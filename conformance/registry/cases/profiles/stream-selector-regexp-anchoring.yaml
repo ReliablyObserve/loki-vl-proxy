@@ -1,0 +1,70 @@
+id: profiles/stream-selector-regexp-anchoring
+title: A stream-selector regexp matcher matches the whole label value, on every route and for __tenant_id__ (fixed)
+proves:
+  - loki-compatible-profile
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+  - loki_api_v1_series
+  - loki_api_v1_label_name_values
+  - loki_api_v1_index_volume
+  - loki_api_v1_detected_labels
+consumer: explore
+why: |
+  Loki builds selector matchers with Prometheus' labels.NewMatcher, which
+  compiles `=~`/`!~` as ^(?s:re)$ (vendor/github.com/prometheus/prometheus/
+  model/labels/regexp.go:76): `{app=~"api|web"}`, what a Grafana multi-value
+  variable sends, selects app api and web only. The proxy passed the pattern
+  to VictoriaLogs' `field:~"re"`, a substring match (lib/logstorage
+  filter_regexp.go), so it also selected api-gateway, my-api and webhook, and
+  `{namespace=~"nch"}` selected anch. Only the derived service_name matcher
+  was anchored. The multi-tenant fan-out matched `__tenant_id__=~"prod"` with
+  a bare Go regexp, so it also queried prod-eu and nonprod; Loki matches the
+  tenant ids with the anchored matcher (pkg/querier/multi_tenant_querier.go:421
+  filterValuesByMatchers).
+
+  Every route translates its selector the same way (query, query_range,
+  labels, label values, series, index/volume, volume_range, index/stats,
+  detected_labels, detected_fields, detected_field values, patterns, tail).
+  The proxy now emits an exact filter for a whole-value literal (`app:="api"`),
+  VictoriaLogs' own match-all and non-empty filters for `.*` and `.+`, the
+  substring regexp for `.*literal.*`, and ^(?s:re)$ otherwise; VictoriaLogs'
+  `{f=~"re"}` stream filter is anchored the same way already
+  (lib/regexutil PromRegex, indexdb.go getStreamIDsForTagFilter). 40 patterns,
+  both operators, over 28 values, agree with Loki v3.7.7 on VictoriaLogs
+  v1.49.0 and v1.53.0 storage.
+
+  **Breaking:** a selector that relied on substring matching, such as
+  `{namespace=~"prod"}` for production, selects only the whole value, as in
+  Loki; write `.*prod.*` for a substring.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{probe="anchor<ts>", app=~"api|web"}'
+    start: now-15m
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.stream]
+  expect: |
+    Streams whose app is exactly api or web; none for api-gateway, my-api or
+    webhook.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator/label_matcher_regexp.go selectorRegexpFieldFilter (streamMatcherToFieldFilter) + internal/proxy/multitenant.go applyTenantMatch'
+  loki: 'vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76 (^(?s:re)$); pkg/querier/multi_tenant_querier.go:421 filterValuesByMatchers'
+  proxy: 'the whole-value match, as an exact, substring or anchored VictoriaLogs filter'
+  planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator); TestLabelMatcherRegexpAnchoredOnEveryRoute and TestTenantMatcherRegexpIsAnchored (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

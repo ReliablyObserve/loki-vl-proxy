@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 68 items are locked; 0 carry an effort exception.
+29 of 70 items are locked; 0 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -416,7 +416,9 @@ None measured.
 | `parser-logfmt` | 7 × 5 ranges | 23 same | worst 5.39s / 5.30s (24h) | 8.43s / 0.63s | differs; 1 slower than Loki cold | not locked |
 | `profiles/dotted-name-parse-error` | 2 × 4 ranges | 8 same | worst **400** / **400** (1h) | 0.00s / 0.00s | same | not locked |
 | `profiles/label-filter-on-line-field` | 3 × 4 ranges | 12 same | worst 0.59s / 0.04s (24h) | 2.64s † / 0.03s | same | locked 2026-10-27 |
+| `profiles/label-filter-regexp-anchoring` | — | not measured | | | | not locked |
 | `profiles/stage-field-exposure` | 7 × 4 ranges | 28 same | worst 2.83s / 0.02s (24h) | 7.54s / 0.04s | same; 13 slower than Loki cold | not locked |
+| `profiles/stream-selector-regexp-anchoring` | — | not measured | | | | not locked |
 | `profiles/structured-metadata-keys-per-profile` | 2 × 4 ranges | 8 same | worst 0.87s / 0.05s (24h) | 4.15s / 0.04s | same | locked 2026-10-27 |
 | `profiles/structured-metadata-label-collision` | 8 × 3 ranges | 15 same | worst 0.92s / 0.07s (3h) | 0.08s † / 0.01s | same; 1 slower than Loki cold | not locked |
 | `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.45s / 0.04s (24h) | 6.44s / 0.08s | same | locked 2026-10-27 |

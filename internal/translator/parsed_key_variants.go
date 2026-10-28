@@ -173,7 +173,7 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 	if !op.isRe {
 		return (v == "") != op.negate
 	}
-	re, err := regexp.Compile("^(?:" + v + ")$")
+	re, err := regexp.Compile(anchorLabelFilterPattern(lokiLabelFilterPattern(v)))
 	if err != nil {
 		return op.negate
 	}

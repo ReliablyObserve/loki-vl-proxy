@@ -735,15 +735,21 @@ func TestOrderedJSONLogsVolumeWithLabelFilterUsesStatsBuckets(t *testing.T) {
 
 func TestLogsQLLabelFilter(t *testing.T) {
 	// VictoriaLogs unquotes double-quoted strings with Go rules, so every
-	// backslash a Loki regexp carries must survive as an escape.
+	// backslash a Loki regexp carries must survive as an escape. A regexp
+	// matches what Loki's label filter matches: `/api/.*\.json` stays anchored
+	// (two literals), '.' kept off newlines.
 	for _, tc := range []struct{ op, value, want string }{
 		{"=", "200", ` | filter status:="200"`},
 		{"!=", `a"b`, ` | filter -status:="a\"b"`},
 		{"=~", `2\d\d`, ` | filter status:~"^(?:2\\d\\d)$"`},
-		{"!~", "5..", ` | filter -status:~"^(?:5..)$"`},
-		{"=~", `/api/.*\.json`, ` | filter status:~"^(?:/api/.*\\.json)$"`},
+		{"!~", "5..", ` | filter -status:~"^(?-s:5..)$"`},
+		{"=~", `/api/.*\.json`, ` | filter status:~"^(?-s:/api/.*\\.json)$"`},
+		{"=~", `500|404`, ` | filter (status:="500" OR status:="404")`},
+		// A common prefix: Loki compares each branch as a substring.
+		{"=~", `5xx|503`, ` | filter status:~"^(?-s:(?s:.*)5xx(?s:.*)|(?s:.*)503(?s:.*))$"`},
+		{"=~", `api.*`, ` | filter status:~"api"`},
 	} {
-		condition, err := translator.NewDropCondition("status", tc.op, tc.value)
+		condition, err := translator.NewLabelFilterCondition("status", tc.op, tc.value)
 		if err != nil {
 			t.Fatal(err)
 		}

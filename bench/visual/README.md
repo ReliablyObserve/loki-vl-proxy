@@ -144,7 +144,7 @@ How to add a fix proof: add (or extend) a page in `spec.json` whose query shows 
 the base, add `"fixes": ["<case id>"]`, and cover registry ids that name code (as for any entry).
 `python3 bench/visual/plan.py --check` fails when a case with `status: fixed` and impact `explore-visible`
 or `drilldown-visible` is listed by no entry. The page must fail on the base build (check the base proxy's answer for the query first: a form the base
-already handles proves nothing and the gate says so). If Grafana cannot show the case (data the stack cannot
+already handles proves nothing and the gate says so). A fix that changes which streams a selector selects also changes the `index/stats` count Explore requests for it; the gate never carries a resource difference to the range Loki does not hold, so pin that entry to the ranges Loki holds (`"ranges": ["15m", "1h"]`). If Grafana cannot show the case (data the stack cannot
 hold, a single-version behaviour, nothing a panel renders), set in the case's gap block
 `visual: none` and `visual_reason: '<why>'` (an honest reason; `api-only` and `edge` impacts need nothing).
 

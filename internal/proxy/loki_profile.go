@@ -496,7 +496,7 @@ func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilt
 	conditions := make([]lineFieldFilter, 0, len(parsed.Selector.Matchers))
 	for _, m := range parsed.Selector.Matchers {
 		op := [...]string{"=", "!=", "=~", "!~"}[m.Op]
-		condition, err := translator.NewDropCondition(m.Name, op, m.Value)
+		condition, err := translator.NewLabelFilterCondition(m.Name, op, m.Value)
 		if err != nil {
 			return nil
 		}

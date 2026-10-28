@@ -259,6 +259,32 @@ class QueryProofTest(unittest.TestCase):
         rows[2].update(main_pr_diffs=[INDEX_STATS], main_pr_qids=[None])
         self.assertEqual(self.verdict(rows)[1]["exit"], 1)
 
+    def test_a_fix_page_whose_selector_is_unchanged_is_improved_and_carries_to_6h(self):
+        # A label-filter fix changes the query's series (the base keeps 1, the PR and Loki 3) and nothing else the page
+        # requests: Explore's index/stats for the unchanged selector is identical on base and PR. At 15m and 1h the open
+        # index/stats gap against Loki is on both builds (2 differences on the base, 1 on the PR), so the case is
+        # improved; at 6h the one difference is the proven query, so it carries.
+        gained = "series sets differ: 0 only left [], 2 only right ['a']"
+        rows = [at("15m", [(Q, gained)], [(None, "")], main_n=2), at("1h", [(Q, gained)], [(None, "")], main_n=2),
+                at("6h", [(Q, gained)])]
+        p = plan(*[(r["page"], r["range"]) for r in rows])
+        p["fix_cases"] = {"profiles/case-a": {"entries": ["explore-a"], "exempt": ""}}
+        _, v = comment.render(rows, {}, p, META, ARGS)
+        self.assertEqual((v["exit"], v["failures"]), (0, []))
+        self.assertEqual(v["fix_proof"], {"profiles/case-a": "improved"})
+
+    def test_an_index_stats_difference_beside_a_proven_query_is_not_carried_to_6h(self):
+        # A selector fix changes the row count index/stats reports for the selector, so a page that shows it differs on
+        # that resource base vs PR at every range, and the resource is never carried (above): such a page is pinned
+        # to the ranges Loki holds in spec.json ("ranges").
+        rows = self.ranges()
+        rows[2] = at("6h", [(Q, "value at 1793149260000: 49033 vs 939017")])
+        rows[2]["main_pr_diffs"].append(INDEX_STATS)
+        rows[2]["main_pr_qids"].append(None)
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+        self.assertIn("explore-a 6h", v["failures"][0])
+
     def test_the_proof_belongs_to_the_page(self):
         rows = self.ranges()
         rows[2]["page"] = "explore-b"

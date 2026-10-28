@@ -1024,7 +1024,8 @@ func filtersOnLevel(filters []translator.DropCondition) bool {
 }
 
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
-// with the same semantics: exact comparison, and a fully anchored RE2 regexp.
+// with the same semantics: exact comparison, and the regexp Loki's label
+// filter matches (translator.LabelFilterRegexpFieldFilter).
 func logsQLLabelFilter(filter translator.DropCondition) string {
 	return " | filter " + logsQLLabelCondition(filter)
 }
@@ -1037,13 +1038,8 @@ func logsQLLabelCondition(filter translator.DropCondition) string {
 		return field + ":=" + logsql.QuoteValue(filter.Value)
 	case "!=":
 		return "-" + field + ":=" + logsql.QuoteValue(filter.Value)
-	case "=~":
-		// strconv.Quote, not QuotePattern: VictoriaLogs unquotes double-quoted
-		// strings with Go rules, so a regexp escape such as \d must stay escaped
-		// or the query is rejected.
-		return field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
 	default:
-		return "-" + field + ":~" + strconv.Quote("^(?:"+filter.Value+")$")
+		return translator.LabelFilterRegexpFieldFilter(field, filter.Value, filter.Op == "!~")
 	}
 }
 
@@ -2372,7 +2368,7 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 		}
 		m := parsed.Selector.Matchers[0]
 		op := []string{"=", "!=", "=~", "!~"}[int(m.Op)]
-		condition, err := translator.NewDropCondition(m.Name, op, m.Value)
+		condition, err := translator.NewLabelFilterCondition(m.Name, op, m.Value)
 		out.filter = &condition
 		return out, err == nil
 	case *logqlpkg.LineFilterStage:

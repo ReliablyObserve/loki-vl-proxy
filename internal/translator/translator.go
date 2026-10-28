@@ -1548,6 +1548,12 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 
 			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
 
+			if entry.entry.isRe {
+				// Loki simplifies a label filter's regexp before matching
+				// it (lokiLabelFilterPattern); `=~""` keeps every line.
+				return labelFilterRegexpFieldFilter(label, value, entry.entry.negate), true
+			}
+
 			if entry.entry.isComp {
 				// Comparison filters (>, >=, <, <=) do not quote the value.
 				return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
@@ -1766,7 +1772,8 @@ func translatedFilterFieldOp(translated string) (field string, op string, ok boo
 	if s == "" {
 		return "", "", false
 	}
-	s = strings.TrimPrefix(s, "-")
+	// A literal alternation is `(field:="a" OR field:="b")`: the same field.
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "-"), "(")
 	for _, candidate := range []string{":>=", ":<=", ":~", ":=", ":>", ":<"} {
 		idx := strings.Index(s, candidate)
 		if idx <= 0 {
@@ -3951,6 +3958,10 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			}
 
 			value = streamMatcherValue(value, op.isRe)
+			if op.isRe {
+				// A selector matcher is anchored to the whole value.
+				return selectorRegexpFieldFilter(label, value, op.negate)
+			}
 
 			if value == "" && !op.isRe {
 				// level="" matches entries where level is absent or empty.
@@ -4109,7 +4120,7 @@ func serviceNameMatcherFilter(rawValue string, neg, isRegex bool) string {
 	value := streamMatcherValue(rawValue, false)
 	if isRegex {
 		// Loki selector regexps are fully anchored and '.' matches newlines.
-		value = "^(?s:" + value + ")$"
+		value = logsql.AnchorLabelMatcherRegex(value)
 	}
 	return serviceNameDerivedFilter(value, neg, isRegex)
 }
@@ -4188,85 +4199,9 @@ func serviceNameDerivedFilter(value string, neg, isRegex bool) string {
 }
 
 // serviceNameLabelFilterPattern returns the anchored pattern that matches what
-// Loki's label filter matches for the regexp value, reproducing the
-// simplifications of RegexSimplifier.Simplify with isLabel=true: a literal is
-// an equality check, `.*`/`.+` match everything and everything non-empty, a
-// literal wrapped in `.*` is a substring check, and alternations combine the
-// same rules per leg. Anything else keeps Loki's anchored regexp.
+// Loki's label filter matches for the regexp value (lokiLabelFilterPattern).
 func serviceNameLabelFilterPattern(value string) string {
-	reg, err := syntax.Parse(value, syntax.Perl)
-	if err != nil {
-		return "^(?s:" + value + ")$"
-	}
-	return "^(?s:" + effectiveLabelMatcherPattern(reg.Simplify()) + ")$"
-}
-
-func effectiveLabelMatcherPattern(reg *syntax.Regexp) string {
-	switch reg.Op {
-	case syntax.OpCapture:
-		if len(reg.Sub) == 1 {
-			return effectiveLabelMatcherPattern(reg.Sub[0])
-		}
-	case syntax.OpEmptyMatch:
-		return ""
-	case syntax.OpLiteral:
-		return quotedRegexpLiteral(reg)
-	case syntax.OpStar:
-		if len(reg.Sub) == 1 && reg.Sub[0].Op == syntax.OpAnyCharNotNL {
-			return ".*"
-		}
-	case syntax.OpPlus:
-		if len(reg.Sub) == 1 && reg.Sub[0].Op == syntax.OpAnyCharNotNL {
-			return ".+"
-		}
-	case syntax.OpAlternate:
-		parts := make([]string, 0, len(reg.Sub))
-		for _, sub := range reg.Sub {
-			parts = append(parts, effectiveLabelMatcherPattern(sub))
-		}
-		return strings.Join(parts, "|")
-	case syntax.OpConcat:
-		if literal, ok := concatSingleLiteral(reg); ok {
-			return ".*" + literal + ".*"
-		}
-	}
-	return reg.String()
-}
-
-// concatSingleLiteral returns the quoted literal of a concatenation of one
-// literal and `.*` parts, the shape Loki turns into a substring check.
-func concatSingleLiteral(reg *syntax.Regexp) (string, bool) {
-	literal := ""
-	parts := 0
-	for _, sub := range reg.Sub {
-		switch {
-		case sub.Op == syntax.OpEmptyMatch:
-			continue
-		case sub.Op == syntax.OpLiteral:
-			if literal != "" {
-				return "", false
-			}
-			literal = quotedRegexpLiteral(sub)
-		case sub.Op == syntax.OpStar && len(sub.Sub) == 1 && sub.Sub[0].Op == syntax.OpAnyCharNotNL:
-		default:
-			return "", false
-		}
-		parts++
-		if parts > 3 {
-			return "", false
-		}
-	}
-	return literal, literal != ""
-}
-
-// quotedRegexpLiteral returns a regexp that matches the literal's text, case
-// insensitively when the literal was parsed that way.
-func quotedRegexpLiteral(reg *syntax.Regexp) string {
-	literal := regexp.QuoteMeta(string(reg.Rune))
-	if reg.Flags&syntax.FoldCase != 0 {
-		return "(?i:" + literal + ")"
-	}
-	return literal
+	return anchorLabelFilterPattern(lokiLabelFilterPattern(value))
 }
 
 func isParserStage(translated string) bool {

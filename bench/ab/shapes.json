@@ -2702,6 +2702,69 @@
      ]
     }
    ]
+  },
+  "label-matcher-anchoring": {
+   "description": "Regexp label matchers matched against the whole value, as Loki does (profiles/stream-selector-regexp-anchoring, profiles/label-filter-regexp-anchoring). The proxy sends a whole-value literal as an exact filter, `.*` as VictoriaLogs' match-all, a `.*`-wrapped literal as a substring regexp and anything else anchored (^(?s:re)$ in a selector, Loki's simplified ^(?:re)$ in a label filter), where it sent the pattern unanchored before. A Grafana multi-value variable over two services (logs and count by app), the single-value form (exact filter), an alternation over many streams, and label filters after | json (a literal alternation, anchored; a prefix, which Loki compares by substring). Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
+   "shapes": [
+    {
+     "name": "M1 multi-value variable, log query",
+     "query": "{app=~\"api-gateway|auth-service\"}",
+     "covers": [
+      "profiles/stream-selector-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
+    },
+    {
+     "name": "M2 multi-value variable, count by app",
+     "query": "sum by (app) (count_over_time({app=~\"api-gateway|auth-service\"} [1m]))",
+     "covers": [
+      "profiles/stream-selector-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "M3 single-value variable, log query",
+     "query": "{app=~\"api-gateway\"}",
+     "covers": [
+      "profiles/stream-selector-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
+    },
+    {
+     "name": "M4 alternation over many streams, count",
+     "query": "sum(count_over_time({namespace=~\"prod|data\", app=~\".*\"} [1m]))",
+     "covers": [
+      "profiles/stream-selector-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "M5 json label filter, literal alternation",
+     "query": "sum by (region) (count_over_time({app=\"api-gateway\"} | json | region=~\"us-east-1|eu-west-1\" [1m]))",
+     "covers": [
+      "profiles/label-filter-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "M6 json label filter, prefix (substring in Loki)",
+     "query": "{app=\"api-gateway\"} | json | region=~\"us-.*\"",
+     "covers": [
+      "profiles/label-filter-regexp-anchoring",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true,
+     "limit": 100
+    }
+   ]
   }
  }
 }

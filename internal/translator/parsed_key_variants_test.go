@@ -37,8 +37,15 @@ func TestParsedKeyFilterMatchesEverySpellingOfASanitizedLabel(t *testing.T) {
 		},
 		{
 			name:  "a regexp that accepts the empty value needs every spelling to accept it",
+			query: `{app="a"} | json | http_method=~"(GET)?"`,
+			want:  []string{prefix + `(http_method:~"^(?:(GET)?)$" "http.method":~"^(?:(GET)?)$" "http-method":~"^(?:(GET)?)$")`},
+		},
+		{
+			// Loki drops the empty branch of a label filter's alternation
+			// (newOrFilter), so `GET|` is an equality check on GET.
+			name:  "an empty alternative a label filter drops is not the empty value",
 			query: `{app="a"} | json | http_method=~"GET|"`,
-			want:  []string{prefix + `(http_method:~"GET|" "http.method":~"GET|" "http-method":~"GET|")`},
+			want:  []string{prefix + `(http_method:="GET" OR "http.method":="GET" OR "http-method":="GET")`},
 		},
 		{
 			name:  "comparisons reject an absent label, any spelling may satisfy them",

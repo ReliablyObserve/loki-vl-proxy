@@ -149,3 +149,11 @@ func BenchmarkTranslate_UnwrapMaxPlain(b *testing.B) {
 		TranslateLogQL(`max_over_time({app="nginx"} | unwrap latency [5m])`)
 	}
 }
+
+// Regexp label matchers: a multi-value variable, a single value, a prefix, and
+// label filters after a parser.
+func BenchmarkTranslateLogQL_RegexpMatchers(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app=~"api-gateway|auth-service", env=~"prod", pod=~"api-.*"} | json | status=~"5.." | region=~"us-.*"`)
+	}
+}

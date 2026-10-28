@@ -49,7 +49,7 @@ Loki profile shown: `aligned`, the stack's Loki (align_queries_with_step on, max
 
 - First request: **70 of 449** pairs are slower (16%): log queries **31 of 73**, Drilldown and Explore pages **22 of 105**, metric queries **17 of 270**.
 - Between 1× and 2× Loki: **18** rows on the first request, **2** on a repeat; above 2× Loki: **52** on the first request and **110** on a repeat (the 2026-10-28 distribution).
-- **165 shape, range and mode rows are on the above-2× list** (more than 2× Loki and more than 50 ms slower): **55** on the first request, **110** on a repeat, **0** on a refresh. Each is a defect being fixed: a row leaves the list after two consecutive daily runs within 2×, so it can hold more rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 68 covered registry items are locked at the 2× bound.
+- **165 shape, range and mode rows are on the above-2× list** (more than 2× Loki and more than 50 ms slower): **55** on the first request, **110** on a repeat, **0** on a refresh. Each is a defect being fixed: a row leaves the list after two consecutive daily runs within 2×, so it can hold more rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 70 covered registry items are locked at the 2× bound.
 - Largest gaps on that list, first request: `X1 json filter level_extracted, by level` over 24h, **19.72 s** against **4.66 s**; `DLV1 drilldown logs volume, json` over 24h, **10.40 s** against **1.05 s**; `DLV2 json error filter, detected_level` over 6h, **10.15 s** against **1.31 s**.
 - Largest gaps on that list, repeat: `DLV2 json error filter, detected_level` over 6h, **10.27 s** against **0.04 s**; `DLV1 drilldown logs volume, json` over 24h, **9.61 s** against **0.02 s**.
 - Answers: **124 of 620** pairs return a different result from Loki, and **0** could not be compared.
@@ -63,7 +63,7 @@ Loki profile shown: `aligned`, the stack's Loki (align_queries_with_step on, max
 | Endpoints whose registry state is `proven` | **11 of 33** (33%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 23 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
-| Known differences from Loki (ranked) | **85**: 65 open, 12 documented, 6 owner-kept, 2 upstream |
+| Known differences from Loki (ranked) | **84**: 64 open, 12 documented, 6 owner-kept, 2 upstream |
 
 The 5 open differences with the most impact (all explore-visible): `profiles/keep-removes-derived-service-name` (`| keep` removes service_name the proxy derived for a stream without one), `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it). Differences kept on purpose are listed as documented or owner-kept.
 
@@ -101,6 +101,7 @@ The exhaustive checks compare status, result type and non-emptiness. Strict quan
 - Binary expressions joining two vector operands evaluate both on the step-aligned grid, as Loki's query frontend does when `align_queries_with_step` is enabled. The compatibility stack enables it; a default Loki evaluates at `start+k*step`, so results with an unaligned start differ by less than one step. Operands with different ranges take different execution paths (sliding evaluation versus tumbling buckets), and an unaligned start previously left no common timestamps to join.
 - `unwrap duration(...)` and `unwrap bytes(...)` over bare parsers convert unit strings such as `15ms` and `1024B` instead of dropping every sample.
 - Range operands grouped `by (level)` keep Loki's `level` key, so `on(level)` matching works for range queries as it already did for instant queries.
+- Selector regexps (`{app=~"api"}`) match the whole label value, as Prometheus compiles them (`^(?s:…)$`). VictoriaLogs' `field:~` is a substring match, so `{app=~"api"}` selected `api-gateway` and `{namespace=~"prod"}` selected `production` where Loki returns nothing; results of such queries shrink to Loki's. Label filters after a parser (`| status=~"5.."`) match what Loki's simplified filter matches: a literal or literal alternation compares whole values, `api.*` and a factored alternation such as `api|api-gateway` compare by substring, as in Loki. Line filters keep their substring semantics.
 - Scalar results carry second timestamps and all sample values use Loki's fixed-point rendering (`1234000`, not `1.234e+06`).
 
 - Metric queries over `| regexp` and `| pattern` keep the labels those stages extract in the series identity, as Loki does, so an existing query now returns one series per captured value instead of one per stream (a minute of one generator app: 450 series instead of 30, same total). `| json` and `| logfmt` are unchanged by default; `-exact-parser-series-identity` opts in.
