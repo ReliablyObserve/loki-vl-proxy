@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **sum, avg, max and min over time with unwrap and a range shorter than the
+  step answer Loki's window on query_range.** Loki reads each step's sample from
+  (t-range, t] only (`pkg/logql/range_vector.go:102-189`), so with a range
+  shorter than the step most lines belong to no sample and a step whose window
+  is empty has none. The proxy answered these functions from VictoriaLogs' step
+  buckets (t-step, t]: `sum by (service_name) (sum_over_time({service_name="api-gateway"}
+  | json | unwrap duration_ms [1m]))` over 7 days (step 10m) summed ten minutes
+  of lines per point where Loki sums one, and a step with lines only outside its
+  window had a sample Loki does not. The VictoriaLogs query now carries the same
+  window filter as the other range metrics, right after the filters, so each
+  bucket holds exactly Loki's window and VictoriaLogs parses only those lines;
+  values and sample presence are Loki's, as an operand of a binary operation too,
+  and the unwrap conversion-error check counts only lines inside a window, the
+  only ones Loki fails on. Not covered: the series identity of avg, max and min
+  under an outer aggregation
+  (`semantics/unwrap-sum-by-per-series-function-extraction-list`); VictoriaLogs
+  evaluates the window phase in float64, so a line within a few hundred
+  nanoseconds of a window edge may fall on either side. Registry:
+  `semantics/unwrap-over-time-short-range-windows`.
+
+- **sum, avg, max and min over time with unwrap and a range longer than the
+  step answer Loki's window on query_range.** Loki reads each step's sample from
+  (t-range, t] (`pkg/logql/range_vector.go:102-189`, the functions at
+  `range_vector.go:371-420`); windows overlap when the range is longer than the
+  step. The proxy answered every point from one VictoriaLogs step bucket
+  (t-step, t] (`statsRateRangeEqualsStepShift` read every range of these
+  functions as the step), so `sum(sum_over_time({app="payment-service"} | logfmt
+  | unwrap amount [5m]))` at step 60 was 2.00257e+06 where Loki has 9.84307e+06
+  (one step of the five in the window), and a line every 4.5 minutes gave 13
+  samples in an hour where Loki has 61. Such a query now goes to the window
+  evaluator that already answers rate with unwrap: VictoriaLogs returns, per
+  series, buckets of gcd(range, step) anchored at the request holding the sum,
+  maximum or minimum of the converted value (and the line count for avg), and
+  the proxy merges the buckets of each window (the sum, the sum over the count
+  for avg, the extreme for max and min), with a sample only where the window
+  holds a line. VictoriaLogs has no sliding-window stats, so the merge is done
+  in the proxy, over aggregated buckets only. `max by (L) (max_over_time(...))`
+  and `min by (L) (min_over_time(...))` take the extreme of the group's lines,
+  whatever the series are, so VictoriaLogs groups their buckets by L directly,
+  JSON queries included, and Loki's series limit counts the groups
+  (`pkg/logql/engine.go:530-590`). This covers grouped and ungrouped sums,
+  topk and bottomk, binary operands, count, min, max and avg by labels, a
+  labelled `without` as the outermost aggregation, json and logfmt; an outer
+  fold counts Loki's series limit on its answer, and its reads are bounded by
+  `-manual-range-metric-row-limit` as for `without`. Their per-stream series now
+  carry `detected_level="unknown"` for a stream without a level, as Loki's do
+  and as rate's already did. A grid of more than 11,000 buckets (a range the
+  step does not divide, such as [5m] at step 86.4s) is answered by the raw-row
+  evaluator, bounded by `-manual-range-metric-row-limit`. Not covered: a JSON
+  parser query grouped per stream and line under an outer aggregation, nested
+  aggregations such as a sum over a sum, and an empty `without ()` keep the step
+  bucket (`semantics/unwrap-over-time-range-windows-residual-forms`). Ranges
+  equal to or shorter than the step and instant queries are unchanged. This
+  supersedes #740. Registry: `semantics/unwrap-over-time-range-windows`.
+
+- **The raw-row range evaluator reads the window (t-range, t] for every
+  function.** Loki skips a sample with `Timestamp <= start` and keeps the one at
+  the evaluation time for every range aggregation
+  (`pkg/logql/range_vector.go:148-189`, `batchRangeVectorIterator.load`). The
+  evaluator excluded the lower edge only for rate, count_over_time,
+  bytes_over_time and bytes_rate, and fetched the line at the evaluation time
+  only for those and quantile_over_time, so the other functions read
+  [t-range, t): over lines {0:1, 10:2, 20:3} and the window (0, 20], sum 3 where
+  Loki has 5, avg 1.5 (2.5), min 1 (2). It answers rate_counter on
+  query_range, the instant sum, avg, max, min, stddev, stdvar, first and last
+  over time of a JSON parser query, and grids of more than 11,000 buckets; only
+  lines exactly on a window edge move. Not covered: rate_counter's value is the
+  counter increase over the window, without Loki's extrapolation to the window
+  edges (`range_vector.go:275-346`). Contributed in #570. Registry:
+  `semantics/lower-bound-exclusive`.
+
+### Performance
+
+- **A range metric whose range is shorter than its step parses only the lines
+  inside an evaluation window.** Loki reads a step's sample from the window
+  (t-range, t] only (`pkg/logql/range_vector.go:102-189`,
+  `batchRangeVectorIterator.Next` and `load`: a line between two windows belongs
+  to no sample, and a conversion error there fails nothing). The proxy already
+  kept only those lines, with a filter on each line's stored `_time`, but it
+  applied the filter after the whole log pipeline, so VictoriaLogs still derived
+  service_name, unpacked and gated every line of the range. The filter now
+  follows the query's filters, ahead of every pipe: for `sum by (service_name)
+  (rate({env="production"} | logfmt | unwrap latency_ms [5m]))` over 7 days
+  (step 10m) half the lines are parsed, for a `[1m]` range nine in ten are
+  skipped (`quantile_over_time` included). The unwrap conversion-error check
+  rides on the same query, and its row lookup carries the filter once, ahead of
+  the parser. The pipes it moves ahead of are row-local and never write
+  `_time`, so the rows the stats group, and the answer, are unchanged. A query
+  that groups by or filters on detected_level keeps the filter after the derived
+  level chain, whose base is the key of its remembered presence probe. Ranges
+  equal to or longer than the step are unchanged. Registry:
+  `semantics/unwrap-conversion-error`, `window-bounds-and-step-alignment`.
+
+- **A range metric whose range is shorter than its step reuses the
+  VictoriaLogs buckets it read before when its window moves by whole steps.**
+  The window filter named the window start of the request (start-range in
+  nanoseconds), so every moved window sent a new query text and the stats
+  extent cache stored each one apart: a 1h window of
+  `sum by (pod) (count_over_time({app="uw"}[30s]))` at step 2m moved five times
+  by one step read every bucket again each time. The filter now
+  names that start modulo the step, the same lines on the same grid, so a window
+  moved by whole steps reads only its new buckets (one miss and five partial
+  answers where there were six misses). The unwrap functions are unchanged
+  here: their conversion-error check reads VictoriaLogs whole, as before.
+  Registry: `window-bounds-and-step-alignment`, `quality/query-range-extent-cache`.
+
+- **The window evaluator reads its stats buckets in place and writes its
+  points without a value per point.** Each stats_query_range answer of a range
+  metric over a range other than the step was parsed into a document of a value
+  per point, every point of the answer was built as an interface pair, and the
+  unwrap counter's kept flag was removed from an answer in three copies. The
+  points are now read where they stand (only each series' labels are parsed),
+  every window's bounds move forward with the step instead of being searched
+  for, the points are written straight into the answer, and the flag is
+  removed in one pass. With 10 series and VictoriaLogs answering from memory, a
+  24h query at step 60 with a [5m] range of `sum by (service_name)
+  (sum_over_time(... | unwrap duration_ms [5m]))` (the new route of this
+  release) takes 2.8 ms and 4.2 MiB in 1.6k allocations per request, against
+  3.1 ms and 6.9 MiB in 4.8k for main's step-bucket answer; the 7-day `[1m]`
+  and `[5m]` shapes at step 10m go from 3.9 to 2.9 MiB. Registry:
+  `window-bounds-and-step-alignment`.
+
 ## [2.38.0] - 2026-10-28
 
 ### Added
@@ -169,128 +293,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the HTTP client directly (the label metadata warmers, the label index, the
   patterns store, the version probe and the cold tier's client) keep one attempt.
   Registry: `semantics/live-request-not-cancelled-by-sibling`.
-
-- **sum, avg, max and min over time with unwrap and a range shorter than the
-  step answer Loki's window on query_range.** Loki reads each step's sample from
-  (t-range, t] only (`pkg/logql/range_vector.go:102-189`), so with a range
-  shorter than the step most lines belong to no sample and a step whose window
-  is empty has none. The proxy answered these functions from VictoriaLogs' step
-  buckets (t-step, t]: `sum by (service_name) (sum_over_time({service_name="api-gateway"}
-  | json | unwrap duration_ms [1m]))` over 7 days (step 10m) summed ten minutes
-  of lines per point where Loki sums one, and a step with lines only outside its
-  window had a sample Loki does not. The VictoriaLogs query now carries the same
-  window filter as the other range metrics, right after the filters, so each
-  bucket holds exactly Loki's window and VictoriaLogs parses only those lines;
-  values and sample presence are Loki's, as an operand of a binary operation too,
-  and the unwrap conversion-error check counts only lines inside a window, the
-  only ones Loki fails on. Not covered: the series identity of avg, max and min
-  under an outer aggregation
-  (`semantics/unwrap-sum-by-per-series-function-extraction-list`); VictoriaLogs
-  evaluates the window phase in float64, so a line within a few hundred
-  nanoseconds of a window edge may fall on either side. Registry:
-  `semantics/unwrap-over-time-short-range-windows`.
-
-- **sum, avg, max and min over time with unwrap and a range longer than the
-  step answer Loki's window on query_range.** Loki reads each step's sample from
-  (t-range, t] (`pkg/logql/range_vector.go:102-189`, the functions at
-  `range_vector.go:371-420`); windows overlap when the range is longer than the
-  step. The proxy answered every point from one VictoriaLogs step bucket
-  (t-step, t] (`statsRateRangeEqualsStepShift` read every range of these
-  functions as the step), so `sum(sum_over_time({app="payment-service"} | logfmt
-  | unwrap amount [5m]))` at step 60 was 2.00257e+06 where Loki has 9.84307e+06
-  (one step of the five in the window), and a line every 4.5 minutes gave 13
-  samples in an hour where Loki has 61. Such a query now goes to the window
-  evaluator that already answers rate with unwrap: VictoriaLogs returns, per
-  series, buckets of gcd(range, step) anchored at the request holding the sum,
-  maximum or minimum of the converted value (and the line count for avg), and
-  the proxy merges the buckets of each window (the sum, the sum over the count
-  for avg, the extreme for max and min), with a sample only where the window
-  holds a line. VictoriaLogs has no sliding-window stats, so the merge is done
-  in the proxy, over aggregated buckets only. `max by (L) (max_over_time(...))`
-  and `min by (L) (min_over_time(...))` take the extreme of the group's lines,
-  whatever the series are, so VictoriaLogs groups their buckets by L directly,
-  JSON queries included, and Loki's series limit counts the groups
-  (`pkg/logql/engine.go:530-590`). This covers grouped and ungrouped sums,
-  topk and bottomk, binary operands, count, min, max and avg by labels, a
-  labelled `without` as the outermost aggregation, json and logfmt; an outer
-  fold counts Loki's series limit on its answer, and its reads are bounded by
-  `-manual-range-metric-row-limit` as for `without`. Their per-stream series now
-  carry `detected_level="unknown"` for a stream without a level, as Loki's do
-  and as rate's already did. A grid of more than 11,000 buckets (a range the
-  step does not divide, such as [5m] at step 86.4s) is answered by the raw-row
-  evaluator, bounded by `-manual-range-metric-row-limit`. Not covered: a JSON
-  parser query grouped per stream and line under an outer aggregation, nested
-  aggregations such as a sum over a sum, and an empty `without ()` keep the step
-  bucket (`semantics/unwrap-over-time-range-windows-residual-forms`). Ranges
-  equal to or shorter than the step and instant queries are unchanged. This
-  supersedes #740. Registry: `semantics/unwrap-over-time-range-windows`.
-
-- **The raw-row range evaluator reads the window (t-range, t] for every
-  function.** Loki skips a sample with `Timestamp <= start` and keeps the one at
-  the evaluation time for every range aggregation
-  (`pkg/logql/range_vector.go:148-189`, `batchRangeVectorIterator.load`). The
-  evaluator excluded the lower edge only for rate, count_over_time,
-  bytes_over_time and bytes_rate, and fetched the line at the evaluation time
-  only for those and quantile_over_time, so the other functions read
-  [t-range, t): over lines {0:1, 10:2, 20:3} and the window (0, 20], sum 3 where
-  Loki has 5, avg 1.5 (2.5), min 1 (2). It answers rate_counter on
-  query_range, the instant sum, avg, max, min, stddev, stdvar, first and last
-  over time of a JSON parser query, and grids of more than 11,000 buckets; only
-  lines exactly on a window edge move. Not covered: rate_counter's value is the
-  counter increase over the window, without Loki's extrapolation to the window
-  edges (`range_vector.go:275-346`). Contributed in #570. Registry:
-  `semantics/lower-bound-exclusive`.
-
-### Performance
-
-- **A range metric whose range is shorter than its step parses only the lines
-  inside an evaluation window.** Loki reads a step's sample from the window
-  (t-range, t] only (`pkg/logql/range_vector.go:102-189`,
-  `batchRangeVectorIterator.Next` and `load`: a line between two windows belongs
-  to no sample, and a conversion error there fails nothing). The proxy already
-  kept only those lines, with a filter on each line's stored `_time`, but it
-  applied the filter after the whole log pipeline, so VictoriaLogs still derived
-  service_name, unpacked and gated every line of the range. The filter now
-  follows the query's filters, ahead of every pipe: for `sum by (service_name)
-  (rate({env="production"} | logfmt | unwrap latency_ms [5m]))` over 7 days
-  (step 10m) half the lines are parsed, for a `[1m]` range nine in ten are
-  skipped (`quantile_over_time` included). The unwrap conversion-error check
-  rides on the same query, and its row lookup carries the filter once, ahead of
-  the parser. The pipes it moves ahead of are row-local and never write
-  `_time`, so the rows the stats group, and the answer, are unchanged. A query
-  that groups by or filters on detected_level keeps the filter after the derived
-  level chain, whose base is the key of its remembered presence probe. Ranges
-  equal to or longer than the step are unchanged. Registry:
-  `semantics/unwrap-conversion-error`, `window-bounds-and-step-alignment`.
-
-- **A range metric whose range is shorter than its step reuses the
-  VictoriaLogs buckets it read before when its window moves by whole steps.**
-  The window filter named the window start of the request (start-range in
-  nanoseconds), so every moved window sent a new query text and the stats
-  extent cache stored each one apart: a 1h window of
-  `sum by (pod) (count_over_time({app="uw"}[30s]))` at step 2m moved five times
-  by one step read every bucket again each time. The filter now
-  names that start modulo the step, the same lines on the same grid, so a window
-  moved by whole steps reads only its new buckets (one miss and five partial
-  answers where there were six misses). The unwrap functions are unchanged
-  here: their conversion-error check reads VictoriaLogs whole, as before.
-  Registry: `window-bounds-and-step-alignment`, `quality/query-range-extent-cache`.
-
-- **The window evaluator reads its stats buckets in place and writes its
-  points without a value per point.** Each stats_query_range answer of a range
-  metric over a range other than the step was parsed into a document of a value
-  per point, every point of the answer was built as an interface pair, and the
-  unwrap counter's kept flag was removed from an answer in three copies. The
-  points are now read where they stand (only each series' labels are parsed),
-  every window's bounds move forward with the step instead of being searched
-  for, the points are written straight into the answer, and the flag is
-  removed in one pass. With 10 series and VictoriaLogs answering from memory, a
-  24h query at step 60 with a [5m] range of `sum by (service_name)
-  (sum_over_time(... | unwrap duration_ms [5m]))` (the new route of this
-  release) takes 2.8 ms and 4.2 MiB in 1.6k allocations per request, against
-  3.1 ms and 6.9 MiB in 4.8k for main's step-bucket answer; the 7-day `[1m]`
-  and `[5m]` shapes at step 10m go from 3.9 to 2.9 MiB. Registry:
-  `window-bounds-and-step-alignment`.
 
 ## [2.37.0] - 2026-10-27
 
