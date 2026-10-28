@@ -117,6 +117,8 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 		count  = `sum by (job, pod) (count_over_time({app="uw"}[1m]))`
 		amount = `sum by (job, pod) (sum_over_time({app="uw"} | unwrap amount [1m]))`
 		perJob = `sum by (job) (count_over_time({app="uw"}[1m]))`
+		// emptyCount reads a window an hour back, where no line is.
+		emptyCount = `sum by (job, pod) (count_over_time({app="uw"}[1m] offset 1h))`
 	)
 	ja, jb, none := `{"job":"a"}`, `{"job":"b"}`, `{}`
 	for _, tc := range []struct {
@@ -151,6 +153,16 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 		{"ignoring an absent label under an outer sum", `sum by (job) (` + perJob + ` + ignoring(machine) sum by (job, machine) (count_over_time({app="uw"}[1m])))`, map[string]float64{ja: 8, jb: 4}},
 		{"aggregation over the aggregation", `max(sum by (job) (` + amount + ` / ` + count + `))`, map[string]float64{none: 6}},
 		{"empty after the filter", `sum(` + count + ` > 100)`, map[string]float64{}},
+		// An operand with no series (its window, an hour back, holds no line):
+		// the join has none, so the aggregation has none (vectorBinop matches
+		// nothing; VectorAggEvaluator.Next folds an empty vector to an empty one).
+		{"empty right operand", `sum by (job) (` + count + ` / ` + emptyCount + `)`, map[string]float64{}},
+		{"empty left operand", `sum(` + emptyCount + ` * 2)`, map[string]float64{}},
+		{"empty operand under count", `count(` + amount + ` > ` + emptyCount + `)`, map[string]float64{}},
+		// A grouping by a label no series has is one group without labels.
+		{"by a label no series has", `sum by (absent) (` + amount + ` / ` + count + `)`, map[string]float64{none: 12}},
+		{"without every label", `count without (job, pod) (` + amount + ` / ` + count + `)`, map[string]float64{none: 3}},
+		{"without a label no series has", `max without (absent) (` + amount + ` / ` + count + `)`, map[string]float64{`{"job":"a","pod":"p1"}`: 2, `{"job":"a","pod":"p2"}`: 4, `{"job":"b","pod":"p3"}`: 6}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, version := range []string{"v1.52.0", "v1.49.0"} {
