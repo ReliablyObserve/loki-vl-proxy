@@ -253,23 +253,49 @@ func nearAsk(t *testing.T, rep replica, req proofRequest) (string, fleetCounters
 // through the scope's owner.
 func inventoryAnswered(d fleetCounters) bool { return d.invHit > 0 || d.invForwarded > 0 }
 
-// nearWarm asks every request on rep until the inventory answers it (a
-// scope's first request is answered from VictoriaLogs while the inventory
-// reads in the background), and returns the answers.
-func nearWarm(t *testing.T, rep replica, reqs func() []proofRequest, inventory bool) answers {
+// nearListed reports whether an answer lists every stream of apps: label
+// names list the fixture's labels, values every app, series every stream.
+func nearListed(req proofRequest, answer string, apps []string) bool {
+	switch {
+	case strings.HasSuffix(req.name, "/labels"):
+		return strings.Contains(" "+answer+" ", " fleet_near ") && strings.Contains(" "+answer+" ", " near_app ")
+	case strings.HasSuffix(req.name, "/near_app_values"):
+		for _, app := range apps {
+			if !slices.Contains(strings.Fields(answer), app) {
+				return false
+			}
+		}
+		return true
+	default:
+		for _, app := range apps {
+			if !strings.Contains(answer, "near_app="+app+",") && !strings.Contains(answer, "near_app="+app+"}") {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// nearWarm asks every request on rep until it lists every stream of apps
+// and, with the inventory, the inventory answers it (a scope's first request
+// is answered from VictoriaLogs while the inventory reads in the background;
+// rows written with past timestamps after a scope read those hours are late
+// data, listed after the next -metadata-late-data-sweep-interval), and
+// returns the answers.
+func nearWarm(t *testing.T, rep replica, reqs func() []proofRequest, inventory bool, apps []string) answers {
 	t.Helper()
 	out := answers{}
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := time.Now().Add(nearLateSweep + 75*time.Second)
 	for i := range reqs() {
 		for {
 			req := reqs()[i]
 			got, d, _ := nearAsk(t, rep, req)
 			out[req.name] = got
-			if !inventory || inventoryAnswered(d) {
+			if nearListed(req, got, apps) && (!inventory || inventoryAnswered(d)) {
 				break
 			}
 			if time.Now().After(deadline) {
-				t.Fatalf("the stream inventory never answered %s on %s within 90s (%s)", req, rep.name, d)
+				t.Fatalf("%s on %s did not list %v from the stream inventory (inventory %v) by the deadline: %s (%s)", req, rep.name, apps, inventory, got, d)
 			}
 			time.Sleep(250 * time.Millisecond)
 		}
@@ -402,6 +428,9 @@ func waitValue(t *testing.T, rep replica, id, value string, deadline time.Time) 
 	}
 }
 
+// nearApps are the near_app values listed once the fresh stream is written.
+var nearApps = []string{"a", "b", "fresh", "live"}
+
 func runNearNowPhase(t *testing.T) {
 	proofRun(t, "near_now_label_inventory", func(t *testing.T) {
 		phase := startPhase("near_now_label_inventory", fleetReplicas())
@@ -415,7 +444,9 @@ func runNearNowPhase(t *testing.T) {
 
 		var warmed answers
 		proofRun(t, "cross_peer_read", func(t *testing.T) {
-			warmed = nearWarm(t, a, reqs, inventory)
+			started := time.Now()
+			warmed = nearWarm(t, a, reqs, inventory, []string{"a", "b", "live"})
+			proofRec.addEdge("near_now_backfill_listed", map[string]any{"replica": a.name, "after_ms": ms(time.Since(started))})
 			total := requireNearSame(t, []replica{b, c}, fx.id, warmed, inventory)
 			if inventory && total.invServedPeer < 1 && total.invHit < 1 {
 				t.Errorf("B and C were answered neither through the scope owner nor from their own inventory (%s)", total)
@@ -442,13 +473,36 @@ func runNearNowPhase(t *testing.T) {
 				}
 			}
 			// The warm answers now include the new value.
-			warmed = nearWarm(t, a, reqs, inventory)
+			warmed = nearWarm(t, a, reqs, inventory, nearApps)
 		})
 
 		if !inventory {
 			t.Log("no label stream inventory on this build: the near-now phase checked equal answers and the edge contract only")
 			return
 		}
+		proofRun(t, "late_row_listed_fleet_wide", func(t *testing.T) {
+			// A row written three hours in the past, in an hour the scope
+			// owner already read, is listed everywhere within one late-data
+			// sweep (plus the sweep's tick, the near-now share window and
+			// slack). It runs on the warm fleet, before any replica restarts,
+			// so the sweep is what lists it.
+			written := time.Now()
+			if err := nearRow(fx.id, "late", written.Add(-3*time.Hour), map[string]string{"near_late": "yes"}); err != nil {
+				t.Fatal(err)
+			}
+			deadline := written.Add(nearLateSweep + 15*time.Second)
+			for _, rep := range fleetReplicas() {
+				took, ok := waitListed(t, rep, fx.id, "near_late", deadline)
+				proofRec.addEdge("near_now_late_row_listed", map[string]any{"replica": rep.name, "after_ms": ms(time.Since(written)), "polled_ms": ms(took), "listed": ok})
+				if !ok {
+					t.Errorf("a row written 3h in the past was not listed on %s within one late-data sweep (%s) plus 15s", rep.name, nearLateSweep)
+				}
+			}
+		})
+
+		// The late stream is part of the 6h and 24h answers from now on.
+		warmed = nearWarm(t, a, reqs, true, nearApps)
+
 		owner := scopeOwner(t, fx.id)
 		ownerRep := fleetReplica(owner)
 		var others []replica
@@ -465,7 +519,7 @@ func runNearNowPhase(t *testing.T) {
 			// hour units its peers hold.
 			before := scrapeAll(t, others)
 			recreateWithoutDisk(t, owner)
-			rebuilt := nearWarm(t, ownerRep, reqs, true)
+			rebuilt := nearWarm(t, ownerRep, reqs, true, nearApps)
 			after := scrapeAll(t, append(others, ownerRep))
 			var units fleetCounters
 			units = units.plus(after[ownerRep.name])
@@ -499,7 +553,7 @@ func runNearNowPhase(t *testing.T) {
 			before := scrapeAll(t, others)
 			got := map[string]answers{}
 			for _, rep := range others {
-				got[rep.name] = nearWarm(t, rep, reqs, true)
+				got[rep.name] = nearWarm(t, rep, reqs, true, nearApps)
 			}
 			after := scrapeAll(t, others)
 			var units fleetCounters
@@ -518,24 +572,6 @@ func runNearNowPhase(t *testing.T) {
 				t.Errorf("no replica fell back from the stopped owner (%s)", units)
 			}
 			proofRec.addEdge("near_now_owner_down", map[string]any{"owner": ownerRep.name, "forward_fallback": units.invForwardFallback, "units_peer": units.invPeer, "units_vl": units.invVL})
-		})
-
-		proofRun(t, "late_row_listed_fleet_wide", func(t *testing.T) {
-			// A row written three hours in the past, in an hour every replica
-			// already read, is listed everywhere within one late-data sweep
-			// (plus the sweep's tick, the near-now share window and slack).
-			written := time.Now()
-			if err := nearRow(fx.id, "late", written.Add(-3*time.Hour), map[string]string{"near_late": "yes"}); err != nil {
-				t.Fatal(err)
-			}
-			deadline := written.Add(nearLateSweep + 15*time.Second)
-			for _, rep := range fleetReplicas() {
-				took, ok := waitListed(t, rep, fx.id, "near_late", deadline)
-				proofRec.addEdge("near_now_late_row_listed", map[string]any{"replica": rep.name, "after_ms": ms(time.Since(written)), "polled_ms": ms(took), "listed": ok})
-				if !ok {
-					t.Errorf("a row written 3h in the past was not listed on %s within one late-data sweep (%s) plus 15s", rep.name, nearLateSweep)
-				}
-			}
 		})
 
 		fx.mu.Lock()
