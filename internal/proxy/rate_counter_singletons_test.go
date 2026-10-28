@@ -594,3 +594,43 @@ func FuzzRateCounterOneSample(f *testing.F) {
 		}
 	})
 }
+
+// TestRateCounterKeysAreReusedPerQuery: a moved window proves its missing
+// steps with the keys found by the request before (one VictoriaLogs read, not
+// two), and its answer is the same.
+//
+// conformance: semantics/unwrap-rate-counter-one-sample-series
+func TestRateCounterKeysAreReusedPerQuery(t *testing.T) {
+	base := int64(1_800_000_000) * 1e9
+	var rows []emuRow
+	for i := 0; i < 200; i++ {
+		rows = append(rows, emuRow{ts: base - int64(10*time.Minute) + int64(i)*int64(5*time.Second), stream: `{app="rc"}`, value: float64(i % 9), msg: fmt.Sprintf("amount=%d txn=k%d", i%9, i)})
+	}
+	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+	backend := httptest.NewServer(rateCounterEmuHandler(emu))
+	defer backend.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
+	_ = p.ValidateBackendVersionCompatibility(context.Background())
+	var answers []string
+	for i := 0; i < 2; i++ {
+		params := url.Values{"query": {`sum(rate_counter({app="rc"} | logfmt | unwrap amount [5m]))`}, "start": {strconv.FormatInt(base/1e9-int64(i)*30, 10)}, "end": {strconv.FormatInt(base/1e9+300-int64(i)*30, 10)}, "step": {"30"}}
+		res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"0"`) {
+			t.Fatalf("%d %s", res.Code, res.Body)
+		}
+		answers = append(answers, res.Body.String())
+	}
+	discoveries := 0
+	for _, q := range emu.endpointCalls("/select/logsql/query") {
+		if strings.HasSuffix(q, "| field_names") {
+			discoveries++
+		}
+	}
+	if discoveries != 1 {
+		t.Fatalf("%d key discoveries for two requests of one query, want 1", discoveries)
+	}
+}

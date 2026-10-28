@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -185,6 +187,58 @@ func (p *Proxy) rateCounterOneSample(ctx context.Context, base, field, label str
 // name (pkg/logql/log/util.go:22-39 sanitizeLabelKey) another key or the
 // unwrapped label shares.
 func (p *Proxy) rateCounterIdentityKeys(ctx context.Context, lines, label string, from, to time.Time) []string {
+	cacheKey := fmt.Sprintf("%p\x00%s\x00%s\x00%s\x00%s", p, p.backend, p.contextScopeFingerprint(ctx), lines, label)
+	if keys, ok := rateCounterKeyCache.get(cacheKey); ok {
+		return keys
+	}
+	keys := p.discoverRateCounterKeys(ctx, lines, label, from, to)
+	if keys != nil {
+		rateCounterKeyCache.put(cacheKey, keys)
+	}
+	return keys
+}
+
+// rateCounterKeyCache remembers the keys of a query's lines for a while, so
+// a refresh proves its missing steps with one VictoriaLogs read. Keys an
+// entry misses only merge series.
+var rateCounterKeyCache = &rateCounterKeys{entries: map[string]rateCounterKeysEntry{}}
+
+// rateCounterKeysTTL and rateCounterKeysMax bound the key cache.
+const (
+	rateCounterKeysTTL = 10 * time.Minute
+	rateCounterKeysMax = 1024
+)
+
+type rateCounterKeysEntry struct {
+	keys []string
+	at   time.Time
+}
+
+type rateCounterKeys struct {
+	mu      sync.Mutex
+	entries map[string]rateCounterKeysEntry
+}
+
+func (c *rateCounterKeys) get(key string) ([]string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok || time.Since(e.at) > rateCounterKeysTTL {
+		return nil, false
+	}
+	return e.keys, true
+}
+
+func (c *rateCounterKeys) put(key string, keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= rateCounterKeysMax {
+		clear(c.entries)
+	}
+	c.entries[key] = rateCounterKeysEntry{keys: keys, at: time.Now()}
+}
+
+func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string, from, to time.Time) []string {
 	resp, err := p.rateCounterQuery(ctx, lines+" | limit "+strconv.Itoa(rateCounterKeysSample)+" | unpack_logfmt from _msg result_prefix "+strconv.Quote(rateCounterKeyPrefix)+" | field_names", from, to)
 	if err != nil {
 		return nil
