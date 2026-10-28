@@ -99,3 +99,10 @@ gap:
   planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceEdgeTable, TestLabelReplaceOnInstantAndRange, TestLabelReplaceDifferential, TestLabelReplaceUnderPostAggregation, TestLabelReplaceInvalidRegexp, TestLabelReplaceOverBareRangeFunctionKeepsOneSeriesPerStream, TestLabelReplaceOverJSONMetricUsesTheOrderedJSONEvaluator (internal/proxy); TestLabelReplaceStringArgumentsAreUnquoted (internal/translator)'
   clusters:
     - a9d4f85c
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -51,3 +51,10 @@ gap:
   planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceOfABinaryExpressionRoutesByTheBinary (internal/proxy)'
   note: 'Related: semantics/label-replace-instant-vector, semantics/label-replace-new-label.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

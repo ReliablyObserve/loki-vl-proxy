@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 70 items are locked; 0 carry an effort exception.
+29 of 74 items are locked; 0 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -438,9 +438,9 @@ None measured.
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 32 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | same | locked 2026-10-27 |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 8 same | worst 1.39s / 0.05s (24h) | 5.50s / 0.06s | same | locked 2026-10-27 |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | differs | locked 2026-10-27 |
-| `semantics/label-replace-instant-vector` | — | not measured | | | | — |
-| `semantics/label-replace-new-label` | 6 × 2 ranges | 5 same, 1 slower | worst 0.54s / 0.55s (1h) | 0.11s / 0.01s | differs; 1 slower than Loki cold | — |
-| `semantics/label-replace-range-binary-marker` | — | not measured | | | | — |
+| `semantics/label-replace-instant-vector` | — | not measured | | | | not locked |
+| `semantics/label-replace-new-label` | 6 × 2 ranges | 5 same, 1 slower | worst 0.54s / 0.55s (1h) | 0.11s / 0.01s | differs; 1 slower than Loki cold | not locked |
+| `semantics/label-replace-range-binary-marker` | — | not measured | | | | not locked |
 | `semantics/labels-end-inclusive-like-loki` | 12 × 4 ranges | 48 same | worst 0.70s / 0.00s (24h) | 0.07s † / 0.07s | differs | locked 2026-10-27 |
 | `semantics/line-filter-or-alternatives` | 6 × 5 ranges | 21 same | worst 0.74s / 0.05s (24h) | 3.34s / 0.03s | same; 2 slower than Loki cold | not locked |
 | `semantics/metadata-answers-include-last-24h-like-loki` | 4 × 4 ranges | 16 same | worst 0.02s / 0.00s (1h) | 0.01s † / 0.01s | differs | locked 2026-10-27 |
@@ -448,7 +448,7 @@ None measured.
 | `semantics/parenthesized-log-range` | 7 × 5 ranges | 25 same | worst 1.54s / 0.07s (24h) | 5.17s / 0.06s | same | locked 2026-10-27 |
 | `semantics/pattern-line-filter` | 4 × 1 ranges | 4 same | worst 0.06s / 0.06s (1h) | 0.02s / 0.02s | same | locked 2026-10-27 |
 | `semantics/pattern-line-filter-anchoring` | 9 × 2 ranges | 18 same | worst 0.28s / 0.02s (24h) | 0.02s / 0.02s | same; 4 slower than Loki cold | not locked |
-| `semantics/pipeline-error-text-parity` | 2 × 2 ranges | 1 same, 1 slower | worst 0.54s / 0.55s (1h) | 0.11s / 0.01s | same; 1 slower than Loki cold | — |
+| `semantics/pipeline-error-text-parity` | 2 × 2 ranges | 1 same, 1 slower | worst 0.54s / 0.55s (1h) | 0.11s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `semantics/plain-name-after-parser-reads-stream-label` | 12 × 5 ranges | 26 same | worst 0.31s / 0.07s (6h) | 0.32s † / 0.34s | same | locked 2026-10-27 |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 8 slower than Loki cold | not locked |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.41s / 0.40s (24h) | 0.22s / 0.01s | same; 2 slower than Loki cold | not locked |
