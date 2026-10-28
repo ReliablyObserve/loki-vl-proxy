@@ -755,11 +755,14 @@ type unwrapCheck struct {
 
 	writer *unwrapLookupWriter
 
-	// first is the lookup of the first evaluation window, started beside the
-	// metric's first counting stats query that reads firstMinSpan or more (a
-	// heavy read, -backend-heavy-query-min-range). Its error answers before
-	// any hit, and cancel stops the metric's queries once it has one: Loki
-	// stops at the first rejected value too.
+	// heavy is the base of the metric's first counting stats query that reads
+	// firstMinSpan or more (-backend-heavy-query-min-range). Once such a read
+	// has hits, the first evaluation window (start-range, start] is looked up
+	// before them: Loki stops at the first rejected value. first is that
+	// lookup; it starts beside the heavy read when the same query met a
+	// rejected value lately (unwrapRecentErrors), and cancel stops the
+	// metric's queries once it has Loki's error.
+	heavy        *unwrapHit
 	first        *unwrapFirstWindow
 	cancel       context.CancelFunc
 	firstMinSpan time.Duration
@@ -816,7 +819,15 @@ func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Va
 		return params, nil, false
 	}
 	if c.cancel != nil && c.accepts(field, conv) && unwrapVLSpan(params) >= c.firstMinSpan {
-		c.firstOnce.Do(func() { c.startFirstWindow(base, field, conv) })
+		c.firstOnce.Do(func() {
+			h := unwrapHit{base: base, field: field, conv: conv}
+			c.mu.Lock()
+			c.heavy = &h
+			c.mu.Unlock()
+			if l := c.writer; unwrapRecentErrors.seen(c.recentKey(l.ctx, l.p, h)) {
+				c.startFirstWindow(h, true)
+			}
+		})
 	}
 	var nan *unwrapNaN
 	if conv == "" {
@@ -910,52 +921,108 @@ func unwrapVLSpan(params url.Values) time.Duration {
 }
 
 // startFirstWindow looks up the first evaluation window (start-range, start]
-// of every probe of field and conv beside the metric's queries, and cancels
-// them when Loki fails there.
-func (c *unwrapCheck) startFirstWindow(base, field, conv string) {
+// of every probe of h's field and conv; early, it runs beside the metric's
+// queries and cancels them when Loki fails there.
+func (c *unwrapCheck) startFirstWindow(h unwrapHit, early bool) *unwrapFirstWindow {
 	first := &unwrapFirstWindow{done: make(chan struct{})}
 	c.mu.Lock()
+	if c.first != nil {
+		first = c.first
+		c.mu.Unlock()
+		return first
+	}
 	c.first = first
 	c.mu.Unlock()
 	l := c.writer
 	go func() {
 		defer close(first.done)
-		for _, probe := range c.probesFor(field, conv) {
+		for _, probe := range c.probesFor(h.field, h.conv) {
 			from := c.start.Add(-probe.window).Add(time.Nanosecond)
 			to := c.start.Add(time.Nanosecond)
-			if first.err = c.lookupHit(l.ctx, l.p, probe, unwrapHit{base: base, field: field, conv: conv}, from, to); first.err != nil {
-				c.cancel()
+			if first.err = c.lookupHit(l.ctx, l.p, probe, h, from, to); first.err != nil {
+				if early {
+					c.cancel()
+				}
 				return
 			}
 		}
 	}()
+	return first
 }
 
-// firstWindowError waits for the first window's lookup, when one started.
-func (c *unwrapCheck) firstWindowError() *orderedJSONPipelineError {
-	c.mu.Lock()
-	first := c.first
-	c.mu.Unlock()
-	if first == nil {
-		return nil
+// recentKey identifies the query of a heavy read for unwrapRecentErrors.
+func (c *unwrapCheck) recentKey(ctx context.Context, p *Proxy, h unwrapHit) string {
+	return fmt.Sprintf("%p\x00%s\x00%s\x00%s\x00%s\x00%s", p, p.backend, p.contextScopeFingerprint(ctx), h.base, h.field, h.conv)
+}
+
+// unwrapRecentErrors remembers the heavy queries that answered Loki's
+// conversion error lately, so their next heavy read looks the first window
+// up beside the stats read; a query that never errs pays nothing.
+var unwrapRecentErrors = &unwrapRecent{at: map[string]time.Time{}}
+
+// unwrapRecentTTL and unwrapRecentMax bound unwrapRecentErrors.
+const (
+	unwrapRecentTTL = 10 * time.Minute
+	unwrapRecentMax = 1024
+)
+
+type unwrapRecent struct {
+	mu sync.Mutex
+	at map[string]time.Time
+}
+
+func (r *unwrapRecent) seen(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	at, ok := r.at[key]
+	return ok && time.Since(at) <= unwrapRecentTTL
+}
+
+func (r *unwrapRecent) mark(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.at) >= unwrapRecentMax {
+		clear(r.at)
 	}
-	<-first.done
-	return first.err
+	r.at[key] = time.Now()
 }
 
 // confirm returns Loki's error for the first hit whose row Loki fails on, or
-// nil. Each lookup reads at most three rows of one hit's span. The first
-// evaluation window's lookup, when one ran, answers first.
+// nil. Each lookup reads at most three rows of one hit's span. After a heavy
+// read with hits, the first evaluation window's lookup answers first (the
+// early one when it ran), so the answer is the same whichever way it came.
 func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelineError {
-	if err := c.firstWindowError(); err != nil {
-		return err
-	}
 	c.mu.Lock()
 	hits := append([]unwrapHit(nil), c.hits...)
+	heavy, first := c.heavy, c.first
 	c.mu.Unlock()
+	if first != nil {
+		<-first.done
+		if first.err != nil {
+			return first.err
+		}
+	}
 	if len(hits) == 0 {
 		return nil
 	}
+	if heavy != nil && first == nil {
+		first = c.startFirstWindow(*heavy, false)
+		<-first.done
+		if first.err != nil {
+			unwrapRecentErrors.mark(c.recentKey(ctx, p, *heavy))
+			return first.err
+		}
+	}
+	err := c.confirmHits(ctx, p, hits)
+	if err != nil && heavy != nil {
+		unwrapRecentErrors.mark(c.recentKey(ctx, p, *heavy))
+	}
+	return err
+}
+
+// confirmHits returns Loki's error for the first of hits whose row Loki fails
+// on, or nil.
+func (c *unwrapCheck) confirmHits(ctx context.Context, p *Proxy, hits []unwrapHit) *orderedJSONPipelineError {
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].from.Before(hits[j].from) })
 	seen := map[string]bool{}
 	lookups := 0

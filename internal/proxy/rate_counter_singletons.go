@@ -41,7 +41,9 @@ import (
 // series. So equal counts mean every Loki series holds one sample, and every
 // window rates 0; a hash collision lowers the distinct count and only sends
 // the request to the per-row evaluator. Not covered: a line holding one key
-// twice, where VictoriaLogs and Loki may keep different values. The windows'
+// twice, where VictoriaLogs and Loki may keep different values, and a line
+// holding a sampled key and an unsampled one Loki names alike (`a.b` sampled,
+// `a_b` not), where Loki keeps one of the two values. The windows'
 // presence is the bucket count of the unwrap rate route, which also reports
 // Loki's conversion errors.
 
