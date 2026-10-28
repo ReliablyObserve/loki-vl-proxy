@@ -702,15 +702,8 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	gated, quantileCounts := spec, readsQuantileCounts(manualFunc, spec)
 	// rate_counter under sum: when no series holds two samples, the windows
 	// rate 0 and only their presence is read (rate_counter_singletons.go).
-	var counterProof <-chan bool
 	counterSpec, counterFunc := spec, manualFunc
-	if label, ungrouped, ok := rateCounterUnderSum(r.FormValue("query")); ok && manualFunc == "rate_counter" {
-		counterProof = p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, label, startTS.Add(-origSpec.Window), endTS)
-		manualFunc = "unwrap_rate"
-		if ungrouped {
-			spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, true
-		}
-	}
+	counterProof, spec, manualFunc := p.startRateCounterProof(r, spec, manualFunc, field, startTS.Add(-origSpec.Window), endTS)
 	spec, rawSpec, statsAggFunc := unwrapManualSpecs(spec, manualFunc)
 	switch field {
 	case "__count__":
@@ -804,19 +797,16 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			p.writeErr(w, r.Context(), err)
 			return true
 		}
-		if ok && counterProof != nil {
-			if !<-counterProof {
-				break
-			}
-			markQueryStepsRoute(r.Context(), "counter-one-sample-"+strconv.Itoa(route))
-			p.writeHitsRangeMetricMatrix(w, rateCounterZeroFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
-			return true
+		if !ok {
+			continue
 		}
-		if ok {
-			markQueryStepsRoute(r.Context(), "buckets-"+strconv.Itoa(route))
-			p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
-			return true
+		routeName, matrixFunc, proven := rateCounterBucketRoute(counterProof, manualFunc)
+		if !proven {
+			break // the per-row evaluator answers
 		}
+		markQueryStepsRoute(r.Context(), routeName+strconv.Itoa(route))
+		p.writeHitsRangeMetricMatrix(w, matrixFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
+		return true
 	}
 
 	// VL's raw-query end is exclusive; Loki includes the evaluation time. That
@@ -826,11 +816,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	fetchEnd := endTS.Add(time.Nanosecond)
 	if counterProof != nil {
 		// Not proven: the per-row evaluator answers as before.
-		manualFunc, spec = counterFunc, counterSpec
-		_, rawSpec, _ = unwrapManualSpecs(spec, manualFunc)
-		if origSpec.Window < step {
-			rawSpec.BaseQuery = withWindowPhaseFilter(r.Context(), rawSpec.BaseQuery, startTS, step, origSpec.Window)
-		}
+		manualFunc, spec, rawSpec = counterFunc, counterSpec, rateCounterRawSpec(r.Context(), counterSpec, startTS, step, origSpec.Window)
 	}
 	markQueryStepsRoute(r.Context(), "raw")
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)

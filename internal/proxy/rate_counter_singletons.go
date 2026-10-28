@@ -101,6 +101,42 @@ func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
 	return label, agg.Grouping == nil || len(agg.Grouping.Labels) == 0, parsers == 1 && label != ""
 }
 
+// startRateCounterProof starts the one-sample proof of a sum over
+// rate_counter and returns the spec and function its windows' presence is
+// read with (the unwrap rate route, one series for a bare sum); other
+// requests get a nil channel and their spec and function back.
+func (p *Proxy) startRateCounterProof(r *http.Request, spec statsCompatSpec, manualFunc, field string, from, to time.Time) (<-chan bool, statsCompatSpec, string) {
+	label, ungrouped, ok := rateCounterUnderSum(r.FormValue("query"))
+	if !ok || manualFunc != "rate_counter" {
+		return nil, spec, manualFunc
+	}
+	proof := p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, label, from, to)
+	if ungrouped {
+		spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, true
+	}
+	return proof, spec, "unwrap_rate"
+}
+
+// rateCounterBucketRoute names the route and the matrix function of a bucket
+// answer: the plain ones without a proof, the zero matrix once the proof
+// holds; proven is false when it failed.
+func rateCounterBucketRoute(proof <-chan bool, manualFunc string) (route, matrixFunc string, proven bool) {
+	if proof == nil {
+		return "buckets-", manualFunc, true
+	}
+	return "counter-one-sample-", rateCounterZeroFunc, <-proof
+}
+
+// rateCounterRawSpec is the per-row evaluator's spec of a rate_counter whose
+// proof failed, as proxyManualRangeMetricRange builds it.
+func rateCounterRawSpec(ctx context.Context, spec statsCompatSpec, start time.Time, step, window time.Duration) statsCompatSpec {
+	_, raw, _ := unwrapManualSpecs(spec, "rate_counter")
+	if window < step {
+		raw.BaseQuery = withWindowPhaseFilter(ctx, raw.BaseQuery, start, step, window)
+	}
+	return raw
+}
+
 // rateCounterKeyPrefix names the fields of the proof's own parse of the line.
 const rateCounterKeyPrefix = "__lvpk."
 
