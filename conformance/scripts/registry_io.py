@@ -302,5 +302,6 @@ def perf_problems(covered, over_2x_rows=(), shape_covers=None, root=REGISTRY_ROO
             block = blocks.get(identifier, (None,))[0]
             if block and block["locked"] is True and row["mode"] in block["modes"]:
                 problems.append(f"{identifier}: locked, but covers {row['set']} / {row['shape']} / {row['range']} / "
-                                f"{row['mode']}, which is on the above-2× list (bench/ab/history/over-2x-loki.json)")
+                                f"{row['mode']}, which is on the above-2× list in the {row.get('profile', 'aligned')} profile "
+                                "(bench/ab/history/over-2x-loki.json)")
     return problems

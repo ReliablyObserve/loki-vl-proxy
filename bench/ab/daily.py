@@ -6,8 +6,13 @@ fresh runner and opens a bot pull request with what it writes:
 
   bench/ab/results/daily-<set>.json   the day's summary per set (report.py
                                       format; overwritten daily, the git
-                                      history keeps every day)
+                                      history keeps every day) against the
+                                      stack's Loki ("aligned" profile);
+  bench/ab/results/daily-<set>.loki-defaults.json
+                                      the same against Loki with its own
+                                      defaults (the "loki-defaults" profile)
   bench/ab/history/<set>.jsonl        one appended line per set per day
+  bench/ab/history/<set>.loki-defaults.jsonl   the same, per profile
   bench/ab/history/trend.md           day-over-day and week-over-week report
   bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
   bench/ab/history/over-2x-loki.json  rows above 2x Loki (only ever removed from:
@@ -26,6 +31,11 @@ fresh runner and opens a bot pull request with what it writes:
   python3 bench/ab/daily.py --out /tmp/ab-daily                 # everything
   python3 bench/ab/daily.py --out /tmp/ab-daily --sets control --max-range 3h --runs 3 --no-write
 
+Both Loki profiles run on the one seeded stack (stack.PROFILES; pr_smoke.py has the
+rules): Loki is recreated between them on the same data and every build restarts with the
+profile's flags. aligned runs when a build supports -align-queries-with-step, for the
+range-metric shapes only (the only queries the flag changes); loki-defaults runs every shape.
+
 The baseline is the newest release tag reachable from HEAD (--baseline-ref
 to override), so each day also shows what main has gained since the release.
 Ranges are each set's own, up to --max-range (the seeded window is sized from
@@ -41,6 +51,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import history  # noqa: E402
+import over2x  # noqa: E402
 import pr_smoke  # noqa: E402
 import stack  # noqa: E402
 
@@ -68,9 +79,12 @@ def main():
     ap.add_argument("--service", default="loki-vl-proxy-underscore")
     ap.add_argument("--proxy-port", type=int, default=23190)
     ap.add_argument("--seed-timeout", type=int, default=3600)
+    ap.add_argument("--profiles", choices=pr_smoke.PROFILE_MODES, default="auto",
+                    help="Loki profiles to run (pr_smoke.py): auto = loki-defaults, plus aligned for the range-metric "
+                         "shapes when a build supports -align-queries-with-step")
     ap.add_argument("--no-write", action="store_true", help="do not touch results/, history/ or conformance reports")
     ap.add_argument("--keep-stack", action="store_true")
-    stack.stack_args(ap)
+    stack.stack_args(ap, profile=False)
     args = ap.parse_args()
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
@@ -87,7 +101,23 @@ def main():
 
     st = stack.stack_from(args)
     proxies, trees, summaries = [], {}, []
+    phases, profile_meta = {}, {}
+    clock = time.time()
+
+    def lap(name):
+        nonlocal clock
+        phases[name] = round(time.time() - clock)
+        clock = time.time()
+
     try:
+        # Planned from source (the seed does not depend on it, the order of the profiles does); the built
+        # binaries' probe decides what runs.
+        planned = (pr_smoke.source_supports_align(None) or pr_smoke.source_supports_align(baseline))
+        every = {name: [sh["name"] for sh in spec["sets"][name]["shapes"]] for name in sets}
+        runs, skipped = pr_smoke.plan_profiles(args.profiles, {"sets": every}, spec, planned)
+        profiles = pr_smoke.execution_order(runs)
+        if profiles:
+            st.profile = profiles[0]
         st.up()
         seed_s = max_secs + 60 * args.runs + 900
         end = int(time.time()) // 60 * 60
@@ -98,25 +128,47 @@ def main():
         except BaseException as e:
             trees.update(getattr(e, "trees", {}))
             raise
-        stack.start_proxies([("release", bins["release"], trees["release"], args.proxy_port),
-                             ("main", bins["main"], trees["main"], args.proxy_port + 2)], out, st, args.service, proxies)
-        targets = [("release", proxies[0].url), ("main", proxies[1].url), ("loki", st.loki)]
-        for set_name in sets:
-            ranges = [r for r in spec["sets"][set_name]["ranges"] if range_defs[r][0] <= max_secs]
-            if not ranges:
-                stack.log(f"skipping set {set_name}: no range up to {args.max_range}")
+        lap("seed_and_build")
+        specs = [("release", bins["release"], trees["release"], args.proxy_port),
+                 ("main", bins["main"], trees["main"], args.proxy_port + 2)]
+        supported = {name: stack.probe_align_support(binary) for name, binary, _, _ in specs}
+        for profile in profiles:
+            if profile == "aligned" and args.profiles == "auto" and not any(supported.values()):
+                skipped[profile] = "the built binaries do not know -align-queries-with-step"
                 continue
-            summary = pr_smoke.run_matrix(set_name, None, targets, args, end, st, out, args.runs, ranges=ranges,
-                                          label="daily", extra=["--long-runs", f"release={args.long_runs}"])
-            summary["baseline_ref"], summary["commit"] = baseline, head
-            summaries.append(summary)
-            if not all(p.alive() for p in proxies):
-                raise RuntimeError("a proxy died during the run; see the proxy logs in " + out)
+            restarted = profile != profiles[0]  # the first profile runs on the Loki the seed wrote to
+            settings = st.set_profile(profile, (end - seed_s, end), args.seed_timeout)
+            first = len(proxies)
+            stack.start_proxies(specs, out, st, args.service, proxies, profile=profile, supported=supported)
+            here = proxies[first:]
+            unlike = [p.name for p in here if not stack.like_for_like(profile, p.align)]
+            profile_meta[profile] = {"loki": settings, "proxy_align": {p.name: p.align for p in here},
+                                     "not_like_for_like": unlike}
+            targets = [("release", here[0].url), ("main", here[1].url), ("loki", st.loki)]
+            for _, set_name, names in (r for r in runs if r[0] == profile):
+                ranges = [r for r in spec["sets"][set_name]["ranges"] if range_defs[r][0] <= max_secs]
+                if not ranges:
+                    stack.log(f"skipping set {set_name}: no range up to {args.max_range}")
+                    continue
+                summary = pr_smoke.run_matrix(set_name, names, targets, args, end, st, out, args.runs, ranges=ranges,
+                                              label="daily", extra=["--long-runs", f"release={args.long_runs}"],
+                                              profile=profile, unlike=unlike)
+                summary["baseline_ref"], summary["commit"] = baseline, head
+                summary["proxy_align"] = profile_meta[profile]["proxy_align"]
+                summary["loki_restarted"] = restarted
+                summaries.append(summary)
+                if not all(p.alive() for p in here):
+                    raise RuntimeError("a proxy died during the run; see the proxy logs in " + out)
+            lap(profile)
+            for p in here:
+                p.stop()
     finally:
         stack.teardown(proxies, trees.values(), st, args.keep_stack)
 
     meta = {"baseline": baseline, "commit": head, "runs": args.runs, "max_range": args.max_range,
-            "elapsed_s": round(time.time() - t0), "sets": sets,
+            "elapsed_s": round(time.time() - t0), "sets": sets, "phases_s": phases,
+            "profiles": {p: {"ran": p in profile_meta, **profile_meta.get(p, {}),
+                             **({"why_not": skipped[p]} if p in skipped else {})} for p in stack.PROFILES},
             "valid": all(s.get("valid", True) for s in summaries)}
     with open(os.path.join(out, "meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
@@ -130,9 +182,11 @@ def main():
         return 2
     written = []
     for summary in summaries:
-        with open(os.path.join(RESULTS, f"daily-{summary['set']}.json"), "w") as f:
+        profile = summary["profile"]
+        suffix = "" if profile == over2x.LEGACY_PROFILE else f".{profile}"
+        with open(os.path.join(RESULTS, f"daily-{summary['set']}{suffix}.json"), "w") as f:
             json.dump(summary, f, indent=1)
-        if history.append(summary, commit=head)[1]:
+        if history.append(summary, commit=head)[1] and summary["set"] not in written:
             written.append(summary["set"])
     with open(os.path.join(history.HISTORY, "trend.md"), "w") as f:
         f.write(history.trend())

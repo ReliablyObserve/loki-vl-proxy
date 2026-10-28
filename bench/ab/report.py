@@ -130,6 +130,9 @@ def summarize(args):
         k = (r["shape"], r["range"])
         if k not in keys:
             keys.append(k)
+    # Targets that did not run the setting of the Loki profile the pass was made against (perf_matrix.py
+    # --not-like-for-like): their timings are shown, marked, and never compared.
+    unlike = set(raw.get("not_like_for_like") or [])
     out = []
     for shape, rng in keys:
         entry = {"shape": shape, "range": rng, "p50": {}, "p95": {}, "cold": {}, "status": {}, "vl_cpu_max": {}}
@@ -185,6 +188,10 @@ def summarize(args):
             entry["note"] = "now rejected exactly as the reference rejects it"
         elif b_ok and not c_ok:
             verdict = "broken"
+        elif unlike & {args.baseline, args.candidate}:
+            verdict = "n/a"
+            entry["note"] = "not like-for-like with the Loki profile: " + ", ".join(
+                sorted(unlike & {args.baseline, args.candidate}))
         else:
             verdict = timing_verdict(entry["p50"].get(args.baseline), entry["p50"].get(args.candidate),
                                      args.noise, args.min_delta)
@@ -204,7 +211,8 @@ def summarize(args):
                       and e["baseline_parity_vs_reference"] == "differs")
     summary = {"label": args.label, "date": datetime.date.today().isoformat(), "set": raw.get("set") or (rows[0].get("set") if rows else None),
                "description": raw.get("description", ""), "baseline": args.baseline, "candidate": args.candidate,
-               "reference": args.reference, "runs": raw.get("runs"), "valid": raw.get("valid", True) and (refresh_raw.get("valid", True) if refresh_raw else True),
+               "reference": args.reference, "profile": raw.get("profile") or None,
+               "not_like_for_like": sorted(unlike), "runs": raw.get("runs"), "valid": raw.get("valid", True) and (refresh_raw.get("valid", True) if refresh_raw else True),
                "restart_before": raw.get("restart_before"), "restart_after": raw.get("restart_after"),
                "noise": args.noise, "refresh_s": refresh_raw.get("refresh_s") if refresh_raw else None,
                "refresh_runs": refresh_raw.get("runs") if refresh_raw else None, "timing": "cold" if args.cold else "warm", "verdicts": counts, "result_differs_from_reference": differs,
@@ -234,7 +242,10 @@ def fmt(v, status, stale=False):
 def markdown(s):
     b, c, r = s["baseline"], s["candidate"], s["reference"]
     has_refresh = any("refresh" in e for e in s["rows"])
-    lines = [f"**{s['set']}** — {s['label']} ({s['date']}, {s['runs']} runs, "
+    unlike = set(s.get("not_like_for_like") or [])
+    mark = lambda t, text: text + (" ‡" if t in unlike else "")  # noqa: E731 - a timing of a build that is not like-for-like
+    lines = [f"**{s['set']}** — {s['label']} ({s['date']}, {s['runs']} runs"
+             f"{', Loki profile ' + s['profile'] if s.get('profile') else ''}, "
              f"{'cold (first run)' if s.get('timing') == 'cold' else 'warm p50'}; "
              f"VictoriaLogs restarts {s['restart_before']}→{s['restart_after']}{'' if s['valid'] else ', INVALID'})", "",
              f"| shape | range | {b} | {c} | {r} | change | result vs {r} |", "|---|---|---|---|---|---|---|"]
@@ -246,8 +257,8 @@ def markdown(s):
         if change is None:
             change = f"{e['speedup']}×" if e["speedup"] and e["verdict"] == "faster" else "same"
         st = e.get("stale", [])
-        lines.append(f"| {cell(e['shape'])} | {e['range']} | {fmt(e['p50'].get(b), e['status'].get(b), b in st)} | "
-                     f"{fmt(e['p50'].get(c), e['status'].get(c), c in st)} | "
+        lines.append(f"| {cell(e['shape'])} | {e['range']} | {mark(b, fmt(e['p50'].get(b), e['status'].get(b), b in st))} | "
+                     f"{mark(c, fmt(e['p50'].get(c), e['status'].get(c), c in st))} | "
                      f"{fmt(e['p50'].get(r), e['status'].get(r), r in st)} | {change} | {e['parity_vs_reference']} |"
                      + "".join(f" {fmt(e.get('refresh', {}).get(t), e.get('refresh_status', {}).get(t))} |"
                                for t in (b, c, r) if has_refresh))
@@ -257,6 +268,9 @@ def markdown(s):
         lines += ["", f"{served} of {len(s['rows'])} {r} cold runs were answered from its results cache "
                   "(its own counters say so): not a computed cold time."]
     v = s["verdicts"]
+    if unlike:
+        lines += ["", f"‡ {', '.join(sorted(unlike))}: this build did not run the setting of the Loki profile "
+                  f"({s.get('profile')}), so its timings are not like-for-like with Loki's and are never compared."]
     if any(stale.values()):
         lines += ["", "† identical answers for windows a minute apart: served from a cache or a stale view, so the "
                   "timing is not a like-for-like reference (" +

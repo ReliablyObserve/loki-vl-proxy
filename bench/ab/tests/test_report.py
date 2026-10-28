@@ -130,5 +130,38 @@ class CacheAndRefreshTest(unittest.TestCase):
         self.assertFalse(whole["valid"])
 
 
+class ProfileTest(unittest.TestCase):
+    SECONDS = {"main": (0.5, 0.2), "branch": (0.5, 0.9), "loki": (0.3, 0.05)}  # branch is 4.5x main warm
+
+    def test_the_profile_and_the_unaligned_builds_are_carried_into_the_summary(self):
+        whole = summarize(timed(self.SECONDS, profile="aligned", not_like_for_like=["main"]), whole=True)
+        self.assertEqual((whole["profile"], whole["not_like_for_like"]), ("aligned", ["main"]))
+        self.assertEqual(summarize(timed(self.SECONDS), whole=True)["profile"], None)
+        self.assertEqual(summarize(timed(self.SECONDS), whole=True)["not_like_for_like"], [])
+
+    def test_a_build_that_is_not_like_for_like_gets_no_timing_verdict_against_the_other(self):
+        same_flags = summarize(timed(self.SECONDS, profile="loki-defaults", not_like_for_like=[]))
+        self.assertEqual(same_flags["verdict"], "slower")
+        for unlike in (["main"], ["branch"]):
+            row = summarize(timed(self.SECONDS, profile="aligned", not_like_for_like=unlike))
+            self.assertEqual(row["verdict"], "n/a", unlike)
+            self.assertIn("not like-for-like", row["note"])
+
+    def test_status_verdicts_survive(self):
+        raw = timed(self.SECONDS, profile="aligned", not_like_for_like=["main"])
+        for r in raw["rows"]:
+            if r["target"] == "branch":
+                r["status"] = 502
+        self.assertEqual(summarize(raw)["verdict"], "broken")
+
+    def test_the_markdown_marks_the_build_and_says_why(self):
+        whole = summarize(timed(self.SECONDS, profile="aligned", not_like_for_like=["main"]), whole=True)
+        text = report.markdown(whole)
+        self.assertIn("Loki profile aligned", text)
+        self.assertIn("0.20s† ‡", text)
+        self.assertIn("‡ main: this build did not run the setting of the Loki profile (aligned)", text)
+        self.assertNotIn("‡", report.markdown(summarize(timed(self.SECONDS), whole=True)))
+
+
 if __name__ == "__main__":
     unittest.main()

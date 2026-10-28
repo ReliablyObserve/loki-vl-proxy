@@ -50,18 +50,19 @@ COMMENT_LIMIT = 60000
 
 
 def measured_pairs(summaries):
-    """{(set, range)} the summaries cover."""
-    return {(s["set"], row["range"]) for s in summaries for row in s["rows"]}
+    """{(profile, set, range)} the summaries cover: a profile that did not run leaves its rows as committed."""
+    return {(over2x.profile_of(s), s["set"], row["range"]) for s in summaries for row in s["rows"]}
 
 
 def bands(summaries):
-    """[(mode, band)] of every comparable row (both answered 200; on cold, Loki's cache did not answer)."""
-    out = []
+    """{profile: [(mode, band)]} of every comparable row (both answered 200; on cold, Loki's cache did not answer;
+    a build that is not like-for-like with the profile has no pair)."""
+    out = {}
     for s in summaries:
         for row in s["rows"]:
             for mode, pair in over2x.summary_pairs(s, row, s["candidate"]).items():
                 if over2x.judge(*pair) in ("above", "within"):
-                    out.append((mode, over2x.band(pair[0], pair[1])))
+                    out.setdefault(over2x.profile_of(s), []).append((mode, over2x.band(pair[0], pair[1])))
     return out
 
 
@@ -75,19 +76,23 @@ def candidate_over_2x(summaries, committed, date="", commit=""):
     """
     seen = measured_pairs(summaries)
     fresh = {over2x.key(r): r for r in over2x.seed(summaries, date=date, commit=commit)}
-    rows = {k: v for k, v in committed.items() if (v["set"], v["range"]) not in seen}
+    pair = lambda v: (over2x.profile_of(v), v["set"], v["range"])  # noqa: E731
+    rows = {k: v for k, v in committed.items() if pair(v) not in seen}
     rows.update(fresh)
     added = sorted(k for k in fresh if k not in committed)
-    removed = sorted(k for k, v in committed.items() if (v["set"], v["range"]) in seen and k not in fresh)
+    removed = sorted(k for k, v in committed.items() if pair(v) in seen and k not in fresh)
     return list(rows.values()), added, removed
 
 
 def acceptance_day(summaries, date="", commit=""):
-    """One entry of acceptance.json's days, for this run."""
-    dist = over2x.distribution(bands(summaries))
-    return {"date": date, "sets": len(summaries), "commits": [commit[:10]] if commit else [],
-            **{m: {k: dist[m][k] for k in ("rows", "share_below", "below", "close", "between", "above")}
-               for m in dist}}
+    """One entry of acceptance.json's days, for this run: the distribution per Loki profile that ran."""
+    profiles = {}
+    for profile, pairs in bands(summaries).items():
+        dist = over2x.distribution(pairs)
+        profiles[profile] = {"sets": sum(1 for s in summaries if over2x.profile_of(s) == profile),
+                             **{m: {k: dist[m][k] for k in ("rows", "share_below", "below", "close", "between", "above")}
+                                for m in dist}}
+    return {"date": date, "commits": [commit[:10]] if commit else [], "profiles": profiles}
 
 
 def committed_day(ref, root=ROOT):
@@ -110,24 +115,29 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
              "`bench/ab/history/over-2x-loki.json` to accept it, and `acceptance-day.json`, a report: the committed " +
              "`acceptance.json` is rebuilt from the daily history, so the next daily run after the merge writes the real " +
              "new distribution.", "",
-             "| mode | rows compared | below Loki | close | 1–2× | above 2× | share below | " +
-             "committed share below |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
-    for mode in over2x.MODES:
-        d = day.get(mode)
-        if not d:
-            continue
-        old = committed.get(mode, {})
-        lines.append(f"| {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | {d['above']} | "
-                     f"{d['share_below']:.1f}% | " + (f"{old['share_below']:.1f}% ({committed.get('date', '?')})"
-                                                         if old else "—") + " |")
+             "| profile | mode | rows compared | below Loki | close | 1–2× | above 2× | share below | " +
+             "committed share below |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for profile, by_mode in day.get("profiles", {}).items():
+        # a committed day from before the profiles existed holds its modes at the top: they are aligned
+        old_day = (committed.get("profiles") or {}).get(profile) or (committed if profile == over2x.LEGACY_PROFILE
+                                                                      and "profiles" not in committed else {})
+        for mode in over2x.MODES:
+            d = by_mode.get(mode)
+            if not d:
+                continue
+            old = old_day.get(mode, {})
+            lines.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | "
+                         f"{d['above']} | {d['share_below']:.1f}% | "
+                         + (f"{old['share_below']:.1f}% ({committed.get('date', '?')})" if old else "—") + " |")
     lines += ["", "The committed column is the newest daily run (7 runs, ranges up to 24h): the direction is comparable, " +
               "the rows are not the same ones.",
               "", f"Above-2× list: {len(rows)} rows after this run, {len(added)} added, {len(removed)} not above 2× in " +
-              "this run's profile (the daily run's two-run rule decides for the committed list)."]
+              "this run's profile (the daily run's two-run rule decides for the committed list). A profile that did not "
+              "run leaves its committed rows as they are."]
     for title, keys in (("Added", added), ("Not above 2× in this run", removed)):
         if keys:
             lines += ["", f"{title}:"]
-            lines += [f"- `{k[0]}` / {k[1]} / {k[2]} / {k[3]}" for k in keys[:LISTED]]
+            lines += [f"- {k[0]} / `{k[1]}` / {k[2]} / {k[3]} / {k[4]}" for k in keys[:LISTED]]
             if len(keys) > LISTED:
                 lines.append(f"- … and {len(keys) - LISTED} more (in `over-2x-loki.json`)")
     if elapsed_s:

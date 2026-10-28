@@ -70,16 +70,16 @@ class CandidateTest(unittest.TestCase):
         committed = {**listed("old", "24h", "warm", 4.0), **listed("old", "1h", "warm", 4.0)}
         rows, added, removed = bc.candidate_over_2x([summary(fast("old", "1h"))], committed)
         keys = {over2x.key(r) for r in rows}
-        self.assertIn(("control", "old", "24h", "warm"), keys)
-        self.assertNotIn(("control", "old", "1h", "warm"), keys)
-        self.assertEqual(removed, [("control", "old", "1h", "warm")])
+        self.assertIn(("aligned", "control", "old", "24h", "warm"), keys)
+        self.assertNotIn(("aligned", "control", "old", "1h", "warm"), keys)
+        self.assertEqual(removed, [("aligned", "control", "old", "1h", "warm")])
         self.assertEqual(added, [])
 
     def test_a_row_still_above_stays_and_is_not_added_again(self):
         committed = listed("slow", "1h", "warm", 6.0)
         rows, added, removed = bc.candidate_over_2x([summary(slow())], committed)
-        self.assertNotIn(("control", "slow", "1h", "warm"), added)
-        self.assertIn(("control", "slow", "1h", "cold"), added)
+        self.assertNotIn(("aligned", "control", "slow", "1h", "warm"), added)
+        self.assertIn(("aligned", "control", "slow", "1h", "cold"), added)
         self.assertEqual(removed, [])
 
     def test_the_distribution_counts_comparable_rows_only(self):
@@ -87,14 +87,16 @@ class CandidateTest(unittest.TestCase):
         day = bc.acceptance_day([summary(slow(), fast(), loki_down)], "2026-10-28", "abcdef0123456789")
         self.assertEqual(day["date"], "2026-10-28")
         self.assertEqual(day["commits"], ["abcdef0123"])
-        self.assertEqual(day["warm"]["rows"], 2)
-        self.assertEqual((day["warm"]["below"], day["warm"]["above"]), (1, 1))
-        self.assertEqual(day["warm"]["share_below"], 50.0)
-        self.assertEqual(set(day["warm"]), {"rows", "share_below", "below", "close", "between", "above"})
+        warm = day["profiles"]["aligned"]["warm"]
+        self.assertEqual(warm["rows"], 2)
+        self.assertEqual((warm["below"], warm["above"]), (1, 1))
+        self.assertEqual(warm["share_below"], 50.0)
+        self.assertEqual(set(warm), {"rows", "share_below", "below", "close", "between", "above"})
 
     def test_write_produces_the_files_and_commits_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            text = bc.write(tmp, [summary(slow(), fast())], {}, {"date": "2026-10-27", "warm": {"share_below": 40.0}},
+            text = bc.write(tmp, [summary(slow(), fast())], {},
+                            {"date": "2026-10-27", "profiles": {"aligned": {"warm": {"share_below": 40.0}}}},
                             "2026-10-28", "c0ffee", ["the `baseline` label is set"], 600)
             self.assertEqual(sorted(os.listdir(tmp)), ["acceptance-day.json", "candidate.md", "meta.json", "over-2x-loki.json"])
             parsed, problem = over2x.read_baseline(os.path.join(tmp, "over-2x-loki.json"))
@@ -125,6 +127,32 @@ class CandidateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bc.write(tmp, [summary(slow())], {}, {})
             self.assertNotEqual(os.path.abspath(tmp), os.path.abspath(os.path.dirname(over2x.BASELINE)))
+
+
+class ProfileCandidateTest(unittest.TestCase):
+    def test_a_profile_that_did_not_run_leaves_its_committed_rows(self):
+        committed = {**listed("old", "1h", "warm", 4.0, profile="aligned"),
+                     **listed("old", "1h", "warm", 4.0, profile="loki-defaults")}
+        rows, added, removed = bc.candidate_over_2x([summary(fast("old", "1h"), profile="loki-defaults")], committed)
+        keys = {over2x.key(r) for r in rows}
+        self.assertIn(("aligned", "control", "old", "1h", "warm"), keys)           # not measured in aligned: kept
+        self.assertNotIn(("loki-defaults", "control", "old", "1h", "warm"), keys)  # measured within 2x: out
+        self.assertEqual(removed, [("loki-defaults", "control", "old", "1h", "warm")])
+
+    def test_the_day_has_a_distribution_per_profile_and_not_for_a_build_that_is_not_like_for_like(self):
+        day = bc.acceptance_day([summary(slow(), fast(), profile="loki-defaults"),
+                                 summary(slow(), profile="aligned", not_like_for_like=["pr"])], "2026-10-28", "abc")
+        self.assertEqual(list(day["profiles"]), ["loki-defaults"])
+        self.assertEqual(day["profiles"]["loki-defaults"]["warm"]["rows"], 2)
+
+    def test_the_section_compares_each_profile_with_its_committed_day(self):
+        day = bc.acceptance_day([summary(slow(), fast(), profile="loki-defaults")], "2026-10-28", "abc")
+        text = bc.render(day, {"date": "2026-10-27", "profiles": {"loki-defaults": {"warm": {"share_below": 30.0}}}}, [], [], [])
+        self.assertIn("| loki-defaults | warm | 2 |", text)
+        self.assertIn("30.0% (2026-10-27)", text)
+        legacy = bc.render(bc.acceptance_day([summary(slow(), fast(), profile="aligned")], "d", "c"),
+                           {"date": "2026-10-20", "warm": {"share_below": 11.0}}, [], [], [])
+        self.assertIn("11.0% (2026-10-20)", legacy)   # a day from before the profiles is the aligned one
 
 
 class PrSmokeTest(unittest.TestCase):

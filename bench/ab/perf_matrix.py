@@ -174,9 +174,13 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
     """Non-overlapping window blocks, one per set, so no request repeats across sets.
 
     `sets` is [(set name, wanted shape names or empty for all)]. A set's block
-    holds, from its top downwards: the first pass (shift*runs), the confirm
-    pass (shift*confirm_runs) and, when refresh_s is set, the refresh pass,
-    where shift is the largest per-run shift of any selected shape and range.
+    holds, from its top downwards: the refresh pass when refresh_s is set, the
+    first pass (shift*runs) and the confirm pass (shift*confirm_runs), where
+    shift is the largest per-run shift of any selected shape and range. The
+    refresh pass is on top because it is the one that models a dashboard
+    refresh, whose window ends at now: Loki recomputes the newest part of a
+    window (max_cache_freshness_per_query), so the refresh pass must be the
+    nearest to now of the three (the first pass follows it by a few minutes).
     The next set starts below the block (plus margin), rounded up to a minute.
     Every end is floored to the minute, as perf_matrix floors --end.
 
@@ -187,7 +191,7 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
     from Loki's own cache counters.
 
     Returns one dict per set: end (first pass), confirm_end, refresh_end (or
-    None), span (the block's length) and offset from the first set.
+    None; the block's top), span (the block's length) and offset from the first set.
     """
     plans, offset = [], 0
     for name, wanted in sets:
@@ -197,13 +201,15 @@ def plan_windows(spec, sets, ranges, runs, confirm_runs, end, refresh_s=0, refre
         # perf_matrix floors --end to the minute, so the plan records ends that are really sent.
         top = (end - offset) // 60 * 60
         used = shift * (runs + confirm_runs)
-        refresh_end = None
+        refresh_end, first = None, top
         if refresh_s:
-            refresh_end = (top - used - margin) // 60 * 60
-            used += margin + (refresh_runs - 1) * refresh_s
+            refresh_end = top
+            refresh_used = margin + (refresh_runs - 1) * refresh_s
+            first = (top - refresh_used) // 60 * 60
+            used += refresh_used
         span = -(-(used + margin) // 60) * 60
-        plans.append({"set": name, "end": top, "confirm_end": (top - shift * runs) // 60 * 60, "refresh_end": refresh_end,
-                      "shift": shift, "span": span, "offset": offset})
+        plans.append({"set": name, "end": first, "confirm_end": (first - shift * runs) // 60 * 60,
+                      "refresh_end": refresh_end, "shift": shift, "span": span, "offset": offset})
         offset += span
     return plans
 
@@ -333,6 +339,12 @@ def main():
     ap.add_argument("--long-runs", default="", metavar="NAME=N",
                     help="cap runs of ranges >= 24h for a target, e.g. main=1 when an old build scans raw rows "
                          "(repeated long raw scans have killed the shared backend)")
+    ap.add_argument("--profile", default="",
+                    help="the Loki profile this pass ran against (stack.PROFILES); recorded in the raw file")
+    ap.add_argument("--not-like-for-like", action="append", default=[], metavar="TARGET",
+                    help="repeatable: a target that did not run the setting the profile compares with (a proxy build "
+                         "without -align-queries-with-step in the aligned profile); recorded in the raw file, and "
+                         "report.py leaves its timings out of every comparison")
     ap.add_argument("--known-timeouts", default="", metavar="RAW.json",
                     help="raw file of an earlier pass of the same set: a shape and range whose Loki request timed out "
                          "there is not sent to Loki again (its rows repeat the timeout, marked skipped)")
@@ -436,7 +448,7 @@ def main():
                     # vl_cpu_max / vl_cpu_avg are filled from the sampler's samples after the loop.
                     row = {"shape": shape["name"], "range": rname, "run": run, "end": run_end, "target": tname, "status": status,
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False)),
-                           "vl_cpu_max": None, "vl_cpu_avg": None}
+                           "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
                     if cache:
@@ -466,6 +478,7 @@ def main():
                "targets": [t for t, _ in targets], "restart_before": restart0, "restart_after": restart1,
               "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
+              "profile": args.profile, "not_like_for_like": args.not_like_for_like,
               "timeouts": timeouts, "rows": rows}
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)

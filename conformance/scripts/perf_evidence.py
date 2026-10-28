@@ -77,6 +77,17 @@ def registry_ids():
     return ids
 
 
+# A saved summary belongs to a Loki profile (bench/ab/stack.py PROFILES); one saved before the profiles existed ran
+# against the stack's Loki with proxy builds that did not align queries: "aligned". Of two summaries of the same
+# date the loki-defaults one is the evidence: every build is like-for-like with Loki's own defaults.
+LEGACY_PROFILE = "aligned"
+PROFILE_RANK = {"aligned": 0, "loki-defaults": 1}
+
+
+def profile_of(summary):
+    return summary.get("profile") or LEGACY_PROFILE
+
+
 def latest_runs(shape_sets, problems):
     """(set, shape, range) -> the row of the most recent saved summary."""
     latest = {}
@@ -92,7 +103,7 @@ def latest_runs(shape_sets, problems):
                 problems.append(f"{path}: shape '{row['shape']}' is not in set '{set_name}'")
                 continue
             key = (set_name, row["shape"], row["range"])
-            stamp = (summary.get("date", ""), os.path.basename(path))
+            stamp = (summary.get("date", ""), PROFILE_RANK.get(profile_of(summary), 0), os.path.basename(path))
             if key not in latest or stamp >= latest[key][0]:
                 latest[key] = (stamp, summary, row)
     return latest
@@ -113,7 +124,7 @@ def is_comparable(summary, row):
     """Both sides answered 200 and Loki's results cache did not answer the cold run."""
     cand, ref = summary["candidate"], summary["reference"]
     return (row["status"].get(cand) == "200" and row["status"].get(ref) == "200"
-            and not cache_served(summary, row))
+            and cand not in summary.get("not_like_for_like", []) and not cache_served(summary, row))
 
 
 def measurement(summary, row):
@@ -133,6 +144,7 @@ def measurement(summary, row):
     isolated = summary.get("isolated_windows") is True
     measured = {
         "label": summary["label"], "date": summary["date"], "valid": summary.get("valid", True),
+        "profile": profile_of(summary),
         "verdict_vs_baseline": row["verdict"], "baseline": base,
         "status": row["status"].get(cand), "baseline_status": row["status"].get(base),
         "cold": cand_cold, "warm_p50": row["p50"].get(cand),
@@ -142,6 +154,7 @@ def measurement(summary, row):
     }
     # Recorded only when the run measured them (older results did not): absent means unknown, never false.
     known = {
+        "not_like_for_like": True if cand in summary.get("not_like_for_like", []) else None,
         "slower_than_loki_warm": bool(comparable and beyond_noise(cand_warm, ref_warm)) if isolated else None,
         "loki_cold_cache": cold_stats["cold"] if cold_stats else None,
         "loki_cold_reused_from": row.get("loki_cold_reused_from"),
@@ -367,18 +380,18 @@ def main():
 def acceptance(latest, bounds):
     """The distribution of proxy ÷ Loki per mode, the locked rows and the rows between 1× and 2×, over the
     latest run of every shape×range, by bench/ab/over2x.py's comparability and bands."""
-    pairs, between, locked = [], [], {m: 0 for m in over2x.MODES}
+    pairs, between, locked = {p: [] for p in PROFILE_RANK}, [], {m: 0 for m in over2x.MODES}
     for (set_name, shape, rng), (_, summary, row) in sorted(latest.items()):
         for mode, pair in over2x.summary_pairs(summary, row, summary["candidate"]).items():
             if over2x.judge(*pair) not in ("above", "within"):
                 continue
             band = over2x.band(*pair[:2])
-            pairs.append((mode, band))
+            pairs[profile_of(summary)].append((mode, band))
             bound = over2x.bound_for(bounds, set_name, shape, mode)
             locked[mode] += bound["locked"]
             if band == "between":
                 between.append((shape, rng, mode, pair[0], pair[1], bound))
-    return over2x.distribution(pairs), locked, between
+    return {p: over2x.distribution(ps) for p, ps in pairs.items() if ps}, locked, between
 
 
 def render_acceptance(latest, bounds):
@@ -397,16 +410,18 @@ def render_acceptance(latest, bounds):
            "measured (Loki's warm is its results cache by design), so these warm figures are not the summary's",
            f"Warm repeat row. Below or above Loki means beyond {over2x.DIST_NOISE * 100:.0f}% and "
            f"{over2x.MIN_GAP * 1000:.0f} ms; close is within that.", "",
-           "| Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |",
-           "|---|---|---|---|---|---|---|---|---|"]
-    for mode in over2x.MODES:
-        d = dist.get(mode)
-        if not d:
-            out.append(f"| {mode} | 0 | — | — | — | — | {locked[mode]} | — | — |")
-            continue
-        out.append(f"| {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | {d['between']} | "
-                   f"{d['above']} | {locked[mode]} | {'yes' if d['share_below'] > 50 else '**no**'} | "
-                   f"{'yes' if not d['above'] else '**no**'} |")
+           "Each row is counted in the Loki profile of the run it comes from (`aligned`: the stack's Loki; `loki-defaults`:",
+           "Loki with its own defaults, preferred when both ran); a locked row's bound holds in each profile.", "",
+           "| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
+    for profile, by_mode in dist.items():
+        for mode in over2x.MODES:
+            d = by_mode.get(mode)
+            if not d:
+                continue
+            out.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | "
+                       f"{d['between']} | {d['above']} | {locked[mode]} | {'yes' if d['share_below'] > 50 else '**no**'} | "
+                       f"{'yes' if not d['above'] else '**no**'} |")
     flagged = sum(1 for b in between if not b[5]["exception"])
     out += ["", "### Between 1× and 2× Loki", "",
             f"{len(between)} rows: {flagged} without an effort exception (flagged for review: below Loki is the",
@@ -428,15 +443,21 @@ def over_2x(over):
         return []
     rows = over.get("rows", [])
     modes = {m: sum(1 for r in rows if r["mode"] == m) for m in ("cold", "warm", "refresh")}
+    profiles = {p: sum(1 for r in rows if (r.get("profile") or LEGACY_PROFILE) == p) for p in PROFILE_RANK}
     out = ["## Above 2× Loki (must fix)", "",
            f"Rows the daily run measured above 2× Loki ({over.get('rule', '')}), from `{OVER_2X}`. A shape × range",
            "slower than 2× Loki on any mode is a defect. The list only shrinks: the daily run removes a row after two",
-           "consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`.", "",
-           f"{len(rows)} rows: " + ", ".join(f"{m} {n}" for m, n in modes.items()) + ".", ""]
+           "consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`. A row is",
+           "above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;",
+           "rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.", "",
+           f"{len(rows)} rows: " + ", ".join(f"{m} {n}" for m, n in modes.items()) + "; "
+           + ", ".join(f"{p} {n}" for p, n in profiles.items()) + ".", ""]
     if rows:
-        out += ["| set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |", "|---|---|---|---|---|---|---|---|"]
-        for r in sorted(rows, key=lambda r: (r["set"], r["shape"], r["range"], r["mode"])):
-            out.append(f"| {r['set']} | {r['shape'].replace('|', chr(92) + '|')} | {r['range']} | {r['mode']} | "
+        out += ["| profile | set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |", "|---|---|---|---|---|---|---|---|---|"]
+        for r in sorted(rows, key=lambda r: (PROFILE_RANK.get(r.get("profile") or LEGACY_PROFILE, 0), r["set"], r["shape"],
+                                             r["range"], r["mode"])):
+            profile = (r.get("profile") or LEGACY_PROFILE) + (" (proxy unaligned)" if r.get("proxy_side") == "unaligned" else "")
+            out.append(f"| {profile} | {r['set']} | {r['shape'].replace('|', chr(92) + '|')} | {r['range']} | {r['mode']} | "
                        f"{fmt(r.get('proxy_s'))} | {fmt(r.get('loki_s'))} | {r['ratio']:.2f}× | {r.get('since', '')} |")
     else:
         out.append("None.")
@@ -527,8 +548,9 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         out.append(f"| `{item}` | {len({(r['set'], r['shape']) for r in rows})} × {len({r['range'] for r in rows})} ranges | "
                    f"{', '.join(f'{n} {k}' for k, n in sorted(verdicts.items()))} | "
                    f"worst {fmt(worst['cold'], worst['status'])} / {fmt(worst['warm_p50'], worst['status'])} ({worst['range']}) | "
-                   f"{fmt(worst['loki_cold'])} / {fmt(worst['loki_warm_p50'])} | "
+                   f"{fmt(worst['loki_cold'])}{' †' if worst['loki_cache_served'] else ''} / {fmt(worst['loki_warm_p50'])} | "
                    f"{parity}{f'; {slow} slower than Loki cold' if slow else ''} | {lock(item)} |")
+    out += ["", "† Loki's results cache answered that cold run: not a computed time, and in no comparison."]
     if problems:
         out += ["", "## Problems", ""] + [f"- {p}" for p in problems]
     return "\n".join(out) + "\n"

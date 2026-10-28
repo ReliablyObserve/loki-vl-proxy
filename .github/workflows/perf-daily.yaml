@@ -20,6 +20,11 @@ name: Perf daily
 # and a new row above 2x Loki is a warning at the top of the pull request and
 # an annotation, never a red run.
 #
+# Both Loki profiles run on the one seeded stack (bench/ab/README.md, "Like for
+# like"): loki-defaults for every shape, aligned for the range-metric shapes once
+# a build supports -align-queries-with-step; history, results and the above-2x
+# list are kept per profile.
+#
 # A pull request that edits this pipeline runs a short validation instead
 # (control set, 1h, 3 runs): it writes the files on the runner and shows the
 # trend report in the job summary, but opens no pull request.
@@ -53,6 +58,7 @@ on:
       - "bench/ab/perf_matrix.py"
       - "bench/ab/report.py"
       - "bench/ab/docker-compose.ab.yml"
+      - "bench/ab/docker-compose.ab-loki-defaults.yml"
       - "test/e2e-compat/log-generator.py"
 
 permissions:

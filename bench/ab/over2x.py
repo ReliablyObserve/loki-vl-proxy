@@ -13,7 +13,18 @@ comparable:
   - for cold only: Loki's results cache did not answer the cold run (its own
     counters, or identical answers for moved windows). Loki's warm and refresh
     timings come from its results cache by design: that is what a repeat view of
-    Loki costs, so they are compared as measured.
+    Loki costs, so they are compared as measured. A cold run without Loki
+    counters at all (instant queries and metadata endpoints have no results
+    cache and carry none) is compared as computed;
+  - the proxy build ran the setting of the Loki profile it is compared with
+    (summary["not_like_for_like"]: a build without -align-queries-with-step in
+    the "aligned" profile is left out of every comparison).
+
+Every row belongs to one Loki PROFILE (bench/ab/README.md, "Like for like"):
+"aligned" is the stack's Loki as configured (align_queries_with_step on,
+max_cache_freshness_per_query 0s), "loki-defaults" is Loki with its own defaults
+(off, 10m). A shape × range × mode is above 2× when it is in either profile;
+the baseline keys on the profile too.
 
 bench/ab/history/over-2x-loki.json is the baseline: every row the daily run
 measured above 2× Loki when the list was seeded. It only shrinks. history.py
@@ -58,6 +69,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from stack import PROFILES  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "conformance", "scripts"))
 import registry_io  # noqa: E402
@@ -68,9 +81,20 @@ MODES = ("cold", "warm", "refresh")
 BASELINE_NAME = "over-2x-loki.json"
 BASELINE = os.path.join(HERE, "history", BASELINE_NAME)
 BASELINE_REL = f"bench/ab/history/{BASELINE_NAME}"
+# Rows and summaries written before the profiles existed ran proxy builds without the align flag against the
+# stack's Loki, which is the "aligned" profile with an unaligned proxy side.
+LEGACY_PROFILE = "aligned"
 # The PR gate: "warn" reports new and worsened rows without changing the verdict; "fail" fails perf-smoke on them.
 GATE_MODES = ("warn", "fail")
 DEFAULT_GATE = "warn"
+PROFILE_NOTES = {
+    "aligned": "the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s). Rows listed before "
+               "the profiles existed were measured with proxy builds that did not align queries with the step, "
+               "so their proxy side was unaligned (proxy_side: unaligned).",
+    "loki-defaults": "Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); "
+                     "proxy builds run with their defaults. Seeded from the first daily run that measures it, "
+                     "with the owner's approval; nothing is listed until then.",
+}
 RULE = (f"proxy time > {RATIO:g} x Loki time and more than {MIN_GAP * 1000:.0f} ms slower; both answer 200; "
         "on cold, Loki's results cache did not answer")
 
@@ -233,7 +257,8 @@ def lock_state(summaries, bounds, ids=None):
                     if state == "within":
                         out[item]["within"] += 1
                     elif state == "above":
-                        out[item]["above"].append(entry(s["set"], row["shape"], row["range"], mode, pair[0], pair[1]))
+                        out[item]["above"].append(entry(profile_of(s), s["set"], row["shape"], row["range"], mode,
+                                                        pair[0], pair[1]))
     for v in out.values():
         v["lockable"] = v["within"] > 0 and not v["above"]
     return out
@@ -243,35 +268,63 @@ def ratio(proxy, loki):
     return round(proxy / loki, 2) if proxy is not None and loki else None
 
 
+def profile_of(summary):
+    return summary.get("profile") or LEGACY_PROFILE
+
+
+def cold_served(row, ref):
+    """Loki's results cache (its own counters) or a stale view (identical answers for moved windows) answered
+    the reference's cold run: its time is not a computed one."""
+    return ref in row.get("cold_cache_served", []) or ref in row.get("stale", [])
+
+
+def loki_cold(row, ref):
+    """The reference's cold seconds when it computed them, else None. Every ratio of a cold run takes the
+    reference's time through here: a cache-served cold is never a plain number."""
+    return None if cold_served(row, ref) else row["cold"].get(ref)
+
+
+def like_for_like(summary, target):
+    """The target ran the setting of the summary's Loki profile (report.py carries perf_matrix's list)."""
+    return target not in summary.get("not_like_for_like", [])
+
+
 def summary_pairs(summary, row, target):
     """mode -> (target seconds, Loki seconds, target status, Loki status, Loki's cache answered the cold run)
-    for a report.py row; the cache flag is set for the cold mode only."""
+    for a report.py row; the cache flag is set for the cold mode only. A target that is not like-for-like with
+    the profile has no time and no status: it is never compared."""
     ref = summary["reference"]
-    served = ref in row.get("cold_cache_served", []) or ref in row.get("stale", [])
+    served = cold_served(row, ref)
     status = row["status"]
-    out = {"cold": (row["cold"].get(target), row["cold"].get(ref), status.get(target), status.get(ref), served)}
+    mine = like_for_like(summary, target)
+    got = (lambda d: d.get(target)) if mine else (lambda d: None)
+    out = {"cold": (got(row["cold"]), row["cold"].get(ref), got(status), status.get(ref), served)}
     if summary.get("timing") != "cold":  # a --cold summary's p50 holds first runs
-        out["warm"] = (row["p50"].get(target), row["p50"].get(ref), status.get(target), status.get(ref), False)
+        out["warm"] = (got(row["p50"]), row["p50"].get(ref), got(status), status.get(ref), False)
     if row.get("refresh"):
         rs = row.get("refresh_status", {})
-        out["refresh"] = (row["refresh"].get(target), row["refresh"].get(ref), rs.get(target), rs.get(ref), False)
+        out["refresh"] = (got(row["refresh"]), row["refresh"].get(ref), got(rs), rs.get(ref), False)
     return out
 
 
 def history_pairs(row):
-    """The same for a history.py line's row (cold and warm; the daily run has no refresh pass)."""
+    """The same for a history.py line's row (cold and warm; the daily run has no refresh pass). A row of a build
+    that was not like-for-like with the line's profile has no proxy side. A cold without Loki counters
+    (loki_cold_computed None) is compared as computed, as in summary_pairs; only False is a cache answer."""
     served = row.get("loki_cold_computed") is False
-    return {"cold": (row["cold"], row["loki_cold"], row["status"], row["loki_status"], served),
-            "warm": (row["p50"], row["loki_p50"], row["status"], row["loki_status"], False)}
+    mine = row.get("like_for_like") is not False
+    got = (lambda v: v) if mine else (lambda v: None)
+    return {"cold": (got(row["cold"]), row["loki_cold"], got(row["status"]), row["loki_status"], served),
+            "warm": (got(row["p50"]), row["loki_p50"], got(row["status"]), row["loki_status"], False)}
 
 
 def key(entry):
-    return (entry["set"], entry["shape"], entry["range"], entry["mode"])
+    return (entry.get("profile") or LEGACY_PROFILE, entry["set"], entry["shape"], entry["range"], entry["mode"])
 
 
-def entry(set_name, shape, rng, mode, proxy, loki, **extra):
-    return {"set": set_name, "shape": shape, "range": rng, "mode": mode, "proxy_s": proxy, "loki_s": loki,
-            "ratio": ratio(proxy, loki), **extra}
+def entry(profile, set_name, shape, rng, mode, proxy, loki, **extra):
+    return {"profile": profile, "set": set_name, "shape": shape, "range": rng, "mode": mode, "proxy_s": proxy,
+            "loki_s": loki, "ratio": ratio(proxy, loki), **extra}
 
 
 # --- the baseline file ---------------------------------------------------------------------------------------
@@ -285,7 +338,7 @@ def parse_baseline(text):
     out = {}
     for r in rows:
         if not (isinstance(r, dict) and all(isinstance(r.get(k), str) for k in ("set", "shape", "range", "mode"))
-                and isinstance(r.get("ratio"), (int, float))):
+                and isinstance(r.get("ratio"), (int, float)) and r.get("profile", LEGACY_PROFILE) in PROFILES):
             raise ValueError(f"bad row {r!r}")
         out[key(r)] = r
     return out
@@ -313,11 +366,15 @@ def baseline_at(ref, root=ROOT):
 
 
 def write_baseline(rows, path=BASELINE):
-    rows = sorted(rows, key=lambda r: (r["set"], r["shape"], r["range"], MODES.index(r["mode"])))
-    data = {"about": "Shape x range x mode rows the daily A/B run measured above 2x Loki. Generated by "
-                     "bench/ab/over2x.py seed and kept by bench/ab/history.py alerts: rows are removed after two "
-                     "consecutive daily runs under 2x and never added automatically. See bench/ab/README.md.",
-            "rule": RULE, "rows": rows}
+    rows = sorted(rows, key=lambda r: (PROFILES.index(r.get("profile") or LEGACY_PROFILE), r["set"], r["shape"],
+                                       r["range"], MODES.index(r["mode"])))
+    data = {"about": "Profile x set x shape x range x mode rows the daily A/B run measured above 2x Loki. "
+                     "Generated by bench/ab/over2x.py seed and kept by bench/ab/history.py alerts: rows are removed "
+                     "after two consecutive daily runs under 2x and never added automatically. The profile is the "
+                     "Loki the row was measured against: aligned (the stack's Loki: align_queries_with_step on, "
+                     "max_cache_freshness_per_query 0s) or loki-defaults (Loki's defaults: off, 10m). See "
+                     "bench/ab/README.md.",
+            "profiles": PROFILE_NOTES, "rule": RULE, "rows": rows}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n")
@@ -332,8 +389,9 @@ def counts(rows):
 
 def count_line(rows):
     by_mode = counts(rows)
-    return (f"above-2× baseline: {len(rows)} rows ({', '.join(f'{m} {n}' for m, n in by_mode.items())}); "
-            "the gate becomes blocking at 0")
+    by_profile = {p: sum(1 for r in rows if (r.get("profile") or LEGACY_PROFILE) == p) for p in PROFILES}
+    return (f"above-2× baseline: {len(rows)} rows ({', '.join(f'{m} {n}' for m, n in by_mode.items())}; "
+            f"{', '.join(f'{p} {n}' for p, n in by_profile.items())}); the gate becomes blocking at 0")
 
 
 # --- measuring a summary ----------------------------------------------------------------------------------------
@@ -344,7 +402,8 @@ def measure(summary, target=None):
     out = []
     for row in summary["rows"]:
         for mode, pair in summary_pairs(summary, row, target).items():
-            out.append(entry(summary["set"], row["shape"], row["range"], mode, pair[0], pair[1], state=judge(*pair)))
+            out.append(entry(profile_of(summary), summary["set"], row["shape"], row["range"], mode, pair[0], pair[1],
+                             state=judge(*pair)))
     return out
 
 
@@ -390,8 +449,8 @@ def gate(summary, baseline, noise, min_delta, bounds=None):
     for row in summary["rows"]:
         bases = summary_pairs(summary, row, b)
         for mode, pr in summary_pairs(summary, row, c).items():
-            k = (summary["set"], row["shape"], row["range"], mode)
-            bound = bound_for(bounds, *k[:2], mode)
+            k = (profile_of(summary), summary["set"], row["shape"], row["range"], mode)
+            bound = bound_for(bounds, k[1], k[2], mode)
             limit = bound["max_ratio"] if bound["locked"] else RATIO
             state, listed = judge(*pr, bound=limit), baseline.get(k)
             base = bases.get(mode) or (None, None, None, None, False)
@@ -429,8 +488,53 @@ def failing(findings):
     return [f for f in findings if f["kind"] in ("new", "worsened")]
 
 
+def row_key(f):
+    return (f["set"], f["shape"], f["range"], f["mode"])
+
+
+def ratio_table(summaries):
+    """(set, shape, range, mode) -> {profile: PR ÷ Loki or None}: the candidate's ratio in every profile that ran.
+
+    None is a profile that ran but has no comparable pair for the row (a build that is not like-for-like, a
+    cache-served cold, an error); a profile that did not run has no key, which readers show as "not run", never
+    as a ratio.
+    """
+    out = {}
+    for s in summaries:
+        for m in measure(s):
+            cmp_ok = m["state"] in ("above", "within")
+            out.setdefault((m["set"], m["shape"], m["range"], m["mode"]), {})[m["profile"]] = (
+                m["ratio"] if cmp_ok else None)
+    return out
+
+
+def merge_failing(findings, summaries):
+    """The new and worsened findings of all profiles as one record per shape × range × mode.
+
+    A row is above 2× when it is in either profile: the record's kind is the worse of the profiles' (worsened
+    before new) and `profiles` keeps each profile's finding; `ratios` holds the PR ÷ Loki of every profile that
+    ran (ratio_table). Rows come out in the findings' order.
+    """
+    ratios = ratio_table(summaries)
+    merged = {}
+    for f in failing(findings):
+        m = merged.setdefault(row_key(f), {"set": f["set"], "shape": f["shape"], "range": f["range"],
+                                           "mode": f["mode"], "kind": f["kind"], "profiles": {}})
+        m["profiles"][f["profile"]] = f
+        if f["kind"] == "worsened":
+            m["kind"] = "worsened"
+        if f.get("locked"):  # locked in any profile: a locked-row regression (bound: the tightest)
+            m["locked"] = True
+            m["bound"] = min(m.get("bound", f["bound"]), f["bound"])
+            m["locked_by"] = sorted(set(m.get("locked_by", [])) | set(f["locked_by"]))
+    for k, m in merged.items():
+        m["ratios"] = ratios.get(k, {})
+        m["confirmed"] = any(f.get("confirmed") for f in m["profiles"].values())
+    return list(merged.values())
+
+
 def locked_failing(findings):
-    """The locked-row regressions among the failing findings: a locked row above its bound."""
+    """The locked-row regressions among the failing findings (or merged records): a locked row above its bound."""
     return [f for f in failing(findings) if f.get("locked")]
 
 
@@ -454,21 +558,24 @@ def secs(v):
     return f"{v * 1000:.0f} ms" if v < 1 else f"{v:.2f} s"
 
 
-def annotations(findings, mode=DEFAULT_GATE, cap=10):
-    """GitHub workflow commands for the new and worsened rows (GitHub shows ten per step)."""
+def both(ratios):
+    """"aligned 2.40× · loki-defaults 1.10×"; a profile that did not run reads "not run"."""
+    return " · ".join(f"{p} {times(ratios[p]) if p in ratios else 'not run'}" for p in PROFILES)
+
+
+def annotations(merged, mode=DEFAULT_GATE, cap=10):
+    """GitHub workflow commands for the new and worsened rows, merge_failing's records (GitHub shows ten per step)."""
     level = "error" if mode == "fail" else "warning"
-    rows = failing(findings)
     out = []
-    for f in sorted(rows, key=lambda f: not f.get("locked"))[:cap]:
-        text = (f"{f['kind']}: {f['set']} / {f['shape']} / {f['range']} / {f['mode']}: PR ÷ Loki {times(f['ratio'])}"
-                f" (base {times(f['base_ratio'])}, baseline list {times(f['baseline_ratio'])})")
+    for f in sorted(merged, key=lambda f: not f.get("locked"))[:cap]:
+        text = (f"{f['kind']}: {f['set']} / {f['shape']} / {f['range']} / {f['mode']}: PR ÷ Loki {both(f['ratios'])}")
         if f.get("locked"):
             text += f"; locked at {times(f['bound'])} by {', '.join(f['locked_by'])}"
         text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         title = "locked row above its bound" if f.get("locked") else "above 2x Loki"
         out.append(f"::{level} title={title}::{text}")
-    if len(rows) > cap:
-        out.append(f"{len(rows) - cap} more above-2× Loki row(s) in the PR comment")
+    if len(merged) > cap:
+        out.append(f"{len(merged) - cap} more above-2× Loki row(s) in the PR comment")
     return out
 
 
@@ -520,7 +627,7 @@ def locks(cmd, ids, results, root=ROOT, spec=None):
                 print(f"{i}: locked since {date}")
         return 1 if refused else 0
     # status: what the bounds say about the given results.
-    locked_rows, over, between, pairs = {m: 0 for m in MODES}, [], [], []
+    locked_rows, over, between, pairs = {m: 0 for m in MODES}, [], [], {p: [] for p in PROFILES}
     for s in summaries:
         for row in s["rows"]:
             for mode, pair in summary_pairs(s, row, s["candidate"]).items():
@@ -528,8 +635,9 @@ def locks(cmd, ids, results, root=ROOT, spec=None):
                 st = judge(*pair, bound=b["max_ratio"] if b["locked"] else RATIO)
                 if st not in ("above", "within"):
                     continue
-                where = f"{s['set']} / {row['shape']} / {row['range']} / {mode}: {times(ratio(*pair[:2]))}"
-                pairs.append((mode, band(*pair[:2])))
+                where = (f"{profile_of(s)} / {s['set']} / {row['shape']} / {row['range']} / {mode}: "
+                         f"{times(ratio(*pair[:2]))}")
+                pairs[profile_of(s)].append((mode, band(*pair[:2])))
                 locked_rows[mode] += b["locked"]
                 if b["locked"] and st == "above":
                     over.append(where)
@@ -547,9 +655,10 @@ def locks(cmd, ids, results, root=ROOT, spec=None):
     print(f"rows between 1× and 2× Loki: {len(between)}")
     for line in between:
         print("  " + line)
-    for mode, d in distribution(pairs).items():
-        print(f"{mode}: {d['rows']} comparable: " + ", ".join(f"{BAND_LABEL[k]} {d[k]}" for k in BANDS) +
-              f"; share below Loki {d['share_below']:.1f}%")
+    for profile, ps in pairs.items():
+        for mode, d in distribution(ps).items():
+            print(f"{profile} {mode}: {d['rows']} comparable: " + ", ".join(f"{BAND_LABEL[k]} {d[k]}" for k in BANDS) +
+                  f"; share below Loki {d['share_below']:.1f}%")
     return 0
 
 
@@ -589,7 +698,7 @@ def main():
         print(f"{os.path.basename(path)}: {by_kind or 'nothing above 2x Loki'}")
         for f in found:
             if f["kind"] in ("new", "worsened"):
-                print(f"  {f['kind']}: {f['shape']} {f['range']} {f['mode']}: PR {secs(f['proxy_s'])} vs Loki "
+                print(f"  {f['kind']} ({f['profile']}): {f['shape']} {f['range']} {f['mode']}: PR {secs(f['proxy_s'])} vs Loki "
                       f"{secs(f['loki_s'])} = {times(f['ratio'])} (base {times(f['base_ratio'])}, listed "
                       f"{times(f['baseline_ratio'])})")
     return 0

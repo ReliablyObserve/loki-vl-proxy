@@ -16,12 +16,13 @@ pull request. See [Automation](#automation).
 | `perf_matrix.py` | Runs a set against two or more proxy builds and Loki direct, interleaved, and writes raw rows. No target gets a `Cache-Control` header; `--refresh-s` runs the windows forward like a dashboard refresh; `--flush-before-run0 http://HOST:ADMIN_PORT/admin/cache/flush` (repeatable, token from `$AB_ADMIN_TOKEN`) empties a proxy's cache tiers (memory and disk: responses, kept stats buckets, parse-risk verdicts) before run 0 of every shape and range, so run 0 is that proxy's cold first request. A request does not wait for the VictoriaLogs CPU sampler (`docker stats` runs in its own thread; each row's `vl_cpu_*` is read from its samples after the loop), and Loki is asked once about a shape and range it times out on: its later runs are not sent and their rows repeat the timeout marked `"skipped": "loki_timeout"` (the raw file lists the first ones under `timeouts`; `--known-timeouts RAW.json` carries them into the refresh and confirm passes). `--pause SECONDS` (default 0) waits after every request. |
 | `report.py` | `summarize` turns raw rows into a compact table and a summary JSON; `compare` diffs two summaries. |
 | `selection.py` | Picks the shapes a change needs from the files it touches, through the registry. `--check` is part of the conformance gate. |
-| `stack.py` | A fresh Loki + VictoriaLogs stack under its own compose project and ports, seeded with a fixed window of the log generator's data; proxy builds run as host processes with the stack proxy's flags. |
+| `stack.py` | A fresh Loki + VictoriaLogs stack under its own compose project and ports, seeded with a fixed window of the log generator's data; proxy builds run as host processes with the stack proxy's flags, set for the Loki profile (see [Like for like](#like-for-like-the-two-loki-profiles)). |
+| `docker-compose.ab-loki-defaults.yml` | The A/B-only overlay that gives the stack's Loki its own defaults for `align_queries_with_step` and `max_cache_freshness_per_query` (the `loki-defaults` profile). The shared e2e Loki config is not touched. |
 | `pr_smoke.py` | The per-PR run: select, stack, seed, build base and PR, measure, re-measure what looks slower, render the comment. |
 | `comment.py` | Renders the PR comment and decides the `perf-smoke` check. |
 | `daily.py` | The daily run: last release vs `main` vs Loki, every set and range up to 24h. |
-| `history.py` | Appends the daily results to `history/<set>.jsonl` and renders `history/trend.md`. |
-| `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` from the daily run. Commit these; keep raw rows out of the repository. |
+| `history.py` | Appends the daily results to `history/<set>.jsonl` (`history/<set>.loki-defaults.jsonl` for the second profile) and renders `history/trend.md`. |
+| `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` (`daily-<set>.loki-defaults.json` for the second profile) from the daily run. Commit these; keep raw rows out of the repository. |
 | `history/` | Written by the daily run only: append-only JSONL per set and the generated trend report. |
 
 ## Registry
@@ -117,7 +118,8 @@ too: use it for the cold column and a normal run for warm and refresh.
   answered (below).
 - Sets do not share windows. `pr_smoke.py` gives each selected set its own block
   of windows (`perf_matrix.plan_windows`): the first pass, the confirm pass (which
-  uses the set's real `shift`, not a minute) and the refresh pass, stacked downwards
+  uses the set's real `shift`, not a minute) and the refresh pass (on top: the one that models a
+  refresh at now), stacked downwards
   from the first set's end, each block as long as the set's largest `shift` needs.
   No request is sent twice across sets, so a later set (the control set after a
   change set, say) never meets an exact-URL cache an earlier one filled. The seeded window
@@ -158,12 +160,101 @@ too: use it for the cold column and a normal run for warm and refresh.
   from a cache an earlier set primed. For those rows the flags are absent
   (unknown) while the recorded warm p50s still show.
 
-Local stack asymmetry: the stack's Loki runs with `max_cache_freshness_per_query: 0s`
-(`test/e2e-compat/loki-local-config.yaml`), so it caches results up to the present
-and its warm and refresh answers are as cache-assisted as they can be. Production
-Loki defaults to 10m, so the newest 10 minutes are always recomputed there and a
-warm or refresh view of a near-now window is slower than on this stack. Read the
-Loki warm and refresh columns as a best case for Loki.
+The stack's Loki is not Loki's default Loki: see the next section.
+
+### Like for like: the two Loki profiles
+
+`test/e2e-compat/loki-local-config.yaml` sets `query_range.align_queries_with_step: true` and
+`limits_config.max_cache_freshness_per_query: 0s`; Loki's own defaults are off and 10m
+(`-querier.align-querier-with-step`, `pkg/querier/queryrange/queryrangebase/roundtrip.go:49`;
+`-frontend.max-cache-freshness`, `pkg/validation/limits.go:407-408`, Loki v3.7.9). A Loki with
+the first setting moves both bounds of a metric `query_range` request down to a multiple of
+the step (`queryrangebase/step_align.go:20-24`) and, with the second, caches results up to the
+present, so it answers a refresh that moves less than a step as an exact results-cache hit (3-5
+ms). A proxy build compared with that Loki must do the same work the same way, so every pass is
+made against one of two profiles (`stack.PROFILES`) and every row, comment line, gate finding and
+evidence record names its profile:
+
+| profile | Loki | proxy builds |
+|---|---|---|
+| `aligned` | the stack as it is: align on, freshness 0s | `-align-queries-with-step=true` |
+| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults (the flag is removed from the build's own stack flags, so a build whose compose file carries it does not run aligned against an unaligned Loki) |
+
+- One seeded stack serves both: after the first profile `stack.set_profile` recreates only
+  Loki (its results cache is in memory, so the second Loki starts cold) on the same volume,
+  checks `/config` shows the profile's two values and waits until Loki and VictoriaLogs count
+  the same lines again. Every build is restarted per profile with its own work directory and log.
+  Each profile has its own block of windows, so no request is sent twice across profiles either.
+- A build without `-align-queries-with-step` (an unknown flag exits the process) is found by
+  `stack.probe_align_support` on the built binary (`proxy -align-queries-with-step=true -help`
+  stops at the flag for a build without it, at `-help` for one with it; anything else counts as
+  unsupported). In the `aligned` profile it runs without the flag, `meta.json` and the comment say
+  so (`profiles.aligned.proxy_align`, `not_like_for_like`), and its rows are marked `‡`: shown,
+  never compared (no verdict against the base build, no PR ÷ Loki, no gate, no history ratchet,
+  no above-2× row, no evidence of "slower than Loki"). The planning (windows, seed) reads
+  `cmd/proxy/main.go` at the refs; the probe on the binary decides what runs.
+- `--profiles auto` (the default) runs `loki-defaults` for the whole selection and `aligned`
+  for its range-metric shapes only (log, instant and metadata queries keep the bounds the client
+  sent, so the flag cannot change them) and only when a build supports the flag; `both` runs
+  the whole selection in both, `aligned` or `loki-defaults` one. When no build supports the flag
+  the comment says the `aligned` profile did not run and why.
+- A row is above 2× Loki when it is above 2× in either profile; the comment, the annotation
+  and `verdict.json` give both PR ÷ Loki ratios (`not run` for a profile that did not run).
+  A locked row (registry `perf:` block) is judged against its bound in each profile.
+- Cold: a Loki cold enters a ratio only when Loki computed it. A cache-served cold (`†`) is
+  printed with the mark and is in no ratio; the confirm pass re-measures the warm numbers and
+  keeps the first pass's cold columns, with their marks, whenever its own Loki cold was
+  cache-served (`cold_from_first_pass`, `¹`): Loki's results cache reuses overlapping extents of
+  a query, so a re-run on fresh windows over the same data is cache-served almost always.
+- Files: `raw-<set>-<profile>.json`, `summary-<set>-<profile>.json`, `proxy-<build>-<profile>.log`;
+  the daily run writes `results/daily-<set>.json` (aligned, as before) and
+  `results/daily-<set>.loki-defaults.json`, `history/<set>.jsonl` and `history/<set>.loki-defaults.jsonl`.
+  A summary or history line with no profile was written before the profiles existed: aligned, with an
+  unaligned proxy side. `conformance` evidence takes the latest summary per row and prefers
+  `loki-defaults` of the same date.
+- Freshness only bites on windows near now. Loki caches every part of a window older than
+  `max_cache_freshness_per_query` and recomputes the newest part, so a window that ended half
+  an hour before the request is a cache hit in `loki-defaults` too, as in `aligned` (the first
+  validation run, with every window in the past, showed Loki's refresh at 3-5 ms in both profiles).
+  So the windows are placed to be near now when they are requested, never after it (a window that
+  ends in the future makes Loki compute more than a dashboard would): the end is the time the seed
+  starts, the first block of the first profile is requested about a minute after, the refresh pass
+  is the top of its block (`perf_matrix.plan_windows`) and the first pass follows it by a few
+  minutes. `meta.json` records, per profile, the youngest and oldest age of a requested window
+  (`profiles.<p>.window_age_s`: seconds from the window's end to the request; the raw rows carry the
+  request time as `at`). Limits: a block is 15-20 minutes tall and is traversed in two or three, so
+  the lower blocks of a large selection are older than the horizon when they run (they then measure
+  what both profiles share), and the daily run keeps one `end` for all sets. Read a `loki-defaults`
+  Loki number next to the age of its window, not as a property of the profile alone.
+- The profiles run in the order `loki-defaults`, `aligned`; their blocks of windows are planned in
+  that order. `loki-defaults` runs on the Loki the seed wrote to, which has the data in its
+  ingesters as the daily history always had. `aligned` runs on a Loki recreated on the same data (empty
+  caches, chunks read from the store), so its colds are slower and a cold ratio against it is the more
+  lenient one: every range-metric shape it runs is also run, cold included, against the seeded
+  Loki in `loki-defaults`. Its lines carry `loki_restarted`, and the ratchet takes neither entries nor
+  losses from them. Compare a proxy with the Loki of its own profile, not the profiles with each other.
+- CI cost (local figures: a laptop with a warm Go build cache, the control smoke subset of 8 shapes plus
+  `unwrap-conversion-error`, 1h, 4 runs, no refresh; a hosted runner is slower in the build and the seed,
+  which this change does not touch):
+
+  | run | what | total | Loki recreate | matrix |
+  |---|---|---|---|---|
+  | before | one profile, the stack's Loki (`--profiles aligned`) | 88 s | none | 26 s |
+  | after, no build with the flag (today) | `loki-defaults` only (`--profiles auto`) | 95 s | none | 35 s |
+  | after, a build with the flag | `loki-defaults` + `aligned` range-metric subset | 190 s | 44 s | 35 + 23 s |
+
+  Until a build supports `-align-queries-with-step`, `auto` runs the single `loki-defaults` pass in place of the
+  `aligned` one (its matrix is longer here because Loki recomputes what its freshness horizon keeps out of its
+  cache). Once a build supports it, a pull request adds the Loki recreate (about 45 s with the count
+  check), a few seconds of proxy starts and the matrix of the range-metric subset of its selection:
+  about 70 s on the 8 + 9 shapes above (the 190 s also holds the build of the older branch used as the
+  flag-supporting build, 41 s against 14-19 s) and, on the 17-minute runs of the larger selections, about
+  10-20% (not measured on a hosted runner). The seed does not grow. The daily run runs the same two passes
+  with every shape in `loki-defaults` and the range-metric shapes in `aligned`; it skips `aligned` until a
+  build supports the flag. Its duration was not available when this was written: compare the first
+  two-profile run with the workflow's `timeout-minutes: 240` before relying on it.
+- `--loki-uncached` replaces Loki's whole command and cannot be combined with the `loki-defaults`
+  profile or with moving the stack between profiles.
 
 ### Rows with no stored level
 
@@ -263,7 +354,8 @@ and `-probes.json`.
    proxies' exact-URL caches cannot answer them; only a move that holds is
    reported. Loki's results cache can still answer the re-measured cold run from
    the first pass's overlapping extents: its counters mark that run cache-served,
-   so a confirmed row usually has no Loki cold reference.
+   and the row then keeps the first pass's cold columns (`cold_from_first_pass`), so a
+   cache-served cold is never printed as a plain number or put in a ratio.
 6. `comment.py` updates one sticky comment and sets the check.
 
 Reproduce it locally (it never touches the e2e stack; smaller memory limits
@@ -385,12 +477,12 @@ release build's 24h ranges are capped at 3 runs. It writes:
 
 | path | content |
 |---|---|
-| `results/daily-<set>.json` | the day's summary per set (`report.py` format), overwritten daily; git history keeps every day, and `perf_evidence.py` reads it as the latest evidence |
-| `history/<set>.jsonl` | one line per set per day, append-only: date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
+| `results/daily-<set>.json`, `results/daily-<set>.loki-defaults.json` | the day's summary per set and Loki profile (`report.py` format), overwritten daily; git history keeps every day, and `perf_evidence.py` reads the latest as evidence (`loki-defaults` first). The `aligned` profile runs its range-metric shapes when a build supports `-align-queries-with-step` |
+| `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per day, append-only (the first file also holds every line written before the profiles existed): date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
-| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per set × shape × range × mode; the run only removes from it (see "Above 2× Loki" below) |
-| `history/acceptance.json` | per day of the history, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
+| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the 165 rows listed before the profiles are `aligned`, `proxy_side: unaligned`: no proxy build aligned queries then; `loki-defaults` starts empty and is seeded from its first daily run, with the owner's approval); the run only removes from it (see "Above 2× Loki" below) |
+| `history/acceptance.json` | per day of the history and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
@@ -505,7 +597,9 @@ slower row, before it is reported. The confirmation pass has no refresh run,
 so a refresh finding stands on the first pass. A cold one does too when Loki's
 cache answered the re-run's cold run from the first pass's extents (each pass
 has one cold sample): the row keeps the first pass's cold timings
-(`cold_from_first_pass`).
+(`cold_from_first_pass`). A row is above 2× when it is in either Loki profile (see
+"Like for like"); the baseline file keys on the profile, and a finding names the profile
+it was measured in. The comment's table gives both ratios, `not run` for a profile that did not run.
 The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
 
 - `warn` (now): new and worsened rows are a ⚠️ section at the top of the
