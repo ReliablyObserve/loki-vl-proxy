@@ -29,6 +29,18 @@ func TestQueryStepsTeeForcesJSONAndNoSniff(t *testing.T) {
 	}
 }
 
+func TestQueryStepsTeePreservesPlainTextErrors(t *testing.T) {
+	rec := httptest.NewRecorder()
+	tee := &queryStepsTee{ResponseWriter: rec, run: &queryStepsRun{}}
+	http.Error(tee, "invalid metric value", http.StatusBadRequest)
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("error Content-Type = %q, want Loki text/plain", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("error X-Content-Type-Options = %q", got)
+	}
+}
+
 // queryStepsGetBehindMiddleware is queryStepsGet with the headers the
 // middleware has set on the writer before the handler runs (the security
 // headers: nosniff, no-store), as every request through the server has.

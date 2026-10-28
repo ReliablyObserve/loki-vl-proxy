@@ -890,7 +890,11 @@ type queryStepsTee struct {
 }
 
 func (t *queryStepsTee) WriteHeader(code int) {
-	t.Header().Set("Content-Type", "application/json")
+	if code < http.StatusBadRequest {
+		t.Header().Set("Content-Type", "application/json")
+	} else if t.Header().Get("Content-Type") == "" {
+		t.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
 	t.Header().Set("X-Content-Type-Options", "nosniff")
 	if t.code == 0 {
 		t.code = code
@@ -906,7 +910,9 @@ func (t *queryStepsTee) snapshot() {
 }
 
 func (t *queryStepsTee) Write(b []byte) (int, error) {
-	t.Header().Set("Content-Type", "application/json")
+	if t.code == 0 {
+		t.Header().Set("Content-Type", "application/json")
+	}
 	t.Header().Set("X-Content-Type-Options", "nosniff")
 	if t.code == 0 {
 		t.code = http.StatusOK
