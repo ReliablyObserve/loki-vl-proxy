@@ -1,0 +1,48 @@
+id: semantics/error-layer-transport-text
+title: A failed VictoriaLogs connection reaches the client as Go transport text with the backend host:port (open)
+proves:
+  - backend-deadlines-and-cancellation
+  - status-502
+  - status-500
+consumer: any
+why: |
+  When the connection to VictoriaLogs is refused, reset, times out or is
+  cancelled, the proxy answers the http.Client error itself:
+  `Post "http://10.0.0.5:9428/select/logsql/query": dial tcp 10.0.0.5:9428:
+  connect: connection refused`. That names the backend host, port and
+  endpoint, and the Go transport wording, on 19 of 21 routes (72 cells).
+  Loki answers a failed querier call with its own text: 500, or 504 and 499
+  with its fixed texts (pkg/util/server/error.go:26-27, :103-107, :124-128).
+request:
+  scope: internal
+  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
+    errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
+    connection refused and reset, a reply after -backend-timeout, a client
+    cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
+    body above -backend-max-buffered-response-bytes), driven through 21 client
+    routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
+    rate_counter, json; query; series; labels; label values; detected_fields,
+    detected_field values, detected_labels; index stats, volume, volume_range,
+    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
+    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
+    VictoriaLogs through a fault-injecting forwarder and compares with Loki.
+compare:
+  mode: exact
+  fields: [status, errorType, body, headers]
+  expect: |
+    No backend host:port, URL, endpoint path or Go transport wording
+    (`dial tcp`, `read tcp`, `connection reset`, `Client.Timeout`) in the body,
+    the headers or a tail close frame; the status and text of the failure mode
+    (500, 504 or 499 with Loki's fixed text).
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/http_utils.go writeError (one choke point mapping every upstream error) and backend.go sanitizeUpstreamError'
+  loki: 'pkg/util/server/error.go:56-130 ClientHTTPStatusAndError'
+  proxy: 'writeError(status, err.Error()) with the *url.Error text; tail native close frame and the ruler/cold-tier paths unsanitized'
+  planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

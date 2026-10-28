@@ -1,0 +1,42 @@
+id: semantics/error-layer-internal-go-text
+title: Internal Go errors (decoder, scanner, body limits) reach the client (open)
+proves:
+  - status-500
+  - status-502
+consumer: any
+why: |
+  A truncated, malformed or oversized VictoriaLogs body is answered with
+  the Go error that read it: `unexpected EOF`, `scanning VL response:
+  unexpected EOF`, `invalid character 'V' looking for beginning of value`,
+  `body exceeds configured limit`. 25 cells on 15 routes. Loki's client text
+  is its own (pkg/util/server/error.go:124-128).
+request:
+  scope: internal
+  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
+    errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
+    connection refused and reset, a reply after -backend-timeout, a client
+    cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
+    body above -backend-max-buffered-response-bytes), driven through 21 client
+    routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
+    rate_counter, json; query; series; labels; label values; detected_fields,
+    detected_field values, detected_labels; index stats, volume, volume_range,
+    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
+    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
+    VictoriaLogs through a fault-injecting forwarder and compares with Loki.
+compare:
+  mode: exact
+  fields: [status, errorType, body, headers]
+  expect: |
+    No Go decoder, scanner or reader wording; Loki's 500.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/http_utils.go writeError (map unknown errors to one Loki text)'
+  loki: 'pkg/util/server/error.go:124-128'
+  proxy: 'err.Error() of the reader or decoder'
+  planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

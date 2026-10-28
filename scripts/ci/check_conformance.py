@@ -29,13 +29,18 @@ Fails when:
   * a score or an item's state regressed against the committed baseline, or a
     waiver expired,
   * evidence contradicts a state: `proven` without a passing declaring test,
-    when a test-result file is supplied.
+    when a test-result file is supplied;
+  * the error-layer known-leak list (conformance/registry/error-layer-known-leaks.json) grew, names
+    an unknown or fixed case, or disagrees with its ceiling; with test results: the error-layer gate
+    (TestErrorLayer_NoVictoriaLogsLeak) did not run, failed, or skipped more cells than the list holds;
+    see error_layer_problems().
 
 Usage:
   python3 scripts/ci/check_conformance.py [--go-results unit.json ...]
 """
 import argparse
 import filecmp
+import json
 import os
 import shutil
 import subprocess
@@ -72,6 +77,71 @@ def perf_acceptance_problems(shapes=SHAPES, over_2x=OVER_2X):
     covers = {(s, sh["name"]): list(sh.get("covers") or []) for s, v in spec["sets"].items() for sh in v["shapes"]}
     rows = load_json(over_2x).get("rows", []) if os.path.exists(over_2x) else []
     return perf_problems({i for ids in covers.values() for i in ids}, rows, covers)
+
+
+ERROR_LAYER_LEAKS = "conformance/registry/error-layer-known-leaks.json"
+ERROR_LAYER_TEST = "TestErrorLayer_NoVictoriaLogsLeak"
+
+
+def error_layer_problems(go_results=(), leaks_path=ERROR_LAYER_LEAKS, base_text=None):
+    """The ratchet of the single Loki-shaped error layer. Every route x failure-mode cell that still leaks
+    VictoriaLogs text or a non-Loki status is listed with the registry cases it fails; the Go gate skips
+    exactly those and fails on any other. The list may only shrink: its pair count must equal `ceiling`
+    (a fix lowers both), never exceed the base branch's count when that is known (base_text, the file at
+    the base ref), each case must exist with an open gap, and a supplied go test -json run must show the
+    gate ran, passed and skipped no more cells than are listed."""
+    problems = []
+    doc = load_json(leaks_path)
+    leaks = doc.get("leaks", {})
+    pairs = sum(len(ids) for ids in leaks.values())
+    if pairs != doc.get("ceiling"):
+        problems.append(f"{leaks_path}: {pairs} listed leak(s) but ceiling {doc.get('ceiling')}; "
+                        "the list may not grow, and a fix lowers the ceiling with it")
+    for ident in sorted({i for ids in leaks.values() for i in ids}):
+        path = os.path.join("conformance/registry/cases", ident + ".yaml")
+        if not os.path.exists(path):
+            problems.append(f"{leaks_path}: unknown registry case {ident}")
+        elif "status: open" not in open(path, encoding="utf-8").read():
+            problems.append(f"{leaks_path}: {ident} is listed as leaking but its gap is not open")
+    if base_text:
+        base = json.loads(base_text).get("leaks", {})
+        base_pairs = sum(len(ids) for ids in base.values())
+        added = sorted(f"{cell}: {i}" for cell, ids in leaks.items() for i in ids if i not in base.get(cell, []))
+        if pairs > base_pairs or added:
+            problems.append(f"{leaks_path}: the known-leak list grew against the base ({base_pairs} -> {pairs}); "
+                            f"new: {', '.join(added[:10])}")
+    if go_results:
+        ran, failed, skipped = False, False, 0
+        for path in go_results:
+            with open(path, encoding="utf-8", errors="ignore") as handle:
+                for line in handle:
+                    if not line.startswith("{"):
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    name = event.get("Test") or ""
+                    if name.split("/")[0] != ERROR_LAYER_TEST:
+                        continue
+                    ran = True
+                    if event.get("Action") == "fail":
+                        failed = True
+                    elif event.get("Action") == "skip" and name.count("/") == 2:
+                        skipped += 1
+        if not ran:
+            problems.append(f"{ERROR_LAYER_TEST} did not run in the supplied test results")
+        if failed:
+            problems.append(f"{ERROR_LAYER_TEST} failed: a new leak, or a listed one that was fixed")
+        if skipped > len(leaks):
+            problems.append(f"{ERROR_LAYER_TEST} skipped {skipped} cells, the list holds {len(leaks)}")
+    return problems
+
+
+def base_known_leaks(ref="origin/main", path=ERROR_LAYER_LEAKS):
+    """The known-leak list at the base ref, when the checkout has it (a full clone); None otherwise."""
+    shown = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True, text=True)
+    return shown.stdout if shown.returncode == 0 else None
 
 
 def run(script, *args):
@@ -152,6 +222,15 @@ def main():
     print(ratchet.stdout.strip())
     if ratchet.returncode:
         failures.append("score ratchet")
+
+    error_layer = error_layer_problems(args.go_results, base_text=base_known_leaks())
+    for problem in error_layer:
+        print(f"error layer: {problem}")
+    if error_layer:
+        failures.append("error-layer leak ratchet")
+    else:
+        leaks = load_json(ERROR_LAYER_LEAKS).get("leaks", {})
+        print(f"error layer: {len(leaks)} known leaking cell(s), the list may only shrink")
 
     if args.go_results:
         evidence_args = []
