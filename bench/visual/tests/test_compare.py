@@ -32,6 +32,8 @@ class CompareTest(unittest.TestCase):
                     with open(os.path.join(d, f"{name}.json"), "w", encoding="utf-8") as f:
                         json.dump(cap, f)
             proc = subprocess.run([sys.executable, os.path.join(HERE, "..", "compare.py"), out], capture_output=True, text=True)
+            with open(os.path.join(out, "compare.md"), encoding="utf-8") as f:
+                self.last_md = f.read()
             with open(os.path.join(out, "compare.json"), encoding="utf-8") as f:
                 return proc.returncode, json.load(f)[0]
 
@@ -276,6 +278,45 @@ class ExplainedVsLokiTest(unittest.TestCase):
         for loki, n_diffs in ((first, 0), (recapture, 0), (moved, 1)):
             row = self.check(pr, loki)
             self.assertEqual((len(row["loki_diffs"]), len(row["loki_explained"])), (n_diffs, 1 - n_diffs))
+
+    def test_index_stats_bodies_name_both_sides_numbers(self):
+        # Loki's results cache answered a 15m window with the 1h window's stream count (index_stats_cache.go Extract):
+        # the difference stays counted, and the artifact keeps both answers so the run shows which numbers moved.
+        pr = resources(("index/stats?q=1", {"streams": 3365, "chunks": 3365, "bytes": 7230800, "entries": 72308}))
+        loki = resources(("index/stats?q=1", {"streams": 13501, "chunks": 13501, "bytes": 15496192, "entries": 72315}), uid="vp-loki")
+        row = self.check(pr, loki)
+        self.assertEqual((len(row["loki_diffs"]), row["loki_explained"]), (1, []))
+        self.assertEqual(len(row["loki_bodies"]), 1)
+        kept = row["loki_bodies"][0]
+        self.assertIn("/resources/index/stats?q=1", kept["request"])
+        self.assertEqual(json.loads(kept["left"])["streams"], 3365)
+        self.assertEqual(json.loads(kept["right"])["streams"], 13501)
+        numbers = ("streams 3365, chunks 3365, entries 72308, bytes 7230800 vs "
+                   "streams 13501, chunks 13501, entries 72315, bytes 15496192")
+        self.assertEqual(kept["numbers"], numbers)
+        self.assertIn(f"- PR vs Loki index/stats: {numbers}", self.last_md)
+        # an explained difference (bytes and chunks only) keeps its answers too
+        row = self.check(pr, resources(("index/stats?q=1", {"streams": 3365, "chunks": 3365, "bytes": 15496192, "entries": 72308}), uid="vp-loki"))
+        self.assertEqual((row["loki_diffs"], len(row["loki_explained"]), len(row["loki_bodies"])), ([], 1, 1))
+        # main vs PR keeps the bodies of a differing resource; identical answers keep none
+        _, row = self.run_compare(resources(("index/stats?q=1", {"streams": 2, "chunks": 2, "bytes": 200, "entries": 2})), pr)
+        self.assertEqual(row["main_pr_bodies"][0]["numbers"].split(" vs ")[0], "streams 2, chunks 2, entries 2, bytes 200")
+        _, row = self.run_compare(pr, pr, pr)
+        self.assertEqual((row["main_pr_bodies"], row["loki_bodies"]), ([], []))
+
+    def test_kept_bodies_are_bounded(self):
+        big = {"fields": [{"label": f"field_{i}", "type": "string", "cardinality": i} for i in range(500)]}
+        pr = resources(*[(f"detected_fields?q={i}", big) for i in range(20)])
+        loki = resources(*[(f"detected_fields?q={i}", {"fields": []}) for i in range(20)], uid="vp-loki")
+        row = self.check(pr, loki)
+        self.assertEqual(len(row["loki_bodies"]), compare.BODIES_PER_ROW)
+        for kept in row["loki_bodies"]:
+            self.assertLessEqual(len(kept["left"]), compare.BODY_CHARS + 40)
+            self.assertTrue(kept["left"].endswith(" characters)"))
+            self.assertEqual(kept["right"], '{"fields": []}')
+            self.assertNotIn("numbers", kept)
+        self.assertEqual(compare.bounded(None), "null")
+        self.assertEqual(compare.stats_numbers({"streams": 1}), "streams 1, chunks None, entries None, bytes None")
 
     def test_patterns_are_history_dependent_not_counted(self):
         pr = resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>"}]}))
