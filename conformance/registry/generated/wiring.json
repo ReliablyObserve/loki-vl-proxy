@@ -375,7 +375,8 @@
     "peer-cache-replication": [
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
-      "internal/proxy/peer_push_identity_test.go"
+      "internal/proxy/peer_push_identity_test.go",
+      "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-stats-extent": [
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -1736,6 +1737,7 @@
       "peer-cache-metadata",
       "peer-cache-patterns",
       "peer-cache-query-range-windows",
+      "peer-cache-replication",
       "peer-cache-stats-extent"
     ],
     "test/e2e-ui/tests/datasource.spec.ts": [

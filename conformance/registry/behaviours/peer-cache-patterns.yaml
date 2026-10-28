@@ -10,29 +10,20 @@ victorialogs: |
   VictoriaLogs has no pattern mining; the proxy mines the lines it reads.
 
 proxy: |
-  A mined, non-empty answer is stored with SetWithTTL (patterns.go:349):
-  memory and a write-through push to the ring owner; patterns: keys skip the
-  generic disk tier (cache.go:598) and are kept instead in a snapshot file
-  (-patterns-persist-path) whose latest copy each replica publishes in its
-  memory under __patterns_snapshot:v1 (patterns_persistence.go:513). A
-  replica reads with Get (patterns.go:153): memory, then the owner's memory.
-  On start a replica restores the snapshot from its disk and from every peer
-  (patterns_persistence.go:672, 780).
+  A mined, non-empty answer is stored with SetWithTTL (handlePatterns):
+  memory and a write-through push to the key's replicas; patterns: keys skip
+  the generic disk tier (skipL2WriteForKey) and are kept instead in a snapshot
+  file (-patterns-persist-path) whose latest copy each replica publishes in
+  its memory under __patterns_snapshot:v1 (persistPatternsNow). A replica
+  reads with Get: memory, then the replicas in ring order. On start a replica
+  restores the snapshot from its disk and from every peer
+  (warmPatternsOnStartup), under the keys its requests read.
   Fleet proof (TestFleetPeerCacheProof): patterns mined on A are answered by
   B and C with no VictoriaLogs call, by B after a restart with none, and by B
   after it lost its disk with none, after it restored the peers' snapshot
-  (loki_vl_proxy_patterns_restored_from_peers_total). Compared with the first
-  answer only: Loki mines patterns with its own algorithm.
-  Open, measured on the stack (fails the proof on this build): a non-owner
-  clamps its own copy to a 30s shadow and pushes that clamped TTL
-  (cache.go:541 then cache.go:565), so the owner keeps patterns written
-  elsewhere for 30s, and patterns: keys never reach a disk; B restarted or
-  recreated more than 30s after A mined them read them again from
-  VictoriaLogs (12 calls per request). The snapshot B restores from its peers
-  is stored under a query-only key (patterns_persistence.go:227-249, applied
-  at :186-189) that no /patterns request reads: requests look up a key with
-  start, end, step and the level setting (patterns.go:1036-1056), so a
-  restored snapshot does not answer them.
+  (loki_vl_proxy_patterns_restored_from_peers_total); with A stopped or
+  paused B and C answer them from the backup replica with none. Compared
+  with the first answer only: Loki mines patterns with its own algorithm.
 
 implementation:
   - internal/proxy/patterns.go

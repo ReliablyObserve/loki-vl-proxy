@@ -15,26 +15,27 @@ victorialogs: |
 proxy: |
   /labels, /label/{name}/values, /detected_labels, /detected_fields,
   /detected_field/{name}/values, /index/stats and /index/volume(_range) answers
-  are stored with SetLocalAndDiskWithTTL (cache_keys.go:295): memory and the
-  writer's disk, never pushed to the owner. They are read with
-  GetSharedWithAge (cache_keys.go:313): memory, disk, then the ring owner's
-  memory (peer.go:628 serves peers from memory only). The time-bucketed
-  metadata inventory behind them is written with SetWithTTL and pushed to the
-  owner (metadata_inventory.go:917).
+  are stored with SetLocalAndDiskWithTTL (setEndpointReadCacheWithTTL):
+  memory and the writer's disk, never pushed. They are read with
+  GetSharedWithAge (endpointReadCacheEntryAge): memory, disk, then the key's
+  replicas in ring order, each serving from memory then disk. The
+  time-bucketed metadata inventory behind them is written with SetWithTTL and
+  pushed to the replicas (storeInventoryEntry).
   Fleet proof (TestFleetPeerCacheProof): twelve answers computed on A are read
-  on B and C; every answer served from a peer or the disk costs no
-  VictoriaLogs call; after a restart B serves answers from its disk; after
-  it lost its disk it reads them from their owners; with A down B and C answer
-  the same; the rebuilt label values equal Loki's.
+  on B and C; a request none of whose lookups missed every tier costs no
+  VictoriaLogs call in the fleet, and at least one answer comes from a peer;
+  after a restart B serves answers from its disk; after it lost its disk it
+  reads them from their replicas; with A stopped or paused B and C answer the
+  same; the rebuilt label values equal Loki's.
   A listing that ends within -max-metadata-cache-freshness (24h) revalidates
   its recent edge from VictoriaLogs on every replica by design (Loki reads
   that window live), so the proof's fixture is older than 24h.
-  Not covered (open): an answer computed by a replica that is not the key's
-  owner is never pushed, so the other replicas find it only once the owner
-  computed it itself; a replica that lost its disk does not refill the keys
-  it owns from copies on other replicas (peer.go:326); /index/stats and
-  /index/volume answers live 10s, below -disk-cache-min-ttl and close to the
-  5s a peer requires (peer.go:629), so they are effectively per replica.
+  Not covered (open): an answer is never pushed, so a replica finds it on a
+  peer only when one of the key's replicas computed it itself, and a replica
+  that lost its disk refills a key it owns only from a replica that computed
+  it; /index/stats and /index/volume answers live 10s, below
+  -disk-cache-min-ttl and close to the 5s a peer requires, so they are
+  effectively per replica.
 
 implementation:
   - internal/proxy/cache_keys.go

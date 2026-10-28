@@ -35,7 +35,10 @@ type requestRecord struct {
 	LatencyMs    float64            `json:"latency_ms"`
 	VLCalls      float64            `json:"vl_calls"`
 	VLUpstreamMs float64            `json:"vl_upstream_ms"`
-	FleetVLCalls float64            `json:"fleet_vl_calls"`
+	FleetVLCalls float64            `json:"fleet_vl_calls"` // without background work's calls
+	VLBackground float64            `json:"vl_background_calls,omitempty"`
+	PeerFetches  float64            `json:"peer_fetches,omitempty"`
+	PeerFetchMs  float64            `json:"peer_fetch_ms,omitempty"`
 	PeerHits     float64            `json:"peer_hits"`
 	BackupHits   float64            `json:"backup_hits"`
 	InvUnits     map[string]float64 `json:"inventory_units,omitempty"`
@@ -95,6 +98,7 @@ type layerSummary struct {
 	VLUpstreamMs float64      `json:"vl_upstream_ms"`
 	PeerHits     float64      `json:"peer_hits"`
 	PeerErrors   float64      `json:"peer_errors"`
+	PeerFetchMs  float64      `json:"peer_fetch_ms"`
 }
 
 type proofReport struct {
@@ -108,7 +112,6 @@ type proofReport struct {
 	Summary           []layerSummary     `json:"summary"`
 	Phases            []phaseResources   `json:"phases"`
 	Edges             []map[string]any   `json:"edge_cases"`
-	PeerProbe         []map[string]any   `json:"peer_get_probes"`
 	Requests          []requestRecord    `json:"requests"`
 	Bounds            map[string]float64 `json:"contract_bounds"`
 }
@@ -149,13 +152,6 @@ func (r *proofRecorder) addEdge(name string, fields map[string]any) {
 	r.mu.Unlock()
 }
 
-func (r *proofRecorder) addPeerProbe(fields map[string]any) {
-	r.mu.Lock()
-	fields["phase"] = r.phase
-	r.report.PeerProbe = append(r.report.PeerProbe, fields)
-	r.mu.Unlock()
-}
-
 func (r *proofRecorder) addPhase(p phaseResources) {
 	r.mu.Lock()
 	r.report.Phases = append(r.report.Phases, p)
@@ -180,6 +176,9 @@ func requestRecordFrom(rep replica, req proofRequest, repeat int, latency time.D
 		VLCalls:      d.vlSelect,
 		VLUpstreamMs: d.vlSeconds * 1000,
 		FleetVLCalls: d.fleetVLSelect,
+		VLBackground: d.vlBackground,
+		PeerFetches:  d.peerFetches,
+		PeerFetchMs:  d.peerFetchSeconds * 1000,
 		PeerHits:     d.peerHits, BackupHits: d.backupHits, PeerMisses: d.peerMisses, PeerErrors: d.peerErrors,
 		InvUnits: inventoryUnits(d), FleetRoutes: d.fleetVLRoutes, SLNRefresh: d.slnRefreshes,
 		DiskHits: d.tierL2Hits, WindowHits: d.windowHits,
@@ -240,6 +239,7 @@ func (r *proofRecorder) summarize() []layerSummary {
 		a.sum.VLUpstreamMs += rec.VLUpstreamMs
 		a.sum.PeerHits += rec.PeerHits
 		a.sum.PeerErrors += rec.PeerErrors
+		a.sum.PeerFetchMs += rec.PeerFetchMs
 	}
 	out := make([]layerSummary, 0, len(order))
 	for _, k := range order {
@@ -274,9 +274,9 @@ func writeProofReport(t *testing.T) {
 		return
 	}
 	t.Logf("peer cache proof report: %s", path)
-	t.Logf("%-32s %-20s %-10s %6s %9s %9s %9s %9s %8s %10s %8s %8s", "phase", "layer", "replica", "n", "first p50", "first p95", "first max", "rep p50", "vl calls", "vl ms", "peer hit", "peer err")
+	t.Logf("%-32s %-20s %-10s %6s %9s %9s %9s %9s %8s %10s %8s %8s %8s", "phase", "layer", "replica", "n", "first p50", "first p95", "first max", "rep p50", "vl calls", "vl ms", "peer hit", "peer err", "fetch ms")
 	for _, s := range summary {
-		t.Logf("%-32s %-20s %-10s %6d %9.1f %9.1f %9.1f %9.1f %8.0f %10.1f %8.0f %8.0f", s.Phase, s.Layer, s.Replica, s.First.Count, s.First.P50Ms, s.First.P95Ms, s.First.MaxMs, s.Repeat.P50Ms, s.VLCalls, s.VLUpstreamMs, s.PeerHits, s.PeerErrors)
+		t.Logf("%-32s %-20s %-10s %6d %9.1f %9.1f %9.1f %9.1f %8.0f %10.1f %8.0f %8.0f %8.1f", s.Phase, s.Layer, s.Replica, s.First.Count, s.First.P50Ms, s.First.P95Ms, s.First.MaxMs, s.Repeat.P50Ms, s.VLCalls, s.VLUpstreamMs, s.PeerHits, s.PeerErrors, s.PeerFetchMs)
 	}
 	for _, p := range phases {
 		for name, res := range p.Replicas {
@@ -458,22 +458,6 @@ func (s *resourceSampler) stop() phaseResources {
 	}
 	proofRec.addPhase(s.res)
 	return s.res
-}
-
-// probePeerGet times one /_cache/get of key on each replica that holds it:
-// the proxy exports no peer fetch duration, so this is the measured cost of
-// one peer read of that entry, including transfer.
-func probePeerGet(t *testing.T, key string, replicas []replica) {
-	t.Helper()
-	for _, rep := range replicas {
-		started := time.Now()
-		status, size, err := peerGet(rep.addr, key)
-		fields := map[string]any{"replica": rep.name, "key": key, "status": status, "bytes": size, "latency_ms": ms(time.Since(started))}
-		if err != nil {
-			fields["error"] = err.Error()
-		}
-		proofRec.addPeerProbe(fields)
-	}
 }
 
 func describeBytes(b float64) string { return fmt.Sprintf("%.1fMiB", b/(1<<20)) }

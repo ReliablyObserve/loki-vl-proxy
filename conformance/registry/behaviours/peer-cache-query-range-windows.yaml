@@ -12,17 +12,18 @@ victorialogs: |
 
 proxy: |
   A query_range log query is split into windows (-query-range-split-interval).
-  A window is stored with SetLocalOnlyWithTTL (query_range_windowing.go:523):
-  memory only, no disk, no push. It is read with Get
-  (query_range_windowing.go:461): memory, then the ring owner's memory.
+  A window is stored with SetLocalOnlyWithTTL (fetchQueryRangeWindow): memory
+  only, no disk, no push, and a replica that fetches it keeps it off its disk
+  too. It is read with Get: memory, then the key's replicas in ring order.
   Fleet proof (TestFleetPeerCacheProof): sixteen windows computed on A, then
-  B, then C are read through the peer tier; after B restarts every window hit
-  on it is a peer read (memory only by design); after it lost its disk it
-  reads windows from their owners; with A down B and C answer the same; the
-  rebuilt lines equal Loki's.
+  B, then C are read through the peer tier; after B restarts no window hit on
+  it comes from a disk and every one is a peer read (memory only by design);
+  after it lost its disk it reads windows from their replicas; with A stopped
+  or paused B and C answer the same; the rebuilt lines equal Loki's.
   Not covered (open): windows never reach the disk tier, although
   -query-range-history-cache-ttl keeps historical windows for 24h, and a
-  window computed by a replica that is not its owner is not shared.
+  window computed by a replica that is not one of its key's replicas is not
+  shared.
 
 implementation:
   - internal/proxy/query_range_windowing.go

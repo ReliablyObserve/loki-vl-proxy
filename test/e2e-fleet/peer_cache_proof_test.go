@@ -196,10 +196,12 @@ func ask(t *testing.T, rep replica, req proofRequest) (string, fleetCounters, ti
 	d := after[rep.name].minus(before[rep.name])
 	d.fleetVLRoutes = map[string]float64{}
 	d.slnRefreshes = 0
+	// Calls made by background work (warm-ups, inventory refreshes, sweeps)
+	// are not the request's: they are left out where the build counts them.
 	for _, peer := range counted {
 		f := after[peer.name].minus(before[peer.name])
-		d.fleetVLSelect += f.vlSelect
-		d.fleetVLStats += f.vlStats
+		d.fleetVLSelect += f.vlSelect - f.vlBackground
+		d.fleetVLStats += f.vlStats - f.vlStatsBackground
 		d.fleetVLSeconds += f.vlSeconds
 		d.slnRefreshes += f.slnRefreshes
 		for route, n := range f.vlRoutes {
@@ -255,11 +257,13 @@ func warm(t *testing.T, rep replica, reqs []proofRequest, into answers) (fleetCo
 }
 
 // requireReadsWithoutVL reads every write-through request on B and C and
-// requires no VictoriaLogs call for the layer anywhere in the fleet. With one
+// requires that no lookup missed every tier and no VictoriaLogs call for the
+// layer was made anywhere in the fleet: a hit in the reader's own memory or
+// disk (it holds a pushed replica copy) counts like a peer hit. With one
 // copy per key (factor 1) at least one of B and C must read from a peer (a
 // key owned by A is read by both, by B by C, by C by B). With a backup
 // replica a key whose replicas are B and C is a local hit on both, so there
-// only the absence of VictoriaLogs calls is required.
+// a peer read is not required.
 // route selects the counter: fleetVLStats for the extent cache, fleetVLSelect for all.
 func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, route func(fleetCounters) float64, routeName string) {
 	t.Helper()
@@ -269,6 +273,9 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 			d, _ := askSame(t, rep, req, want[req.path])
 			if route(d) != 0 {
 				t.Errorf("%s on %s caused %.0f VictoriaLogs %s calls in the fleet; every entry was written on another replica and pushed to its replicas (%s)", req, rep.name, route(d), routeName, d)
+			}
+			if d.missedAll != 0 {
+				t.Errorf("%s on %s: %.0f lookups missed every tier although every entry was pushed to its replicas (%s)", req, rep.name, d.missedAll, d)
 			}
 			peerReads += d.peerHits
 		}
@@ -398,7 +405,7 @@ const (
 	labelValuesSnapshotKey = "__label_values_index_snapshot:v1"
 )
 
-// conformance: peer-cache-stats-extent, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery
+// conformance: peer-cache-stats-extent, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery, peer-cache-replication
 func TestFleetPeerCacheProof(t *testing.T) {
 	for _, addr := range proxyAddrs {
 		waitProxyReady(t, addr)
@@ -468,8 +475,6 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			// lost its disk warms from: some peer other than B must hold each.
 			waitPeerHasKey(t, patternsSnapshotKey, 20*time.Second, a.addr, c.addr)
 			waitPeerHasKey(t, labelValuesSnapshotKey, 20*time.Second, a.addr, c.addr)
-			probePeerGet(t, patternsSnapshotKey, fleetReplicas())
-			probePeerGet(t, labelValuesSnapshotKey, fleetReplicas())
 		})
 	})
 	if !ok {
@@ -487,8 +492,9 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			// Buckets B owns were pushed to it and written to its disk; the
 			// others are on their owners.
 			for _, req := range base.metric {
-				if d, _ := askSame(t, b, req, first[req.path]); d.fleetVLStats != 0 {
-					t.Errorf("%s on B after a restart caused %.0f stats_query_range calls; its buckets are on its disk or its peers (%s)", req, d.fleetVLStats, d)
+				d, _ := askSame(t, b, req, first[req.path])
+				if d.fleetVLStats != 0 || d.missedAll != 0 {
+					t.Errorf("%s on B after a restart caused %.0f stats_query_range calls and %.0f lookups that missed every tier; its buckets are on its disk or its peers (%s)", req, d.fleetVLStats, d.missedAll, d)
 				}
 			}
 		})
@@ -508,7 +514,10 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		proofRun(t, "query_range_window_memory_only", func(t *testing.T) {
 			// Windows are kept in memory only (SetLocalOnlyWithTTL): after a
 			// restart every window hit on B is a peer read, none a disk read.
-			requireWindowReadThrough(t, base.windows, first, replicaB)
+			total := requireWindowReadThrough(t, base.windows, first, replicaB)
+			if total.tierL2Hits != 0 {
+				t.Errorf("B served %.0f lookups of log queries from its disk after a restart; windows are kept in memory only (%s)", total.tierL2Hits, total)
+			}
 		})
 		readAgain(t, []replica{b}, base.all(), first)
 	})
