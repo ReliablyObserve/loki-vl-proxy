@@ -29,6 +29,7 @@ endpoint's smoke shapes, not every shape behind the endpoint.
   selection.py --base origin/main              files from git diff base...HEAD
   selection.py --files internal/proxy/x.go ... explicit file list
   selection.py --check                         gate: every shape is reachable
+  selection.py --all                           the baseline run: every shape of every set
 
 Prints JSON: {"run": bool, "sets": {set: [shape, ...]}, "why": {...}, ...}.
 """
@@ -214,6 +215,28 @@ def select(files, base=None, spec=None, items=None, head=None):
     }
 
 
+BASELINE_WHY = "baseline run: every shape of every set"
+
+
+def select_all(spec=None):
+    """The baseline run's selection: every shape of every set, in shapes.json order.
+
+    Same shape as select(): the run is never empty, so the job measures and
+    comments instead of ending as 'nothing to run'.
+    """
+    spec = spec or load_shapes()
+    sets = {name: [s["name"] for s in v["shapes"]] for name, v in spec["sets"].items() if v["shapes"]}
+    return {
+        "run": bool(sets),
+        "baseline": True,
+        "changed": 0,
+        "relevant": [],
+        "ignored": [],
+        "sets": sets,
+        "why": {f"{name}/{shape}": [BASELINE_WHY] for name, shapes in sets.items() for shape in shapes},
+    }
+
+
 def check(spec=None, items=None):
     spec = spec or load_shapes()
     items = items if items is not None else registry_items()
@@ -244,6 +267,7 @@ def main():
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--files", nargs="*", help="explicit changed files (instead of git diff)")
     ap.add_argument("--check", action="store_true", help="gate: every shape is reachable from code")
+    ap.add_argument("--all", action="store_true", help="the baseline run: select every shape of every set")
     ap.add_argument("--out", default="", help="also write the JSON here")
     ap.add_argument("--root", default="", help="repository checkout to read shapes and registry from (default: this one)")
     args = ap.parse_args()
@@ -256,6 +280,14 @@ def main():
             print(p)
         print(f"bench/ab selection: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
+    if args.all:
+        result = select_all()
+        text = json.dumps(result, indent=1)
+        if args.out:
+            with open(args.out, "w") as f:
+                f.write(text + "\n")
+        print(text)
+        return 0
     base = args.base or "origin/main"
     files = args.files if args.files is not None else changed_files(base, args.head)
     result = select(files, base=base, head=None if args.head == "HEAD" else args.head)

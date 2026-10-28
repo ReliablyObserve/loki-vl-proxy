@@ -239,6 +239,24 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
     return out
 
 
+BASELINE_WHY = "baseline run: every page"
+
+
+def plan_all(spec=None):
+    """The baseline run's plan: every page of the spec at its own ranges, no budget and no trimming.
+
+    Same shape as plan(), so ci_run.py and visual_comment.py need no special case; `baseline` marks it.
+    """
+    spec = spec or load_spec()
+    entries = {p["id"]: {"ranges": ranges_of(p, spec), "why": [BASELINE_WHY], "core": bool(p.get("core")),
+                         "kind": p["kind"]} for p in spec["pages"]}
+    captures = sum(len([r for r in e["ranges"] if r != LIVE]) + (1 if e["ranges"] == [LIVE] else 0)
+                   for e in entries.values())
+    return {"run": bool(entries), "baseline": True, "changed": 0, "relevant": [], "ignored": [],
+            "core_range": spec["core_range"], "entries": entries, "captures": captures, "trimmed": [], "dropped": [],
+            "fix_cases": {}, "fix_trimmed": []}
+
+
 def check(spec=None, items=None, cases=None):
     spec = spec or load_spec()
     items = items if items is not None else ab.registry_items()
@@ -292,6 +310,7 @@ def main():
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--files", nargs="*", help="explicit changed files (instead of git diff)")
     ap.add_argument("--check", action="store_true", help="gate: every entry's covers resolve to registry items that name code")
+    ap.add_argument("--all", action="store_true", help="the baseline run: every page at its own ranges, no budget")
     ap.add_argument("--max-captures", type=int, default=MAX_CAPTURES)
     ap.add_argument("--out", default="", help="also write the JSON here")
     args = ap.parse_args()
@@ -301,6 +320,12 @@ def main():
             print(p)
         print(f"bench/visual plan: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
+    if args.all:
+        result = plan_all()
+        if args.out:
+            dump_json(args.out, result)
+        print(json.dumps(result, indent=1))
+        return 0
     base = args.base or "origin/main"
     files = args.files if args.files is not None else changed_files(base, args.head)
     cases = changed_cases(base, args.head) if args.files is None else []

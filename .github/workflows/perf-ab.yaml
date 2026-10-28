@@ -7,6 +7,13 @@ name: Perf A/B
 # Loki. A row the PR adds above 2x Loki or makes worse (bench/ab/over2x.py)
 # is a warning at the top of the comment and an annotation; --over-2x-loki
 # below is the switch that makes it fail the check. See bench/ab/README.md.
+#
+# A baseline run (change scope: the `baseline` label, or a big shipped diff on a
+# pull request into main) measures every shape of every set at these ranges
+# instead of the selected ones, and also writes what could become the new
+# baseline (the above-2x Loki list and the acceptance distribution of this run, a report)
+# as the `perf-baseline-candidate` artifact and a "new baseline candidate"
+# section of the comment. Nothing is committed: a person copies the files in.
 
 on:
   pull_request:
@@ -31,14 +38,16 @@ jobs:
   perf-smoke:
     name: perf-smoke
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.perf != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The smoke selects a handful of shapes; the baseline run measures all of them.
+    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}
     permissions:
       contents: read
       pull-requests: write
     env:
       OUT: /tmp/ab-smoke
+      BASELINE: ${{ needs.scope.outputs.baseline }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -54,7 +63,11 @@ jobs:
           # HEAD is the PR merged onto the base; its first parent is that base.
           BASE="$(git rev-parse HEAD^1)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          python3 bench/ab/selection.py --base "$BASE" --out "$OUT/selection.json" > /dev/null
+          if [ "$BASELINE" = "true" ]; then
+            python3 bench/ab/selection.py --all --out "$OUT/selection.json" > /dev/null
+          else
+            python3 bench/ab/selection.py --base "$BASE" --out "$OUT/selection.json" > /dev/null
+          fi
           RUN="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["run"]).lower())' "$OUT/selection.json")"
           echo "run=${RUN}" >> "$GITHUB_OUTPUT"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print({k: len(v) for k, v in d["sets"].items()} or "nothing to run")' "$OUT/selection.json"
@@ -72,8 +85,10 @@ jobs:
           BASE: ${{ steps.select.outputs.base }}
         run: |
           set +e
+          CANDIDATE=()
+          if [ "$BASELINE" = "true" ]; then CANDIDATE=(--baseline-candidate "$OUT/baseline-candidate"); fi
           python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT" \
-            --over-2x-loki warn
+            --over-2x-loki warn "${CANDIDATE[@]}"
           # The verdict file, not the exit status, decides: a crash of the
           # interpreter itself leaves none and is reported as incomplete.
           CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
@@ -101,6 +116,16 @@ jobs:
             ${{ env.OUT }}/*.json
             ${{ env.OUT }}/*.md
             ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+      - name: Upload the baseline candidate
+        # Never committed: the files are what a person would copy into bench/ab/history/ once they accept them.
+        if: always() && steps.select.outputs.run == 'true' && env.BASELINE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: perf-baseline-candidate
+          path: ${{ env.OUT }}/baseline-candidate/
+          retention-days: 30
           if-no-files-found: ignore
 
       - name: Publish sticky PR comment

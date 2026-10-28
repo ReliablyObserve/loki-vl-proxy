@@ -6,10 +6,16 @@ only; the parser understands the block layout the workflows use) and assert:
 
 - lint and helm always run, so the infra checks they carry are never skipped;
 - every job that reads `needs.scope` lists `scope` in `needs`, and in ci.yaml
-  uses the canonical gate or, for the two aggregators, `if: always()`;
+  uses the gate of its lane (product, stack, or the stack gate of a job that
+  follows `test`) or, for the two aggregators, `if: always()`;
+- every job of every workflow gates on the lane it belongs to, and on no other;
 - every ci.yaml job is gated directly or through a gated job;
-- no job downstream of `test` can run when `test` failed or was skipped;
-- both aggregators pass on skipped groups only when scope says `false`.
+- no job downstream of `test` can run when `test` failed, and only the stack
+  jobs, with exactly the gate below, can run when `test` was skipped;
+- both aggregators pass on skipped groups only when scope says `false`;
+- the baseline output reaches only the three heavy workflows, only through
+  `needs.scope.outputs.baseline == 'true'`, only for pull requests into main,
+  and never commits anything.
 """
 
 import re
@@ -21,6 +27,36 @@ WORKFLOWS = REPO / ".github" / "workflows"
 CI = WORKFLOWS / "ci.yaml"
 
 CANONICAL_GATE = "${{ !cancelled() && needs.scope.outputs.product != 'false' }}"
+STACK_GATE = "${{ !cancelled() && needs.scope.outputs.stack != 'false' }}"
+# A stack job that follows `test`: it runs after a green `test`, and also when
+# `test` was skipped because no product path changed but a stack path did. `==`
+# on both lane outputs, so an empty output can never take the skipped route.
+STACK_AFTER_TEST_GATE = (
+    "${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success'"
+    " || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false'"
+    " && needs.scope.outputs.stack == 'true')) }}"
+)
+# ci.yaml jobs whose gate is not the product one.
+CI_GATES = {
+    "image": STACK_GATE,
+    "tuple-smoke": STACK_AFTER_TEST_GATE,
+    "e2e-compat-group": STACK_AFTER_TEST_GATE,
+    "e2e-fleet": STACK_AFTER_TEST_GATE,
+    "e2e-ui": STACK_AFTER_TEST_GATE,
+}
+# The lane output every other workflow's gated job reads: (file, job) -> lane.
+WORKFLOW_LANES = {
+    ("perf-ab.yaml", "perf-smoke"): "perf",
+    ("visual-smoke.yaml", "visual-smoke"): "stack",
+    ("compat-loki.yaml", "loki-pinned"): "stack",
+    ("compat-vl.yaml", "vl-pinned"): "stack",
+    ("compat-drilldown.yaml", "drilldown-pinned-runtime"): "stack",
+    ("compat-drilldown.yaml", "drilldown-grafana-pr-matrix"): "stack",
+    ("e2e-pipeline.yml", "e2e-pipeline"): "stack",
+    ("security-pr.yaml", "security-runtime"): "stack",
+    ("pr-quality-report.yaml", "report"): "product",
+}
+LANES = ("product", "stack", "perf")
 ALWAYS_ON = ("lint", "helm")
 AGGREGATORS = ("e2e-compat", "race-stress")
 STATUS_FUNCTIONS = re.compile(r"\b(always|cancelled|failure)\(\)")
@@ -123,11 +159,16 @@ def ci_problems(text):
         if name in AGGREGATORS:
             if job["if"] != "always()":
                 found.append(f"{name} must use if: always(), got {job['if']}")
-            for needle in ("needs.scope.outputs.product", '"skipped"', '= "false"'):
+            needles = ["needs.scope.outputs.product", '"skipped"', '= "false"']
+            if name == "e2e-compat":
+                # Stack jobs run on a stack path, so a skipped group is a pass only
+                # when the stack lane says false as well.
+                needles += ["needs.scope.outputs.stack", '"$STACK" = "false"']
+            for needle in needles:
                 if needle not in job["body"]:
                     found.append(f"{name} must test the scope output: missing {needle}")
-        elif "scope" in job["needs"] and job["if"] != CANONICAL_GATE:
-            found.append(f"{name} must use the canonical gate, got if: {job['if']}")
+        elif "scope" in job["needs"] and job["if"] != CI_GATES.get(name, CANONICAL_GATE):
+            found.append(f"{name} must use its lane's gate, got if: {job['if']}")
 
     gated = {n for n, j in jobs.items() if n != "scope" and "scope" in j["needs"]}
     for name, job in jobs.items():
@@ -144,12 +185,20 @@ def ci_problems(text):
         found.append("conformance must need test: it reads the unit results of test")
 
     # A job downstream of `test` keeps the implicit success(): it must skip
-    # when `test` skips and must not run when `test` failed.
+    # when `test` skips and must not run when `test` failed. The stack jobs are
+    # the one exception, and only with their exact gate (checked above).
     for name, job in jobs.items():
         if name in AGGREGATORS or name == "test":
             continue
+        if name in CI_GATES and CI_GATES[name] == STACK_AFTER_TEST_GATE and job["if"] == STACK_AFTER_TEST_GATE:
+            continue
         if reaches(jobs, name, {"test"}) and job["if"] and STATUS_FUNCTIONS.search(job["if"]):
             found.append(f"{name} is downstream of test but its if: bypasses success(): {job['if']}")
+    for name, gate in CI_GATES.items():
+        if gate == STACK_AFTER_TEST_GATE and name in jobs:
+            needs = set(jobs[name]["needs"])
+            if not {"scope", "test", "image"} <= needs:
+                found.append(f"{name} must need scope, test and image, got {sorted(needs)}")
     return found
 
 
@@ -176,6 +225,7 @@ class ScopeWiringTest(unittest.TestCase):
     def test_aggregators_read_the_scope_output(self):
         for name in AGGREGATORS:
             self.assertIn("needs.scope.outputs.product", self.jobs[name]["body"], name)
+        self.assertIn("needs.scope.outputs.stack", self.jobs["e2e-compat"]["body"])
 
     def test_infra_checks_run_in_lint_not_in_test(self):
         moved = (
@@ -185,11 +235,36 @@ class ScopeWiringTest(unittest.TestCase):
             "scripts.ci.tests.test_scope_wiring",
             "-run '^TestVictoriaLogsSupportPolicy$'",
             "./scripts/ci/validate_compose.sh",
+            # Their paths are in the perf, stack and infra lanes, which skip the
+            # Go unit tests: the bench module holds the drift guard of the three
+            # Loki configs, and bench/ab/tests the A/B harness.
+            "Benchmark harness vet and tests (bench module)",
+            "python3 -m unittest discover -s bench/ab/tests",
         )
         for command in moved:
             self.assertIn(command, self.jobs["lint"]["body"], command)
-        for command in moved[:3]:
+        for command in moved[:3] + moved[6:]:
             self.assertNotIn(command, self.jobs["test"]["body"], command)
+        self.assertNotIn("python3 -m unittest discover -s bench/ab/tests", self.jobs["conformance"]["body"])
+
+    def test_stack_jobs_follow_test_with_the_exact_gate(self):
+        for name, gate in CI_GATES.items():
+            with self.subTest(name):
+                self.assertEqual(self.jobs[name]["if"], gate)
+                if gate == STACK_AFTER_TEST_GATE:
+                    self.assertEqual(self.jobs[name]["needs"], ["scope", "test", "image"])
+        self.assertEqual(self.jobs["image"]["needs"], ["scope"])
+
+    def test_other_workflows_gate_on_their_lane(self):
+        for (filename, name), lane in WORKFLOW_LANES.items():
+            with self.subTest(f"{filename}:{name}"):
+                jobs = parse_jobs((WORKFLOWS / filename).read_text())
+                condition = jobs[name]["if"] or ""
+                self.assertIn("scope", jobs[name]["needs"])
+                self.assertIn(f"needs.scope.outputs.{lane} != 'false'", condition)
+                for other in LANES:
+                    if other != lane:
+                        self.assertNotIn(f"needs.scope.outputs.{other}", condition)
 
     def test_every_workflow_reading_scope_declares_it(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
@@ -203,12 +278,121 @@ class ScopeWiringTest(unittest.TestCase):
                 if name != "scope" and reads_scope(job):
                     self.assertIn("scope", job["needs"], f"{path.name}: {name}")
 
+    # --- the baseline run -------------------------------------------------------------------------
+
+    HEAVY = ("perf-ab.yaml", "visual-smoke.yaml", "compat-vl.yaml")
+
+    def test_only_the_heavy_workflows_read_the_baseline(self):
+        readers = sorted(p.name for p in WORKFLOWS.glob("*.y*ml")
+                         if "outputs.baseline" in p.read_text() and p.name != "change-scope.yaml")
+        self.assertEqual(readers, sorted(self.HEAVY))
+        self.assertNotIn("outputs.baseline", CI.read_text())  # the ordinary CI is the same for every size
+
+    def test_heavy_workflows_only_run_for_pull_requests_into_main(self):
+        # A stacked pull request (base is not main) starts none of them, so it never pays for a baseline.
+        for name in self.HEAVY + ("ci.yaml",):
+            with self.subTest(name):
+                text = (WORKFLOWS / name).read_text()
+                self.assertRegex(text, r"(?m)^  pull_request:\n    branches: \[main\]")
+
+    def test_the_scope_workflow_reports_a_baseline_that_fails_off(self):
+        text = (WORKFLOWS / "change-scope.yaml").read_text()
+        self.assertIn("baseline: ${{ steps.result.outputs.baseline }}", text)
+        self.assertRegex(text, r"(?m)^          baseline=false$")  # the default before any evidence
+        self.assertIn('if [ "$CLASSIFIED_BASELINE" = "true" ]; then baseline=true; fi', text)
+        # The classifier gets the diff, the base branch and the labels.
+        for needle in ("--numstat", '--base-ref "$BASE_REF"', '--labels "$LABELS"',
+                       "BASE_REF: ${{ github.event.pull_request.base.ref }}"):
+            self.assertIn(needle, text)
+        # ci-full and baseline force the product lanes here; the classifier gives both the baseline.
+        self.assertIn("ci-full", text)
+        self.assertIn("elif printf '%s\\n' \"$labels\" | grep -qx 'baseline'", text)
+        # The baseline can only come from a classifier that ran on a pull request diff.
+        self.assertIn('[ "$DIFF" = "true" ]', text)
+
+    def test_the_perf_workflow_runs_every_shape_on_a_baseline_and_keeps_its_budget_otherwise(self):
+        text = (WORKFLOWS / "perf-ab.yaml").read_text()
+        job = parse_jobs(text)["perf-smoke"]
+        self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline }}", job["body"])
+        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", job["body"])
+        self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', job["body"])
+        self.assertIn('selection.py --base "$BASE"', job["body"])  # an ordinary pull request keeps the selection
+        self.assertIn('--baseline-candidate "$OUT/baseline-candidate"', job["body"])
+        self.assertIn("name: perf-baseline-candidate", job["body"])
+        # The gate is unchanged: a baseline never makes the job run when its lane says no.
+        self.assertEqual(job["if"], "${{ !cancelled() && needs.scope.outputs.perf != 'false' }}")
+
+    def test_the_visual_workflow_captures_every_page_on_a_baseline(self):
+        text = (WORKFLOWS / "visual-smoke.yaml").read_text()
+        jobs = parse_jobs(text)
+        body = jobs["visual-smoke"]["body"]
+        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", body)
+        self.assertIn('plan.py --all --out "$OUT/plan.json"', body)
+        self.assertIn('plan.py --base "$BASE" --out "$OUT/plan.json"', body)
+        self.assertIn("name: visual-baseline-candidate", body)
+        self.assertIn("scope", jobs["visual-comment"]["needs"])
+        # The job that holds a write token and publishes to pr-visuals knows nothing of the baseline.
+        self.assertNotIn("baseline", jobs["visual-publish"]["body"].lower())
+
+    def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
+        jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())
+        matrix = jobs["vl-matrix"]
+        # (the job parser strips the quotes around an unbraced condition, the last one too)
+        self.assertEqual(matrix["if"].rstrip("'"), ("github.event_name == 'schedule' || "
+                                                    "github.event_name == 'workflow_dispatch' || "
+                                                    "needs.scope.outputs.baseline == 'true'").rstrip("'"))
+        self.assertEqual(matrix["needs"], ["vl-matrix-source", "scope"])
+        # The pinned tuple still runs on every pull request in the stack lane.
+        self.assertIn("needs.scope.outputs.stack != 'false'", jobs["vl-pinned"]["if"])
+        self.assertNotIn("baseline", jobs["vl-pinned"]["if"])
+
+    def test_a_baseline_run_commits_and_pushes_nothing(self):
+        for name in self.HEAVY:
+            with self.subTest(name):
+                text = (WORKFLOWS / name).read_text()
+                for job_name, job in parse_jobs(text).items():
+                    if "baseline" not in job["body"].lower():
+                        continue
+                    for forbidden in ("git push", "git commit", "contents: write", "commit_via_api", "gh pr create"):
+                        self.assertNotIn(forbidden, job["body"], f"{name}:{job_name}")
+
     def test_the_checks_catch_broken_wiring(self):
         gate = f"    if: {CANONICAL_GATE}\n"
         mutations = {
             "ungated test": self.text.replace("    needs: [scope]\n" + gate + "    runs-on", "    runs-on", 1),
             "scope missing from needs": self.text.replace("  bench:\n    needs: [scope]", "  bench:\n    needs: []", 1),
             "weaker gate": self.text.replace(CANONICAL_GATE, "${{ needs.scope.outputs.product != 'false' }}", 1),
+            "image gated on the product lane": self.text.replace(
+                "  image:\n    needs: [scope]\n    if: " + STACK_GATE, "  image:\n    needs: [scope]\n    if: " + CANONICAL_GATE, 1
+            ),
+            "stack job runs after a failed test": self.text.replace(
+                STACK_AFTER_TEST_GATE,
+                STACK_AFTER_TEST_GATE.replace("needs.test.result == 'success' ||", "needs.test.result != 'cancelled' ||"),
+                1,
+            ),
+            "skipped test route on an empty output": self.text.replace(
+                STACK_AFTER_TEST_GATE,
+                STACK_AFTER_TEST_GATE.replace("needs.scope.outputs.stack == 'true'", "needs.scope.outputs.stack != 'false'"),
+                1,
+            ),
+            "stack job without scope in needs": self.text.replace(
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]",
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [test, image]",
+                1,
+            ),
+            "stack job ignores the image": self.text.replace(
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n    if: " + STACK_AFTER_TEST_GATE,
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n    if: " + CANONICAL_GATE,
+                1,
+            ),
+            "other job downstream of test uses the stack route": self.text.replace(
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [test]\n",
+                "  docker:\n    if: " + STACK_AFTER_TEST_GATE + "\n    runs-on: ubuntu-latest\n    needs: [test]\n",
+                1,
+            ),
+            "aggregator ignores the stack lane": self.text.replace(
+                ' && [ "$STACK" = "false" ]; then', "; then", 1
+            ),
             "dependent bypasses success()": self.text.replace(
                 "  docker:\n    runs-on: ubuntu-latest\n    needs: [test]\n",
                 "  docker:\n    if: always()\n    runs-on: ubuntu-latest\n    needs: [test]\n",

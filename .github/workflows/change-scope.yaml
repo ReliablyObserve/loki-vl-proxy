@@ -1,9 +1,20 @@
 name: Change scope
 
-# Reusable workflow. Reports whether a pull request changes product paths
-# (output `product` is "true" or "false"). Everything except an unlabelled
-# pull request whose changed paths are all infra reports "true", and so does
-# any error, so a caller that skips on "false" can only skip on purpose.
+# Reusable workflow. Reports which lanes of jobs a pull request needs, as three
+# cumulative outputs, each "true" or "false", and whether it gets the baseline run:
+#   product  the Go unit tests, race, fuzz, bench, conformance and the quality
+#            report: the paths that change the proxy or its evidence
+#   stack    every job that starts a compose stack (a superset of product)
+#   perf     the A/B smoke (a superset of stack)
+#   baseline the heavy re-measure that can become the new baseline: every A/B set,
+#            every visual page and the whole VictoriaLogs matrix. "true" only for
+#            a pull request into main that carries the `baseline` or `ci-full` label or whose
+#            shipped diff is big (change_scope.py: BASELINE_*); never for a stacked
+#            pull request. Fails the other way round: any doubt is "false".
+# Everything except an unlabelled pull request whose changed paths all fall in
+# a lane reports "true" for the lanes above it, and so does any error, so a
+# caller that skips on "false" can only skip on purpose. scripts/ci/change_scope.py
+# holds the path tables.
 #
 # Callers need `contents: read` and `pull-requests: read`.
 
@@ -12,10 +23,26 @@ on:
     outputs:
       product:
         description: >-
-          "false" only when every changed path is infra; "true" otherwise,
+          "false" only when no changed path is product; "true" otherwise,
           including on any event that is not a pull request, on the ci-full
           label and on any error.
         value: ${{ jobs.scope.outputs.product }}
+      stack:
+        description: >-
+          "false" only when no changed path needs a compose stack job
+          (product implies stack); "true" otherwise.
+        value: ${{ jobs.scope.outputs.stack }}
+      perf:
+        description: >-
+          "false" only when no changed path needs the A/B smoke
+          (stack implies perf); "true" otherwise.
+        value: ${{ jobs.scope.outputs.perf }}
+      baseline:
+        description: >-
+          "true" only for a pull request into main with the baseline or ci-full
+          label or a big shipped diff; "false" on every other event, on a stacked
+          pull request and on any error.
+        value: ${{ jobs.scope.outputs.baseline }}
 
 permissions: {}
 
@@ -29,6 +56,9 @@ jobs:
       pull-requests: read
     outputs:
       product: ${{ steps.result.outputs.product }}
+      stack: ${{ steps.result.outputs.stack }}
+      perf: ${{ steps.result.outputs.perf }}
+      baseline: ${{ steps.result.outputs.baseline }}
     steps:
       - name: Decide whether the classifier applies
         id: gate
@@ -41,31 +71,42 @@ jobs:
         run: |
           set -u
           reason=""
+          diff=false
+          label_list=""
           if [ "$EVENT_NAME" != "pull_request" ]; then
             reason="event is $EVENT_NAME, not pull_request"
           elif [ -z "$PR_NUMBER" ]; then
             reason="no pull request number"
           elif labels=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.labels[].name'); then
             # Read at run time so a re-run after adding the label sees it.
+            diff=true
+            label_list=$(printf '%s\n' "$labels" | paste -sd, -)
             if printf '%s\n' "$labels" | grep -qx 'ci-full'; then
               reason="the ci-full label is set"
+            elif printf '%s\n' "$labels" | grep -qx 'baseline'; then
+              reason="the baseline label is set"
             fi
           else
             reason="could not read the pull request labels"
           fi
+          echo "diff=$diff" >> "$GITHUB_OUTPUT"
+          echo "labels=$label_list" >> "$GITHUB_OUTPUT"
           if [ -n "$reason" ]; then
             echo "force=true" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Change scope"
-              echo
-              echo "Result: \`product=true\` ($reason)."
-            } >> "$GITHUB_STEP_SUMMARY"
+            # A forced pull request is still classified (below) for the baseline.
+            if [ "$diff" != "true" ]; then
+              {
+                echo "### Change scope"
+                echo
+                echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\`, \`baseline=false\` ($reason)."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             echo "force=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check out the merge ref
-        if: ${{ !cancelled() && steps.gate.outputs.force != 'true' }}
+        if: ${{ !cancelled() && steps.gate.outputs.diff == 'true' }}
         continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -74,15 +115,24 @@ jobs:
 
       - name: Classify the changed paths
         id: classify
-        if: ${{ !cancelled() && steps.gate.outputs.force != 'true' }}
+        if: ${{ !cancelled() && steps.gate.outputs.diff == 'true' }}
         continue-on-error: true
+        env:
+          FORCE: ${{ steps.gate.outputs.force }}
+          LABELS: ${{ steps.gate.outputs.labels }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           # The merge ref's first parent is the base tip, so this is the net
           # change of the pull request. --no-renames lists both the old and
           # the new path of a rename. A failed diff leaves the list empty,
-          # which the classifier reports as product.
-          git -c core.quotepath=false diff --name-only --no-renames HEAD^1 HEAD \
-            | python3 scripts/ci/change_scope.py --files-from - \
+          # which the classifier reports as product (all three lanes true) and
+          # as no baseline.
+          force_arg=""
+          if [ "$FORCE" = "true" ]; then force_arg="--force-product"; fi
+          git -c core.quotepath=false diff --numstat --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/numstat.txt"
+          cut -f3- "$RUNNER_TEMP/numstat.txt" \
+            | python3 scripts/ci/change_scope.py --files-from - $force_arg \
+                --numstat "$RUNNER_TEMP/numstat.txt" --base-ref "$BASE_REF" --labels "$LABELS" \
                 --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Report the result
@@ -91,13 +141,39 @@ jobs:
         env:
           GATE_OUTCOME: ${{ steps.gate.outcome }}
           FORCE: ${{ steps.gate.outputs.force }}
+          DIFF: ${{ steps.gate.outputs.diff }}
           CLASSIFY_OUTCOME: ${{ steps.classify.outcome }}
-          CLASSIFIED: ${{ steps.classify.outputs.product }}
+          CLASSIFIED_PRODUCT: ${{ steps.classify.outputs.product }}
+          CLASSIFIED_STACK: ${{ steps.classify.outputs.stack }}
+          CLASSIFIED_PERF: ${{ steps.classify.outputs.perf }}
+          CLASSIFIED_BASELINE: ${{ steps.classify.outputs.baseline }}
         run: |
+          # A lane is skipped only on an explicit "false" from a classifier that
+          # ran, on a pull request that is not forced; anything else keeps it.
+          # The baseline goes the other way: only an explicit "true" from a
+          # classifier that ran on a pull request diff.
           product=true
-          if [ "$GATE_OUTCOME" = "success" ] && [ "$FORCE" = "false" ] \
-             && [ "$CLASSIFY_OUTCOME" = "success" ] && [ "$CLASSIFIED" = "false" ]; then
-            product=false
+          stack=true
+          perf=true
+          baseline=false
+          if [ "$GATE_OUTCOME" = "success" ] && [ "$DIFF" = "true" ] \
+             && [ "$CLASSIFY_OUTCOME" = "success" ]; then
+            if [ "$FORCE" = "false" ]; then
+              if [ "$CLASSIFIED_PRODUCT" = "false" ]; then product=false; fi
+              if [ "$CLASSIFIED_STACK" = "false" ]; then stack=false; fi
+              if [ "$CLASSIFIED_PERF" = "false" ]; then perf=false; fi
+            fi
+            if [ "$CLASSIFIED_BASELINE" = "true" ]; then baseline=true; fi
           fi
-          echo "product=$product" >> "$GITHUB_OUTPUT"
-          echo "Change scope: product=$product"
+          # The lanes are nested: a lane that runs keeps the ones below it, and
+          # the baseline is a product run.
+          if [ "$baseline" = "true" ]; then product=true; fi
+          if [ "$product" = "true" ]; then stack=true; fi
+          if [ "$stack" = "true" ]; then perf=true; fi
+          {
+            echo "product=$product"
+            echo "stack=$stack"
+            echo "perf=$perf"
+            echo "baseline=$baseline"
+          } >> "$GITHUB_OUTPUT"
+          echo "Change scope: product=$product stack=$stack perf=$perf baseline=$baseline"

@@ -6,14 +6,27 @@ from pathlib import Path
 
 from scripts.ci import change_scope
 from scripts.ci.change_scope import (
+    BASELINE_BASE,
+    BASELINE_ENTRY_LINES,
+    BASELINE_ENTRY_POINTS,
+    BASELINE_FILES,
+    BASELINE_LABEL,
+    BASELINE_LINES,
+    LANES,
     NON_PRODUCT,
     NOT_SHIPPED_GO,
     PRODUCT_OVERRIDES,
     SHIPPED,
     any_ships,
+    baseline,
+    baseline_reasons,
     classify,
     glob_match,
+    lane,
+    lane_flags,
+    parse_numstat,
     scope,
+    scope_lane,
     ships,
 )
 
@@ -248,15 +261,58 @@ PR_826 = [
     "scripts/ci/validate_compose.sh",
 ]
 
+# The CI-only pull requests of 2026-10-28, which ran the whole product CI before
+# the lanes existed (the file lists are the API's).
+PR_888 = [  # gRPC limit of the CI Loki stacks
+    "test/e2e-compat/loki-bench-config.yaml",
+    "test/e2e-compat/loki-bench-nocache-config.yaml",
+    "test/e2e-compat/loki-local-config.yaml",
+]
+PR_889 = [  # A/B matrix loop
+    "bench/ab/README.md",
+    "bench/ab/perf_matrix.py",
+    "bench/ab/pr_smoke.py",
+    "bench/ab/tests/fixtures/raw-unwrap-sum-without-w8-w9.json",
+    "bench/ab/tests/test_matrix_loop.py",
+    "bench/ab/tests/test_pr_smoke.py",
+]
+PR_890 = [  # conformance job reads the unit results
+    ".github/workflows/ci.yaml",
+    "scripts/ci/race_sensitive_tests.sh",
+    "scripts/ci/tests/test_race_sensitive_tests.py",
+    "scripts/ci/tests/test_scope_wiring.py",
+]
+PR_891 = [  # image built once, e2e-ui shards merged
+    ".github/workflows/ci.yaml",
+    "docs/testing-e2e-guide.md",
+    "docs/testing.md",
+    "test/e2e-ui/README.md",
+]
+PR_892 = [  # PR quality report reads the base commit back
+    ".github/workflows/ci.yaml",
+    ".github/workflows/pr-quality-report.yaml",
+    "docs/testing.md",
+    "scripts/ci/collect_quality_metrics.sh",
+    "scripts/ci/tests/test_collect_quality_metrics.py",
+]
+
 INFRA_PRS = {
     807: PR_807,
-    810: PR_810,
     811: PR_811,
     814: PR_814,
     815: PR_815,
     816: PR_816,
     817: PR_817,
     805: PR_805,
+    890: PR_890,
+    891: PR_891,
+}
+STACK_PRS = {
+    810: PR_810,  # the compose file CI starts
+    888: PR_888,  # loki-local-config.yaml
+}
+PERF_PRS = {
+    889: PR_889,
 }
 PRODUCT_PRS = {
     808: PR_808,
@@ -264,6 +320,7 @@ PRODUCT_PRS = {
     813: PR_813,
     804: PR_804,
     582: PR_582,
+    892: PR_892,  # P3: the quality report's own scripts run the whole CI, by design
 }
 
 # Pull requests that change nothing users receive, and ones that do.
@@ -308,6 +365,11 @@ RULE_CASES = [
     ("scripts/ci/check_conformance.py", True, "P3"),
     ("scripts/ci/change_scope.py", True, "P4"),
     (".github/workflows/change-scope.yaml", True, "P4"),
+    ("bench/ab/selection.py", True, "P5"),
+    ("bench/ab/stack.py", True, "P5"),
+    ("bench/ab/shapes.json", True, "P5"),
+    ("bench/ab/docker-compose.ab.yml", True, "P5"),
+    ("bench/ab/docker-compose.ab-loki-uncached.yml", True, "P5"),
     # Infra rules.
     (".github/workflows/ci.yaml", False, "I1"),
     (".github/dependabot.yml", False, "I1"),
@@ -320,8 +382,8 @@ RULE_CASES = [
     ("security/nuclei/templates/a.yaml", False, "I3"),
     ("bench/ab/history/2026-10-20.json", False, "I4"),
     ("bench/ab/results/run-1/summary.json", False, "I4"),
-    ("test/e2e-compat/docker-compose.yml", False, "I5"),
     ("test/e2e-compat/docker-compose.bench.yml", False, "I5"),
+    ("test/e2e-compat/docker-compose.review.yml", False, "I5"),
     ("test/e2e-fleet/docker-compose.http-discovery.yml", False, "I5"),
     ("test/e2e-ui/package.json", False, "I6"),
     ("test/e2e-ui/package-lock.json", False, "I6"),
@@ -345,6 +407,29 @@ RULE_CASES = [
     (".trivyignore.yaml", False, "I12"),
     (".hadolint.yaml", False, "I12"),
     (".golangci.yml", False, "I12"),
+    ("ROADMAP.md", False, "I13"),
+    ("bench/ab/README.md", False, "I13"),
+    ("bench/visual/README.md", False, "I13"),
+    ("test/e2e-ui/README.md", False, "I13"),
+    ("test/e2e-compat/results/bench-warm-v1.50.0.md", False, "I13"),
+    ("test/e2e-compat/loki-bench-config.yaml", False, "I14"),
+    ("test/e2e-compat/loki-bench-nocache-config.yaml", False, "I14"),
+    # Lanes: not the full product, but not nothing.
+    ("test/e2e-compat/docker-compose.yml", False, "S1"),
+    ("test/e2e-fleet/docker-compose.yml", False, "S1"),
+    ("test/e2e-pipeline/docker-compose.yml", False, "S1"),
+    ("test/e2e-compat/loki-local-config.yaml", False, "S1"),
+    ("test/e2e-compat/grafana-datasources.yaml", False, "S1"),
+    ("test/e2e-compat/grafana-dashboards.yaml", False, "S1"),
+    ("test/e2e-compat/vmauth.yml", False, "S1"),
+    ("test/e2e-compat/vmauth-ring.yml", False, "S1"),
+    ("test/e2e-compat/vmalert-rules.yml", False, "S1"),
+    ("test/e2e-compat/vm-scrape.yml", False, "S1"),
+    ("test/e2e-compat/nginx-tail.conf", False, "S1"),
+    ("bench/ab/perf_matrix.py", False, "S2"),
+    ("bench/ab/pr_smoke.py", False, "S2"),
+    ("bench/ab/tests/test_pr_smoke.py", False, "S2"),
+    ("bench/ab/tests/fixtures/raw-unwrap-sum-without-w8-w9.json", False, "S2"),
     # Product by default.
     ("cmd/loki-vl-proxy/main.go", True, "P-default"),
     ("internal/proxy/proxy.go", True, "P-default"),
@@ -354,13 +439,23 @@ RULE_CASES = [
     ("charts/loki-vl-proxy/values.yaml", True, "P-default"),
     ("conformance/registry/behaviours/x.yaml", True, "P-default"),
     ("conformance/reports/roadmap.md", True, "P-default"),
+    ("conformance/reports/coverage-map.md", True, "P-default"),
+    ("conformance/README.md", True, "P-default"),
+    ("charts/loki-vl-proxy/README.md", True, "P-default"),
+    ("internal/proxy/README.md", True, "P-default"),
+    ("cmd/loki-vl-proxy/README.md", True, "P-default"),
+    ("test/e2e-compat/log-generator.py", True, "P-default"),
+    ("test/e2e-compat/query-semantics-matrix.json", True, "P-default"),
+    ("test/e2e-fleet/sd-peers.json", True, "P-default"),
+    ("test/e2e-compat/dashboards/bench-resources.json", True, "P-default"),
     ("test/e2e-compat/compatibility-matrix.json", True, "P-default"),
     ("test/e2e-compat/series_count_aggregation_test.go", True, "P-default"),
     ("test/e2e-ui/playwright.config.ts", True, "P-default"),
     ("test/e2e-ui/tests/drilldown.spec.ts", True, "P-default"),
     ("bench/visual/package.json", True, "P-default"),
     ("bench/visual/requirements.txt", True, "P-default"),
-    ("bench/ab/compose.yml", True, "P-default"),
+    ("bench/parity/run.py", True, "P-default"),
+    ("bench/visual/plan.py", True, "P-default"),
     ("bench/cmd/main.go", True, "P-default"),
 ]
 
@@ -373,11 +468,11 @@ class ClassifyTests(unittest.TestCase):
 
     def test_every_rule_has_a_case(self):
         covered = {rule for _, _, rule in RULE_CASES}
-        declared = {rule for rule, _ in PRODUCT_OVERRIDES + NON_PRODUCT}
+        declared = {rule for rule, _ in PRODUCT_OVERRIDES + NON_PRODUCT} | {rule for rule, _, _ in LANES}
         self.assertEqual(declared - covered, set())
 
     def test_rule_ids_are_unique(self):
-        ids = [rule for rule, _ in PRODUCT_OVERRIDES + NON_PRODUCT]
+        ids = [rule for rule, _ in PRODUCT_OVERRIDES + NON_PRODUCT] + [rule for rule, _, _ in LANES]
         self.assertEqual(len(ids), len(set(ids)))
 
     def test_overrides_beat_broad_infra_globs(self):
@@ -409,7 +504,8 @@ class ClassifyTests(unittest.TestCase):
 
     def test_matching_is_case_sensitive(self):
         self.assertEqual(classify("Docs/reference/config.md"), (True, "P-default"))
-        self.assertEqual(classify("readme.md"), (True, "P-default"))
+        self.assertEqual(classify("README.MD"), (True, "P-default"))
+        self.assertEqual(classify("Test/e2e-ui/README.md"), (True, "P-default"))
 
     def test_unknown_path_is_product(self):
         self.assertEqual(classify("something/new/file.txt"), (True, "P-default"))
@@ -463,6 +559,406 @@ class RealPullRequestTests(unittest.TestCase):
     def test_fixtures_are_not_empty(self):
         for files in list(INFRA_PRS.values()) + list(PRODUCT_PRS.values()):
             self.assertGreater(len(files), 0)
+
+
+class LaneTests(unittest.TestCase):
+    def test_lane_flags_are_nested(self):
+        self.assertEqual(lane_flags("infra"), {"product": False, "stack": False, "perf": False, "baseline": False})
+        self.assertEqual(lane_flags("perf"), {"product": False, "stack": False, "perf": True, "baseline": False})
+        self.assertEqual(lane_flags("stack"), {"product": False, "stack": True, "perf": True, "baseline": False})
+        self.assertEqual(lane_flags("product"), {"product": True, "stack": True, "perf": True, "baseline": False})
+
+    def test_the_highest_lane_wins(self):
+        self.assertEqual(scope_lane(["docs/a.md"]), "infra")
+        self.assertEqual(scope_lane(["docs/a.md", "bench/ab/perf_matrix.py"]), "perf")
+        self.assertEqual(scope_lane(["bench/ab/perf_matrix.py", "test/e2e-compat/vmauth.yml"]), "stack")
+        self.assertEqual(scope_lane(["test/e2e-compat/vmauth.yml", "internal/proxy/proxy.go"]), "product")
+        self.assertEqual(scope_lane(["bench/ab/perf_matrix.py", "something/unknown.txt"]), "product")
+
+    def test_empty_and_untrusted_lists_are_product(self):
+        self.assertEqual(scope_lane([]), "product")
+        self.assertEqual(scope_lane(["", "  "]), "product")
+        self.assertEqual(scope_lane(["docs/a.md", "../x.md"]), "product")
+
+    def test_a_lane_glob_never_beats_an_infra_rule_or_an_override(self):
+        # bench/ab/** is the perf lane, but its history and results stay infra
+        # and its shared modules stay product.
+        self.assertEqual(lane("bench/ab/history/trend.md"), ("infra", "I4"))
+        self.assertEqual(lane("bench/ab/results/daily-control.json"), ("infra", "I4"))
+        self.assertEqual(lane("bench/ab/shapes.json"), ("product", "P5"))
+        self.assertEqual(lane("bench/ab/README.md"), ("infra", "I13"))
+        self.assertEqual(lane("bench/ab/daily.py"), ("perf", "S2"))
+
+    def test_markdown_is_infra_only_where_nothing_reads_it(self):
+        for path in ("ROADMAP.md", "bench/README.md", "bench/parity/README.md", "test/e2e-ui/README.md"):
+            with self.subTest(path):
+                self.assertEqual(lane(path)[0], "infra")
+        for path in (
+            "charts/loki-vl-proxy/README.md",       # shipped, and read by the flag documentation gate
+            "conformance/README.md",
+            "conformance/registry/README.md",
+            "conformance/reports/coverage-map.md",  # generated and compared by the conformance gate
+            "conformance/reports/roadmap.md",
+            "cmd/loki-vl-proxy/README.md",
+            "internal/proxy/README.md",
+            "pkg/a/README.md",
+            "dashboard/README.md",
+            "alerting/README.md",
+        ):
+            with self.subTest(path):
+                self.assertEqual(lane(path)[0], "product")
+
+    def test_the_gate_data_stays_product(self):
+        for path in (
+            "conformance/registry/behaviours/x.yaml",
+            "conformance/registry/generated/wiring.json",
+            "bench/visual/plan.py",
+            "bench/visual/spec.json",
+            "bench/parity/run.py",
+            "bench/parity/corpus.py",
+            "bench/ab/selection.py",
+            "bench/ab/stack.py",
+            "bench/ab/shapes.json",
+            "test/e2e-compat/log-generator.py",
+            "test/e2e-compat/compatibility-matrix.json",
+            "scripts/ci/check_conformance.py",
+        ):
+            with self.subTest(path):
+                self.assertEqual(lane(path)[0], "product")
+
+    def test_a_pure_go_change_is_the_full_product(self):
+        for files in (
+            ["internal/proxy/proxy.go"],
+            ["internal/proxy/proxy.go", "internal/proxy/proxy_test.go", "docs/a.md"],
+            ["cmd/loki-vl-proxy/main.go"],
+            ["go.mod", "go.sum"],
+            ["Dockerfile"],
+            ["charts/loki-vl-proxy/values.yaml"],
+            ["internal/translator/testdata/fuzz/FuzzX/abc"],
+        ):
+            with self.subTest(files=files):
+                self.assertEqual(scope_lane(files), "product")
+                self.assertTrue(scope(files))
+                self.assertEqual(lane_flags(scope_lane(files)), {"product": True, "stack": True, "perf": True, "baseline": False})
+
+    def test_the_ci_only_pull_requests_of_2026_10_28(self):
+        # Each ran the whole product CI before the lanes. #892 still does, by design (P3).
+        expected = {
+            888: ("stack", {"test/e2e-compat/loki-local-config.yaml": "S1"}),
+            889: ("perf", {"bench/ab/perf_matrix.py": "S2", "bench/ab/pr_smoke.py": "S2"}),
+            890: ("infra", {}),
+            891: ("infra", {"test/e2e-ui/README.md": "I13"}),
+            892: ("product", {"scripts/ci/collect_quality_metrics.sh": "P3"}),
+        }
+        files = {888: PR_888, 889: PR_889, 890: PR_890, 891: PR_891, 892: PR_892}
+        for number, (want, rules) in expected.items():
+            with self.subTest(pr=number):
+                self.assertEqual(scope_lane(files[number]), want)
+                for path, rule in rules.items():
+                    self.assertEqual(lane(path)[1], rule)
+
+    def test_stack_pull_requests(self):
+        for number, files in STACK_PRS.items():
+            with self.subTest(pr=number):
+                self.assertEqual(scope_lane(files), "stack")
+                self.assertFalse(scope(files))
+
+    def test_perf_pull_requests(self):
+        for number, files in PERF_PRS.items():
+            with self.subTest(pr=number):
+                self.assertEqual(scope_lane(files), "perf")
+                self.assertFalse(scope(files))
+
+    def test_infra_pull_requests_are_infra_not_a_lane(self):
+        for number, files in INFRA_PRS.items():
+            with self.subTest(pr=number):
+                self.assertEqual(scope_lane(files), "infra")
+
+
+@unittest.skipUnless(TRACKED, "git ls-files is not available")
+class LaneRepositoryTests(unittest.TestCase):
+    # Every path a user receives, and every path the Go, chart and image jobs
+    # read, must run the full product CI.
+    PRODUCT_ROOTS = ("cmd/", "internal/", "pkg/", "charts/", "dashboard/", "alerting/")
+    PRODUCT_FILES = ("go.mod", "go.sum", "Dockerfile", ".dockerignore")
+
+    def test_everything_that_ships_is_the_full_product(self):
+        for path in TRACKED:
+            if ships(path):
+                with self.subTest(path=path):
+                    self.assertEqual(lane(path)[0], "product")
+
+    def test_nothing_under_a_product_root_leaves_the_product_lane(self):
+        for path in TRACKED:
+            if path.startswith(self.PRODUCT_ROOTS) or path in self.PRODUCT_FILES:
+                with self.subTest(path=path):
+                    self.assertEqual(lane(path)[0], "product")
+
+    def test_gate_inputs_are_product_except_the_declared_generated_reports(self):
+        reports = {
+            "conformance/registry/generated/perf-evidence.json",
+            "conformance/reports/performance.md",
+            "conformance/reports/gaps.md",
+        }
+        for path in TRACKED:
+            if path.startswith("conformance/") and path not in reports:
+                with self.subTest(path=path):
+                    self.assertEqual(lane(path)[0], "product")
+
+    def test_the_other_harnesses_and_their_shared_modules_are_product(self):
+        for path in TRACKED:
+            if path.startswith(("bench/visual/", "bench/parity/", "bench/cmd/", "bench/internal/")) \
+                    and not path.endswith(".md"):
+                with self.subTest(path=path):
+                    self.assertEqual(lane(path)[0], "product")
+
+    def test_the_perf_lane_holds_only_files_no_other_job_reads(self):
+        for path in TRACKED:
+            if lane(path)[0] == "perf":
+                with self.subTest(path=path):
+                    self.assertTrue(path.startswith("bench/ab/"), path)
+                    self.assertNotIn(path, ("bench/ab/selection.py", "bench/ab/stack.py", "bench/ab/shapes.json"))
+
+    def test_the_stack_lane_holds_only_stack_inputs(self):
+        for path in TRACKED:
+            if lane(path)[0] == "stack":
+                with self.subTest(path=path):
+                    self.assertTrue(path.startswith(("test/e2e-compat/", "test/e2e-fleet/", "test/e2e-pipeline/")), path)
+
+    def test_the_stack_configs_are_mounted_by_a_ci_compose_file(self):
+        mounted = (REPO / "test/e2e-compat/docker-compose.yml").read_text()
+        for path in TRACKED:
+            if lane(path) == ("stack", "S1") and path.startswith("test/e2e-compat/") and not path.endswith("docker-compose.yml"):
+                with self.subTest(path=path):
+                    self.assertIn(path.rsplit("/", 1)[1], mounted)
+
+    def test_every_lane_rule_has_a_tracked_file(self):
+        for rule, name, globs in LANES:
+            with self.subTest(rule=rule):
+                self.assertTrue(any(lane(path)[0] == name and lane(path)[1] == rule for path in TRACKED))
+
+
+def numstat(*changes):
+    """paths and changed-line counts as `git diff --numstat` prints them: (path, lines) with the lines split
+    as added and deleted."""
+    return [(path, lines) for path, lines in changes]
+
+
+def many(count, lines_each=1, prefix="internal/proxy/f"):
+    return numstat(*[(f"{prefix}{i}.go", lines_each) for i in range(count)])
+
+
+def decide(changes, base="main", labels=()):
+    paths = [path for path, _ in changes]
+    return baseline(paths, changes, base, labels)[0]
+
+
+# Recorded pull requests of #678 to #894 (shipped changed lines, shipped files, lines in the entry points) and
+# whether the trigger selects them; the replay in the pull request description lists the 200.
+RECORDED = [
+    (862, 1739, 13, 222, True),   # metric query_range reuses buckets: both rules
+    (846, 331, 7, 299, True),     # canonical tenants: the entry points
+    (760, 1710, 8, 2, True),      # sum by (detected_level): lines
+    (747, 335, 2, 333, True),     # pattern line filters: the entry points
+    (739, 663, 9, 282, True),     # sum without over unwrap: the entry points
+    (704, 1565, 9, 76, True),     # unwrap conversion error: lines
+    (877, 510, 8, 17, False),     # near-now label lists
+    (746, 1364, 10, 32, False),   # large, below the bar
+    (758, 1090, 3, 0, False),
+    (743, 86, 1, 86, False),      # an entry point, but a small edit
+    (883, 50, 1, 0, False),       # a small Go fix
+    (857, 31, 3, 16, False),
+    (855, 22, 4, 15, False),
+    (860, 7, 1, 0, False),
+]
+
+
+class BaselineTests(unittest.TestCase):
+    def test_a_big_go_refactor_triggers(self):
+        self.assertTrue(decide(numstat(("internal/proxy/postprocess.go", 900), ("internal/proxy/metric_agg.go", 800))))
+        self.assertTrue(decide(many(BASELINE_FILES + 1)))
+
+    def test_a_small_go_fix_does_not(self):
+        self.assertFalse(decide(numstat(("internal/proxy/metric_agg.go", 30), ("internal/proxy/metric_agg_test.go", 90))))
+        self.assertFalse(decide(numstat(("go.mod", 2), ("go.sum", 2))))
+
+    def test_the_thresholds_are_strict(self):
+        self.assertFalse(decide(numstat(("internal/proxy/a.go", BASELINE_LINES))))
+        self.assertTrue(decide(numstat(("internal/proxy/a.go", BASELINE_LINES + 1))))
+        self.assertFalse(decide(many(BASELINE_FILES)))
+        self.assertTrue(decide(many(BASELINE_FILES + 1)))
+        # The entry points: at least, not more than.
+        self.assertFalse(decide(numstat(("internal/proxy/proxy.go", BASELINE_ENTRY_LINES - 1))))
+        self.assertTrue(decide(numstat(("internal/proxy/proxy.go", BASELINE_ENTRY_LINES))))
+
+    def test_entry_point_lines_add_up_across_files(self):
+        half = BASELINE_ENTRY_LINES // 2
+        self.assertTrue(decide(numstat(("internal/proxy/proxy.go", half), ("internal/translator/translator.go", half))))
+        self.assertFalse(decide(numstat(("internal/proxy/proxy.go", half), ("internal/proxy/metric_agg.go", 500))))
+
+    def test_each_entry_point_counts_and_others_do_not(self):
+        for path in BASELINE_ENTRY_POINTS:
+            with self.subTest(path):
+                self.assertTrue(ships(path))
+                self.assertTrue(decide(numstat((path, BASELINE_ENTRY_LINES))))
+        for path in ("internal/proxy/postprocess.go", "internal/proxy/backend.go", "internal/cache/cache.go",
+                     "internal/translator/normalize.go", "cmd/loki-vl-proxy/main.go"):
+            with self.subTest(path):
+                self.assertFalse(decide(numstat((path, BASELINE_ENTRY_LINES * 5))))
+
+    def test_the_entry_points_are_real_files(self):
+        for path in BASELINE_ENTRY_POINTS:
+            with self.subTest(path):
+                self.assertTrue((REPO / path).is_file(), path)
+
+    def test_tests_testdata_and_non_shipped_paths_do_not_count(self):
+        self.assertFalse(decide(numstat(("internal/proxy/big_test.go", 9000), ("internal/proxy/testdata/g.json", 9000),
+                                        ("docs/a.md", 9000), ("bench/ab/perf_matrix.py", 9000),
+                                        ("conformance/registry/behaviours/x.yaml", 9000))))
+        self.assertFalse(decide(numstat(*[(f"internal/proxy/t{i}_test.go", 5) for i in range(BASELINE_FILES + 20)])))
+
+    def test_charts_and_the_image_count_as_shipped(self):
+        self.assertTrue(decide(numstat(("charts/loki-vl-proxy/templates/deployment.yaml", BASELINE_LINES + 1))))
+        self.assertTrue(decide(numstat(("Dockerfile", BASELINE_LINES + 1))))
+
+    def test_a_stacked_pull_request_never_gets_it(self):
+        big = many(BASELINE_FILES + 5)
+        for base in ("feature/parent", "release/1.x", "", "Main", "main2"):
+            with self.subTest(base):
+                self.assertFalse(decide(big, base=base))
+                self.assertFalse(decide(big, base=base, labels=[BASELINE_LABEL]))
+        self.assertTrue(decide(big, base=BASELINE_BASE))
+
+    def test_the_label_forces_it(self):
+        small = numstat(("internal/proxy/metric_agg.go", 3))
+        self.assertTrue(decide(small, labels=[BASELINE_LABEL]))
+        self.assertTrue(decide(small, labels=["bug", BASELINE_LABEL]))
+        self.assertEqual(baseline(["internal/proxy/metric_agg.go"], small, "main", [BASELINE_LABEL])[1],
+                         ["the `baseline` label is set"])
+
+    def test_the_label_forces_it_on_an_infra_pull_request_too(self):
+        infra = numstat(("docs/a.md", 3))
+        self.assertFalse(decide(infra))
+        self.assertTrue(decide(infra, labels=[BASELINE_LABEL]))
+
+    def test_ci_full_forces_it(self):
+        infra = numstat((".github/workflows/ci.yaml", 400))
+        self.assertTrue(decide(infra, labels=["ci-full"]))
+        self.assertTrue(decide(numstat(("internal/proxy/metric_agg.go", 3)), labels=["ci-full"]))
+
+    def test_ci_full_on_a_stacked_pull_request_does_not_force_it(self):
+        self.assertEqual(baseline(["internal/proxy/a.go"], [("internal/proxy/a.go", 3)], "perf/x", ["ci-full"]),
+                         (False, []))
+
+    def test_ci_full_does_not_stop_a_big_change_from_triggering(self):
+        self.assertTrue(decide(many(BASELINE_FILES + 1), labels=["ci-full"]))
+
+    def test_an_infra_lane_diff_never_triggers_by_size(self):
+        self.assertFalse(decide(numstat(("test/e2e-compat/loki-local-config.yaml", 9000))))
+        self.assertFalse(decide(numstat(("bench/ab/perf_matrix.py", 9000))))
+
+    def test_no_diff_no_baseline(self):
+        self.assertEqual(baseline([], [], "main", []), (False, []))
+        self.assertEqual(baseline(["internal/proxy/a.go"], [], "main", []), (False, []))
+
+    def test_reasons_name_what_tripped(self):
+        reasons = baseline_reasons(numstat(*[(f"internal/proxy/f{i}.go", 40) for i in range(41)]))
+        self.assertEqual(len(reasons), 2)
+        self.assertIn("1640 changed lines", reasons[0])
+        self.assertIn("41 shipped files", reasons[1])
+        self.assertIn("changed lines in the files every query passes through",
+                      baseline_reasons(numstat(("internal/proxy/proxy.go", 200)))[0])
+
+    def test_numstat_parsing(self):
+        text = "10\t5\tinternal/proxy/a.go\n-\t-\tcharts/loki-vl-proxy/logo.png\nbad line\n3\tx\tb.go\n0\t0\t\n"
+        self.assertEqual(parse_numstat(text), [("internal/proxy/a.go", 15), ("charts/loki-vl-proxy/logo.png", 0)])
+        self.assertEqual(parse_numstat(""), [])
+
+    def test_a_binary_file_is_a_file_with_no_lines(self):
+        changes = parse_numstat("".join(f"-\t-\tcharts/loki-vl-proxy/img{i}.png\n" for i in range(BASELINE_FILES + 1)))
+        self.assertTrue(decide(changes))
+
+    def test_recorded_pull_requests(self):
+        for number, lines, files, entry, want in RECORDED:
+            with self.subTest(pr=number):
+                changes = [("internal/proxy/proxy.go", entry)] if entry else []
+                rest, count = lines - entry, files - (1 if entry else 0)
+                if rest:
+                    changes += [(f"internal/proxy/x{i}.go", rest // count + (1 if i < rest % count else 0))
+                                for i in range(count)]
+                self.assertEqual(sum(n for _, n in changes), lines)
+                self.assertEqual(decide(changes), want)
+
+    def test_the_recorded_fixture_covers_both_rules(self):
+        # 862 and 760 trip the line count, 846 and 747 only the entry points: neither rule alone is enough.
+        by_lines = {n for n, lines, files, entry, _ in RECORDED if lines > BASELINE_LINES}
+        by_entry = {n for n, lines, files, entry, _ in RECORDED if entry >= BASELINE_ENTRY_LINES}
+        self.assertTrue(by_lines - by_entry and by_entry - by_lines)
+
+    def test_the_constants(self):
+        self.assertEqual((BASELINE_LINES, BASELINE_FILES, BASELINE_ENTRY_LINES), (1500, 40, 150))
+        self.assertEqual(BASELINE_LABEL, "baseline")
+        self.assertEqual(BASELINE_BASE, "main")
+        self.assertEqual(len(BASELINE_ENTRY_POINTS), len(set(BASELINE_ENTRY_POINTS)))
+
+
+class BaselineCLITests(unittest.TestCase):
+    def run_cli(self, *args, stdin=None):
+        return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], input=stdin, capture_output=True,
+                              text=True, cwd=REPO)
+
+    def run_with(self, files, stat, *args):
+        with tempfile.TemporaryDirectory() as tmp:
+            listing = Path(tmp) / "numstat"
+            listing.write_text("".join(f"{n}\t0\t{p}\n" for p, n in stat))
+            out = Path(tmp) / "out"
+            result = self.run_cli("--files-from", "-", "--numstat", str(listing), "--github-output", str(out), *args,
+                                  stdin="".join(p + "\n" for p in files))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return out.read_text()
+
+    def test_a_big_pull_request_into_main(self):
+        stat = [(f"internal/proxy/f{i}.go", 1) for i in range(41)]
+        self.assertEqual(self.run_with([p for p, _ in stat], stat, "--base-ref", "main"), BASELINE_FLAGS)
+
+    def test_a_small_pull_request_into_main(self):
+        stat = [("internal/proxy/f.go", 9)]
+        self.assertEqual(self.run_with([p for p, _ in stat], stat, "--base-ref", "main"), ALL_FLAGS)
+
+    def test_a_stacked_pull_request(self):
+        stat = [(f"internal/proxy/f{i}.go", 1) for i in range(41)]
+        self.assertEqual(self.run_with([p for p, _ in stat], stat, "--base-ref", "feature/x", "--labels", "baseline"),
+                         ALL_FLAGS)
+
+    def test_no_base_ref_means_not_a_pull_request(self):
+        stat = [(f"internal/proxy/f{i}.go", 1) for i in range(41)]
+        self.assertEqual(self.run_with([p for p, _ in stat], stat), ALL_FLAGS)
+
+    def test_the_label_on_an_infra_pull_request_gets_the_full_product_ci_and_the_baseline(self):
+        # The workflow passes --force-product for a ci-full or baseline label.
+        stat = [("docs/a.md", 3)]
+        self.assertEqual(self.run_with(["docs/a.md"], stat, "--base-ref", "main", "--labels", "bug,baseline",
+                                       "--force-product"), BASELINE_FLAGS)
+
+    def test_ci_full_on_an_infra_pull_request_gets_the_full_product_ci_and_the_baseline(self):
+        stat = [(".github/workflows/ci.yaml", 400)]
+        self.assertEqual(self.run_with([".github/workflows/ci.yaml"], stat, "--base-ref", "main", "--labels",
+                                       "ci-full", "--force-product"), BASELINE_FLAGS)
+
+    def test_an_unreadable_numstat_means_no_baseline_and_every_lane(self):
+        out = self.run_cli("--files-from", "-", "--numstat", "/nonexistent/numstat", "--base-ref", "main",
+                           stdin="internal/proxy/f.go\n").stdout
+        self.assertEqual(out, ALL_FLAGS)
+
+    def test_the_summary_says_why(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            listing, summary = Path(tmp) / "n", Path(tmp) / "s.md"
+            listing.write_text("2000\t0\tinternal/proxy/a.go\n")
+            self.run_cli("--files-from", "-", "--numstat", str(listing), "--base-ref", "main",
+                         "--summary", str(summary), stdin="internal/proxy/a.go\n")
+            text = summary.read_text()
+            self.assertIn("`baseline=true`", text)
+            self.assertIn("Baseline run: 2000 changed lines in shipped paths", text)
 
 
 class ShipsTests(unittest.TestCase):
@@ -673,11 +1169,18 @@ class RepositoryTests(unittest.TestCase):
 
     def test_no_rule_is_dead(self):
         dead = []
-        for rule, globs in PRODUCT_OVERRIDES + NON_PRODUCT:
+        for rule, globs in PRODUCT_OVERRIDES + NON_PRODUCT + [(r, g) for r, _, g in LANES]:
             for glob in globs:
                 if not any(glob_match(glob, path) for path in TRACKED):
                     dead.append("%s: %s" % (rule, glob))
         self.assertEqual(dead, [], "globs that match no tracked file")
+
+
+ALL_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=false\n"
+NO_FLAGS = "product=false\nstack=false\nperf=false\nbaseline=false\n"
+STACK_FLAGS = "product=false\nstack=true\nperf=true\nbaseline=false\n"
+PERF_FLAGS = "product=false\nstack=false\nperf=true\nbaseline=false\n"
+BASELINE_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=true\n"
 
 
 class CLITests(unittest.TestCase):
@@ -693,7 +1196,7 @@ class CLITests(unittest.TestCase):
             result = self.run_cli("--files-from", "-", "--github-output", str(out),
                                   stdin="docs/a.md\nREADME.md\n")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(out.read_text(), "product=false\n")
+            self.assertEqual(out.read_text(), NO_FLAGS)
             self.assertEqual(result.stdout, "")
 
     def test_github_output_is_appended(self):
@@ -702,19 +1205,19 @@ class CLITests(unittest.TestCase):
             out.write_text("other=1\n")
             self.run_cli("--files-from", "-", "--github-output", str(out),
                          stdin="internal/proxy/proxy.go\n")
-            self.assertEqual(out.read_text(), "other=1\nproduct=true\n")
+            self.assertEqual(out.read_text(), "other=1\n" + ALL_FLAGS)
 
     def test_stdout_without_github_output(self):
         result = self.run_cli("--files-from", "-", stdin="docs/a.md\n")
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "product=false\n")
+        self.assertEqual(result.stdout, NO_FLAGS)
 
     def test_files_from_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             listing = Path(tmp) / "files.txt"
             listing.write_text("docs/a.md\ninternal/x.go\n")
             result = self.run_cli("--files-from", str(listing))
-            self.assertEqual(result.stdout, "product=true\n")
+            self.assertEqual(result.stdout, ALL_FLAGS)
 
     def test_force_product(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -724,7 +1227,7 @@ class CLITests(unittest.TestCase):
                                   "--github-output", str(out), "--summary", str(summary),
                                   stdin="docs/a.md\n")
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(out.read_text(), "product=true\n")
+            self.assertEqual(out.read_text(), ALL_FLAGS)
             self.assertIn("--force-product", summary.read_text())
 
     def test_empty_input_is_product(self):
@@ -733,12 +1236,12 @@ class CLITests(unittest.TestCase):
                 out = Path(tmp) / "out"
                 result = self.run_cli("--files-from", "-", "--github-output", str(out), stdin=stdin)
                 self.assertEqual(result.returncode, 0)
-                self.assertEqual(out.read_text(), "product=true\n")
+                self.assertEqual(out.read_text(), ALL_FLAGS)
 
     def test_no_input_is_product(self):
         result = self.run_cli()
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "product=true\n")
+        self.assertEqual(result.stdout, ALL_FLAGS)
 
     def test_missing_file_is_product(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -746,14 +1249,14 @@ class CLITests(unittest.TestCase):
             result = self.run_cli("--files-from", str(Path(tmp) / "absent"),
                                   "--github-output", str(out))
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(out.read_text(), "product=true\n")
+            self.assertEqual(out.read_text(), ALL_FLAGS)
 
     def test_unknown_argument_is_product(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
             result = self.run_cli("--bogus", "--github-output", str(out))
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(out.read_text(), "product=true\n")
+            self.assertEqual(out.read_text(), ALL_FLAGS)
 
     def test_unwritable_summary_does_not_change_the_result(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -762,7 +1265,24 @@ class CLITests(unittest.TestCase):
                                   "--summary", str(Path(tmp) / "no" / "such" / "dir"),
                                   stdin="docs/a.md\n")
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(out.read_text(), "product=false\n")
+            self.assertEqual(out.read_text(), NO_FLAGS)
+
+    def test_stack_and_perf_lanes_report_their_flags(self):
+        cases = {
+            "test/e2e-compat/loki-local-config.yaml\ndocs/a.md\n": STACK_FLAGS,
+            "bench/ab/perf_matrix.py\nbench/ab/README.md\n": PERF_FLAGS,
+            "bench/ab/perf_matrix.py\ntest/e2e-compat/vmauth.yml\n": STACK_FLAGS,
+            "bench/ab/perf_matrix.py\ninternal/proxy/proxy.go\n": ALL_FLAGS,
+            "test/e2e-compat/vmauth.yml\nscripts/ci/change_scope.py\n": ALL_FLAGS,
+        }
+        for stdin, want in cases.items():
+            with self.subTest(stdin=stdin), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "out"
+                self.run_cli("--files-from", "-", "--github-output", str(out), stdin=stdin)
+                self.assertEqual(out.read_text(), want)
+
+    def test_unknown_argument_without_output_prints_every_lane(self):
+        self.assertEqual(self.run_cli("--bogus").stdout, ALL_FLAGS)
 
     def test_ships_true(self):
         result = self.run_cli("--files-from", "-", "--ships", stdin="docs/a.md\ninternal/x.go\n")
@@ -806,7 +1326,7 @@ class CLITests(unittest.TestCase):
 
     def test_product_output_is_unchanged_by_the_ships_flag_existing(self):
         result = self.run_cli("--files-from", "-", stdin="internal/x_test.go\n")
-        self.assertEqual(result.stdout, "product=true\n")
+        self.assertEqual(result.stdout, ALL_FLAGS)
 
     def test_summary_table(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -818,15 +1338,22 @@ class CLITests(unittest.TestCase):
             self.assertIn("| `docs/a.md` | infra | I9 |", text)
             self.assertIn("| `scripts/ci/run_zap_scan.sh` | product | P1 |", text)
             self.assertIn("| `internal/x.go` | product | P-default |", text)
-            self.assertIn("`product=true`", text)
+            self.assertIn("`product=true`, `stack=true`, `perf=true`, `baseline=false`", text)
+
+    def test_summary_names_the_lane_of_each_path(self):
+        text = change_scope.render_summary(
+            ["bench/ab/perf_matrix.py", "test/e2e-compat/vmauth.yml", "docs/a.md"], lane_flags("stack"))
+        self.assertIn("| `bench/ab/perf_matrix.py` | perf | S2 |", text)
+        self.assertIn("| `test/e2e-compat/vmauth.yml` | stack | S1 |", text)
+        self.assertIn("`product=false`, `stack=true`, `perf=true`, `baseline=false`", text)
 
     def test_summary_escapes_pipes(self):
-        text = change_scope.render_summary(["docs/a|b.md"], False)
+        text = change_scope.render_summary(["docs/a|b.md"], lane_flags("infra"))
         self.assertIn("docs/a\\|b.md", text)
 
     def test_summary_is_capped(self):
         paths = ["docs/%d.md" % i for i in range(change_scope.MAX_SUMMARY_ROWS + 7)]
-        text = change_scope.render_summary(paths, False)
+        text = change_scope.render_summary(paths, lane_flags("infra"))
         self.assertIn("7 more paths not listed.", text)
 
 

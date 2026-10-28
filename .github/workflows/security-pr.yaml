@@ -201,7 +201,7 @@ jobs:
     name: Security / runtime
     runs-on: ubuntu-latest
     needs: [security-static, scope]
-    if: ${{ !cancelled() && needs.security-static.result == 'success' && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && needs.security-static.result == 'success' && needs.scope.outputs.stack != 'false' }}
     env:
       PROXY_IMAGE: loki-vl-proxy:security-ci
       PROXY_BASE_URL: http://127.0.0.1:13100

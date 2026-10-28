@@ -297,6 +297,10 @@ What to look at on the result (`comment.md`, `summary-<set>.json`, `meta.json`):
   --runs 5 --end <e> --set <set> --target ... --out refresh.raw.json`, then
   `report.py summarize raw.json ... --refresh refresh.raw.json`, does the same by hand.
 
+### The baseline run
+
+On a pull request into `main` that carries the `baseline` label, or whose shipped diff is big (see "Baseline run" in `CONTRIBUTING.md`), the smoke measures every shape of every set (`selection.py --all`) at the smoke's ranges instead of the selected ones, with a 90 minute budget (about 35 minutes on a hosted runner). `pr_smoke.py --baseline-candidate DIR` then writes `over-2x-loki.json` (the committed list with the set × range pairs this run measured replaced by this run's rows), `acceptance-day.json` (one day, in the shape of an entry of `history/acceptance.json`; a report, because `acceptance.json` is rebuilt from the history lines by every daily run), `candidate.md` and `meta.json`, and the comment ends with a "new baseline candidate" section. The CI job uploads DIR as the `perf-baseline-candidate` artifact. Nothing is written under `history/`: a person can copy `over-2x-loki.json` over the committed list in a pull request (the conformance gate checks it against the registry locks). The profile is the smoke's (4 runs, 1h, the smoke's line rate), not the daily run's (7 runs, up to 24h), so the numbers show the direction, and the 24h and 7d rows of the committed list stay as they are; the daily run that follows the merge writes the real new distribution.
+
 ### Reading the comment
 
 | column | meaning |
