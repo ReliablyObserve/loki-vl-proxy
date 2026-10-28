@@ -57,3 +57,10 @@ gap:
   proxy: 'the filter Loki simplification describes, anchored where Loki anchors'
   planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

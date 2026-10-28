@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A regexp label matcher matches what Loki matches, not any value that
+  contains the pattern** (contributed by @clain23). Loki compiles a selector
+  matcher such as `{app=~"api|web"}`, what a Grafana multi-value variable
+  sends, as `^(?s:api|web)$` (Prometheus `labels.NewMatcher`,
+  `vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76`), so it
+  selects app `api` and `web` only. The proxy passed the pattern to
+  VictoriaLogs' `field:~"re"`, a substring match, so it also selected
+  `api-gateway`, `my-api` and `webhook`, and `{namespace=~"nch"}` selected
+  `anch`; nothing errors, panels and log lists just hold more. Only the derived
+  `service_name` matcher was anchored. Every route that takes a selector was
+  affected (query, query_range, labels, label values, series, index volume and
+  stats, detected labels and fields, patterns, tail), and so was the
+  multi-tenant fan-out: `{__tenant_id__=~"prod"}` also queried `prod-eu` and
+  `nonprod`, where Loki matches tenant ids with the anchored matcher
+  (`pkg/querier/multi_tenant_querier.go:421`). A label filter after a parser
+  (`| status=~"5.."`) is not anchored as written in Loki: it is simplified
+  first (`pkg/logql/log/filter.go:645` `parseRegexpFilter`, `:696`
+  `RegexSimplifier.Simplify`), so a literal or a literal alternation compares
+  whole values, `api.*`, `.*api` and a factored alternation such as
+  `api|api-gateway` compare by substring, `=~""` keeps every line, `GET|`
+  equals `GET`, and only the rest is anchored as `^(?:re)$`. The proxy matched
+  all of these by substring. It now sends VictoriaLogs the filter Loki's
+  matcher describes: an exact filter for a whole-value literal, VictoriaLogs'
+  own match-all and non-empty filters for `.*` and `.+`, the substring regexp
+  for a `.*`-wrapped literal, exact filters joined by `OR` for a label
+  filter's literal alternation, and the anchored regexp otherwise. 40
+  patterns, both operators, over 28 values (prefixes of each other, empty, a
+  newline) select what Loki v3.7.7 selects on VictoriaLogs v1.49.0 and v1.53.0
+  storage, where the previous release matched 26 of 80 selector and 36 of 80
+  label-filter answers. Line filters (`|~`, `!~`) are unchanged: they are substring
+  regexps in Loki too. **Breaking:** a selector written for substring matching
+  selects fewer streams, as in Loki: `{namespace=~"prod"}` no longer selects
+  `production` and `{pod=~"api"}` no longer selects `api-7d9`; write
+  `.*prod.*` where a substring is meant, and check rules migrated with
+  `rules-migrate`. Not covered: case-insensitive equality on non-ASCII values in
+  a label filter (Loki lowercases both sides, the proxy folds case). Registry:
+  `profiles/stream-selector-regexp-anchoring`,
+  `profiles/label-filter-regexp-anchoring`.
+
 ## [2.42.0] - 2026-10-28
 
 ### Fixed

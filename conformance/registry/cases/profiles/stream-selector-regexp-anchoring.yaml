@@ -61,3 +61,10 @@ gap:
   proxy: 'the whole-value match, as an exact, substring or anchored VictoriaLogs filter'
   planned_test: 'TestCompat_LabelMatcherRegexpAnchoring (test/e2e-compat, group core); TestLabelRegexpMatchesWhatLokiMatches (internal/translator); TestLabelMatcherRegexpAnchoredOnEveryRoute and TestTenantMatcherRegexpIsAnchored (internal/proxy)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
