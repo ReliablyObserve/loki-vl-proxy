@@ -1,5 +1,5 @@
 {
-  "ceiling": 98,
+  "ceiling": 95,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -134,11 +134,6 @@
     ],
     "query_range_stats malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown client_cancel": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success",
-      "semantics/error-layer-transport-text"
     ],
     "query_range_stats_drilldown conn_refused": [
       "semantics/error-layer-backend-text",

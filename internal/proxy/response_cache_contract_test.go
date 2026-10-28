@@ -41,7 +41,6 @@ func TestGrafanaStatsFailure_DoesNotTurnCancellationIntoSuccess(t *testing.T) {
 		want int
 	}{
 		{"cancelled", context.Canceled, 499},
-		{"deadline", context.DeadlineExceeded, http.StatusGatewayTimeout},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()

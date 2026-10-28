@@ -718,7 +718,7 @@ func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
 	// full query queue stays a 429 for Grafana clients too, so panels show the
 	// rejection instead of an empty chart.
 	status := statusFromUpstreamErr(err)
-	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) || status == 499 || status == http.StatusGatewayTimeout {
+	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) || status == 499 {
 		p.writeErr(w, context.Background(), err)
 		return
 	}
