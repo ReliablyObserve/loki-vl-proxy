@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.40.0] - 2026-10-28
+## [2.41.0] - 2026-10-28
 
 ### Fixed
 
@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   times Loki's value) because an outer aggregation over a binary expression is
   translated from its first operand; the join itself matches Loki, and the row
   stays open for that path.
+
+## [2.40.0] - 2026-10-28
+
+### Fixed
 
 - **A zero divisor of `/` and `%` is NaN, like Loki.** `sum(rate({app="api"}[5m])) / 0`,
   `5 / <a series whose value is 0>`, `-1 / 0` and `1 / 0` answered `+Inf` or `-Inf`
