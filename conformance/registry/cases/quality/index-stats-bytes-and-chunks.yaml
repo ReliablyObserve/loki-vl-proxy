@@ -4,11 +4,18 @@ proves:
   - loki_api_v1_index_stats
 consumer: drilldown
 why: |
-  Loki's /index/stats `bytes` and `chunks` are its chunk accounting
-  (compressed chunk sizes, chunk count). VictoriaLogs has neither; the proxy
-  reports `chunks` as the stream count and `bytes` as an estimate from the
-  stored line lengths. The differential run marks a bytes or chunks difference
-  with this case only; a streams or entries difference is never covered by it.
+  Loki's /index/stats `bytes` and `chunks` are its chunk accounting: `bytes`
+  sums each overlapping chunk's uncompressed size, rounded to whole KB when
+  the chunk is indexed and multiplied back by 1024
+  (pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-174,
+  pkg/logproto/extensions.go:119-123; unflushed chunks
+  pkg/ingester/instance.go:809-814), pro rata by time like entries; `chunks`
+  counts the chunks. VictoriaLogs has neither; the proxy reports `chunks` as
+  the stream count and `bytes` as 100 bytes per entry. Summing the stored line
+  lengths (`sum_len(_msg)`) would make VictoriaLogs read the message column on
+  every index/stats call, which count() and the stream hash do not. The
+  differential run and the visual gate mark a bytes or chunks difference with
+  this case only; a streams or entries difference is never covered by it.
 request:
   method: GET
   path: /loki/api/v1/index/stats
@@ -28,7 +35,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/label_handlers.go handleIndexStats; docs/KNOWN_ISSUES.md'
-  loki: 'pkg/storage index stats from chunk refs (bytes, chunks)'
-  proxy: 'chunks = streams, bytes estimated'
+  loki: 'pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-174 chunk KB; pkg/logproto/extensions.go:119-123 bytes = KB<<10'
+  proxy: 'chunks = streams, bytes = 100 x entries'
   planned_test: 'bench/parity diff rule (documented facet)'
   clusters: []

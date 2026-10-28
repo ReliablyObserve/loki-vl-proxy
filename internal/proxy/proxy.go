@@ -2263,43 +2263,49 @@ const (
 
 // exceedsLokiRangeResolution reports whether Loki would reject the request's
 // range parameters for exceeding lokiMaxPointsPerSeries. It applies Loki's
-// defaults (end=now, start=min(end, now)-since, since=1h). A missing step uses
-// Loki's range/250 default, which never exceeds the limit; unparseable or
-// inverted parameters are left to the handlers that already report them.
+// defaults (lokiRangeBounds). A missing step uses Loki's range/250 default,
+// which never exceeds the limit; unparseable or inverted parameters are left
+// to the handlers that already report them.
 func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
 	if !ok {
 		return false
 	}
-	end := now
+	start, end, ok := lokiRangeBounds(r, now)
+	return ok && end.After(start) && end.Sub(start)/step > lokiMaxPointsPerSeries
+}
+
+// lokiRangeBounds is the window Loki reads a range request for
+// (pkg/loghttp/params.go:83-120 determineBounds): end defaults to now, start to
+// min(end, now) minus since, and since to one hour (params.go:23). ok is false
+// when a given start, end or since does not parse.
+func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok bool) {
+	end = now
 	if raw := strings.TrimSpace(r.FormValue("end")); raw != "" {
 		ns, ok := parseLokiTimeToUnixNano(raw)
 		if !ok {
-			return false
+			return start, end, false
 		}
 		end = time.Unix(0, ns)
 	}
-	var start time.Time
 	if raw := strings.TrimSpace(r.FormValue("start")); raw != "" {
 		ns, ok := parseLokiTimeToUnixNano(raw)
 		if !ok {
-			return false
+			return start, end, false
 		}
-		start = time.Unix(0, ns)
-	} else {
-		since := time.Hour
-		if raw := strings.TrimSpace(r.FormValue("since")); raw != "" {
-			if since, ok = parsePositiveStepDuration(raw); !ok {
-				return false
-			}
-		}
-		endOrNow := end
-		if end.After(now) {
-			endOrNow = now
-		}
-		start = endOrNow.Add(-since)
+		return time.Unix(0, ns), end, true
 	}
-	return end.After(start) && end.Sub(start)/step > lokiMaxPointsPerSeries
+	since := time.Hour
+	if raw := strings.TrimSpace(r.FormValue("since")); raw != "" {
+		if since, ok = parsePositiveStepDuration(raw); !ok {
+			return start, end, false
+		}
+	}
+	endOrNow := end
+	if end.After(now) {
+		endOrNow = now
+	}
+	return endOrNow.Add(-since), end, true
 }
 
 // queryRangeResponseCacheTTL is shared by full-response admission and freshness
