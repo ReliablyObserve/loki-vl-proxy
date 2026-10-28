@@ -700,6 +700,17 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// (non-empty groupBy or byExplicit aggregate-all).
 	// quantile_over_time reads VictoriaLogs' counts of the converted value.
 	gated, quantileCounts := spec, readsQuantileCounts(manualFunc, spec)
+	// rate_counter under sum: when no series holds two samples, the windows
+	// rate 0 and only their presence is read (rate_counter_singletons.go).
+	var counterProof <-chan bool
+	counterSpec, counterFunc := spec, manualFunc
+	if ungrouped, ok := rateCounterUnderSum(r.FormValue("query")); ok && manualFunc == "rate_counter" {
+		counterProof = p.proveRateCounterOneSample(r.Context(), withoutUnwrapGate(spec).BaseQuery, field, startTS.Add(-origSpec.Window), endTS)
+		manualFunc = "unwrap_rate"
+		if ungrouped {
+			spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit = nil, nil, true
+		}
+	}
 	spec, rawSpec, statsAggFunc := unwrapManualSpecs(spec, manualFunc)
 	switch field {
 	case "__count__":
@@ -793,6 +804,14 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			p.writeErr(w, r.Context(), err)
 			return true
 		}
+		if ok && counterProof != nil {
+			if !<-counterProof {
+				break
+			}
+			markQueryStepsRoute(r.Context(), "counter-one-sample-"+strconv.Itoa(route))
+			p.writeHitsRangeMetricMatrix(w, rateCounterZeroFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
+			return true
+		}
 		if ok {
 			markQueryStepsRoute(r.Context(), "buckets-"+strconv.Itoa(route))
 			p.writeHitsRangeMetricMatrix(w, manualFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
@@ -805,6 +824,14 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// for every one of them, so the fetch is extended unconditionally — leaving
 	// it to a subset made the window open at BOTH ends for the rest.
 	fetchEnd := endTS.Add(time.Nanosecond)
+	if counterProof != nil {
+		// Not proven: the per-row evaluator answers as before.
+		manualFunc, spec = counterFunc, counterSpec
+		_, rawSpec, _ = unwrapManualSpecs(spec, manualFunc)
+		if origSpec.Window < step {
+			rawSpec.BaseQuery = withWindowPhaseFilter(r.Context(), rawSpec.BaseQuery, startTS, step, origSpec.Window)
+		}
+	}
 	markQueryStepsRoute(r.Context(), "raw")
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
@@ -2431,6 +2458,11 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 	encodedBytes := 0
 	windowNS := window.Nanoseconds()
 	windowSec := window.Seconds()
+	// rate_counter over one-sample series: the unwrap rate's windows, each 0.
+	zero := manualFunc == rateCounterZeroFunc
+	if zero {
+		manualFunc = "unwrap_rate"
+	}
 	mergedUnwrap := unwrapBucketAgg(manualFunc) != ""
 
 	keys := make([]string, 0, len(series))
@@ -2514,6 +2546,9 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			value := sum
 			if manualFunc == "rate" || manualFunc == "bytes_rate" || manualFunc == "unwrap_rate" {
 				value = sum / windowSec
+			}
+			if zero {
+				value = 0
 			}
 			// The points are written as encoding/json writes [][]interface{}{{float64
 			// seconds, value text}}, without a value per point.
