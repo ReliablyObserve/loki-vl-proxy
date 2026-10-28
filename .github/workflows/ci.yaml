@@ -51,8 +51,33 @@ jobs:
 
       # internal/proxy alone takes 480-600 s under -race with coverage on the hosted
       # runners, at Go's default 10 minute per-binary timeout; give it headroom.
+      #
+      # -json keeps every test's outcome: the conformance job reads the
+      # ./internal/... part of it (its evidence check) instead of running the
+      # unit tests a second time. The log shows the package lines as it runs and,
+      # on a failure, the output of each failing test.
       - name: Unit tests
-        run: go test ./... -count=1 -race -timeout=20m -coverprofile=coverage.out
+        run: |
+          set -o pipefail
+          status=0
+          go test ./... -count=1 -race -timeout=20m -coverprofile=coverage.out -json \
+            | tee unit-results-full.json \
+            | jq -rR --unbuffered 'fromjson? | select(.Action == "output" and .Test == null) | .Output | rtrimstr("\n") | select(. != "PASS" and (startswith("coverage:") | not))' \
+            || status=$?
+          # The outcome of every test of ./internal/... (the set the conformance gate checks), without the output.
+          jq -c 'select(.Test != null and (.Action == "pass" or .Action == "fail" or .Action == "skip")
+                        and (.Package | startswith("github.com/ReliablyObserve/Loki-VL-proxy/internal/")))
+                 | {Action, Package, Test, Elapsed}' unit-results-full.json > unit-results.json
+          if [ "$status" -ne 0 ]; then
+            echo "::group::failing tests"
+            jq -r 'select(.Action == "fail") | "\(.Package)\t\(.Test // "")"' unit-results-full.json | sort -u | tee failed.tsv
+            echo "::endgroup::"
+            jq -Rn '[inputs] | map({(.): true}) | add // {}' failed.tsv > failed.json
+            jq -r --slurpfile failed failed.json \
+              'select(.Action == "output") | select($failed[0][.Package + "\t" + (.Test // "")]) | .Output | rtrimstr("\n")' \
+              unit-results-full.json | head -400
+          fi
+          exit "$status"
 
       # bench/ is a separate Go module, so the root ./... above does not cover it.
       # Its tests include the benchmark Loki config drift guard.
@@ -86,6 +111,14 @@ jobs:
           path: |
             coverage.out
             coverage-cache.out
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: unit-results
+          path: unit-results.json
+          retention-days: 1
+          if-no-files-found: error
 
   tuple-contract:
     runs-on: ubuntu-latest
@@ -296,9 +329,40 @@ jobs:
           echo "race-stress shards: $SHARD_RESULT (scope product=$PRODUCT)"
           exit 1
 
+  # Builds the proxy image once for the jobs that run a stack (tuple-smoke,
+  # e2e-compat, e2e-fleet, e2e-ui): each loads this artifact instead of building
+  # the same image (about 45 s of build and cache export per job). It does not
+  # wait for `test`, so the image is ready when they start.
+  image:
+    needs: [scope]
+    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: loki-vl-proxy:ci
+          outputs: type=docker,dest=${{ runner.temp }}/proxy-image.tar
+          cache-from: type=gha,scope=e2e-proxy
+          cache-to: type=gha,mode=max,scope=e2e-proxy
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: proxy-image
+          path: ${{ runner.temp }}/proxy-image.tar
+          retention-days: 1
+          if-no-files-found: error
+
   tuple-smoke:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, image]
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
       PROXY_URL: http://127.0.0.1:13100
@@ -314,16 +378,17 @@ jobs:
           go-version: "1.27.3"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+      # Built once by the `image` job.
+      - name: Download proxy image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=e2e-proxy
-          cache-to: type=gha,mode=max,scope=e2e-proxy
+          name: proxy-image
+          path: ${{ runner.temp }}/proxy-image
+
+      - name: Load proxy image
+        run: |
+          docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
+          docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
       - name: Start e2e stack
         working-directory: test/e2e-compat
@@ -686,33 +751,42 @@ jobs:
 
   conformance:
     name: conformance
-    needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    # Downstream of `test`: its unit results feed the evidence check, so this job
+    # does not run the unit tests again (only the few that differ under -race). Like every job that needs `test` it is
+    # skipped when `test` fails or is skipped.
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
 
+      # Unit results feed the evidence check: an item whose state claims
+      # `proven` must have a test that declares it and passed in this run (the
+      # `test` job's run, under -race).
+      - name: Unit test results of the test job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: unit-results
+          path: unit-results
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.27.3"
           cache: true
 
-      # Unit results feed the evidence check: an item whose state claims
-      # `proven` must have a test that declares it and passed in this run.
-      - name: Unit tests with machine-readable results
-        # The gate decides; this step only names the failing tests so a red
-        # gate ("a test declaring it failed") shows which test and why.
+      # A few tests skip or assert less under the race detector (the metadata scan
+      # simulations, the buffered-read allocation bounds): they run once more here,
+      # plain, and their outcome replaces the -race one in the gate, as when this job
+      # ran every unit test without -race.
+      - name: Tests that behave differently under the race detector
+        # The gate decides; this step only names the failing tests.
         run: |
-          go test ./internal/... -count=1 -json > /tmp/unit-results.json || {
-            echo "::warning::unit tests failed; the conformance gate decides whether that matters"
-            jq -r 'select(.Action=="fail" and .Test != null) | "\(.Package) \(.Test)"' /tmp/unit-results.json | sort -u
-            jq -r 'select(.Action=="output" and .Test != null) | .Output' /tmp/unit-results.json | grep -E -- '--- FAIL|_test\.go:[0-9]+:' | head -50 || true
-          }
+          scripts/ci/race_sensitive_tests.sh unit-results/race-sensitive.json || \
+            echo "::warning::tests run without the race detector failed; the conformance gate decides whether that matters"
 
       - name: Conformance gate
-        run: python3 scripts/ci/check_conformance.py --go-results /tmp/unit-results.json
+        run: python3 scripts/ci/check_conformance.py --go-results unit-results/unit-results.json --go-results unit-results/race-sensitive.json
 
       - name: A/B harness unit tests (selection, PR comment, history)
         run: python3 -m unittest discover -s bench/ab/tests
@@ -793,7 +867,7 @@ jobs:
 
   e2e-compat-group:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, image]
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ci
     strategy:
@@ -821,16 +895,17 @@ jobs:
           go-version: "1.27.3"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+      # Built once by the `image` job.
+      - name: Download proxy image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=e2e-proxy
-          cache-to: type=gha,mode=max,scope=e2e-proxy
+          name: proxy-image
+          path: ${{ runner.temp }}/proxy-image
+
+      - name: Load proxy image
+        run: |
+          docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
+          docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
       - name: Start e2e stack
         working-directory: test/e2e-compat
@@ -903,7 +978,7 @@ jobs:
 
   e2e-fleet:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, image]
     env:
       PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
@@ -916,16 +991,17 @@ jobs:
           go-version: "1.27.3"
           cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+      # Built once by the `image` job.
+      - name: Download proxy image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=fleet-proxy
-          cache-to: type=gha,mode=max,scope=fleet-proxy
+          name: proxy-image
+          path: ${{ runner.temp }}/proxy-image
+
+      - name: Load proxy image
+        run: |
+          docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
+          docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
       - name: Start 3-proxy fleet
         working-directory: test/e2e-fleet
@@ -943,31 +1019,34 @@ jobs:
 
   e2e-ui:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, image]
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ui
     strategy:
       fail-fast: false
       matrix:
+        # Each shard pays for a stack start (about 70 s), so the 9 former shards
+        # (one tag or spec each) are merged into 5 that keep the same tests: the
+        # critical path stays explore-core. `commands` holds one `playwright test`
+        # option list per line; the shards together select exactly the tests the 9
+        # selected before (checked with `playwright test --list`).
         shard:
-          - name: datasource
-            command: tests/datasource.spec.ts
           - name: explore-core
-            command: --grep @explore-core
-          - name: explore-tail
-            command: --grep @explore-tail
-          - name: drilldown-core
-            command: --grep @drilldown-core
-          - name: drilldown-multitenant
-            command: --grep @drilldown-mt
-          - name: explore-ops
-            command: --grep @explore-ops
-          - name: explore-mt
-            command: --grep @explore-mt
-          - name: explore-regression
-            command: --grep @regression
-          - name: explore-comprehensive
-            command: --grep @comprehensive-ui
+            commands: |
+              --grep @explore-core
+          - name: regression-datasource
+            commands: |
+              --grep @regression
+              tests/datasource.spec.ts
+          - name: drilldown-core-tail
+            commands: |
+              --grep @drilldown-core|@explore-tail
+          - name: comprehensive-drilldown-mt
+            commands: |
+              --grep @comprehensive-ui|@drilldown-mt
+          - name: ops-mt
+            commands: |
+              --grep @explore-ops|@explore-mt
     name: e2e-ui (${{ matrix.shard.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -992,16 +1071,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ms-playwright-
 
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+      # Built once by the `image` job.
+      - name: Download proxy image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=e2e-proxy
-          cache-to: type=gha,mode=max,scope=e2e-proxy
+          name: proxy-image
+          path: ${{ runner.temp }}/proxy-image
+
+      - name: Load proxy image
+        run: |
+          docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
+          docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
       - name: Start e2e stack (with log generator for UI tests)
         working-directory: test/e2e-compat
@@ -1032,12 +1112,27 @@ jobs:
         env:
           GRAFANA_URL: http://127.0.0.1:3002
           PROXY_URL: http://127.0.0.1:13100
-          SHARD_COMMAND: ${{ matrix.shard.command }}
+          SHARD_COMMANDS: ${{ matrix.shard.commands }}
         run: |
-          # The shard command is a short option list (for example --grep @regression):
-          # split it into words, then pass each word through quoted.
-          read -r -a shard_args <<< "$SHARD_COMMAND"
-          npx playwright test "${shard_args[@]}"
+          # Each line of the shard's commands is a short option list (for example
+          # --grep @regression): split it into words, then pass each word through
+          # quoted. One `playwright test` run per line; every line runs even when an
+          # earlier one failed, and the step fails if any did. With more than one
+          # line, each run keeps its report and results in its own run-N folder.
+          status=0
+          count="$(grep -c . <<< "$SHARD_COMMANDS")"
+          n=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            n=$((n + 1))
+            read -r -a shard_args <<< "$line"
+            if [ "$count" -gt 1 ]; then
+              PLAYWRIGHT_HTML_REPORT="playwright-report/run-$n" npx playwright test --output="test-results/run-$n" "${shard_args[@]}" || status=$?
+            else
+              npx playwright test "${shard_args[@]}" || status=$?
+            fi
+          done <<< "$SHARD_COMMANDS"
+          exit "$status"
 
       - name: Upload Playwright artifacts
         if: always()

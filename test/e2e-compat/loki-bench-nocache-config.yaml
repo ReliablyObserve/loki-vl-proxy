@@ -9,8 +9,14 @@ auth_enabled: false
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
-  grpc_server_max_recv_msg_size: 8388608
-  grpc_server_max_send_msg_size: 8388608
+  # 64 MiB, not 8 MiB: with sharding on, a querier returns a sharded inner result
+  # to the frontend in one gRPC message, and a large answer passes 8 MiB (8,399,905
+  # bytes for a 1h range on the A/B stack: "received message larger than max", then
+  # the client waited for query_timeout). The querier->frontend client limits
+  # (frontend_worker.grpc_client_config) default to 100 MiB, so these server limits
+  # are the binding ones and both sides agree.
+  grpc_server_max_recv_msg_size: 67108864
+  grpc_server_max_send_msg_size: 67108864
   # Extend write timeout beyond the default 30s to handle large range-query
   # responses (13–53 KB/req × slow serialisation paths) at c=100.
   http_server_write_timeout: 120s
