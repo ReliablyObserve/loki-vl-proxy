@@ -42,7 +42,9 @@ why: |
   answer, so a moved window proves only its missing ranges.
 
   Not covered: a line holding one key twice (VictoriaLogs' unpack_logfmt keeps
-  the last value, Loki the first), `| json` (VictoriaLogs renders an array as
+  the last value, Loki the first), a line holding a sampled key and an
+  unsampled one Loki names alike (`a.b` sampled, `a_b` not; the key sample is
+  kept 10 minutes per query), `| json` (VictoriaLogs renders an array as
   text, Loki skips it), other parsers, `| drop`, `| keep`, `| label_format`,
   `| line_format`, `without`, and data where a series holds two samples: those
   keep the per-row evaluator and its open gap

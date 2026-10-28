@@ -104,10 +104,12 @@ why: |
   covers the whole range before the lookup that names the line (E6 and E7 took
   2.0-4.3x Loki cold at 6h to 24h). When the metric's counting stats query
   reads -backend-heavy-query-min-range or more, the first evaluation window
-  (start-range, start] is looked up beside it (at most three flagged rows); a
-  row Loki fails on there answers first, in the confirmation too, so the
-  answer does not depend on which read finishes first, and the metric's
-  queries are cancelled. A clean first window leaves the earliest flagged
+  (start-range, start] is looked up before the read's flagged buckets (at
+  most three flagged rows), and beside the read when the same tenant's query
+  answered Loki's conversion error within 10 minutes (the metric's queries
+  are then cancelled once a row Loki fails on is found); a query that never
+  errs pays nothing. A row Loki fails on there answers first, so the answer
+  does not depend on which read finishes first. A clean first window leaves the earliest flagged
   bucket of the stats read as the reported line. The reported line therefore
   depends on whether the read is heavy (a cold whole window) or not (a moved
   window's missing steps); both are lines Loki fails on, and Loki's own choice
@@ -150,5 +152,5 @@ perf:
   locked: false
   locked_since: null
   effort_exception:
-    reason: 'E2 (quantile_over_time over json) cold runs 1.2-1.7x Loki at 6h (531 ms against 336 on the 2026-10-28 A/B stack, loki-defaults): VictoriaLogs'' value-count read alone takes about as long as Loki''s whole answer; the proxy''s part (in-place read, counting sort, distinct-value ranks) is 83-106 ms of a 9 MB answer at 24h. E6 and E7 (Loki 400) are below Loki since the first-window lookup (6h and 22h cold 13-21 ms against 39-426 ms)'
-    follow_up: 'a coarser value histogram from VictoriaLogs for the quantile (fewer distinct values per bucket), which needs Loki''s exact rank on the merged buckets'
+    reason: 'E2 (quantile_over_time over json) cold runs 1.4x Loki at 6h (405 ms against 284 on the 2026-10-28 A/B stack, loki-defaults; was 2.7x): VictoriaLogs'' value-count read alone takes about as long as Loki''s whole answer, the proxy''s part is 101 ms of a 9 MB answer at 24h (benchmark). E6 and E7 (Loki 400) run 1.2-1.6x at 6h on a query''s first heavy read (one VictoriaLogs counting read before the first-window lookup) and below Loki once the query erred lately (22h cold 17-21 ms against 84-426)'
+    follow_up: 'a coarser value histogram from VictoriaLogs for the quantile, which needs Loki''s exact rank on the merged buckets; for E6 and E7 a first-window lookup beside every heavy read costs clean queries a VictoriaLogs search, so it stays gated on a recent error'

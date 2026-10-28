@@ -119,5 +119,5 @@ perf:
   locked: false
   locked_since: null
   effort_exception:
-    reason: 'U14 (duration()), U9 (bytes()) and U4 run 1.1-1.9x Loki at 1h and 6h (warm and refresh 13-25 ms against 9-15 ms; U9 bytes() 1h cold 228 against 121): one VictoriaLogs read per moved window, at VictoriaLogs'' floor of about 15 ms for a stream-filter search; the proxy takes 1 ms'
-    follow_up: 'resolve the selector''s stream ids once and query by _stream_id, so a small window skips VictoriaLogs'' stream index search'
+    reason: 'U14 (duration()), U9 (bytes()) and U4 run 1.1-1.7x Loki at 1h and warm or refresh at 6h (13-18 ms against 6-10 ms; 6h cold U4 1.4x, U9 1.3x on the 2026-10-28 A/B stack): one VictoriaLogs read per window or moved window, at VictoriaLogs'' floor of about 15 ms for a stream-filter search (`{service_name="cache-redis"} | limit 1` over 6 minutes 16 ms, `* | limit 1` 2 ms); the proxy takes 1 ms. U14 6h cold (2.2x, base 1.9x) and warm (2.0x) are not covered by this exception'
+    follow_up: 'resolve the selector''s stream ids once and query by _stream_id, so a small window skips VictoriaLogs'' stream index search (untested)'
