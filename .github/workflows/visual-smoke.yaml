@@ -149,6 +149,7 @@ jobs:
           name: visual-montage
           path: |
             ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/data/lvl-dd-logs-pill-multi-json/1h/*.json
             ${{ env.OUT }}/*.json
             ${{ env.OUT }}/*.md
             ${{ env.OUT }}/*.log
