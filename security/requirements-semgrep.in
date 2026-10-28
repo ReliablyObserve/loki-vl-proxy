@@ -1,1 +1,14 @@
+# Input of requirements-semgrep.txt. semgrep 1.173.0 through 1.182.1 require
+# exactly mcp==1.29.0 and opentelemetry-*~=1.37 (~=0.58b0), both with open
+# advisories, so the lock is compiled with requirements-semgrep.overrides,
+# which replaces those requirements. Recompile from this directory with:
+#
+#   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#     --exclude-newer <date at least 7 days ago> \
+#     --override requirements-semgrep.overrides \
+#     requirements-semgrep.in -o requirements-semgrep.txt
+#
+# A Dependabot pull request that bumps semgrep recompiles with pip-compile,
+# which has no overrides and brings the old pins back; recompile it with the
+# command above (test_tool_pins fails until the overrides are back).
 semgrep==1.181.0

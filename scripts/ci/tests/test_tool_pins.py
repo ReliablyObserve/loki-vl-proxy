@@ -91,6 +91,23 @@ class ToolPinTests(unittest.TestCase):
             for block in blocks:
                 self.assertIn("--hash=sha256:", block, f"{name}: {block.splitlines()[0]}")
 
+    def test_semgrep_lock_keeps_the_fixed_overrides(self):
+        # semgrep pins mcp and OpenTelemetry to releases with open advisories.
+        # A Dependabot semgrep bump recompiles with pip-compile, which has no
+        # overrides, and would bring them back.
+        text = (REPO / "security" / "requirements-semgrep.txt").read_text()
+
+        def version(name):
+            found = re.search(rf"^{re.escape(name)}==([\d.]+)", text, re.MULTILINE)
+            self.assertIsNotNone(found, name)
+            return tuple(int(part) for part in found.group(1).split("."))
+
+        self.assertGreaterEqual(version("mcp"), (1, 30, 0))
+        self.assertGreaterEqual(version("opentelemetry-api"), (1, 45, 1))
+        self.assertIn("--override requirements-semgrep.overrides", text.split("\n", 2)[1])
+        workflow = (REPO / ".github" / "workflows" / "security-heavy.yaml").read_text()
+        self.assertIn("pip install --no-deps --require-hashes -r security/requirements-semgrep.txt", workflow)
+
     def test_violations_are_reported(self):
         digest = "a" * 64
         self.assertEqual(

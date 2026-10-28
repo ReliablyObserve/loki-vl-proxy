@@ -83,7 +83,10 @@ jobs:
 
       - name: Semgrep scan
         run: |
-          pip install --require-hashes -r security/requirements-semgrep.txt
+          # --no-deps: the lock carries every dependency with hashes and fixed
+          # mcp and OpenTelemetry releases that semgrep's own metadata forbids
+          # (see security/requirements-semgrep.in).
+          pip install --no-deps --require-hashes -r security/requirements-semgrep.txt
           semgrep scan \
             --config p/default \
             --config p/dockerfile \

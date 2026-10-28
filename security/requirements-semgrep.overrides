@@ -1,0 +1,14 @@
+# uv --override file for requirements-semgrep.txt (see requirements-semgrep.in).
+# semgrep pins mcp and the OpenTelemetry packages to releases with open
+# advisories; no semgrep release up to 1.182.1 allows the fixed ones. These
+# requirements replace semgrep's own. The lock is therefore installed with
+# `pip install --no-deps --require-hashes`, because pip refuses a set that
+# contradicts semgrep's metadata. `semgrep scan` and `semgrep --trace` run
+# unchanged with them; remove this file when a semgrep release allows the fixed
+# versions on its own.
+mcp==1.30.0
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-requests==0.66b1
+opentelemetry-instrumentation-threading==0.66b1
