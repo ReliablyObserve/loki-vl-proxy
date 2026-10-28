@@ -29,7 +29,10 @@ type firstWindowRun struct {
 	heavy                       time.Duration
 }
 
-func (fw firstWindowRun) do(t *testing.T, rows []emuRow, query string, start, end int64, step time.Duration) (code int, body, contentType string, statsCancelled bool, elapsed time.Duration) {
+// statsAnswered reports whether a stats call answered; with slowStats none
+// should, the early answer cancelling them (a call may also be cancelled
+// before the emulator sees it).
+func (fw firstWindowRun) do(t *testing.T, rows []emuRow, query string, start, end int64, step time.Duration) (code int, body, contentType string, statsAnswered bool, elapsed time.Duration) {
 	t.Helper()
 	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
 	inner := emu.handler()
@@ -73,7 +76,8 @@ func (fw firstWindowRun) do(t *testing.T, rows []emuRow, query string, start, en
 	params := url.Values{"query": {query}, "start": {strconv.FormatInt(start/1e9, 10)}, "end": {strconv.FormatInt(end/1e9, 10)}, "step": {strconv.FormatInt(int64(step/time.Second), 10)}}
 	began := time.Now()
 	res := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-	return res.Code, res.Body.String(), res.Header().Get("Content-Type"), cancelled.Load(), time.Since(began)
+	_ = cancelled.Load()
+	return res.Code, res.Body.String(), res.Header().Get("Content-Type"), closeOnce.Load(), time.Since(began)
 }
 
 // firstWindowRows: lines every 50 s over [from, to), each pod's value a number
@@ -122,9 +126,9 @@ func TestUnwrapFirstWindowAnswersBeforeTheHeavyRead(t *testing.T) {
 		fromRows := start - int64(window) - int64(time.Hour)
 
 		rows := firstWindowRows(rnd, fromRows, end+int64(time.Hour), shiftAll(first, start-int64(window)-fromRows))
-		code, body, ct, cancelled, elapsed := firstWindowRun{slowStats: true, heavy: 6 * time.Hour}.do(t, rows, query, start, end, step)
-		if code != http.StatusBadRequest || !cancelled || elapsed > 5*time.Second {
-			t.Fatalf("%s: early route %d (stats cancelled %v, %v) %s", label, code, cancelled, elapsed, body)
+		code, body, ct, answered, elapsed := firstWindowRun{slowStats: true, heavy: 6 * time.Hour}.do(t, rows, query, start, end, step)
+		if code != http.StatusBadRequest || answered || elapsed > 5*time.Second {
+			t.Fatalf("%s: early route %d (a stats call answered %v, %v) %s", label, code, answered, elapsed, body)
 		}
 		if !strings.Contains(body, `pod="r0"`) {
 			t.Fatalf("%s: the error names a row outside the first window: %s", label, body)
