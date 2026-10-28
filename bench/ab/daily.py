@@ -13,6 +13,8 @@ fresh runner and opens a bot pull request with what it writes:
   bench/ab/history/over-2x-loki.json  rows above 2x Loki (only ever removed from:
                                       after two runs within 2x; new rows are
                                       warnings in alerts, see over2x.py)
+  bench/ab/history/acceptance.json    per day, the rows below Loki, close, 1-2x
+                                      and above 2x (history.py acceptance)
   <out>/alerts.md, alerts.json        regressions, improvements and ratchet
   alerts-body.md                      losses of this run's lines (not committed:
                                       they describe one run; the workflow puts
@@ -134,6 +136,8 @@ def main():
             written.append(summary["set"])
     with open(os.path.join(history.HISTORY, "trend.md"), "w") as f:
         f.write(history.trend())
+    # The distribution per day, from the history lines (apart from the alerts: their failure must not leave it stale).
+    history.write_acceptance()
     # Only the sets this run wrote: a manual run of one set must not report the others' old lines again.
     # Alerts are a report: a failure here is logged and the day is still delivered.
     try:

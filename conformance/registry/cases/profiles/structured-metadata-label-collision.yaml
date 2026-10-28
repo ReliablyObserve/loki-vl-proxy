@@ -65,3 +65,10 @@ gap:
     - cb109373
     - d32173c3
     - e6dc2163
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

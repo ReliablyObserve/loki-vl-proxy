@@ -1,4 +1,5 @@
 """Unit tests for the alerts and the ratchet in bench/ab/history.py."""
+import glob
 import json
 import os
 import subprocess
@@ -470,6 +471,192 @@ class AlertsTest(unittest.TestCase):
               body_out=os.path.join(out, "b.md"))
         with open(os.path.join(out, "b.md")) as f:
             self.assertLess(len(f.read()), 65536)
+
+
+LOCK = {**history.over2x.registry_io.PERF_DEFAULTS, "locked": True, "locked_since": "2026-10-27"}
+OPEN = dict(history.over2x.registry_io.PERF_DEFAULTS)
+EXCEPTION = {"reason": "a VictoriaLogs scan Loki does not need", "follow_up": "a native pipe"}
+
+
+def bounds(block, shapes=(SHAPE,), item="semantics/x"):
+    return {"blocks": {item: block}, "covers": {("control", s): [item] for s in shapes}}
+
+
+def timed(p50=0.4, loki_p50=0.4, cold=0.9, loki_cold=0.9, **kw):
+    r = row(p50=p50, cold=cold, loki_cold=loki_cold, **kw)
+    r["p50"]["loki"] = loki_p50
+    return r
+
+
+class AcceptanceAlertsTest(unittest.TestCase):
+    """The daily run against the registry's perf: blocks and the distribution ratchet."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.n = 0
+
+    def day(self, *rows):
+        self.n += 1
+        history.append(summary(f"2026-10-{self.n:02d}", *rows), self.dir, f"c{self.n}" * 12, SPEC)
+
+    def run_alerts(self, block=LOCK, **kw):
+        return alerts(self.dir, bounds=bounds(block, **kw))
+
+    def locked(self, a):
+        return [(r["kind"], r["detail"]) for r in a["regressions"] if r["kind"] == "locked"]
+
+    def test_locked_warm_above_its_bound_is_a_regression_at_once(self):
+        self.day(timed(p50=1.0))  # 2.5× Loki's warm 400 ms
+        found = self.locked(self.run_alerts())
+        self.assertEqual(len(found), 1)
+        self.assertIn("warm 1.00 s against Loki's 400 ms, 2.50×, above its 2.00× bound (locked: semantics/x since "
+                      "2026-10-27)", found[0][1])
+        self.assertEqual(self.locked(self.run_alerts(OPEN)), [])  # unlocked: not a locked regression
+
+    def test_locked_cold_needs_two_runs(self):
+        self.day(timed(cold=2.0))  # 2.2× Loki's computed cold
+        a = self.run_alerts()
+        self.assertEqual(self.locked(a), [])
+        self.assertEqual([(r["mode"], r["shape"]) for r in a["locked_pending"]], [("cold", SHAPE)])
+        self.day(timed(cold=2.0))
+        a = self.run_alerts()
+        self.assertEqual(len(self.locked(a)), 1)
+        self.assertIn("held for two runs", self.locked(a)[0][1])
+        self.assertEqual(a["locked_pending"], [])
+
+    def test_a_tighter_bound_and_its_modes(self):
+        self.day(timed(p50=0.7))  # 1.75×
+        self.assertEqual(self.locked(self.run_alerts()), [])
+        self.assertEqual(len(self.locked(self.run_alerts({**LOCK, "max_ratio": 1.5}))), 1)
+        self.assertEqual(self.locked(self.run_alerts({**LOCK, "max_ratio": 1.5, "modes": ["cold"]})), [])
+
+    def test_noise_floor_loki_failures_and_cache_answered_colds_are_not_regressions(self):
+        self.day(timed(p50=0.04, loki_p50=0.006))  # 6.7×, inside the 50 ms floor
+        self.assertEqual(self.locked(self.run_alerts()), [])
+        self.day(timed(p50=1.0, loki_status="504"))
+        self.assertEqual(self.locked(self.run_alerts()), [])
+        self.day(timed(cold=2.0, served=True))
+        self.day(timed(cold=2.0, served=True))
+        a = self.run_alerts()
+        self.assertEqual((self.locked(a), a["locked_pending"]), ([], []))
+
+    def test_lost_below_is_flagged_not_a_regression(self):
+        self.day(timed(cold=0.4))   # below Loki's 900 ms
+        self.day(timed(cold=1.3))   # 1.44×
+        a = self.run_alerts()
+        self.assertEqual([(r["mode"], r["shape"]) for r in a["lost_below"]], [("cold", SHAPE)])
+        self.assertIn("below Loki on the previous run (400 ms against 900 ms)", a["lost_below"][0]["detail"])
+        self.assertEqual(a["regressions"], [])
+
+    def test_between_rows_with_and_without_an_exception(self):
+        self.day(timed(cold=1.3))
+        a = self.run_alerts()
+        self.assertEqual([(r["mode"], r["exception"], r["locked"]) for r in a["between"]], [("cold", [], True)])
+        text = history.render_alerts(a)
+        self.assertIn("1–2× Loki without an effort exception (flagged for review: below Loki is the target) (1):", text)
+        a = self.run_alerts({**LOCK, "effort_exception": EXCEPTION})
+        self.assertEqual(a["between"][0]["exception"], ["semantics/x"])
+        self.assertIn("1–2× Loki with an effort exception (accepted up to the bound) (1):", history.render_alerts(a))
+
+    def test_ready_to_lock_needs_two_runs_within(self):
+        self.day(timed())
+        self.assertEqual(self.run_alerts(OPEN)["lockable"], [])
+        self.day(timed())
+        self.assertEqual(self.run_alerts(OPEN)["lockable"], ["semantics/x"])
+        self.assertEqual(self.run_alerts(LOCK)["lockable"], [])  # already locked
+        self.day(timed(p50=1.0))
+        self.assertEqual(self.run_alerts(OPEN)["lockable"], [])
+
+    def shapes(self, n, **kw):
+        return [timed(shape=f"s{i}", **kw) for i in range(n)]
+
+    def dist(self, a):
+        return [(r["shape"], r["detail"]) for r in a["regressions"] if r["kind"] == "distribution"]
+
+    def test_distribution_ratchet(self):
+        names = [f"s{i}" for i in range(10)]
+        self.day(*self.shapes(10, cold=0.4))      # every cold below Loki
+        self.day(*self.shapes(10, cold=0.9))      # all close now: 10 rows, 100 points
+        found = self.dist(alerts(self.dir, bounds=bounds(OPEN, names)))
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0][0], "cold: share below Loki")
+        self.assertIn("share below Loki 100.0% → 0.0% (10 → 0 of the 10 rows compared on both), against the previous "
+                      "full run", found[0][1])
+
+    def test_distribution_ratchet_noise_and_the_count_above_2x(self):
+        names = [f"s{i}" for i in range(4)]
+        self.day(*self.shapes(4, cold=0.4))
+        self.day(*self.shapes(4, cold=0.9))       # 4 rows lost: within the 5-row margin
+        self.assertEqual(self.dist(alerts(self.dir, bounds=bounds(OPEN, names))), [])
+        names = [f"s{i}" for i in range(10)]
+        self.day(*self.shapes(10))
+        self.day(*self.shapes(10, p50=1.0))       # 10 warm rows above 2×
+        self.assertEqual([s for s, _ in self.dist(alerts(self.dir, bounds=bounds(OPEN, names)))],
+                         ["warm: rows above 2× Loki"])
+
+    def test_a_move_only_loki_made_is_not_a_regression(self):
+        names = [f"s{i}" for i in range(10)]
+        self.day(*self.shapes(10, p50=0.3, loki_p50=0.2))     # warm 1.5×
+        self.day(*self.shapes(10, p50=0.31, loki_p50=0.1))    # 3.1×: Loki's cache got faster, the proxy held
+        a = alerts(self.dir, bounds=bounds(OPEN, names))
+        self.assertEqual(a["distribution"]["warm"]["above"], 10)  # reported as measured
+        self.assertEqual(self.dist(a), [])                         # but not a ratchet regression
+        self.day(*self.shapes(10, cold=0.4))
+        self.day(*self.shapes(10, cold=0.42, loki_cold=0.2))  # below Loki → above it, by Loki alone
+        self.assertEqual(alerts(self.dir, bounds=bounds(OPEN, names))["lost_below"], [])
+
+    def test_distribution_ratchet_catches_a_slow_drift_over_a_week(self):
+        names = [f"s{i}" for i in range(20)]
+        for lost in range(9):  # one row a day leaves the band below Loki: noise day to day
+            self.day(*[timed(shape=n, cold=0.9 if i < lost else 0.4) for i, n in enumerate(names)])
+        a = alerts(self.dir, bounds=bounds(OPEN, names))
+        self.assertEqual([r["detail"].split(", against ")[1] for r in a["regressions"] if r["kind"] == "distribution"],
+                         ["the full run a week earlier"])
+
+    def test_distribution_and_section_with_targets(self):
+        self.day(timed(cold=0.4), timed(shape="t", cold=3.0, p50=1.0))
+        a = self.run_alerts(shapes=(SHAPE, "t"))
+        self.assertEqual(a["distribution"]["cold"], {"rows": 2, "below": 1, "close": 0, "between": 0, "above": 1,
+                                                     "share_below": 50.0})
+        text = history.render_alerts(a)
+        self.assertIn("## Acceptance versus Loki", text)
+        self.assertIn("| cold | 2 | 1 (50.0%) | 0 | 0 | 1 | ❌ | ❌ |", text)
+        self.assertNotIn("## Acceptance versus Loki", history.render_alerts(alerts(self.dir)))  # no blocks: off
+
+    def test_acceptance_history_is_written_per_day(self):
+        self.day(timed(cold=0.4))
+        self.day(timed(cold=3.0))
+        history.write_acceptance(self.dir, spec=SPEC)
+        with open(os.path.join(self.dir, history.ACCEPTANCE)) as f:
+            days = json.load(f)["days"]
+        self.assertEqual([(d["date"], d["cold"]["below"], d["cold"]["above"]) for d in days],
+                         [("2026-10-01", 1, 0), ("2026-10-02", 0, 1)])
+        self.assertEqual(days[0]["cold"]["share_below"], 100.0)
+
+
+class AcceptanceReplayTest(unittest.TestCase):
+    """The history up to the seed day (append-only, so fixed) against the seed's locks: the seed day trips no lock
+    and no distribution ratchet."""
+
+    def test_seed_day_against_the_seed_locks(self):
+        sys.path.insert(0, HERE)
+        from test_over2x import SEED, seed_bounds  # noqa: E402
+        tmp = tempfile.mkdtemp()
+        for path in glob.glob(os.path.join(history.HISTORY, "*.jsonl")):
+            with open(os.path.join(tmp, os.path.basename(path)), "w") as f:
+                f.writelines(json.dumps(e) + "\n" for e in history.read(path) if e["date"] <= SEED)
+        a = history.alerts(tmp, bounds=seed_bounds())
+        self.assertTrue(a["acceptance_active"])
+        self.assertEqual([r for r in a["regressions"] if r["kind"] in ("locked", "distribution")], [])
+        self.assertEqual(a["locked_pending"], [])
+        # The two rows of locked items between 1× and 2× (A explore volume, 6h and 24h cold) are listed, not failed.
+        locked_between = sorted((r["shape"], r["range"]) for r in a["between"] if r["locked"])
+        self.assertEqual(locked_between, [("A explore volume, 2 filters, drop", "24h"),
+                                          ("A explore volume, 2 filters, drop", "6h")])
+
+    def test_committed_acceptance_record_is_current(self):
+        with open(os.path.join(history.HISTORY, history.ACCEPTANCE)) as f:
+            self.assertEqual(json.load(f), json.loads(json.dumps(history.acceptance_history())))
 
 
 if __name__ == "__main__":

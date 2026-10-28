@@ -148,3 +148,10 @@ gap:
   planned_test: 'TestUnwrapNumberPatternMatchesParseFloat, TestUnwrapGateRange, TestUnwrapDurationPatternMatchesParseDuration, TestUnwrapBytesPatternAndExtract and the generated-input tests (internal/translator, internal/proxy); TestUnwrapCountedGateFlagsOverflow, TestUnwrapNaNGroupsReachTheAnswer, TestUnwrapNaNReachesTheLokiAnswer, TestUnwrapConversionErrorAnswersLokiText, TestUnwrapConversionErrorDifferential (internal/proxy); TestCompat_UnwrapValueFormsParity (rate on query_range, the over-time functions on grouped instants) and TestCompat_UnwrapOverflowParity (test/e2e-compat)'
   note: 'Every form of the lists was checked against the Go functions through the gate and the counting gate executed by VictoriaLogs v1.43.1 and v1.50.0 query code (6,000 generated values per conversion, both block layouts); run live against Loki on VictoriaLogs v1.40.0, v1.47.0 and v1.52.0 (TestCompat_UnwrapOverflowParity passes on all three; TestCompat_UnwrapValueFormsParity passes except the ungrouped nan sum above, with the ungrouped over-time series skipped as registered apart).'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -33,3 +33,10 @@ cases:
   - limits/drilldown-breakdown-exact
   - limits/resolution-limit-precedence
   - limits/top-n-ranking-not-silent
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

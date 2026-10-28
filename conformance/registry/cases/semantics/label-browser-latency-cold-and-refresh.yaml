@@ -58,3 +58,10 @@ loki_parity: |
   label queries), so their latency does not depend on the range; the proxy
   matches the answer exactly and gets the latency close for every window
   inside what it has scanned once.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-27'
+  effort_exception: null

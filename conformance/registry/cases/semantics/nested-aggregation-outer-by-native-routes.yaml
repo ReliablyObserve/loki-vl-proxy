@@ -88,3 +88,10 @@ gap:
   planned_test: 'TestCompat_NestedVectorAggregation (test/e2e-compat, CI group core); TestNestedVectorAggregationDifferential, TestNestedVectorAggregationOverSeriesWithout and TestNestedVectorAggregationUnderBinaryScalar (internal/proxy); TestNestedVectorAggregationEmitsOneStatsPipePerLevel (internal/translator); TestWithoutNestedAggregationMatchesLoki, TestWithoutPushdownMatchesFoldAndLoki, TestWithoutPushdownDirectedStreams, TestWithoutPushdownOnlyForTumblingWindows and TestTypedFoldMatchesGenericFold (internal/proxy); TestPushDownWithoutEmitsTheFoldAsStatsPipes and TestPushDownWithoutLeavesTheFoldToTheProxyWhenNotExact (internal/translator)'
   note: 'Found while fixing the non-sum vector aggregations; measured on origin/main b20a550f. The sliding windows are covered by the same differential (window != step, count_over_time and rate).'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

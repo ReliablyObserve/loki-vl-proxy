@@ -70,3 +70,10 @@ compare:
     query is discarded and the raw-row evaluator answers, so
     `loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",reason="probe"}`
     rises by one.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

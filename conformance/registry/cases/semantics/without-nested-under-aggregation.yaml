@@ -65,3 +65,10 @@ gap:
   planned_test: 'TestWithoutNestedAggregationMatchesLoki (internal/proxy, max and sum by over a without, range and instant), TestWithoutFoldIsLimitedToTheOperatorsItProves; TestCompat_UnwrapSumWithoutUnderAnotherAggregation (test/e2e-compat, max, min, avg and count over a without)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/without-over-inner-aggregation-collapses.'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

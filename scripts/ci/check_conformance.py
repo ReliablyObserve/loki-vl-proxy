@@ -7,6 +7,10 @@ Fails when:
   * a registry item points at code that no longer exists,
   * a bench/ab shape covers an unknown registry id, or a saved A/B result does
     not match the shape sets (performance evidence);
+  * a registry item a bench/ab shape covers has no valid `perf:` acceptance block (max_ratio at most
+    2.0, target_ratio, modes, locked with locked_since, effort_exception with reason and follow_up), an
+    item no shape covers has one, or a locked item covers a row on the above-2× list
+    (bench/ab/history/over-2x-loki.json); see perf_acceptance_problems();
   * a bench/ab shape outside `control` covers no registry item that names code,
     so no change could select it for the per-PR A/B run (bench/ab/selection.py);
   * a bench/visual entry covers an unknown registry id, or (outside the core
@@ -39,7 +43,9 @@ import tempfile
 
 SCRIPTS = "conformance/scripts"
 sys.path.insert(0, SCRIPTS)
-from registry_io import scope_problems  # noqa: E402
+from registry_io import load_json, perf_problems, scope_problems  # noqa: E402
+SHAPES = "bench/ab/shapes.json"
+OVER_2X = "bench/ab/history/over-2x-loki.json"
 REPORTS = (
     # perf_evidence.py runs first: gaps.py reads the evidence it writes.
     ("perf_evidence.py", "conformance/reports/performance.md", None),
@@ -52,6 +58,15 @@ REPORTS = (
     ("matrix_link.py", "conformance/reports/compatibility-matrix.md", None),
     ("parity_gaps.py", "conformance/reports/parity-gaps.md", None),
 )
+
+
+def perf_acceptance_problems(shapes=SHAPES, over_2x=OVER_2X):
+    """The perf: blocks against the shapes that cover registry items and the above-2× list (schema and
+    consistency only: measured values are the daily run's and perf-smoke's, never this gate's)."""
+    spec = load_json(shapes)
+    covers = {(s, sh["name"]): list(sh.get("covers") or []) for s, v in spec["sets"].items() for sh in v["shapes"]}
+    rows = load_json(over_2x).get("rows", []) if os.path.exists(over_2x) else []
+    return perf_problems({i for ids in covers.values() for i in ids}, rows, covers)
 
 
 def run(script, *args):
@@ -93,6 +108,14 @@ def main():
     print(parity.stdout.strip())
     if parity.returncode:
         failures.append("parity gap registration")
+
+    acceptance = perf_acceptance_problems()
+    for problem in acceptance:
+        print(f"perf acceptance: {problem}")
+    if acceptance:
+        failures.append("perf acceptance blocks")
+    else:
+        print("perf acceptance: every covered registry item has a valid perf: block")
 
     scope = scope_problems()
     for problem in scope:

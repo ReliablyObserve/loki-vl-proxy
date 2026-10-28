@@ -31,6 +31,11 @@ compared warm and on refresh. A query two sets share can be answered by Loki's
 cache from the earlier set's extents; its Loki cold is then the first set's computed
 run (loki_cold_reused_from), which keeps the row comparable.
 
+The acceptance section applies the owner's tiers (2026-10-28: at most 2× Loki in the worst case, close to
+Loki in general, below Loki for most queries) with bench/ab/over2x.py's definitions: the distribution of
+proxy ÷ Loki per mode (below Loki, close, 1–2×, above 2×), the registry's perf: blocks (locked items and
+rows) and every row between 1× and 2× with or without an effort exception.
+
 --check fails when a shape covers an id the registry does not have, a shape
 covers nothing, or a saved result names a set or shape shapes.json does not
 define — the performance evidence and the registry cannot drift apart.
@@ -45,6 +50,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from registry_io import dump_json, load_json, read_text, write_text  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bench", "ab"))
+import over2x  # noqa: E402
 
 ROOT = "conformance/registry"
 SHAPES = "bench/ab/shapes.json"
@@ -353,8 +360,66 @@ def main():
 
     dump_json(EVIDENCE, evidence)
     over = load_json(OVER_2X) if os.path.exists(OVER_2X) else None
-    write_text(REPORT, render(evidence, latest, problems, shape_sets, over))
+    write_text(REPORT, render(evidence, latest, problems, shape_sets, over, over2x.read_bounds(spec=spec)))
     return 0
+
+
+def acceptance(latest, bounds):
+    """The distribution of proxy ÷ Loki per mode, the locked rows and the rows between 1× and 2×, over the
+    latest run of every shape×range, by bench/ab/over2x.py's comparability and bands."""
+    pairs, between, locked = [], [], {m: 0 for m in over2x.MODES}
+    for (set_name, shape, rng), (_, summary, row) in sorted(latest.items()):
+        for mode, pair in over2x.summary_pairs(summary, row, summary["candidate"]).items():
+            if over2x.judge(*pair) not in ("above", "within"):
+                continue
+            band = over2x.band(*pair[:2])
+            pairs.append((mode, band))
+            bound = over2x.bound_for(bounds, set_name, shape, mode)
+            locked[mode] += bound["locked"]
+            if band == "between":
+                between.append((shape, rng, mode, pair[0], pair[1], bound))
+    return over2x.distribution(pairs), locked, between
+
+
+def render_acceptance(latest, bounds):
+    dist, locked, between = acceptance(latest, bounds)
+    blocks = (bounds or {}).get("blocks", {})
+    n_locked = sum(1 for b in blocks.values() if b["locked"] is True)
+    n_exc = sum(1 for b in blocks.values() if b.get("effort_exception"))
+    out = ["## Acceptance versus Loki", "",
+           "The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki in general; below Loki",
+           "for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the",
+           "hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily",
+           "run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.",
+           f"{n_locked} of {len(blocks)} items are locked; {n_exc} carry an effort exception.", "",
+           "Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the",
+           "definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as",
+           "measured (Loki's warm is its results cache by design), so these warm figures are not the summary's",
+           f"Warm repeat row. Below or above Loki means beyond {over2x.DIST_NOISE * 100:.0f}% and "
+           f"{over2x.MIN_GAP * 1000:.0f} ms; close is within that.", "",
+           "| Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |",
+           "|---|---|---|---|---|---|---|---|---|"]
+    for mode in over2x.MODES:
+        d = dist.get(mode)
+        if not d:
+            out.append(f"| {mode} | 0 | — | — | — | — | {locked[mode]} | — | — |")
+            continue
+        out.append(f"| {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | {d['between']} | "
+                   f"{d['above']} | {locked[mode]} | {'yes' if d['share_below'] > 50 else '**no**'} | "
+                   f"{'yes' if not d['above'] else '**no**'} |")
+    flagged = sum(1 for b in between if not b[5]["exception"])
+    out += ["", "### Between 1× and 2× Loki", "",
+            f"{len(between)} rows: {flagged} without an effort exception (flagged for review: below Loki is the",
+            f"target) and {len(between) - flagged} with one (accepted up to the bound).", ""]
+    if between:
+        out += ["| shape | range | mode | proxy | Loki | proxy ÷ Loki | locked by | effort exception |",
+                "|---|---|---|---|---|---|---|---|"]
+        for shape, rng, mode, proxy, loki, b in between:
+            out.append(f"| {shape.replace('|', chr(92) + '|')} | {rng} | {mode} | {fmt(proxy)} | {fmt(loki)} | "
+                       f"{over2x.times(over2x.ratio(proxy, loki))} | "
+                       f"{', '.join(f'`{i}`' for i in b['locked_by']) or '—'} | "
+                       f"{', '.join(f'`{i}`' for i in b['exception']) or '**flagged: none**'} |")
+    return out + [""]
 
 
 def over_2x(over):
@@ -378,7 +443,7 @@ def over_2x(over):
     return out + [""]
 
 
-def render(evidence, latest, problems, shape_sets=None, over=None):
+def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
     gaps = {}
     for item, rows in evidence.items():
         for r in rows:
@@ -401,6 +466,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None):
            f"Runs: {', '.join(f'{label} ({date})' for date, label in labels) or 'none yet'}.", ""]
     if shape_sets:
         out += render_summary(summarize(latest, shape_sets)) + [""]
+    if bounds is not None:
+        out += render_acceptance(latest, bounds)
     out += over_2x(over)
     out += ["## Slower than Loki on first load", ""]
     if gaps:
@@ -435,12 +502,21 @@ def render(evidence, latest, problems, shape_sets=None, over=None):
         out += ["", f"{len(repeat)} shape×range slower than Loki beyond noise on a repeat view."]
     else:
         out.append("None measured.")
+    blocks = (bounds or {}).get("blocks", {})
+
+    def lock(item):
+        b = blocks.get(item)
+        if not b:
+            return "—"
+        text = f"locked {b['locked_since']}" if b["locked"] is True else "not locked"
+        return text + ("; exception" if b.get("effort_exception") else "")
+
     out += ["", "## By registry item", "",
-            "| registry item | shapes | vs previous build | proxy cold / warm | Loki cold / warm | results vs Loki |",
-            "|---|---|---|---|---|---|"]
+            "| registry item | shapes | vs previous build | proxy cold / warm | Loki cold / warm | results vs Loki | acceptance |",
+            "|---|---|---|---|---|---|---|"]
     for item, rows in sorted(evidence.items()):
         if not rows:
-            out.append(f"| `{item}` | — | not measured | | | |")
+            out.append(f"| `{item}` | — | not measured | | | | {lock(item)} |")
             continue
         verdicts = {}
         for r in rows:
@@ -452,7 +528,7 @@ def render(evidence, latest, problems, shape_sets=None, over=None):
                    f"{', '.join(f'{n} {k}' for k, n in sorted(verdicts.items()))} | "
                    f"worst {fmt(worst['cold'], worst['status'])} / {fmt(worst['warm_p50'], worst['status'])} ({worst['range']}) | "
                    f"{fmt(worst['loki_cold'])} / {fmt(worst['loki_warm_p50'])} | "
-                   f"{parity}{f'; {slow} slower than Loki cold' if slow else ''} |")
+                   f"{parity}{f'; {slow} slower than Loki cold' if slow else ''} | {lock(item)} |")
     if problems:
         out += ["", "## Problems", ""] + [f"- {p}" for p in problems]
     return "\n".join(out) + "\n"

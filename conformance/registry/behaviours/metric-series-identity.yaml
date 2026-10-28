@@ -38,3 +38,10 @@ cases:
   - metric-identity/dynamic-key-parser-labels           # deviation, see state
   - semantics/non-sum-vector-aggregation-unreduced
   - semantics/stddev-stdvar-grouped-values
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

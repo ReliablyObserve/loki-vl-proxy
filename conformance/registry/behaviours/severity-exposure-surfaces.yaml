@@ -37,3 +37,10 @@ cases:
   - severity/label-values-detected-level
   - severity/label-filter-reads-stored-field    # open gap, see state
   - severity/detected-level-stage-side-effects
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

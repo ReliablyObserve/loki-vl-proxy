@@ -245,3 +245,10 @@ gap:
   note: |
     Measured on VictoriaLogs v1.52.0 and v1.47.0 against Loki v3.7.7.
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
