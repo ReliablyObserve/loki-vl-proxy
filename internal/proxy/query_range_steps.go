@@ -382,14 +382,33 @@ func (p *Proxy) queryStepsWhole(w http.ResponseWriter, r *http.Request, outcome 
 	}
 }
 
-// evaluateQueryStepsGaps evaluates the missing ranges one after another (each
-// is a request of its own, and together they take no more of the backend than
-// the whole window would). It returns their steps, or the first answer that
-// failed, or complete false when one cannot be merged.
+// evaluateQueryStepsGaps evaluates the missing ranges (each is a request of
+// its own, and together they take no more of the backend than the whole window
+// would). A moved window misses two (its old edge and the fresh steps), so
+// ranges shorter than -backend-heavy-query-min-range are evaluated at the same
+// time; a heavy one goes one after another, so the request never holds more
+// than the one heavy slot its whole window would. It returns their steps, or
+// the first answer that failed, or complete false when one cannot be merged.
 func (p *Proxy) evaluateQueryStepsGaps(r *http.Request, grid queryStepsGrid, gaps [][2]int64, base http.Header) (fragments []*statsExtentFragment, failed *bufferedResponseWriter, complete bool) {
 	fragments = make([]*statsExtentFragment, 0, len(gaps))
-	for _, gap := range gaps {
-		answer, run := p.evaluateQuerySteps(r, grid, gap, base)
+	answers := make([]*bufferedResponseWriter, len(gaps))
+	runs := make([]*queryStepsRun, len(gaps))
+	if len(gaps) > 1 && p.queryStepsGapsLight(r, grid, gaps) {
+		var wg sync.WaitGroup
+		for i, gap := range gaps {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				answers[i], runs[i] = p.evaluateQuerySteps(r, grid, gap, base)
+			}()
+		}
+		wg.Wait()
+	}
+	for i, gap := range gaps {
+		answer, run := answers[i], runs[i]
+		if answer == nil {
+			answer, run = p.evaluateQuerySteps(r, grid, gap, base)
+		}
 		if answer.code != http.StatusOK {
 			return nil, answer, false
 		}
@@ -404,6 +423,47 @@ func (p *Proxy) evaluateQueryStepsGaps(r *http.Request, grid queryStepsGrid, gap
 		fragments = append(fragments, f)
 	}
 	return fragments, nil, true
+}
+
+// queryStepsGapsLight reports whether every missing range reads less than
+// -backend-heavy-query-min-range from VictoriaLogs (its steps plus the range
+// of the query's window), so none takes a heavy-query slot.
+func (p *Proxy) queryStepsGapsLight(r *http.Request, grid queryStepsGrid, gaps [][2]int64) bool {
+	if p.heavyQueryLimiter == nil {
+		return true
+	}
+	window, ok := queryStepsWindow(r.FormValue("query"))
+	if !ok {
+		return false
+	}
+	for _, gap := range gaps {
+		if time.Duration(grid.at(gap[1])-grid.at(gap[0]))+window >= p.backendHeavyQueryMinRange {
+			return false
+		}
+	}
+	return true
+}
+
+// queryStepsWindow is the range of the range aggregation of a query the
+// steps cache keeps (queryStepsShape).
+func queryStepsWindow(query string) (time.Duration, bool) {
+	expr, err := logqlpkg.Parse(query)
+	if err != nil {
+		return 0, false
+	}
+	for {
+		agg, ok := expr.(*logqlpkg.VectorAggregation)
+		if !ok {
+			break
+		}
+		expr = agg.Inner
+	}
+	ra, ok := expr.(*logqlpkg.RangeAggregation)
+	if !ok {
+		return 0, false
+	}
+	window := parseLokiDuration(ra.Range)
+	return window, window > 0
 }
 
 func (p *Proxy) recordQueryStepsRequest(r *http.Request, logqlQuery string, code int, began time.Time, outcome string) {

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -537,5 +538,67 @@ func TestQueryRangeStepsRouteBoundary(t *testing.T) {
 	t.Logf("outcomes %v, %d answers with data", outcomes, withData)
 	if withData != len(windows) || outcomes["fallback"] < 1 || outcomes["partial"] < 1 {
 		t.Fatalf("the long window must fall back to a whole evaluation and the short one be merged: %v", outcomes)
+	}
+}
+
+// TestQueryRangeStepsGapsReadTogether: a moved window misses its old edge and
+// its fresh steps; the two are evaluated at the same time when each reads
+// less than -backend-heavy-query-min-range, and one after another otherwise
+// (the request holds at most the one heavy-query slot its whole window
+// would). Either way the answer is the uncached proxy's, byte for byte.
+//
+// conformance: quality/query-range-settled-steps, loki_api_v1_query_range
+func TestQueryRangeStepsGapsReadTogether(t *testing.T) {
+	s0 := time.Unix(1_700_001_000, 0).UTC()
+	rows := queryStepsRows(s0, 4*time.Hour, nil)
+	query := `sum by (app) (max_over_time({env="production"} | logfmt amount | unwrap amount [5m]))`
+	start := s0.Add(90 * time.Minute)
+	for _, tc := range []struct {
+		name     string
+		heavy    time.Duration
+		together bool
+	}{
+		{"light gaps", 6 * time.Hour, true},
+		{"heavy gaps", 2 * time.Minute, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var inFlight, most atomic.Int32
+			slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				n := inFlight.Add(1)
+				defer inFlight.Add(-1)
+				for {
+					m := most.Load()
+					if n <= m || most.CompareAndSwap(m, n) {
+						break
+					}
+				}
+				time.Sleep(60 * time.Millisecond)
+				(&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler().ServeHTTP(w, r)
+			})
+			onSrv, _ := newExtentShim(t, slow)
+			offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+			on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
+			off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
+			on.backendHeavyQueryMinRange = tc.heavy
+			on.heavyQueryLimiter = newHeavyQueryLimiter(4, time.Second)
+			on.queryRangeFreshness = time.Since(start.Add(50 * time.Minute))
+			if _, body := extentQueryRange(t, on, query, start, start.Add(time.Hour), 10*time.Second, nil); !bytes.Contains(body, []byte(`"values":[[`)) {
+				t.Fatalf("first window: %s", body)
+			}
+			most.Store(0)
+			from, to := start.Add(-time.Minute), start.Add(time.Hour-time.Minute)
+			before := queryStepsOutcomes(t, on)
+			gotCode, got := extentQueryRange(t, on, query, from, to, 10*time.Second, nil)
+			wantCode, want := extentQueryRange(t, off, query, from, to, 10*time.Second, nil)
+			if gotCode != http.StatusOK || gotCode != wantCode || !bytes.Equal(got, want) {
+				t.Fatalf("moved window: %d %s\nwithout steps: %d %s", gotCode, got, wantCode, want)
+			}
+			if o := queryStepsOutcomes(t, on); o["partial"] != before["partial"]+1 {
+				t.Fatalf("the moved window was not answered from steps and two gaps: %v", o)
+			}
+			if together := most.Load() >= 2; together != tc.together {
+				t.Fatalf("at most %d reads at once, want together=%v", most.Load(), tc.together)
+			}
+		})
 	}
 }
