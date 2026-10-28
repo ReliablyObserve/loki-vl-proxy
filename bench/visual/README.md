@@ -144,7 +144,7 @@ How to add a fix proof: add (or extend) a page in `spec.json` whose query shows 
 the base, add `"fixes": ["<case id>"]`, and cover registry ids that name code (as for any entry).
 `python3 bench/visual/plan.py --check` fails when a case with `status: fixed` and impact `explore-visible`
 or `drilldown-visible` is listed by no entry. The page must fail on the base build (check the base proxy's answer for the query first: a form the base
-already handles proves nothing and the gate says so). A fix that changes which streams a selector selects also changes the `index/stats` count Explore requests for it; the gate never carries a resource difference to the range Loki does not hold, so pin that entry to the ranges Loki holds (`"ranges": ["15m", "1h"]`). If Grafana cannot show the case (data the stack cannot
+already handles proves nothing and the gate says so). A fix that changes which streams a selector selects also changes the `index/stats` count Explore requests for it; the gate carries that resource difference to the range Loki does not hold when the PR adds nothing new against Loki on it at the shorter ranges (see the Gate section). If Grafana cannot show the case (data the stack cannot
 hold, a single-version behaviour, nothing a panel renders), set in the case's gap block
 `visual: none` and `visual_reason: '<why>'` (an honest reason; `api-only` and `edge` impacts need nothing).
 
@@ -157,6 +157,8 @@ data for the range (15m and 1h):
 | the base matched Loki, the PR diverges | fail: "regressed vs Loki" (the label does not excuse it) |
 | Loki has no data for the range (6h), and every query that differs is one the same page proved at a shorter range: there the PR changed its answer and now answers like Loki, and the PR diverges from Loki on it at no range Loki holds (the kind of difference does not matter, except that a series-set difference must lose or gain series in the direction the shorter range showed) | pass, "improved", with a note |
 | neither matches Loki, or Loki has no data for the range and a difference was not proven at a shorter range | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
+
+A resource request that differs base vs PR (no query id, for example Explore's `/resources/index/stats?query=...`) is carried by the same rule when the page also proved a query and, at every shorter range Loki holds, the same resource (path and query, time parameters ignored) shows up and the PR adds no difference from Loki on it that the base did not have (its differences from Loki are a subset of the base's, or none). A resource that differs from Loki in a new way on the PR at a shorter range, or that does not show up at one of them, is not carried, and neither is a resource on a page with no proven query. Base vs PR at the same range stays exact.
 
 Adding or removing that label re-runs the workflow. Also failing, on the PR side:
 
