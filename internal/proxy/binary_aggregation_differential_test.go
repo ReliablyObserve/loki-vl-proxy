@@ -22,7 +22,7 @@ import (
 // The operands are `sum by (...)` over count_over_time and rate, read on the
 // window (t-range, t]; only VictoriaLogs is simulated (vlEmulator).
 
-type refSample struct {
+type aggRefSample struct {
 	labels map[string]string
 	v      float64
 }
@@ -115,7 +115,7 @@ func refComparison(op string) bool {
 }
 
 // eval returns the vector at t, or the literal.
-func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bool) {
+func (n *refNode) eval(rows []emuRow, t, window int64) ([]aggRefSample, float64, bool) {
 	if n.scalar != nil {
 		return nil, *n.scalar, true
 	}
@@ -143,17 +143,17 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bo
 			groups[key].count++
 			groups[key].sum += row.value
 		}
-		var out []refSample
+		var out []aggRefSample
 		seconds := float64(window) / 1e9
 		for _, g := range groups {
 			v := map[string]float64{"count": g.count, "rate": g.count / seconds, "amount": g.sum / seconds}[n.fn]
-			out = append(out, refSample{g.labels, v})
+			out = append(out, aggRefSample{g.labels, v})
 		}
 		return out, 0, false
 	}
 	lhs, lv, lScalar := n.l.eval(rows, t, window)
 	rhs, rv, rScalar := n.r.eval(rows, t, window)
-	var out []refSample
+	var out []aggRefSample
 	if lScalar || rScalar {
 		vec := lhs
 		if lScalar {
@@ -172,7 +172,7 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bo
 				}
 			}
 			if keep {
-				out = append(out, refSample{s.labels, v})
+				out = append(out, aggRefSample{s.labels, v})
 			}
 		}
 		return out, 0, false
@@ -197,7 +197,7 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bo
 		}
 		return binaryLabelKey(sig)
 	}
-	right := map[string]refSample{}
+	right := map[string]aggRefSample{}
 	for _, s := range rhs {
 		right[signature(s.labels)] = s
 	}
@@ -229,7 +229,7 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]refSample, float64, bo
 			v, keep = map[bool]float64{true: 1, false: 0}[keep], true
 		}
 		if keep {
-			out = append(out, refSample{labels, v})
+			out = append(out, aggRefSample{labels, v})
 		}
 	}
 	return out, 0, false
@@ -251,7 +251,7 @@ func (a refAggregation) wrap(q string) string {
 	return a.op + " by (" + strings.Join(a.labels, ", ") + ") (" + q + ")"
 }
 
-func (a refAggregation) apply(in []refSample) []refSample {
+func (a refAggregation) apply(in []aggRefSample) []aggRefSample {
 	type group struct {
 		labels map[string]string
 		v      float64
@@ -294,13 +294,13 @@ func (a refAggregation) apply(in []refSample) []refSample {
 			g.v = math.Max(g.v, s.v)
 		}
 	}
-	out := make([]refSample, 0, len(order))
+	out := make([]aggRefSample, 0, len(order))
 	for _, key := range order {
 		g := groups[key]
 		if a.op == "count" {
 			g.v = float64(g.n)
 		}
-		out = append(out, refSample{g.labels, g.v})
+		out = append(out, aggRefSample{g.labels, g.v})
 	}
 	return out
 }
