@@ -149,7 +149,7 @@ func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.C
 		if errors.As(err, &upstream) && (upstream.status == http.StatusNotFound || upstream.status == http.StatusMethodNotAllowed || upstream.status == http.StatusNotImplemented) {
 			return false // a VictoriaLogs without stats_query_range: the recurrence reads /select/logsql/query
 		}
-		p.writeError(w, badRequestStatusOr(err, statusFromUpstreamErr(err)), err.Error())
+		p.writeErr(w, ctx, err)
 		return true
 	}
 	result, err := buildHitsRangeMetricMatrix(manualFunc, shiftSeriesSamples(series, sampleShift), start, end, step, window, p.limits().BufferedBackendBodyBytes)

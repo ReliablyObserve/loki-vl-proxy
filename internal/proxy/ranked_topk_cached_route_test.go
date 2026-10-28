@@ -505,6 +505,36 @@ func TestRankedTopKRangeFallsBackWhenBucketsAreUnreadable(t *testing.T) {
 	}
 }
 
+// A failed bucket read must use the same Loki error layer as the other query
+// routes, without exposing the backend status or body to the client.
+// conformance: semantics/error-layer-backend-failure-status, semantics/error-layer-backend-text
+func TestRankedTopKBucketFailureUsesLokiError(t *testing.T) {
+	end := time.Unix(rankedTopKEnd, 0).UTC()
+	lines := rankedTopKLines(7, end, 3*time.Hour)
+	srv, _ := newSlidingFakeVL(t, lines)
+	inner := srv.Config.Handler
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			http.Error(w, "VictoriaLogs private backend failure", http.StatusServiceUnavailable)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	t.Cleanup(broken.Close)
+	p, err := New(Config{BackendURL: broken.URL, LogLevel: "error", QueryRangeExtentCache: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	start := end.Add(-10 * time.Minute)
+	query := `topk(2, ` + fmt.Sprintf(rankedTopKInner, "5m") + `)`
+	code, body := extentQueryRange(t, p, query, start, end, time.Minute, nil)
+	if code != http.StatusInternalServerError || !strings.Contains(string(body), "Internal Server Error") || strings.Contains(string(body), "VictoriaLogs") {
+		t.Fatalf("failed bucket read = %d %s, want Loki 500 without backend text", code, body)
+	}
+}
+
 // The label_replace e2e fixture, as it was first written: three streams with a
 // line at the same instants every 10 seconds (the data of the e2e starts 22
 // minutes back, so every window of a 15 minute query holds full 5 minutes). Their counts in
