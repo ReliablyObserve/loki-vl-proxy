@@ -754,6 +754,23 @@ type unwrapCheck struct {
 	rawHits int
 
 	writer *unwrapLookupWriter
+
+	// first is the lookup of the first evaluation window, started beside the
+	// metric's first counting stats query that reads firstMinSpan or more (a
+	// heavy read, -backend-heavy-query-min-range). Its error answers before
+	// any hit, and cancel stops the metric's queries once it has one: Loki
+	// stops at the first rejected value too.
+	first        *unwrapFirstWindow
+	cancel       context.CancelFunc
+	firstMinSpan time.Duration
+	firstOnce    sync.Once
+}
+
+// unwrapFirstWindow is the lookup of the rows of the first evaluation window
+// whose value the conversion rejects.
+type unwrapFirstWindow struct {
+	done chan struct{}
+	err  *orderedJSONPipelineError
 }
 
 func unwrapCheckFrom(ctx context.Context) *unwrapCheck {
@@ -797,6 +814,9 @@ func (c *unwrapCheck) countingStatsQuery(path string, params url.Values) (url.Va
 	})
 	if !ok {
 		return params, nil, false
+	}
+	if c.cancel != nil && c.accepts(field, conv) && unwrapVLSpan(params) >= c.firstMinSpan {
+		c.firstOnce.Do(func() { c.startFirstWindow(base, field, conv) })
 	}
 	var nan *unwrapNaN
 	if conv == "" {
@@ -879,9 +899,57 @@ const unwrapMaxRawHits = 64
 // duplicate logfmt key) pays this bound on every request.
 const unwrapMaxLookups = 4
 
+// unwrapVLSpan is the time range a VictoriaLogs call reads, 0 when unknown.
+func unwrapVLSpan(params url.Values) time.Duration {
+	start, okS := parseLokiTimeToUnixNano(params.Get("start"))
+	end, okE := parseLokiTimeToUnixNano(params.Get("end"))
+	if !okS || !okE || end <= start {
+		return 0
+	}
+	return time.Duration(end - start)
+}
+
+// startFirstWindow looks up the first evaluation window (start-range, start]
+// of every probe of field and conv beside the metric's queries, and cancels
+// them when Loki fails there.
+func (c *unwrapCheck) startFirstWindow(base, field, conv string) {
+	first := &unwrapFirstWindow{done: make(chan struct{})}
+	c.mu.Lock()
+	c.first = first
+	c.mu.Unlock()
+	l := c.writer
+	go func() {
+		defer close(first.done)
+		for _, probe := range c.probesFor(field, conv) {
+			from := c.start.Add(-probe.window).Add(time.Nanosecond)
+			to := c.start.Add(time.Nanosecond)
+			if first.err = c.lookupHit(l.ctx, l.p, probe, unwrapHit{base: base, field: field, conv: conv}, from, to); first.err != nil {
+				c.cancel()
+				return
+			}
+		}
+	}()
+}
+
+// firstWindowError waits for the first window's lookup, when one started.
+func (c *unwrapCheck) firstWindowError() *orderedJSONPipelineError {
+	c.mu.Lock()
+	first := c.first
+	c.mu.Unlock()
+	if first == nil {
+		return nil
+	}
+	<-first.done
+	return first.err
+}
+
 // confirm returns Loki's error for the first hit whose row Loki fails on, or
-// nil. Each lookup reads at most three rows of one hit's span.
+// nil. Each lookup reads at most three rows of one hit's span. The first
+// evaluation window's lookup, when one ran, answers first.
 func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelineError {
+	if err := c.firstWindowError(); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	hits := append([]unwrapHit(nil), c.hits...)
 	c.mu.Unlock()
@@ -893,7 +961,7 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 	lookups := 0
 	for _, h := range hits {
 		for _, probe := range c.probesFor(h.field, h.conv) {
-			from, to, last := c.windows(probe)
+			from, to, _ := c.windows(probe)
 			if !h.from.IsZero() {
 				if h.from.After(from) {
 					from = h.from
@@ -905,13 +973,7 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 			if !to.After(from) {
 				continue
 			}
-			query := unwrapLookupQuery(h.base, h.field, h.conv)
-			if !c.instant && c.step > probe.window && !strings.Contains(h.base, "__lvp_window_phase") {
-				// A base read through the window evaluator holds the filter already.
-				query = withWindowPhaseFilter(ctx, query, c.start, c.step, probe.window)
-			}
-			query += " | limit 3"
-			key := query + from.String() + to.String()
+			key := unwrapLookupQuery(h.base, h.field, h.conv) + from.String() + to.String()
 			if seen[key] {
 				continue
 			}
@@ -919,32 +981,49 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 			if lookups++; lookups > unwrapMaxLookups {
 				return nil
 			}
-			rows, err := p.unwrapLookupRows(ctx, query, from, to)
-			if err != nil {
-				p.log.Warn("unwrap conversion lookup failed", "error", err)
-				continue
+			if pipelineErr := c.lookupHit(ctx, p, probe, h, from, to); pipelineErr != nil {
+				return pipelineErr
 			}
-			// The stored rows are re-read side by side; the first row in the
-			// lookup's order that Loki fails on answers.
-			found := make([]*orderedJSONPipelineError, len(rows))
-			var wg sync.WaitGroup
-			for i, row := range rows {
-				ts, ok := parseFlexibleUnixNanos(row["_time"])
-				if !ok || !c.visible(ts, probe, last) {
-					continue
-				}
-				wg.Add(1)
-				go func(i int, row map[string]string) {
-					defer wg.Done()
-					found[i] = p.unwrapRowError(ctx, probe, row, h.field)
-				}(i, row)
-			}
-			wg.Wait()
-			for _, pipelineErr := range found {
-				if pipelineErr != nil {
-					return pipelineErr
-				}
-			}
+		}
+	}
+	return nil
+}
+
+// lookupHit reads at most three rows of h's base in [from, to) whose value the
+// conversion rejects and returns Loki's error for the first one, in the
+// lookup's order, that Loki fails on.
+func (c *unwrapCheck) lookupHit(ctx context.Context, p *Proxy, probe unwrapErrorProbe, h unwrapHit, from, to time.Time) *orderedJSONPipelineError {
+	_, _, last := c.windows(probe)
+	query := unwrapLookupQuery(h.base, h.field, h.conv)
+	if !c.instant && c.step > probe.window && !strings.Contains(h.base, "__lvp_window_phase") {
+		// A base read through the window evaluator holds the filter already.
+		query = withWindowPhaseFilter(ctx, query, c.start, c.step, probe.window)
+	}
+	query += " | limit 3"
+	rows, err := p.unwrapLookupRows(ctx, query, from, to)
+	if err != nil {
+		p.log.Warn("unwrap conversion lookup failed", "error", err)
+		return nil
+	}
+	// The stored rows are re-read side by side; the first row in the
+	// lookup's order that Loki fails on answers.
+	found := make([]*orderedJSONPipelineError, len(rows))
+	var wg sync.WaitGroup
+	for i, row := range rows {
+		ts, ok := parseFlexibleUnixNanos(row["_time"])
+		if !ok || !c.visible(ts, probe, last) {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, row map[string]string) {
+			defer wg.Done()
+			found[i] = p.unwrapRowError(ctx, probe, row, h.field)
+		}(i, row)
+	}
+	wg.Wait()
+	for _, pipelineErr := range found {
+		if pipelineErr != nil {
+			return pipelineErr
 		}
 	}
 	return nil
@@ -1389,6 +1468,10 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 		c.vlName = p.labelTranslator.ToVL
 	}
 	ctx := context.WithValue(r.Context(), unwrapCheckKey{}, c)
+	if run := queryStepsRunFor(r); isRange && p.backendHeavyQueryMinRange > 0 && (run == nil || !run.inner) {
+		ctx, c.cancel = context.WithCancel(ctx)
+		c.firstMinSpan = p.backendHeavyQueryMinRange
+	}
 	l := &unwrapLookupWriter{p: p, ctx: ctx, check: c, out: w, header: http.Header{}}
 	c.writer = l
 	return r.WithContext(ctx), l
@@ -1465,6 +1548,9 @@ func unwrapRecordedStatus(ctx context.Context, code int) int {
 
 // finish writes Loki's pipeline error or the metric's own answer.
 func (l *unwrapLookupWriter) finish(endpoint, logql string, requestStart time.Time) {
+	if l.check.cancel != nil {
+		defer l.check.cancel()
+	}
 	if l.failed() {
 		l.p.writeLokiTextError(l.out, http.StatusBadRequest, l.err.Error())
 		if !l.recorded {

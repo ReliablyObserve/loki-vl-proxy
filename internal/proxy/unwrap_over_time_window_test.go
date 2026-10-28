@@ -974,8 +974,12 @@ func TestUnwrapOverTimeShortRangeStaysOnStepBuckets(t *testing.T) {
 			if len(calls) != 1 || !strings.Contains(calls[0], "__lvp_window_phase") || strings.Contains(calls[0], "__sample_count") {
 				t.Fatalf("%s: want one phase-filtered step bucket query, got %d: %v", query, len(calls), calls)
 			}
-			if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
-				t.Fatalf("%s: read raw rows: %s", query, raw[0])
+			for _, raw := range emu.endpointCalls("/select/logsql/query") {
+				// The conversion check's lookup of the first window (at most
+				// three flagged rows) runs beside a heavy read; no metric rows.
+				if !strings.HasSuffix(raw, ` | filter __lvp_bad:="1" | limit 3`) {
+					t.Fatalf("%s: read raw rows: %s", query, raw)
+				}
 			}
 		})
 	}
