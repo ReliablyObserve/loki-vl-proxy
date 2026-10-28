@@ -1359,6 +1359,19 @@
    "fixes": [
     "semantics/topk-grouped-spellings"
    ]
+  },
+  {
+   "id": "explore-topk-without-keeps-labels",
+   "kind": "explore",
+   "query": "topk without (level) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "covers": [
+    "semantics/topk-bottomk-without-strips-label",
+    "semantics/topk-grouped-spellings",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/topk-bottomk-without-strips-label"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

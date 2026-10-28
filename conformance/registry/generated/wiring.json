@@ -725,16 +725,22 @@
       "test/e2e-compat/tenant_numeric_routing_test.go"
     ],
     "semantics/topk-bottomk-range-series": [
+      "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
       "test/e2e-compat/topk_range_per_step_test.go"
     ],
     "semantics/topk-bottomk-without-strips-label": [
+      "internal/proxy/extraction_list_outside_without_test.go",
+      "internal/proxy/topk_fuzz_test.go",
+      "internal/proxy/without_fold_scope_test.go",
       "internal/proxy/without_open_shapes_test.go"
     ],
     "semantics/topk-grouped-spellings": [
+      "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
+      "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/topk_range_per_step_test.go"
     ],
     "semantics/tumbling-window-single-grid": [
@@ -1098,6 +1104,7 @@
     ],
     "internal/proxy/extraction_list_outside_without_test.go": [
       "metric-series-identity",
+      "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-extraction-list-series-identity"
     ],
     "internal/proxy/first_last_unwrap_differential_test.go": [
@@ -1389,6 +1396,11 @@
       "limits/series-limit-error",
       "semantics/unwrap-sum-without-collapses"
     ],
+    "internal/proxy/topk_fuzz_test.go": [
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-bottomk-without-strips-label",
+      "semantics/topk-grouped-spellings"
+    ],
     "internal/proxy/topk_range_differential_test.go": [
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
@@ -1495,6 +1507,7 @@
     ],
     "internal/proxy/without_fold_scope_test.go": [
       "limits/series-limit-error",
+      "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-sum-without-collapses"
     ],
     "internal/proxy/without_open_shapes_test.go": [
@@ -1503,6 +1516,7 @@
       "semantics/label-replace-range-binary-marker",
       "semantics/nested-aggregation-outer-by-native-routes",
       "semantics/topk-bottomk-without-strips-label",
+      "semantics/topk-grouped-spellings",
       "semantics/unwrap-sum-without-collapses",
       "semantics/without-comparison-inside-ignored",
       "semantics/without-empty-grouping-range-collapses",
@@ -1900,7 +1914,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 192,
+  "tests_with_markers": 193,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

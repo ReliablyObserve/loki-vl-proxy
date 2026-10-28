@@ -154,6 +154,10 @@ func TestCompat_TopkRangePerStep(t *testing.T) {
 	innerQuery := `sum by (app, pod) (count_over_time(` + selector + `[5m]))`
 	step := time.Minute
 	inner := slidingRangeSeries(t, lokiURL, innerQuery, start, end, step, nil)
+	// A range function ranked as it is: a series per stream, with every label
+	// of the stream (pod included) that topk/bottomk without must keep.
+	directQuery := `count_over_time(` + selector + `[5m])`
+	direct := slidingRangeSeries(t, lokiURL, directQuery, start, end, step, nil)
 
 	for _, tc := range []struct {
 		name        string
@@ -171,10 +175,22 @@ func TestCompat_TopkRangePerStep(t *testing.T) {
 		{"topk by pod, groups spanning both apps", `topk by (pod) (1, ` + innerQuery + `)`, []string{"pod"}, 1, true},
 		{"topk by app,pod keeps every series", `topk by (app, pod) (1, ` + innerQuery + `)`, []string{"app", "pod"}, 1, true},
 		{"k beyond the series count", `topk(50, ` + innerQuery + `)`, nil, 50, true},
+		{"topk without pod over a range function", `topk without (pod) (2, ` + directQuery + `)`, []string{"app"}, 2, true},
+		{"bottomk without pod over a range function", `bottomk without (pod) (1, ` + directQuery + `)`, []string{"app"}, 1, false},
+		{"topk without pod, trailing clause", `topk(2, ` + directQuery + `) without (pod)`, []string{"app"}, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loki := slidingRangeSeries(t, lokiURL, tc.query, start, end, step, nil)
 			proxy := slidingRangeSeries(t, proxyURL, tc.query, start, end, step, nil)
+			ranked := inner
+			if strings.Contains(tc.query, directQuery) {
+				ranked = direct
+				for key := range proxy {
+					if topKLabel(key, "pod") == "" {
+						t.Fatalf("%s: proxy series {%s} lost its pod label", tc.query, key)
+					}
+				}
+			}
 			if tc.k >= pods*len(apps) {
 				// Nothing is dropped: the answer is the inner vector.
 				assertSlidingParity(t, tc.query, loki, proxy)
@@ -185,7 +201,7 @@ func TestCompat_TopkRangePerStep(t *testing.T) {
 				assertSlidingParity(t, tc.query, loki, proxy)
 				return
 			}
-			assertTopKRangeParity(t, tc.query, inner, loki, proxy, tc.groupLabels, tc.k, tc.descending)
+			assertTopKRangeParity(t, tc.query, ranked, loki, proxy, tc.groupLabels, tc.k, tc.descending)
 		})
 	}
 

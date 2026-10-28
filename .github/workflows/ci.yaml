@@ -197,6 +197,9 @@ jobs:
       - name: Fuzz smoke (proxy lifecycle leaves no goroutines)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzProxyLifecycleNoGoroutineLeak$' -fuzztime=12s
 
+      - name: Fuzz smoke (topk and bottomk per step)
+        run: go test ./internal/proxy -run '^$' -fuzz=FuzzTopKPerStep -fuzztime=20s -timeout=60s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -308,6 +309,39 @@ func TestInstantTopKByHandler(t *testing.T) {
 		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &resp) != nil || resp.Data.ResultType != "vector" || len(resp.Data.Result) != want {
 			t.Errorf("%s: %d, want %d series: %.300s", query, rec.Code, want, rec.Body)
 		}
+	}
+}
+
+// Loki's parser rejects a k below 1 (pkg/logql/syntax/ast.go mustNewVectorAggregation:
+// "invalid parameter (must be greater than 0) topk(0"), in every spelling and on
+// both endpoints, so no ranking is ever asked for zero series.
+// conformance: semantics/topk-grouped-spellings, loki_api_v1_query, loki_api_v1_query_range
+func TestTopKRejectsAKBelowOne(t *testing.T) {
+	var reached bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	defer backend.Close()
+	p := newGapTestProxy(t, backend.URL)
+	for _, query := range []string{
+		`topk(0, ` + topKInner + `)`,
+		`bottomk(0, ` + topKInner + `)`,
+		`topk by (env) (0, ` + topKInner + `)`,
+		`topk without (app) (0, ` + topKInner + `)`,
+		`bottomk(0, ` + topKInner + `) by (env)`,
+		`topk(-1, ` + topKInner + `)`,
+	} {
+		for _, endpoint := range []string{"query", "query_range"} {
+			params := url.Values{"query": {query}, "time": {"1700000000"}, "start": {"1700000000"}, "end": {"1700000600"}, "step": {"60"}}
+			rec := doCompatProxyRequest(p, "/loki/api/v1/"+endpoint+"?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "parse error") {
+				t.Errorf("%s %s: %d %.200s, want a 400 parse error", endpoint, query, rec.Code, rec.Body)
+			}
+		}
+	}
+	if reached {
+		t.Error("a query with a k below 1 reached VictoriaLogs")
 	}
 }
 
