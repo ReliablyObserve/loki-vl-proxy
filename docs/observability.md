@@ -356,6 +356,9 @@ When the peer cache is enabled, `/metrics` appends these fleet-cache families (P
 | `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful pushes to a key's replicas (one per replica) |
 | `loki_vl_proxy_peer_cache_write_through_errors_total` | counter | none | `Low` | replica push errors |
 | `loki_vl_proxy_peer_cache_push_too_large_total` | counter | none | `Low` | pushes skipped because the value is above the peers' accepted body size (8 MiB) |
+| `loki_vl_proxy_peer_cache_peer_not_up_total` | counter | none | `Low` | refused connections to peers that had not answered since this process started: a peer still starting is skipped for 250 ms and tried again, without counting towards its breaker (reason `peer_not_up` in `peer_cache_error_reason_total` for lookups) |
+| `loki_vl_proxy_peer_cache_push_peer_not_up_total` | counter | none | `Low` | pushes to a peer still starting that were dropped: above 256 kept pushes or 8 MiB per peer, or the peer did not answer within 30 s (the others are sent once it answers) |
+| `loki_vl_proxy_peer_cache_push_throttled_total` | counter | none | `Low` | pushes dropped because the push queue was full: at most 64 pushes run at once (a slow replica holds its pushes for up to `-peer-timeout`) and 4,096 pushes or 64 MiB wait behind them; the replica that misses a copy fetches it from another replica on its first lookup |
 | `loki_vl_proxy_peer_cache_hot_index_requests_total` | counter | none | `Low` | peer hot-index requests |
 | `loki_vl_proxy_peer_cache_hot_index_errors_total` | counter | none | `Low` | peer hot-index request errors |
 | `loki_vl_proxy_peer_cache_read_ahead_prefetches_total` | counter | none | `Low` | successful hot read-ahead prefetches |

@@ -1,7 +1,11 @@
 package cache
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"sort"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -224,6 +228,69 @@ func BenchmarkPeerReplication_ColdMiss(b *testing.B) {
 				}
 				b.ReportMetric(float64((cpuTime()-cpu0).Nanoseconds())/float64(n), "cpu-ns/op")
 			})
+		}
+	}
+}
+
+// TestPeerReplicationContention measures whether replica pushes slow the
+// requests a replica serves meanwhile: the latency of a small label-like
+// request (a local memory hit and a JSON encode of 200 label values) on the
+// writing replica, alone and while writes push 4 KiB values to their
+// replicas, about 1,000 writes a second per writer, at factor 1 (no push)
+// and 2. It runs only with
+// LVP_PEER_CONTENTION=1:
+//
+//	LVP_PEER_CONTENTION=1 GOMAXPROCS=4 go test -count=1 -run TestPeerReplicationContention -v ./internal/cache/
+func TestPeerReplicationContention(t *testing.T) {
+	if os.Getenv("LVP_PEER_CONTENTION") != "1" {
+		t.Skip("set LVP_PEER_CONTENTION=1 to measure push contention")
+	}
+	values := make([]string, 200)
+	for i := range values {
+		values[i] = fmt.Sprintf("value-%04d", i)
+	}
+	measure := func(rf, writers int) (p50, p99, max time.Duration, pushes, throttled int64) {
+		f := newReplFleet(t, 3, rf, true, 2*time.Second)
+		defer f.close()
+		f.nodes[0].c.SetWithTTL("labels-key", []byte("x"), time.Hour)
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		p0, t0 := f.nodes[0].pc.WTPushes.Load(), f.nodes[0].pc.PushThrottled.Load()
+		for w := 0; w < writers; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				value := make([]byte, 4096)
+				tick := time.NewTicker(time.Millisecond) // about 1,000 writes a second per writer
+				defer tick.Stop()
+				for i := 0; ; i++ {
+					select {
+					case <-stop:
+						return
+					case <-tick.C:
+					}
+					f.nodes[0].c.SetWithTTL(fmt.Sprintf("w%d-%d", w, i%512), value, time.Hour)
+				}
+			}(w)
+		}
+		var lat []time.Duration
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			started := time.Now()
+			f.nodes[0].c.GetSharedWithAge("labels-key")
+			_, _ = json.Marshal(map[string]any{"status": "success", "data": values})
+			lat = append(lat, time.Since(started))
+			time.Sleep(time.Millisecond)
+		}
+		close(stop)
+		wg.Wait()
+		sort.Slice(lat, func(i, j int) bool { return lat[i] < lat[j] })
+		return lat[len(lat)/2], lat[len(lat)*99/100], lat[len(lat)-1], f.nodes[0].pc.WTPushes.Load() - p0, f.nodes[0].pc.PushThrottled.Load() - t0
+	}
+	for _, writers := range []int{0, 1, 4} {
+		for _, rf := range []int{1, 2} {
+			p50, p99, mx, pushes, throttled := measure(rf, writers)
+			t.Logf("factor %d, writers %d (about %d writes/s): label-like request p50 %s, p99 %s, max %s; %d pushes (%.0f/s), %d throttled", rf, writers, writers*1000, p50, p99, mx, pushes, float64(pushes)/2, throttled)
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -580,4 +581,192 @@ func TestPeerReplication_GetTierCountersAndFetchDurations(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, text)
 		}
 	}
+}
+
+// Replicas of a fleet start within milliseconds of each other, so a replica
+// dials peers that do not listen yet. A refused connection to a peer that
+// never answered is not a failure: the peer is skipped for a moment and
+// tried again, its breaker never opens, and the first lookups after every
+// replica listens are peer hits. Pushes made while a replica did not listen
+// are kept (bounded) and sent once it answers, so no copy is lost.
+//
+// conformance: peer-cache-replication
+func TestPeerReplication_StaggeredStartOpensNoBreaker(t *testing.T) {
+	const n = 3
+	addrs := make([]string, n)
+	for i := range addrs {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addrs[i] = l.Addr().String()
+		_ = l.Close() // nothing listens until the node starts: dials are refused
+	}
+	caches := make([]*Cache, n)
+	pcs := make([]*PeerCache, n)
+	for i := range caches {
+		caches[i] = NewWithMaxBytes(time.Hour, 10000, 64<<20)
+		pcs[i] = NewPeerCache(PeerConfig{SelfAddr: addrs[i], DiscoveryType: "static", StaticPeers: strings.Join(addrs, ","),
+			Timeout: time.Second, WriteThrough: true, WriteThroughMinTTL: time.Second, ReplicationFactor: 2,
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		caches[i].SetL3(pcs[i])
+	}
+	var servers []*http.Server
+	t.Cleanup(func() {
+		for _, srv := range servers {
+			_ = srv.Close()
+		}
+		for i := range caches {
+			pcs[i].Close()
+			caches[i].Close()
+		}
+	})
+	start := func(i int) {
+		var l net.Listener
+		var err error
+		for tries := 0; tries < 50; tries++ {
+			if l, err = net.Listen("tcp", addrs[i]); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatalf("listen %s: %v", addrs[i], err)
+		}
+		c, pc := caches[i], pcs[i]
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { pc.ServeHTTP(w, r, c) })}
+		servers = append(servers, srv)
+		go func() { _ = srv.Serve(l) }()
+	}
+	replicaIdx := func(key string) []int {
+		var out []int
+		for _, addr := range pcs[0].replicasOf(key) {
+			for i := range addrs {
+				if addrs[i] == addr {
+					out = append(out, i)
+				}
+			}
+		}
+		return out
+	}
+	up := []bool{true, false, false}
+
+	// Node 0 starts and works while the others are not listening yet.
+	start(0)
+	var keys []string
+	wantDropped := 0
+	for i := 0; i < 30; i++ {
+		key := fmt.Sprintf("stagger-%d", i)
+		keys = append(keys, key)
+		caches[0].SetWithTTL(key, []byte("v-"+key), 10*time.Minute)
+		for _, r := range replicaIdx(key) {
+			if r != 0 && !up[r] {
+				wantDropped++
+			}
+		}
+		caches[0].Get(fmt.Sprintf("absent-%d", i)) // lookups that dial the others
+	}
+	time.Sleep(150 * time.Millisecond)
+	start(1)
+	up[1] = true
+	time.Sleep(350 * time.Millisecond)
+	start(2)
+	up[2] = true
+	time.Sleep(2 * peerStartupRetry) // past the retry window
+
+	for i, pc := range pcs {
+		for j, addr := range addrs {
+			if i == j {
+				continue
+			}
+			pb := pc.breaker(addr)
+			if pb.failures.Load() >= pb.threshold || pb.suspendedUntil.Load() != 0 || !pc.peerAllowed(addr) {
+				t.Fatalf("node %d's breaker for node %d is open after the staggered start (failures %d)", i, j, pb.failures.Load())
+			}
+		}
+	}
+	waitFor(t, "the kept pushes", func() bool { return pcs[0].WTPushes.Load() >= int64(wantDropped) })
+	if got := pcs[0].PushPeerNotUp.Load(); got != 0 || pcs[0].WTErrors.Load() != 0 {
+		t.Fatalf("pushes dropped %d, errors %d (pushes made before their replica listened: %d)", got, pcs[0].WTErrors.Load(), wantDropped)
+	}
+
+	// The first lookups after every replica listens are answered by a peer
+	// whenever node 0 (the writer) is one of the key's replicas.
+	hits := 0
+	for _, key := range keys {
+		if v, ok := caches[2].Get(key); !ok || string(v) != "v-"+key {
+			t.Fatalf("%s (replicas %v): the first lookup after start missed", key, replicaIdx(key))
+		}
+		hits++
+	}
+	// Writes after every replica listens are pushed with no loss.
+	dropped := pcs[0].PushPeerNotUp.Load()
+	for i := 0; i < 10; i++ {
+		caches[0].SetWithTTL(fmt.Sprintf("after-%d", i), []byte("v"), 10*time.Minute)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if pcs[0].PushPeerNotUp.Load() != dropped || pcs[0].WTErrors.Load() != 0 {
+		t.Fatal("a push after every replica started was lost")
+	}
+	t.Logf("staggered start: %d of %d keys found by the first lookups, %d pushes made before their replica listened, all sent later (%d dropped), %d refused dials counted as starting", hits, len(keys), wantDropped, dropped, pcs[0].PeerNotUp.Load())
+}
+
+// Pushes kept for a peer that never starts are bounded and dropped after the
+// wait, each counted, and the retrier ends with the cache.
+//
+// conformance: peer-cache-replication
+func TestPeerReplication_PendingPushesBounded(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := l.Addr().String()
+	_ = l.Close()
+	pc := NewPeerCache(PeerConfig{SelfAddr: "self:1", DiscoveryType: "static", StaticPeers: "self:1," + dead,
+		Timeout: time.Second, WriteThrough: true, ReplicationFactor: 2, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	defer pc.Close()
+	for i := 0; i < pendingPushMaxEntries+10; i++ {
+		pc.Replicate(fmt.Sprintf("k-%d", i), []byte("v"), time.Minute)
+	}
+	waitFor(t, "the first refusal", func() bool { return pc.PeerNotUp.Load() > 0 })
+	time.Sleep(50 * time.Millisecond)
+	pb := pc.breaker(dead)
+	pb.mu.Lock()
+	kept := len(pb.pending)
+	pb.mu.Unlock()
+	if kept > pendingPushMaxEntries {
+		t.Fatalf("%d pushes kept, bound %d", kept, pendingPushMaxEntries)
+	}
+	if dropped := pc.PushPeerNotUp.Load(); dropped+int64(kept) < 10 {
+		t.Fatalf("kept %d, dropped %d of %d", kept, dropped, pendingPushMaxEntries+10)
+	}
+	if pb.failures.Load() != 0 {
+		t.Fatalf("refusals of a peer that never started counted %d failures", pb.failures.Load())
+	}
+	pc.Close()
+	waitFor(t, "the retrier to end", func() bool {
+		pb.mu.Lock()
+		defer pb.mu.Unlock()
+		return !pb.retrying
+	})
+}
+
+// A burst of writes (a cold build storing every hour of a range) is pushed
+// in full: pushes beyond the running ones wait in the queue instead of being
+// dropped, and the queue drains to empty.
+//
+// conformance: peer-cache-replication
+func TestPeerReplication_PushBurstQueued(t *testing.T) {
+	f := newReplFleet(t, 3, 2, true, time.Second)
+	owner, backup := 0, 1
+	keys := f.keysWith(500, owner, backup)
+	for _, key := range keys {
+		f.nodes[owner].c.SetWithTTL(key, []byte("v"), 10*time.Minute)
+	}
+	waitFor(t, "every push", func() bool { ok, _ := f.pushes(); return ok == int64(len(keys)) })
+	pc := f.nodes[owner].pc
+	if pc.PushThrottled.Load() != 0 {
+		t.Fatalf("%d pushes of a burst dropped", pc.PushThrottled.Load())
+	}
+	waitFor(t, "the workers to stop", func() bool { return pc.pushers.Load() == 0 && pc.pushQueued.Load() == 0 })
 }

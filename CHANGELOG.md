@@ -44,6 +44,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     also counts `loki_vl_proxy_cache_tier_*` and
     `loki_vl_proxy_cache_backend_fallthrough_total`, as `GetSharedWithAge`
     already did (a miss costs 1.6 ns more; no allocations).
+  - **Bounded pushes, cheaper fetches.**
+    - At most 64 replica pushes run at once. Up to 4,096 pushes, or 64 MiB,
+      wait behind them; pushes beyond that are dropped and counted
+      (`loki_vl_proxy_peer_cache_push_throttled_total`).
+    - The peer zstd encoder and decoder are shared instead of created per
+      request. A peer fetch of a 4 KiB value went from 1.08 MiB to 16 KiB of
+      allocation and from 276 µs to 75 µs on loopback.
+    - Measured push contention: a label-like request (a memory hit and a
+      200-value JSON encode) on a replica writing about 4,000 times a
+      second (5,352 pushes a second at factor 2) had p99 134 µs at factor
+      2, against 87 µs at factor 1; p50 was unchanged at 5-7 µs and the
+      maximum was 1.0 ms against 2.9 ms.
   - **Cost** (three replicas over loopback, 4 KiB values):
     - **Writes.** Every write-through write pushes one more copy: 4,096 bytes
       on the wire at factor 2, and about 0.22 ms of CPU across sender and
@@ -69,6 +81,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Replicas that start together no longer open each other's breakers.**
+  - At start, a replica dials peers that do not listen yet. The stack load
+    test saw five `connect: connection refused` within 1 ms. Five refusals
+    opened the breaker for the 10 s cooldown, so the peer tier was skipped
+    meanwhile: cold-start traffic went to VictoriaLogs and pushes were lost.
+  - Now a refused connection to a peer that never answered since this
+    process started is not counted towards its breaker. The peer is skipped
+    for 250 ms and tried again
+    (`loki_vl_proxy_peer_cache_peer_not_up_total`).
+  - Pushes made meanwhile are kept, at most 256 or 8 MiB per peer, and sent
+    once the peer answers. They are dropped if it does not answer within
+    30 s (`loki_vl_proxy_peer_cache_push_peer_not_up_total`).
+  - A peer that answered once and then fails counts as before.
+  - Test: three replicas starting 150 and 350 ms apart. No breaker opens,
+    every key written before the others listened is found by the first
+    lookup after start, and 39-43 kept pushes were sent with none dropped.
 - **A paused or hung peer costs a request one `-peer-timeout`, not one per
   lookup.**
   - Before, the per-peer breaker opened only after five failures
