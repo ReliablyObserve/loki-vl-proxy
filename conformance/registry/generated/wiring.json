@@ -258,6 +258,7 @@
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
+      "internal/proxy/topk_tie_nondeterminism_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_convert_test.go",
@@ -729,6 +730,7 @@
       "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
+      "internal/proxy/topk_tie_nondeterminism_test.go",
       "test/e2e-compat/topk_range_per_step_test.go"
     ],
     "semantics/topk-bottomk-without-strips-label": [
@@ -741,6 +743,7 @@
       "internal/proxy/topk_fuzz_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
+      "internal/proxy/topk_tie_nondeterminism_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/topk_range_per_step_test.go"
     ],
@@ -1415,6 +1418,11 @@
       "semantics/topk-bottomk-range-series",
       "semantics/topk-grouped-spellings"
     ],
+    "internal/proxy/topk_tie_nondeterminism_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/topk-bottomk-range-series",
+      "semantics/topk-grouped-spellings"
+    ],
     "internal/proxy/tumbling_axis_parity_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -1916,7 +1924,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 193,
+  "tests_with_markers": 194,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
