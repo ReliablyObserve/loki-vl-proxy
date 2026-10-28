@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`label_replace` adds its destination label to instant answers, reads an
+  escaped regexp, and runs under `topk`, `sort` and a binary expression (#744).**
+  `label_replace(rate({app="api-gateway"}[5m]), "app_short", "$1", "app",
+  "(.*)-.*")` came back from `/loki/api/v1/query` without `app_short` on every
+  series (also through nested `label_replace`), where Loki adds it
+  (`pkg/logql/evaluator.go` `LabelReplaceEvaluator.Next`): the proxy applied the
+  transform to range matrices only. It now rewrites the labels of a vector and
+  of a matrix alike, keeps the rest of the answer, and expands the replacement
+  the way Loki does (`$1`, `${1}`, `$name`, `$$`; an empty expansion removes the
+  destination), with the anchored regexp. Two series that end with one label
+  set stay two samples on an instant query and become one series on a range
+  query, as `JoinSampleVector` does, and no error is raised, as in Loki. Also
+  fixed: the string arguments are unquoted like the LogQL lexer does, so a
+  regexp written `"(\\w+)\\.(\\w+)"` matches (the backslashes used to be kept,
+  and the regexp never matched) and an escaped quote no longer ends the
+  argument; `topk`, `bottomk`, `sort` and `stddev` over a `label_replace` sent
+  the translator's marker to VictoriaLogs and now rank what the transform
+  produced; and a `label_replace` around a binary expression on `query_range`
+  sent the binary marker to VictoriaLogs, as the instant path used to. An
+  invalid regexp under those wrappers is Loki's `parse error : invalid regex in
+  label_replace` 400. `label_replace(sum without (level) (...), ...)` kept the
+  excluded label and lost the transform, because the `without` marker swallowed
+  the `label_replace` marker after it; and a call without the four string
+  arguments of Loki's grammar, or with an invalid escape in one, was taken for a
+  log query (an empty `streams` answer on `query_range`) and is now a 400 parse
+  error on both endpoints.
+  An instant `label_replace(count_over_time({env="production"}[5m]), ...)` (or
+  `bytes_over_time`, `rate`, ...) no longer comes back as one unlabeled total: the
+  grouping by stream was added only for a query that itself starts with the range
+  function, so the wrapper turned sixteen series into `{}`. A `label_replace`
+  around a metric over `| json` is answered by the evaluator that owns JSON parser
+  errors, as the metric is without the wrapper: a line that is not JSON fails the
+  query with Loki's `pipeline error: 'JSONParserErr'` 400 unless the pipeline
+  filters `__error__`, and `| json | __error__=""` keeps only the streams that
+  parse (the wrapper used to skip both and answer 200 with every stream). The
+  transform is applied to that answer.
+  `topk` and `bottomk` over a grouped `count_over_time`, `rate`, `bytes_over_time`
+  or `bytes_rate` (with or without a `label_replace` between) read the stats
+  buckets of the unranked metric when they hold every series, not the
+  three-grid window recurrence over `/select/logsql/query`: a first request of
+  `topk(3, label_replace(sum by (service_name) (count_over_time({env="production"}[5m])), ...))`
+  is one VictoriaLogs call instead of three, and an identical repeat or a window
+  moved back a minute is answered by the stats extent cache (0 calls, or the
+  four missing buckets) where the recurrence asked VictoriaLogs three full-range
+  questions every time. The ranking is Loki's (the sample at t covers (t-range,
+  t], the k largest of the series present at t); the recurrence still answers
+  when the grouping yields more series than `-max-stats-query-series` (topk ranks
+  them all, Loki's limit applies to the answer), for a Logs Drilldown request that
+  keeps the busiest series, and for a range equal to the step (one grid already).
+  A failure of VictoriaLogs on the bucket read is the client's answer (the recurrence is
+  not tried against a backend that is failing), and a grouping over the limit is
+  remembered for five minutes so its bucket read is not repeated on every request.
+  A `stats_query_range` answer that is not a Prometheus success body falls back to the
+  recurrence too, and a step that is not a whole number of seconds is read in
+  nanosecond buckets.
+  `topk` and `bottomk` without a grouping rank before a `label_replace` around them
+  renames the series, as Loki ranks the samples it leaves apart.
+  Not covered: an instant `rate(...)` or `count_over_time(...)` over a stream with
+  no level label has no `detected_level="unknown"` where Loki does, with or
+  without the `label_replace` (registered open as
+  `semantics/instant-bare-range-detected-level-unknown`, pinned by
+  `TestInstantBareRangeLacksDetectedLevelUnknown`); the e2e leaves that label out
+  of the bare instant shapes until it is fixed.
+  Registry: `semantics/label-replace-new-label`, and the rows this also closes,
+  `semantics/label-replace-instant-vector` (the instant answer of
+  `label_replace(sum by (level) (count_over_time(...)), "dst", ...)` now carries
+  `dst`) and `semantics/label-replace-range-binary-marker` (its `query_range`
+  form around a binary answers the ratio per level with `dst`, no marker sent).
+
 ## [2.43.0] - 2026-10-28
 
 ### Fixed

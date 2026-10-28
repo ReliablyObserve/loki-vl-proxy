@@ -60,3 +60,10 @@ compare:
     HTTP 400 on both; the proxy's `error` equals Loki's body except for the
     series named. Time to the error: 3-10 ms on the proxy (one lookup, no
     raw rows), 0.16-0.73 s on Loki direct at 1h-24h.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

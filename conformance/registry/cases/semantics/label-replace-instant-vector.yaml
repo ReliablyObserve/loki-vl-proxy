@@ -1,5 +1,5 @@
 id: semantics/label-replace-instant-vector
-title: label_replace around a vector at an instant adds no destination label (open)
+title: label_replace around a vector at an instant adds the destination label, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -14,7 +14,15 @@ why: |
   (internal/proxy/vector_matching.go) returns early unless the response is a matrix.
   semantics/label-replace-new-label covers query_range only. Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestInstantLabelReplaceOnAVectorAddsNoLabel, internal/proxy); Loki's behaviour is read from its v3.7.7 source and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
 
-  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant query): Loki answers the three series error, info and warn with `dst` equal to `level`; the proxy answers the same three series and values without `dst`. On query_range both carry it. The registered request uses the `level` stream label of the generator data.
+  Measured on generator data (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant query): Loki answers the three series error, info and warn with `dst` equal to `level`; the proxy answered the same three series and values without `dst`. On query_range both carry it. The registered request uses the `level` stream label of the generator data.
+
+  Fixed with semantics/label-replace-new-label: the transform now rewrites the
+  labels of an instant vector as of a range matrix (transformSeriesLabels in
+  internal/proxy/vector_matching.go), on the plain path and after a
+  post-aggregation, so the instant answer above carries `dst` on every series
+  whose source matches. TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant (the
+  test that pinned the old answer, converted) and the label_replace wrapper of
+  TestWithoutWrappedByAnOperator now assert Loki's answer on both endpoints.
 
 request:
   method: GET
@@ -30,12 +38,22 @@ compare:
   expect: |
     dst on every series whose source label matches (level).
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#744"
   impact: explore-visible
+  visual: none
+  visual_reason: 'the difference is on instant queries; the visual harness captures Explore range panels (queryType range), where label_replace already added the label, so the fix is proven by the instant tests and the e2e against Loki'
   effort: S
-  area: 'internal/proxy applyLabelReplace (matrix only)'
+  area: 'internal/proxy applyLabelReplace, transformSeriesLabels'
   loki: 'pkg/logql/evaluator.go:1275-1310 LabelReplaceEvaluator.Next'
-  proxy: 'the instant vector is returned without dst'
-  planned_test: 'TestInstantLabelReplaceOnAVectorAddsNoLabel (internal/proxy); an e2e test vs Loki in group semantics when fixed'
-  note: 'Related: semantics/label-replace-new-label (query_range), semantics/unwrap-sum-without-collapses (fixed). TestWithoutWrappedByAnOperator also pins the instant answer without dst for a label_replace around a without (keepInstant): update both tests with the fix.'
+  proxy: 'the transform rewrites the series of an instant vector as of a range matrix'
+  planned_test: 'TestCompat_LabelReplaceNewLabel (test/e2e-compat, group semantics); TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant, TestWithoutWrappedByAnOperator, TestLabelReplaceOnInstantAndRange (internal/proxy)'
+  note: 'Related: semantics/label-replace-new-label, semantics/unwrap-sum-without-collapses (fixed).'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

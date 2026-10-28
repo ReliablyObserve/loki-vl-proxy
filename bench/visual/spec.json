@@ -1408,6 +1408,19 @@
    "fixes": [
     "profiles/label-filter-regexp-anchoring"
    ]
+  },
+  {
+   "id": "explore-label-replace-over-binary",
+   "kind": "explore",
+   "query": "label_replace(sum by (level) (rate({service_name=\"payment-service\"}[$__auto])) / sum by (level) (rate({service_name=\"payment-service\"}[$__auto])), \"dst\", \"$1\", \"level\", \"(.*)\")",
+   "covers": [
+    "semantics/label-replace-range-binary-marker",
+    "semantics/label-replace-new-label",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/label-replace-range-binary-marker"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

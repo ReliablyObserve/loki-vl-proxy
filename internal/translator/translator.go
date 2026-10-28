@@ -1935,6 +1935,29 @@ func parseAllStringArgs(s string) []string {
 	return args
 }
 
+// parseUnquotedStringArgs reads the comma-separated string arguments that
+// follow the first argument of label_replace or label_join, unquoted as the
+// LogQL lexer does: a double-quoted string has its escapes resolved, a
+// backtick one is raw (pkg/logql/syntax/lex.go). It stops at ')' or at the
+// first argument that is not a valid string.
+func parseUnquotedStringArgs(s string) []string {
+	var args []string
+	for {
+		s = strings.TrimSpace(s)
+		quoted, err := strconv.QuotedPrefix(s)
+		if err != nil {
+			break
+		}
+		arg, err := strconv.Unquote(quoted)
+		if err != nil {
+			break
+		}
+		args = append(args, arg)
+		s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s[len(quoted):]), ","))
+	}
+	return args
+}
+
 // tryTranslateLabelReplace handles label_replace(v, "dst", "repl", "src", "regex").
 // It translates the inner expression and embeds a marker for proxy post-processing.
 func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string, bool) {
@@ -1946,7 +1969,7 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) != 4 {
 		return "", false
 	}
@@ -1971,7 +1994,7 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 	if !ok {
 		return "", false
 	}
-	args := parseAllStringArgs(rest)
+	args := parseUnquotedStringArgs(rest)
 	if len(args) < 3 { // dst + sep + at least one src
 		return "", false
 	}

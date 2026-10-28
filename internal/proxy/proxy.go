@@ -2487,7 +2487,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			logsqlQuery, withoutLabels, foldWithout = pushed, nil, false
 		}
 	}
-	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
+	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
@@ -2495,7 +2495,18 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	// A label_replace or label_join around a binary expression routes by that
+	// expression: its operands are evaluated, then the transform is applied below.
+	routedQuery := logqlQuery
+	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+		routedQuery = stripLabelTransforms(logqlQuery)
+	}
+	if routedQuery != logqlQuery {
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
+	}
+	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
 	if isBinary {
 		// A binary expression evaluates its operands through this handler, which
@@ -2562,6 +2573,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			cacheOut = sortSeriesByLabels(cacheOut, false)
 		}
 		var capErr error
 		if foldWithout && sc.code == http.StatusOK {
@@ -2777,7 +2791,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
-	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
+	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
 		return
@@ -2792,6 +2806,11 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	routedQuery := logqlQuery
 	if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
 		routedQuery = stripLabelTransforms(logqlQuery)
+	}
+	if routedQuery != logqlQuery {
+		// From the request's own query: logqlQuery may have lost a parser stage
+		// that one operand needs (preferWorkingParser).
+		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
@@ -2820,9 +2839,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		} else if rightErr != nil {
 			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
 		} else {
-			if routedQuery != logqlQuery {
-				r = cloneMetricQueryRequest(r, routedQuery)
-			}
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
 	} else if isStatsQuery(logsqlQuery) {
@@ -2849,6 +2865,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)
+		}
+		if len(labelReplaceSpecs) > 0 || labelJoinSpec != nil {
+			result = sortSeriesByLabels(result, queryIsSortable(logqlQuery))
 		}
 		var capErr error
 		if foldWithout {

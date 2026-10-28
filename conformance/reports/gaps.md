@@ -82,7 +82,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-query-range-windows` — Log query windows computed by their ring owner are read by the other replicas | 2 | 1 | partial |
 | resource_control | `peer-cache-replication` — Every peer-cache key has a backup replica, so losing one replica's disk or the owner costs no recompute | 3 | 4 | partial |
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
-| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 10 | partial |
+| limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 11 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
 | severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 6 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 3 | partial |
@@ -154,6 +154,8 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `drilldown-service-landing` | 4 | 1.14s (LF12 drilldown logs volume by level, level pill, 24h) | 0.43s | 0.03s | 0.01s | — |
 | `loki-compatible-profile` | 14 | 0.52s (E7 json count by level_extracted, 1h) | 0.06s | 0.06s | 0.01s | — |
 | `profiles/structured-metadata-label-collision` | 1 | 0.52s (E7 json count by level_extracted, 1h) | 0.06s | 0.06s | 0.01s | — |
+| `semantics/label-replace-new-label` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s | 0.55s | 0.01s | — |
+| `semantics/pipeline-error-text-parity` | 1 | 0.54s (L6 label_replace over json sum by, 1h) | 0.11s | 0.55s | 0.01s | — |
 | `profiles/stage-field-exposure` | 13 | 0.38s (SF5 logs, regexp capture, 6h) | 0.04s | 0.12s | 0.04s | — |
 | `parser-json` | 2 | 0.73s (LF15 drilldown field breakdown, level filter, 24h) | 0.47s | 0.02s | 0.01s | — |
 | `semantics/detected-level-filter-before-parser-pushdown` | 2 | 0.73s (LF15 drilldown field breakdown, level filter, 24h) | 0.47s | 0.02s | 0.01s | — |

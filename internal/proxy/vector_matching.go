@@ -759,58 +759,217 @@ func applyGroupNormalization(body []byte) []byte {
 	return out
 }
 
-// applyLabelReplace applies label_replace semantics to all series in a matrix response.
-// For each series: new_value = regexp.ReplaceAll(src_label_value, replacement).
-// If new_value is non-empty, dst_label is set; otherwise dst_label is deleted.
+// transformSeriesLabels rewrites the label set of every series of a matrix or
+// a vector answer with fn, keeping the rest of the answer as it is. Series
+// that end with one label set are not an error in Loki: an instant vector
+// keeps each sample, a range matrix files their points under one series, those
+// of each step in turn (pkg/logql/engine.go JoinSampleVector, vectorsToSeries).
+func transformSeriesLabels(body []byte, fn func(map[string]string) map[string]string) []byte {
+	var top, data map[string]json.RawMessage
+	if json.Unmarshal(body, &top) != nil || json.Unmarshal(top["data"], &data) != nil {
+		return body
+	}
+	var resultType string
+	var series []map[string]json.RawMessage
+	_ = json.Unmarshal(data["resultType"], &resultType)
+	if (resultType != "matrix" && resultType != "vector") || json.Unmarshal(data["result"], &series) != nil {
+		return body
+	}
+	merged := make(map[string]int, len(series))
+	out := series[:0]
+	for _, s := range series {
+		var metric map[string]string
+		_ = json.Unmarshal(s["metric"], &metric)
+		if metric == nil {
+			metric = map[string]string{}
+		}
+		metric = fn(metric)
+		s["metric"], _ = json.Marshal(metric)
+		if resultType == "matrix" {
+			key := binaryLabelKey(metric)
+			if at, dup := merged[key]; dup {
+				var more, have []json.RawMessage
+				_ = json.Unmarshal(s["values"], &more)
+				_ = json.Unmarshal(out[at]["values"], &have)
+				all := append(have, more...)
+				sort.SliceStable(all, func(i, j int) bool { return pointSeconds(all[i]) < pointSeconds(all[j]) })
+				out[at]["values"], _ = json.Marshal(all)
+				continue
+			}
+			merged[key] = len(out)
+		}
+		out = append(out, s)
+	}
+	data["result"], _ = json.Marshal(out)
+	top["data"], _ = json.Marshal(data)
+	b, err := json.Marshal(top)
+	if err != nil {
+		return body
+	}
+	return b
+}
+
+// sortSeriesByLabels orders the series of a matrix or vector answer as Loki
+// does after a label_replace: a range result by label set (pkg/logql/engine.go
+// JoinSampleVector, sort.Sort(result)), an instant vector the same way unless
+// the query sorts by value (sort, sort_desc: evaluator.go Sortable), in which
+// case sortable is set and the order is kept.
+func sortSeriesByLabels(body []byte, sortable bool) []byte {
+	var top, data map[string]json.RawMessage
+	if json.Unmarshal(body, &top) != nil || json.Unmarshal(top["data"], &data) != nil {
+		return body
+	}
+	var resultType string
+	var series []struct {
+		raw    json.RawMessage
+		metric map[string]string
+	}
+	var raws []json.RawMessage
+	_ = json.Unmarshal(data["resultType"], &resultType)
+	if (resultType != "matrix" && resultType != "vector") || (resultType == "vector" && sortable) || json.Unmarshal(data["result"], &raws) != nil {
+		return body
+	}
+	for _, raw := range raws {
+		var m struct {
+			Metric map[string]string `json:"metric"`
+		}
+		_ = json.Unmarshal(raw, &m)
+		series = append(series, struct {
+			raw    json.RawMessage
+			metric map[string]string
+		}{raw, m.Metric})
+	}
+	sort.SliceStable(series, func(i, j int) bool { return compareLabelSets(series[i].metric, series[j].metric) < 0 })
+	for i := range series {
+		raws[i] = series[i].raw
+	}
+	data["result"], _ = json.Marshal(raws)
+	top["data"], _ = json.Marshal(data)
+	if b, err := json.Marshal(top); err == nil {
+		return b
+	}
+	return body
+}
+
+var sortCallRE = regexp.MustCompile(`(^|[^\w])sort(_desc)?\s*\(`)
+
+// queryIsSortable reports whether a query orders by value (evaluator.go
+// Sortable: a sort or sort_desc anywhere in it).
+func queryIsSortable(logql string) bool { return sortCallRE.MatchString(logql) }
+
+// compareLabelSets is Prometheus' labels.Compare: label by label in name
+// order, the name first and then the value, a shorter prefix first.
+func compareLabelSets(a, b map[string]string) int {
+	names := func(m map[string]string) []string {
+		out := make([]string, 0, len(m))
+		for k := range m {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
+	}
+	na, nb := names(a), names(b)
+	for i := 0; i < len(na) && i < len(nb); i++ {
+		if na[i] != nb[i] {
+			return strings.Compare(na[i], nb[i])
+		}
+		if c := strings.Compare(a[na[i]], b[nb[i]]); c != 0 {
+			return c
+		}
+	}
+	return len(na) - len(nb)
+}
+
+// pointSeconds is the time of a sample point `[time, "value"]`.
+func pointSeconds(point json.RawMessage) float64 {
+	var p []any
+	if json.Unmarshal(point, &p) != nil || len(p) == 0 {
+		return 0
+	}
+	t, _ := sampleTimeSeconds(p[0])
+	return t
+}
+
+// applyLabelReplace applies label_replace to every series of a matrix or vector
+// answer as Loki's LabelReplaceEvaluator does (pkg/logql/evaluator.go): the
+// regexp is anchored, a series it does not match is left as it is, and the
+// expanded replacement ($1, ${1}, $name) replaces the destination label, which
+// an empty expansion removes.
 func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
 	re, err := regexp.Compile("^(?:" + spec.Regex + ")$")
 	if err != nil {
 		return body
 	}
-	var resp matrixResponseRW
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
-		return body
-	}
-	for i, s := range resp.Data.Result {
-		src := s.Metric[spec.SrcLabel]
-		// Prometheus semantics: if regex matches, apply replacement; if not, series unchanged.
-		if re.MatchString(src) {
-			newVal := re.ReplaceAllString(src, spec.Replacement)
-			if newVal != "" {
-				resp.Data.Result[i].Metric[spec.DstLabel] = newVal
-			} else {
-				delete(resp.Data.Result[i].Metric, spec.DstLabel)
-			}
+	return transformSeriesLabels(body, func(in map[string]string) map[string]string {
+		src := in[spec.SrcLabel]
+		idx := re.FindStringSubmatchIndex(src)
+		if idx == nil {
+			return in
 		}
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return out
+		res := re.ExpandString(nil, spec.Replacement, src, idx)
+		out := make(map[string]string, len(in)+1)
+		for k, v := range in {
+			out[k] = v
+		}
+		delete(out, spec.DstLabel)
+		if len(res) > 0 {
+			out[spec.DstLabel] = string(res)
+		}
+		return out
+	})
 }
 
-// applyLabelJoin applies label_join semantics to all series in a matrix response.
-// dst_label is set to the src_labels values joined by separator.
+// applyLabelJoin applies label_join to every series of a matrix or vector
+// answer: the destination label is the values of the source labels, the
+// absent ones skipped, joined by the separator. Loki v3.7.7 has no label_join;
+// accepting it is the open gap semantics/proxy-accepts-operators-not-in-loki.
 func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
-	var resp matrixResponseRW
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
-		return body
-	}
-	for i, s := range resp.Data.Result {
+	return transformSeriesLabels(body, func(in map[string]string) map[string]string {
 		parts := make([]string, 0, len(spec.SrcLabels))
 		for _, src := range spec.SrcLabels {
-			if v := s.Metric[src]; v != "" {
+			if v := in[src]; v != "" {
 				parts = append(parts, v)
 			}
 		}
-		resp.Data.Result[i].Metric[spec.DstLabel] = strings.Join(parts, spec.Separator)
+		out := make(map[string]string, len(in)+1)
+		for k, v := range in {
+			out[k] = v
+		}
+		out[spec.DstLabel] = strings.Join(parts, spec.Separator)
+		return out
+	})
+}
+
+// labelTransforms are the label_replace and label_join calls of a query, in
+// the order they apply: the innermost first.
+type labelTransforms struct {
+	replaces []translator.LabelReplaceSpec
+	join     *translator.LabelJoinSpec
+}
+
+// parseLabelTransformMarkers strips the label_replace and label_join markers
+// the translator left in a query. It returns Loki's parse error text when a
+// label_replace regexp does not compile.
+func parseLabelTransformMarkers(logsql string) (string, labelTransforms, string) {
+	logsql, replaces := translator.ParseAllLabelReplaceMarkers(logsql)
+	logsql, join := translator.ParseLabelJoinMarker(logsql)
+	for _, spec := range replaces {
+		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
+			return logsql, labelTransforms{}, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err)
+		}
 	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
+	return logsql, labelTransforms{replaces: replaces, join: join}, ""
+}
+
+// apply runs the transforms over a matrix or vector answer.
+func (t labelTransforms) apply(body []byte) []byte {
+	for _, spec := range t.replaces {
+		body = applyLabelReplace(body, spec)
 	}
-	return out
+	if t.join != nil {
+		body = applyLabelJoin(body, *t.join)
+	}
+	return body
 }
 
 // sampleTimeSeconds reads a sample time of a decoded response: a JSON number, or

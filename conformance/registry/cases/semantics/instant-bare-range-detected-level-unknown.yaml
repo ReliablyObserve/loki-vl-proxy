@@ -1,0 +1,41 @@
+id: semantics/instant-bare-range-detected-level-unknown
+title: an instant bare range function lacks the detected_level=unknown label Loki puts on a stream with no level (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `rate({app="api-gateway"}[5m])` at /query, or the same function under a
+  label_replace, answers one series per stream. For a stream with no `level`
+  label Loki 3.7.x labels the series `detected_level="unknown"` next to the
+  stream labels; the proxy's instant answer has the stream labels without it,
+  where query_range carries it (buildMetricSeriesEntry adds `unknown` when the
+  row has no level). Found by the e2e of semantics/label-replace-new-label when
+  another test's stream with no level matched its selector; the same
+  difference is on the base commit with no label_replace around the function,
+  so it is not caused by the transform. It is the instant half of the
+  "detected_level, unknown included, on every route" work (#750); the sibling row
+  semantics/without-instant-detected-level-unknown is the `without` form.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'rate({app="api-gateway"}[5m])'
+    time: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series labels]
+  expect: |
+    detected_level="unknown" on every series of a stream with no level label.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy instant stats answer labels (the stream-derived label set of an instant vector)'
+  loki: 'detected_level is a label of every stream when log level discovery is on (unknown without a level)'
+  proxy: 'the instant vector has the stream labels without detected_level'
+  planned_test: 'TestInstantBareRangeLacksDetectedLevelUnknown pins the current answer (internal/proxy); TestCompat_LabelReplaceNewLabel leaves detected_level out of the bare instant shapes until it is fixed (test/e2e-compat)'
+  note: 'Fixed by #750 (detected_level on every route); flip the pinned test then.'
+  clusters: []

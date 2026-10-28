@@ -564,7 +564,7 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 // not 14. A label_replace is pinned by the label it adds, and a comparison by a
 // threshold between the groups' values, so it drops some of them.
 //
-// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity
+// conformance: semantics/unwrap-sum-without-collapses, metric-series-identity, semantics/label-replace-instant-vector
 func TestWithoutWrappedByAnOperator(t *testing.T) {
 	type answer = map[int64]map[string]float64
 	type wrapper struct {
@@ -618,7 +618,7 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 				}
 			}
 			return out
-		}, identity /* an instant label_replace on a vector adds no label (open row semantics/label-replace-instant-vector) */},
+		}, nil},
 		// On query_range a topk over a binary expression is answered 502 with or
 		// without `without` (the binary marker reaches VictoriaLogs): instant only.
 		{"topk(10) of a comparison", func(q string, threshold float64) string { return "topk(10, " + q + " > " + text(threshold) + ")" }, true, false, true, above, nil},

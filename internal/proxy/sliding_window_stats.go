@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,6 +104,61 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 		return true
 	}
 	return (end.Sub(start)+window)/gcdBucket > heavyQueryBucketThreshold
+}
+
+// writeRankedRangeFromBuckets answers the input of a topk or bottomk from the
+// stats_query_range buckets of the unranked window metric (the route, and the
+// stats extent cache, a repeated or moved window reuses) instead of the window
+// recurrence, and reports false when the recurrence must answer. The buckets
+// hold every series the grouping yields, so the caller's ranking sees all of
+// them; they cannot when the grouping yields more series than
+// -max-stats-query-series (the read fails: Loki's limit applies to the answer,
+// which topk shrinks, so the recurrence ranks them; the verdict is remembered for
+// a while so the heavy bucket read is not repeated on every request), for a
+// request that keeps only the busiest series (Drilldown), when the window equals
+// the step (one grid is read already), or when the unranked metric would use the
+// recurrence itself (no exact bucket grid, or more buckets than the heavy-query
+// bound), or a VictoriaLogs that has no stats_query_range (404, 405, 501, or an answer that is not a stats_query_range success body). Any
+// other failure is the client's answer, as it is for the recurrence: the heavier
+// path is not tried against a backend that is failing.
+func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, statsAggFunc, field, manualFunc string, fetchStart, start, end time.Time, step, window, bucket time.Duration, bucketsOK bool, sampleShift time.Duration) bool {
+	if _, ranked := rangeTopKFromContext(ctx); !ranked || statsAggFunc == "" || window == step || requestKeepsPartialSeries(ctx) {
+		return false
+	}
+	unranked := context.WithValue(ctx, rangeTopKKey{}, rangeTopK{})
+	if p.slidingWindowStatsApplies(unranked, spec, field, start, end, step, window, bucket, bucketsOK) {
+		return false
+	}
+	overLimitKey := "ranked-over-limit:" + getOrgID(ctx) + ":" + strconv.Itoa(p.resolvedMaxStatsQuerySeries(ctx)) + ":" + spec.BaseQuery + "|" + strings.Join(spec.GroupBy, ",") + "|" + statsAggFunc
+	if p.cache != nil {
+		if _, seen := p.cache.Get(overLimitKey); seen {
+			return false
+		}
+	}
+	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, fetchStart, end, bucket)
+	if err != nil {
+		if isSeriesLimitError(err) || errors.Is(err, errBodyTooLarge) {
+			p.setLocalReadCacheWithTTL(overLimitKey, []byte("1"), drilldownOverLimitTTL)
+			return false
+		}
+		var unreadable *statsBucketsUnreadableError
+		if errors.As(err, &unreadable) {
+			return false // not a stats_query_range answer: the recurrence reads /select/logsql/query
+		}
+		var upstream *upstreamStatusError
+		if errors.As(err, &upstream) && (upstream.status == http.StatusNotFound || upstream.status == http.StatusMethodNotAllowed || upstream.status == http.StatusNotImplemented) {
+			return false // a VictoriaLogs without stats_query_range: the recurrence reads /select/logsql/query
+		}
+		p.writeError(w, badRequestStatusOr(err, statusFromUpstreamErr(err)), err.Error())
+		return true
+	}
+	result, err := buildHitsRangeMetricMatrix(manualFunc, shiftSeriesSamples(series, sampleShift), start, end, step, window, p.limits().BufferedBackendBodyBytes)
+	if err != nil {
+		return false // the matrix does not fit the buffered body bound: the recurrence encodes only the ranked series
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return true
 }
 
 // slidingRecord is one non-empty bucket of one series in one grid.
