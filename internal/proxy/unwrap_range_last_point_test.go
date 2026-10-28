@@ -27,10 +27,13 @@ func unwrapRangeResult(t *testing.T, emu *vlEmulator, query string, startSec, en
 	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	c := cache.New(60*time.Second, 1000)
+	defer c.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
 	if emu.version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
@@ -185,6 +188,83 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 						}
 					}
 				})
+			}
+		}
+	}
+}
+
+// TestUnwrapOverTimeShortRangeMatchesLoki: with a range shorter than the step,
+// the step bucket keeps only the lines of Loki's window (t-range, t] (the window
+// filter), so the values and which steps have a sample at all are Loki's, at
+// every step, the end included, per stream, over generated rows (zero values,
+// lines beside the window edges), with and without the conversion-error check,
+// and as an operand of a binary operation.
+//
+// conformance: semantics/unwrap-over-time-range-windows, semantics/unwrap-range-last-point, window-bounds-and-step-alignment
+func TestUnwrapOverTimeShortRangeMatchesLoki(t *testing.T) {
+	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
+		for _, parser := range []string{"json", "logfmt"} {
+			for _, fn := range []string{"sum_over_time", "avg_over_time", "max_over_time", "min_over_time"} {
+				for _, form := range []struct{ name, query string }{
+					{"error filter", `sum by (pod) (%s({app="uw"} | %s | unwrap amount | __error__="" [%s]))`},
+					{"conversion check", `sum by (pod) (%s({app="uw"} | %s | unwrap amount [%s]))`},
+					{"binary operand", `sum by (pod) (%s({app="uw"} | %s | unwrap amount [%s])) * 1`},
+					{"vector operands", `sum by (pod) (%[1]s({app="uw"} | %[2]s | unwrap amount [%[3]s])) + sum by (pod) (%[1]s({app="uw"} | %[2]s | unwrap amount [%[3]s]))`},
+				} {
+					name := fmt.Sprintf("%s/%s/%s/%s", version, parser, fn, form.name)
+					t.Run(name, func(t *testing.T) {
+						rnd := rand.New(rand.NewSource(int64(len(name))*7907 + 11))
+						for i := 0; i < 20; i++ {
+							s := generateUnwrapScenario(rnd, fn, parser, false)
+							s.step = []time.Duration{time.Minute, 90 * time.Second, 5 * time.Minute}[rnd.Intn(3)]
+							s.window = []time.Duration{10 * time.Second, 30 * time.Second, time.Minute}[rnd.Intn(3)]
+							if s.window >= s.step {
+								s.window = s.step / 3
+							}
+							if form.name == "vector operands" {
+								// Binary operands are evaluated on the step-aligned axis
+								// (alignBinaryRangeRequest, Loki's align_queries_with_step).
+								s.start -= s.start % int64(s.step)
+								s.end -= s.end % int64(s.step)
+							}
+							// Lines spread over the whole range, some on window edges.
+							lo, hi := s.start-int64(s.step), s.end+5e9
+							for j := range s.rows {
+								s.rows[j].labels = nil
+								s.rows[j].ts = lo + rnd.Int63n(hi-lo)
+								if rnd.Intn(4) == 0 {
+									edge := s.start + int64(rnd.Intn(8))*int64(s.step)
+									if rnd.Intn(2) == 0 {
+										edge -= int64(s.window)
+									}
+									s.rows[j].ts = edge + int64(rnd.Intn(3)-1)
+								}
+							}
+							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							query := fmt.Sprintf(form.query, fn, parser, uwWindowText(s.window))
+							got := unwrapRangeResult(t, emu, query, s.start/1e9, s.end/1e9, int64(s.step/time.Second))
+							for _, pod := range []string{"a", "b", "c"} {
+								var rows []emuRow
+								for _, row := range s.rows {
+									if row.stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
+										rows = append(rows, row)
+									}
+								}
+								gotNs := map[int64]float64{}
+								for ts, v := range got[pod] {
+									gotNs[ts*1e9] = v
+								}
+								want := lokiUnwrapSum(rows, fn, int64(s.window), s.times())
+								if form.name == "vector operands" {
+									for ts, v := range want {
+										want[ts] = 2 * v
+									}
+								}
+								compareUnwrapSum(t, fmt.Sprintf("%s #%d pod=%s", name, i, pod), s, gotNs, want, 1)
+							}
+						}
+					})
+				}
 			}
 		}
 	}

@@ -136,9 +136,13 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 			[4]string{`200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0266667,0.0533333,0.0666667`, `200 {}=0.0666667`, `200 {}=0.0666667`}},
 		// The shapes the fold answers (sum, min, max, avg, count without, the
 		// outermost aggregation, also under a ranking): a series per remaining
-		// label set, limited on the folded answer.
+		// label set, limited on the folded answer. On query_range a max over time
+		// with a range longer than the step reads Loki's window (t-range, t] from
+		// the stream buckets (semantics/unwrap-over-time-range-windows), whose
+		// series carry detected_level=unknown as Loki's do for a stream without
+		// a level.
 		{`max without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,20,12 {app=uw,ns=y,service_name=uw}=32,24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=36,36,36 {app=uw,detected_level=unknown,ns=y,service_name=uw}=40,40,40`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
 		// stddev and stdvar wrap the folded series: the deviation of the two ns
 		// sums (138 and 154) is 8, of the two ns maxima (36 and 40) the variance is 4.
 		{`stddev(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
@@ -146,7 +150,7 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		{`stdvar(max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 			[4]string{`200 {}=4,4,4`, `200 {}=4,4,4`, `200 {}=4`, `200 {}=4`}},
 		{`topk(5, max without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,20,12 {app=uw,ns=y,service_name=uw}=32,24,8`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=36,36,36 {app=uw,detected_level=unknown,ns=y,service_name=uw}=40,40,40`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=36 {app=uw,ns=y,service_name=uw}=40`, `400 series limit (1)`}},
 	} {
 		for i, name := range []string{"query_range", "query_range/limit 1", "query", "query/limit 1"} {
 			t.Run(fmt.Sprintf("%s/%s", tc.query, name), func(t *testing.T) {

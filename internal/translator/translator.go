@@ -3192,6 +3192,10 @@ func statsGroupsByLabel(query, label string) bool {
 	}
 }
 
+// FirstTopLevelPipe returns the index of the first '|' of a LogsQL query
+// outside quoted strings (the end of its filters), or -1.
+func FirstTopLevelPipe(query string) int { return firstTopLevelPipe(query) }
+
 // firstTopLevelPipe returns the index of the first '|' outside quoted strings.
 func firstTopLevelPipe(query string) int {
 	var quote byte

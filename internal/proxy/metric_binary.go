@@ -74,6 +74,14 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// (edge, edge+W] and relabel every bucket to its Loki evaluation timestamp
 	// (relabelSnappedTumblingStatsQueryRange).
 	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
+		query := effectiveQuery
+		if inner, ok := parseOriginalRangeMetricSpec(originalLogql); ok && inner.Window > 0 && inner.Window < origSpec.Window {
+			// sum, avg, max and min over time with unwrap and a range shorter
+			// than the step: the bucket (t-step, t] keeps only the lines of
+			// Loki's window (t-range, t] (pkg/logql/range_vector.go:102-189),
+			// and a step whose window holds none has no sample.
+			query = withWindowPhaseFilter(r.Context(), query, time.Unix(0, origStartNs), origSpec.Window, inner.Window)
+		}
 		buf := &bufferedResponseWriter{}
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
@@ -83,7 +91,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 			window := origSpec.Window.Nanoseconds()
 			shiftedR.Form.Set("end", strconv.FormatInt(origStartNs+(endNs-origStartNs)/window*window, 10))
 		}
-		p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, effectiveQuery, origSpec.Window)
+		p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, query, origSpec.Window)
 		code := buf.code
 		if code == 0 {
 			code = http.StatusOK

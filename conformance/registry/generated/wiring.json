@@ -228,6 +228,7 @@
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_over_time_window_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go",
@@ -250,6 +251,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_convert_test.go",
       "internal/proxy/unwrap_samples_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "internal/translator/extracted_suffix_test.go",
       "internal/translator/regexp_escaping_test.go",
       "internal/translator/unwrap_gate_test.go",
@@ -268,6 +270,8 @@
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go",
+      "test/e2e-compat/unwrap_over_time_window_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
@@ -300,6 +304,7 @@
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/sum_without_extraction_list_test.go",
       "internal/proxy/sum_without_label_collision_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/proxy/vector_agg_fold_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
@@ -481,6 +486,7 @@
     "quality/query-range-extent-cache": [
       "internal/proxy/manual_metric_encoding_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go"
     ],
     "semantics/backend-aborted-response": [
@@ -611,6 +617,11 @@
     "semantics/live-request-not-cancelled-by-sibling": [
       "internal/proxy/backend_stale_cancel_test.go"
     ],
+    "semantics/lower-bound-exclusive": [
+      "internal/proxy/range_lower_bound_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
+      "test/e2e-compat/unwrap_over_time_window_test.go"
+    ],
     "semantics/metadata-answers-include-last-24h-like-loki": [
       "internal/proxy/compat_cache_freshness_test.go",
       "internal/proxy/label_empty_run_test.go",
@@ -693,6 +704,8 @@
     "semantics/unwrap-conversion-error": [
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
@@ -721,9 +734,19 @@
     "semantics/unwrap-gate-parsefloat-divergences": [
       "internal/proxy/unwrap_bytes_gate_property_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/translator/unwrap_gate_property_test.go",
       "internal/translator/unwrap_gate_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
+    ],
+    "semantics/unwrap-over-time-range-windows": [
+      "internal/proxy/unwrap_over_time_window_test.go",
+      "internal/proxy/unwrap_range_last_point_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go",
+      "test/e2e-compat/unwrap_over_time_window_test.go"
+    ],
+    "semantics/unwrap-over-time-range-windows-residual-forms": [
+      "internal/proxy/unwrap_over_time_window_test.go"
     ],
     "semantics/unwrap-quantile-response-limit": [
       "internal/proxy/quantile_histogram_test.go",
@@ -845,18 +868,23 @@
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
     "window-bounds-and-step-alignment": [
+      "internal/proxy/range_lower_bound_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
+      "internal/proxy/unwrap_over_time_window_test.go",
       "internal/proxy/unwrap_range_last_point_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/proxy/vector_agg_series_differential_test.go",
+      "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/unwrap_over_time_short_range_test.go",
+      "test/e2e-compat/unwrap_over_time_window_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 337,
+  "registry_items": 340,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1217,6 +1245,10 @@
     "internal/proxy/quantile_histogram_test.go": [
       "semantics/unwrap-quantile-response-limit"
     ],
+    "internal/proxy/range_lower_bound_test.go": [
+      "semantics/lower-bound-exclusive",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/recent_tail_bypass_clamp_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -1340,10 +1372,21 @@
       "loki_api_v1_query_range",
       "semantics/unwrap-duration-seconds"
     ],
+    "internal/proxy/unwrap_over_time_window_test.go": [
+      "metric-series-identity",
+      "quality/query-range-extent-cache",
+      "semantics/lower-bound-exclusive",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-gate-parsefloat-divergences",
+      "semantics/unwrap-over-time-range-windows",
+      "semantics/unwrap-over-time-range-windows-residual-forms",
+      "window-bounds-and-step-alignment"
+    ],
     "internal/proxy/unwrap_quantile_response_limit_test.go": [
       "semantics/unwrap-quantile-response-limit"
     ],
     "internal/proxy/unwrap_range_last_point_test.go": [
+      "semantics/unwrap-over-time-range-windows",
       "semantics/unwrap-range-last-point",
       "window-bounds-and-step-alignment"
     ],
@@ -1371,6 +1414,11 @@
       "drilldown/index_volume/single-sample-returns-vector",
       "loki_api_v1_index_volume",
       "status-400"
+    ],
+    "internal/proxy/window_phase_filter_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-conversion-error",
+      "window-bounds-and-step-alignment"
     ],
     "internal/proxy/without_fold_scope_test.go": [
       "limits/series-limit-error",
@@ -1689,6 +1737,18 @@
       "semantics/unwrap-duration-seconds",
       "status-400"
     ],
+    "test/e2e-compat/unwrap_over_time_short_range_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-over-time-range-windows",
+      "window-bounds-and-step-alignment"
+    ],
+    "test/e2e-compat/unwrap_over_time_window_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/lower-bound-exclusive",
+      "semantics/unwrap-over-time-range-windows",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/unwrap_quantile_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -1746,7 +1806,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 177,
+  "tests_with_markers": 182,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -1831,7 +1891,7 @@
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
-    "semantics/unwrap-over-time-range-windows",
+    "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
@@ -1844,5 +1904,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 161
+  "wired_items": 164
 }

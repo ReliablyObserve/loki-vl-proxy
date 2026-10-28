@@ -1043,6 +1043,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-sum-over-time-sliding-window",
+   "kind": "explore",
+   "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))",
+   "covers": [
+    "semantics/unwrap-over-time-range-windows",
+    "window-bounds-and-step-alignment",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-over-time-range-windows"
+   ]
+  },
+  {
    "id": "explore-unwrap-first-last-under-sum",
    "kind": "explore",
    "query": "sum by (service_name) (last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [$__auto]))",

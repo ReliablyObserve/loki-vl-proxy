@@ -492,10 +492,7 @@ type unwrapPoint struct {
 func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
 	flagged := func(flag string) []byte { return []byte(`"` + unwrapBadField + `":"` + flag + `"`) }
 	if !bytes.Contains(body, flagged("1")) && !bytes.Contains(body, flagged(unwrapNaNFlag)) {
-		kept := string(flagged("0"))
-		out := bytes.ReplaceAll(body, []byte(","+kept), nil)
-		out = bytes.ReplaceAll(out, []byte(kept+","), nil)
-		return bytes.ReplaceAll(out, []byte(kept), nil), nil, nil
+		return dropKeptFlag(body, flagged("0")), nil, nil
 	}
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(body, &top); err != nil {
@@ -582,6 +579,29 @@ func stripUnwrapFlags(body []byte, nan *unwrapNaN) ([]byte, []float64, error) {
 	}
 	out, err := json.Marshal(top)
 	return out, times, err
+}
+
+// dropKeptFlag removes every kept label from body in one pass, in place (the
+// answer only shrinks), with the comma that joins it to a neighbour: the one
+// before it, else the one after it, as the three replacements `,kept`,
+// `kept,` and `kept` in turn would.
+func dropKeptFlag(body, kept []byte) []byte {
+	out := body[:0]
+	for {
+		i := bytes.Index(body, kept)
+		if i < 0 {
+			return append(out, body...)
+		}
+		end := i + len(kept)
+		switch {
+		case i > 0 && body[i-1] == ',':
+			i--
+		case end < len(body) && body[end] == ',':
+			end++
+		}
+		out = append(out, body[:i]...)
+		body = body[end:]
+	}
 }
 
 // unwrapSeriesKey identifies a series of a stats answer by its labels.
@@ -886,8 +906,9 @@ func (c *unwrapCheck) confirm(ctx context.Context, p *Proxy) *orderedJSONPipelin
 				continue
 			}
 			query := unwrapLookupQuery(h.base, h.field, h.conv)
-			if !c.instant && c.step > probe.window {
-				query += windowPhaseFilter(c.start, c.step, probe.window)
+			if !c.instant && c.step > probe.window && !strings.Contains(h.base, "__lvp_window_phase") {
+				// A base read through the window evaluator holds the filter already.
+				query = withWindowPhaseFilter(ctx, query, c.start, c.step, probe.window)
 			}
 			query += " | limit 3"
 			key := query + from.String() + to.String()

@@ -1,0 +1,63 @@
+id: semantics/unwrap-over-time-short-range-windows
+title: sum, avg, max and min over time with unwrap and a range shorter than the step answer Loki's window on query_range (fixed)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki evaluates `sum_over_time`, `avg_over_time`, `max_over_time` and
+  `min_over_time` over unwrap on the window (t-range, t] for every step
+  (pkg/logql/range_vector.go:102-189 batchRangeVectorIterator.Next and load: the
+  lower bound is exclusive, and a line between two windows is consumed without
+  joining any sample). With a range shorter than the step the windows are
+  disjoint and a step whose window holds no line has no sample.
+
+  The proxy answered these functions from VictoriaLogs' anchored step buckets
+  (edge, edge+step] relabelled onto the evaluation time each closes
+  (statsRateRangeEqualsStepShift, semantics/unwrap-range-last-point), so a step's
+  value was the whole step: `sum by (service_name) (sum_over_time({service_name="api-gateway"}
+  | json | unwrap duration_ms [1m]))` over 7 days (step 10m, the daily
+  unwrap-conversion-error E1 shape) summed ten minutes of lines per point where
+  Loki sums one, and a step with lines only outside its window had a sample Loki
+  does not.
+
+  Fixed: for a range shorter than the step the request's VictoriaLogs query
+  carries the window filter of the window evaluator (withWindowPhaseFilter: the
+  phase of a line's stored _time modulo the step, anchored at start-range), right
+  after the query's filters, so the bucket (t-step, t] holds exactly the lines of
+  (t-range, t] and VictoriaLogs parses only those. Values and sample presence are
+  Loki's, as an operand of a binary operation too, and with the conversion-error
+  check, which counts only the lines inside a window as Loki fails only on those.
+
+  A range longer than the step is fixed with semantics/unwrap-over-time-range-windows.
+  Not covered: the series identity of avg, max and min under an outer aggregation
+  (semantics/unwrap-sum-by-per-series-function-extraction-list). VictoriaLogs
+  evaluates the phase in float64, so a line within a few hundred nanoseconds of a
+  window edge may fall on either side, as for the window evaluator.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="api-gateway"} | json | unwrap duration_ms [1m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '600'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per service_name, Loki's one-minute window sum at every 10-minute step.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a fix proof is captured at the ranges Loki holds in the visual stack (up to 1.5h), where Explore''s auto step is a few seconds and any range a panel can show is longer than the step (semantics/unwrap-over-time-range-windows); range < step needs a step of minutes (7d), proven by the window comparison against Loki in the e2e'
+  effort: S
+  area: 'internal/proxy metric_binary.go proxyStatsQueryRange (statsRateRangeEqualsStepShift branch) and range_metric_compat.go withWindowPhaseFilter'
+  loki: 'pkg/logql/range_vector.go:102-189 batchRangeVectorIterator (window (t-range, t]); range_vector.go:371-420 sumOverTime, avgOverTime, maxOverTime, minOverTime'
+  proxy: 'anchored step buckets restricted to the lines of (t-range, t] by the window filter'
+  planned_test: 'TestUnwrapOverTimeShortRangeMatchesLoki (internal/proxy); TestCompat_UnwrapOverTimeShortRange (test/e2e-compat, group core)'
+  clusters: []

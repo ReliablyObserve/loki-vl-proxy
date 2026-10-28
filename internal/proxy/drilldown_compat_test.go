@@ -1723,10 +1723,11 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	// every row the exact matcher already selected, and grouping by
 	// service_name computes the derived value before the stats pipe (with
 	// format pipes: the test backend reports no version with the coalesce pipe).
-	// The range is shorter than the step, so the window evaluator adds its
-	// window-phase filter between the derivation pipes and the stats pipe.
+	// The range is shorter than the step, so the window evaluator puts its
+	// window-phase filter right after the filters, ahead of the derivation pipes.
 	if !strings.HasPrefix(statsQuery, `(service_name:="argocd" OR `) ||
-		!strings.Contains(statsQuery, `) * | format "<service.name>" as service_name keep_original_fields`) ||
+		!strings.Contains(statsQuery, `) * | math ((_time - `) ||
+		!strings.Contains(statsQuery, ` as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=5000000000 | format "<service.name>" as service_name keep_original_fields`) ||
 		!strings.Contains(statsQuery, `as service_name keep_original_fields |`) ||
 		!strings.Contains(statsQuery, `| stats by (service_name) count()`) {
 		t.Fatalf("expected derived service_name matchers, got %q", statsQuery)
