@@ -98,6 +98,22 @@ why: |
   line is named (Loki's choice depends on its shards; compared by shape). As
   for any metric, an identical request ending near now within
   -recent-tail-refresh-max-staleness is answered from the response cache.
+
+  First window of a heavy read: Loki stops at the first rejected value
+  (pkg/logql/evaluator.go:726-733), while the proxy's counting stats read
+  covers the whole range before the lookup that names the line (E6 and E7 took
+  2.0-4.3x Loki cold at 6h to 24h). When the metric's counting stats query
+  reads -backend-heavy-query-min-range or more, the first evaluation window
+  (start-range, start] is looked up beside it (at most three flagged rows); a
+  row Loki fails on there answers first, in the confirmation too, so the
+  answer does not depend on which read finishes first, and the metric's
+  queries are cancelled. A clean first window leaves the earliest flagged
+  bucket of the stats read as the reported line. The reported line therefore
+  depends on whether the read is heavy (a cold whole window) or not (a moved
+  window's missing steps); both are lines Loki fails on, and Loki's own choice
+  depends on its splits and shards. Tests: TestUnwrapFirstWindowAnswersBeforeTheHeavyRead,
+  TestUnwrapFirstWindowScope (internal/proxy);
+  TestCompat_UnwrapConversionErrorFirstWindowHeavyRead (test/e2e-compat, group core).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -134,5 +150,5 @@ perf:
   locked: false
   locked_since: null
   effort_exception:
-    reason: 'E6 and E7 (Loki answers 400) take 2.0-4.3x Loki cold at 1h to 24h: one VictoriaLogs counting stats call is 73 of 81 ms at 6h (the 4 lookups that name the failing line are 7 ms), while Loki stops at the first bad line (19 ms); E2 24h cold is 2.02x (VictoriaLogs 328 ms of 603 ms for the value histogram, the rest decoding and keeping it); measured 2026-10-28 on the A/B stack, loki-defaults'
-    follow_up: 'find the first flagged row with a limit-1 probe sent in parallel with the counting call, or carry it in the counting stats call (row_min per flag group), so a window with a rejected value costs Loki''s early stop; ask VictoriaLogs for a coarser histogram for the quantile'
+    reason: 'E2 (quantile_over_time over json) cold runs 1.2-1.7x Loki at 6h (531 ms against 336 on the 2026-10-28 A/B stack, loki-defaults): VictoriaLogs'' value-count read alone takes about as long as Loki''s whole answer; the proxy''s part (in-place read, counting sort, distinct-value ranks) is 83-106 ms of a 9 MB answer at 24h. E6 and E7 (Loki 400) are below Loki since the first-window lookup (6h and 22h cold 13-21 ms against 39-426 ms)'
+    follow_up: 'a coarser value histogram from VictoriaLogs for the quantile (fewer distinct values per bucket), which needs Loki''s exact rank on the merged buckets'

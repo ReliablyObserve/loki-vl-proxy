@@ -95,6 +95,4 @@ perf:
   modes: [cold, warm, refresh]
   locked: false
   locked_since: null
-  effort_exception:
-    reason: 'U9 (rate_counter) answers 3-8x Loki warm and is not Loki''s answer: Loki rates each series of the parsed labels (one line each, so 0), the evaluator rates a stream; at 6h the raw rows exceed the 64 MiB response limit (400, as main)'
-    follow_up: 'rate_counter from stats buckets (first, last and increase per bucket and parsed-label series), which also gives Loki''s values and drops the raw read'
+  effort_exception: null

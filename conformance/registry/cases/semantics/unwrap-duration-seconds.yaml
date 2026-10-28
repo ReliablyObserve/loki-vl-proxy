@@ -61,5 +61,5 @@ perf:
   locked: false
   locked_since: null
   effort_exception:
-    reason: 'D1 and D2 at 24h warm run 1.9-2.1x Loki (25-32 ms against 13-15 ms): two VictoriaLogs stats calls of about 11 ms per moved window; the proxy takes 1 ms'
-    follow_up: 'one call for the check and the read; merge the extent cache''s two gap reads'
+    reason: 'D1 and D2 run 1.0-1.8x Loki warm and refresh at 1h and 6h (15-28 ms against 10-15): one VictoriaLogs read per moved window (the old edge and the fresh steps now read at the same time), each at VictoriaLogs'' floor of about 15 ms for a stream-filter search; the proxy takes 1 ms'
+    follow_up: 'resolve the selector''s stream ids once and query by _stream_id, so a small window skips VictoriaLogs'' stream index search'

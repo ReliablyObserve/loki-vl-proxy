@@ -31,8 +31,10 @@ why: |
   window works per step (pkg/logql/evaluator.go VectorAggEvaluator.Next,
   topk per step), so the steps of a request whose start is on the grid of an
   earlier one are taken from that answer and the missing ranges (a refresh's
-  new edge, a re-run's old one) are evaluated through the handler, one after
-  another, and merged. A step is kept once its window is older than
+  new edge, a re-run's old one) are evaluated through the handler (at the
+  same time when each reads less than -backend-heavy-query-min-range, one
+  after another otherwise, so a request holds at most the one heavy-query slot
+  its whole window would) and merged. A step is kept once its window is older than
   -query-range-freshness, per tenant, query, step and grid phase, in the
   response cache tiers (memory, disk, peers), and expires with the oldest
   VictoriaLogs bucket it was evaluated from (-query-range-extent-cache-ttl).
@@ -83,7 +85,7 @@ gap:
   area: 'internal/proxy/query_range_steps.go serveQueryRangeSteps (from handleQueryRange in internal/proxy/proxy.go); markQueryStepsEvaluated and markQueryStepsRoute in proxyManualRangeMetricRange (internal/proxy/range_metric_compat.go)'
   loki: 'pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit, filterRecentExtents; pkg/querier/queryrange/queryrangebase/query_range.go:310-350 matrixMerge; pkg/logql/range_vector.go:102-189'
   proxy: 'the window evaluator''s answers kept per evaluation time; a moved window evaluates its missing ranges and merges'
-  planned_test: 'TestQueryRangeStepsMatchUncached, TestQueryRangeStepsLokiWindows, TestQueryRangeStepsRouteBoundary, TestQueryRangeStepsOnlyPerStepAnswers, TestQueryRangeStepsScopeAndAccounting, TestQueryRangeStepsSeriesLimit, TestQueryStepsAnswerRoundTrip (internal/proxy); TestCompat_QueryRangeSettledSteps (test/e2e-compat, group core); TestFleet_QueryRangeSettledStepsReachPeers (test/e2e-fleet)'
+  planned_test: 'TestQueryRangeStepsMatchUncached, TestQueryRangeStepsGapsReadTogether, TestQueryRangeStepsLokiWindows, TestQueryRangeStepsRouteBoundary, TestQueryRangeStepsOnlyPerStepAnswers, TestQueryRangeStepsScopeAndAccounting, TestQueryRangeStepsSeriesLimit, TestQueryStepsAnswerRoundTrip (internal/proxy); TestCompat_QueryRangeSettledSteps (test/e2e-compat, group core); TestFleet_QueryRangeSettledStepsReachPeers (test/e2e-fleet)'
   clusters: []
 perf:
   max_ratio: 2.0
