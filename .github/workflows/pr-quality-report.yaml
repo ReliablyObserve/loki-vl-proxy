@@ -70,11 +70,22 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The base commit's test count and coverage depend only on that commit, so
+      # a later run of this pull request against the same base reads them back
+      # instead of running every test again. (Timings are not cached: see below.)
+      - name: Restore the base commit's test count and coverage
+        id: base-tests
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] two numbers read back by the quality script; nothing from this job is published
+        with:
+          path: /tmp/pr-base-tests.json
+          key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh') }}-${{ github.event.pull_request.base.sha }}
+
       - name: Collect base and PR quality snapshots
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           WORKSPACE: ${{ github.workspace }}
           PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
+          BASE_TESTS_CACHE_HIT: ${{ steps.base-tests.outputs.cache-hit }}
           QUALITY_SKIP_PERF: ${{ steps.perf-scope.outputs.run_perf == 'true' && '0' || '1' }}
         run: |
           set -euo pipefail
@@ -85,12 +96,19 @@ jobs:
           # throughput and CPU timings are only comparable on the same machine.
           # (A base snapshot cached from another runner made unchanged code
           # look 40% slower or faster depending on which machine measured it.)
+          # Only the test count and coverage of the base are taken from the cache
+          # above: they are the same on every machine.
           bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
           git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
           (
             cd /tmp/loki-vl-proxy-base
-            bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
+            QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json \
+              bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
           )
+          # Save them for the next run unless the collection fell back to zeros.
+          if [ "$BASE_TESTS_CACHE_HIT" != "true" ] && jq -e '.tests.count > 0' /tmp/pr-base-quality.json >/dev/null; then
+            jq -c '.tests' /tmp/pr-base-quality.json > /tmp/pr-base-tests.json
+          fi
 
           bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
             /tmp/pr-base-quality.json \
