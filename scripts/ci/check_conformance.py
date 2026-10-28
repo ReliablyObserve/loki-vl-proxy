@@ -101,8 +101,11 @@ def error_layer_problems(go_results=(), leaks_path=ERROR_LAYER_LEAKS, base_text=
         path = os.path.join("conformance/registry/cases", ident + ".yaml")
         if not os.path.exists(path):
             problems.append(f"{leaks_path}: unknown registry case {ident}")
-        elif "status: open" not in open(path, encoding="utf-8").read():
-            problems.append(f"{leaks_path}: {ident} is listed as leaking but its gap is not open")
+        else:
+            with open(path, encoding="utf-8") as handle:
+                case_text = handle.read()
+            if "status: open" not in case_text:
+                problems.append(f"{leaks_path}: {ident} is listed as leaking but its gap is not open")
     if base_text:
         base = json.loads(base_text).get("leaks", {})
         base_pairs = sum(len(ids) for ids in base.values())
