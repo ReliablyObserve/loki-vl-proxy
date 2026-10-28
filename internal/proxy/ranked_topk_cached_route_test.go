@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strconv"
 	"strings"
@@ -286,7 +287,7 @@ func TestRankedTopKRangeDifferential(t *testing.T) {
 	on := newRankedTopKStack(t, lines, true, nil)
 	off := newRankedTopKStack(t, lines, false, nil)
 	rng := rand.New(rand.NewSource(3))
-	steps := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 150 * time.Second, 10 * time.Minute}
+	steps := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 150 * time.Second, 10 * time.Minute, 604800 * time.Millisecond}
 	ranges := []string{"2m", "5m", "10m", "1m"}
 	for i := 0; i < 40; i++ {
 		step := steps[rng.Intn(len(steps))]
@@ -450,6 +451,56 @@ func TestRankedTopKOverLabelSetsLabelReplaceMadeEqual(t *testing.T) {
 		}
 		if len(points) != len(ranked) {
 			t.Fatalf("%s: %d points, want %d", fn, len(points), len(ranked))
+		}
+	}
+}
+
+// A stats_query_range answer the ranked route cannot read (not JSON, a body
+// without Prometheus' success status, empty) is not a backend failure: the window
+// recurrence answers, as it did before the route existed. A step that is not a
+// whole number of seconds (604.8 s) takes the same route when VictoriaLogs reads
+// it, and the recurrence otherwise.
+// conformance: semantics/label-replace-new-label, quality/query-range-extent-cache, loki_api_v1_query_range
+func TestRankedTopKRangeFallsBackWhenBucketsAreUnreadable(t *testing.T) {
+	end := time.Unix(rankedTopKEnd, 0).UTC()
+	lines := rankedTopKLines(7, end, 3*time.Hour)
+	window := 5 * time.Minute
+	query := `topk(2, ` + fmt.Sprintf(rankedTopKInner, "5m") + `)`
+	for name, bucketsAnswer := range map[string]string{
+		"empty object":      `{"values":[]}`,
+		"not JSON":          `<html>not found</html>`,
+		"no status":         `{"data":{"result":[]}}`,
+		"error status body": `{"status":"error","error":"x"}`,
+	} {
+		for _, step := range []time.Duration{15 * time.Second, 604800 * time.Millisecond} {
+			t.Run(fmt.Sprintf("%s/step %s", name, step), func(t *testing.T) {
+				srv, fake := newSlidingFakeVL(t, lines)
+				inner := srv.Config.Handler
+				broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/select/logsql/stats_query_range" {
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = w.Write([]byte(bucketsAnswer))
+						return
+					}
+					inner.ServeHTTP(w, r)
+				}))
+				t.Cleanup(broken.Close)
+				c := cache.NewWithMaxBytes(time.Minute, 100000, 256<<20)
+				t.Cleanup(c.Close)
+				p, err := New(Config{BackendURL: broken.URL, Cache: c, LogLevel: "error", QueryRangeExtentCache: true, QueryRangeExtentCacheTTL: time.Hour})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				p.storeBackendVersion("v1.50.0", "v1.50.0")
+				start := end.Add(-100 * step).Truncate(step)
+				code, body := extentQueryRange(t, p, query, start, start.Add(100*step), step, nil)
+				want, skip := rankedTopKReference(lines, "count_over_time", 2, true, start, start.Add(100*step), step, window)
+				assertRankedTopK(t, name, decodeRankedTopK(t, code, body), want, skip, false)
+				if _, raw := fake.snapshot(); raw != 0 {
+					t.Fatalf("raw scans: %d", raw)
+				}
+			})
 		}
 	}
 }

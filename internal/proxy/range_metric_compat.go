@@ -1442,10 +1442,10 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	// place (eachBucketPoint) and only each series' labels are parsed, with a
 	// pooled parser; nothing parsed outlives this call (labels are copied out).
 	if !json.Valid(body) {
-		return nil, nil, fmt.Errorf("parse stats_query_range response: invalid JSON")
+		return nil, nil, &statsBucketsUnreadableError{"parse stats_query_range response: invalid JSON"}
 	}
 	if status, _ := jsonparser.GetString(body, "status"); status != "success" {
-		return nil, nil, fmt.Errorf("stats_query_range non-success status: %s", status)
+		return nil, nil, &statsBucketsUnreadableError{"stats_query_range non-success status: " + status}
 	}
 	parser := statsQRFJPool.Get()
 	defer statsQRFJPool.Put(parser)
@@ -1512,6 +1512,13 @@ func (p *Proxy) collectRangeMetricHitsAux(
 	series, err := capHitSeries(ctx, seriesMap, limit, aux)
 	return series, auxEdges, err
 }
+
+// statsBucketsUnreadableError reports a 2xx stats_query_range answer that is not
+// a Prometheus success body: the endpoint is not the one the proxy expects, not a
+// failure of the backend. A ranked metric answers from the window recurrence then.
+type statsBucketsUnreadableError struct{ msg string }
+
+func (e *statsBucketsUnreadableError) Error() string { return e.msg }
 
 // capHitSeries applies the series limit to the series read from stats buckets:
 // more than -max-stats-query-series is Loki's error, or for Drilldown the

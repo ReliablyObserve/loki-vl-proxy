@@ -118,7 +118,7 @@ func (p *Proxy) slidingWindowStatsApplies(ctx context.Context, spec statsCompatS
 // request that keeps only the busiest series (Drilldown), when the window equals
 // the step (one grid is read already), or when the unranked metric would use the
 // recurrence itself (no exact bucket grid, or more buckets than the heavy-query
-// bound), or a VictoriaLogs that has no stats_query_range (404, 405, 501). Any
+// bound), or a VictoriaLogs that has no stats_query_range (404, 405, 501, or an answer that is not a stats_query_range success body). Any
 // other failure is the client's answer, as it is for the recurrence: the heavier
 // path is not tried against a backend that is failing.
 func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.Context, spec statsCompatSpec, statsAggFunc, field, manualFunc string, fetchStart, start, end time.Time, step, window, bucket time.Duration, bucketsOK bool, sampleShift time.Duration) bool {
@@ -140,6 +140,10 @@ func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.C
 		if isSeriesLimitError(err) || errors.Is(err, errBodyTooLarge) {
 			p.setLocalReadCacheWithTTL(overLimitKey, []byte("1"), drilldownOverLimitTTL)
 			return false
+		}
+		var unreadable *statsBucketsUnreadableError
+		if errors.As(err, &unreadable) {
+			return false // not a stats_query_range answer: the recurrence reads /select/logsql/query
 		}
 		var upstream *upstreamStatusError
 		if errors.As(err, &upstream) && (upstream.status == http.StatusNotFound || upstream.status == http.StatusMethodNotAllowed || upstream.status == http.StatusNotImplemented) {

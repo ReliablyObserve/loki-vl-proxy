@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A failure of VictoriaLogs on the bucket read is the client's answer (the recurrence is
   not tried against a backend that is failing), and a grouping over the limit is
   remembered for five minutes so its bucket read is not repeated on every request.
+  A `stats_query_range` answer that is not a Prometheus success body falls back to the
+  recurrence too, and a step that is not a whole number of seconds is read in
+  nanosecond buckets.
   `topk` and `bottomk` without a grouping rank before a `label_replace` around them
   renames the series, as Loki ranks the samples it leaves apart.
   Not covered: an instant `rate(...)` or `count_over_time(...)` over a stream with
