@@ -97,6 +97,11 @@ it in this order:
    within configurable limits and answers a Loki-style error naming the flag when a
    limit is reached. Evaluating raw log rows is the last resort and must stream with
    bounded memory.
+4. **Errors are Loki's.** A failure reaches the client only through the proxy's single
+   error layer, with Loki's status, `errorType` and text, never VictoriaLogs' status,
+   message, LogsQL or host. A new route or backend call is added to the
+   `TestErrorLayer_NoVictoriaLogsLeak` gate; see "Errors: one Loki-shaped layer" in
+   `conformance/registry/README.md`.
 
 ## Performance Rules
 

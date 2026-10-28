@@ -1,0 +1,45 @@
+id: semantics/error-layer-cancel-deadline
+title: Client cancellation and backend deadlines are not Loki's 499 and 504 with Loki's texts (open)
+proves:
+  - backend-deadlines-and-cancellation
+  - status-502
+consumer: any
+why: |
+  Loki answers a cancelled request with 499 "the request was cancelled by
+  the client" and a deadline with 504 "request timed out, decrease the
+  duration of the request or add more label matchers (prefer exact match
+  over regex match) to reduce the amount of data processed"
+  (pkg/util/server/error.go:26-27, :103-107). The proxy answers 499/504 with
+  the transport text, and the raw-row metric paths (sliding rate,
+  rate_counter) and rules/alerts answer both with 502 unavailable: 34 cells
+  on 17 routes.
+request:
+  scope: internal
+  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
+    every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
+    errors, 422, 500, a 502/503 from a proxy in front, 429 queue full,
+    connection refused and reset, a reply after -backend-timeout, a client
+    cancellation, a 200 body cut off mid-stream, a malformed 200 body, a valid
+    body above -backend-max-buffered-response-bytes), driven through 21 client
+    routes (query_range log, sliding rate, stats, Drilldown stats, unwrap
+    rate_counter, json; query; series; labels; label values; detected_fields,
+    detected_field values, detected_labels; index stats, volume, volume_range,
+    Drilldown volume_range; patterns; tail; rules; alerts). The cells that
+    fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
+    VictoriaLogs through a fault-injecting forwarder and compares with Loki.
+compare:
+  mode: exact
+  fields: [status, errorType, body, headers]
+  expect: |
+    499 with Loki's cancel text and 504 with Loki's deadline text on every route.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/http_utils.go badRequestStatusOr (route ctx errors through statusFromUpstreamErr) and writeError'
+  loki: 'pkg/util/server/error.go:26-27, :103-107'
+  proxy: '502 or the transport text'
+  planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

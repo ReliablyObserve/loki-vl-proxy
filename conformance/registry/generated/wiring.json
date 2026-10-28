@@ -23,7 +23,9 @@
     "backend-deadlines-and-cancellation": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/backend_response_guard_test.go",
-      "internal/proxy/backend_stale_cancel_test.go"
+      "internal/proxy/backend_stale_cancel_test.go",
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "drilldown/index_volume/single-sample-returns-vector": [
       "internal/proxy/volume_test.go"
@@ -567,6 +569,34 @@
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
     ],
+    "semantics/error-layer-backend-failure-status": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-backend-text": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-cancel-deadline": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-internal-go-text": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-proxy-limit-status": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-silent-success": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "semantics/error-layer-transport-text": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
     "semantics/extracted-metric-known-differences": [
       "internal/proxy/ordered_json_extracted_differential_test.go"
     ],
@@ -905,12 +935,25 @@
       "internal/proxy/lifecycle_leak_test.go"
     ],
     "status-400": [
+      "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/volume_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
+    ],
+    "status-500": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "status-502": [
+      "internal/proxy/error_layer_gate_test.go",
+      "test/e2e-compat/error_layer_like_loki_test.go"
+    ],
+    "status-503": [
+      "internal/proxy/error_layer_gate_test.go"
     ],
     "tenant-label-isolation": [
       "internal/proxy/alerting_tenant_label_test.go",
@@ -957,7 +1000,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 344,
+  "registry_items": 351,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1115,6 +1158,20 @@
     "internal/proxy/drilldown_compat_test.go": [
       "loki_api_v1_detected_fields",
       "profiles/detected-fields-structured-metadata-beside-json-line"
+    ],
+    "internal/proxy/error_layer_gate_test.go": [
+      "backend-deadlines-and-cancellation",
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-proxy-limit-status",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text",
+      "status-400",
+      "status-500",
+      "status-502",
+      "status-503"
     ],
     "internal/proxy/extracted_probe_head_test.go": [
       "quality/extracted-label-probe-cost",
@@ -1690,6 +1747,19 @@
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
     ],
+    "test/e2e-compat/error_layer_like_loki_test.go": [
+      "backend-deadlines-and-cancellation",
+      "semantics/error-layer-backend-failure-status",
+      "semantics/error-layer-backend-text",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-internal-go-text",
+      "semantics/error-layer-proxy-limit-status",
+      "semantics/error-layer-silent-success",
+      "semantics/error-layer-transport-text",
+      "status-400",
+      "status-500",
+      "status-502"
+    ],
     "test/e2e-compat/extracted_metric_pushdown_test.go": [
       "parser-error-and-label-collision",
       "semantics/extracted-suffix-collision",
@@ -1970,7 +2040,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 199,
+  "tests_with_markers": 201,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2064,5 +2134,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 172
+  "wired_items": 182
 }

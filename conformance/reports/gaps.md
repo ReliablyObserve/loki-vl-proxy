@@ -65,7 +65,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
-| resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 8 | 3 | proven |
+| resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 8 | 5 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 11 | 0 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 3 | partial |
