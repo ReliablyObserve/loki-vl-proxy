@@ -71,6 +71,18 @@ class CompareTest(unittest.TestCase):
         self.assertTrue(row["main_pr_diffs"])
         self.assertEqual(len(row["loki_new"]), 1)  # PR differs from Loki where the base does not
 
+    def test_differences_carry_the_query_they_are_about(self):
+        # the window and ids vary by range; the expression and query type do not
+        _, row = self.run_compare(capture([1, 2]), capture([1, 3]), capture([1, 2]))
+        self.assertEqual(row["main_pr_qids"], ["sum(x)|range"])
+        self.assertEqual(row["loki_qids"], ["sum(x)|range"])
+        _, row = self.run_compare(capture([1, 2]), capture([1, 2]), capture([1, 2]))
+        self.assertEqual((row["main_pr_qids"], row["loki_qids"]), ([], []))
+
+    def test_a_resource_difference_has_no_query(self):
+        _, row = self.run_compare(resources(("index/stats?q=1", {"streams": 1})), resources(("index/stats?q=1", {"streams": 2})))
+        self.assertEqual((len(row["main_pr_diffs"]), row["main_pr_qids"]), (1, [None]))
+
     def test_loki_difference_the_base_has_is_not_new(self):
         _, row = self.run_compare(capture([1, 2]), capture([1, 2]), capture([5, 5]))
         self.assertEqual(len(row["loki_diffs"]), 1)
@@ -237,6 +249,18 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual((row["loki_diffs"], len(row["loki_explained"])), ([], 1))
         row = self.check(resources(("index/stats?q=1", {"streams": 1, "chunks": 1, "bytes": 39508700, "entries": 395087})), loki)
         self.assertEqual(len(row["loki_diffs"]), 1)
+
+    def test_index_stats_of_a_recapture_follows_the_same_rules_as_the_first_pass(self):
+        # ci_run recaptures a page and runs this same compare again. Loki's index/stats is an estimate from chunk
+        # metadata: while the live generator writes into the stream, bytes and chunks move (explained) and so can
+        # entries (a difference), which is why the recapture is taken before the Live tail pass.
+        pr = resources(("index/stats?q=1", {"streams": 13513, "chunks": 13513, "bytes": 28927900, "entries": 289279}))
+        first = resources(("index/stats?q=1", {"streams": 13513, "chunks": 13513, "bytes": 62091264, "entries": 289279}), uid="vp-loki")
+        recapture = resources(("index/stats?q=1", {"streams": 13513, "chunks": 13590, "bytes": 62917300, "entries": 289279}), uid="vp-loki")
+        moved = resources(("index/stats?q=1", {"streams": 13513, "chunks": 13590, "bytes": 62917300, "entries": 289954}), uid="vp-loki")
+        for loki, n_diffs in ((first, 0), (recapture, 0), (moved, 1)):
+            row = self.check(pr, loki)
+            self.assertEqual((len(row["loki_diffs"]), len(row["loki_explained"])), (n_diffs, 1 - n_diffs))
 
     def test_patterns_are_history_dependent_not_counted(self):
         pr = resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>"}]}))

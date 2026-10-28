@@ -185,6 +185,123 @@ class FixProofTest(unittest.TestCase):
         self.assertNotIn("fix_proof", v)
 
 
+Q = "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))|range"
+OTHER = "sum(rate({service_name=\"api-gateway\"} [5m]))|range"
+INDEX_STATS = "resource /api/datasources/uid/*/resources/index/stats?query=%7Bservice_name%3D%22api-gateway%22%7D&: body: content differs (rows 0 vs 0)"
+
+
+def qdiff(q, why):
+    """A base-vs-PR difference as compare.py writes it (the expression cut at 90 characters), with its query id."""
+    expr = q.rsplit("|", 1)[0]
+    return f"query ({expr!r}, 'range', '1793167260000', '1793170860000', 'abc')"[:90] + f": {why}"
+
+
+def at(rng, diffs=(), loki=(), main_n=0, **kw):
+    """A row with compare.py's query ids for its difference lists: diffs [(query, why)], loki [(query, why)]."""
+    held = rng in ("15m", "1h")
+    return row(rng=rng, main_pr_diffs=[qdiff(q, w) for q, w in diffs], main_pr_qids=[q for q, _ in diffs],
+               loki_diffs=[qdiff(q, w) if q else INDEX_STATS for q, w in loki], loki_qids=[q for q, _ in loki],
+               loki_new=[], loki_main_n=main_n, loki_compared=held, points_loki=10 if held else 0, **kw)
+
+
+class QueryProofTest(unittest.TestCase):
+    """A query proven against Loki at a shorter range of the page carries to the range Loki does not hold."""
+
+    def verdict(self, rows):
+        return comment.render(rows, {}, plan(*[(r["page"], r["range"]) for r in rows]), META, ARGS)
+
+    def ranges(self, with_ids=True):
+        # The shape of #885: at 15m and 1h the PR answers the query like Loki (base 90 vs 901 points, 360 vs 721); the
+        # one remaining difference from Loki is Explore's index/stats; at 6h Loki holds nothing and the diff reads "value at".
+        rows = [at("15m", [(Q, "timestamps differ (90 vs 901 points)")], [(None, "")], main_n=2),
+                at("1h", [(Q, "timestamps differ (360 vs 721 points)")], [(None, "")], main_n=2),
+                at("6h", [(Q, "value at 1793149260000: 49033 vs 939017")])]
+        if not with_ids:
+            for r in rows:
+                del r["main_pr_qids"], r["loki_qids"]
+        return rows
+
+    def test_the_885_shape_passes_with_ids_and_from_an_older_compare_json(self):
+        for with_ids in (True, False):
+            text, v = self.verdict(self.ranges(with_ids))
+            self.assertEqual((v["exit"], v["failures"]), (0, []), with_ids)
+            self.assertIn("shorter range", text)
+
+    def test_the_pr_diverging_from_loki_at_1h_fails_the_6h_difference(self):
+        rows = self.ranges()
+        rows[1] = at("1h", [(Q, "timestamps differ (360 vs 721 points)")], [(Q, "timestamps differ (721 vs 700 points)")], main_n=2)
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+        self.assertEqual([f.split(":")[0] for f in v["failures"]], ["explore-a 6h"])
+        self.assertIn("no Loki data for this range", v["failures"][0])
+
+    def test_diverging_at_any_range_loki_holds_disqualifies_even_if_matching_at_another(self):
+        rows = self.ranges()
+        rows[0] = at("15m", [(Q, "timestamps differ (90 vs 901 points)")], [(Q, "value at 1: 1 vs 2")], main_n=2)
+        _, v = self.verdict(rows)
+        self.assertEqual([f.split(":")[0] for f in v["failures"]], ["explore-a 6h"])
+
+    def test_a_6h_difference_on_a_query_never_proven_at_a_shorter_range_fails(self):
+        rows = self.ranges()
+        rows[2] = at("6h", [(OTHER, "value at 1793149260000: 1 vs 2")])
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+        self.assertIn("label the pull request `visual-change-expected`", v["failures"][0])
+
+    def test_one_unproven_query_among_proven_ones_fails(self):
+        rows = self.ranges()
+        rows[2] = at("6h", [(Q, "value at 1: 1 vs 2"), (OTHER, "value at 1: 1 vs 2")])
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_a_resource_difference_at_6h_is_never_carried(self):
+        rows = self.ranges()
+        rows[2] = at("6h")
+        rows[2].update(main_pr_diffs=[INDEX_STATS], main_pr_qids=[None])
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_the_proof_belongs_to_the_page(self):
+        rows = self.ranges()
+        rows[2]["page"] = "explore-b"
+        p = plan(*[(r["page"], r["range"]) for r in rows])
+        _, v = comment.render(rows, {}, p, META, ARGS)
+        self.assertEqual(v["exit"], 1)
+
+    def test_a_range_where_the_pr_did_not_change_the_query_proves_nothing(self):
+        # base = PR = Loki at 15m and 1h: nothing shows the change moves 6h towards Loki
+        rows = [at("15m"), at("1h"), at("6h", [(Q, "value at 1: 1 vs 2")])]
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_a_range_with_no_loki_points_proves_nothing(self):
+        rows = self.ranges()
+        for r in rows[:2]:
+            r["points_loki"] = 0
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_a_series_set_difference_must_lose_or_gain_series_like_the_proven_one(self):
+        gained = "series sets differ: 779 only left ['a'], 1 only right ['b']"
+        lost = "series sets differ: 1 only left ['a'], 0 only right []"
+        rows = [at("1h", [(Q, gained)], main_n=1), at("6h", [(Q, lost)])]
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+        rows[1] = at("6h", [(Q, "series sets differ: 4371 only left ['c'], 1 only right ['d']")])
+        self.assertEqual(self.verdict(rows)[1]["exit"], 0)
+
+    def test_malformed_ids_in_the_artifact_prove_nothing_and_do_not_crash(self):
+        rows = self.ranges()
+        rows[0]["main_pr_qids"] = 7
+        rows[1]["main_pr_qids"] = [["unhashable"]]
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_other_failures_of_the_row_still_fail(self):
+        rows = self.ranges()
+        rows[2]["errors_pr"] = ["boom"]
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+        self.assertIn("error answer", v["failures"][0])
+        rows = self.ranges()
+        rows[2].update(points_main=10, points_pr=0)
+        self.assertIn("empty on the PR", self.verdict(rows)[1]["failures"][0])
+
+
 class GateTest(unittest.TestCase):
     def verdict(self, rows, px=None, p=None):
         p = p or plan(*[(r["page"], r["range"]) for r in rows])
@@ -240,7 +357,7 @@ class GateTest(unittest.TestCase):
 
     def test_a_regression_at_a_shorter_range_proves_nothing(self):
         d = "query ('{a=\"b\"}', 'range', '1790864400000', '1790868000000', 'aa'): content differs"
-        rows = [row(rng="1h", main_pr_diffs=[d], loki_main_n=0, loki_diffs=["x"]),
+        rows = [row(rng="1h", main_pr_diffs=[d], loki_main_n=0, loki_diffs=[d]),
                 row(rng="6h", main_pr_diffs=[d], loki_compared=False, points_loki=0)]
         _, v = self.verdict(rows)
         self.assertEqual(v["exit"], 1)

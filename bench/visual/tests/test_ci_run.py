@@ -48,6 +48,41 @@ class CiRunTest(unittest.TestCase):
                 json.dump([{"page": "a", "range": "1h", "main_pr_diffs": ["x"]}, {"page": "b", "range": "1h", "main_pr_diffs": []}], f)
             self.assertEqual(ci_run.differing(out), {"a 1h"})
 
+    def test_the_recapture_runs_before_the_live_tail_pass_and_one_compare_sees_both(self):
+        # The live generator writes into the streams the static windows read, and Loki's index/stats is an estimate from
+        # chunk metadata that moves while it writes: a recapture after it compares a different Loki answer.
+        calls = []
+        with tempfile.TemporaryDirectory() as out:
+            plan_path = os.path.join(out, "in-plan.json")
+            with open(plan_path, "w", encoding="utf-8") as f:
+                json.dump({"run": True, "captures": 2, "entries": {"p": {"kind": "explore", "ranges": ["1h"]},
+                                                                   "t": {"kind": "tail", "ranges": ["live"]}}}, f)
+            with open(os.path.join(out, "state.json"), "w", encoding="utf-8") as f:
+                json.dump({"end": 1, "ports": {"grafana": 1, "loki": 2}}, f)
+
+            def step(name, result=None):
+                def fn(*args, **kw):
+                    calls.append(name)
+                    return result
+                return fn
+            patches = {"git": lambda *a: "sha", "capture": step("capture"), "recapture": step("recapture", True),
+                       "capture_live": step("capture_live", True),
+                       "run": lambda cmd, **kw: calls.append("compare" if cmd[1].endswith("compare.py") else
+                                                             "montage" if cmd[1].endswith("montage.py") else "stack")}
+            saved = {k: getattr(ci_run, k) for k in patches}
+            argv = sys.argv
+            try:
+                for k, fn in patches.items():
+                    setattr(ci_run, k, fn)
+                sys.argv = ["ci_run.py", "--base", "main", "--plan", plan_path, "--out", out]
+                self.assertEqual(ci_run.main(), 0)
+            finally:
+                sys.argv = argv
+                for k, fn in saved.items():
+                    setattr(ci_run, k, fn)
+        steps = [c for c in calls if c != "stack"]
+        self.assertEqual(steps, ["capture", "compare", "recapture", "capture_live", "compare", "montage"])
+
 
 if __name__ == "__main__":
     unittest.main()

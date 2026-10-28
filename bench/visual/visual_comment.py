@@ -140,27 +140,50 @@ def classify(row):
     return "unsettled"
 
 
-def signature(diff):
-    """A base-vs-PR difference with its window removed (timestamps, ids, hashes, counts, and the example
-    series of a series-set difference, which name the streams of that window), so the same request shape at
-    another range compares equal."""
-    s = re.sub(r"only left \[.*\], (\d+) only right \[.*\]", r"only left [...], \1 only right [...]", diff)
-    s = re.sub(r"\b0 only (left|right)", r"none only \1", s)  # an empty side stays apart from a non-empty one
-    s = re.sub(r"[0-9a-f]{12,}", "#", s)
-    s = re.sub(r"\d{4}-\d\d-\d\dT[\d:.%A-Z]+", "#", s)
-    return re.sub(r"\d+", "#", s)
+SERIES_SET = re.compile(r"series sets differ: (\d+) only left .*?, (\d+) only right")
 
 
-def proven_improvements(rows):
-    """page -> signatures of base-vs-PR differences that Loki judged an improvement at some range."""
-    out = {}
+def diff_ids(row, diffs="main_pr_diffs", ids="main_pr_qids"):
+    """The query (expression and type) each difference of a row is about, None for a resource request. Rows from
+    compare.py carry them; for an older compare.json the id is the leading part of the difference text."""
+    have = row.get(ids)
+    if isinstance(have, list) and len(have) == len(row.get(diffs) or []):
+        return [q if isinstance(q, str) else None for q in have]
+    return [re.split(r", (?:'range'|'instant'|None)(?:,|$)", d.split(": ", 1)[0], maxsplit=1)[0] if d.startswith("query (") else None
+            for d in row.get(diffs) or []]
+
+
+def lost_shape(diff):
+    """Which sides a series-set difference has series on only: a build that lost series differs from one that gained them."""
+    m = SERIES_SET.search(diff)
+    return (int(m[1]) > 0, int(m[2]) > 0) if m else None
+
+
+def proven_queries(rows):
+    """page -> {query id: shapes of its base-vs-PR differences}, for the queries the page proved against Loki.
+
+    A query is proven when, at a range Loki holds, the PR changed its answer (base vs PR differs) and the PR answers
+    it like Loki (no PR-vs-Loki difference on it): the change moved it to Loki's answer. A query the PR diverges from
+    Loki on at any range Loki holds is not proven, whatever it showed elsewhere."""
+    fixed, diverged = {}, {}
     for r in rows:
-        if r.get("main_pr_diffs") and classify(r) == "improved":
-            out.setdefault(r["page"], set()).update(signature(d) for d in r["main_pr_diffs"])
-    return out
+        if r["range"] == "live" or not r.get("loki_compared") or r.get("points_loki", 0) <= 0 or r.get("points_pr", 0) <= 0:
+            continue
+        page = r["page"]
+        diverged.setdefault(page, set()).update(q for q in diff_ids(r, "loki_diffs", "loki_qids") if q)
+        for q, d in zip(diff_ids(r), r["main_pr_diffs"]):
+            if q:
+                fixed.setdefault(page, {}).setdefault(q, set()).add(lost_shape(d))
+    return {page: {q: shapes for q, shapes in qs.items() if q not in diverged.get(page, ())} for page, qs in fixed.items()}
 
 
-def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
+def carried(row, proven):
+    """Every base-vs-PR difference of a row beyond the Loki window is about a query proven at a shorter range of the page."""
+    return all(q in proven and (lost_shape(d) is None or lost_shape(d) in proven[q])
+               for q, d in zip(diff_ids(row), row["main_pr_diffs"]))
+
+
+def assess(row, pixel, expected=False, flipped=(), proven=None):
     """(failures, warnings, status) of one capture; status is '', 'improved' or 'expected'."""
     fails, warns, status = [], [], ""
     diffs = row["main_pr_diffs"]
@@ -169,9 +192,9 @@ def assess(row, pixel, expected=False, flipped=(), proven=frozenset()):
         detail = f"({len(diffs)}): {diffs[0][:160]}"
         if kind == "improved":
             status = "improved"
-        elif kind == "no-loki" and all(signature(d) in proven for d in diffs):
-            # Loki holds no data for this range, but the same page proved every one of these
-            # differences an improvement against Loki at a shorter range.
+        elif kind == "no-loki" and carried(row, proven or {}):
+            # Loki holds no data for this range, but the same page proved every query that differs here to answer
+            # like Loki at a shorter range, where the PR changed it.
             status = "improved"
             warns.append(f"no Loki data at this range; the same differences match Loki at a shorter range {detail}")
         elif kind == "no-loki" and base_failed(row):
@@ -240,14 +263,14 @@ def captures(plan):
 def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
     """Per-capture assessments and the verdict."""
     by = {(r["page"], r["range"]): r for r in rows}
-    proven = proven_improvements(rows)
+    proven = proven_queries(rows)
     items, failed, missing = [], [], []
     for pid, rng in captures(plan):
         row = by.get((pid, rng))
         if row is None:
             missing.append(f"{pid} {rng}")
             continue
-        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid, frozenset()))
+        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid))
         items.append(dict(row=row, fails=fails, warns=warns, status=status, pixel=pixeldiff.get(key(row)),
                           core=plan["entries"][pid]["core"] and rng == plan.get("core_range", "1h"), why=plan["entries"][pid]["why"]))
         if fails:
@@ -417,7 +440,7 @@ def render(rows, pixeldiff, plan, meta, a):
         px = "" if i["pixel"] is None else f"{i['pixel']:.2%}"
         lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {'core' if i['core'] else 'detailed'} | {same} | {vs_loki(r)} | {px} | {result_cell(i)} |")
     lines += ["", "Gate: a base-vs-PR data difference passes when the PR is closer to Loki, and fails when the PR diverges from Loki "
-              f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved it closer to Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
+              f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
               "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
               "settled, a difference that did not reproduce on the recapture. Pixel differences only warn."]
     if a.mode == "branch":

@@ -114,8 +114,10 @@ merge commit, Loki and VictoriaLogs seeded once through the generator backfill, 
 at a fixed minute, so base, PR and Loki see the same static window). VictoriaLogs
 holds 7h, Loki 1.5h: 15m and 1h are compared with Loki, 6h is base vs PR only. A
 warm-up page load of each kind comes first (a fresh Grafana loads the Drilldown app
-slowly), then the static captures, then, only when a Live tail entry was selected,
-the mirrored live generator and the tail captures. 24h and 7d stay out of PR CI
+slowly), then the static captures and, for the ones whose data differed, a recapture,
+then, only when a Live tail entry was selected, the mirrored live generator and the tail
+captures (last: the generator writes into the streams the static windows read, and Loki's
+index/stats is an estimate from chunk metadata that moves while it writes). 24h and 7d stay out of PR CI
 (use the manual run).
 
 **Fix proof.** The regression tiers prove nothing broke elsewhere; a fix proof shows the exact
@@ -153,7 +155,7 @@ data for the range (15m and 1h):
 |---|---|
 | the PR matches Loki, the base did not | pass: "improved (closer to Loki)" |
 | the base matched Loki, the PR diverges | fail: "regressed vs Loki" (the label does not excuse it) |
-| Loki has no data for the range (6h), and every difference matches one the same page proved closer to Loki at a shorter range (timestamps and ids ignored) | pass, "improved", with a note |
+| Loki has no data for the range (6h), and every query that differs is one the same page proved at a shorter range: there the PR changed its answer and now answers like Loki, and the PR diverges from Loki on it at no range Loki holds (the kind of difference does not matter, except that a series-set difference must lose or gain series in the direction the shorter range showed) | pass, "improved", with a note |
 | neither matches Loki, or Loki has no data for the range and a difference was not proven at a shorter range | fail, unless the pull request carries the label `visual-change-expected`; then a warning, "expected change" |
 
 Adding or removing that label re-runs the workflow. Also failing, on the PR side:
