@@ -13,9 +13,11 @@ Steps (stack.py does the stack, shared with the manual tooling):
   1. a fresh Loki + VictoriaLogs stack under its own compose project, seeded once
      with a fixed window ending at a fixed minute (state.json: end), the base
      proxy (--base) and the PR proxy (the working tree), and Grafana;
-  2. capture.spec.ts over the plan (page x range, base | PR | Loki in sequence);
-     the Live tail pages in a second pass with the mirrored live generator;
-  3. compare.py (panel data and UI state), montage.py (images, at most 300 KB each);
+  2. capture.spec.ts over the static plan (page x range, base | PR | Loki in sequence);
+     compare.py; the static captures whose data differed (or never settled) once more;
+  3. the Live tail pages with the mirrored live generator (after the recapture: the generator
+     writes into the streams the static windows read), compare.py again over everything,
+     montage.py (images, at most 300 KB each);
   4. the stack is torn down, whatever happened.
 
 Outputs in --out: plan.json, meta.json, compare.json/.md, pixeldiff.json,
@@ -105,8 +107,7 @@ def recapture(a, out, plan, end, port, meta):
         return False
     retry = os.path.join(out, "plan-recapture.json")
     dump_json(retry, {"entries": again})
-    env = dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", VP_OUT=out, VP_END=str(end), VP_PLAN=retry,
-               WORKERS=str(a.workers), VP_QUIET_MS="10000", VP_SETTLE_MS="150000")
+    env = dict(capture_env(a, out, end, port), VP_PLAN=retry, VP_QUIET_MS="10000", VP_SETTLE_MS="150000")
     t0 = time.time()
     run(["npx", "playwright", "test"], cwd=HERE, env=env, log=os.path.join(out, "capture.log"), check=False)
     phase(meta, "recapture", t0)
@@ -114,13 +115,15 @@ def recapture(a, out, plan, end, port, meta):
     return True
 
 
+def capture_env(a, out, end, port):
+    return dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", VP_OUT=out, VP_END=str(end),
+                VP_PLAN=os.path.join(out, "plan.json"), WORKERS=str(a.workers))
+
+
 def capture(a, out, plan, end, port, meta, loki_port):
-    """Static captures, then the Live tail pass; a failed Playwright test leaves a capture missing, which the verdict reports."""
-    entries = plan["entries"]
-    static = [p for p, e in entries.items() if e["kind"] != "tail"]
-    tail = [p for p, e in entries.items() if e["kind"] == "tail"]
-    env = dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", VP_OUT=out, VP_END=str(end),
-               VP_PLAN=os.path.join(out, "plan.json"), WORKERS=str(a.workers))
+    """The static captures; a failed Playwright test leaves a capture missing, which the verdict reports."""
+    static = [p for p, e in plan["entries"].items() if e["kind"] != "tail"]
+    env = capture_env(a, out, end, port)
     log = os.path.join(out, "capture.log")
     if not os.path.isdir(os.path.join(HERE, "node_modules")):
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=HERE, log=log)
@@ -134,17 +137,26 @@ def capture(a, out, plan, end, port, meta, loki_port):
         r = run(["npx", "playwright", "test"], cwd=HERE, env=env, log=log, check=False)
         meta["playwright_static_exit"] = r.returncode
     phase(meta, "capture", t0)
-    if tail:
-        t0 = time.time()
-        stack = [PY, os.path.join(HERE, "stack.py"), "--out", out, "--project", a.project, "--port-offset", str(a.port_offset)]
-        run([*stack, "live-start"], log=log)
-        try:
-            time.sleep(8)  # the generator has written a few batches to both backends
-            r = run(["npx", "playwright", "test"], cwd=HERE, env=dict(env, VP_LIVE="1"), log=log, check=False)
-            meta["playwright_live_exit"] = r.returncode
-        finally:
-            run([*stack, "live-stop"], log=log, check=False)
-        phase(meta, "capture_live", t0)
+
+
+def capture_live(a, out, plan, end, port, meta):
+    """The Live tail pass with the mirrored live generator. It runs after the static captures and their recapture:
+    the generator writes into the streams the static windows read, and Loki's index/stats is an estimate from chunk
+    metadata that moves while it writes, so a recapture taken after it would compare a different Loki answer."""
+    if not any(e["kind"] == "tail" for e in plan["entries"].values()):
+        return False
+    t0 = time.time()
+    log = os.path.join(out, "capture.log")
+    stack = [PY, os.path.join(HERE, "stack.py"), "--out", out, "--project", a.project, "--port-offset", str(a.port_offset)]
+    run([*stack, "live-start"], log=log)
+    try:
+        time.sleep(8)  # the generator has written a few batches to both backends
+        r = run(["npx", "playwright", "test"], cwd=HERE, env=dict(capture_env(a, out, end, port), VP_LIVE="1"), log=log, check=False)
+        meta["playwright_live_exit"] = r.returncode
+    finally:
+        run([*stack, "live-stop"], log=log, check=False)
+    phase(meta, "capture_live", t0)
+    return True
 
 
 def main():
@@ -190,8 +202,11 @@ def main():
         compare = [PY, os.path.join(HERE, "compare.py"), out]
         run(compare, log=os.path.join(out, "compare.log"), check=False)  # exit 1 = a difference; the verdict decides
         differed = differing(out)
-        if recapture(a, out, plan, state["end"], state["ports"]["grafana"], meta):
+        recaptured = recapture(a, out, plan, state["end"], state["ports"]["grafana"], meta)
+        live = capture_live(a, out, plan, state["end"], state["ports"]["grafana"], meta)
+        if recaptured or live:
             run(compare, log=os.path.join(out, "compare.log"), check=False)
+        if recaptured:
             # A difference that was gone on the second look is not a difference of the PR: the run is not deterministic.
             meta["flipped"] = sorted(differed - differing(out))
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))

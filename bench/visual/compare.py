@@ -215,6 +215,22 @@ def nondeterministic(diff):
     return any(s in diff for s in NONDETERMINISTIC)
 
 
+class Diff(str):
+    """A difference text that also carries the question it is about (`qid`), so a gate can match the same query at
+    another range without parsing the (truncated) text. None for a resource request."""
+    qid = None
+
+
+def tagged(text, key):
+    d = Diff(text)
+    d.qid = f"{key[2]}|{key[3]}" if key[0] == "query" else None  # the expression and query type: the window and ids vary by range
+    return d
+
+
+def qids(diffs):
+    return [getattr(x, "qid", None) for x in diffs]
+
+
 def compare(left, right, lenient=False, explain=None):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
@@ -231,9 +247,9 @@ def compare(left, right, lenient=False, explain=None):
                 text = f"{k[0]} {str(k[2:] or k[1])[:90]}: request only on one side ({'left' if j is None else 'right'})"
                 reason = explain_one_sided(k) if explain else None
                 if reason:
-                    explained.append(f"{text} -- explained: {reason}")
+                    explained.append(tagged(f"{text} -- explained: {reason}", k))
                 else:
-                    diffs.append(text)
+                    diffs.append(tagged(text, k))
                 continue
             n += 1
             xa, xb = la[i], lb[j]
@@ -246,9 +262,9 @@ def compare(left, right, lenient=False, explain=None):
             text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
             reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain else None
             if reason:
-                explained.append(f"{text} -- explained: {reason}")
+                explained.append(tagged(f"{text} -- explained: {reason}", k))
             else:
-                diffs.append(text)
+                diffs.append(tagged(text, k))
     return n, ok, diffs, series, missing, explained
 
 
@@ -467,8 +483,9 @@ def main():
                   + (f", {lmiss} request(s) on one side only" if (lmiss := sum("on one side" in x for x in ldiffs2)) else ""))
         else:
             ln, lok, ldiffs2, mdiffs, vs = 0, 0, [], [], ("n/a (Loki holds 1.5h)" if has_loki else "n/a (Loki not captured)")
+        gated = [x for x in diffs if not nondeterministic(x) and not configuration(x)]
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
-                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=[x for x in diffs if not nondeterministic(x) and not configuration(x)], main_pr_nondet=[x for x in diffs if nondeterministic(x)], main_pr_config=[x for x in diffs if configuration(x)], loki_diffs=ldiffs2 if loki_ok else [],
+                         settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=gated, main_pr_qids=qids(gated), loki_qids=qids(ldiffs2) if loki_ok else [], main_pr_nondet=[x for x in diffs if nondeterministic(x)], main_pr_config=[x for x in diffs if configuration(x)], loki_diffs=ldiffs2 if loki_ok else [],
                          loki_explained=explained, loki_nondet=lnondet,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
