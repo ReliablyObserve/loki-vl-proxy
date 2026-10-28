@@ -18,8 +18,12 @@ import (
 // This file pins which `without` queries the proxy folds from a row per stream
 // (semantics/unwrap-sum-without-collapses). Only a sum, min, max, avg or count
 // without that is the outermost aggregation is: its fold is Loki's
-// (TestSumWithoutDifferential). Any other query that holds a `without` clause
-// (topk and bottomk without) is answered as it was before the fold existed: the
+// (TestSumWithoutDifferential). topk and bottomk without rank the series of the
+// range function per group and keep each winner with all its labels, pod
+// included, like Loki (semantics/topk-bottomk-without-strips-label); the rate
+// fixture ties at several steps, which the proxy breaks by label order where
+// Loki's follow map order. Any other query that holds a `without` clause is
+// answered as it was before the fold existed: the
 // answers below are the ones the proxy gave then, byte for byte, not Loki's: the
 // shapes whose answers differ from Loki's are
 // open rows of the registry (semantics/without-*). A `without` that is the innermost
@@ -108,7 +112,7 @@ func withoutScopeRows() []emuRow {
 	return rows
 }
 
-// conformance: semantics/unwrap-sum-without-collapses, limits/series-limit-error
+// conformance: semantics/unwrap-sum-without-collapses, semantics/topk-bottomk-without-strips-label, limits/series-limit-error
 func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 	// Each answer is [query_range, query_range with -max-stats-query-series=1,
 	// query, query with the limit of 1].
@@ -117,11 +121,11 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		want  [4]string
 	}{
 		{`topk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=36,12 {app=uw,ns=y,service_name=uw}=24`, `400 series limit (1)`, `200 {app=uw,ns=y,service_name=uw}=40`, `200 {app=uw,ns=y,service_name=uw}=40`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=d,service_name=uw}=36,36,36 {app=uw,detected_level=unknown,ns=y,pod=d,service_name=uw}=40,40,40`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=d,service_name=uw}=36 {app=uw,ns=y,pod=d,service_name=uw}=40`, `400 series limit (1)`}},
 		{`bottomk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,ns=x,service_name=uw}=17 {app=uw,ns=y,service_name=uw}=29,5`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=33`, `200 {app=uw,ns=x,service_name=uw}=33`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=33,33,33 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=37,37,37`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=a,service_name=uw}=33 {app=uw,ns=y,pod=a,service_name=uw}=37`, `400 series limit (1)`}},
 		{`topk without (pod) (1, rate({app="uw"}[5m]))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,service_name=uw}=2,5 {app=uw,detected_level=unknown,ns=y,service_name=uw}=4`, `400 series limit (1)`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`, `200 {app=uw,ns=x,service_name=uw}=0.0166667`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=0.00666667,0.01,0.0166667 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=0.00666667,0.0133333,0.0166667`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=a,service_name=uw}=0.0166667 {app=uw,ns=y,pod=a,service_name=uw}=0.0166667`, `400 series limit (1)`}},
 		{`max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 			[4]string{`200 {}=138,90,42`, `200 {}=138,90,42`, `200 {}=154`, `200 {}=154`}},
 		{`sum by (ns) (sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,

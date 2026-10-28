@@ -1,5 +1,5 @@
 id: semantics/topk-bottomk-without-strips-label
-title: topk without and bottomk without drop the label and answer other values than Loki (open)
+title: topk without and bottomk without keep every label of the winning series, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -9,8 +9,20 @@ why: |
   `topk without (pod) (1, rate({app="payment-service"} | logfmt | unwrap amount [5m]))`
   keeps, per group of the labels other than pod, the series with the top value
   at each step, with all its labels, pod included (VectorAggEvaluator.Next keeps
-  `v.Metric` of the heap, pkg/logql/evaluator.go:598-619). The proxy strips pod
-  and folds the rows by sum, so the values are not any series' value. On
+  `v.Metric` of the heap, Loki v3.7.9 pkg/logql/evaluator.go:597-618). The proxy now does the
+  same, in the leading (`topk without (pod) (1, e)`) and the trailing
+  (`topk(1, e) without (pod)`) spelling, on query_range and at an instant: the
+  topk/bottomk post-aggregation ranks per group (topKGroupKey) and no longer
+  folds the rows by sum (semantics/topk-grouped-spellings, #736). On the fixture
+  the answer is {ns=x,pod=d} = 0.213333,0.28,0.333333 and {ns=y,pod=d} =
+  0.24,0.373333,0.4 on query_range, {ns=x,pod=d} = 0.333333 and {ns=y,pod=d} = 0.4
+  at an instant, and `bottomk without` the {pod=a} series of each ns, which is
+  Loki's answer computed from the same rows
+  (TestWithoutTopKBottomKKeepsEveryLabelLikeLoki). Ties at the k-th place follow
+  Go map order in Loki; the proxy breaks them by label order.
+
+  What follows is the measurement before the fix. The proxy stripped pod
+  and folded the rows by sum, so the values were not any series' value. On
   the fixture, query_range: {ns=x} = 0.0533333 and {ns=y} = 0.133333 against
   Loki's {ns=x,pod=d} = 0.213333,0.28,0.333333 and {ns=y,pod=d} = 0.24,0.373333,0.4;
   instant: only {ns=y} = 0.4 (the other group missing) against {ns=x,pod=d} =
@@ -18,11 +30,9 @@ why: |
   {ns=y,pod=a} on Loki (0.283333 and 0.35 at an instant), `{ns=x}` = 0.283333 only
   on the proxy.
 
-  The fold of semantics/unwrap-sum-without-collapses is for sum, min, max, avg and
-  count; topk and bottomk without are answered as they were before it.
-  Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestWithoutShapesStillDifferFromLoki, internal/proxy); Loki's answer is computed from the same rows with the evaluator of Loki v3.7.7 and was not run against a Loki here. The same on origin/main. Found while fixing semantics/unwrap-sum-without-collapses.
+  Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines; Loki's answer is computed from the same rows with the evaluator of Loki v3.7.9 and was not run against a Loki here. Found while fixing semantics/unwrap-sum-without-collapses.
 
-  Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack): at an instant Loki answers two series (the top series of the error group and of the info group, each with its pod label); the proxy answers one, the info group without pod and with the same value (310.23). On query_range over 10 minutes Loki answers 7 series and the proxy 1.
+  Measured on generator data with `| logfmt amount`, before the fix (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack): at an instant Loki answers two series (the top series of the error group and of the info group, each with its pod label); the proxy answers one, the info group without pod and with the same value (310.23). On query_range over 10 minutes Loki answers 7 series and the proxy 1.
 
 request:
   method: GET
@@ -40,12 +50,13 @@ compare:
   expect: |
     The top (bottom) series of each group, with all its labels.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#736"
   impact: explore-visible
   effort: M
-  area: 'internal/translator tryTranslateMetricQueryWithout (topk and bottomk without); internal/proxy applyWithoutGrouping'
-  loki: 'pkg/logql/evaluator.go:451-466, :561-577 VectorAggEvaluator.Next (topk and bottomk keep the sample metric)'
-  proxy: 'the label is stripped and the rows are folded by sum'
-  planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, topk and bottomk, range and instant), TestWithoutFoldIsLimitedToTheOperatorsItProves (the answers kept as before the fold); an e2e test vs Loki in group semantics when fixed'
-  note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/topk-bottomk-range-series (the per-step ranking of a topk without a without clause).'
+  area: 'internal/proxy metric_agg.go (parseTopKPostAgg, topKGroupKey), metric_binary.go (applyTopKToMatrix, applyTopKToVector)'
+  loki: 'Loki v3.7.9 pkg/logql/evaluator.go:443-448 (k below 1: empty), :451-466 (group key), :492-504 and :548-570 (one heap per group), :597-618 (the output keeps the sample Metric) VectorAggEvaluator.Next'
+  proxy: 'k series per group of the labels other than the excluded ones, each with all its labels'
+  planned_test: 'TestWithoutTopKBottomKKeepsEveryLabelLikeLoki (internal/proxy, topk and bottomk, range and instant, both spellings), TestWithoutFoldIsLimitedToTheOperatorsItProves, TestExtractionListOutsideWithoutKeepsItsGrouping, TestExtractionListTopKWithoutIsBoundedByTheSeriesLimit, TestTopKMatrixEdges, TestInstantTopKPerGroup, TestTopKRejectsAKBelowOne, FuzzTopKPerStep (internal/proxy); TestCompat_TopkRangePerStep (test/e2e-compat, group semantics, bottomk and topk without over a direct range function)'
+  note: 'Related: semantics/unwrap-sum-without-collapses (fixed), semantics/topk-bottomk-range-series and semantics/topk-grouped-spellings (the per-step ranking per group). The e2e subtests are written and not yet run against Loki and VictoriaLogs. Over an unwrapped range function the series identity is still the open row semantics/unwrap-per-series-identity-raw-rows, so the ranked series are the proxy ones there.'
   clusters: []

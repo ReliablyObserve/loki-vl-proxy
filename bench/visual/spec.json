@@ -1345,6 +1345,33 @@
     "drilldown-service-landing",
     "loki_api_v1_query_range"
    ]
+  },
+  {
+   "id": "explore-topk-by-per-step",
+   "kind": "explore",
+   "query": "topk by (service_name) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "covers": [
+    "semantics/topk-bottomk-range-series",
+    "semantics/topk-grouped-spellings",
+    "heavy-metric-fetch-bounds",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/topk-grouped-spellings"
+   ]
+  },
+  {
+   "id": "explore-topk-without-keeps-labels",
+   "kind": "explore",
+   "query": "topk without (level) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
+   "covers": [
+    "semantics/topk-bottomk-without-strips-label",
+    "semantics/topk-grouped-spellings",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/topk-bottomk-without-strips-label"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

@@ -585,34 +585,29 @@ func hasOuterAggregationWithoutBy(logql string) bool {
 	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
 }
 
-// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper.
-// Returns k, whether descending (true=topk, false=bottomk), ok=true only when
-// topk/bottomk is outermost with a valid positive integer K.
-func parseTopKWrapper(logql string) (k int, descending bool, ok bool) {
+// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper
+// in any of Loki's spellings. Returns k, whether descending (true=topk,
+// false=bottomk) and its by()/without() clause, ok=true only when topk/bottomk
+// is outermost with a valid positive integer K.
+func parseTopKWrapper(logql string) (k int, descending bool, group *logqlpkg.Grouping, ok bool) {
 	if strings.TrimSpace(logql) == "" {
-		return 0, false, false
+		return 0, false, nil, false
 	}
 	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
 	if err != nil {
-		return 0, false, false
+		return 0, false, nil, false
 	}
 	va, isVA := parsed.(*logqlpkg.VectorAggregation)
-	if !isVA || !va.HasParam {
-		return 0, false, false
+	if !isVA || !va.HasParam || int(va.Param) <= 0 {
+		return 0, false, nil, false
 	}
 	switch va.Op {
 	case logqlpkg.VectorTopK:
-		if int(va.Param) <= 0 {
-			return 0, false, false
-		}
-		return int(va.Param), true, true
+		return int(va.Param), true, va.Grouping, true
 	case logqlpkg.VectorBottomK:
-		if int(va.Param) <= 0 {
-			return 0, false, false
-		}
-		return int(va.Param), false, true
+		return int(va.Param), false, va.Grouping, true
 	}
-	return 0, false, false
+	return 0, false, nil, false
 }
 
 // shouldUseManualRangeMetricCompat reports whether the given metric function

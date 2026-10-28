@@ -277,9 +277,11 @@ func openShapeKeys(series map[string]string) map[string]string {
 
 // TestWithoutShapesStillDifferFromLoki: the registered shapes, with the answer
 // the proxy gives and Loki's. See the rows semantics/without-* and
-// semantics/label-replace-instant-vector.
+// semantics/label-replace-instant-vector. topk and bottomk without moved to
+// TestWithoutTopKBottomKKeepsEveryLabelLikeLoki when
+// semantics/topk-bottomk-without-strips-label was fixed.
 //
-// conformance: semantics/without-empty-grouping-range-collapses, semantics/without-comparison-inside-ignored, semantics/topk-bottomk-without-strips-label, metric-series-identity
+// conformance: semantics/without-empty-grouping-range-collapses, semantics/without-comparison-inside-ignored, metric-series-identity
 func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
 	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
@@ -314,15 +316,6 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 			`{ns=x}=138 {ns=y}=154`, func(i bool) map[string]string {
 				return openShapeGroup(openShapeStreams("max_over_time", 5*time.Minute, i), "sum", func(v float64) bool { return v > 35 }, true)
 			}},
-		// topk and bottomk without: Loki keeps the series with all their labels.
-		{"topk-bottomk-without-strips-label", `topk without (pod) (1, ` + unwrapRate + `)`, false, false,
-			`{ns=x}=0.0533333 {ns=y}=0.133333`, func(i bool) map[string]string { return openShapeTopK(rate(i), true) }},
-		{"topk-bottomk-without-strips-label", `topk without (pod) (1, ` + unwrapRate + `)`, true, false,
-			`{ns=y}=0.4`, func(i bool) map[string]string { return openShapeTopK(rate(i), true) }},
-		{"topk-bottomk-without-strips-label", `bottomk without (pod) (1, ` + unwrapRate + `)`, false, false,
-			`{ns=x}=0.0566667 {ns=y}=0.0166667`, func(i bool) map[string]string { return openShapeTopK(rate(i), false) }},
-		{"topk-bottomk-without-strips-label", `bottomk without (pod) (1, ` + unwrapRate + `)`, true, false,
-			`{ns=x}=0.283333`, func(i bool) map[string]string { return openShapeTopK(rate(i), false) }},
 	} {
 		name := fmt.Sprintf("%s/%s/instant=%v", tc.row, tc.query, tc.instant)
 		t.Run(name, func(t *testing.T) {
@@ -343,6 +336,46 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 				t.Fatalf("the proxy answered %s, the registry row %s states %s\nLoki: %s", gotCanon, tc.row, tc.got, wantCanon)
 			}
 		})
+	}
+}
+
+// TestWithoutTopKBottomKKeepsEveryLabelLikeLoki: topk and bottomk without keep,
+// per group of the labels other than the excluded ones, the series with the top
+// (bottom) value at each step, with all its labels, pod included
+// (VectorAggEvaluator.Next keeps the sample's metric: pkg/logql/evaluator.go).
+// The proxy stripped pod and folded the rows by sum before
+// (semantics/topk-bottomk-without-strips-label). Instant and query_range, topk
+// and bottomk, in the leading and the trailing spelling of the clause.
+//
+// conformance: semantics/topk-bottomk-without-strips-label, semantics/topk-grouped-spellings, metric-series-identity
+func TestWithoutTopKBottomKKeepsEveryLabelLikeLoki(t *testing.T) {
+	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
+	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
+	for _, tc := range []struct {
+		op    string
+		top   bool
+		query string
+	}{
+		{"topk", true, `topk without (pod) (1, ` + unwrapRate + `)`},
+		{"topk", true, `topk(1, ` + unwrapRate + `) without (pod)`},
+		{"bottomk", false, `bottomk without (pod) (1, ` + unwrapRate + `)`},
+		{"bottomk", false, `bottomk(1, ` + unwrapRate + `) without (pod)`},
+	} {
+		for _, instant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/instant=%v", tc.query, instant), func(t *testing.T) {
+				got := openShapeRun(t, tc.query, instant)
+				if got.code != http.StatusOK {
+					t.Fatalf("%d %s", got.code, got.raw)
+				}
+				want := openShapeTopK(rate(instant), tc.top)
+				if len(want) == 0 {
+					t.Fatal("the reference holds no series")
+				}
+				if gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(want); gotCanon != wantCanon {
+					t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
+				}
+			})
+		}
 	}
 }
 
