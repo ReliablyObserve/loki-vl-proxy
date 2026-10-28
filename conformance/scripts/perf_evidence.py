@@ -40,7 +40,15 @@ rows) and every row between 1× and 2× with or without an effort exception.
 covers nothing, or a saved result names a set or shape shapes.json does not
 define — the performance evidence and the registry cannot drift apart.
 
-Usage: python3 conformance/scripts/perf_evidence.py [--check]
+Quality summary: `--quality-summary PATH` rewrites only the text between the
+`<!-- quality-summary:start -->` and `<!-- quality-summary:end -->` markers of PATH (README.md and
+docs/real-window-compatibility-gaps.md) with the "Quality and performance vs Loki" section. Every figure comes from
+files: the latest valid daily run (bench/ab/results/daily-*.json; the date and commit from
+bench/ab/history/acceptance.json), the above-2× list (bench/ab/history/over-2x-loki.json), the registry (summary.json,
+the cases' gap blocks, the behaviour states, the perf: blocks) and the Loki version pinned in
+test/e2e-compat/docker-compose.yml. The gate (scripts/ci/check_conformance.py) fails when the text is stale.
+
+Usage: python3 conformance/scripts/perf_evidence.py [--check | --quality-summary PATH]
 """
 import argparse
 import glob
@@ -49,9 +57,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from registry_io import dump_json, load_json, read_text, write_text  # noqa: E402
+from registry_io import SCOPE_SENTENCE, dump_json, load_json, read_text, write_text  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bench", "ab"))
 import over2x  # noqa: E402
+import parity_gaps  # noqa: E402
+import roadmap  # noqa: E402
 
 ROOT = "conformance/registry"
 SHAPES = "bench/ab/shapes.json"
@@ -88,11 +98,13 @@ def profile_of(summary):
     return summary.get("profile") or LEGACY_PROFILE
 
 
-def latest_runs(shape_sets, problems):
-    """(set, shape, range) -> the row of the most recent saved summary."""
+def latest_runs(shape_sets, problems, pattern="*.json", keep=None):
+    """(set, shape, range) -> the row of the most recent saved summary; `keep` (summary -> bool) narrows the summaries."""
     latest = {}
-    for path in sorted(glob.glob(f"{RESULTS}/*.json")):
+    for path in sorted(glob.glob(f"{RESULTS}/{pattern}")):
         summary = load_json(path)
+        if keep is not None and not keep(summary):
+            continue
         set_name = summary.get("set")
         if set_name not in shape_sets:
             problems.append(f"{path}: set '{set_name}' is not defined in {SHAPES}")
@@ -337,10 +349,13 @@ def fmt(value, status=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--quality-summary", metavar="PATH", help="rewrite the generated section of PATH and nothing else")
     args = parser.parse_args()
 
     spec = load_json(SHAPES)
     shape_sets = spec["sets"]
+    if args.quality_summary:
+        return write_quality_summary(args.quality_summary, shape_sets)
     known = registry_ids()
     problems = []
     covers = {}
@@ -554,6 +569,305 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
     if problems:
         out += ["", "## Problems", ""] + [f"- {p}" for p in problems]
     return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# The "Quality and performance vs Loki (current)" section of README.md and docs/real-window-compatibility-gaps.md.
+# It states the position now: figures from the latest valid daily run and the registry as they are, no history.
+# ---------------------------------------------------------------------------------------------------------------
+SUMMARY_START, SUMMARY_END = "<!-- quality-summary:start -->", "<!-- quality-summary:end -->"
+COMPOSE = "test/e2e-compat/docker-compose.yml"
+ACCEPTANCE = "bench/ab/history/acceptance.json"
+SUMMARY_JSON = f"{ROOT}/generated/summary.json"
+REPO_URL = "https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/"
+# Behaviours stated as facts only while the registry holds them: every case in `cases` has gap.status fixed, every
+# test in `tests` ((name, directory)) still exists and every item in `behaviours` has a state other than gap/unknown.
+CLAIMS = (
+    {"cases": ["semantics/unwrap-over-time-range-windows", "semantics/unwrap-over-time-short-range-windows"],
+     "text": "`sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` over an unwrapped field answer "
+             "Loki's window on `query_range` for a range longer or shorter than the step",
+     "open": {"semantics/unwrap-over-time-range-windows-residual-forms":
+              "some outer aggregations of them are still listed as open differences"}},
+    {"cases": ["quality/unwrap-query-range-extent-cache"],
+     "text": "an unwrap metric moved forward by a refresh or a re-run reads from VictoriaLogs only the buckets it has "
+             "not read before"},
+    {"cases": ["semantics/binary-division-by-zero-nan"], "text": "a zero divisor of `/` and `%` is NaN, like Loki"},
+    {"tests": [("TestBinaryMatchingErrorTextAndStepOrder", "internal/proxy")],
+     "text": "binary vector matching raises Loki's duplicate-series error text at the first step where Loki's join fails"},
+    {"behaviours": ["peer-cache-replication"], "tests": [("TestFleetPeerCacheProof", "test/e2e-fleet")],
+     "text": "every peer-cache key has a backup replica (`-peer-replication-factor`, default 2); a three-proxy fleet "
+             "test covers a replica that lost its disk refilling from its peers, the owner being down and every "
+             "cache being lost"},
+)
+RANKED_TEST = ("RankedSignatureTest", "bench/ab/tests")
+
+
+def pinned_loki(compose_text):
+    """The Loki release the compatibility stack, CI and the A/B stack run: the default of LOKI_IMAGE."""
+    found = re.search(r"\$\{LOKI_IMAGE:-grafana/loki:(\d+\.\d+\.\d+)\}", compose_text)
+    if not found:
+        raise ValueError(f"{COMPOSE}: no ${{LOKI_IMAGE:-grafana/loki:X.Y.Z}} default to read the Loki version from")
+    return found.group(1)
+
+
+def daily_runs(shape_sets, problems):
+    """(latest rows, date, profile): the newest valid daily summaries, all of one date and one Loki profile
+    (loki-defaults when that profile ran that day, otherwise aligned)."""
+    summaries = [load_json(p) for p in sorted(glob.glob(f"{RESULTS}/daily-*.json"))]
+    valid = [x for x in summaries if x.get("valid", True)]
+    if not valid:
+        raise ValueError(f"{RESULTS}: no valid daily-*.json summary")
+    date = max(x["date"] for x in valid)
+    profile = max((profile_of(x) for x in valid if x["date"] == date), key=lambda p: PROFILE_RANK.get(p, 0))
+    latest = latest_runs(shape_sets, problems, "daily-*.json",
+                         lambda x: x.get("valid", True) and x["date"] == date and profile_of(x) == profile)
+    return latest, date, profile
+
+
+def range_seconds(text):
+    return int(text[:-1]) * {"m": 60, "h": 3600, "d": 86400}[text[-1]]
+
+
+def test_names(directory):
+    """Names of the Go tests (TestXxx), Python test classes and test_ functions defined under directory."""
+    names = set()
+    for current, _, files in os.walk(directory):
+        for name in files:
+            if name.endswith("_test.go") or name.endswith(".py"):
+                text = read_text(os.path.join(current, name))
+                names.update(re.findall(r"^func (Test\w+)\(", text, re.M))
+                names.update(re.findall(r"^class (\w+)\b", text, re.M))
+    return names
+
+
+def behaviour_claims(found):
+    """The sentences of CLAIMS the registry and the tests hold now."""
+    status = {c["id"]: c["status"] for c in found}
+    state_of = {}
+    for track, directory in (("behaviours", "behaviours"), ("translations", "translations")):
+        for item in roadmap.collect(track, directory):
+            state_of[item["id"]] = item["state"]
+    names = {}
+    out = []
+    for claim in CLAIMS:
+        if any(status.get(c) != "fixed" for c in claim.get("cases", [])):
+            continue
+        if any(state_of.get(b, "unknown") in ("gap", "unknown") for b in claim.get("behaviours", [])):
+            continue
+        if any(t not in names.setdefault(d, test_names(d)) for t, d in claim.get("tests", [])):
+            continue
+        notes = [text for case, text in claim.get("open", {}).items() if status.get(case) == "open"]
+        out.append(claim["text"] + (f" ({'; '.join(notes)})" if notes else ""))
+    return out
+
+
+def quality_inputs():
+    """Everything the section states, read from the committed files."""
+    spec = load_json(SHAPES)
+    problems = []
+    latest, date, profile = daily_runs(spec["sets"], problems)
+    if problems:
+        raise ValueError("; ".join(problems))
+    acceptance_file = load_json(ACCEPTANCE)
+    day = next((d for d in acceptance_file["days"] if d["date"] == date), None)
+    found, _, parity_problems = parity_gaps.analyse()
+    behaviours = roadmap.collect("behaviours", "behaviours") + roadmap.collect("translations", "translations")
+    states = {}
+    for item in behaviours:
+        states[item["state"]] = states.get(item["state"], 0) + 1
+    return {
+        "loki": pinned_loki(read_text(COMPOSE)), "date": date, "profile": profile,
+        "commits": (day or {}).get("commits", []), "sets": len({k[0] for k in latest}),
+        "ranges": sorted({k[2] for k in latest if re.fullmatch(r"\d+[mhd]", k[2])}, key=range_seconds),
+        "summary": summarize(latest, spec["sets"]),
+        "distribution": ((day or {}).get("profiles", {}).get(profile)),
+        "targets": acceptance_file.get("targets", {}),
+        "over": load_json(OVER_2X) if os.path.exists(OVER_2X) else {"rows": []},
+        "blocks": over2x.read_bounds(spec=spec).get("blocks", {}),
+        "stats": load_json(SUMMARY_JSON), "states": states, "differences": found,
+        "claims": behaviour_claims(found),
+        "ranked_signature": RANKED_TEST[0] in test_names(RANKED_TEST[1]),
+    }
+
+
+def pct(part, whole):
+    return f"{round(100 * part / whole)}%" if whole else "0%"
+
+
+def sec(value):
+    return "—" if value is None else f"{value:.2f} s"
+
+
+def span(values):
+    return f"{sec(min(values))} to {sec(max(values))}" if min(values) != max(values) else sec(values[0])
+
+
+def code(text):
+    return f"`` {text} ``" if "`" in text else f"`{text}`"
+
+
+def plain_title(title):
+    """A registry case title as a phrase: without the trailing state, starting in lower case."""
+    title = re.sub(r"\s*\((open|documented|owner-kept|upstream)\)$", "", title)
+    return title[0].lower() + title[1:] if title[:2].isalpha() and title[1].islower() else title
+
+
+def links(target_is_docs):
+    """The closing links, relative to where the section is published: docs pages by file, the rest on GitHub."""
+    if target_is_docs:
+        return [("performance summary", REPO_URL + "conformance/reports/performance.md#summary-versus-loki"),
+                ("performance guide", "performance.md#current-position-versus-loki"),
+                ("ranked differences", REPO_URL + "conformance/reports/parity-gaps.md"),
+                ("coverage map", "compatibility-coverage.md"), ("Known Issues", "KNOWN_ISSUES.md")]
+    return [("performance summary", "conformance/reports/performance.md#summary-versus-loki"),
+            ("performance guide", "docs/performance.md#current-position-versus-loki"),
+            ("ranked differences", "conformance/reports/parity-gaps.md"),
+            ("coverage map", "conformance/reports/coverage-map.md"), ("Known Issues", "docs/KNOWN_ISSUES.md")]
+
+
+def render_quality_summary(q, target_is_docs=False):
+    """The section body (without the markers) from inputs read by quality_inputs()."""
+    s, workloads = q["summary"], q["summary"]["workloads"]
+    cold, comparable = s["cold"], s["comparable"]
+    drill, logs, metric = (workloads[w] for w in WORKLOADS[1:])
+    dist = q["distribution"] or {}
+    first, repeat = dist.get("cold"), dist.get("warm")
+    over = q["over"].get("rows", [])
+    over_modes = {m: sum(1 for r in over if r["mode"] == m) for m in over2x.MODES}
+    commits = ", ".join(f"`{c[:10]}`" for c in q["commits"])
+    notes = {p: re.split(r"\.\s", n)[0].rstrip(".") for p, n in over2x.PROFILE_NOTES.items()}
+    other = [p for p in PROFILE_RANK if p != q["profile"]]
+    out = [f"Tested against Loki v{q['loki']}, the release the compatibility stack and CI pin. Timings were measured "
+           f"on {q['date']}{f' at commit {commits}' if commits else ''} on the project's A/B stack: the same data, "
+           f"the same hardware, the latest valid daily run of each of {q['sets']} query-shape sets over "
+           f"{q['ranges'][0]} to {q['ranges'][-1]}. A pair is one query shape over one time range; \"comparable\" "
+           f"means both sides answered 200 and Loki's results cache did not answer the first request. Faster and "
+           f"slower mean beyond {int(NOISE * 100)}% and {int(MIN_DELTA * 1000)} ms; everything else is on par."
+           + (" A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series "
+              "count." if q["ranked_signature"] else ""),
+           "",
+           f"Loki profile shown: `{q['profile']}`, {notes[q['profile']]}. "
+           + (f"The stack's Loki settings differ from Loki's own defaults ({notes['loki-defaults'].split('(')[1].split(')')[0]}); "
+              f"the `loki-defaults` profile has no valid daily run yet." if q["profile"] == "aligned" else
+              f"The `aligned` profile ({notes['aligned']}) is measured too and is not shown here.") + " "
+           + SCOPE_SENTENCE, "",
+           "**Where the proxy is better than Loki**", ""]
+    out += [f"- First request: **{cold.get('faster', 0)} of {comparable}** comparable pairs are faster "
+            f"({pct(cold.get('faster', 0), comparable)}).",
+            f"- Drilldown and Explore pages: **{drill['cold'].get('faster', 0)} of {drill['comparable']}** faster "
+            f"({pct(drill['cold'].get('faster', 0), drill['comparable'])}); median first request "
+            f"**{sec(median(drill['cand_cold']))}** against Loki's **{sec(median(drill['ref_cold']))}**.",
+            f"- Metric queries: **{metric['cold'].get('faster', 0)} of {metric['comparable']}** faster "
+            f"({pct(metric['cold'].get('faster', 0), metric['comparable'])}); median first request "
+            f"**{sec(median(metric['cand_cold']))}** against **{sec(median(metric['ref_cold']))}**."]
+    labels = [k for n, k in sorted(s["metadata"].items()) if n in ("Labels (label browser)", "Label values")]
+    if labels:
+        mine = [v for k in labels for v in k["cand_warm"] if v is not None]
+        theirs = [v for k in labels for v in k["ref_warm"] if v is not None]
+        out.append(f"- Label and label-value calls: median repeat **{sec(median(mine))}** against Loki's "
+                   f"**{sec(median(theirs))}**, over {sum(k['pairs'] for k in labels)} pairs "
+                   f"({sum(k['served'] for k in labels)} of them answered by Loki's results cache).")
+    if first:
+        out.append(f"- Share of rows below Loki, first request: **{first['share_below']:.1f}%** "
+                   f"({first['below']} of {first['rows']} rows)"
+                   + (f"; repeat: **{repeat['share_below']:.1f}%** ({repeat['below']} of {repeat['rows']})."
+                      if repeat else ".") + f" The target is {q['targets'].get('share_below', 'most queries below Loki')}.")
+    out += ["", "**Where it is on par**", ""]
+    out += [f"- First request: **{cold.get('par', 0)} of {comparable}** pairs are within noise "
+            f"({pct(cold.get('par', 0), comparable)}).",
+            f"- Log queries: **{logs['cold'].get('par', 0)} of {logs['comparable']}** on par; metric queries: "
+            f"**{metric['cold'].get('par', 0)} of {metric['comparable']}**; Drilldown and Explore pages: "
+            f"**{drill['cold'].get('par', 0)} of {drill['comparable']}**."]
+    if first:
+        out.append(f"- Rows close to Loki (within the same noise): **{first['close']}** on the first request"
+                   + (f", **{repeat['close']}** on a repeat." if repeat else "."))
+    out.append("- Repeat of the same query, median p50: " + "; ".join(
+        f"{name if name == WORKLOADS[1] else name[0].lower() + name[1:]} **{sec(median(g['cand_warm']))}** "
+        f"against **{sec(median(g['ref_warm']))}**" for name, g in ((WORKLOADS[1], drill), (WORKLOADS[3], metric), (WORKLOADS[2], logs))) + ".")
+    results = s["results"]
+    out.append(f"- Answers: **{results.get('same', 0)} of {s['pairs']}** pairs return the same result as Loki "
+               f"({pct(results.get('same', 0), s['pairs'])}).")
+    for claim in q["claims"]:
+        out.append(f"- {claim[0].upper()}{claim[1:]}.")
+    out += ["", "**Where it is worse**", ""]
+    out += [f"- First request: **{cold.get('slower', 0)} of {comparable}** pairs are slower "
+            f"({pct(cold.get('slower', 0), comparable)}): log queries **{logs['cold'].get('slower', 0)} of "
+            f"{logs['comparable']}**, Drilldown and Explore pages **{drill['cold'].get('slower', 0)} of "
+            f"{drill['comparable']}**, metric queries **{metric['cold'].get('slower', 0)} of {metric['comparable']}**."]
+    if first:
+        out.append(f"- Between 1× and 2× Loki: **{first['between']}** rows on the first request"
+                   + (f", **{repeat['between']}** on a repeat" if repeat else "")
+                   + f"; above 2× Loki: **{first['above']}** on the first request"
+                   + (f" and **{repeat['above']}** on a repeat" if repeat else "") + f" (the {q['date']} distribution).")
+    locked = sum(1 for b in q["blocks"].values() if b["locked"] is True)
+    if over:
+        out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list** (more than 2× Loki and more "
+                   f"than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
+                   f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row leaves the "
+                   f"list after two consecutive daily runs within 2×, so it can hold more rows than the day's "
+                   f"distribution above; a change that adds or worsens a row is flagged. {locked} of "
+                   f"{len(q['blocks'])} covered registry items are locked at the 2× bound.")
+    else:
+        out.append(f"- No row is on the above-2× list. {locked} of {len(q['blocks'])} covered registry items are "
+                   f"locked at the 2× bound.")
+    gaps = {m: sorted((r for r in over if r["mode"] == m), key=lambda r: r["loki_s"] - r["proxy_s"])[:limit]
+            for m, limit in (("cold", 3), ("warm", 2))}
+    for mode, label in (("cold", "first request"), ("warm", "repeat")):
+        if gaps[mode]:
+            out.append(f"- Largest gaps on that list, {label}: " + "; ".join(
+                f"{code(r['shape'])} over {r['range']}, **{sec(r['proxy_s'])}** against **{sec(r['loki_s'])}**"
+                for r in gaps[mode]) + ".")
+    out.append(f"- Answers: **{results.get('differs', 0)} of {s['pairs']}** pairs return a different result from Loki, "
+               f"and **{results.get('not compared', 0)}** could not be compared.")
+    stats = q["stats"]
+    found = q["differences"]
+    count = {k: sum(1 for c in found if c["status"] == k) for k in ("open", "documented", "owner-kept", "upstream")}
+    states = q["states"]
+    native = stats["execution"].get("native_vl", 0)
+    out += ["", "**Quality of the Loki read API**", "", "| | Now |", "|---|---|",
+            f"| Loki endpoints the proxy routes | **{stats['implemented']} of {stats['endpoints']}** "
+            f"({pct(stats['implemented'], stats['endpoints'])}) |",
+            f"| Endpoints with tests that compare the proxy against Loki | **{stats['with_differential_tests']} of "
+            f"{stats['endpoints']}** ({pct(stats['with_differential_tests'], stats['endpoints'])}) |",
+            f"| Endpoints whose registry state is `proven` | **{stats['proven']} of {stats['endpoints']}** "
+            f"({pct(stats['proven'], stats['endpoints'])}) |",
+            f"| Routed endpoints answered natively by VictoriaLogs | {native} of {stats['implemented']} |",
+            f"| Behaviour and feature items | {states.get('proven', 0)} proven, {states.get('partial', 0)} partial, "
+            f"{states.get('gap', 0)} gaps |",
+            f"| Known differences from Loki (ranked) | **{sum(count.values())}**: {count['open']} open, "
+            f"{count['documented']} documented, {count['owner-kept']} owner-kept, {count['upstream']} upstream |", ""]
+    top = [c for c in found if c["status"] == "open"][:5]
+    if top:
+        impacts = {c["impact"] for c in top}
+        out.append(f"The {len(top)} open differences with the most impact"
+                   + (f" (all {next(iter(impacts))})" if len(impacts) == 1 else "") + ": "
+                   + ", ".join(f"`{c['id']}` ({plain_title(c['title'])})" for c in top)
+                   + ". Differences kept on purpose are listed as documented or owner-kept.")
+    out += ["", "Details, the per-workload tables and the method: "
+            + " · ".join(f"[{name}]({url})" for name, url in links(target_is_docs)) + "."]
+    return "\n".join(out)
+
+
+def replace_section(text, body):
+    """text with what lies between the markers replaced by body; the rest is untouched."""
+    if text.count(SUMMARY_START) != 1 or text.count(SUMMARY_END) != 1:
+        raise ValueError(f"expected exactly one {SUMMARY_START} and one {SUMMARY_END}")
+    if text.index(SUMMARY_START) > text.index(SUMMARY_END):
+        raise ValueError("the end marker comes before the start marker")
+    head = text.split(SUMMARY_START)[0]
+    tail = text.split(SUMMARY_END)[1]
+    return f"{head}{SUMMARY_START}\n\n{body}\n\n{SUMMARY_END}{tail}"
+
+
+def write_quality_summary(path, shape_sets=None):
+    try:
+        body = render_quality_summary(quality_inputs(), os.path.normpath(path).startswith("docs" + os.sep))
+        write_text(path, replace_section(read_text(path), body))
+    except (ValueError, KeyError, OSError) as error:
+        print(f"quality summary {path}: {error}", file=sys.stderr)
+        return 1
+    print(f"{path}: quality summary written")
+    return 0
 
 
 if __name__ == "__main__":

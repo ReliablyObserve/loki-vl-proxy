@@ -18,7 +18,8 @@ Fails when:
     per-PR visual smoke (bench/visual/plan.py);
   * a generated report is stale (performance, coverage map and its published copy
     docs/compatibility-coverage.md, gaps, translation map, roadmap, compatibility matrix,
-    ranked parity gaps),
+    ranked parity gaps) or the "Quality and performance vs Loki" section of README.md and
+    docs/real-window-compatibility-gaps.md (between its quality-summary markers),
   * the method-level scope is inconsistent: a write method of an endpoint is neither listed
     in its state's out_of_scope_methods (with the owner decision) nor allowed (delete), or
     an endpoint with every method out of scope is not not-applicable,
@@ -57,6 +58,10 @@ REPORTS = (
     ("roadmap.py", "conformance/reports/roadmap.md", None),
     ("matrix_link.py", "conformance/reports/compatibility-matrix.md", None),
     ("parity_gaps.py", "conformance/reports/parity-gaps.md", None),
+    # The "Quality and performance vs Loki" section between the quality-summary markers: it reads the registry and
+    # the evidence, so it runs after every generator above.
+    ("perf_evidence.py", "README.md", "--quality-summary"),
+    ("perf_evidence.py", "docs/real-window-compatibility-gaps.md", "--quality-summary"),
 )
 
 
@@ -140,7 +145,7 @@ def main():
                 failures.append(f"{script} failed")
                 continue
             if os.path.exists(backup) and not filecmp.cmp(backup, target, shallow=False):
-                print(f"{target} is stale; run python3 {SCRIPTS}/{script}")
+                print(f"{target} is stale; run python3 {SCRIPTS}/{script}" + (f" {docs_flag} {target}" if docs_flag else ""))
                 failures.append(f"{target} stale")
 
     ratchet = run("ratchet.py", "--check")
