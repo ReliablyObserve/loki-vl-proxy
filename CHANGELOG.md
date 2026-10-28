@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.44.0] - 2026-10-28
+
 ### Fixed
 
 - **`label_replace` adds its destination label to instant answers, reads an
