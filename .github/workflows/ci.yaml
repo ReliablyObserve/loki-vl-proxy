@@ -53,8 +53,8 @@ jobs:
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-      # internal/proxy alone takes 480-600 s under -race with coverage on the hosted
-      # runners, at Go's default 10 minute per-binary timeout; give it headroom.
+      # internal/proxy can exceed 20 minutes under -race with coverage on a
+      # contended hosted runner; keep the complete suite and allow headroom.
       #
       # -json keeps every test's outcome: the conformance job reads the
       # ./internal/... part of it (its evidence check) instead of running the
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          go test ./... -count=1 -race -timeout=20m -coverprofile=coverage.out -json \
+          go test ./... -count=1 -race -timeout=35m -coverprofile=coverage.out -json \
             | tee unit-results-full.json \
             | jq -rR --unbuffered 'fromjson? | select(.Action == "output" and .Test == null) | .Output | rtrimstr("\n") | select(. != "PASS" and (startswith("coverage:") | not))' \
             || status=$?
@@ -82,6 +82,14 @@ jobs:
               unit-results-full.json | head -400
           fi
           exit "$status"
+
+      - name: Upload failed unit-test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: unit-results-diagnostics
+          path: unit-results-full.json
+          if-no-files-found: ignore
 
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
