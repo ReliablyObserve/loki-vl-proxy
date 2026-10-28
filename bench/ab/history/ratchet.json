@@ -448,6 +448,13 @@
   "shape": "DLV6 drilldown detected_level breakdown, json"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "json-error-split",
+  "shape": "J1 json no-error count by service_name, one service"
+ },
+ {
   "added": "2026-10-23",
   "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
   "range": "24h",
@@ -616,6 +623,13 @@
   "shape": "E field breakdown pipeline (explore)"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "json-filter-pushdown",
+  "shape": "F field breakdown service_version (explore)"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -728,6 +742,20 @@
   "shape": "LF2 logs, detected_level regexp"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF20 logfmt count by detected_level"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF20 logfmt count by detected_level"
+ },
+ {
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "1h",
@@ -754,6 +782,13 @@
   "range": "6h",
   "set": "level-filter",
   "shape": "LF22 json count by detected_level, level filter"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF23 json count by level, level filter"
  },
  {
   "added": "2026-10-27",
@@ -857,6 +892,13 @@
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS1 logs, level stream label"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
   "set": "level-filter-stored",
   "shape": "LS1 logs, level stream label"
  },
@@ -994,6 +1036,174 @@
   "shape": "DL6 explore volume, level filter before json"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N1 sum by app of max by app,pod, count"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N1 sum by app of max by app,pod, count"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "instant",
+  "set": "nested-aggregation",
+  "shape": "N10 instant min of avg, rate"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "instant",
+  "set": "nested-aggregation",
+  "shape": "N11 instant three levels"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "instant",
+  "set": "nested-aggregation",
+  "shape": "N13 instant without under by"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N14 sliding sum of max"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N14 sliding sum of max"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N15 sliding sums only"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N15 sliding sums only"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N16 innermost without under by, tumbling"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N16 innermost without under by, tumbling"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N2 max by namespace of sum by namespace,app, rate"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N2 max by namespace of sum by namespace,app, rate"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N4 avg by app of min by app,pod"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N4 avg by app of min by app,pod"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N5 three levels, max min sum"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N5 three levels, max min sum"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N6 json inner, sum of max"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N6 json inner, sum of max"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N7 logfmt inner, max of sum"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N7 logfmt inner, max of sum"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "nested-aggregation",
+  "shape": "N8 without over a named by level, tumbling"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "nested-aggregation",
+  "shape": "N8 without over a named by level, tumbling"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "instant",
+  "set": "nested-aggregation",
+  "shape": "N9 instant sum of max"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
@@ -1001,9 +1211,23 @@
   "shape": "OR1 logs, or alternatives"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "6h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR1 logs, or alternatives"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR2 logs, negated or alternatives"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "3h",
   "set": "parenthesized-range-or-filters",
   "shape": "OR2 logs, negated or alternatives"
  },
@@ -1407,6 +1631,13 @@
   "shape": "E4 logfmt size_bytes max by service"
  },
  {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "instant",
+  "set": "unwrap-conversion-error",
+  "shape": "E5 json duration_ms sum, instant"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -1496,6 +1727,20 @@
   "range": "instant",
   "set": "unwrap-sum-without",
   "shape": "W6 sum without pod, rate, instant"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W8 sum without pod, count_over_time (production)"
+ },
+ {
+  "added": "2026-10-28",
+  "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
+  "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W8 sum without pod, count_over_time (production)"
  },
  {
   "added": "2026-10-22",
