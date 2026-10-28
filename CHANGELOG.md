@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.39.0] - 2026-10-28
+
 ### Fixed
 
 - **sum, avg, max and min over time with unwrap and a range shorter than the
