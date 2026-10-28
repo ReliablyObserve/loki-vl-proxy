@@ -263,8 +263,9 @@ func TestHeavyQueryAdmission_SaturatedReturns429AndLabelsStillServe(t *testing.T
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("saturated heavy query status = %d, want 429; body=%s", w.Code, w.Body.String())
 	}
-	if body := w.Body.String(); !strings.Contains(body, "too many outstanding requests") || !strings.Contains(body, "-backend-max-concurrent-heavy-queries") {
-		t.Fatalf("429 body does not carry Loki's message and the flag name: %s", body)
+	// Loki's queue-full text exactly (pkg/queue/queue.go:21); the flag goes to the log.
+	if got := lokiErrorText(t, w); got != "too many outstanding requests" {
+		t.Fatalf("429 text = %q, want Loki's %q", got, "too many outstanding requests")
 	}
 	if got := statsCalls.Load(); got != 1 {
 		t.Fatalf("rejected query still reached VictoriaLogs: %d stats calls", got)

@@ -262,8 +262,8 @@ func TestVLResponseAbortedAfterHeaders(t *testing.T) {
 		timeout    time.Duration
 		wantStatus int
 	}{
-		{"early abort, identity", &abortingVL{}, 0, http.StatusBadGateway},
-		{"early abort, gzip", &abortingVL{gzip: true}, 0, http.StatusBadGateway},
+		{"early abort, identity", &abortingVL{}, 0, http.StatusInternalServerError},
+		{"early abort, gzip", &abortingVL{gzip: true}, 0, http.StatusInternalServerError},
 		{"VictoriaLogs deadline text, identity", &abortingVL{deadlineText: true}, 0, http.StatusGatewayTimeout},
 		{"abort at the timeout argument, identity", &abortingVL{abortAfter: func(d time.Duration) time.Duration { return d * 97 / 100 }}, 400 * time.Millisecond, http.StatusGatewayTimeout},
 		{"abort at the timeout argument, gzip", &abortingVL{gzip: true, deadlineText: true, abortAfter: func(d time.Duration) time.Duration { return d * 97 / 100 }}, 400 * time.Millisecond, http.StatusGatewayTimeout},
@@ -302,8 +302,8 @@ func runAbortedAfterHeadersCase(t *testing.T, vl *abortingVL, timeout time.Durat
 		if wantStatus == http.StatusGatewayTimeout && msg != lokiErrDeadlineExceeded {
 			t.Fatalf("attempt %d: error %q, want Loki's %q", attempt, msg, lokiErrDeadlineExceeded)
 		}
-		if wantStatus == http.StatusBadGateway && !strings.HasPrefix(msg, "VictoriaLogs aborted the response after ") {
-			t.Fatalf("attempt %d: error %q, want the sanitized abort message", attempt, msg)
+		if wantStatus == http.StatusInternalServerError && msg != lokiErrInternal {
+			t.Fatalf("attempt %d: error %q, want Loki's %q", attempt, msg, lokiErrInternal)
 		}
 		for _, noise := range goTransportNoise {
 			if strings.Contains(msg, noise) {
@@ -355,7 +355,7 @@ func TestStatusFromUpstreamErr_GuardErrors(t *testing.T) {
 		text string
 	}{
 		{"aborted past its deadline", &vlResponseAbortedError{elapsed: time.Minute, timedOut: true}, http.StatusGatewayTimeout, lokiErrDeadlineExceeded},
-		{"aborted early", &vlResponseAbortedError{elapsed: 1500 * time.Millisecond}, http.StatusBadGateway, "VictoriaLogs aborted the response after 1.5s, before it was complete; it ends a response this way when a query exceeds -search.maxQueryDuration or fails while its result is being written"},
+		{"aborted early", &vlResponseAbortedError{elapsed: 1500 * time.Millisecond}, http.StatusInternalServerError, "VictoriaLogs aborted the response after 1.5s, before it was complete; it ends a response this way when a query exceeds -search.maxQueryDuration or fails while its result is being written"},
 		{"wrapped abort", fmt.Errorf("fetch: %w", &vlResponseAbortedError{timedOut: true}), http.StatusGatewayTimeout, "fetch: " + lokiErrDeadlineExceeded},
 		{"label values too large", &labelValuesResponseTooLargeError{read: 67108865, limit: 67108864}, http.StatusInternalServerError, "rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (67108865 vs. 67108864); raise -label-values-max-response-bytes or narrow the query"},
 	}

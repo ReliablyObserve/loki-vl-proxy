@@ -87,7 +87,7 @@ rules:
 
   - alert: LokiVLProxyBackendUnreachable
     expr: |
-      sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status="502"}[5m])) > 0.5
+      sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status="500"}[5m])) > 0.5
     for: 2m
     labels:
       severity: critical
@@ -100,7 +100,7 @@ rules:
       managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
     annotations:
       summary: "VictoriaLogs backend unreachable"
-      description: "Proxy sees sustained 502 responses while querying VictoriaLogs."
+      description: "Proxy sees sustained 500 responses (Loki's status for a failed backend call) while querying VictoriaLogs."
       impact: "Read-path compatibility is degraded or unavailable."
       action: "Check VictoriaLogs health, network paths, and auth headers."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-backend-unreachable.md'

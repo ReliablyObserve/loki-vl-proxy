@@ -216,12 +216,7 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	}
 	status := http.StatusOK
 	if err != nil {
-		status = statusFromUpstreamErr(err)
-		var pipelineErr *orderedJSONPipelineError
-		if errors.As(err, &pipelineErr) {
-			status = http.StatusBadRequest
-		}
-		p.writeError(w, status, err.Error())
+		status = p.writeErr(w, r.Context(), err)
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
@@ -1720,8 +1715,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 	}
 	status := http.StatusOK
 	if err != nil {
-		status = statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status = p.writeErr(w, r.Context(), err)
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)

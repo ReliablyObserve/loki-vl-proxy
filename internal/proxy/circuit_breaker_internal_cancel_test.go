@@ -286,8 +286,8 @@ func TestShouldRecordBreakerFailure_UsesCallContext(t *testing.T) {
 	if !shouldRecordBreakerFailure(unknown, transportErr) {
 		t.Fatal("a transport failure without a known context must count")
 	}
-	if got := upstreamErrorStatus(live, transportErr); got != http.StatusBadGateway {
-		t.Fatalf("upstreamErrorStatus on a live context = %d, want 502", got)
+	if got := upstreamErrorStatus(live, transportErr); got != http.StatusInternalServerError {
+		t.Fatalf("upstreamErrorStatus on a live context = %d, want 500", got)
 	}
 
 	canceled, cancel := context.WithCancelCause(context.Background())

@@ -291,14 +291,14 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				)
 				break
 			}
-			status := statusFromBackendErr(err)
+			status := statusFromUpstreamErr(err)
 			p.log.Warn("query_range windowed fetch failed",
 				"error", err,
 				"window_count", len(windows),
 				"batch_size", batchSize,
 				"status", status,
 			)
-			p.writeError(w, status, err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 

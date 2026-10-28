@@ -1,5 +1,5 @@
 id: semantics/error-layer-backend-text
-title: VictoriaLogs error messages reach the client, redacted but verbatim (open)
+title: VictoriaLogs error messages reach the client on the Drilldown stats partial reply and the ruler passthrough (open)
 proves:
   - status-400
   - status-500
@@ -7,19 +7,18 @@ proves:
   - status-503
 consumer: any
 why: |
-  Every VictoriaLogs error body is answered with its own message after
-  query redaction: `cannot execute query […], since it requires more than
-  100MB of memory; possible solutions: to increase -search.maxQueryDuration`,
-  `backend returned 400: cannot parse query arg […]: unexpected token`,
-  VictoriaLogs' -search.maxConcurrentRequests text, a front proxy's HTML
-  page, and on the Drilldown partial path the message in the body warnings
-  and the X-Proxy-Upstream-Error/-Status headers; the rules and alerts routes
-  copy the ruler's body verbatim. 151 cells on all 21 routes. Loki never
-  answers with storage or backend text: its querier failure is 500 with
-  Loki's text, a bad query 400 with its parse error.
+  Loki never answers with storage or backend text: its querier failure is
+  500 with Loki's text, a bad query 400 with its parse error. The error layer
+  now answers every VictoriaLogs error body with Loki's text: 500 `Internal
+  Server Error`, 400 `failed to parse the log query` (logqlmodel.ErrParse,
+  pkg/logqlmodel/error.go:13) for a query VictoriaLogs rejects as unparsable,
+  429 `too many outstanding requests`; VictoriaLogs' message stays in the log
+  line. 25 cells remain (151 before): the Logs Drilldown stats partial reply
+  (message in its warnings and X-Proxy-Upstream-Error/-Status headers) and the
+  rules and alerts routes, which copy the ruler's non-2xx body verbatim.
 request:
   scope: internal
-  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
   setup: |
     TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
     every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
@@ -47,5 +46,5 @@ gap:
   effort: M
   area: 'internal/proxy/http_utils.go writeError/writeBackendError/writeGrafanaStatsFailure/writeDrilldownPartialFromUpstream; alerting.go passthrough'
   loki: 'pkg/util/server/error.go:56-130; pkg/logql/syntax parse errors for 400'
-  proxy: 'redactBackendError keeps the VictoriaLogs reason; X-Proxy-Upstream-Error header; ruler body copied'
+  proxy: 'Drilldown stats partial reply warnings and X-Proxy-Upstream-* headers; ruler non-2xx body copied (alerting.go)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

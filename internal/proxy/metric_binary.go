@@ -195,7 +195,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 					time.AfterFunc(delay, func() { sem <- struct{}{} })
 				}()
 			case <-ctx.Done():
-				p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
+				p.writeErr(w, ctx, ctx.Err())
 				return
 			}
 		}
@@ -238,17 +238,17 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		if upstream.status > 0 {
 			p.writeBackendError(w, upstream.status, upstream.body)
 		} else {
-			p.writeError(w, statusFromUpstreamErr(upstream.err), upstream.err.Error())
+			p.writeErr(w, r.Context(), upstream.err)
 		}
 		return
 	case errors.Is(err, errSeriesCountExceeded):
 		p.writeError(w, http.StatusBadRequest, newSeriesLimitError(ctx, limit).Error())
 		return
 	case errors.Is(err, errBodyTooLarge):
-		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
+		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
 		return
 	default:
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 
@@ -1688,7 +1688,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	key := "stats_query:" + getOrgID(r.Context()) + ":" + params.Encode()
 	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query", params)
 	if err != nil {
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 
@@ -1710,7 +1710,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	// plain client, a partial vector with a warning for Logs Drilldown.
 	capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 	if capErr != nil {
-		p.writeError(w, badRequestStatusOr(capErr, http.StatusBadRequest), capErr.Error())
+		p.writeErr(w, r.Context(), capErr)
 		return
 	}
 	body = capped
@@ -1865,11 +1865,11 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		rightBody, _, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
 	}
 	if leftErr != nil {
-		p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
+		p.writeErr(w, r.Context(), leftErr)
 		return
 	}
 	if rightErr != nil {
-		p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+		p.writeErr(w, r.Context(), rightErr)
 		return
 	}
 
@@ -1984,7 +1984,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		} else {
 			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
 			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+				p.writeErr(w, r.Context(), e)
 				return
 			}
 			defer resp.Body.Close()
@@ -1996,7 +1996,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		} else {
 			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
 			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+				p.writeErr(w, r.Context(), e)
 				return
 			}
 			defer resp.Body.Close()
@@ -2005,11 +2005,11 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	}
 
 	if leftErr != nil {
-		p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
+		p.writeErr(w, r.Context(), leftErr)
 		return
 	}
 	if rightErr != nil {
-		p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+		p.writeErr(w, r.Context(), rightErr)
 		return
 	}
 

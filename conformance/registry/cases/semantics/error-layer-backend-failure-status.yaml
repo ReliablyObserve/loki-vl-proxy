@@ -1,5 +1,5 @@
 id: semantics/error-layer-backend-failure-status
-title: A failed backend call is answered with the VictoriaLogs status or a proxy-only status instead of Loki's 500 (open)
+title: A failed ruler call is answered with the ruler's own status instead of Loki's 500 (open)
 proves:
   - status-500
   - status-502
@@ -9,16 +9,17 @@ consumer: any
 why: |
   Loki answers a failed querier or storage call with 500
   (pkg/util/server/error.go:124-128), a full queue with 429 "too many
-  outstanding requests" (pkg/queue/queue.go:21). The proxy answers the same
-  failures with 502 unavailable (statusFromUpstreamErr default, every
-  badRequestStatusOr(err, 502) call site), 503 timeout, 422 execution, 400
-  for a VictoriaLogs memory limit, VictoriaLogs' own 429, or the ruler's raw
-  status without the error envelope: 167 cells on 20 routes. The Drilldown
-  partial reply turns every stats failure into 200 (see
-  error-layer-silent-success); Loki's carve-out covers max_query_series only.
+  outstanding requests" (pkg/queue/queue.go:21). The error layer now does the
+  same on every VictoriaLogs-backed route: VictoriaLogs' 400/422 for a query
+  it could not execute, its 500, a front proxy's 502/503, refused and reset
+  connections, truncated and malformed bodies answer 500; VictoriaLogs' 429
+  answers Loki's 429; the 502/503 fallbacks are gone. 14 cells remain (167
+  before), all on the rules and alerts routes, which pass the ruler's non-2xx
+  status and body through. The Drilldown partial reply turns every stats
+  failure into 200 (see error-layer-silent-success).
 request:
   scope: internal
-  entry: (*Proxy).writeError, statusFromUpstreamErr, badRequestStatusOr, writeBackendError
+  entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
   setup: |
     TestErrorLayer_NoVictoriaLogsLeak: a fake VictoriaLogs (and ruler) that fails
     every call in one of 14 modes (VictoriaLogs 400 parse and memory-limit
@@ -47,5 +48,5 @@ gap:
   effort: M
   area: 'internal/proxy/http_utils.go statusFromUpstreamErr/statusFromBackendErr/badRequestStatusOr/lokiErrorType and their call sites'
   loki: 'pkg/util/server/error.go:56-130; pkg/queue/queue.go:21'
-  proxy: '502/503/422/VictoriaLogs status'
+  proxy: 'rules and alerts copy the ruler's non-2xx status (alerting.go)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

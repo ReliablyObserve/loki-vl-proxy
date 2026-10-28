@@ -21,7 +21,7 @@ import (
 // /label/<name>/values requests at once (distinct selectors, so nothing is
 // coalesced), the shape several replicas send when their label keep-warm
 // ticks coincide. With the metadata-scan limiter every request is answered
-// with 200 or the documented 429 naming -backend-max-concurrent-metadata-scans,
+// with 200 or Loki's 429 "too many outstanding requests" (the log names -backend-max-concurrent-metadata-scans),
 // a short-range /labels keeps answering throughout, VictoriaLogs does not
 // restart, and the 7-day label list still carries every label Loki reports.
 //
@@ -100,7 +100,7 @@ func TestCompat_MetadataScanAdmission(t *testing.T) {
 				switch {
 				case err == nil && status == http.StatusOK:
 					served++
-				case err == nil && status == http.StatusTooManyRequests && strings.Contains(body, "too many outstanding requests") && strings.Contains(body, "-backend-max-concurrent-metadata-scans"):
+				case err == nil && status == http.StatusTooManyRequests && strings.Contains(body, "too many outstanding requests"):
 					rejected++
 				default:
 					failures = append(failures, fmt.Sprintf("%s: %d %v %.300s", target, status, err, body))

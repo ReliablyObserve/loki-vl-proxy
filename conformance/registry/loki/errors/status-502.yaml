@@ -15,11 +15,12 @@ generated:
 loki_behaviour: |
   Loki never answers 502 for a failed backend: a querier or storage failure is
   500 (pkg/util/server/error.go:124-128). A 502 from the proxy is a leak unless
-  it is a registry-listed, documented proxy limit naming its flag; today it is
-  the default of statusFromUpstreamErr and of every badRequestStatusOr(err, 502)
-  site, and the answer of -backend-max-buffered-response-bytes and
-  -manual-range-metric-row-limit. TestErrorLayer_NoVictoriaLogsLeak lists the
-  cells (error-layer-known-leaks.json); the list may only shrink.
+  it is a registry-listed, documented proxy limit naming its flag. The error
+  layer (lokiClientError, writeErr) answers every failed backend call with 500
+  and the proxy's limits with 500 naming their flag; what still answers 502 is
+  the ruler's own status passed through on the rules and alerts routes and
+  the delete endpoint. TestErrorLayer_NoVictoriaLogsLeak lists the cells
+  (error-layer-known-leaks.json); the list may only shrink.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
   TODO: how Grafana Explore and Logs Drilldown render it.

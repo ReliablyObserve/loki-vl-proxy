@@ -358,7 +358,7 @@ func TestInstantQueryPostProcessedBackendFailureKeepsStatus(t *testing.T) {
 	for _, tc := range []struct {
 		mode instantBackendMode
 		code int
-	}{{instantBackendBad400, http.StatusBadRequest}, {instantBackendDown500, http.StatusInternalServerError}} {
+	}{{instantBackendBad400, http.StatusInternalServerError}, {instantBackendDown500, http.StatusInternalServerError}} {
 		p := newTestProxy(t, instantBackend(t, tc.mode).URL)
 		for _, q := range []string{
 			`stdvar without (app) (count_over_time(` + instantNS + `[1m]))`,

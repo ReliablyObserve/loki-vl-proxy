@@ -101,7 +101,7 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 		}
 		capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
 		if err != nil {
-			p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 		body = capped

@@ -279,11 +279,13 @@ func ingestHeavyRankFixture(t *testing.T, app, vlRows string, streams map[string
 func isDocumentedLimitError(status int, body string) bool {
 	switch {
 	case status == http.StatusTooManyRequests:
-		return strings.Contains(body, "too many outstanding requests") && strings.Contains(body, "-backend-max-concurrent-heavy-queries")
-	case status == http.StatusGatewayTimeout || status == http.StatusServiceUnavailable:
+		// Loki's queue-full text (pkg/queue/queue.go:21); the flag is in the log.
+		return strings.Contains(body, "too many outstanding requests")
+	case status == http.StatusGatewayTimeout:
 		// -backend-timeout, or VictoriaLogs' own -search.maxQueryDuration,
-		// which the proxy now passes as the per-query timeout argument.
-		return strings.Contains(body, "timeout") || strings.Contains(body, "couldn't be executed") || strings.Contains(body, "deadline")
+		// which the proxy now passes as the per-query timeout argument: Loki's
+		// deadline text (pkg/util/server/error.go:27).
+		return strings.Contains(body, "request timed out")
 	case status >= 400:
 		return strings.Contains(body, "-manual-range-metric-row-limit") || strings.Contains(body, "-max-stats-query-series")
 	}

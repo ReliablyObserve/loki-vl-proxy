@@ -116,14 +116,14 @@ groups:
 
       - alert: LokiVLProxyBackendUnreachable
         expr: |
-          sum(rate(loki_vl_proxy_requests_total{status="502"}[5m])) by (job) > 0.5
+          sum(rate(loki_vl_proxy_requests_total{status="500"}[5m])) by (job) > 0.5
         for: 2m
         labels:
           severity: critical
           component: loki-vl-proxy
         annotations:
           summary: "VictoriaLogs backend unreachable"
-          description: "Proxy returning 502 errors — VL backend may be down or network issue."
+          description: "Proxy returning 500 errors (Loki's status for a failed backend call) — VL backend may be down or network issue."
 
       # ── Resource ──
 

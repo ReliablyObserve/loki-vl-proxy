@@ -1,25 +1,9 @@
 {
-  "ceiling": 502,
+  "ceiling": 98,
   "leaks": {
-    "alerts client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "alerts conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "alerts conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "alerts malformed": [
       "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success"
-    ],
-    "alerts timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
     ],
     "alerts truncated": [
       "semantics/error-layer-silent-success"
@@ -55,14 +39,6 @@
     "detected_field_values client_cancel": [
       "semantics/error-layer-silent-success"
     ],
-    "detected_field_values conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "detected_field_values conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "detected_field_values malformed": [
       "semantics/error-layer-silent-success"
     ],
@@ -72,43 +48,8 @@
     "detected_field_values truncated": [
       "semantics/error-layer-silent-success"
     ],
-    "detected_field_values vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_field_values vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
     "detected_fields client_cancel": [
       "semantics/error-layer-silent-success"
-    ],
-    "detected_fields conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "detected_fields conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
     ],
     "detected_fields malformed": [
       "semantics/error-layer-silent-success"
@@ -119,400 +60,32 @@
     "detected_fields truncated": [
       "semantics/error-layer-silent-success"
     ],
-    "detected_fields vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_fields vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "detected_labels conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "detected_labels conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "detected_labels malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "detected_labels timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
     ],
     "detected_labels truncated": [
       "semantics/error-layer-silent-success"
     ],
-    "detected_labels vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "detected_labels vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_stats conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_stats conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_stats malformed": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
     "index_stats oversize": [
-      "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "index_stats timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_stats truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "index_stats vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_stats vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
     ],
     "index_volume malformed": [
       "semantics/error-layer-silent-success"
     ],
     "index_volume oversize": [
-      "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "index_volume timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "index_volume vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
     ],
     "index_volume_range malformed": [
       "semantics/error-layer-silent-success"
     ],
     "index_volume_range oversize": [
-      "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "index_volume_range timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "index_volume_range vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range_drilldown conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range_drilldown conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
     ],
     "index_volume_range_drilldown malformed": [
       "semantics/error-layer-silent-success"
     ],
     "index_volume_range_drilldown oversize": [
-      "semantics/error-layer-internal-go-text",
       "semantics/error-layer-proxy-limit-status"
-    ],
-    "index_volume_range_drilldown timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "index_volume_range_drilldown truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "index_volume_range_drilldown vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "index_volume_range_drilldown vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "label_values conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "label_values conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "label_values malformed": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "label_values timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "label_values truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "label_values vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "labels conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "labels conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "labels malformed": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "labels timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "labels truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "labels vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ],
     "patterns client_cancel": [
       "semantics/error-layer-silent-success"
@@ -535,9 +108,6 @@
     "patterns vl400_limit": [
       "semantics/error-layer-silent-success"
     ],
-    "patterns vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
     "patterns vl422": [
       "semantics/error-layer-silent-success"
     ],
@@ -553,256 +123,17 @@
     "patterns vl503_front": [
       "semantics/error-layer-silent-success"
     ],
-    "query_instant client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_instant conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_instant conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "query_instant malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "query_instant timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_instant truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_instant vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl500": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_instant vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_json conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_json conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_json malformed": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_range_json timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_json truncated": [
-      "semantics/error-layer-backend-failure-status"
-    ],
-    "query_range_json vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_json vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_log conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_log conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
     ],
     "query_range_log malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "query_range_log timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_log truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_range_log vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl500": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_log vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_rate conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_rate conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "query_range_rate malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "query_range_rate timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_rate truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_range_rate vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_rate vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_stats conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_stats conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "query_range_stats malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ],
-    "query_range_stats timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_stats truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_range_stats vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl500": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_stats vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ],
     "query_range_stats_drilldown client_cancel": [
       "semantics/error-layer-backend-text",
@@ -822,24 +153,14 @@
     "query_range_stats_drilldown malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "query_range_stats_drilldown oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ],
     "query_range_stats_drilldown timeout": [
       "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success",
       "semantics/error-layer-transport-text"
     ],
-    "query_range_stats_drilldown truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
     "query_range_stats_drilldown vl400_limit": [
       "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl400_parse": [
-      "semantics/error-layer-backend-text"
     ],
     "query_range_stats_drilldown vl422": [
       "semantics/error-layer-backend-text",
@@ -861,83 +182,8 @@
       "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success"
     ],
-    "query_range_unwrap_rate_counter client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_unwrap_rate_counter conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_unwrap_rate_counter conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "query_range_unwrap_rate_counter malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "query_range_unwrap_rate_counter oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ],
-    "query_range_unwrap_rate_counter timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_unwrap_rate_counter truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "query_range_unwrap_rate_counter vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "query_range_unwrap_rate_counter vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "rules conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "rules conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "rules malformed": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
-    ],
-    "rules timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "rules truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-internal-go-text"
     ],
     "rules vl400_limit": [
       "semantics/error-layer-backend-failure-status",
@@ -967,64 +213,12 @@
       "semantics/error-layer-backend-failure-status",
       "semantics/error-layer-backend-text"
     ],
-    "series client_cancel": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "series conn_refused": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
-    "series conn_reset": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-transport-text"
-    ],
     "series malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "series timeout": [
-      "semantics/error-layer-cancel-deadline",
-      "semantics/error-layer-transport-text"
-    ],
-    "series truncated": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl500": [
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "series vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ],
     "tail client_cancel": [
       "semantics/error-layer-cancel-deadline",
       "semantics/error-layer-silent-success"
-    ],
-    "tail conn_refused": [
-      "semantics/error-layer-internal-go-text"
-    ],
-    "tail conn_reset": [
-      "semantics/error-layer-internal-go-text"
     ],
     "tail malformed": [
       "semantics/error-layer-internal-go-text"
@@ -1038,32 +232,6 @@
     ],
     "tail truncated": [
       "semantics/error-layer-internal-go-text"
-    ],
-    "tail vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl400_parse": [
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl500": [
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "tail vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ]
   }
 }

@@ -785,7 +785,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	} {
 		series, ok, err := collect()
 		if err != nil {
-			p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 		if ok {
@@ -801,13 +801,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	fetchEnd := endTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 
 	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.manualSeriesLimit(r.Context()))
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -885,8 +885,7 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) int {
 	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window, p.limits().BufferedBackendBodyBytes)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
-		return http.StatusServiceUnavailable
+		return p.writeErr(w, context.Background(), err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
@@ -968,12 +967,12 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	if readsQuantileCounts(manualFunc, spec) {
 		series, err := p.collectQuantileHistogram(r.Context(), spec, evalTS.Add(-origSpec.Window), evalTS, 0)
 		if err != nil {
-			p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 		result, err := buildQuantileHistogramVector(r.Context(), quantile, series, evalTS, origSpec.Window)
 		if err != nil {
-			p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+			p.writeErr(w, r.Context(), err)
 			return true
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -986,13 +985,13 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	fetchEnd := evalTS.Add(time.Nanosecond)
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusBadGateway), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 
 	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.manualSeriesLimit(r.Context()))
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusServiceUnavailable), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")

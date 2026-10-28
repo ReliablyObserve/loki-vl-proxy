@@ -473,8 +473,7 @@ func (p *Proxy) writeBoundedBareParserMetric(w http.ResponseWriter, r *http.Requ
 	body, err := buildBoundedBareParserMetric(r.Context(), series, start, end, step, spec, isRange)
 	status := http.StatusOK
 	if err != nil {
-		status = statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
+		status = p.writeErr(w, r.Context(), err)
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)

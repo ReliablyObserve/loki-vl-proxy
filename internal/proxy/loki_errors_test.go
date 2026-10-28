@@ -88,8 +88,9 @@ func TestLokiError_BackendDown_ReturnsUnavailable(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to parse: %v\nbody: %s", err, w.Body.String())
 	}
-	if resp.ErrorType != "unavailable" {
-		t.Errorf("backend down should return errorType=unavailable, got %q", resp.ErrorType)
+	// Loki answers a failed backend call with 500 (pkg/util/server/error.go:124-128).
+	if w.Code != http.StatusInternalServerError || resp.ErrorType != "internal" {
+		t.Errorf("backend down should return 500 errorType=internal, got %d %q", w.Code, resp.ErrorType)
 	}
 }
 
@@ -141,8 +142,9 @@ func TestVLError_OOMBodyIsRewritten(t *testing.T) {
 	if strings.Contains(resp.Error, `"errorType"`) || strings.Contains(resp.Error, `"status"`) {
 		t.Errorf("error field must not contain VL JSON envelope fields; got %q", resp.Error)
 	}
-	if !strings.Contains(resp.Error, "819MB") && !strings.Contains(resp.Error, "memory") {
-		t.Errorf("error field should contain the VL error message; got %q", resp.Error)
+	// Loki's 500 carries no backend text: VictoriaLogs' message stays in the log.
+	if resp.Error != lokiErrInternal {
+		t.Errorf("error field = %q, want Loki's %q", resp.Error, lokiErrInternal)
 	}
 	// errorType must be a valid Loki errorType string (not "unavailable" from VL for 500).
 	validTypes := map[string]bool{"internal": true, "execution": true, "bad_data": true, "timeout": true, "not_found": true, "canceled": true, "unavailable": true}

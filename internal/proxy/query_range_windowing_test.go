@@ -1617,8 +1617,10 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 		t.Fatal("expected generic validation error to be non-retryable")
 	}
 
-	if got := statusFromBackendErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusServiceUnavailable {
-		t.Fatalf("expected http status passthrough, got=%d", got)
+	// Loki answers a failed backend with 500 (pkg/util/server/error.go:124-128),
+	// never VictoriaLogs' own 503.
+	if got := statusFromUpstreamErr(&upstreamStatusError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusInternalServerError {
+		t.Fatalf("expected Loki's 500 for a failed backend, got=%d", got)
 	}
 
 	if got := queryRangeWindowRetryBackoff(0); got != queryRangeRetryMinBackoff {

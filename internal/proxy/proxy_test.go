@@ -1985,11 +1985,12 @@ func TestContract_Volume_ReturnsGatewayErrorWithoutCacheOnBackendFailure(t *test
 
 	w := httptest.NewRecorder()
 	p.handleVolume(w, httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bapp%3D%22api%22%7D&end=now", nil))
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502 without cached volume fallback, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 without cached volume fallback, got %d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(strings.ToLower(w.Body.String()), "backend unavailable") {
-		t.Fatalf("expected backend error message, got %s", w.Body.String())
+	// Loki's 500 carries no backend text (pkg/util/server/error.go:124-128).
+	if got := lokiErrorText(t, w); got != lokiErrInternal {
+		t.Fatalf("expected Loki's %q, got %q", lokiErrInternal, got)
 	}
 }
 

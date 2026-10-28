@@ -129,15 +129,15 @@ func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 				t.Fatalf("proxy error envelope = %+v, want status=error errorType=bad_data", envelope)
 			}
 			// A multi-tenant 400 must be the query's rejection, not a tenant or
-			// fanout error: VictoriaLogs' parse marker or the single-tenant error.
+			// fanout error: the single-tenant error, with no VictoriaLogs text.
 			if strings.Contains(tc.orgID, "|") {
 				_, singleBody := rejectedQueryGet(t, proxyURL, tc.path, window(cloneQueryValues(tc.params)), "0", tc.headers)
 				var single struct {
 					Error string `json:"error"`
 				}
 				_ = json.Unmarshal(singleBody, &single)
-				if envelope.Error != single.Error && !strings.Contains(envelope.Error, "cannot parse query arg") {
-					t.Fatalf("multi-tenant error %q is neither the VictoriaLogs parse error nor the single-tenant error %q", envelope.Error, single.Error)
+				if envelope.Error != single.Error || strings.Contains(envelope.Error, "cannot parse") {
+					t.Fatalf("multi-tenant error %q is not the single-tenant error %q, or carries VictoriaLogs text", envelope.Error, single.Error)
 				}
 			}
 		})

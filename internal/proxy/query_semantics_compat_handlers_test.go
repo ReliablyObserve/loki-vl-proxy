@@ -300,11 +300,11 @@ func TestContract_Query_AbsentOverTimeCompatReturnsBackendError(t *testing.T) {
 
 	p.handleQuery(resp, req)
 
-	if resp.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", resp.Code, resp.Body.String())
 	}
-	if !strings.Contains(resp.Body.String(), "backend unavailable") {
-		t.Fatalf("expected backend error body, got %s", resp.Body.String())
+	if got := lokiErrorText(t, resp); got != lokiErrInternal {
+		t.Fatalf("expected Loki's %q, got %q", lokiErrInternal, got)
 	}
 }
 
@@ -356,8 +356,8 @@ func TestContract_Query_BareParserMetricCompatPropagatesBackendError(t *testing.
 
 	p.handleQuery(resp, req)
 
-	if resp.Code != http.StatusBadGateway {
-		t.Fatalf("expected upstream 502 to propagate, got %d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected an upstream 502 to answer Loki's 500, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
