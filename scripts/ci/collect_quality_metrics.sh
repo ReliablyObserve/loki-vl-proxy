@@ -79,6 +79,15 @@ capture_async() {
 }
 
 collect_tests_and_coverage() {
+  # A snapshot of this commit's count and coverage taken by an earlier run of this
+  # script (the PR quality workflow caches the base commit's): the numbers depend
+  # only on the commit, so the tests are not run again. A missing, unreadable or
+  # all-zero file (a collection that timed out) is ignored.
+  if [ -n "${QUALITY_TESTS_SNAPSHOT:-}" ] && jq -e '(.count > 0) and (.coverage_pct | type == "number")' "$QUALITY_TESTS_SNAPSHOT" >/dev/null 2>&1; then
+    log_step "using the saved test count and coverage in ${QUALITY_TESTS_SNAPSHOT}"
+    jq -c '{count, coverage_pct}' "$QUALITY_TESTS_SNAPSHOT"
+    return 0
+  fi
   local cover_file="$TMP_DIR/coverage.out"
   local events_file="$TMP_DIR/go-test-events.json"
   go test ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"

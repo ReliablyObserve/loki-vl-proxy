@@ -602,7 +602,7 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - Loki / Logs Drilldown / VictoriaLogs compatibility deltas
 - sampled benchmark and load-test deltas
 
-The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and reports medians of 7 benchmark samples (`-count=7 -benchtime=2s -cpu=1` with `GOMAXPROCS=1`) and 3 high-concurrency load-test runs (`scripts/ci/collect_quality_metrics.sh`).
+The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and reports medians of 7 benchmark samples (`-count=7 -benchtime=2s -cpu=1` with `GOMAXPROCS=1`) and 3 high-concurrency load-test runs (`scripts/ci/collect_quality_metrics.sh`). The base commit's test count and coverage depend only on that commit, so they are cached per base SHA (`actions/cache`, read back through `QUALITY_TESTS_SNAPSHOT`): a later run of the same pull request against the same base does not run the base's tests again. Throughput, CPU and compatibility scores are always measured in the run, on its runner.
 The collector runs test/coverage, compatibility scores, benchmark medians, and load metrics in parallel with bounded fallbacks so a single slow signal does not block the whole report gate.
 The PR quality workflow now skips benchmark/load perf smoke when no perf-sensitive files changed, so docs/metadata-only PRs do not report noisy runner jitter as fake regressions.
 The quality gate compares base/head with relative and absolute regression thresholds and ignores low-baseline noise, so tiny shared-runner jitter does not fail required checks.
