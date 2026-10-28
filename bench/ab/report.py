@@ -31,7 +31,7 @@ import os
 import re
 import sys
 
-SIG_RE = re.compile(r"series=(\d+) points=(\d+) sum=(\S+)")
+SIG_RE = re.compile(r"series=(\d+|ranked) points=(\d+) sum=(\S+)")
 NOT_NUMBERS_RE = re.compile(r"not_numbers=(\d+)")
 
 
