@@ -171,11 +171,12 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `ci.yaml` | `memory-leak-tests` | `-tags=memleak -race -run 'TestMemLeak_'` in `internal/proxy` |
 | `ci.yaml` | `bench` | `internal/proxy` benchmarks (`-count=3`), label/field, patterns, cache and stats-translation scale benchmarks with regression thresholds, `TestLoad*` load tests |
 | `ci.yaml` | `docker` | image build and binary smoke run |
+| `ci.yaml` | `image` | builds the proxy image once (`docker/build-push-action`, `type=docker` tar uploaded as the `proxy-image` artifact); `tuple-smoke`, `e2e-compat`, `e2e-fleet` and `e2e-ui` download and `docker load` it instead of building it themselves |
 | `ci.yaml` | `helm` | `helm lint`, template regressions, `scripts/ci/validate_helm_flags.sh` |
 | `ci.yaml` | `e2e-compat (core, drilldown, otel-edge, tail-multitenancy, semantics)` | one fresh compose stack per group, `go test -tags=e2e -run '<group pattern>' ./test/e2e-compat/` |
 | `ci.yaml` | `e2e-compat` | aggregates the five grouped jobs into one result |
 | `ci.yaml` | `e2e-fleet` | `test/e2e-fleet` 3-proxy stack, `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` only |
-| `ci.yaml` | `e2e-ui (9 shards)` | compose stack with `--profile ui`, one Playwright shard per job (see [CI Shards](#ci-shards)) |
+| `ci.yaml` | `e2e-ui (5 shards)` | compose stack with `--profile ui`, one group of Playwright tags per job (see [CI Shards](#ci-shards)) |
 | `compat-loki.yaml` | `loki-pinned` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.2.3: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
 | `compat-loki.yaml` | `loki-matrix` | weekly: the same checks for every `stack.loki.matrix_versions` entry |
 | `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.2.3: `TestDrilldownTrackScore` |
@@ -312,17 +313,15 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 
 ### CI Shards
 
-| Shard | Command | Primary focus |
+| Shard | Commands | Primary focus |
 |---|---|---|
-| `datasource` | `npx playwright test tests/datasource.spec.ts` | Grafana datasource settings smoke |
 | `explore-core` | `npx playwright test --grep @explore-core` | default Explore browser smoke plus API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`) |
-| `explore-tail` | `npx playwright test --grep @explore-tail` | browser-only multi-tenant (`__tenant_id__` exact and negative regex) plus live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
-| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields plus URL filter-reload persistence |
-| `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity: parsers (json, logfmt), formatting (line_format, label_format, keep/drop), metric queries (count_over_time, rate, unwrap), line filters (regex, negative), aggregations (topk) |
-| `explore-mt` | `npx playwright test --grep @explore-mt` | multi-tenant Explore coverage |
-| `explore-regression` | `npx playwright test --grep @regression` | API-level parity register (`explore-regression.spec.ts`): log selectors, line filters, parsers and pipelines compared line-for-line on an uncapped window; grouped metric queries compared by series set after Loki's range path has warmed; the `-max-stats-query-series` cap; content checks |
-| `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage (`explore-comprehensive-ui.spec.ts`): page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations |
+| `regression-datasource` | `npx playwright test --grep @regression`, then `npx playwright test tests/datasource.spec.ts` | `@regression`: API-level parity register (`explore-regression.spec.ts`): log selectors, line filters, parsers and pipelines compared line-for-line on an uncapped window; grouped metric queries compared by series set after Loki's range path has warmed; the `-max-stats-query-series` cap; content checks. Then the Grafana datasource settings smoke |
+| `drilldown-core-tail` | `npx playwright test --grep '@drilldown-core\|@explore-tail'` | `@drilldown-core`: Explore detail-panel smoke and single-tenant Logs Drilldown smoke. `@explore-tail`: browser-only multi-tenant (`__tenant_id__` exact and negative regex) plus live-tail recovery |
+| `comprehensive-drilldown-mt` | `npx playwright test --grep '@comprehensive-ui\|@drilldown-mt'` | `@comprehensive-ui`: Explore UI coverage (`explore-comprehensive-ui.spec.ts`): page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations. `@drilldown-mt`: multi-tenant Logs Drilldown landing/service/fields plus URL filter-reload persistence |
+| `ops-mt` | `npx playwright test --grep '@explore-ops\|@explore-mt'` | `@explore-ops`: Loki operations parity: parsers (json, logfmt), formatting (line_format, label_format, keep/drop), metric queries (count_over_time, rate, unwrap), line filters (regex, negative), aggregations (topk). `@explore-mt`: multi-tenant Explore coverage |
+
+Each shard pays for a stack start, so the former one-tag shards are grouped; the five together select exactly the tests the nine selected before, each once. `explore-core` stays the longest shard.
 
 Specs whose tags match no shard do not run in CI: `explore-click-interactions.spec.ts` (`@click-interactions`), `performance-baseline.spec.ts` (`@performance`), `drilldown-loki-vs-proxy-compare.spec.ts` (`@compare`), and the `@drilldown-cache` groups of `drilldown-cache-regression.spec.ts` other than the labels-sidebar group, which also carries `@drilldown-core`.
 

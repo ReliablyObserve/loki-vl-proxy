@@ -130,19 +130,15 @@ Most non-browser assertions moved out of Playwright:
 
 ## CI Shards
 
-The GitHub Actions `e2e-ui` job runs as nine shards:
+The GitHub Actions `e2e-ui` job runs as five shards (each starts the stack once, so one-tag shards were grouped; the five select exactly the tests the former nine did, each once):
 
-| Shard | Command | Coverage |
+| Shard | Commands | Coverage |
 |------|---------|----------|
-| `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource settings smoke |
 | `explore-core` | `npx playwright test --grep @explore-core` | default Explore smoke, API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`), security hardening visibility, Explore URL-state |
-| `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore exact/negative tenant filtering plus browser live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, single-tenant Logs Drilldown smoke, the Patterns-tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`), and the Drilldown labels-sidebar cache regression |
-| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields smoke plus filter persistence from URL state |
-| `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity in Explore: parsers, formatting, metric queries, line filters, aggregations |
-| `explore-mt` | `npx playwright test --grep @explore-mt` | multi-tenant Explore coverage |
-| `explore-regression` | `npx playwright test --grep @regression` | API-level proxy-vs-Loki parity register: log selectors, filters, parsers, pipelines, grouped metric queries, the series cap, content checks (`explore-regression.spec.ts`) |
-| `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage: page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations (`explore-comprehensive-ui.spec.ts`) |
+| `regression-datasource` | `npx playwright test --grep @regression`, then `npx playwright test tests/datasource.spec.ts` | API-level proxy-vs-Loki parity register: log selectors, filters, parsers, pipelines, grouped metric queries, the series cap, content checks (`explore-regression.spec.ts`); then the datasource settings smoke |
+| `drilldown-core-tail` | `npx playwright test --grep '@drilldown-core\|@explore-tail'` | Explore detail-panel smoke, URL-state unit coverage, single-tenant Logs Drilldown smoke, the Patterns-tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`), the Drilldown labels-sidebar cache regression; multi-tenant Explore exact/negative tenant filtering plus browser live-tail recovery |
+| `comprehensive-drilldown-mt` | `npx playwright test --grep '@comprehensive-ui\|@drilldown-mt'` | Explore UI coverage: page load, editor, query execution, results panel, empty results, filters, timings recorded as annotations (`explore-comprehensive-ui.spec.ts`); multi-tenant Logs Drilldown landing/service/fields smoke plus filter persistence from URL state |
+| `ops-mt` | `npx playwright test --grep '@explore-ops\|@explore-mt'` | Loki operations parity in Explore: parsers, formatting, metric queries, line filters, aggregations; multi-tenant Explore coverage |
 
 `@click-interactions`, `@performance`, `@compare`, and the `@drilldown-cache` groups without `@drilldown-core` are not selected by any shard.
 
