@@ -219,7 +219,8 @@ jobs:
           # not keep one.
           # bench/ab/history includes trend.md and ratchet.json.
           FILES=(bench/ab/results bench/ab/history conformance/registry/generated/perf-evidence.json
-                 conformance/reports/performance.md conformance/reports/gaps.md)
+                 conformance/reports/performance.md conformance/reports/gaps.md
+                 README.md docs/real-window-compatibility-gaps.md)
           # The job summary gets every alert; the pull request body (65,536
           # characters at most) the first of them.
           ALERTS=""

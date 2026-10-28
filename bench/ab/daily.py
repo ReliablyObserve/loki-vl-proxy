@@ -27,6 +27,8 @@ fresh runner and opens a bot pull request with what it writes:
                                       on them)
   conformance/registry/generated/perf-evidence.json, conformance/reports/
   performance.md and gaps.md          regenerated from the new results
+  README.md, docs/real-window-         the "Quality and performance vs Loki" section
+  compatibility-gaps.md               between the quality-summary markers
 
   python3 bench/ab/daily.py --out /tmp/ab-daily                 # everything
   python3 bench/ab/daily.py --out /tmp/ab-daily --sets control --max-range 3h --runs 3 --no-write
@@ -58,6 +60,8 @@ import stack  # noqa: E402
 ROOT = stack.ROOT
 RESULTS = os.path.join(HERE, "results")
 PY = sys.executable
+# The files holding the generated "Quality and performance vs Loki" section (conformance/scripts/perf_evidence.py).
+QUALITY_SUMMARY_FILES = ("README.md", "docs/real-window-compatibility-gaps.md")
 # Daily data profile: a batch per 30 s at a third of the PR smoke's line rate
 # (about 25 lines/s), so the ~24.4 h seed (24h + the runs' shifts + margin)
 # stays near 2.2 M lines and 120 k streams on a hosted runner. Fixed: every
@@ -206,6 +210,10 @@ def main():
         stack.log(f"alerts failed, the day is delivered without them: {e!r}")
     for script in ("perf_evidence.py", "gaps.py"):
         subprocess.run([PY, os.path.join(ROOT, "conformance/scripts", script)], cwd=ROOT, check=True)
+    # The README and docs section states this day's figures (perf_evidence.py --quality-summary).
+    for target in QUALITY_SUMMARY_FILES:
+        subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--quality-summary", target],
+                       cwd=ROOT, check=True)
     stack.log(f"daily run written in {(time.time() - t0) / 60:.1f} min")
     return 0
 
