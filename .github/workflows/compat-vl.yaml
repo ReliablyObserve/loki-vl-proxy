@@ -77,8 +77,12 @@ jobs:
   vl-matrix:
     # Weekly, and on demand (workflow_dispatch) so a compose or matrix change can
     # be validated across every supported VictoriaLogs version before it ships.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: vl-matrix-source
+    # Also on a baseline run (change scope: the `baseline` label, or a big shipped
+    # diff on a pull request into main): the whole version matrix, not only the
+    # pinned tuple. An empty or failed scope output is not "true", so a doubt runs
+    # nothing extra.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.scope.outputs.baseline == 'true'
+    needs: [vl-matrix-source, scope]
     runs-on: ubuntu-latest
     # Each version runs the range-metric table on top of the compatibility
     # checks; bound a hung stack well below the 6 hour default.

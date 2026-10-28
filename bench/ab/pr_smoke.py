@@ -36,6 +36,10 @@ Steps:
      --over-2x-loki warn (the default) an above-2× finding is a warning at the
      top of the comment and a ::warning:: annotation; with fail it fails the job.
 
+  7. A baseline run (selection.py --all, with --baseline-candidate DIR) also writes
+     what could become the new baseline into DIR and ends the comment with a "new
+     baseline candidate" section (baseline_candidate.py). Nothing is committed.
+
 Outputs in --out: selection.json, raw-<set>.json, summary-<set>.json,
 comment.md, verdict.json, meta.json and the proxies' logs.
 """
@@ -49,6 +53,7 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import baseline_candidate  # noqa: E402
 import comment  # noqa: E402
 import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
@@ -180,6 +185,9 @@ def main():
     ap.add_argument("--over-2x-baseline", default="",
                     help="the above-2x Loki list to compare with (default: bench/ab/history/over-2x-loki.json as "
                          "committed on the base ref, so a PR cannot list its own rows)")
+    ap.add_argument("--baseline-candidate", default="", metavar="DIR",
+                    help="a baseline run: write the above-2x list and the acceptance distribution this run would "
+                         "make the baseline into DIR, and add the section to the comment (nothing is committed)")
     stack.stack_args(ap)
     args = ap.parse_args()
     args.ranges = [r for r in args.ranges.split(",") if r]
@@ -224,6 +232,11 @@ def main():
             summaries = measure(args, sel, out, base_sha, meta, baseline, bounds)
             meta["elapsed_s"] = round(time.time() - t0)
             text, verdict = comment.render(summaries, sel, meta, baseline, bounds)
+            if args.baseline_candidate:
+                section = baseline_candidate.write(
+                    args.baseline_candidate, summaries, baseline or {}, baseline_candidate.committed_day(base_sha),
+                    date=time.strftime("%Y-%m-%d", time.gmtime()), commit=meta["head"], elapsed_s=meta["elapsed_s"])
+                text = baseline_candidate.fit(text, baseline_candidate.COMMENT_LIMIT - len(section)) + section
     except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
         traceback.print_exc()
         meta["elapsed_s"] = round(time.time() - t0)

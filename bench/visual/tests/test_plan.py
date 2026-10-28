@@ -170,6 +170,36 @@ def git(repo, *a):
     return subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True, text=True).stdout.strip()
 
 
+class BaselinePlanTest(unittest.TestCase):
+    def test_every_page_at_its_own_ranges(self):
+        got = plan.plan_all(SPEC)
+        self.assertTrue(got["run"])
+        self.assertTrue(got["baseline"])
+        self.assertEqual(list(got["entries"]), [p["id"] for p in SPEC["pages"]])
+        self.assertEqual(got["entries"]["json-volume"]["ranges"], ["15m", "1h", "6h"])
+        self.assertEqual(got["entries"]["tail"]["ranges"], [plan.LIVE])
+
+    def test_no_budget_applies(self):
+        spec = {**SPEC, "pages": [{"id": f"p{i}", "kind": "explore", "covers": ["x"]} for i in range(40)]}
+        got = plan.plan_all(spec)
+        self.assertEqual(got["captures"], 120)  # 40 pages x 3 ranges, far above MAX_CAPTURES
+        self.assertGreater(got["captures"], plan.MAX_CAPTURES)
+        self.assertEqual((got["trimmed"], got["dropped"]), ([], []))
+
+    def test_the_tail_is_one_capture(self):
+        self.assertEqual(plan.plan_all(SPEC)["captures"], 5 * 3 + 1)
+
+    def test_it_has_the_shape_the_runner_reads(self):
+        normal = plan.plan(["internal/proxy/proxy.go"], spec=SPEC, items=ITEMS)
+        self.assertEqual(set(normal) - set(plan.plan_all(SPEC)), set())
+
+    def test_the_real_spec_is_planned_whole(self):
+        spec = plan.load_spec()
+        got = plan.plan_all()
+        self.assertEqual(set(got["entries"]), {p["id"] for p in spec["pages"]})
+        self.assertGreater(got["captures"], plan.MAX_CAPTURES)
+
+
 class ChangedCasesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

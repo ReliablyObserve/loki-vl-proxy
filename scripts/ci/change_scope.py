@@ -33,6 +33,26 @@ the lane's jobs may be skipped: product=false (no Go-level job), stack=false
 table, so a path an infra rule names stays infra, and every path that matches
 no rule at all is product.
 
+Baseline. Separately from the lanes, a very large change to the proxy re-measures
+everything once, so the project gets a fresh baseline to compare later pull
+requests with: every A/B set, every visual page and the whole VictoriaLogs
+version matrix, instead of the shapes and pages a small change selects. The CLI
+reports baseline=true only for a pull request whose base is main, and only when
+
+  - the `baseline` label is set (it also forces the full product CI), or
+  - the change is in the product lane and its shipped diff is big: more than
+    BASELINE_LINES changed lines, or more than BASELINE_FILES files, in shipped
+    paths (ships(): tests and testdata do not count), or at least
+    BASELINE_ENTRY_LINES changed lines in the files every query passes through
+    (BASELINE_ENTRY_POINTS).
+
+`ci-full` forces the product lanes but not the baseline: it exists to run the
+normal CI on a change that touches no product path, where a baseline would only
+repeat main's. A pull request that does not target main (a stacked one) never
+gets the baseline, label or not: it pays once, when the stack lands. Where the
+lane flags fail towards running more, baseline fails towards running less: an
+error, an empty diff or an unreadable label list reports baseline=false.
+
 A second, narrower question is whether a change SHIPS: whether it alters
 something users receive (the proxy binary, the container image, the Helm
 chart, the dashboards and alert rules). Only a change that ships cuts a
@@ -46,7 +66,8 @@ Usage:
     git diff --name-only TAG..HEAD | change_scope.py --files-from - --ships
 
 The CLI always exits 0 once it can report a result. On an empty list or any
-internal error it reports product=true, stack=true and perf=true. With --ships it reports
+internal error it reports product=true, stack=true and perf=true, and
+baseline=false. With --ships it reports
 ships=true|false instead: an empty list or an internal error reports
 ships=true, as the release bot always has, and the bot's own checks (the
 changelog and the release labels) stay the deciding gate in that case.
@@ -212,6 +233,32 @@ NOT_SHIPPED_GO = (
 )
 GO_ROOTS = ("cmd/**", "internal/**", "pkg/**")
 
+# The baseline trigger (see the module docstring). Tuned on the 200 merged pull
+# requests #678 to #894: of the 45 that changed shipped code (release and
+# dependency bots left out) the lines/files rule alone selects 3 (7%), the
+# entry-point rule adds 3 more (13% together); counting any edit of an entry
+# point would select 44%, which is why it has a size.
+BASELINE_LABEL = "baseline"
+BASELINE_BASE = "main"
+BASELINE_LINES = 1500
+BASELINE_FILES = 40
+BASELINE_ENTRY_LINES = 150
+# The files every query passes through, none of them specific to one endpoint:
+#   proxy.go            route table (Init), New, the handlers of query_range and query
+#   query_translation.go  requestLogger around every route and translateQuery
+#   request_scope.go    tenant and routing scope applied to every request
+#   cache_keys.go       the canonical read-cache key of every cached endpoint
+#   middleware.go       tenant validation and the security headers of every request
+#   translator.go       the LogQL to LogsQL translation every query goes through
+BASELINE_ENTRY_POINTS = (
+    "internal/proxy/proxy.go",
+    "internal/proxy/query_translation.go",
+    "internal/proxy/request_scope.go",
+    "internal/proxy/cache_keys.go",
+    "internal/proxy/middleware.go",
+    "internal/translator/translator.go",
+)
+
 MAX_SUMMARY_ROWS = 500
 
 
@@ -296,12 +343,13 @@ def scope_lane(paths):
 
 
 def lane_flags(name):
-    """The three flags a lane switches on: product, stack, perf."""
+    """The flags a lane switches on: product, stack, perf. A lane never implies the baseline."""
     rank = LANE_ORDER.index(name)
     return {
         "product": rank >= LANE_ORDER.index(PRODUCT),
         "stack": rank >= LANE_ORDER.index(STACK),
         "perf": rank >= LANE_ORDER.index(PERF),
+        "baseline": False,
     }
 
 
@@ -338,6 +386,60 @@ def any_ships(paths):
     return any(ships(p) for p in paths)
 
 
+def parse_numstat(text):
+    """[(path, changed lines)] from `git diff --numstat --no-renames` output.
+
+    A binary file (`-` counts) is one file of zero lines. Lines that do not
+    parse are skipped: the baseline can only get smaller from bad input.
+    """
+    out = []
+    for line in text.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3 or not parts[2].strip():
+            continue
+        try:
+            lines = 0 if parts[0] == "-" or parts[1] == "-" else int(parts[0]) + int(parts[1])
+        except ValueError:
+            continue
+        out.append((parts[2].strip(), lines))
+    return out
+
+
+def baseline_reasons(numstat):
+    """Why the shipped diff is big: a list of sentences, empty when it is not."""
+    shipped = [(path, lines) for path, lines in numstat if ships(path)]
+    total = sum(lines for _, lines in shipped)
+    entry = sum(lines for path, lines in shipped if normalize(path) in BASELINE_ENTRY_POINTS)
+    reasons = []
+    if total > BASELINE_LINES:
+        reasons.append("%d changed lines in shipped paths (more than %d)" % (total, BASELINE_LINES))
+    if len(shipped) > BASELINE_FILES:
+        reasons.append("%d shipped files changed (more than %d)" % (len(shipped), BASELINE_FILES))
+    if entry >= BASELINE_ENTRY_LINES:
+        reasons.append("%d changed lines in the files every query passes through (at least %d)"
+                       % (entry, BASELINE_ENTRY_LINES))
+    return reasons
+
+
+def baseline(paths, numstat, base_ref, labels=()):
+    """(wanted, reasons): whether the pull request gets the baseline run.
+
+    base_ref is the pull request's base branch ("" when it is not a pull
+    request); labels are its label names. Only a pull request into main can get
+    it, whatever the label says. The label forces it; otherwise the change must
+    be in the product lane on its own paths (not forced there by ci-full) and
+    its shipped diff must be big.
+    """
+    if base_ref != BASELINE_BASE:
+        return False, []
+    if BASELINE_LABEL in labels:
+        return True, ["the `%s` label is set" % BASELINE_LABEL]
+    if scope_lane(paths) != PRODUCT:
+        return False, []
+    reasons = baseline_reasons(numstat)
+    return bool(reasons), reasons
+
+
 def read_paths(source):
     if source == "-":
         text = sys.stdin.read()
@@ -351,9 +453,11 @@ def _cell(text):
     return text.replace("|", "\\|").replace("`", "'")
 
 
-def render_summary(paths, flags, forced=False, note=""):
+def render_summary(paths, flags, forced=False, note="", reasons=()):
     lines = ["### Change scope", "", "Result: " + ", ".join(
-        "`%s=%s`" % (key, str(flags[key]).lower()) for key in ("product", "stack", "perf"))]
+        "`%s=%s`" % (key, str(flags[key]).lower()) for key in FLAG_NAMES if key in flags)]
+    if flags.get("baseline"):
+        lines += ["", "Baseline run: " + "; ".join(reasons) + "."]
     if forced:
         lines.append("")
         lines.append("Forced to product by `--force-product`.")
@@ -384,23 +488,31 @@ def build_parser():
     parser.add_argument("--force-product", action="store_true",
                         help="report every lane whatever the paths are")
     parser.add_argument("--github-output", metavar="FILE",
-                        help="append product, stack and perf =true|false to this file")
+                        help="append product, stack, perf and baseline =true|false to this file")
     parser.add_argument("--ships", action="store_true",
                         help="report ships=true|false (does anything users receive change) "
                              "instead of product=true|false")
     parser.add_argument("--summary", metavar="FILE",
                         help="append a markdown table of path, class and rule")
+    parser.add_argument("--numstat", metavar="FILE",
+                        help="`git diff --numstat --no-renames` of the change; with --base-ref it decides "
+                             "baseline=true|false")
+    parser.add_argument("--base-ref", default="", metavar="BRANCH",
+                        help="the pull request's base branch; empty (not a pull request) never gets the baseline")
+    parser.add_argument("--labels", default="", metavar="A,B",
+                        help="comma-separated pull request labels (`baseline` forces the baseline)")
     return parser
 
 
-FLAG_NAMES = ("product", "stack", "perf")
-ALL_TRUE = {name: True for name in FLAG_NAMES}
+FLAG_NAMES = ("product", "stack", "perf", "baseline")
+# What an error reports: every lane on, the baseline off.
+ALL_TRUE = {"product": True, "stack": True, "perf": True, "baseline": False}
 
 
 def emit(value, github_output, name="product"):
     """Report one flag, or (name="lanes") the three lane flags of a dict."""
     if name == "lanes":
-        lines = ["%s=%s" % (key, str(value[key]).lower()) for key in FLAG_NAMES]
+        lines = ["%s=%s" % (key, str(value.get(key, False)).lower()) for key in FLAG_NAMES]
     else:
         lines = ["%s=%s" % (name, str(value).lower())]
     if github_output:
@@ -437,7 +549,7 @@ def main(argv=None):
                 emit(ALL_TRUE, _fallback_output(argv), "lanes")
         except Exception:
             for name in (("ships",) if ships_mode else FLAG_NAMES):
-                print("%s=true" % name)
+                print("%s=%s" % (name, "false" if name == "baseline" else "true"))
         return 0
 
     if args.ships:
@@ -445,6 +557,7 @@ def main(argv=None):
 
     paths = []
     note = ""
+    reasons = []
     flags = dict(ALL_TRUE)
     try:
         if args.files_from:
@@ -455,9 +568,18 @@ def main(argv=None):
             note = "No changed paths were provided, so the change counts as product."
         else:
             flags = lane_flags(scope_lane(paths))
+        # Fails towards the cheaper answer: no paths, no diff or any error is no baseline.
+        if paths and args.base_ref:
+            numstat = []
+            if args.numstat:
+                with open(args.numstat, encoding="utf-8", errors="replace") as handle:
+                    numstat = parse_numstat(handle.read())
+            labels = [name.strip() for name in args.labels.split(",") if name.strip()]
+            flags["baseline"], reasons = baseline(paths, numstat, args.base_ref, labels)
     except Exception as exc:
         print("change_scope: %s; treating the change as product" % exc, file=sys.stderr)
         flags = dict(ALL_TRUE)
+        reasons = []
         note = "The classifier failed, so the change counts as product."
 
     try:
@@ -465,13 +587,13 @@ def main(argv=None):
     except Exception as exc:
         print("change_scope: cannot write output: %s" % exc, file=sys.stderr)
         for name in FLAG_NAMES:
-            print("%s=true" % name)
+            print("%s=%s" % (name, "false" if name == "baseline" else "true"))
         return 0
 
     if args.summary:
         try:
             with open(args.summary, "a", encoding="utf-8") as handle:
-                handle.write(render_summary(paths, flags, args.force_product, note))
+                handle.write(render_summary(paths, flags, args.force_product, note, reasons))
         except Exception as exc:
             print("change_scope: cannot write summary: %s" % exc, file=sys.stderr)
     return 0

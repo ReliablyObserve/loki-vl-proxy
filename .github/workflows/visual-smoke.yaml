@@ -24,6 +24,12 @@ name: Visual smoke
 #
 # An intended change of what Grafana shows is accepted by labelling the pull
 # request `visual-change-expected` (adding or removing it re-runs this workflow).
+#
+# A baseline run (change scope: the `baseline` label, or a big shipped diff on a
+# pull request into main) captures every page of bench/visual/spec.json at its
+# own ranges (plan.py --all) instead of the pages the change selects. The captures
+# are uploaded as `visual-baseline-candidate` and the comment ends with a "new
+# baseline candidate" section. Nothing is committed or published as a baseline.
 
 on:
   pull_request:
@@ -56,7 +62,8 @@ jobs:
     # job leaves its output empty, so the job runs.
     if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') && needs.scope.outputs.stack != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The planned pages of a change are a few captures; the baseline run captures every page.
+    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}
     permissions:
       contents: read
     outputs:
@@ -65,6 +72,7 @@ jobs:
     env:
       OUT: /tmp/visual-smoke
       PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASELINE: ${{ needs.scope.outputs.baseline }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -80,7 +88,11 @@ jobs:
           # HEAD is the PR merged onto the base; its first parent is that base.
           BASE="$(git rev-parse HEAD^1)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          python3 bench/visual/plan.py --base "$BASE" --out "$OUT/plan.json" > /dev/null
+          if [ "$BASELINE" = "true" ]; then
+            python3 bench/visual/plan.py --all --out "$OUT/plan.json" > /dev/null
+          else
+            python3 bench/visual/plan.py --base "$BASE" --out "$OUT/plan.json" > /dev/null
+          fi
           echo "run=$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["run"]).lower())' "$OUT/plan.json")" >> "$GITHUB_OUTPUT"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["captures"], "capture(s):", {k: v["ranges"] for k, v in d["entries"].items()} or "nothing to run")' "$OUT/plan.json"
 
@@ -140,6 +152,21 @@ jobs:
             ${{ env.OUT }}/*.json
             ${{ env.OUT }}/*.md
             ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+      - name: Upload the baseline candidate
+        # Never committed or published: the montages and the comparison of a run that measured every page.
+        if: always() && steps.plan.outputs.run == 'true' && env.BASELINE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: visual-baseline-candidate
+          path: |
+            ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/plan.json
+            ${{ env.OUT }}/compare.json
+            ${{ env.OUT }}/pixeldiff.json
+            ${{ env.OUT }}/meta.json
+          retention-days: 30
           if-no-files-found: ignore
 
       - name: Render the summary and the verdict
@@ -218,7 +245,7 @@ jobs:
 
   visual-comment:
     name: visual-comment
-    needs: [visual-smoke, visual-publish]
+    needs: [scope, visual-smoke, visual-publish]
     # A comment even when the gate failed; none for a fork (read-only token), a cancelled run
     # or a label that is not the gate's.
     if: "!cancelled() && needs.visual-smoke.result != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository"
@@ -265,6 +292,7 @@ jobs:
         env:
           RAN: ${{ needs.visual-smoke.outputs.run }}
           RESULT: ${{ needs.visual-smoke.result }}
+          BASELINE: ${{ needs.scope.outputs.baseline }}
         with:
           script: |
             const fs = require('fs');
@@ -275,13 +303,18 @@ jobs:
             // the job summary of the run has the table.
             const body = fs.existsSync('/tmp/comment.md') ? fs.readFileSync('/tmp/comment.md', 'utf8')
               : `${marker}\n### ⚠️ Visual smoke: ${process.env.RESULT === 'success' ? 'passed' : 'see the run'}\n\nThe table for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` is in the job summary of ${runUrl}.\n`;
+            // A baseline run adds a fixed section: no data of the pull request, only where the captures are.
+            const candidate = process.env.BASELINE === 'true'
+              ? `\n\n<details open><summary>🧭 New baseline candidate</summary>\n\nThis pull request got the baseline run: every page of \`bench/visual/spec.json\` was captured at its own ranges. The captures are the \`visual-baseline-candidate\` artifact of ${runUrl}; nothing was committed or published as a baseline. Accept them by copying what you want to keep into a pull request.\n\n</details>\n`
+              : '';
+            const text = body + candidate;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
             const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker));
             if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: text });
             } else if (process.env.RAN !== 'false') {
               // A docs- or CI-only change gets no new comment; an existing one is updated to say it was skipped.
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: text });
             }

@@ -12,7 +12,10 @@ only; the parser understands the block layout the workflows use) and assert:
 - every ci.yaml job is gated directly or through a gated job;
 - no job downstream of `test` can run when `test` failed, and only the stack
   jobs, with exactly the gate below, can run when `test` was skipped;
-- both aggregators pass on skipped groups only when scope says `false`.
+- both aggregators pass on skipped groups only when scope says `false`;
+- the baseline output reaches only the three heavy workflows, only through
+  `needs.scope.outputs.baseline == 'true'`, only for pull requests into main,
+  and never commits anything.
 """
 
 import re
@@ -274,6 +277,84 @@ class ScopeWiringTest(unittest.TestCase):
             for name, job in jobs.items():
                 if name != "scope" and reads_scope(job):
                     self.assertIn("scope", job["needs"], f"{path.name}: {name}")
+
+    # --- the baseline run -------------------------------------------------------------------------
+
+    HEAVY = ("perf-ab.yaml", "visual-smoke.yaml", "compat-vl.yaml")
+
+    def test_only_the_heavy_workflows_read_the_baseline(self):
+        readers = sorted(p.name for p in WORKFLOWS.glob("*.y*ml")
+                         if "outputs.baseline" in p.read_text() and p.name != "change-scope.yaml")
+        self.assertEqual(readers, sorted(self.HEAVY))
+        self.assertNotIn("outputs.baseline", CI.read_text())  # the ordinary CI is the same for every size
+
+    def test_heavy_workflows_only_run_for_pull_requests_into_main(self):
+        # A stacked pull request (base is not main) starts none of them, so it never pays for a baseline.
+        for name in self.HEAVY + ("ci.yaml",):
+            with self.subTest(name):
+                text = (WORKFLOWS / name).read_text()
+                self.assertRegex(text, r"(?m)^  pull_request:\n    branches: \[main\]")
+
+    def test_the_scope_workflow_reports_a_baseline_that_fails_off(self):
+        text = (WORKFLOWS / "change-scope.yaml").read_text()
+        self.assertIn("baseline: ${{ steps.result.outputs.baseline }}", text)
+        self.assertRegex(text, r"(?m)^          baseline=false$")  # the default before any evidence
+        self.assertIn('if [ "$CLASSIFIED_BASELINE" = "true" ]; then baseline=true; fi', text)
+        # The classifier gets the diff, the base branch and the labels.
+        for needle in ("--numstat", '--base-ref "$BASE_REF"', '--labels "$LABELS"',
+                       "BASE_REF: ${{ github.event.pull_request.base.ref }}"):
+            self.assertIn(needle, text)
+        # ci-full forces the product lanes only; the baseline label also forces the baseline.
+        self.assertIn("ci-full", text)
+        self.assertIn("elif printf '%s\\n' \"$labels\" | grep -qx 'baseline'", text)
+        # The baseline can only come from a classifier that ran on a pull request diff.
+        self.assertIn('[ "$DIFF" = "true" ]', text)
+
+    def test_the_perf_workflow_runs_every_shape_on_a_baseline_and_keeps_its_budget_otherwise(self):
+        text = (WORKFLOWS / "perf-ab.yaml").read_text()
+        job = parse_jobs(text)["perf-smoke"]
+        self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline }}", job["body"])
+        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", job["body"])
+        self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', job["body"])
+        self.assertIn('selection.py --base "$BASE"', job["body"])  # an ordinary pull request keeps the selection
+        self.assertIn('--baseline-candidate "$OUT/baseline-candidate"', job["body"])
+        self.assertIn("name: perf-baseline-candidate", job["body"])
+        # The gate is unchanged: a baseline never makes the job run when its lane says no.
+        self.assertEqual(job["if"], "${{ !cancelled() && needs.scope.outputs.perf != 'false' }}")
+
+    def test_the_visual_workflow_captures_every_page_on_a_baseline(self):
+        text = (WORKFLOWS / "visual-smoke.yaml").read_text()
+        jobs = parse_jobs(text)
+        body = jobs["visual-smoke"]["body"]
+        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", body)
+        self.assertIn('plan.py --all --out "$OUT/plan.json"', body)
+        self.assertIn('plan.py --base "$BASE" --out "$OUT/plan.json"', body)
+        self.assertIn("name: visual-baseline-candidate", body)
+        self.assertIn("scope", jobs["visual-comment"]["needs"])
+        # The job that holds a write token and publishes to pr-visuals knows nothing of the baseline.
+        self.assertNotIn("baseline", jobs["visual-publish"]["body"].lower())
+
+    def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
+        jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())
+        matrix = jobs["vl-matrix"]
+        # (the job parser strips the quotes around an unbraced condition, the last one too)
+        self.assertEqual(matrix["if"].rstrip("'"), ("github.event_name == 'schedule' || "
+                                                    "github.event_name == 'workflow_dispatch' || "
+                                                    "needs.scope.outputs.baseline == 'true'").rstrip("'"))
+        self.assertEqual(matrix["needs"], ["vl-matrix-source", "scope"])
+        # The pinned tuple still runs on every pull request in the stack lane.
+        self.assertIn("needs.scope.outputs.stack != 'false'", jobs["vl-pinned"]["if"])
+        self.assertNotIn("baseline", jobs["vl-pinned"]["if"])
+
+    def test_a_baseline_run_commits_and_pushes_nothing(self):
+        for name in self.HEAVY:
+            with self.subTest(name):
+                text = (WORKFLOWS / name).read_text()
+                for job_name, job in parse_jobs(text).items():
+                    if "baseline" not in job["body"].lower():
+                        continue
+                    for forbidden in ("git push", "git commit", "contents: write", "commit_via_api", "gh pr create"):
+                        self.assertNotIn(forbidden, job["body"], f"{name}:{job_name}")
 
     def test_the_checks_catch_broken_wiring(self):
         gate = f"    if: {CANONICAL_GATE}\n"
