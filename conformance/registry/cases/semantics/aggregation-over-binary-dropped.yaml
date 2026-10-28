@@ -76,3 +76,10 @@ gap:
   note: 'The e2e is written and not yet run against the stack.'
   clusters:
     - f2066991
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
