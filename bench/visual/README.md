@@ -206,6 +206,9 @@ every folder whose pull request is not open. The comment embeds an image only fo
 that is not clean and for one collapsed block with the core montages; clean detailed rows
 are linked on the branch. A fork PR has no write token: the montages are an artifact, the
 comment text has no images, and the table is in the job summary.
+Baseline runs also keep their full set of montages in the run artifacts and skip
+`visual-publish`: a full capture can exceed its 80-file bound. Their comments link
+to the artifacts instead of embedding images from `pr-visuals`.
 
 **Reproduce a comment locally** (next to another stack: its own project and ports):
 

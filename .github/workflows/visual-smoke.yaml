@@ -13,8 +13,8 @@ name: Visual smoke
 # a write token run code of the BASE branch (a sparse checkout of bench/visual at the
 # base commit) and treat what the first job produced as untrusted data:
 #   visual-smoke    read-only: plan, stack, capture, compare, gate
-#   visual-publish  contents: write, same-repo PRs: validates the montages and
-#                   replaces pr-<N>/ on pr-visuals (publish.py of the base)
+#   visual-publish  contents: write, same-repo non-baseline PRs: validates the
+#                   montages and replaces pr-<N>/ on pr-visuals (publish.py of the base)
 #   visual-comment  pull-requests: write, same-repo PRs: renders the sticky comment
 #                   with visual_comment.py of the base, which escapes every string that
 #                   comes from the pull request
@@ -202,10 +202,12 @@ jobs:
 
   visual-publish:
     name: visual-publish
-    needs: visual-smoke
+    needs: [scope, visual-smoke]
     # Same-repo PRs only: a fork's token cannot write. !cancelled(), not always(): a run
     # that a newer push cancelled must not overwrite the folder with stale images.
-    if: "!cancelled() && needs.visual-smoke.result != 'skipped' && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository"
+    # A baseline captures every page and can exceed publish.py's 80-file bound; the
+    # complete proof stays in visual-baseline-candidate and visual-montage artifacts.
+    if: "!cancelled() && needs.scope.outputs.baseline != 'true' && needs.visual-smoke.result != 'skipped' && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
