@@ -1126,8 +1126,8 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	resp := httptest.NewRecorder()
 	p.handleQueryRange(resp, req)
 
-	if resp.Code != http.StatusBadGateway {
-		t.Fatalf("expected windowed query failure status=502, got=%d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected Loki windowed query failure status=500, got=%d body=%s", resp.Code, resp.Body.String())
 	}
 	if got := fullRangeCalls.Load(); got != 0 {
 		t.Fatalf("expected no direct full-range fallback call, got %d", got)
@@ -1140,8 +1140,8 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	if parsed["status"] != "error" {
 		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
 	}
-	if parsed["errorType"] != "unavailable" {
-		t.Fatalf("expected Loki errorType=unavailable, body=%s", resp.Body.String())
+	if parsed["errorType"] != "internal" {
+		t.Fatalf("expected Loki errorType=internal, body=%s", resp.Body.String())
 	}
 }
 
