@@ -23,12 +23,19 @@ import (
 // emulated VictoriaLogs and returns label set -> timestamp (s) -> value.
 func binaryAggregationAnswer(t *testing.T, emu *vlEmulator, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
 	t.Helper()
+	return binaryAggregationAnswerFor(t, emu, "0", query, start, end, step)
+}
+
+// binaryAggregationAnswerFor is binaryAggregationAnswer for the tenants orgID names.
+func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
+	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = p.Shutdown(context.Background()) }()
 	if emu.version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
@@ -44,7 +51,7 @@ func binaryAggregationAnswer(t *testing.T, emu *vlEmulator, query string, start,
 		params.Set("end", strconv.FormatInt(end/1e9, 10))
 		params.Set("step", strconv.FormatInt(int64(step/time.Second), 10))
 	}
-	res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+	res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": orgID})
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", query, res.Code, res.Body)
 	}
@@ -227,6 +234,49 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("%s %s:\n got %v\nwant %v", version, tc.query, got, tc.want)
+			}
+		}
+	}
+}
+
+// A multi-tenant request (X-Scope-OrgID "0|1") is evaluated per tenant and
+// merged with each series labelled by its tenant, as for any other metric
+// query (multitenant.go): an aggregation over a binary is answered per tenant
+// like a single tenant's, on both endpoints, not refused as a log query.
+//
+// conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query, loki_api_v1_query_range
+func TestAggregationOverBinaryMultiTenant(t *testing.T) {
+	const (
+		count  = `sum by (job, pod) (count_over_time({app="uw"}[1m]))`
+		amount = `sum by (job, pod) (sum_over_time({app="uw"} | unwrap amount [1m]))`
+	)
+	t0 := binaryAggregationAt / 1e9
+	for _, tc := range []struct {
+		query string
+		want  map[string]float64
+	}{
+		{`sum(2 * ` + count + `)`, map[string]float64{`{}`: 12}},
+		{`sum by (job) (` + amount + ` / ` + count + `)`, map[string]float64{`{"job":"a"}`: 6, `{"job":"b"}`: 6}},
+	} {
+		for _, step := range []time.Duration{0, time.Minute} {
+			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.49.0"}
+			got, resultType := binaryAggregationAnswerFor(t, emu, "0|1", tc.query, binaryAggregationAt, binaryAggregationAt, step)
+			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
+				t.Fatalf("step=%v %s: resultType %q, want %q", step, tc.query, resultType, want)
+			}
+			want := map[string]map[int64]float64{}
+			for _, tenant := range []string{"0", "1"} {
+				for key, v := range tc.want {
+					var labels map[string]string
+					if err := json.Unmarshal([]byte(key), &labels); err != nil {
+						t.Fatal(err)
+					}
+					labels["__tenant_id__"] = tenant
+					want[binaryLabelKey(labels)] = map[int64]float64{t0: v}
+				}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("step=%v %s:\n got %v\nwant %v", step, tc.query, got, want)
 			}
 		}
 	}
