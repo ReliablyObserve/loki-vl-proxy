@@ -1376,10 +1376,6 @@
   {
    "id": "explore-logs-multivalue-regexp",
    "kind": "explore",
-   "ranges": [
-    "15m",
-    "1h"
-   ],
    "query": "{app=~\"api-gateway|auth\"}",
    "covers": [
     "profiles/stream-selector-regexp-anchoring",
@@ -1392,10 +1388,6 @@
   {
    "id": "explore-volume-multivalue-regexp",
    "kind": "explore",
-   "ranges": [
-    "15m",
-    "1h"
-   ],
    "query": "sum by (app) (count_over_time({app=~\"api-gateway|auth\"} [$__auto]))",
    "covers": [
     "profiles/stream-selector-regexp-anchoring",

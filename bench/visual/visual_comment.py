@@ -177,13 +177,58 @@ def proven_queries(rows):
     return {page: {q: shapes for q, shapes in qs.items() if q not in diverged.get(page, ())} for page, qs in fixed.items()}
 
 
-def carried(row, proven):
-    """Every base-vs-PR difference of a row beyond the Loki window is about a query proven at a shorter range of the page."""
-    return all(q in proven and (lost_shape(d) is None or lost_shape(d) in proven[q])
-               for q, d in zip(diff_ids(row), row["main_pr_diffs"]))
+TIME_PARAMS = frozenset({"start", "end", "from", "to", "time", "since", "until", "step", "interval", "ts"})
 
 
-def assess(row, pixel, expected=False, flipped=(), proven=None):
+def resource_id(diff):
+    """A resource difference's identity: its path and query without the time parameters, which vary by range. None for
+    anything else. The text carries the URL cut at 90 characters, so a trailing partial parameter (no `=`) is dropped."""
+    if not diff.startswith("resource "):
+        return None
+    path, _, query = diff[len("resource "):].split(": ", 1)[0].partition("?")
+    params = sorted(p for p in query.split("&") if "=" in p and p.split("=", 1)[0] not in TIME_PARAMS)
+    return path + "?" + "&".join(params)
+
+
+def resource_ids(diffs):
+    return {r for r in map(resource_id, diffs or ()) if r}
+
+
+def proven_resources(rows):
+    """page -> [(range order, resources seen, resources new against Loki)] of the ranges Loki holds.
+
+    A resource is seen at a range when the base and the PR differ on it or either differs from Loki on it; it is new
+    when the PR differs from Loki on it in a way the base did not (compare.py's loki_new). A row without loki_new
+    cannot tell, so every difference from Loki counts as new."""
+    out = {}
+    for r in rows:
+        if r["range"] == "live" or not r.get("loki_compared") or r.get("points_loki", 0) <= 0 or r.get("points_pr", 0) <= 0:
+            continue
+        new = r["loki_new"] if "loki_new" in r else r.get("loki_diffs")
+        out.setdefault(r["page"], []).append((ORDER[r["range"]], resource_ids(r.get("main_pr_diffs")) | resource_ids(r.get("loki_diffs")),
+                                              resource_ids(new)))
+    return out
+
+
+def resource_carried(rid, rng, seen):
+    """A resource the PR changed beyond the Loki window adds nothing new against Loki at every shorter range Loki holds
+    and shows up at each of them (one that never shows up there proves nothing)."""
+    shorter = [(s, n) for order, s, n in seen if order < ORDER[rng]]
+    return bool(shorter) and all(rid in s and rid not in n for s, n in shorter)
+
+
+def carried(row, proven, resources=None):
+    """Every base-vs-PR difference of a row beyond the Loki window is about a query proven at a shorter range of the page,
+    or about a resource that adds nothing new against Loki at every shorter range (and the page proved a query)."""
+    def one(q, d):
+        if q is not None:
+            return q in proven and (lost_shape(d) is None or lost_shape(d) in proven[q])
+        rid = resource_id(d)
+        return bool(proven and rid and row["range"] != "live" and resource_carried(rid, row["range"], resources or ()))
+    return all(one(q, d) for q, d in zip(diff_ids(row), row["main_pr_diffs"]))
+
+
+def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None):
     """(failures, warnings, status) of one capture; status is '', 'improved' or 'expected'."""
     fails, warns, status = [], [], ""
     diffs = row["main_pr_diffs"]
@@ -192,11 +237,13 @@ def assess(row, pixel, expected=False, flipped=(), proven=None):
         detail = f"({len(diffs)}): {diffs[0][:160]}"
         if kind == "improved":
             status = "improved"
-        elif kind == "no-loki" and carried(row, proven or {}):
+        elif kind == "no-loki" and carried(row, proven or {}, resources):
             # Loki holds no data for this range, but the same page proved every query that differs here to answer
-            # like Loki at a shorter range, where the PR changed it.
+            # like Loki at a shorter range, where the PR changed it, and every resource that differs showed nothing new
+            # against Loki there.
             status = "improved"
-            warns.append(f"no Loki data at this range; the same differences match Loki at a shorter range {detail}")
+            res = "; resource differences add nothing new against Loki at the shorter ranges" if resource_ids(diffs) else ""
+            warns.append(f"no Loki data at this range; the same differences match Loki at a shorter range{res} {detail}")
         elif kind == "no-loki" and base_failed(row):
             # Beyond Loki's data window the base failed where Loki and the PR both answered with data.
             status = "improved"
@@ -263,14 +310,14 @@ def captures(plan):
 def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
     """Per-capture assessments and the verdict."""
     by = {(r["page"], r["range"]): r for r in rows}
-    proven = proven_queries(rows)
+    proven, resources = proven_queries(rows), proven_resources(rows)
     items, failed, missing = [], [], []
     for pid, rng in captures(plan):
         row = by.get((pid, rng))
         if row is None:
             missing.append(f"{pid} {rng}")
             continue
-        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid))
+        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid), resources.get(pid))
         items.append(dict(row=row, fails=fails, warns=warns, status=status, pixel=pixeldiff.get(key(row)),
                           core=plan["entries"][pid]["core"] and rng == plan.get("core_range", "1h"), why=plan["entries"][pid]["why"]))
         if fails:

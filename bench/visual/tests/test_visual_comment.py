@@ -204,6 +204,141 @@ def at(rng, diffs=(), loki=(), main_n=0, **kw):
                loki_new=[], loki_main_n=main_n, loki_compared=held, points_loki=10 if held else 0, **kw)
 
 
+# The six captures of the two multivalue-regexp pages of the selector-fix run (compare.json, the fields the gate reads):
+# the logs page proves its two queries at 15m and 1h; the volume page loses one series (1 only left) at every range; both
+# differ from Loki only on Explore's index/stats at 15m and 1h (on the base too) and differ base vs PR on it at 6h.
+V909_ROWS = [{'page': 'explore-logs-multivalue-regexp',
+  'range': '15m',
+  'main_pr_diffs': ['query (\'{app=~"api-gateway|auth"}\', \'range\', \'1793194800000\', \'1793195700000\', \'926dc9e162f7\'): ' +
+                    "('A', '', '{}'): content differs (rows 1000 vs 1000)",
+                    'query (\'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error: ' +
+                    '{"detected_level": "info", "level": "info"}: value at 1793194801000: 114 vs 76',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['{app=~"api-gateway|auth"}|range',
+                   'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error__[$__auto]))|range',
+                   None],
+  'loki_diffs': ['resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                 'content differs (rows 0 vs 0)'],
+  'loki_qids': [None],
+  'loki_new': [],
+  'loki_main_n': 3,
+  'loki_compared': True,
+  'points_main': 1284,
+  'points_pr': 1284,
+  'points_loki': 1284},
+ {'page': 'explore-logs-multivalue-regexp',
+  'range': '1h',
+  'main_pr_diffs': ['query (\'{app=~"api-gateway|auth"}\', \'range\', \'1793192100000\', \'1793195700000\', \'a69ad794c319\'): ' +
+                    "('A', '', '{}'): content differs (rows 1000 vs 1000)",
+                    'query (\'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error: ' +
+                    '{"detected_level": "info", "level": "info"}: value at 1793192100000: 1068 vs 697',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['{app=~"api-gateway|auth"}|range',
+                   'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error__[$__auto]))|range',
+                   None],
+  'loki_diffs': ['resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                 'content differs (rows 0 vs 0)'],
+  'loki_qids': [None],
+  'loki_new': [],
+  'loki_main_n': 3,
+  'loki_compared': True,
+  'points_main': 1198,
+  'points_pr': 1198,
+  'points_loki': 1198},
+ {'page': 'explore-logs-multivalue-regexp',
+  'range': '6h',
+  'main_pr_diffs': ['query (\'{app=~"api-gateway|auth"}\', \'range\', \'1793174100000\', \'1793195700000\', \'0d9b80ebcbc8\'): ' +
+                    "('A', '', '{}'): content differs (rows 1000 vs 1000)",
+                    'query (\'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error: ' +
+                    '{"detected_level": "info", "level": "info"}: value at 1793174100000: 928 vs 609',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['{app=~"api-gateway|auth"}|range',
+                   'sum by (level, detected_level) (count_over_time({app=~"api-gateway|auth"} | drop __error__[$__auto]))|range',
+                   None],
+  'loki_diffs': [],
+  'loki_qids': [],
+  'loki_new': [],
+  'loki_main_n': 0,
+  'loki_compared': False,
+  'points_main': 2098,
+  'points_pr': 2098,
+  'points_loki': 1270},
+ {'page': 'explore-volume-multivalue-regexp',
+  'range': '15m',
+  'main_pr_diffs': ['query (\'sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))\', \'range\', \'17931948: ' +
+                    'series sets differ: 1 only left [\'(\\\'A\\\', \\\'\\\', \\\'{"app": "auth-service"}\\\')\'], 0 only right ' +
+                    '[]',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))|range', None],
+  'loki_diffs': ['resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                 'content differs (rows 0 vs 0)'],
+  'loki_qids': [None],
+  'loki_new': [],
+  'loki_main_n': 2,
+  'loki_compared': True,
+  'points_main': 195,
+  'points_pr': 105,
+  'points_loki': 105},
+ {'page': 'explore-volume-multivalue-regexp',
+  'range': '1h',
+  'main_pr_diffs': ['query (\'sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))\', \'range\', \'17931921: ' +
+                    'series sets differ: 1 only left [\'(\\\'A\\\', \\\'\\\', \\\'{"app": "auth-service"}\\\')\'], 0 only right ' +
+                    '[]',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))|range', None],
+  'loki_diffs': ['resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                 'content differs (rows 0 vs 0)'],
+  'loki_qids': [None],
+  'loki_new': [],
+  'loki_main_n': 2,
+  'loki_compared': True,
+  'points_main': 735,
+  'points_pr': 375,
+  'points_loki': 375},
+ {'page': 'explore-volume-multivalue-regexp',
+  'range': '6h',
+  'main_pr_diffs': ['query (\'sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))\', \'range\', \'17931741: ' +
+                    'series sets differ: 1 only left [\'(\\\'A\\\', \\\'\\\', \\\'{"app": "auth-service"}\\\')\'], 0 only right ' +
+                    '[]',
+                    'resource /api/datasources/uid/*/resources/index/stats?query=%7Bapp%3D~%22api-gateway%7Cauth%22%7D&s: body: ' +
+                    'content differs (rows 0 vs 0)'],
+  'main_pr_qids': ['sum by (app) (count_over_time({app=~"api-gateway|auth"} [$__auto]))|range', None],
+  'loki_diffs': [],
+  'loki_qids': [],
+  'loki_new': [],
+  'loki_main_n': 0,
+  'loki_compared': False,
+  'points_main': 2177,
+  'points_pr': 1096,
+  'points_loki': 270}]
+
+
+class RecordedSelectorFixRunTest(unittest.TestCase):
+    def verdict(self, rows):
+        base = {k: v for k, v in row().items() if k not in V909_ROWS[0]}
+        rows = [{**base, **r} for r in rows]
+        return comment.render(rows, {}, plan(*[(r["page"], r["range"]) for r in rows]), META, ARGS)
+
+    def test_the_6h_captures_pass_with_the_index_stats_difference_carried(self):
+        text, v = self.verdict(V909_ROWS)
+        self.assertEqual((v["exit"], v["failures"], v["captures"], v["improved"]), (0, [], 6, 6))
+        self.assertEqual(text.count("resource differences add nothing new against Loki"), 2)
+
+    def test_the_same_run_fails_when_index_stats_is_new_against_loki_at_1h(self):
+        rows = [dict(r) for r in V909_ROWS]
+        for r in rows:
+            if r["range"] == "1h":
+                r["loki_new"] = list(r["loki_diffs"])
+        _, v = self.verdict(rows)
+        self.assertEqual({f.split(":")[0] for f in v["failures"] if " 6h" in f[:40]},
+                         {"explore-logs-multivalue-regexp 6h", "explore-volume-multivalue-regexp 6h"})
+
+
 class QueryProofTest(unittest.TestCase):
     """A query proven against Loki at a shorter range of the page carries to the range Loki does not hold."""
 
@@ -253,10 +388,34 @@ class QueryProofTest(unittest.TestCase):
         rows[2] = at("6h", [(Q, "value at 1: 1 vs 2"), (OTHER, "value at 1: 1 vs 2")])
         self.assertEqual(self.verdict(rows)[1]["exit"], 1)
 
-    def test_a_resource_difference_at_6h_is_never_carried(self):
+    def test_a_resource_with_a_new_difference_from_loki_is_never_carried(self):
+        # The same resource differs from Loki on the PR at 1h in a way the base did not (loki_new): nothing proves 6h.
         rows = self.ranges()
         rows[2] = at("6h")
         rows[2].update(main_pr_diffs=[INDEX_STATS], main_pr_qids=[None])
+        rows[1]["loki_new"] = [INDEX_STATS]
+        _, v = self.verdict(rows)
+        self.assertEqual(v["exit"], 1)
+        six = [f for f in v["failures"] if f.startswith("explore-a 6h")]
+        self.assertTrue(six and "no Loki data for this range" in six[0], v["failures"])
+
+    def test_a_resource_difference_with_nothing_new_against_loki_is_carried(self):
+        # The page proves its queries (rows 1000 vs 1000 and the volume series), Explore's index/stats
+        # differs from Loki on the base and the PR alike at 15m and 1h, and differs base vs PR at 6h.
+        rows = self.ranges()
+        rows[2] = at("6h", [(Q, "value at 1793149260000: 49033 vs 939017")])
+        rows[2]["main_pr_diffs"].append(INDEX_STATS.replace("&:", "&start=1793174100&end=1793195700:"))
+        rows[2]["main_pr_qids"].append(None)
+        text, v = self.verdict(rows)
+        self.assertEqual((v["exit"], v["failures"]), (0, []))
+        self.assertIn("shorter range", text)
+
+    def test_a_carried_resource_does_not_carry_a_new_one_next_to_it(self):
+        rows = self.ranges()
+        other = "resource /api/datasources/uid/*/resources/labels?end=2026-10-01T18%3A00%3A00Z: body: content differs (rows 3 vs 4)"
+        rows[2] = at("6h", [(Q, "value at 1: 1 vs 2")])
+        rows[2]["main_pr_diffs"] += [INDEX_STATS, other]
+        rows[2]["main_pr_qids"] += [None, None]
         self.assertEqual(self.verdict(rows)[1]["exit"], 1)
 
     def test_a_fix_page_whose_selector_is_unchanged_is_improved_and_carries_to_6h(self):
@@ -273,17 +432,60 @@ class QueryProofTest(unittest.TestCase):
         self.assertEqual((v["exit"], v["failures"]), (0, []))
         self.assertEqual(v["fix_proof"], {"profiles/case-a": "improved"})
 
-    def test_an_index_stats_difference_beside_a_proven_query_is_not_carried_to_6h(self):
+    def test_an_index_stats_difference_beside_a_proven_query_carries_to_6h(self):
         # A selector fix changes the row count index/stats reports for the selector, so a page that shows it differs on
-        # that resource base vs PR at every range, and the resource is never carried (above): such a page is pinned
-        # to the ranges Loki holds in spec.json ("ranges").
+        # that resource base vs PR at every range. Where the PR adds nothing new against Loki on it at the shorter
+        # ranges, the resource is carried to 6h with the proven query.
         rows = self.ranges()
         rows[2] = at("6h", [(Q, "value at 1793149260000: 49033 vs 939017")])
         rows[2]["main_pr_diffs"].append(INDEX_STATS)
         rows[2]["main_pr_qids"].append(None)
         _, v = self.verdict(rows)
-        self.assertEqual(v["exit"], 1)
-        self.assertIn("explore-a 6h", v["failures"][0])
+        self.assertEqual((v["exit"], v["failures"]), (0, []))
+
+    def test_a_resource_absent_at_the_shorter_ranges_is_not_carried(self):
+        other = "resource /api/datasources/uid/*/resources/labels?end=2026-10-01T18%3A00%3A00Z: body: content differs (rows 3 vs 4)"
+        for shown in ([], [1]):  # nowhere at a shorter range, or at 1h only (15m is Loki-held too)
+            rows = self.ranges()
+            for i in shown:
+                rows[i]["main_pr_diffs"].append(other)
+                rows[i]["main_pr_qids"].append(None)
+            rows[2] = at("6h")
+            rows[2].update(main_pr_diffs=[other], main_pr_qids=[None])
+            self.assertEqual(self.verdict(rows)[1]["exit"], 1, shown)
+
+    def test_a_resource_the_pr_brought_to_loki_is_carried(self):
+        # base and PR differ on index/stats at 15m and 1h, and the PR no longer differs from Loki on it.
+        rows = self.ranges()
+        for r in rows[:2]:
+            r["loki_diffs"], r["loki_qids"] = [], []
+            r["main_pr_diffs"].append(INDEX_STATS)
+            r["main_pr_qids"].append(None)
+        rows[2] = at("6h")
+        rows[2].update(main_pr_diffs=[INDEX_STATS], main_pr_qids=[None])
+        self.assertEqual((self.verdict(rows)[1]["exit"], self.verdict(rows)[1]["failures"]), (0, []))
+
+    def test_a_page_with_no_proven_query_never_carries_a_resource(self):
+        rows = [at("15m", [], [(None, "")], main_n=1), at("1h", [], [(None, "")], main_n=1), at("6h")]
+        rows[2].update(main_pr_diffs=[INDEX_STATS], main_pr_qids=[None])
+        self.assertEqual(self.verdict(rows)[1]["exit"], 1)
+
+    def test_a_row_without_loki_new_counts_every_difference_from_loki_as_new(self):
+        rows = self.ranges()
+        del rows[1]["loki_new"]
+        (_, _, new), = [t for t in comment.proven_resources(rows)["explore-a"] if t[0] == comment.ORDER["1h"]]
+        self.assertEqual(new, comment.resource_ids([INDEX_STATS]))
+
+    def test_a_resource_is_identified_without_its_time_parameters(self):
+        rid = comment.resource_id
+        a = "resource /api/datasources/uid/*/resources/index/stats?query=%7Ba%3D%22b%22%7D&start=1&end=2: body: x"
+        b = "resource /api/datasources/uid/*/resources/index/stats?end=9&query=%7Ba%3D%22b%22%7D&start=8: body: y (rows 1 vs 2)"
+        cut = "resource /api/datasources/uid/*/resources/index/stats?query=%7Ba%3D%22b%22%7D&s: body: z"
+        self.assertEqual(rid(a), rid(b))
+        self.assertEqual(rid(a), rid(cut))
+        self.assertNotEqual(rid(a), rid(a.replace("%22b%22", "%22c%22")))
+        self.assertNotEqual(rid(a), rid(a.replace("index/stats", "index/volume")))
+        self.assertIsNone(rid("query ('{a=\"b\"}', 'range', '1', '2', 'x'): content differs"))
 
     def test_the_proof_belongs_to_the_page(self):
         rows = self.ranges()
@@ -591,7 +793,7 @@ class GateTest(unittest.TestCase):
     def test_ui_problems_name_the_error_behind_a_banner(self):
         details = "Details\nTypeError: Cannot read properties of undefined (reading 'defaults')\n    at a (x.js:2:1)"
         found = comment.ui_problems({}, {"banners": ["Plugin failed to load"], "details": details})
-        self.assertEqual(found, ["error banner only on the PR: Plugin failed to load "
+        self.assertEqual(found, ["error banner only on the PR: Plugin failed to load " +
                                  "(TypeError: Cannot read properties of undefined (reading 'defaults'))"])
         self.assertEqual(comment.ui_problems({}, {"banners": ["Plugin failed to load"]}),
                          ["error banner only on the PR: Plugin failed to load"])
