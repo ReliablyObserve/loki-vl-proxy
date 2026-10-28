@@ -212,6 +212,12 @@ jobs:
       - name: Fuzz smoke (sliding quantile vs window sort)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQuantileSlider$' -fuzztime=12s
 
+      - name: Fuzz smoke (quantile counts time sort)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSortQuantileSamples$' -fuzztime=12s
+
+      - name: Fuzz smoke (rate_counter one-sample proof vs Loki)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRateCounterOneSample$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

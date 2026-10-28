@@ -577,6 +577,8 @@ func TestRateCounterUnderSumScope(t *testing.T) {
 
 // FuzzRateCounterOneSample: whatever the lines (ids drawn so series repeat or
 // not), windows and steps, an answer given without reading rows is Loki's.
+//
+// conformance: semantics/unwrap-rate-counter-one-sample-series
 func FuzzRateCounterOneSample(f *testing.F) {
 	f.Add(int64(1), false, "logfmt")
 	f.Add(int64(2), true, "logfmt")

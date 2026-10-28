@@ -1569,6 +1569,7 @@
      "name": "U9 logfmt amount rate_counter (folded per series)",
      "query": "sum(rate_counter({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
      "covers": [
+      "semantics/unwrap-rate-counter-one-sample-series",
       "semantics/unwrap-rate-ungrouped-sum-per-stream",
       "metric-series-identity",
       "loki_api_v1_query_range",

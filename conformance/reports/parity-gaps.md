@@ -147,6 +147,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/unwrap-over-time-short-range-windows` — sum, avg, max and min over time with unwrap and a range shorter than the step answer Loki's window on query_range (fixed) | TBD-PR | 0 | 0 |
 | `semantics/unwrap-quantile-response-limit` — quantile_over_time over a JSON unwrap answers long ranges from VictoriaLogs value counts, like Loki (fixed) | #731 | 0 | 0 |
 | `semantics/unwrap-range-last-point` — A grouped unwrap range metric has the sample at `end`, like Loki (fixed) | #727 | 0 | 0 |
+| `semantics/unwrap-rate-counter-one-sample-series` — A sum of rate_counter over `\| logfmt` whose every parsed series holds one sample answers Loki's zeros from VictoriaLogs stats (fixed) | TBD-PR | 0 | 0 |
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` — An ungrouped sum over rate with unwrap is one series on query_range, like Loki (fixed) | #716 | 0 | 0 |
 | `semantics/unwrap-sum-without-collapses` — sum without over an unwrap range function keeps a series per remaining stream label set, like Loki (fixed) | #739 | 0 | 0 |
 | `semantics/without-nested-under-aggregation` — a without nested under an outer aggregation folds level by level, like Loki (fixed) | #746 | 0 | 0 |
