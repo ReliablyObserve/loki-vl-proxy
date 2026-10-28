@@ -6,7 +6,7 @@ proves:
 consumer: explore
 why: |
   `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
-  and `sum(rate({app="x"}[1m]) / 2)` are evaluated by Loki 3.7.7 as the binary
+  and `sum(rate({app="x"}[1m]) / 2)` are evaluated by Loki (3.7.9, as 3.7.7) as the binary
   per series, then the aggregation per step: newBinOpStepEvaluator joins the
   operands' samples (pkg/logql/evaluator.go:791 and vectorBinop:955, matching
   on every label or on()/ignoring() with group_left/group_right, resultMetric:1096;
@@ -35,14 +35,29 @@ why: |
   logfmt` (the discovered cluster below). A mixed offset (one side only) is
   accepted as for a bare binary.
 
-  A label_replace or label_join around the aggregation, the discovered shape
+  Such a query also went through the parser probe (preferWorkingParser),
+  which drops the parser that does not fit the lines from the whole query
+  (removeParserStage). In a metric query that text rewrite took a stage's
+  parameters up to the next `|`: when the dropped stage was the last one
+  before an operand's range it cut the rest of the query, so the aggregation
+  was no longer one and /query answered the 400 above (the e2e's mixed-parser
+  shape), /query_range answered log streams, and a top-level binary of such
+  operands answered its left operand alone with a 200. The probe now leaves a
+  binary, and an aggregation over one, to its operands (each operand's own
+  handler probes its own query); a query of one operand naming both parsers
+  is probed as before.
+
+  A label_replace around the aggregation, the discovered shape
   (cluster f2066991 on /query), routes by the expression inside it on both
   endpoints and the transform applies to the folded answer. The request is
   cloned to the expression inside the transform from the request's own query,
   so an operand keeps its parser; a transform inside an operand is applied by
-  that operand, not again to the answer. The folded series keep every label set
-  apart (escaped keys: `a="b,c=d"` is not `a="b",c="d"`) and come in Loki's
-  order (labels.Compare: name then value, label by label).
+  that operand, not again to the answer (the proxy's label_join, which Loki's
+  grammar does not have, is handled the same way). The folded series keep
+  every label set apart (escaped keys: `a="b,c=d"` is not `a="b",c="d"`) and
+  come in Loki's order (labels.Compare: name then value, label by label;
+  pkg/logql/engine.go:569 and :604), in the generic fold and in the typed fold
+  (typed_fold.go), which ordered its groups by length-prefixed key text.
 
   A start off the step grid is pinned for a binary with a literal; a join of
   two vectors answers on the aligned grid, registered apart
@@ -58,6 +73,7 @@ request:
     query: 'label_replace( sum by (job) ( sum_over_time( {service_name="api-gateway"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({service_name="api-gateway"} | logfmt | label_format foo=bar[5m]) ), "foo", "$1", "service", "(.*):.*" )'
   headers:
     X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
   mode: observed
   fields: [resultType, series, values]
@@ -69,11 +85,11 @@ gap:
   fixed_by: "#741"
   impact: explore-visible
   effort: M
-  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing; vector_matching.go (fold keys and order)'
+  area: 'internal/proxy binary_aggregation.go (proxyBinaryAggregation, foldBinaryAggregation); proxy.go query and query_range routing; vector_matching.go and typed_fold.go (fold keys and order); query_translation.go operandsKeepTheirParsers (the parser probe leaves a binary to its operands)'
   loki: 'pkg/logql/evaluator.go:791 newBinOpStepEvaluator, :955 vectorBinop, :1096 resultMetric, :400-630 newVectorAggEvaluator / VectorAggEvaluator.Next; pkg/logql/syntax/ast.go:1944 MergeBinOp'
   proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
-  planned_test: 'TestCompat_AggregationOverBinary, TestCompat_AggregationOverBinaryMixedParsers and TestCompat_AggregationOverBinaryUnderLabelTransforms (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset, TestAggregationOverBinaryUnderLabelTransforms, TestBinaryWithLabelReplaceOperandStaysBinary, TestWithoutFoldLabelOrderAndKeys and TestLabelTransformsKeepVectorAndWarnings (internal/proxy)'
-  note: 'The e2e is written and not yet run against the stack.'
+  planned_test: 'TestCompat_AggregationOverBinary, TestCompat_AggregationOverBinaryMixedParsers and TestCompat_AggregationOverBinaryUnderLabelTransforms (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset, TestAggregationOverBinaryUnderLabelTransforms, TestBinaryWithLabelReplaceOperandStaysBinary, TestAggregationOverBinaryMixedParsersAfterTheParserProbe, TestParserProbeLeavesBinariesToTheirOperands, TestAggregationOverBinaryMultiTenant, TestWithoutFoldLabelOrderAndKeys and TestLabelTransformsKeepVectorAndWarnings (internal/proxy); FuzzFoldBinaryAggregation and FuzzParserProbeLeavesBinaries (internal/proxy, CI fuzz smoke)'
+  note: 'The e2e ran once in CI (e2e-compat core, run 38249801561): it failed on its label_join cases, which Loki answers with a parse error (now label_replace over label_replace), and on the mixed-parser instant shape (the parser probe fix above). Its next run is pending.'
   clusters:
     - f2066991
 perf:

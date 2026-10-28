@@ -471,7 +471,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ignoring()` and `group_left` under an aggregation were ignored: all with a 200
   and wrong values on query_range. On an instant query, a literal or a nested
   binary as the first operand (`sum(2 * rate(...))`) answered 400 "log queries are
-  not supported as an instant query type". Loki 3.7.7 joins the operands per
+  not supported as an instant query type". Loki (3.7.9, as 3.7.7) joins the operands per
   series (`pkg/logql/evaluator.go:791` `newBinOpStepEvaluator`, `:955`
   `vectorBinop`, `:1096` `resultMetric`; a comparison keeps the left value or,
   with `bool`, answers 0 or 1) and then folds the joined series per step by the
@@ -484,14 +484,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   joins the aggregated operand series and folds them per step, with no raw rows
   and work bounded by the operands' series. An operand keeps its own parser when
   the query names both `| json` and `| logfmt`, and an offset on one side only
-  is accepted as for a bare binary. A `label_replace` or `label_join` around
+  is accepted as for a bare binary. Such a query also went through the proxy's
+  parser probe, which drops the parser that does not fit the lines from the
+  whole query; in a metric query its text rewrite took a stage's parameters up
+  to the next `|`, so when the dropped stage was the last one before an
+  operand's range it cut the rest of the query: the aggregation then answered
+  the 400 above on /query and log streams on /query_range, and a top-level
+  binary of such operands answered its left operand alone with a 200 (sum by
+  job 10 and 12 on the unit fixture, where Loki answers 2.5 and 6). The probe
+  now leaves a binary, and an aggregation over one, to its operands, each
+  probed on its own; a query of one operand naming both parsers is probed as
+  before (still cut there: not covered here). A `label_replace` (or the proxy's `label_join`,
+  which Loki's grammar does not have) around
   such an aggregation (the shape the differential corpus found on /query)
   is evaluated the same way and the transform applies to the folded answer,
   with each operand still reading the request's own parsers; a transform inside
   an operand (`sum(label_replace(a, ...) / b)`) is applied by that operand, not
   again to the answer. The series the proxy folds (this, and every `without`)
   keep every label set apart, a value holding `,` or `=` included, and come in
-  Loki's order (`labels.Compare`) (#741). This also gives Loki's values for
+  Loki's order (`labels.Compare`, `pkg/logql/engine.go:569` and `:604`), in the
+  typed fold too, which ordered its groups by their key text (`{x="a"}` before
+  `{job="a",x="a"}`, `{pod="api-2"}` before `{pod="api-10"}`) (#741). This also gives Loki's values for
   `sum by (cluster) (sum by (cluster) (A) + ignoring(machine) sum by (cluster,
   machine) (B))`, the query of `semantics/binary-ignoring-matching`: on the
   unit fixture the proxy answered one unlabeled series valued 6 where Loki
