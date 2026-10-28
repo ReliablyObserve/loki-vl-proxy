@@ -436,6 +436,17 @@ func runNearNowPhase(t *testing.T) {
 		phase := startPhase("near_now_label_inventory", fleetReplicas())
 		defer phase.stop()
 		fx := startNearFixture(t)
+		// The live writer's rows and errors, whichever way the phase ends.
+		defer func() {
+			fx.close()
+			fx.mu.Lock()
+			proofRec.addEdge("near_now_live_writer", map[string]any{"rows": fx.written, "errors": len(fx.errs)})
+			errs := append([]string(nil), fx.errs...)
+			fx.mu.Unlock()
+			if len(errs) > 0 {
+				t.Errorf("the live writer failed %d times, first: %s", len(errs), errs[0])
+			}
+		}()
 		a, b, c := fleetReplica(replicaA), fleetReplica(replicaB), fleetReplica(replicaC)
 		reqs := func() []proofRequest { return nearRequests(fx.id) }
 		inventory := inventoryPresent(t, a, fx.id)
@@ -574,12 +585,5 @@ func runNearNowPhase(t *testing.T) {
 			proofRec.addEdge("near_now_owner_down", map[string]any{"owner": ownerRep.name, "forward_fallback": units.invForwardFallback, "units_peer": units.invPeer, "units_vl": units.invVL})
 		})
 
-		fx.mu.Lock()
-		proofRec.addEdge("near_now_live_writer", map[string]any{"rows": fx.written, "errors": len(fx.errs)})
-		errs := append([]string(nil), fx.errs...)
-		fx.mu.Unlock()
-		if len(errs) > 0 {
-			t.Errorf("the live writer failed %d times, first: %s", len(errs), errs[0])
-		}
 	})
 }
