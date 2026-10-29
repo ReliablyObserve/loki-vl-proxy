@@ -310,6 +310,10 @@ func TestCompat_StddevStdvarGroupedInstantResultType(t *testing.T) {
 // TestCompat_StddevStdvarGroupedRegistryQueries runs the row's own request and
 // the example queries of its parity clusters, on the generator's shared data,
 // range and instant, and compares the proxy with Loki: series, labels, values.
+// The instant time is a proven populated step from Loki's range answer. On a
+// fresh CI stack the rich fixture is stamped now-3m before readiness waits;
+// by the time they finish, the range can still contain real data while its
+// wall-clock end has no 5m sample.
 // conformance: semantics/stddev-stdvar-grouped-values, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_StddevStdvarGroupedRegistryQueries(t *testing.T) {
 	ensureDataIngested(t)
@@ -320,19 +324,35 @@ func TestCompat_StddevStdvarGroupedRegistryQueries(t *testing.T) {
 		`stddev by(app)(count_over_time({env="production"}[5m]))`,
 		`stddev by(level)(count_over_time({app="api-gateway",env="production"}[5m]))`,
 	} {
+		lokiRange := slidingRangeSeries(t, lokiURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
+		proxyRange := slidingRangeSeries(t, proxyURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
 		t.Run("range/"+query, func(t *testing.T) {
-			loki := slidingRangeSeries(t, lokiURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
-			proxy := slidingRangeSeries(t, proxyURL, query, end.Add(-30*time.Minute), end, time.Minute, nil)
-			compareUnwrapSumSeries(t, query, loki, proxy)
+			compareUnwrapSumSeries(t, query, lokiRange, proxyRange)
 		})
 		t.Run("instant/"+query, func(t *testing.T) {
+			var instantUnix int64
+			for _, points := range lokiRange {
+				for raw := range points {
+					unix, err := strconv.ParseInt(raw, 10, 64)
+					if err != nil {
+						t.Fatalf("%s: non-integer range timestamp %q: %v", query, raw, err)
+					}
+					if unix > instantUnix {
+						instantUnix = unix
+					}
+				}
+			}
+			if instantUnix == 0 {
+				t.Fatalf("%s: Loki range contained no step for the instant comparison", query)
+			}
+			at := time.Unix(instantUnix, 0)
 			loki := map[string]map[string]string{}
 			proxy := map[string]map[string]string{}
-			for key, value := range unwrapInstant(t, lokiURL, query, end) {
-				loki[key] = map[string]string{strconv.FormatInt(end.Unix(), 10): value}
+			for key, value := range unwrapInstant(t, lokiURL, query, at) {
+				loki[key] = map[string]string{strconv.FormatInt(instantUnix, 10): value}
 			}
-			for key, value := range unwrapInstant(t, proxyURL, query, end) {
-				proxy[key] = map[string]string{strconv.FormatInt(end.Unix(), 10): value}
+			for key, value := range unwrapInstant(t, proxyURL, query, at) {
+				proxy[key] = map[string]string{strconv.FormatInt(instantUnix, 10): value}
 			}
 			compareUnwrapSumSeries(t, query, loki, proxy)
 		})
