@@ -65,11 +65,11 @@ compare:
 gap:
   status: fixed
   fixed_by: "#748"
-  impact: api-only
+  impact: explore-visible
   effort: S
   area: 'internal/logql scanner (keyword case) + parser (opaque calls) + semantic (label_replace argument position); internal/proxy lowercaseQueryKeywords'
   loki: 'pkg/logql/syntax/lex.go:95-137 functionTokens, :226-252 Lex lower-casing, :398 isFunction; syntax.y:477-490 vectorOp, :492-508 rangeOp'
   proxy: '400 with Loki''s text; keywords accepted in any case'
   planned_test: 'TestCompat_OperatorsNotInLokiRejected and TestCompat_UppercaseKeywordsMatchLoki (test/e2e-compat, group semantics); TestValidateLogQL_NamesLokiDoesNotKnowAreRejected, TestValidateLogQL_KeywordsAreCaseInsensitive and TestLowercaseKeywords (internal/logql); TestUnknownLogQLNamesRejectedLikeLoki and TestUppercaseKeywordsSendTheLowercaseBackendRequests (internal/proxy)'
-  note: 'Messages from Loki v3.7.7 syntax.ParseExpr, run on the same queries. The e2e vs Loki is written, not yet run.'
+  note: 'Grafana Explore captures show the result or error for representative query shapes. Differential e2e compares exact status and error text for both query endpoints; proxy tests also cover form POST and tenants.'
   clusters: []

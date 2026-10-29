@@ -77,9 +77,10 @@ func TestCompat_OperatorsNotInLokiRejected(t *testing.T) {
 // Loki lower-cases a word before it looks it up, so SUM, TOPK(3, ...), RATE,
 // BY, OFFSET, UNWRAP, BOOL, ON and GROUP_LEFT are the keywords they spell: both
 // spellings answer 200 on Loki. The proxy answers the upper-case spelling with
-// the same status, result type and series as its own lower-case answer (the
-// comparison with Loki's series is the job of the rows for each query shape,
-// not of this one).
+// the same status, result type and series as its own lower-case answer. For
+// topk, tied series can change labels between identical requests even on Loki;
+// compare the ranked values at every step instead. The comparison with Loki's
+// full series is the job of the rows for each query shape, not of this one.
 //
 // conformance: semantics/proxy-accepts-operators-not-in-loki
 func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
@@ -101,6 +102,8 @@ func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
 		status     int
 		resultType string
 		series     string
+		ranked     string
+		labelNames string
 	}
 	run := func(base, path string, params url.Values) result {
 		status, body := rejectedQueryGet(t, base, path, params, "0", nil)
@@ -109,23 +112,48 @@ func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
 			Data struct {
 				ResultType string `json:"resultType"`
 				Result     []struct {
-					Metric map[string]string `json:"metric"`
+					Metric map[string]string   `json:"metric"`
+					Values [][]json.RawMessage `json:"values"`
+					Value  []json.RawMessage   `json:"value"`
 				} `json:"result"`
 			} `json:"data"`
 		}
 		if status == http.StatusOK && json.Unmarshal(body, &resp) == nil {
 			out.resultType = resp.Data.ResultType
 			var series []string
+			labelNames := make(map[string]bool)
+			ranked := make(map[string][]string)
 			for _, s := range resp.Data.Result {
 				keys := make([]string, 0, len(s.Metric))
 				for k, v := range s.Metric {
+					labelNames[k] = true
 					keys = append(keys, k+"="+v)
 				}
 				sort.Strings(keys)
 				series = append(series, strings.Join(keys, ","))
+				for _, point := range append(s.Values, s.Value) {
+					if len(point) == 2 {
+						ranked[string(point[0])] = append(ranked[string(point[0])], string(point[1]))
+					}
+				}
 			}
 			sort.Strings(series)
 			out.series = strings.Join(series, "|")
+			var names []string
+			for name := range labelNames {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			out.labelNames = strings.Join(names, ",")
+			var timestamps []string
+			for ts := range ranked {
+				timestamps = append(timestamps, ts)
+			}
+			sort.Strings(timestamps)
+			for _, ts := range timestamps {
+				sort.Strings(ranked[ts])
+				out.ranked += ts + ":" + strings.Join(ranked[ts], ",") + "|"
+			}
 		}
 		return out
 	}
@@ -148,6 +176,10 @@ func TestCompat_UppercaseKeywordsMatchLoki(t *testing.T) {
 				}
 				for name, base := range lokiProfileProxies() {
 					want, got := run(base, path, params(tc.lower)), run(base, path, params(tc.upper))
+					if strings.HasPrefix(tc.upper, "TOPK(") {
+						// Loki may choose a different tied label at the k-th rank.
+						want.series, got.series = "", ""
+					}
 					if want.status != http.StatusOK || got != want {
 						t.Errorf("%s proxy: upper-case %+v, lower-case %+v", name, got, want)
 					}

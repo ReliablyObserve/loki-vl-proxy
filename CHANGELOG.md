@@ -60,6 +60,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   series-limit partial (the warning is in the body) is passed on, not inverted
   (#737).
 
+- **Unsupported LogQL function names now return Loki's 400 parse error, and
+  keywords are accepted in any case (#748).** Loki has no `group()` or
+  `label_join()`; the proxy previously accepted these and other unknown names.
+  It now reports Loki's error text and source column before calling the backend.
+  The scanner and request handling accept uppercase LogQL keywords, including
+  aggregation names, pipeline stages, and binary modifiers. The unreachable
+  `group()` and `label_join()` translation and response rewriting are removed.
+
+- **PR quality reports distinguish missing test metrics from a measured
+  regression (#748).** When coverage collection fails, the report shows
+  unavailable values and uploads the Go test events and stderr for diagnosis
+  instead of presenting the fallback as zero tests and zero coverage.
+
 ## [2.46.0] - 2026-10-29
 
 ### Fixed
@@ -121,19 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant where Loki answers 0.333333, the only pod above the threshold); the
   comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
   rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
-
-- **Unsupported LogQL function names now return Loki's 400 parse error, and
-  keywords are accepted in any case (#748).** Loki has no `group()` or
-  `label_join()`; the proxy previously accepted these and other unknown names.
-  It now reports Loki's error text and source column before calling the backend.
-  The scanner and request handling accept uppercase LogQL keywords, including
-  aggregation names, pipeline stages, and binary modifiers. The unreachable
-  `group()` and `label_join()` translation and response rewriting are removed.
-
-- **PR quality reports distinguish missing test metrics from a measured
-  regression (#748).** When coverage collection fails, the report shows
-  unavailable values and uploads the Go test events and stderr for diagnosis
-  instead of presenting the fallback as zero tests and zero coverage.
 
 ## [2.45.0] - 2026-10-29
 

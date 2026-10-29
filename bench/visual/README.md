@@ -210,6 +210,10 @@ comment text has no images, and the table is in the job summary.
 Baseline runs also keep their full set of montages in the run artifacts. The trusted
 base-branch comment renderer selects at most 80 inline images (fix proof first), and
 `visual-publish` validates every montage before publishing only those selected images.
+When the base has the older renderer without a selection-file option, the write-token
+job renders with that base script, stages only its strictly validated inline PNG names,
+and passes the staged directory to the base publisher's own file validator. This also
+lets the pull request introducing bounded publication show its own CI images.
 The full candidate remains an artifact and is not accepted as a new baseline by this step.
 
 **Reproduce a comment locally** (next to another stack: its own project and ports):

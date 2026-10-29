@@ -139,6 +139,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/labels-end-inclusive-like-loki` — /labels and /label/{name}/values include data at the request's end, so a zero-width request (Grafana "Show context") lists the row's labe... | #703 | 0 | 0 |
 | `semantics/lower-bound-exclusive` — the raw-row range evaluator reads the window (t-range, t] for every range function (fixed) | TBD-PR | 0 | 0 |
 | `semantics/nested-aggregation-outer-by-native-routes` — A vector aggregation over another one keeps every level's own by on the native routes (fixed) | #746 | 0 | 0 |
+| `semantics/proxy-accepts-operators-not-in-loki` — group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed) | #748 | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |
 | `semantics/unwrap-duration-seconds` — '`unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed)' | #729 | 0 | 0 |
@@ -161,5 +162,4 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/count-values-unsupported` — count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed) | #860 | 0 | 0 |
-| `semantics/proxy-accepts-operators-not-in-loki` — group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed) | #748 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |
