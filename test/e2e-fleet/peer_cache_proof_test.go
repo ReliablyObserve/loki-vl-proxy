@@ -505,7 +505,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Fatalf("A answered %s with %.0f stats_query_range calls and kept %.0f of %d answers' steps: the settled steps path was not taken (%s)", base.steps[0], d.fleetVLStats, d.stepsStored, len(base.steps), d)
 			}
 			for _, req := range base.steps {
-				if points := matrixPoints(t, req.String(), []byte(first[req.path]), "app"); len(points) == 0 {
+				if points := matrixSumBy(t, req.String(), []byte(first[req.path]), "app"); len(points) == 0 {
 					t.Fatalf("%s: A answered no series; an empty answer is never kept, so nothing would be proven", req)
 				}
 			}
