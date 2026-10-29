@@ -48,6 +48,17 @@ class CiRunTest(unittest.TestCase):
                 json.dump([{"page": "a", "range": "1h", "main_pr_diffs": ["x"]}, {"page": "b", "range": "1h", "main_pr_diffs": []}], f)
             self.assertEqual(ci_run.differing(out), {"a 1h"})
 
+    def test_a_delayed_request_that_matches_on_recapture_is_not_a_data_flip(self):
+        first = [
+            {"page": "late", "range": "1h", "main_pr_diffs": ["query x: request only on one side (left)"]},
+            {"page": "value", "range": "1h", "main_pr_diffs": ["query x: value differs"]},
+            {"page": "mixed", "range": "1h", "main_pr_diffs": ["query x: request only on one side (left)", "query y: value differs"]},
+            {"page": "persistent", "range": "1h", "main_pr_diffs": ["query x: value differs"]},
+        ]
+        second = [{**r, "main_pr_diffs": r["main_pr_diffs"] if r["page"] == "persistent" else []} for r in first]
+        self.assertEqual(ci_run.recapture_flips(first, second),
+                         (["mixed 1h", "value 1h"], ["late 1h"]))
+
     def test_the_recapture_runs_before_the_live_tail_pass_and_one_compare_sees_both(self):
         # The live generator writes into the streams the static windows read, and Loki's index/stats is an estimate from
         # chunk metadata that moves while it writes: a recapture after it compares a different Loki answer.

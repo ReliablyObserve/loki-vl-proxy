@@ -170,14 +170,15 @@ Adding or removing that label re-runs the workflow. Also failing, on the PR side
   same one, unless its text contains a substring of `allowed_errors` in `spec.json`
   (empty today);
 - the PR side never settled;
-- a difference that was gone on the recapture (differing captures are loaded once more,
-  more patiently): the run is not deterministic, and the comment lists it;
+- a value difference that was gone on the recapture (differing captures are loaded once
+  more, more patiently): the run is not deterministic, and the comment lists it;
 - a planned capture is missing, or the run died (exit 3, "did not complete").
 
 Warnings only: a pixel diff above 3% (header and time-picker noise stays below), a Loki
 or base side that did not settle, a missing Loki capture for a range Loki holds, a capture
-with no data on either side. Differences from Loki that the base has too are counted and
-never fail; explained (by-design) and history-dependent ones are listed, not counted.
+with no data on either side. A first pass that missed only a delayed request warns when
+the patient recapture matches. Differences from Loki that the base has too are counted
+and never fail; explained (by-design) and history-dependent ones are listed, not counted.
 
 **Capture details.** Matching of requests is by the whole request body without its
 volatile fields (datasource uid, request id) so a changed query option is a different

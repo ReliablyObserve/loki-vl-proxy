@@ -699,6 +699,12 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["exit"], 1)
         self.assertIn("non-deterministic", text)
 
+    def test_delayed_first_pass_request_that_matches_on_recapture_warns(self):
+        meta = {**META, "late_requests": ["explore-a 1h"]}
+        text, v = comment.render([row()], {}, plan(("explore-a", "1h")), meta, ARGS)
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("delayed request", text)
+
     def test_missing_loki_capture_warns_explicitly(self):
         text, v = self.verdict([row(loki_compared=False, loki_missing=True)])
         self.assertEqual(v["exit"], 0)

@@ -24,9 +24,10 @@ holds data for the range:
 Also failing: a panel with data on the base that is empty on the PR, an error
 banner, panel error or new "No data" panel only on the PR, any error answer on the
 PR side (outside spec.json `allowed_errors`), a PR side that never settled, and a
-capture whose difference flipped between the first pass and the recapture
-(non-deterministic). Pixel differences, a missing Loki capture and captures with no
-data on either side only warn.
+capture whose value difference flipped between the first pass and the recapture
+(non-deterministic). A first pass missing only a delayed request warns when the
+patient recapture matches. Pixel differences, a missing Loki capture and captures
+with no data on either side only warn.
 
 Fix proof: when plan.json carries `fix_cases` (a pull request that adds a registry case or
 turns one to fixed; see plan.py), a "Fix proof" section comes first, before the regression
@@ -228,7 +229,7 @@ def carried(row, proven, resources=None):
     return all(one(q, d) for q, d in zip(diff_ids(row), row["main_pr_diffs"]))
 
 
-def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None):
+def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None, late_requests=()):
     """(failures, warnings, status) of one capture; status is '', 'improved' or 'expected'."""
     fails, warns, status = [], [], ""
     diffs = row["main_pr_diffs"]
@@ -262,6 +263,8 @@ def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None):
         warns.append(f"history-dependent difference, not gated ({len(row['main_pr_nondet'])}): {row['main_pr_nondet'][0][:160]}")
     if f"{row['page']} {row['range']}" in flipped:
         fails.append("non-deterministic: the difference between base and PR was gone on the recapture")
+    if f"{row['page']} {row['range']}" in late_requests:
+        warns.append("first capture missed a delayed request; base and PR matched on the patient recapture")
     fails += ui_problems(row.get("ui_main") or {}, row.get("ui_pr") or {}, loki_ui_for_gate(row))
     if row.get("points_main", 0) > 0 and row.get("points_pr", 0) == 0 and not loki_rejects(row):
         fails.append("empty on the PR, data on the base")
@@ -307,7 +310,7 @@ def captures(plan):
     return [(pid, r) for pid, e in plan["entries"].items() for r in e["ranges"]]
 
 
-def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
+def evaluate(rows, pixeldiff, plan, expected=False, flipped=(), late_requests=()):
     """Per-capture assessments and the verdict."""
     by = {(r["page"], r["range"]): r for r in rows}
     proven, resources = proven_queries(rows), proven_resources(rows)
@@ -317,7 +320,8 @@ def evaluate(rows, pixeldiff, plan, expected=False, flipped=()):
         if row is None:
             missing.append(f"{pid} {rng}")
             continue
-        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped, proven.get(pid), resources.get(pid))
+        fails, warns, status = assess(row, pixeldiff.get(key(row)), expected, flipped,
+                                      proven.get(pid), resources.get(pid), late_requests)
         items.append(dict(row=row, fails=fails, warns=warns, status=status, pixel=pixeldiff.get(key(row)),
                           core=plan["entries"][pid]["core"] and rng == plan.get("core_range", "1h"), why=plan["entries"][pid]["why"]))
         if fails:
@@ -463,7 +467,8 @@ def result_cell(i):
 
 def render(rows, pixeldiff, plan, meta, a):
     expected = bool(getattr(a, "expected_change", False))
-    items, verdict = evaluate(rows, pixeldiff, plan, expected, tuple(meta.get("flipped") or ()))
+    items, verdict = evaluate(rows, pixeldiff, plan, expected, tuple(meta.get("flipped") or ()),
+                              tuple(meta.get("late_requests") or ()))
     if verdict["missing"] or not items:
         text, v = errored(a, meta, "no capture for: " + (", ".join(verdict["missing"][:6]) or "any planned page"))
         return text, dict(v, missing=verdict["missing"])
@@ -489,7 +494,7 @@ def render(rows, pixeldiff, plan, meta, a):
     lines += ["", "Gate: a base-vs-PR data difference passes when the PR is closer to Loki, and fails when the PR diverges from Loki "
               f"or Loki cannot decide it (at a range Loki does not hold, a difference passes when the same page proved that query to answer like Loki at a shorter range; otherwise label the pull request `{LABEL}` to accept an intended change). Also failing: a panel empty on the PR "
               "but not on the base, an error banner, panel error, error answer or new \"No data\" panel on the PR, a PR side that never "
-              "settled, a difference that did not reproduce on the recapture. Pixel differences only warn."]
+              "settled, a value difference that did not reproduce on the recapture. A delayed first-pass request and pixel differences only warn."]
     if a.mode == "branch":
         unclean = [i for i in items if i["fails"] or i["warns"]]
         for i in unclean:
