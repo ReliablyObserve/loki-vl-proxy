@@ -737,18 +737,6 @@ func applyArithmeticOp(left, right float64, op string) float64 {
 
 // --- label_replace() post-processing ---
 
-// matrixResponseRW is a minimal struct for parsing and re-encoding a Loki matrix response.
-type matrixResponseRW struct {
-	Status string `json:"status"`
-	Data   struct {
-		ResultType string `json:"resultType"`
-		Result     []struct {
-			Metric map[string]string `json:"metric"`
-			Values [][]interface{}   `json:"values"`
-		} `json:"result"`
-	} `json:"data"`
-}
-
 // transformSeriesLabels rewrites the label set of every series of a matrix or
 // a vector answer with fn, keeping the rest of the answer as it is. Series
 // that end with one label set are not an error in Loki: an instant vector
