@@ -1,6 +1,6 @@
 ---
 sidebar_label: Honest TLDR
-description: "Full bench numbers behind the README one-glance comparison — workload, dataset, outcome counts, latency, resource consumption, heap-pool deep dive, and the queries Loki structurally cannot serve."
+description: "Historical 2026-06-05 benchmark — workload, dataset, outcome counts, latency, resource consumption, heap-pool deep dive, and the queries Loki structurally could not serve."
 ---
 
 # Honest TLDR — measured 2026-06-05 on the included e2e stack
@@ -9,7 +9,7 @@ description: "Full bench numbers behind the README one-glance comparison — wor
 Everything on this page was measured on 2026-06-05 on the included e2e stack, with Loki given 12 GiB (`GOMEMLIMIT=10GiB`), the 8 M entry dataset below and the proxy and VictoriaLogs builds of that day. The proxy has changed a great deal since, and the Loki results below were measured on this dataset and memory budget only. For the current quality and performance position against Loki, including where the proxy is still slower or answers differently, see [Performance: current position versus Loki](performance.md#current-position-versus-loki), [Known Issues](KNOWN_ISSUES.md) and the [coverage map](compatibility-coverage.md). The methodology and the reproduction command stay valid.
 :::
 
-Real numbers from `bench/drilldown-vs-loki.sh` against the live `test/e2e-compat` compose stack. This is the long-form companion to the [README one-glance comparison](https://github.com/ReliablyObserve/loki-vl-proxy#one-glance-comparison); the README has the headline ratios, this page has the per-query breakdown, methodology, and tuning we tried.
+Real numbers from `bench/drilldown-vs-loki.sh` against the live `test/e2e-compat` compose stack. This page preserves the historical per-query breakdown, methodology, and tuning we tried. The [README one-glance comparison](../README.md#one-glance-comparison) now shows the latest saved daily A/B instead.
 
 ## Workload + dataset
 

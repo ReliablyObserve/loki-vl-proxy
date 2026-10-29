@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.45.0] - 2026-10-29
-
 ### Fixed
 
 - **A `sum`, `avg`, `min`, `max` or `count` over a binary expression aggregates
@@ -63,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant where Loki answers 0.333333, the only pod above the threshold); the
   comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
   rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
+
+## [2.45.0] - 2026-10-29
+
+### Fixed
 
 - **`sum(rate_counter(... | logfmt | unwrap x [r]))` answers Loki's zeros
   when every parsed series holds one sample, from VictoriaLogs stats.** Loki

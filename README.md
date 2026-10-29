@@ -111,53 +111,47 @@ Details, the per-workload tables and the method: [performance summary](conforman
 
 ## One-glance comparison
 
-> **Historical, measured on an earlier release on the e2e stack with Loki given 12 GiB; not the current position.** For the current position see [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current).
+Latest saved daily A/B, measured 2026-10-29 at `9aa207755f` against Loki v3.7.9 on the same seeded stack. Of **475 comparable first requests**, the proxy was faster on **240**, on par on **190**, and slower on **45** (the threshold is 25% and 50 ms). **583 of 648** answers matched Loki; **65** differed. The slower rows and answer differences remain tracked as defects. These are measurements of the cited commit, not a claim about a later build.
 
-Measured 2026-06-05 on the included e2e stack — 36 cold Drilldown queries (`pod` / `trace_id` / `k8s_pod_name` / `service_version` / `/detected_fields` / `/labels` × 30 m – 24 h ranges) against `namespace=prod` (~5 000 pods, ~50 000 trace_ids/h, 8 M entries over 7 days). Loki given 12 GiB.
+| Workload | Comparable first requests | Proxy median | Loki median |
+|---|---:|---:|---:|
+| Drilldown and Explore pages | 105 | **0.10 s** | 0.24 s |
+| Log queries | 79 | **0.05 s** | 0.06 s |
+| Metric queries | 289 | **0.05 s** | 0.16 s |
 
-| | Loki direct | Proxy (+VL backend) |
-|---|---:|---:|
-| Cold queries returning real data | **9 / 36** (25 %) | **35 / 36** (97 %) |
-| Silent fails (`HTTP 200 + result:[]`) | **13 / 36** ← blank Grafana panel | 0 |
-| HTTP 500 / 502 / timeout | 14 / 36 | 1 (known VL `trace_id` 6 h limit) |
-| Total CPU consumed | **2 713 cpu·s** (~45 cpu·min) | **5 cpu·s** + VL 117 cpu·s |
-| Peak RSS | **10 445 MiB** | **44 MiB** + VL 2 129 MiB |
-
-Proxy + VL together: **~140 cpu·s, ~2.2 GiB peak** for **97 %** of the workload. Loki: **~520× more CPU, ~190× more peak RSS** to serve **fewer than a quarter** of the same queries — the silent-empty bucket is the most user-hostile mode (Grafana shows a blank panel with no signal).
-
-Full per-query breakdown, side-by-side latency table, methodology, and the heap-pool deep-dive: **[docs/honest-tldr.md](docs/honest-tldr.md)**. Reproduce: `./bench/drilldown-vs-loki.sh`. Raw TSV + pprof: `test/e2e-compat/results/`.
+Method, all workloads, current open gaps and the regression gate: [Quality and performance vs Loki (current)](#quality-and-performance-vs-loki-current) · [performance evidence](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki). The earlier 2026-06-05, 36-query Drilldown comparison (including CPU and memory measurements) remains in [the historical benchmark](docs/honest-tldr.md), with its [reproduction script](bench/drilldown-vs-loki.sh) and [raw results](test/e2e-compat/results/).
 
 ---
 
 ## Query Performance
 
-Medians over the comparable pairs of the daily A/B against Loki v3.7.7 (generated: [performance summary](conformance/reports/performance.md#summary-versus-loki)). Cold is the first request; warm is the p50 of the repeats.
+Medians over comparable pairs of the 2026-10-29 daily A/B against Loki v3.7.9 at `9aa207755f` (generated: [performance summary](conformance/reports/performance.md#summary-versus-loki)). Cold is the first request; warm is the recorded p50 of repeats, which may include cache hits on both sides and is not a controlled warm comparison.
 
 ### Latency by workload
 
 | Workload | Pairs compared | Cold faster / on par / slower | Proxy cold | Loki cold | Proxy warm | Loki warm |
 |---|---:|:---:|---:|---:|---:|---:|
-| Drilldown and Explore pages | 112 | 69 / 23 / 20 | 0.15 s | 0.38 s | 0.04 s | 0.05 s |
-| Log queries | 78 | 9 / 37 / 32 | 0.10 s | 0.04 s | 0.05 s | 0.04 s |
-| Metric queries | 263 | 134 / 104 / 25 | 0.11 s | 0.24 s | 0.03 s | 0.02 s |
-| Metadata and label browser | 2 | 1 / 0 / 1 | 0.07 s | 0.07 s | 0.06 s | 0.05 s |
+| Drilldown and Explore pages | 105 | 62 / 25 / 18 | 0.10 s | 0.24 s | 0.02 s | 0.06 s |
+| Log queries | 79 | 15 / 48 / 16 | 0.05 s | 0.06 s | 0.03 s | 0.06 s |
+| Metric queries | 289 | 161 / 117 / 11 | 0.05 s | 0.16 s | 0.01 s | 0.02 s |
+| Metadata and label browser | 2 | 2 / 0 / 0 | 0.04 s | 0.14 s | 0.04 s | 0.09 s |
 
-Loki's results cache answered 58 of the 60 metadata pairs, so they are listed apart.
+Loki's results cache answered 43 of the 45 metadata pairs in this daily run; the remaining 2 comparable pairs are listed above.
 
 ### Label browser and Drilldown metadata
 
 | Call | Pairs | Proxy cold | Loki cold | Proxy warm | Loki warm |
 |---|---:|---:|---:|---:|---:|
-| Labels (label browser) | 24 | 0.00 s | 0.03 s | 0.00 s | 0.03 s |
-| Label values | 24 | 0.01 s | 0.04 s | 0.01 s | 0.03 s |
-| Drilldown detected labels and fields | 8 | 0.01 s | 0.02 s | 0.00 s | 0.02 s |
-| Volume (Drilldown landing) | 4 | 0.12 s | 0.13 s | 0.11 s | 0.11 s |
+| Labels (label browser) | 18 | 0.00 s | 0.02 s | 0.00 s | 0.02 s |
+| Label values | 18 | 0.00 s | 0.06 s | 0.00 s | 0.06 s |
+| Drilldown detected labels and fields | 6 | 0.01 s | 0.03 s | 0.00 s | 0.02 s |
+| Volume (Drilldown landing) | 3 | 0.06 s | 0.18 s | 0.06 s | 0.09 s |
 
-Medians over 1h to 7d; Loki's times are mostly its own cache hits.
+Medians over 1h to 24h; Loki's times are mostly its own cache hits. These rows include cache-answered calls and are separate from the comparable-pairs table.
 
 ### Translation overhead
 
-LogQL to LogsQL translation takes **5.9 to 17.1 µs per query**. For a 100 to 500 ms VictoriaLogs round-trip this is under 0.02% of wall time.
+In the measurement below, LogQL to LogsQL translation took **5.9 to 17.1 µs per query**. For a 100 to 500 ms VictoriaLogs round-trip this is under 0.02% of wall time.
 
 | Query type | Time | Allocs |
 |---|---:|---:|
