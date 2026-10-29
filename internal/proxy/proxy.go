@@ -2528,7 +2528,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
 	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
 		// The label transforms belong to an operand, which applies its own.
-		labelReplaceSpecs, labelJoinSpec = nil, nil
+		labelReplaceSpecs = nil
 	}
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
 	if isBinary {
@@ -2839,7 +2839,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
 	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
 		// The label transforms belong to an operand, which applies its own.
-		labelReplaceSpecs, labelJoinSpec = nil, nil
+		labelReplaceSpecs = nil
 	}
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
 	if isBinary {

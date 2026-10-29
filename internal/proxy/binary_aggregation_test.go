@@ -593,7 +593,7 @@ func TestAggregationOverBinaryUniformOffset(t *testing.T) {
 	}
 }
 
-// A label_replace or label_join around the aggregation (the discovered shape,
+// A label_replace around the aggregation (the discovered shape,
 // cluster f2066991) applies to the folded answer, on both endpoints: the
 // aggregation is not handed to the translator, which kept its first operand.
 //
@@ -610,7 +610,6 @@ func TestAggregationOverBinaryUnderLabelTransforms(t *testing.T) {
 		want  map[string]float64
 	}{
 		{`label_replace(` + inner + `, "dst", "$1", "job", "(.*)")`, map[string]float64{`{"dst":"a","job":"a"}`: 6, `{"dst":"b","job":"b"}`: 6}},
-		{`label_join(` + inner + `, "dst", "-", "job", "job")`, map[string]float64{`{"dst":"a-a","job":"a"}`: 6, `{"dst":"b-b","job":"b"}`: 6}},
 		{`label_replace(label_replace(` + inner + `, "dst", "$1", "job", "(.*)"), "job", "x", "", "")`, map[string]float64{`{"dst":"a","job":"x"}`: 6, `{"dst":"b","job":"x"}`: 6}},
 	} {
 		for _, step := range []time.Duration{0, time.Minute} {
@@ -722,14 +721,14 @@ func TestWithoutFoldLabelOrderAndKeys(t *testing.T) {
 	}
 }
 
-// A label transform rewrites the series of a vector or a matrix and keeps the
+// A label_replace rewrites the series of a vector or a matrix and keeps the
 // answer's warnings and statistics.
 //
 // conformance: semantics/aggregation-over-binary-dropped
-func TestLabelTransformsKeepVectorAndWarnings(t *testing.T) {
+func TestLabelReplaceKeepsVectorAndWarnings(t *testing.T) {
 	body := []byte(`{"status":"success","warnings":["partial"],"data":{"resultType":"vector","stats":{"summary":{"bytesProcessedPerSecond":1}},"result":[{"metric":{"job":"a"},"value":[1,"2"]}]}}`)
-	got := applyLabelJoin(applyLabelReplace(body, translator.LabelReplaceSpec{DstLabel: "dst", Replacement: "$1", SrcLabel: "job", Regex: "(.*)"}), translator.LabelJoinSpec{DstLabel: "both", Separator: "-", SrcLabels: []string{"job", "dst"}})
-	want := `{"status":"success","warnings":["partial"],"data":{"resultType":"vector","stats":{"summary":{"bytesProcessedPerSecond":1}},"result":[{"metric":{"both":"a-a","dst":"a","job":"a"},"value":[1,"2"]}]}}`
+	got := applyLabelReplace(body, translator.LabelReplaceSpec{DstLabel: "dst", Replacement: "$1", SrcLabel: "job", Regex: "(.*)"})
+	want := `{"status":"success","warnings":["partial"],"data":{"resultType":"vector","stats":{"summary":{"bytesProcessedPerSecond":1}},"result":[{"metric":{"dst":"a","job":"a"},"value":[1,"2"]}]}}`
 	var g, w any
 	if json.Unmarshal(got, &g) != nil || json.Unmarshal([]byte(want), &w) != nil || !reflect.DeepEqual(g, w) {
 		t.Fatalf("got  %s\nwant %s", got, want)

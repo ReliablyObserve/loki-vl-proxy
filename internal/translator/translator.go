@@ -528,7 +528,7 @@ var (
 // folds, or "" when the query is anything else. The fold is only for the
 // aggregation that is the outermost one: the query may be wrapped by the
 // ranking, sorting and label transforms (topk, bottomk, sort, sort_desc,
-// stddev, stdvar, label_replace, label_join), which the proxy applies to the
+// stddev, stdvar, label_replace), which the proxy applies to the
 // folded series. A `without` under another aggregation (`max(sum without ...)`),
 // a binary expression, another operator (topk without, bottomk without, stddev without), or more
 // than one `without` clause is answered as it was before the fold existed.
@@ -581,7 +581,7 @@ func PeelWithoutWrappers(logql string) string {
 // peelWithoutWrapper returns the expression a ranking, sorting or label
 // transform wraps, when s is exactly that call.
 func peelWithoutWrapper(s string) (string, bool) {
-	for _, name := range []string{"sort_desc", "sort", "stddev", "stdvar", "topk", "bottomk", "label_replace", "label_join"} {
+	for _, name := range []string{"sort_desc", "sort", "stddev", "stdvar", "topk", "bottomk", "label_replace"} {
 		if !strings.HasPrefix(s, name+"(") {
 			continue
 		}
@@ -595,7 +595,7 @@ func peelWithoutWrapper(s string) (string, bool) {
 		case "topk", "bottomk":
 			_, expr, ok := splitFuncFirstArg(args)
 			return expr, ok && expr != ""
-		case "label_replace", "label_join":
+		case "label_replace":
 			expr, _, ok := splitFuncFirstArg(args)
 			return expr, ok && expr != ""
 		}
@@ -1883,7 +1883,7 @@ func parseAllStringArgs(s string) []string {
 }
 
 // parseUnquotedStringArgs reads the comma-separated string arguments that
-// follow the first argument of label_replace or label_join, unquoted as the
+// follow the first argument of label_replace, unquoted as the
 // LogQL lexer does: a double-quoted string has its escapes resolved, a
 // backtick one is raw (pkg/logql/syntax/lex.go). It stops at ')' or at the
 // first argument that is not a valid string.

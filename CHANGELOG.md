@@ -101,8 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job 10 and 12 on the unit fixture, where Loki answers 2.5 and 6). The probe
   now leaves a binary, and an aggregation over one, to its operands, each
   probed on its own; a query of one operand naming both parsers is probed as
-  before (still cut there: not covered here). A `label_replace` (or the proxy's `label_join`,
-  which Loki's grammar does not have) around
+  before (still cut there: not covered here). A `label_replace` around
   such an aggregation (the shape the differential corpus found on /query)
   is evaluated the same way and the transform applies to the folded answer,
   with each operand still reading the request's own parsers; a transform inside
@@ -122,6 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instant where Loki answers 0.333333, the only pod above the threshold); the
   comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
   rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
+
 - **Unsupported LogQL function names now return Loki's 400 parse error, and
   keywords are accepted in any case (#748).** Loki has no `group()` or
   `label_join()`; the proxy previously accepted these and other unknown names.
@@ -129,6 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The scanner and request handling accept uppercase LogQL keywords, including
   aggregation names, pipeline stages, and binary modifiers. The unreachable
   `group()` and `label_join()` translation and response rewriting are removed.
+
 - **PR quality reports distinguish missing test metrics from a measured
   regression (#748).** When coverage collection fails, the report shows
   unavailable values and uploads the Go test events and stderr for diagnosis
