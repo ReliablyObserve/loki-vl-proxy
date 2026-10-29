@@ -137,10 +137,9 @@ func stripOuterLabelReplace(logql string) string {
 	return stripOuterCalls(logql, "label_replace(")
 }
 
-// stripLabelTransforms is stripOuterLabelReplace for label_join as well: the
-// metric expression under the label transforms of a query.
+// stripLabelTransforms finds the metric expression under label_replace calls.
 func stripLabelTransforms(logql string) string {
-	return stripOuterCalls(logql, "label_replace(", "label_join(")
+	return stripOuterCalls(logql, "label_replace(")
 }
 
 func stripOuterCalls(logql string, prefixes ...string) string {

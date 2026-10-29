@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strconv"
-	"unicode/utf8"
 	"strings"
+	"unicode/utf8"
 )
 
 // errEmptyCompatibleMatchers is Loki's syntax.errAtleastOneEqualityMatcherRequired,

@@ -2706,6 +2706,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty `streams`. An aggregation over a binary expression (`sum by (job) (a /
   b)`) is still not evaluated as Loki does; where the proxy rejects it, it now
   does so with an error status, no longer with a typeless 200.
+
 ## [2.11.2] - 2026-10-12
 
 ### CI
