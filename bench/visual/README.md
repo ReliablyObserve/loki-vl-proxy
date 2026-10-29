@@ -86,10 +86,11 @@ like the A/B performance smoke does, and posts one sticky comment.
 **What runs.** `plan.py` reads the changed files (base = the merge commit's first
 parent) and picks captures in two tiers:
 
-- *Core set*: the `spec.json` entries marked `"core": true` (Explore logs and a
-  metric graph, Drilldown landing, a service's Logs and Fields), 5 captures at
-  `core_range` (1h). They run on every relevant change, including a change to
-  this tooling.
+- *Core set*: the `spec.json` entries marked `"core": true` (Explore logs,
+  count, rate, JSON unwrap aggregation, ranked and binary metric graphs,
+  Drilldown landing, a service's Logs and Fields), 9 captures at `core_range`
+  (1h). They run on every PR, including docs, tests, CI and infrastructure
+  changes. Their montages are open in the bot comment.
 - *Detailed set*: entries whose `covers` (conformance registry ids, as in
   `bench/ab/shapes.json`) point at a source file the change touches, at
   `ci_ranges` (15m, 1h, 6h), plus the entries a change to `spec.json` adds or
@@ -100,8 +101,7 @@ parent) and picks captures in two tiers:
   handlers are not followed (every page reads them); every other endpoint
   handler selects the entries that show that endpoint. `scripts/ci/check_conformance.py`
   runs `plan.py --check`: every entry's `covers` must resolve, and a non-core entry
-  must reach code. A change that touches nothing visual (docs, CI, Helm, tests,
-  registry text) runs nothing, and an existing comment is updated to say so.
+  must reach code. A change that touches no visual behavior runs the core set.
   A capture budget (36 page x range captures) first narrows the detailed entries
   to 1h, then drops the last ones, and the comment says which.
 
@@ -226,9 +226,10 @@ python3 -m unittest discover -s bench/visual/tests
 ```
 
 Timing, measured locally on a busy laptop (images pulled, Go cache warm): the core
-set took 6 minutes (stack 2.5, warm-up 2, 5 captures 1, compare and teardown 0.5); a
+set of five then-core captures took 6 minutes (stack 2.5, warm-up 2, captures 1, compare and teardown 0.5); a
 selection of 35 captures (34 static at two workers, one Live tail) took 4.5 minutes of
 static captures, 0.5 of Live tail and the same stack and warm-up, about 11 minutes in
 all. On `ubuntu-latest`, add the runner setup (checkout, Go and npm caches, Docker
-pulls, about 2-3 minutes): about 6-9 minutes for the core set and 13-17 for a full
-detailed selection, inside the job's 30 minute limit.
+pulls, about 2-3 minutes): the old five-capture core took about 6-9 minutes and
+the then-full detailed selection 13-17 minutes. The nine-capture core has not
+yet been timed in CI; the normal job limit remains 30 minutes.

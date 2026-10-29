@@ -522,7 +522,7 @@ def render(rows, pixeldiff, plan, meta, a):
             lines += ["", image(a, name, meta), "", "</details>"]
         core = [i for i in items if i["core"] and not (i["fails"] or i["warns"])]
         if core:
-            lines += ["", f"<details><summary>Core set montages ({len(core)}): base | PR | Loki</summary>", ""]
+            lines += ["", f"<details open><summary>Core set montages ({len(core)}): base | PR | Loki</summary>", ""]
             for i in core:
                 lines += [f"**{esc(key(i['row']))}**", "", image(a, key(i["row"]), meta), ""]
             lines += ["</details>"]

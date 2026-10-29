@@ -20,6 +20,41 @@ go test ./...
 7. Commit with conventional commits: `feat:`, `fix:`, `test:`, `docs:`
 8. Open a Pull Request
 
+## Pull Request Evidence Rules
+
+Every pull request must have a current-head **Visual smoke** CI comment with two
+separate kinds of evidence:
+
+1. **Proof of the actual changes.** Each change visible in Grafana has a targeted
+   capture reproducing its trigger, with `main | PR | Loki` screenshots side by
+   side, the query and time range, and the compared result. Generic Explore or
+   Drilldown screenshots do not prove a particular fix. Add or update the
+   corresponding `bench/visual/spec.json` scene and its `fixes` mapping; all of
+   the PR's proof scenes must be captured and published, not silently trimmed.
+   A deliberately rejected query must show Loki's matching rejection, rather
+   than being treated as an unexplained panel error.
+2. **General regression controls.** A fixed, bounded core set of log views,
+   metric graphs and Drilldown pages runs on every PR, including documentation
+   and CI changes. The core set is independent of the PR's selected fix scenes
+   and cannot be removed to make the PR pass. Compare the underlying responses,
+   series, values and errors as well as the screenshots; new empty panels or
+   errors are regressions even when the screenshots look similar.
+
+CI publishes these images directly in its sticky **Visual smoke** comment,
+with the measured base and PR commit IDs and a link to the complete artifacts.
+An artifact download link, historical screenshot or manually posted image alone
+does not satisfy the automatic current-head proof requirement. After a rebase,
+refresh the proof for the new head. Inspect the posted images before claiming
+the PR is ready.
+
+For a change with no Grafana-visible effect, state why and provide the exact API,
+transport, security, performance or test evidence that proves it. Do not substitute
+an unrelated screenshot. Such changes still run the general core controls.
+Use one shared isolated stack for `main`, PR and Loki, keep the normal core at
+the short smoke range, and reuse the existing full-baseline policy for broader
+coverage. The capture and publication details are in
+[the visual proof guide](bench/visual/README.md).
+
 ## Static Checks
 
 CI (`.github/workflows/ci.yaml`) runs these on pull requests (`lint` always, `test` unless the pull request is infra-only, see CI Scope):
@@ -56,7 +91,7 @@ python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 
 ## CI Scope
 
-`change_scope.py` also sorts each changed path into a lane (`lane()`; `classify()` answers whether it is the full product lane). A change runs the jobs of the highest lane any of its paths needs; lint, helm, Security / static and CodeQL run in every lane:
+`change_scope.py` also sorts each changed path into a lane (`lane()`; `classify()` answers whether it is the full product lane). A change runs the jobs of the highest lane any of its paths needs; lint, helm, Security / static, CodeQL and the visual core regression set run in every lane. The visual plan adds targeted proof scenes for the actual change:
 
 | Lane | Paths | Jobs it adds |
 | --- | --- | --- |

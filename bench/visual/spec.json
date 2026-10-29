@@ -576,6 +576,7 @@
   {
    "id": "lvl-explore-rate-errors-by-service",
    "kind": "explore",
+   "core": true,
    "query": "sum by (service_name) (rate({env=\"production\"} | detected_level=\"error\" [$__auto]))",
    "ranges": [
     "1h"
@@ -903,6 +904,7 @@
   {
    "id": "explore-unwrap-sum",
    "kind": "explore",
+   "core": true,
    "query": "sum by (service_name) (sum_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [$__auto]))",
    "covers": [
     "semantics/unwrap-sample-validity",
@@ -1162,6 +1164,7 @@
   {
    "id": "explore-sum-by-over-binary",
    "kind": "explore",
+   "core": true,
    "query": "sum by (service_name) (rate({service_name=\"api-gateway\"}[$__auto]) / 2)",
    "covers": [
     "semantics/aggregation-over-binary-dropped",
@@ -1414,6 +1417,7 @@
   {
    "id": "explore-topk-by-per-step",
    "kind": "explore",
+   "core": true,
    "query": "topk by (service_name) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))",
    "covers": [
     "semantics/topk-bottomk-range-series",

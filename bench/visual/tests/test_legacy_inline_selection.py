@@ -52,6 +52,15 @@ class LegacyInlineSelectionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(names, ["explore-748-reject-group-1h.png", "explore-748-uppercase-sum-1h.png"])
 
+    def test_all_pr748_fix_images_fit_the_publish_selection(self):
+        names = [f"explore-748-{slug}-1h.png" for slug in
+                 ("reject-group", "reject-label-join", "uppercase-sum", "uppercase-topk-rate",
+                  "uppercase-json-unwrap", "uppercase-on", "uppercase-bool", "uppercase-offset")]
+        md = "".join(f"![{name}]({PREFIX}{name}?v=1234abcd)\n" for name in names)
+        result, staged = self.run_selector(md, {name: b"PNG" for name in names})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(staged, sorted(names))
+
     def test_foreign_urls_and_traversal_are_not_selected(self):
         md = (f"![bad]({PREFIX}../other.png?v=1234abcd)\n"
               "![foreign](https://raw.githubusercontent.com/evil/repo/pr-visuals/pr-748/a.png?v=1234abcd)\n")

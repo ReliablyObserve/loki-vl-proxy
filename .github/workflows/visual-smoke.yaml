@@ -58,10 +58,9 @@ jobs:
   visual-smoke:
     name: visual-smoke
     needs: [scope]
-    # A label other than the one the gate reads does not re-run it. A pull request that changes
-    # only infra or A/B harness paths skips it (and with it the publish and comment jobs below); a failed scope
-    # job leaves its output empty, so the job runs.
-    if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') && needs.scope.outputs.stack != 'false' }}
+    # Every pull request runs the core Grafana regression set, including docs and CI-only changes.
+    # Scope still decides whether the larger baseline is required.
+    if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
     runs-on: ubuntu-latest
     # The planned pages of a change are a few captures; the baseline run captures every page.
     timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}
@@ -377,6 +376,7 @@ jobs:
               if (start >= 0 && end > start) {
                 body = body.slice(0, start) + body.slice(start, end).replaceAll('<details><summary>', '<details open><summary>') + body.slice(end);
               }
+              body = body.replace('<details><summary>Core set montages', '<details open><summary>Core set montages');
             }
             // A baseline run adds a fixed section pointing to the full candidate artifact.
             const candidate = process.env.BASELINE === 'true'

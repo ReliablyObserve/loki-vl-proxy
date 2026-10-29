@@ -39,6 +39,29 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_clean_core_montages_are_open_in_the_bot_comment(self):
+        base = plan(("core-logs", "1h"), ("core-rate", "1h"), core=("core-logs", "core-rate"))
+        text, verdict = comment.render([row(page="core-logs"), row(page="core-rate")], {}, base, META,
+                                       argparse.Namespace(**vars(ARGS)))
+        self.assertEqual(verdict["exit"], 0)
+        self.assertIn("<details open><summary>Core set montages (2)", text)
+        self.assertIn("core-logs-1h.png", text)
+        self.assertIn("core-rate-1h.png", text)
+
+    def test_pr748_all_eight_fix_montages_reach_the_comment_and_publish_list(self):
+        pages = ["explore-748-reject-group", "explore-748-reject-label-join",
+                 "explore-748-uppercase-sum", "explore-748-uppercase-topk-rate",
+                 "explore-748-uppercase-json-unwrap", "explore-748-uppercase-on",
+                 "explore-748-uppercase-bool", "explore-748-uppercase-offset"]
+        rows = [row(page=page, main_pr_diffs=["query: differs"], loki_main_n=1) for page in pages]
+        a = argparse.Namespace(**{**vars(ARGS), "image_names": []})
+        text, verdict = comment.render(rows, {}, fix_plan(rows, {"semantics/proxy-accepts-operators-not-in-loki": pages}), META, a)
+        proof = text[text.index("#### Fix proof"):text.index("#### Regression check")]
+        self.assertEqual(verdict["fix_proof"]["semantics/proxy-accepts-operators-not-in-loki"], "fixed")
+        self.assertEqual(set(a.image_names), {page + "-1h.png" for page in pages})
+        for page in pages:
+            self.assertIn(f"{page}-1h.png", proof)
+
     def test_baseline_comment_bounds_inline_images_to_publish_limit(self):
         a = argparse.Namespace(**vars(ARGS))
         images = [comment.image(a, f"page-{i}-1h", META) for i in range(85)]

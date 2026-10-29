@@ -169,7 +169,9 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
         if reason not in why[pid]:
             why[pid].append(reason)
 
-    out = {"run": bool(relevant), "changed": len(files), "relevant": relevant,
+    # Every pull request runs the small core set, including docs and CI-only
+    # changes. Changed registry cases add their own fix scenes below.
+    out = {"run": True, "changed": len(files), "relevant": relevant,
            "ignored": [f for f in files if f not in relevant], "core_range": spec["core_range"],
            "entries": {}, "captures": 0, "trimmed": [], "dropped": [], "fix_cases": {}, "fix_trimmed": []}
     for cid in cases:
@@ -180,9 +182,6 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
         out["fix_cases"][cid] = {"entries": listed, "status": gap.get("status", ""), "impact": gap.get("impact", ""),
                                  "exempt": gap.get("visual_reason", "") if gap.get("visual") == "none" else ""}
     fix_pages = {pid for c in out["fix_cases"].values() for pid in c["entries"]}
-    if not relevant and not fix_pages:
-        return out
-    out["run"] = True
     for p in spec["pages"]:
         if p.get("core"):
             add(p["id"], "core set")
@@ -200,7 +199,7 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
     detailed = {pid for pid, r in why.items() if r != ["core set"]}
     for pid, reasons in why.items():
         entry = pages[pid]
-        rs = ranges_of(entry, spec) if pid in detailed else [spec["core_range"]]
+        rs = ranges_of(entry, spec) if pid in detailed and (pid in fix_pages or not entry.get("core")) else [spec["core_range"]]
         if all(r.startswith(FIX) for r in reasons):
             rs = [r for r in rs if r == LIVE or spec["ranges"][r] <= LOKI_PROOF_S] or [spec["core_range"]]
         out["entries"][pid] = {"ranges": rs, "why": reasons, "core": bool(entry.get("core")), "kind": entry["kind"]}
