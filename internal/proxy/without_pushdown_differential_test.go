@@ -411,3 +411,64 @@ func TestWithoutPushdownLeavesMappedLabelsToTheProxyFold(t *testing.T) {
 		t.Errorf("control: not folded by VictoriaLogs: %v", queries)
 	}
 }
+
+// A sliding window (range longer than the step) under `sum without (...)`
+// reads its buckets folded by VictoriaLogs (withSlidingWithoutCut): the
+// streams that share their labels but the excluded ones are summed per bucket
+// and the proxy merges each fold's windows. Loki's answer is the sum per step
+// of every stream's window count (pkg/logql/range_vector.go:102-189,
+// pkg/logql/evaluator.go VectorAggEvaluator.Next): over streams that tell
+// apart only by the excluded label, lack it or hold a value that looks like a
+// pair, the folded route, the per-stream route and the reference agree, and
+// names the cut does not take keep the per-stream route.
+//
+// conformance: semantics/without-sliding-sum-folded-buckets, semantics/without-over-inner-aggregation-collapses, metric-series-identity
+func TestWithoutSlidingSumMatchesFoldAndLoki(t *testing.T) {
+	pushed, folded := 0, 0
+	for _, fn := range []string{"count_over_time"} {
+		rnd := rand.New(rand.NewSource(int64(len(fn)) * 7_919))
+		for i := 0; i < 160; i++ {
+			streams := wpGenerateStreams(rnd)
+			step := []time.Duration{15 * time.Second, 30 * time.Second, time.Minute}[rnd.Intn(3)]
+			window := step * time.Duration(2+rnd.Intn(4))
+			if rnd.Intn(4) == 0 {
+				window = step*2 + step/2 // a range the step does not divide
+			}
+			s := nvScenario{fn: fn, window: window, step: step}
+			base := int64(1_800_000_000) * 1e9
+			s.start = base + int64(rnd.Intn(600))*1e9
+			s.start -= s.start % int64(step)
+			s.end = s.start + int64(rnd.Intn(8))*int64(step)
+			lo, hi := s.start-int64(window)-5e9, s.end+5e9
+			for k, n := 0, 10+rnd.Intn(80); k < n; k++ {
+				s.rows = append(s.rows, emuRow{ts: lo + rnd.Int63n(hi-lo), stream: streams[rnd.Intn(len(streams))].text, msg: "x=1"})
+			}
+			s.dropEdgeRows()
+			excluded := []string{"pod", "abc", "zone", "baz", "pod_name", "note", "app"}
+			rnd.Shuffle(len(excluded), func(a, b int) { excluded[a], excluded[b] = excluded[b], excluded[a] })
+			s.levels = []nvLevel{nvWithout("sum", excluded[:1+rnd.Intn(2)]...)}
+			want := wpReference(s, streams)
+			viaVL, queries := wpRun(t, s, false)
+			viaProxy, offQueries := wpRun(t, s, true)
+			if diff := wpEqual(want, viaVL); diff != "" {
+				t.Fatalf("#%d %s\nfolded buckets: %s\nqueries: %v", i, s, diff, queries)
+			}
+			if diff := wpEqual(want, viaProxy); diff != "" {
+				t.Fatalf("#%d %s\nper-stream route: %s", i, s, diff)
+			}
+			for _, q := range offQueries {
+				if strings.Contains(q, "replace_regexp") {
+					t.Fatalf("#%d: the per-stream route folded in VictoriaLogs: %s", i, q)
+				}
+			}
+			if len(queries) > 0 && strings.Contains(strings.Join(queries, "\n"), "replace_regexp") {
+				pushed++
+			} else {
+				folded++
+			}
+		}
+	}
+	if pushed < 60 || folded < 10 {
+		t.Fatalf("scenarios folded by VictoriaLogs: %d, per stream by the proxy: %d", pushed, folded)
+	}
+}

@@ -1,0 +1,71 @@
+id: semantics/without-sliding-sum-folded-buckets
+title: sum without over count_over_time or bytes_over_time on a sliding window reads its buckets folded by VictoriaLogs, with Loki's series and values (fixed)
+proves:
+  - metric-series-identity
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's `sum without (l...)` folds the series of its range aggregation by
+  every label but l (pkg/logql/evaluator.go VectorAggEvaluator.Next), each
+  series' sample being its window (t-range, t] (pkg/logql/range_vector.go:102-189).
+
+  For a window longer than the step the proxy read a bucket series per stream
+  from VictoriaLogs, merged each stream's windows, wrote the per-stream
+  matrix and folded it. A stream per pod per batch is thousands of series
+  over hours: on the 2026-10-27 A/B stack
+  `sum without (pod) (count_over_time({env="production", instrumentation!="otel", app!="otel-collector"}[1m]))`
+  at 6h, step 10 s, took 1.29 s cold where Loki took 576 ms, 1.15 s of it in
+  the proxy.
+
+  Fixed: a count or a byte sum summed without plain labels the cut can take
+  (translator.WithoutStreamCut, the conditions of the tumbling push-down,
+  semantics/without-over-inner-aggregation-collapses) has VictoriaLogs fold
+  the streams bucket by bucket: the stream's count per bucket, the excluded
+  pairs cut out of its _stream text, and their sum per remaining stream and
+  level. A window's count is the sum of its buckets', so the summed windows
+  equal the windows of the summed buckets, and a fold has a sample where one
+  of its streams does. The proxy merges a window per remaining label set
+  (42 series on the generator data instead of a series per stream).
+
+  Not covered: rate and bytes_rate (Loki sums each stream's rate, and the sum
+  of the counts divided once differs in the last bits), a parser or label
+  stage, and the same over an unwrapped value (sum_over_time, rate with
+  unwrap), which keeps the per-stream read: the conversion check's flag groups are
+  per stream and the counting rewrite reads one stats pipe; max, min, avg and
+  count without are not sums of the buckets.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (count_over_time({env="production", instrumentation!="otel", app!="otel-collector"}[1m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    A series per label set without pod, Loki's window counts at every step.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a route change with the same series and values: proven against a reference of Loki''s windows and the per-stream route over generated streams (TestWithoutSlidingSumMatchesFoldAndLoki) and against Loki in the e2e'
+  effort: S
+  area: 'internal/proxy/nested_vector_fold.go withSlidingWithoutCut (from proxyManualRangeMetricRange); internal/translator/without_pushdown.go WithoutStreamCut'
+  loki: 'pkg/logql/evaluator.go VectorAggEvaluator.Next; pkg/logql/range_vector.go:102-189'
+  proxy: 'the excluded pairs cut out of _stream and the buckets summed per remaining stream in VictoriaLogs; the windows merged per fold'
+  planned_test: 'TestWithoutSlidingSumMatchesFoldAndLoki, TestSlidingSumWithoutCutMatchesFoldAndLoki, TestSlidingSumWithoutCutDirectedStreams, TestSlidingSumWithoutCutScope, TestSlidingSumWithoutCutUnderTopk, TestSlidingSumWithoutCutExtentCache, BenchmarkSlidingSumWithout (internal/proxy); TestWithoutStreamCut (internal/translator); TestCompat_SlidingSumWithoutStreamFold, TestCompat_QueryRangeSettledSteps (test/e2e-compat, group core)'
+  note: 'Extends the tumbling push-down of semantics/without-over-inner-aggregation-collapses to sliding windows.'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-10-28'
+  effort_exception: null

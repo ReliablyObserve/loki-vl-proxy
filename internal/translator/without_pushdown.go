@@ -82,6 +82,24 @@ func PushDownWithout(logql, series string, labelFn, toLoki LabelTranslateFunc) (
 	return query, true
 }
 
+// WithoutStreamCut returns the pipes that cut the excluded labels out of the
+// _stream text for `sum without (l...) (<range aggregation>)` alone, under the
+// same conditions as PushDownWithout: a sum of per-stream counts, bytes or
+// rates is the sum over the streams that share the cut text, bucket by
+// bucket, so a sliding window can read its buckets folded
+// (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+func WithoutStreamCut(logql string, labelFn, toLoki LabelTranslateFunc) (string, bool) {
+	levels, ok := withoutPushdownLevels(logql, labelFn, toLoki)
+	if !ok || len(levels) != 1 || levels[0].op != "sum" {
+		return "", false
+	}
+	var cut strings.Builder
+	for _, name := range levels[0].labels {
+		cut.WriteString(streamPairCut(name))
+	}
+	return cut.String(), true
+}
+
 // withoutPushdownLevels returns the levels of logql, outermost first, when it is
 // an innermost `without` of plain names under levels that group `by`, with no
 // ranking, sorting or label transform around them.

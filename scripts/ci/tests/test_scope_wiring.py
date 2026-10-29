@@ -331,8 +331,13 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertIn('plan.py --base "$BASE" --out "$OUT/plan.json"', body)
         self.assertIn("name: visual-baseline-candidate", body)
         self.assertIn("scope", jobs["visual-comment"]["needs"])
-        # The job that holds a write token and publishes to pr-visuals knows nothing of the baseline.
-        self.assertNotIn("baseline", jobs["visual-publish"]["body"].lower())
+        # A full baseline can exceed the publisher's bounded file count; its artifact is the proof.
+        publish = jobs["visual-publish"]
+        self.assertIn("scope", publish["needs"])
+        self.assertIn("needs.scope.outputs.baseline != 'true'", publish["if"])
+        # A skipped publisher must not suppress the artifact-link comment.
+        self.assertIn("!cancelled()", jobs["visual-comment"]["if"])
+        self.assertIn("visual-publish", jobs["visual-comment"]["needs"])
 
     def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
         jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())
@@ -353,6 +358,9 @@ class ScopeWiringTest(unittest.TestCase):
                 for job_name, job in parse_jobs(text).items():
                     if "baseline" not in job["body"].lower():
                         continue
+                    if name == "visual-smoke.yaml" and job_name == "visual-publish":
+                        self.assertIn("needs.scope.outputs.baseline != 'true'", job["if"])
+                        continue  # this write-token job cannot start on a baseline run
                     for forbidden in ("git push", "git commit", "contents: write", "commit_via_api", "gh pr create"):
                         self.assertNotIn(forbidden, job["body"], f"{name}:{job_name}")
 

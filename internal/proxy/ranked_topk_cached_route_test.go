@@ -349,11 +349,12 @@ func TestRankedTopKRangeFallsBackToTheWindowRecurrence(t *testing.T) {
 		if buckets != 1 || grids != 3 {
 			t.Fatalf("cold: %d bucket calls and %d grid fetches, want 1 and 3 (seed, leaving, entering)", buckets, grids)
 		}
-		// The verdict is remembered: the repeat does not read the buckets again.
+		// The verdict is remembered, and the settled-steps cache answers the
+		// identical repeat without another bucket or grid read.
 		code, body = s.ask(t, query, start, end, step, nil)
 		assertRankedTopK(t, "over the limit, repeat", decodeRankedTopK(t, code, body), want, skip, false)
-		if b, g, _ := s.vlCalls(); b != 1 || g != 6 {
-			t.Fatalf("repeat: %d bucket calls and %d grid fetches in all, want 1 and 6", b, g)
+		if b, g, _ := s.vlCalls(); b != 1 || g != 3 {
+			t.Fatalf("repeat: %d bucket calls and %d grid fetches in all, want 1 and 3", b, g)
 		}
 	})
 	t.Run("a failing backend is the answer, not a heavier read", func(t *testing.T) {

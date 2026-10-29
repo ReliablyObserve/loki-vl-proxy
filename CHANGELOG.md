@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sum(rate_counter(... | logfmt | unwrap x [r]))` answers Loki's zeros
+  when every parsed series holds one sample, from VictoriaLogs stats.** Loki
+  rates `rate_counter` per series of its sample extractor, the stream plus
+  every label `| logfmt` extracts less the unwrapped one
+  (`pkg/logql/log/metrics_extraction.go:160-166`), and a `sum` does not hand
+  it its grouping (`pkg/logql/syntax/ast.go:1630-1640`); a series with fewer
+  than two samples in a window rates 0 (`pkg/logql/range_vector.go:286-291`).
+  With a transaction id on every line, as on the A/B stack's payment-service
+  lines, every window is 0. The proxy read every line of the window and rated
+  them as one series:
+  `sum(rate_counter({service_name="payment-service"} | logfmt | unwrap amount [5m]))`
+  answered 16,471/s at 1h and HTTP 502 at 6h and 24h ("manual metric response
+  exceeds 67108864 bytes": the raw read is over
+  `-backend-max-buffered-response-bytes`). For `sum` or `sum by (...)` directly
+  over `rate_counter` of a log query with one parameterless `| logfmt` (line
+  and label filters allowed), the proxy now first proves in VictoriaLogs that
+  no series holds two samples: the lines carrying the unwrapped label are
+  counted next to `count_uniq_hash` of `_stream` and the line's logfmt keys
+  parsed again under a prefix of their own (keys from a 1,000-line
+  `field_names` sample, kept for 10 minutes per query; the unwrapped label,
+  structured metadata and keys whose Loki label names collide are left out,
+  which only merges series). Equal counts answer the unwrap rate route's
+  bucket presence with every value 0; anything else keeps the per-row
+  evaluator. On the 2026-10-28 A/B stack (loki-defaults) the 6h answer is
+  Loki's (29 ms against Loki's 45 ms, was 502); through Grafana the answer is
+  Loki's 0 from 5m to 6h (6h: 83 ms against 396); 24h cold 354 ms against
+  2.3 s; a 22h window moved by a step 8 ms against Loki's 4.5 ms (the
+  proof's keys are kept 10 minutes, so a moved window proves its missing steps
+  with one read). Not covered: a line holding one key twice (VictoriaLogs
+  keeps the last value, Loki the first), a line holding a sampled key and an
+  unsampled one Loki names alike (`a.b` and `a_b`), `| json`, other
+  parsers, `drop`/`keep`/`label_format`/`line_format`, and data where a series
+  holds two samples (`semantics/unwrap-per-series-identity-raw-rows`, open).
+  Registry: `semantics/unwrap-rate-counter-one-sample-series`.
+
+### Performance
+
+- **A heavy unwrap read reaches Loki's conversion error from its first
+  window.** Loki stops at the first rejected value
+  (`pkg/logql/evaluator.go:726-733`); the proxy answered Loki's 400 only after
+  its counting stats read of the whole range, so
+  `max by (service_name) (max_over_time({service_name="cache-redis"} | logfmt | unwrap ttl [1m]))`
+  (E6) took 81 ms against Loki's 19 at 6h cold and 106-430 ms against 45-60 at
+  24h, E7 (`| json | unwrap trace_id`) the same. When the metric's counting
+  stats query reads `-backend-heavy-query-min-range` or more, the conversion
+  check now looks up the first evaluation window (start-range, start] before
+  the read's flagged buckets (at most three flagged rows), and, when the same
+  tenant's query answered Loki's conversion error within the last 10 minutes,
+  beside the read, cancelling the metric's queries once a row Loki fails on is
+  found; a query that never errs pays nothing. The answer does not depend on
+  which read finishes first. On the A/B stack (loki-defaults, the query's first
+  heavy read, no early lookup) E6 6h cold 136 ms against Loki's 113 (was 221)
+  and E7 162 against 104 (was 319); a repeated heavy read answers early: E6 and
+  E7 cold at 22h 17-21 ms against Loki's 84-426 ms on an isolated stack. A
+  clean first window keeps the earlier rule (the earliest flagged bucket of the
+  stats read), so the reported line depends on whether the read is heavy; both
+  are lines Loki fails on. Registry: `semantics/unwrap-conversion-error`.
+
+- **Settled steps evaluate a moved window's light gaps at the same time.** A
+  moved window misses its old edge and its fresh steps; the two were evaluated
+  one after another, two sequential VictoriaLogs reads of about 15 ms each.
+  Gaps that each read less than `-backend-heavy-query-min-range` are now
+  evaluated concurrently; a heavy gap keeps the sequential order, so a request
+  holds at most the one heavy-query slot its whole window would. Registry:
+  `quality/query-range-settled-steps`.
+
+- **`quantile_over_time` reads VictoriaLogs' value counts in place.** The
+  9 MB count answer of
+  `quantile_over_time(0.95, {service_name="api-gateway"} | json | unwrap duration_ms [1m]) by (service_name)`
+  at 24h was parsed into a DOM, its 430k samples sorted with `sort.Slice` and
+  every window ranked by a sort of all samples: 260-270 ms of the proxy's time
+  on top of VictoriaLogs'. The counts are now read in place, placed in time
+  order by a counting sort on the bucket grid and ranked by the sorted distinct
+  values: 261 ms to 101 ms per request, 1.11M to 31k allocations
+  (`BenchmarkQuantileCounts24h`, benchstat n=8); on the A/B stack 6h cold
+  405 ms against 776 before (Loki 284 ms). Registry:
+  `semantics/unwrap-quantile-response-limit`.
+
+- **A metric answered by the window evaluator evaluates only the steps a moved
+  window lacks.** Loki answers a refreshed or re-run `query_range` from the
+  extents of its earlier answers and evaluates only the uncovered part
+  (`pkg/storage/chunk/cache/resultscache/cache.go` Do, handleHit; merged by
+  series labels, `pkg/querier/queryrange/queryrangebase/query_range.go:310-350`).
+  The proxy reused the VictoriaLogs buckets of a moved window but evaluated
+  every step again, and for the window evaluator (a range longer than the
+  step, a count, bytes or rate shorter than it, a `without` fold over
+  per-stream series, `topk` over it, `quantile_over_time`, `rate_counter`)
+  that evaluation is the cost: on the
+  2026-10-27 A/B stack the 6h refresh of
+  `sum without (pod) (max_over_time({app="payment-service"} | logfmt amount | unwrap amount [5m]))`
+  took 113 ms against Loki's 4 ms with no VictoriaLogs call, `topk(5, ...)` of
+  it 116 ms, `quantile_over_time(0.95, ...) by (service_name)` 154 ms against
+  3 ms, `sum(rate_counter(...))` at 1h 161 ms against 4 ms. The evaluator's
+  answers are now kept per evaluation time (settled steps): a step's sample is
+  a function of its window (t-range, t] alone and the aggregations after the
+  window work per step, so a request whose start is on the grid of an earlier
+  one takes those steps and evaluates its missing ranges (a refresh's new edge,
+  a re-run's old one) through the handler, one after another. Steps are kept
+  under the same rules as the buckets (`-query-range-extent-cache`, steps
+  newer than `-query-range-freshness` evaluated again, kept per tenant in the
+  response cache tiers and expiring with the oldest bucket they were evaluated
+  from, `-query-range-extent-cache-ttl`). Every answer, header and 400 is the
+  uncached one: the merged answer is written in the evaluator's own envelope
+  and series order, Loki's series limit and the response size limit apply to
+  it, and an answer of another route, an error or an order the merge cannot
+  reproduce evaluates the whole window. One exception: a proxy read budget
+  that only the whole window would exceed (the raw-row budget of a `without`
+  fold, `-manual-range-metric-row-limit`) is not met by the missing ranges
+  read apart, so such a window answers from steps where the uncached proxy
+  answers its limit error; Loki has no such limit. Measured through the handler with
+  VictoriaLogs' answers held in memory (Go benchmarks, before and after): the
+  6h refresh of the `sum without` shape goes from 191 ms to 1.4 ms, the
+  quantile from 87 ms to 1.1 ms, the 1h `rate_counter` refresh from 171 ms to
+  4.0 ms. Not covered: a window whose start moves by less than a step off the
+  grid of the earlier windows, queries the window evaluator does not answer
+  (tumbling windows, native stats, sum, avg, max and min over time with
+  unwrap and a range up to the step, `sort`, Logs Drilldown requests, a query
+  holding both parsers); each operand of a binary expression is a request of
+  its own and is kept as such. Registry:
+  `quality/query-range-settled-steps`.
+
+- **`sum without` over a count or a byte sum on a sliding window reads its
+  buckets folded by VictoriaLogs.** A window longer than the step read a bucket
+  series per stream and the proxy folded the per-stream answer; a stream per
+  pod per batch is thousands of series over hours:
+  `sum without (pod) (count_over_time({env="production", instrumentation!="otel", app!="otel-collector"}[1m]))`
+  at 6h took 1.29 s cold on the A/B stack, 1.15 s of it in the proxy, where
+  Loki took 576 ms. VictoriaLogs now cuts the excluded pairs out of each
+  stream's `_stream` text and sums the buckets per remaining stream and level,
+  as the tumbling push-down already did (the conditions of
+  `translator.PushDownWithout`); a window's count is the sum of its buckets', so
+  the answer is the same (pkg/logql/evaluator.go VectorAggEvaluator.Next). The
+  proxy's part goes from 218 ms to 12 ms at 1h and from 2.17 s to 40 ms at 6h
+  (Go benchmark). Not
+  covered: the same over an unwrapped value keeps the per-stream read (the
+  conversion check counts per stream), and so do `rate` and `bytes_rate` (Loki
+  sums each stream's rate, and the sum of the counts divided once differs from
+  it in the last bits: `bottomk(2, sum without (pod) (rate(...[90s])))` answered
+  0.9555555555555556 against 0.9555555555555553), a parser or label stage, and
+  any other operator. Registry:
+  `semantics/without-sliding-sum-folded-buckets`.
+
+- **The window evaluator costs the buckets a series holds, not the steps of
+  the range.** The bucket matrix walked every step of the range for every
+  series; a series that holds one batch's bucket (a stream per pod) now skips
+  to the steps whose windows can hold it, so the 6h `sum without (pod)
+  (max_over_time(...))` evaluation goes from 185 ms to 81 ms. A
+  `quantile_over_time` window is taken from a sliding count of its buckets'
+  values by rank instead of sorting every window (6h, step 10 s: 87 ms to
+  62 ms, the same values bit for bit), and the per-series evaluator checks
+  for a cancelled request every 256 series of a step instead of every one.
+  Registry: `window-bounds-and-step-alignment`.
+
 ## [2.44.0] - 2026-10-28
 
 ### Fixed

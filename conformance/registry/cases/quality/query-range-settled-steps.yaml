@@ -1,0 +1,96 @@
+id: quality/query-range-settled-steps
+title: a window-evaluated metric moved by a refresh or a re-run evaluates only the steps it does not hold, with the same answers, headers and 400s (fixed)
+proves:
+  - data-probing-and-freshness
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki answers a moved query_range from its results cache: the extents of
+  earlier answers per split, the missing part evaluated and merged by series
+  labels, nothing newer than max_cache_freshness_per_query
+  (pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit,
+  filterRecentExtents; pkg/querier/queryrange/queryrangebase/query_range.go:310-350
+  matrixMerge). Its refreshes take 3 to 17 ms.
+
+  The proxy kept the VictoriaLogs buckets of a moved window
+  (quality/query-range-extent-cache, quality/unwrap-query-range-extent-cache)
+  but evaluated every step again. For the window evaluator (a range longer
+  than the step, a count, bytes or rate shorter than it, a `without` fold
+  over per-stream series, topk over them, quantile_over_time, rate_counter)
+  that evaluation is the cost: on the
+  2026-10-27 A/B stack the refresh of
+  `sum without (pod) (max_over_time({app="payment-service"} | logfmt amount | unwrap amount [5m]))`
+  at 6h took 113 ms against Loki's 4 ms with no VictoriaLogs call at all, and
+  `sum without (pod) (count_over_time({env="production", ...}[1m]))` 1.29 s
+  against 10 ms.
+
+  Fixed: the window evaluator's answers are kept per evaluation time. A
+  step's sample is a function of its window (t-range, t] alone
+  (pkg/logql/range_vector.go:102-189) and every aggregation applied after the
+  window works per step (pkg/logql/evaluator.go VectorAggEvaluator.Next,
+  topk per step), so the steps of a request whose start is on the grid of an
+  earlier one are taken from that answer and the missing ranges (a refresh's
+  new edge, a re-run's old one) are evaluated through the handler (at the
+  same time when each reads less than -backend-heavy-query-min-range, one
+  after another otherwise, so a request holds at most the one heavy-query slot
+  its whole window would) and merged. A step is kept once its window is older than
+  -query-range-freshness, per tenant, query, step and grid phase, in the
+  response cache tiers (memory, disk, peers), and expires with the oldest
+  VictoriaLogs bucket it was evaluated from (-query-range-extent-cache-ttl).
+  The merged answer is written as the evaluator writes the whole window: its
+  envelope, its series order (learned from its own answers, checked on every
+  answer kept), its headers. Loki's series limit and the response size limit
+  apply to the merged answer; an answer of another route (a window of more
+  than 11,000 buckets is read raw), an error, a header the evaluator does not
+  write, or an order the merge cannot reproduce evaluates the whole window as
+  before. A missing range that fails (Loki's 400 for a rejected value) is the
+  request's answer.
+
+  Not covered: a window whose start moves by less than a step off the grid
+  of the earlier windows reuses nothing (the steps differ; with
+  -align-queries-with-step, on another branch, the start is on the grid);
+  queries the window evaluator does not answer (tumbling windows, native
+  stats, sum, avg, max and min over time with unwrap and a range up to the
+  step, binary expressions as a whole: each operand is a request of its own,
+  sort and sort_desc, Logs Drilldown requests, a query with both parsers);
+  late data in a kept step shows once it expires, as for the buckets; a
+  proxy read budget only the whole window would exceed (the raw-row budget
+  of a `without` fold, -manual-range-metric-row-limit) is not met by the
+  missing ranges read apart, so such a window answers from steps where the
+  uncached proxy answers its limit error (Loki has no such limit).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (max_over_time({app="payment-service"} | logfmt amount | unwrap amount [5m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki for every window of a refresh and a
+    re-run sequence; a moved window is evaluated only on its new steps.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: every answer, header and error is the uncached one, proven by the cache-on/off differential over the window evaluator''s shapes; the refresh time is measured by the A/B refresh pass'
+  effort: M
+  area: 'internal/proxy/query_range_steps.go serveQueryRangeSteps (from handleQueryRange in internal/proxy/proxy.go); markQueryStepsEvaluated and markQueryStepsRoute in proxyManualRangeMetricRange (internal/proxy/range_metric_compat.go)'
+  loki: 'pkg/storage/chunk/cache/resultscache/cache.go Do, handleHit, filterRecentExtents; pkg/querier/queryrange/queryrangebase/query_range.go:310-350 matrixMerge; pkg/logql/range_vector.go:102-189'
+  proxy: 'the window evaluator''s answers kept per evaluation time; a moved window evaluates its missing ranges and merges'
+  planned_test: 'TestQueryRangeStepsMatchUncached, TestQueryRangeStepsGapsReadTogether, TestQueryRangeStepsLokiWindows, TestQueryRangeStepsRouteBoundary, TestQueryRangeStepsOnlyPerStepAnswers, TestQueryRangeStepsScopeAndAccounting, TestQueryRangeStepsSeriesLimit, TestQueryStepsAnswerRoundTrip (internal/proxy); TestCompat_QueryRangeSettledSteps (test/e2e-compat, group core); TestFleet_QueryRangeSettledStepsReachPeers (test/e2e-fleet)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

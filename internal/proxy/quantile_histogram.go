@@ -1,18 +1,21 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	fj "github.com/valyala/fastjson"
+	"github.com/grafana/jsonparser"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -98,7 +101,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 	if err != nil {
 		return nil, err
 	}
-	v, err := p.fetchQuantileCounts(ctx, spec, start, end, bucket)
+	body, err := p.fetchQuantileCounts(ctx, spec, start, end, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -114,58 +117,81 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 	cache := make(map[string]*metricSeriesCacheEntry, 32)
 	series := make(map[string]quantileSeries)
 	held := 0
-	for _, res := range v.GetArray("data", "result") {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	// A series per group and value, a point per bucket: the points are read in
+	// place (eachBucketPoint) and only each series' labels are parsed, with a
+	// pooled parser, as collectRangeMetricHits reads its buckets.
+	parser := statsQRFJPool.Get()
+	defer statsQRFJPool.Put(parser)
+	var resultErr error
+	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
+		if resultErr != nil {
+			return
 		}
-		metric := res.Get("metric")
+		if resultErr = ctx.Err(); resultErr != nil {
+			return
+		}
+		metricRaw, _, _, _ := jsonparser.Get(res, "metric")
+		metric, err := parser.ParseBytes(metricRaw)
+		if err != nil {
+			resultErr = fmt.Errorf("parse stats response: %w", err)
+			return
+		}
 		value, err := strconv.ParseFloat(string(metric.GetStringBytes(translator.UnwrapValueAlias)), 64)
 		if err != nil {
-			continue // the gate keeps only values that convert
+			return // the gate keeps only values that convert
 		}
 		var labels map[string]string
 		if byFields {
-			labels = p.statsGroupMetric(res.GetObject("metric"), vlToLoki)
+			labels = p.statsGroupMetric(metric.GetObject(), vlToLoki)
 		} else {
 			labels = p.manualSeriesEntry(cache, metric, string(metric.GetStringBytes("_stream")), strings.TrimSpace(string(metric.GetStringBytes("level"))), spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, true).translated
 		}
 		key := canonicalLabelsKey(labels)
-		points := res.GetArray("values")
-		if point := res.Get("value"); point != nil {
-			points = []*fj.Value{point}
-		}
 		current, seen := series[key]
 		if !seen {
-			if err := seriesLimitCollecting(ctx, len(series), p.manualSeriesLimit(ctx)); err != nil {
-				return nil, err
+			if resultErr = seriesLimitCollecting(ctx, len(series), p.manualSeriesLimit(ctx)); resultErr != nil {
+				return
 			}
 			current.Metric = labels
 		}
-		for _, point := range points {
-			pair := point.GetArray()
-			if len(pair) < 2 {
-				continue
+		add := func(ts int64, raw []byte) {
+			if resultErr != nil {
+				return
 			}
-			ts := start.UnixNano()
-			if bucket > 0 {
-				var ok bool
-				if ts, ok = snapSlidingBucketTimestamp(pair[0], start, bucket); !ok {
-					continue
-				}
-			}
-			count, err := strconv.ParseFloat(string(pair[1].GetStringBytes()), 64)
+			count, err := jsonparser.ParseFloat(raw)
 			if err != nil || count <= 0 {
-				continue
+				return
 			}
 			if held++; held > rowLimit {
-				return nil, fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+				resultErr = fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+				return
 			}
 			current.Samples = append(current.Samples, quantileSample{ts: ts, value: value, count: count})
 		}
+		if bucket > 0 {
+			values, _, _, _ := jsonparser.Get(res, "values")
+			eachBucketPoint(values, start, bucket, add)
+		} else {
+			// An instant answer: its points (a vector's one value, or a
+			// matrix's), each at the start.
+			if point, _, _, err := jsonparser.Get(res, "value"); err == nil {
+				if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
+					add(start.UnixNano(), []byte(raw))
+				}
+			}
+			_, _ = jsonparser.ArrayEach(res, func(point []byte, _ jsonparser.ValueType, _ int, _ error) {
+				if raw, err := jsonparser.GetString(point, "[1]"); err == nil {
+					add(start.UnixNano(), []byte(raw))
+				}
+			}, "values")
+		}
 		series[key] = current
+	}, "data", "result")
+	if resultErr != nil {
+		return nil, resultErr
 	}
 	for key, s := range series {
-		sort.Slice(s.Samples, func(i, j int) bool { return s.Samples[i].ts < s.Samples[j].ts })
+		s.Samples = sortQuantileSamples(s.Samples, start, bucket)
 		series[key] = s
 	}
 	if limit := p.manualSeriesLimit(ctx); limit > 0 && len(series) > limit {
@@ -175,6 +201,47 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 		series = capQuantileSeries(series, limit)
 	}
 	return series, nil
+}
+
+// sortQuantileSamples orders samples by time. Bucket times lie on the
+// start+k*bucket grid, so a counting sort by bucket places them in two passes
+// (a series per value arrives in time order, the values one after another);
+// the order of the values within a bucket is free, the windows rank them. An
+// instant answer has one time.
+func sortQuantileSamples(samples []quantileSample, start time.Time, bucket time.Duration) []quantileSample {
+	if bucket <= 0 || len(samples) < 2 {
+		return samples
+	}
+	lo, hi := samples[0].ts, samples[0].ts
+	size, anchor := int64(bucket), start.UnixNano()
+	onGrid := true
+	for _, s := range samples {
+		if s.ts < lo {
+			lo = s.ts
+		}
+		if s.ts > hi {
+			hi = s.ts
+		}
+		onGrid = onGrid && (s.ts-anchor)%size == 0
+	}
+	if !onGrid || (hi-lo)/size > int64(len(samples))*4 {
+		slices.SortFunc(samples, func(a, b quantileSample) int { return cmp.Compare(a.ts, b.ts) })
+		return samples
+	}
+	offsets := make([]int, (hi-lo)/size+2)
+	for _, s := range samples {
+		offsets[(s.ts-lo)/size+1]++
+	}
+	for i := 1; i < len(offsets); i++ {
+		offsets[i] += offsets[i-1]
+	}
+	out := make([]quantileSample, len(samples))
+	for _, s := range samples {
+		i := (s.ts - lo) / size
+		out[offsets[i]] = s
+		offsets[i]++
+	}
+	return out
 }
 
 // capQuantileSeries keeps the limit series with the most rows, like
@@ -283,12 +350,135 @@ func quantileSeriesEvaluator(phi float64, series map[string]quantileSeries) ([]s
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	var scratch []quantileSample
+	sliders := make(map[string]*quantileSlider, len(series))
 	metric := func(key string) map[string]string { return series[key].Metric }
 	value := func(key string, windowStart, windowEnd int64) (float64, bool) {
-		return quantileWindow(phi, series[key].Samples, windowStart, windowEnd, &scratch)
+		w := sliders[key]
+		if w == nil {
+			w = newQuantileSlider(series[key].Samples)
+			sliders[key] = w
+		}
+		return w.quantile(phi, windowStart, windowEnd)
 	}
 	return keys, metric, value
+}
+
+// quantileSlider answers quantileWindow for windows that move forward: the
+// counts of the window's buckets are held by value rank in a Fenwick tree, a
+// bucket added when the window reaches it and removed when it leaves, so a
+// step costs the buckets that enter and leave and a rank search, not a sort
+// of the whole window (a [1m] window at a 10 s step over 6 hours is 2,160
+// sorts of every value of six buckets). The order is quantileOfCounts' (NaN
+// first, then ascending), equal values share a rank, and the counts are whole
+// numbers, so the value at each rank is the same as there (0 and -0 compare
+// equal and share a rank; the sort leaves their order open as well).
+type quantileSlider struct {
+	samples []quantileSample // ascending by ts
+	ranks   []int            // the value rank of each sample, 1-based
+	values  []float64        // the value of each rank
+	tree    []float64        // counts by rank (Fenwick, 1-based)
+	total   float64
+	lo, hi  int // samples[lo:hi] are in the tree
+	start   int64
+	used    bool
+}
+
+func newQuantileSlider(samples []quantileSample) *quantileSlider {
+	w := &quantileSlider{samples: samples, ranks: make([]int, len(samples))}
+	// A histogram holds far fewer distinct values than samples: rank the
+	// distinct values (every NaN one key, 0 and -0 one key, as the order has
+	// them equal) and look each sample's rank up.
+	key := func(v float64) uint64 {
+		switch {
+		case math.IsNaN(v):
+			return math.Float64bits(math.NaN())
+		case v == 0:
+			return 0
+		}
+		return math.Float64bits(v)
+	}
+	rankOf := make(map[uint64]int)
+	for _, s := range samples {
+		if k := key(s.value); rankOf[k] == 0 {
+			rankOf[k] = 1
+			w.values = append(w.values, s.value)
+		}
+	}
+	less := func(a, b float64) bool { return math.IsNaN(a) && !math.IsNaN(b) || a < b }
+	sort.Slice(w.values, func(i, j int) bool { return less(w.values[i], w.values[j]) })
+	for r, v := range w.values {
+		rankOf[key(v)] = r + 1
+	}
+	for i, s := range samples {
+		w.ranks[i] = rankOf[key(s.value)]
+	}
+	w.tree = make([]float64, len(w.values)+1)
+	return w
+}
+
+func (w *quantileSlider) add(i int, sign float64) {
+	c := sign * w.samples[i].count
+	w.total += c
+	for r := w.ranks[i]; r < len(w.tree); r += r & -r {
+		w.tree[r] += c
+	}
+}
+
+// at returns the value at 0-based rank of the counts in the tree.
+func (w *quantileSlider) at(rank float64) float64 {
+	pos, step := 0, 1
+	for step*2 < len(w.tree) {
+		step *= 2
+	}
+	for ; step > 0; step /= 2 {
+		if next := pos + step; next < len(w.tree) && w.tree[next] <= rank {
+			pos = next
+			rank -= w.tree[next]
+		}
+	}
+	if pos >= len(w.values) {
+		pos = len(w.values) - 1
+	}
+	return w.values[pos]
+}
+
+func (w *quantileSlider) quantile(phi float64, windowStart, windowEnd int64) (float64, bool) {
+	if !w.used || windowStart < w.start {
+		// The first window, or one that moved back: start again.
+		clear(w.tree)
+		w.total = 0
+		w.lo = sort.Search(len(w.samples), func(i int) bool { return w.samples[i].ts >= windowStart })
+		w.hi = w.lo
+		w.used = true
+	}
+	w.start = windowStart
+	for ; w.lo < len(w.samples) && w.samples[w.lo].ts < windowStart; w.lo++ {
+		if w.lo < w.hi {
+			w.add(w.lo, -1)
+		}
+	}
+	if w.hi < w.lo {
+		w.hi = w.lo
+	}
+	for ; w.hi < len(w.samples) && w.samples[w.hi].ts < windowEnd; w.hi++ {
+		w.add(w.hi, 1)
+	}
+	if w.lo == w.hi {
+		return 0, false
+	}
+	switch n := w.total; {
+	case phi < 0:
+		return math.Inf(-1), true
+	case phi > 1:
+		return math.Inf(+1), true
+	default:
+		rank := phi * (n - 1)
+		lowerIndex := math.Max(0, math.Floor(rank))
+		upperIndex := math.Min(n-1, lowerIndex+1)
+		weight := rank - math.Floor(rank)
+		// As quantileOfCounts writes it (Loki's arithmetic).
+		return w.at(lowerIndex)*(1-weight) + w.at(upperIndex)*weight, true
+	}
 }
 
 // readsQuantileCounts reports whether a manual range metric is a
@@ -452,8 +642,9 @@ func (p *Proxy) writeQuantileHistogramRange(w http.ResponseWriter, ctx context.C
 }
 
 // fetchQuantileCounts sends the value count query of collectQuantileHistogram
-// and returns its decoded answer, read within -backend-max-buffered-response-bytes.
-func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, start, end time.Time, bucket time.Duration) (*fj.Value, error) {
+// and returns its answer, read within -backend-max-buffered-response-bytes and
+// checked to be a successful JSON answer.
+func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, start, end time.Time, bucket time.Duration) ([]byte, error) {
 	params := url.Values{}
 	params.Set("query", spec.BaseQuery+" | stats by ("+strings.Join(quantileStatsGroupBy(spec), ", ")+") count() as "+quantileCountName)
 	path := "/select/logsql/stats_query"
@@ -490,12 +681,11 @@ func (p *Proxy) fetchQuantileCounts(ctx context.Context, spec statsCompatSpec, s
 	if err != nil {
 		return nil, err
 	}
-	v, err := fj.ParseBytes(body)
-	if err != nil {
-		return nil, fmt.Errorf("parse stats response: %w", err)
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("parse stats response: invalid JSON")
 	}
-	if status := string(v.GetStringBytes("status")); status != "success" {
+	if status, _ := jsonparser.GetString(body, "status"); status != "success" {
 		return nil, fmt.Errorf("stats response non-success status: %s", status)
 	}
-	return v, nil
+	return body, nil
 }

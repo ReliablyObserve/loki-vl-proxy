@@ -148,3 +148,33 @@ func TestPushDownWithoutLeavesTheFoldToTheProxyWhenNotExact(t *testing.T) {
 		t.Errorf("control: %v %s", ok, got)
 	}
 }
+
+// The cut of a sliding `sum without` is the tumbling route's, for a `sum`
+// alone; any other operator, a nest, a wrapper and a name the cut does not
+// take have none.
+//
+// conformance: semantics/without-sliding-sum-folded-buckets
+func TestWithoutStreamCut(t *testing.T) {
+	identity := func(s string) string { return s }
+	for _, tc := range []struct {
+		logql string
+		want  string
+		ok    bool
+	}{
+		{`sum without (pod) (count_over_time({app="x"}[1m]))`, pushCut, true},
+		{`sum(count_over_time({app="x"}[1m])) without (pod)`, pushCut, true},
+		{`sum without (pod, zone) (bytes_over_time({app="x"}[1m]))`, pushCut + strings.ReplaceAll(pushCut, "pod", "zone"), true},
+		{`avg without (pod) (count_over_time({app="x"}[1m]))`, "", false},
+		{`max by (app) (sum without (pod) (count_over_time({app="x"}[1m])))`, "", false},
+		{`topk(2, sum without (pod) (count_over_time({app="x"}[1m])))`, "", false},
+		{`sum without (pod_name) (count_over_time({app="x"}[1m]))`, "", false},
+		{`sum without (app) (count_over_time({app="x"}[1m]))`, "", false},
+		{`sum without (level) (count_over_time({app="x"}[1m]))`, "", false},
+		{`sum by (pod) (count_over_time({app="x"}[1m]))`, "", false},
+	} {
+		got, ok := WithoutStreamCut(tc.logql, identity, identity)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("%s: %q %v, want %q %v", tc.logql, got, ok, tc.want, tc.ok)
+		}
+	}
+}

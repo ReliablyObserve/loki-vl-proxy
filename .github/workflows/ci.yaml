@@ -53,8 +53,8 @@ jobs:
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-      # internal/proxy alone takes 480-600 s under -race with coverage on the hosted
-      # runners, at Go's default 10 minute per-binary timeout; give it headroom.
+      # internal/proxy can exceed 20 minutes under -race with coverage on a
+      # contended hosted runner; keep the complete suite and allow headroom.
       #
       # -json keeps every test's outcome: the conformance job reads the
       # ./internal/... part of it (its evidence check) instead of running the
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          go test ./... -count=1 -race -timeout=20m -coverprofile=coverage.out -json \
+          go test ./... -count=1 -race -timeout=35m -coverprofile=coverage.out -json \
             | tee unit-results-full.json \
             | jq -rR --unbuffered 'fromjson? | select(.Action == "output" and .Test == null) | .Output | rtrimstr("\n") | select(. != "PASS" and (startswith("coverage:") | not))' \
             || status=$?
@@ -82,6 +82,14 @@ jobs:
               unit-results-full.json | head -400
           fi
           exit "$status"
+
+      - name: Upload failed unit-test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: unit-results-diagnostics
+          path: unit-results-full.json
+          if-no-files-found: ignore
 
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
@@ -203,6 +211,21 @@ jobs:
       - name: Fuzz smoke (topk and bottomk per step)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzTopKPerStep -fuzztime=20s -timeout=60s
 
+      - name: Fuzz smoke (settled steps parse, merge and write-back)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQueryStepsRoundTrip$' -fuzztime=12s
+
+      - name: Fuzz smoke (sliding sum without cut vs per-stream fold)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSlidingWithoutCut$' -fuzztime=12s
+
+      - name: Fuzz smoke (sliding quantile vs window sort)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQuantileSlider$' -fuzztime=12s
+
+      - name: Fuzz smoke (quantile counts time sort)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSortQuantileSamples$' -fuzztime=12s
+
+      - name: Fuzz smoke (rate_counter one-sample proof vs Loki)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRateCounterOneSample$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s
@@ -245,7 +268,7 @@ jobs:
     #
     # internal/proxy alone takes ~7 minutes under -race, so its top-level tests
     # are split into three deterministic shards (checksum of the test name over
-    # the sorted `go test -list` output) that run in parallel, each with its own 8m
+    # the sorted `go test -list` output) that run in parallel, each with its own 12m
     # budget. The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -286,7 +309,7 @@ jobs:
         if: matrix.shard != 'other'
         run: |
           set -euo pipefail
-          go test -race -count=1 -timeout=8m -run "$(cat shard-run.txt)" ./internal/proxy/
+          go test -race -count=1 -timeout=12m -run "$(cat shard-run.txt)" ./internal/proxy/
 
       - name: Race-detector tests (cache, middleware, observability)
         if: matrix.shard == 'other'
@@ -1035,7 +1058,7 @@ jobs:
       - name: Run fleet cache tests
         env:
           FLEET_PROOF_REPORT: ${{ runner.temp }}/fleet-peer-cache-proof.json
-        run: go test -v -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof)$' ./test/e2e-fleet/
+        run: go test -v -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers)$' ./test/e2e-fleet/
 
       - name: Upload fleet peer cache proof report
         if: always()

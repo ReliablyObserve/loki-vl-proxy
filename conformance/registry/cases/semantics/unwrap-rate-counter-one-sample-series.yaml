@@ -1,0 +1,85 @@
+id: semantics/unwrap-rate-counter-one-sample-series
+title: A sum of rate_counter over `| logfmt` whose every parsed series holds one sample answers Loki's zeros from VictoriaLogs stats (fixed)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum(rate_counter({service_name="payment-service"} | logfmt | unwrap amount [5m]))`
+  answered 16,471/s at 1h where Loki 3.7.9 answers 0, and HTTP 502 at 6h and
+  24h ("manual metric response exceeds 67108864 bytes"): the per-row
+  evaluator read every line of the window (`... | unpack_logfmt | limit
+  1000001`, more than -backend-max-buffered-response-bytes at 6h) and rated
+  them all as one series.
+
+  Loki rates rate_counter per series of its sample extractor: the stream, its
+  structured metadata and every label the parser extracts, less the unwrapped
+  one (pkg/logql/log/metrics_extraction.go:160-166 LabelExtractorWithStages,
+  :202-231 Process; pkg/logql/log/labels.go:664-688 GroupedLabels). A `sum`
+  does not hand rate_counter its grouping (pkg/logql/syntax/ast.go:1630-1640
+  canInjectVectorGrouping lists bytes, bytes_rate, sum, rate and count only).
+  A series with fewer than two samples in a window rates 0
+  (pkg/logql/range_vector.go:286-291 extrapolatedRate) and keeps its point. On
+  the generator's data every payment-service line carries its own
+  transaction id, so every window is 0.
+
+  Fixed: for `sum` or `sum by (...)` directly over rate_counter of a log
+  query with one parameterless `| logfmt` (line and label filters allowed),
+  the proxy first proves in VictoriaLogs that no series holds two samples over
+  the fetch range: `<base> | filter <field>:* | stats count() as n,
+  count_uniq_hash(_stream, <keys>) as u`, the keys parsed again from the line
+  under the prefix `__lvpk.` (`unpack_logfmt from _msg fields (...)
+  result_prefix "__lvpk."`), discovered by `field_names` over a 1,000-line
+  sample. The tuple is never finer than Loki's series: the unwrapped label,
+  structured metadata, keys missing from the sample and keys whose Loki label
+  name (pkg/logql/log/util.go:22-39 sanitizeLabelKey) another key shares are
+  left out, which only merges series; stored fields Loki does not extract are
+  not read. When n == u every window is 0 and the answer is the unwrap rate
+  route's bucket presence (stats on anchored buckets, its conversion error
+  detection included) with every value 0. A hash collision lowers u and sends
+  the request to the per-row evaluator, as does any n != u. Two VictoriaLogs
+  stats reads and the presence buckets, no rows; the settled steps keep the
+  answer, so a moved window proves only its missing ranges.
+
+  Not covered: a line holding one key twice (VictoriaLogs' unpack_logfmt keeps
+  the last value, Loki the first), a line holding a sampled key and an
+  unsampled one Loki names alike (`a.b` sampled, `a_b` not; the key sample is
+  kept 10 minutes per query), `| json` (VictoriaLogs renders an array as
+  text, Loki skips it), other parsers, `| drop`, `| keep`, `| label_format`,
+  `| line_format`, `without`, and data where a series holds two samples: those
+  keep the per-row evaluator and its open gap
+  (semantics/unwrap-per-series-identity-raw-rows).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(rate_counter({service_name="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-6h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    One unlabelled series, 0 at every step whose window holds a line, as Loki.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: explore-visible
+  visual: graph
+  visual_reason: 'the panel showed a rate of 16,471/s (1h) or an error (6h, 24h) where Loki draws 0'
+  effort: M
+  area: 'internal/proxy/rate_counter_singletons.go (rateCounterUnderSum, proveRateCounterOneSample) from proxyManualRangeMetricRange in internal/proxy/range_metric_compat.go'
+  loki: 'pkg/logql/log/metrics_extraction.go:160-166, :202-231; pkg/logql/syntax/ast.go:1630-1640; pkg/logql/range_vector.go:286-291'
+  proxy: 'VictoriaLogs proves one sample per parsed series (count vs count_uniq_hash); the windows'' presence from the unwrap rate buckets, each 0'
+  planned_test: 'TestRateCounterOneSampleMatchesLoki, TestRateCounterOneSampleProofRefusesSharedSeries, TestRateCounterOneSampleProofEdges, TestRateCounterUnderSumScope, FuzzRateCounterOneSample (internal/proxy); TestCompat_UnwrapRateCounterOneSampleSeries (test/e2e-compat, group core)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

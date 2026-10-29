@@ -966,6 +966,19 @@
    ]
   },
   {
+   "id": "explore-unwrap-rate-counter-one-sample",
+   "kind": "explore",
+   "query": "sum(rate_counter({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))",
+   "covers": [
+    "semantics/unwrap-rate-counter-one-sample-series",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/unwrap-rate-counter-one-sample-series"
+   ]
+  },
+  {
    "id": "explore-empty-pattern-filter",
    "kind": "explore",
    "query": "{service_name=\"api-gateway\"} !> \"\" != \"GET\"",
@@ -1118,6 +1131,19 @@
    ],
    "fixes": [
     "semantics/without-nested-under-aggregation"
+   ]
+  },
+  {
+   "id": "explore-sliding-sum-without-stream-fold",
+   "kind": "explore",
+   "query": "sum without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
+   "covers": [
+    "semantics/without-sliding-sum-folded-buckets",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/without-sliding-sum-folded-buckets"
    ]
   },
   {

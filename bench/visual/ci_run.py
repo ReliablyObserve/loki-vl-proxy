@@ -88,6 +88,19 @@ def differing(out):
     return {f"{r['page']} {r['range']}" for r in rows if r["main_pr_diffs"]}
 
 
+def recapture_flips(first, second):
+    """Separate vanished data differences from a first pass that missed a request wave."""
+    final_diffs = {f"{r['page']} {r['range']}" for r in second if r["main_pr_diffs"]}
+    flipped, late = [], []
+    for row in first:
+        diffs = row["main_pr_diffs"]
+        name = f"{row['page']} {row['range']}"
+        if not diffs or name in final_diffs:
+            continue
+        (late if all("request only on one side" in d for d in diffs) else flipped).append(name)
+    return sorted(flipped), sorted(late)
+
+
 def recapture(a, out, plan, end, port, meta):
     """Load again, once and more patiently, the static captures whose base-vs-PR data differed or never settled.
 
@@ -201,14 +214,17 @@ def main():
         t0 = time.time()
         compare = [PY, os.path.join(HERE, "compare.py"), out]
         run(compare, log=os.path.join(out, "compare.log"), check=False)  # exit 1 = a difference; the verdict decides
-        differed = differing(out)
+        first = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
         recaptured = recapture(a, out, plan, state["end"], state["ports"]["grafana"], meta)
         live = capture_live(a, out, plan, state["end"], state["ports"]["grafana"], meta)
         if recaptured or live:
             run(compare, log=os.path.join(out, "compare.log"), check=False)
         if recaptured:
-            # A difference that was gone on the second look is not a difference of the PR: the run is not deterministic.
-            meta["flipped"] = sorted(differed - differing(out))
+            # A one-sided request that appears on the patient second look was an incomplete first capture.
+            # A changed value that disappears remains a non-deterministic data failure.
+            compared = os.path.join(out, "compare.json")
+            second = load_json(compared) if os.path.exists(compared) else []
+            meta["flipped"], meta["late_requests"] = recapture_flips(first, second)
         run([PY, os.path.join(HERE, "montage.py"), out], log=os.path.join(out, "montage.log"))
         phase(meta, "compare", t0)
         ok = True

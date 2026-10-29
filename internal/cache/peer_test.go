@@ -57,6 +57,18 @@ func TestHashRing_Empty(t *testing.T) {
 	}
 }
 
+func TestHashRing_GetNBoundsAllocation(t *testing.T) {
+	ring := newHashRing(10)
+	ring.add("one")
+	ring.add("two")
+	if got := ring.getN("key", -1); got != nil {
+		t.Fatalf("negative replica count returned %v", got)
+	}
+	if got := ring.getN("key", int(^uint(0)>>1)); len(got) != 2 {
+		t.Fatalf("huge replica count returned %v, want both peers", got)
+	}
+}
+
 func TestPeerCache_StaticDiscovery(t *testing.T) {
 	pc := NewPeerCache(PeerConfig{
 		SelfAddr:      "10.0.0.1:3100",

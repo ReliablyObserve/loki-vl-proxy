@@ -267,6 +267,8 @@
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/plain_stream_labels_test.go",
+      "internal/proxy/query_range_steps_middleware_test.go",
+      "internal/proxy/query_range_steps_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
@@ -299,7 +301,9 @@
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
+      "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/topk_range_per_step_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
@@ -309,6 +313,7 @@
       "test/e2e-compat/unwrap_over_time_window_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go",
@@ -337,6 +342,9 @@
       "internal/proxy/first_last_unwrap_differential_test.go",
       "internal/proxy/nested_vector_aggregation_differential_test.go",
       "internal/proxy/nested_vector_fold_test.go",
+      "internal/proxy/rate_counter_singletons_test.go",
+      "internal/proxy/sliding_without_cut_harden_test.go",
+      "internal/proxy/sliding_without_cut_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/sum_without_extraction_list_test.go",
       "internal/proxy/sum_without_label_collision_test.go",
@@ -354,7 +362,9 @@
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
+      "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
@@ -539,7 +549,18 @@
       "internal/proxy/unwrap_over_time_window_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go"
     ],
+    "quality/query-range-settled-steps": [
+      "internal/proxy/quantile_histogram_test.go",
+      "internal/proxy/quantile_slider_harden_test.go",
+      "internal/proxy/query_range_steps_harden_test.go",
+      "internal/proxy/query_range_steps_middleware_test.go",
+      "internal/proxy/query_range_steps_test.go",
+      "test/e2e-compat/query_range_settled_steps_test.go",
+      "test/e2e-fleet/peer_cache_proof_test.go",
+      "test/e2e-fleet/settled_steps_test.go"
+    ],
     "quality/unwrap-query-range-extent-cache": [
+      "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go"
     ],
@@ -835,13 +856,17 @@
       "internal/proxy/sliding_window_stats_test.go"
     ],
     "semantics/unwrap-conversion-error": [
+      "internal/proxy/query_range_steps_harden_test.go",
+      "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_conversion_error_differential_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
+      "internal/proxy/unwrap_first_window_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
     "semantics/unwrap-conversion-error-postfilter-forms": [
@@ -876,8 +901,11 @@
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
     "semantics/unwrap-over-time-range-windows": [
+      "internal/proxy/query_range_steps_harden_test.go",
+      "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
       "internal/proxy/unwrap_range_last_point_test.go",
+      "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-compat/unwrap_over_time_short_range_test.go",
       "test/e2e-compat/unwrap_over_time_window_test.go"
     ],
@@ -886,6 +914,7 @@
     ],
     "semantics/unwrap-quantile-response-limit": [
       "internal/proxy/quantile_histogram_test.go",
+      "internal/proxy/quantile_slider_harden_test.go",
       "internal/proxy/unwrap_quantile_response_limit_test.go",
       "test/e2e-compat/unwrap_quantile_test.go"
     ],
@@ -894,9 +923,15 @@
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "test/e2e-compat/unwrap_range_end_sample_test.go"
     ],
+    "semantics/unwrap-rate-counter-one-sample-series": [
+      "internal/proxy/rate_counter_singletons_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go"
+    ],
     "semantics/unwrap-rate-ungrouped-sum-per-stream": [
+      "internal/proxy/rate_counter_singletons_test.go",
       "internal/proxy/unwrap_ungrouped_sum_differential_test.go",
       "internal/translator/unwrap_ungrouped_sum_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ],
     "semantics/unwrap-sample-validity": [
@@ -913,6 +948,7 @@
       "internal/proxy/without_fold_scope_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "internal/translator/without_grouping_test.go",
+      "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-compat/unwrap_sum_without_test.go"
     ],
     "semantics/unwrap-sum-without-extracted-label-collision": [
@@ -930,10 +966,19 @@
       "test/e2e-compat/unwrap_sum_without_test.go"
     ],
     "semantics/without-over-inner-aggregation-collapses": [
+      "internal/proxy/sliding_without_cut_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "internal/proxy/without_pushdown_differential_test.go",
       "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go"
+    ],
+    "semantics/without-sliding-sum-folded-buckets": [
+      "internal/proxy/sliding_without_cut_harden_test.go",
+      "internal/proxy/sliding_without_cut_test.go",
+      "internal/proxy/without_pushdown_differential_test.go",
+      "internal/translator/without_pushdown_test.go",
+      "test/e2e-compat/query_range_settled_steps_test.go",
+      "test/e2e-compat/sliding_sum_without_test.go"
     ],
     "series-limits-and-partial-results": [
       "internal/proxy/backend_heavy_test.go",
@@ -977,6 +1022,7 @@
       "test/e2e-compat/error_layer_like_loki_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
+      "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
     "status-500": [
@@ -1003,6 +1049,9 @@
       "cmd/proxy/tenant_routing_test.go",
       "internal/proxy/labels_cache_warm_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
+      "internal/proxy/query_range_steps_harden_test.go",
+      "internal/proxy/query_range_steps_test.go",
+      "internal/proxy/sliding_without_cut_harden_test.go",
       "internal/proxy/stats_extent_cache_test.go",
       "internal/proxy/tenant_routing_test.go",
       "test/e2e-compat/tenant_numeric_routing_test.go"
@@ -1022,6 +1071,7 @@
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
     "window-bounds-and-step-alignment": [
+      "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/range_lower_bound_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
@@ -1038,7 +1088,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 355,
+  "registry_items": 358,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1454,7 +1504,31 @@
       "semantics/plain-name-after-parser-reads-stream-label"
     ],
     "internal/proxy/quantile_histogram_test.go": [
+      "quality/query-range-settled-steps",
       "semantics/unwrap-quantile-response-limit"
+    ],
+    "internal/proxy/quantile_slider_harden_test.go": [
+      "quality/query-range-settled-steps",
+      "semantics/unwrap-quantile-response-limit"
+    ],
+    "internal/proxy/query_range_steps_harden_test.go": [
+      "quality/query-range-settled-steps",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-over-time-range-windows",
+      "tenant-numeric-routing",
+      "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/query_range_steps_middleware_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+    ],
+    "internal/proxy/query_range_steps_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps",
+      "quality/unwrap-query-range-extent-cache",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-over-time-range-windows",
+      "tenant-numeric-routing"
     ],
     "internal/proxy/range_lower_bound_test.go": [
       "semantics/lower-bound-exclusive",
@@ -1469,6 +1543,11 @@
       "semantics/label-replace-duplicates-before-ranking",
       "semantics/label-replace-new-label",
       "series-limits-and-partial-results"
+    ],
+    "internal/proxy/rate_counter_singletons_test.go": [
+      "metric-series-identity",
+      "semantics/unwrap-rate-counter-one-sample-series",
+      "semantics/unwrap-rate-ungrouped-sum-per-stream"
     ],
     "internal/proxy/recent_tail_bypass_clamp_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -1494,6 +1573,16 @@
       "semantics/tumbling-window-single-grid",
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/sliding_without_cut_harden_test.go": [
+      "metric-series-identity",
+      "semantics/without-sliding-sum-folded-buckets",
+      "tenant-numeric-routing"
+    ],
+    "internal/proxy/sliding_without_cut_test.go": [
+      "metric-series-identity",
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-sliding-sum-folded-buckets"
     ],
     "internal/proxy/stage_field_exposure_test.go": [
       "loki-compatible-profile",
@@ -1626,6 +1715,9 @@
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-gate-parsefloat-divergences"
     ],
+    "internal/proxy/unwrap_first_window_test.go": [
+      "semantics/unwrap-conversion-error"
+    ],
     "internal/proxy/unwrap_over_time_window_test.go": [
       "metric-series-identity",
       "quality/query-range-extent-cache",
@@ -1695,7 +1787,8 @@
     "internal/proxy/without_pushdown_differential_test.go": [
       "metric-series-identity",
       "semantics/nested-aggregation-outer-by-native-routes",
-      "semantics/without-over-inner-aggregation-collapses"
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-sliding-sum-folded-buckets"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
@@ -1769,7 +1862,8 @@
     ],
     "internal/translator/without_pushdown_test.go": [
       "semantics/nested-aggregation-outer-by-native-routes",
-      "semantics/without-over-inner-aggregation-collapses"
+      "semantics/without-over-inner-aggregation-collapses",
+      "semantics/without-sliding-sum-folded-buckets"
     ],
     "test/e2e-compat/bad_request_status_parity_test.go": [
       "loki-compatible-profile"
@@ -1976,6 +2070,13 @@
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
     ],
+    "test/e2e-compat/query_range_settled_steps_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps",
+      "semantics/unwrap-over-time-range-windows",
+      "semantics/unwrap-sum-without-collapses",
+      "semantics/without-sliding-sum-folded-buckets"
+    ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -1994,6 +2095,11 @@
     "test/e2e-compat/series_count_aggregation_test.go": [
       "metric-series-identity",
       "series-limits-and-partial-results"
+    ],
+    "test/e2e-compat/sliding_sum_without_test.go": [
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/without-sliding-sum-folded-buckets"
     ],
     "test/e2e-compat/stack_profiles_test.go": [
       "loki-compatible-profile",
@@ -2077,6 +2183,14 @@
       "semantics/unwrap-range-last-point",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/unwrap_rate_counter_one_sample_test.go": [
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/unwrap-conversion-error",
+      "semantics/unwrap-rate-counter-one-sample-series",
+      "semantics/unwrap-rate-ungrouped-sum-per-stream",
+      "status-400"
+    ],
     "test/e2e-compat/unwrap_sample_validity_test.go": [
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
@@ -2114,7 +2228,11 @@
       "peer-cache-patterns",
       "peer-cache-query-range-windows",
       "peer-cache-replication",
-      "peer-cache-stats-extent"
+      "peer-cache-stats-extent",
+      "quality/query-range-settled-steps"
+    ],
+    "test/e2e-fleet/settled_steps_test.go": [
+      "quality/query-range-settled-steps"
     ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
@@ -2122,7 +2240,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 207,
+  "tests_with_markers": 219,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2217,5 +2335,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 185
+  "wired_items": 188
 }

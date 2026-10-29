@@ -502,10 +502,14 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 // handleRangeMetricPostAggregation handles topk/bottomk/sort at /query_range by
 // fetching the full matrix from VL and ranking at each evaluation timestamp.
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
+	// A range the settled steps cache evaluates is recorded with its request.
+	silent := queryStepsSilent(r.Context())
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
+			p.metrics.RecordRequest("query_range", code, time.Since(start))
+		}
 		return
 	}
 	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
@@ -586,8 +590,10 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		w.WriteHeader(sc.code)
 		_, _ = w.Write(bw.body)
 		elapsed := time.Since(start)
-		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), sc.code), elapsed)
-		p.queryTracker.Record("query_range", originalQuery, elapsed, true)
+		if code := unwrapRecordedStatus(r.Context(), sc.code); !silent {
+			p.metrics.RecordRequest("query_range", code, elapsed)
+			p.queryTracker.Record("query_range", originalQuery, elapsed, true)
+		}
 		return
 	}
 
@@ -599,7 +605,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		var capErr error
 		if result, capErr = p.capWithoutFold(r.Context(), result); capErr != nil {
 			p.writeError(w, http.StatusBadRequest, capErr.Error())
-			p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
+				p.metrics.RecordRequest("query_range", code, time.Since(start))
+			}
 			return
 		}
 	}
@@ -609,8 +617,10 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 	_, _ = w.Write(result)
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusOK), elapsed)
-	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+	if code := unwrapRecordedStatus(r.Context(), http.StatusOK); !silent {
+		p.metrics.RecordRequest("query_range", code, elapsed)
+		p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+	}
 }
 
 // applyMatrixPostAggregation applies topk/bottomk/sort/stddev/stdvar to a matrix result.

@@ -370,6 +370,12 @@ func runOverTimeCase(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) map
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", c.query(), res.Code, res.Body)
 	}
+	return owParseAnswer(t, c, res.Body.Bytes())
+}
+
+// owParseAnswer reads an answer as series key -> evaluation time (ns) -> value.
+func owParseAnswer(t testing.TB, c owCase, body []byte) map[string]map[int64]float64 {
+	t.Helper()
 	var resp struct {
 		Data struct {
 			Result []struct {
@@ -379,7 +385,7 @@ func runOverTimeCase(t *testing.T, emu *vlEmulator, c owCase, seriesCap int) map
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatal(err)
 	}
 	got := map[string]map[int64]float64{}

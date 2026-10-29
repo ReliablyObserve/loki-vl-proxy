@@ -478,3 +478,46 @@ func TestQuantileStatsGroupByKeepsLevel(t *testing.T) {
 		}
 	}
 }
+
+// TestQuantileSliderMatchesWindowSort: the sliding quantile answers every
+// window as the sort of its buckets' counts does (quantileOfCounts, Loki's
+// Quantile at pkg/logql/range_vector.go:465-487): bit for bit over generated
+// buckets with repeated values, NaN and large counts, phi inside and outside
+// [0, 1], windows moving forward by a step, jumping, empty, and moving back.
+//
+// conformance: semantics/unwrap-quantile-response-limit, quality/query-range-settled-steps
+func TestQuantileSliderMatchesWindowSort(t *testing.T) {
+	rnd := rand.New(rand.NewSource(42))
+	for c := 0; c < 300; c++ {
+		var samples []quantileSample
+		ts := int64(0)
+		for i, n := 0, rnd.Intn(200); i < n; i++ {
+			ts += int64(rnd.Intn(3)) * 10
+			v := float64(rnd.Intn(40)) / 4
+			switch rnd.Intn(20) {
+			case 0:
+				v = math.NaN()
+			case 1:
+				v = -v - 0.25 // not -0, which ties with 0 in either order
+			}
+			samples = append(samples, quantileSample{ts: ts, value: v, count: float64(1 + rnd.Intn(5)*rnd.Intn(1000))})
+		}
+		phi := []float64{0, 0.5, 0.9, 0.95, 0.99, 1, -0.1, 1.5, rnd.Float64()}[rnd.Intn(9)]
+		window := int64(10 * (1 + rnd.Intn(8)))
+		w := newQuantileSlider(samples)
+		var scratch []quantileSample
+		for end := int64(-20); end < ts+60; end += 10 {
+			if rnd.Intn(15) == 0 {
+				end -= int64(10 * rnd.Intn(5)) // a window moved back
+			}
+			if rnd.Intn(15) == 0 {
+				end += int64(10 * rnd.Intn(20))
+			}
+			want, wantOK := quantileWindow(phi, samples, end-window, end, &scratch)
+			got, gotOK := w.quantile(phi, end-window, end)
+			if gotOK != wantOK || (wantOK && math.Float64bits(got) != math.Float64bits(want) && !(math.IsNaN(got) && math.IsNaN(want))) {
+				t.Fatalf("case %d phi %v window [%d, %d): %v %v, sort %v %v", c, phi, end-window, end, got, gotOK, want, wantOK)
+			}
+		}
+	}
+}

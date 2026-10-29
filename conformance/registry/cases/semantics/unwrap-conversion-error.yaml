@@ -98,6 +98,24 @@ why: |
   line is named (Loki's choice depends on its shards; compared by shape). As
   for any metric, an identical request ending near now within
   -recent-tail-refresh-max-staleness is answered from the response cache.
+
+  First window of a heavy read: Loki stops at the first rejected value
+  (pkg/logql/evaluator.go:726-733), while the proxy's counting stats read
+  covers the whole range before the lookup that names the line (E6 and E7 took
+  2.0-4.3x Loki cold at 6h to 24h). When the metric's counting stats query
+  reads -backend-heavy-query-min-range or more, the first evaluation window
+  (start-range, start] is looked up before the read's flagged buckets (at
+  most three flagged rows), and beside the read when the same tenant's query
+  answered Loki's conversion error within 10 minutes (the metric's queries
+  are then cancelled once a row Loki fails on is found); a query that never
+  errs pays nothing. A row Loki fails on there answers first, so the answer
+  does not depend on which read finishes first. A clean first window leaves the earliest flagged
+  bucket of the stats read as the reported line. The reported line therefore
+  depends on whether the read is heavy (a cold whole window) or not (a moved
+  window's missing steps); both are lines Loki fails on, and Loki's own choice
+  depends on its splits and shards. Tests: TestUnwrapFirstWindowAnswersBeforeTheHeavyRead,
+  TestUnwrapFirstWindowScope (internal/proxy);
+  TestCompat_UnwrapConversionErrorFirstWindowHeavyRead (test/e2e-compat, group core).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -133,4 +151,6 @@ perf:
   modes: [cold, warm, refresh]
   locked: false
   locked_since: null
-  effort_exception: null
+  effort_exception:
+    reason: 'E2 (quantile_over_time over json) cold runs 1.4x Loki at 6h (405 ms against 284 on the 2026-10-28 A/B stack, loki-defaults; was 2.7x): VictoriaLogs'' value-count read alone takes about as long as Loki''s whole answer, the proxy''s part is 101 ms of a 9 MB answer at 24h (benchmark). E6 and E7 (Loki 400) run 1.2-1.6x at 6h on a query''s first heavy read (one VictoriaLogs counting read before the first-window lookup) and below Loki once the query erred lately (22h cold 17-21 ms against 84-426)'
+    follow_up: 'a coarser value histogram from VictoriaLogs for the quantile, which needs Loki''s exact rank on the merged buckets; for E6 and E7 a first-window lookup beside every heavy read costs clean queries a VictoriaLogs search, so it stays gated on a recent error'

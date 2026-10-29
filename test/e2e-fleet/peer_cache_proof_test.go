@@ -90,6 +90,27 @@ func metricRequest(fx fleetFixture, by string, from time.Time, name string) proo
 	return proofRequest{layer: "stats_extent", name: name, path: "/loki/api/v1/query_range?" + v.Encode()}
 }
 
+// stepsRequests are two window-evaluated metrics over [from, fx.end) at a
+// 60s step with a 3-7 minute range, so every evaluation time has a window of
+// several buckets: a count folded without a label (VictoriaLogs folds the
+// streams bucket by bucket) and a sum of the status field read from the
+// lines' JSON (sums are the same whatever level split Loki and the proxy give
+// a stream). Every step is older than -query-range-freshness, so every step
+// settles and is kept (quality/query-range-settled-steps). The range differs
+// per tag, so no tag shares a key with another.
+func stepsRequests(fx fleetFixture, from time.Time, tag string, minutes int) []proofRequest {
+	build := func(name, query string) proofRequest {
+		v := fleetRange(from, fx.end)
+		v.Set("query", query)
+		v.Set("step", "60")
+		return proofRequest{layer: "query_steps", name: tag + "_" + name, path: "/loki/api/v1/query_range?" + v.Encode()}
+	}
+	return []proofRequest{
+		build("count_without_env", fmt.Sprintf(`sum without (env) (count_over_time({fleet_probe=%q}[%dm]))`, fx.probe, minutes)),
+		build("unwrap_sum_by_app", fmt.Sprintf(`sum by (app) (sum_over_time({fleet_probe=%q} | json status | unwrap status [%dm]))`, fx.probe, minutes)),
+	}
+}
+
 // logRequest is a log query over the 8h fixture: eight 1h windows.
 func logRequest(fx fleetFixture, selector, name string) proofRequest {
 	v := fleetRange(fx.start, fx.end)
@@ -128,10 +149,14 @@ type proofSet struct {
 	windows  []proofRequest
 	metadata []proofRequest
 	patterns []proofRequest
+	// steps are window-evaluated metrics (a range longer than the step):
+	// the steps they settle are kept per evaluation time (query_steps_cache).
+	steps []proofRequest
 }
 
 func (s proofSet) all() []proofRequest {
 	out := append([]proofRequest{}, s.metric...)
+	out = append(out, s.steps...)
 	out = append(out, s.windows...)
 	out = append(out, s.metadata...)
 	return append(out, s.patterns...)
@@ -144,8 +169,12 @@ func selectorSet(fx fleetFixture, tag, by string, names [2]string, selectors [2]
 		windows:  []proofRequest{logRequest(fx, selectors[0], tag+"_"+names[0]), logRequest(fx, selectors[1], tag+"_"+names[1])},
 		metadata: append(metadataRequests(fx, tag+"_"+names[0], selectors[0]), metadataRequests(fx, tag+"_"+names[1], selectors[1])...),
 		patterns: []proofRequest{patternsRequest(fx, tag+"_"+names[0], selectors[0]), patternsRequest(fx, tag+"_"+names[1], selectors[1])},
+		steps:    stepsRequests(fx, fx.start, tag, stepsMinutes[tag]),
 	}
 }
+
+// stepsMinutes is the range of each set's window-evaluated metrics.
+var stepsMinutes = map[string]int{"base": 5, "paused": 4, "killed": 6, "diskfull": 3, "down": 7}
 
 func baseProofSet(fx fleetFixture) proofSet {
 	return selectorSet(fx, "base", "app", [2]string{"all", "web"}, [2]string{
@@ -288,6 +317,31 @@ func requireReadsWithoutVL(t *testing.T, reqs []proofRequest, want answers, rout
 func fleetStats(c fleetCounters) float64  { return c.fleetVLStats }
 func fleetSelect(c fleetCounters) float64 { return c.fleetVLSelect }
 
+// requireStepsRead reads each window-evaluated request on the given replicas
+// and requires the answer of want, no stats_query_range call anywhere in the
+// fleet and every step found (outcome hit: the replica evaluated nothing). It
+// returns the sum of the deltas. Lookups of the replica's other caches that
+// missed (the request's field and stream-label probes, a log query each) are
+// not the window's and are not counted.
+func requireStepsRead(t *testing.T, reqs []proofRequest, want answers, where string, replicas ...int) fleetCounters {
+	t.Helper()
+	var total fleetCounters
+	for _, req := range reqs {
+		for _, idx := range replicas {
+			rep := fleetReplica(idx)
+			d, _ := askSame(t, rep, req, want[req.path])
+			if d.fleetVLStats != 0 {
+				t.Errorf("%s on %s %s caused %.0f stats_query_range calls in the fleet; every step was settled and kept (%s)", req, rep.name, where, d.fleetVLStats, d)
+			}
+			if d.stepsHit < 1 {
+				t.Errorf("%s on %s %s: the settled steps did not answer the whole window (%s)", req, rep.name, where, d)
+			}
+			total = total.plus(d)
+		}
+	}
+	return total
+}
+
 // replicationFactor is read from the proxies when the proof starts.
 var replicationFactor = 1
 
@@ -379,6 +433,10 @@ func requireBackupServes(t *testing.T, rep replica, req proofRequest, d fleetCou
 		if d.fleetVLStats != 0 {
 			t.Errorf("%s on %s: %.0f stats_query_range calls although every bucket has a backup replica (%s)", req, rep.name, d.fleetVLStats, d)
 		}
+	case "query_steps":
+		if d.fleetVLStats != 0 {
+			t.Errorf("%s on %s: %.0f stats_query_range calls although every settled step has a backup replica (%s)", req, rep.name, d.fleetVLStats, d)
+		}
 	case "patterns":
 		if d.fleetVLSelect != 0 {
 			t.Errorf("%s on %s: %.0f VictoriaLogs calls although the patterns have a backup replica (%s)", req, rep.name, d.fleetVLSelect, d)
@@ -405,7 +463,7 @@ const (
 	labelValuesSnapshotKey = "__label_values_index_snapshot:v1"
 )
 
-// conformance: peer-cache-stats-extent, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery, peer-cache-replication
+// conformance: quality/query-range-settled-steps, peer-cache-stats-extent, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery, peer-cache-replication
 func TestFleetPeerCacheProof(t *testing.T) {
 	for _, addr := range proxyAddrs {
 		waitProxyReady(t, addr)
@@ -440,6 +498,24 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			}
 			requireReadsWithoutVL(t, base.metric, first, fleetStats, "stats_query_range")
 			readAgain(t, fleetReplicas(), base.metric, first)
+		})
+		proofRun(t, "query_steps", func(t *testing.T) {
+			d, _ := warm(t, a, base.steps, first)
+			if d.fleetVLStats == 0 || d.stepsStored < float64(len(base.steps)) {
+				t.Fatalf("A answered %s with %.0f stats_query_range calls and kept %.0f of %d answers' steps: the settled steps path was not taken (%s)", base.steps[0], d.fleetVLStats, d.stepsStored, len(base.steps), d)
+			}
+			for _, req := range base.steps {
+				if points := matrixPoints(t, req.String(), []byte(first[req.path]), "app"); len(points) == 0 {
+					t.Fatalf("%s: A answered no series; an empty answer is never kept, so nothing would be proven", req)
+				}
+			}
+			// B and C find every step on the replica that owns it (a pushed
+			// copy) and evaluate nothing.
+			total := requireStepsRead(t, base.steps, first, "after A kept the steps", replicaB, replicaC)
+			if total.peerHits < 1 && replicationFactor < 2 {
+				t.Errorf("no replica read a settled step from a peer (%s)", total)
+			}
+			readAgain(t, fleetReplicas(), base.steps, first)
 		})
 		proofRun(t, "patterns", func(t *testing.T) {
 			warm(t, a, base.patterns, first)
@@ -497,6 +573,9 @@ func TestFleetPeerCacheProof(t *testing.T) {
 					t.Errorf("%s on B after a restart caused %.0f stats_query_range calls and %.0f lookups that missed every tier; its buckets are on its disk or its peers (%s)", req, d.fleetVLStats, d.missedAll, d)
 				}
 			}
+		})
+		proofRun(t, "query_steps", func(t *testing.T) {
+			requireStepsRead(t, base.steps, first, "after a restart", replicaB)
 		})
 		proofRun(t, "patterns", func(t *testing.T) {
 			for _, req := range base.patterns {
@@ -580,6 +659,30 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				}
 			}
 		})
+		proofRun(t, "query_steps", func(t *testing.T) {
+			// Steps owned by A or C come from them. The ones B owned are lost
+			// with its disk: with one copy per key they are evaluated again
+			// from VictoriaLogs once; with a backup replica they come from the
+			// backup with no VictoriaLogs call. A window moved by an hour
+			// (a new request everywhere) then needs no VictoriaLogs call on
+			// any replica: every step is held again.
+			for _, req := range base.steps {
+				d, _ := askSame(t, b, req, first[req.path])
+				if replicationFactor >= 2 && d.fleetVLStats != 0 {
+					t.Errorf("%s on B without a disk caused %.0f stats_query_range calls although every step it owned has a backup replica (%s)", req, d.fleetVLStats, d)
+				}
+			}
+			moved := stepsRequests(fx, fx.start.Add(time.Hour), "base_moved", stepsMinutes["base"])
+			onMoved := answers{}
+			for _, req := range moved {
+				got, d, _ := ask(t, a, req)
+				onMoved[req.path] = got
+				if d.fleetVLStats != 0 {
+					t.Errorf("%s on A caused %.0f stats_query_range calls after B refilled (%s)", req, d.fleetVLStats, d)
+				}
+			}
+			requireStepsRead(t, moved, onMoved, "after B refilled", replicaB, replicaC)
+		})
 		proofRun(t, "metadata", func(t *testing.T) {
 			total, fromPeer, _ := requireMetadataReadThrough(t, base.metadata, first, replicaB)
 			if fromPeer < 1 {
@@ -643,6 +746,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		}
 		requireReadsWithoutVL(t, base.metric, rebuilt, fleetStats, "stats_query_range")
 		requireReadsWithoutVL(t, base.patterns, rebuilt, fleetSelect, "select")
+		requireStepsRead(t, base.steps, rebuilt, "after the rebuild", replicaB, replicaC)
 		compareWithLoki(t, fx, base, rebuilt)
 	})
 
@@ -687,6 +791,20 @@ func compareWithLoki(t *testing.T, fx fleetFixture, base proofSet, rebuilt answe
 	for _, req := range base.metric {
 		loki := matrixPoints(t, "Loki "+req.String(), fleetGet(t, fleetLokiURL, req.path), "app")
 		proxy := matrixPoints(t, "proxy "+req.String(), []byte(rebuilt[req.path]), "app")
+		points := 0
+		for _, s := range loki {
+			points += len(s)
+		}
+		if points == 0 {
+			t.Fatalf("%s: Loki answered no sample; the comparison would be empty against empty", req)
+		}
+		if !reflect.DeepEqual(loki, proxy) {
+			t.Errorf("%s: rebuilt answer differs from Loki (%d Loki points)\nLoki:  %v\nproxy: %v", req, points, loki, proxy)
+		}
+	}
+	for _, req := range base.steps {
+		loki := matrixSumBy(t, "Loki "+req.String(), fleetGet(t, fleetLokiURL, req.path), "app")
+		proxy := matrixSumBy(t, "proxy "+req.String(), []byte(rebuilt[req.path]), "app")
 		points := 0
 		for _, s := range loki {
 			points += len(s)
