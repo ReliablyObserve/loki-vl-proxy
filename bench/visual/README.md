@@ -191,8 +191,8 @@ empty for a couple of minutes on a fresh stack).
 with a read-only token. `visual-publish` (`contents: write`) and `visual-comment`
 (`pull-requests: write`) are same-repo only and run the scripts of the base commit (a
 sparse checkout of `bench/visual`), treating the artifact as untrusted data: `publish.py`
-accepts only regular PNG files with plain names within 300 KB (at most 80, no symlinks
-or directories), and `visual_comment.py` escapes every string that comes from the pull request.
+accepts only regular PNG files with plain names within 300 KB (at most 80 published,
+no symlinks or directories), and `visual_comment.py` escapes every string that comes from the pull request.
 While the base has no `publish.py` or `visual_comment.py` (the pull request that adds them),
 nothing is published and the comment is a fixed text; the job summary has the table. A
 run cancelled by a newer push never publishes.
@@ -204,12 +204,13 @@ github-actions identity (CI cannot sign; every push-triggered workflow of the re
 runs for `main` only, and a push with the workflow token starts none).
 `visual-smoke-cleanup.yaml` removes the folder when the pull request closes and, weekly,
 every folder whose pull request is not open. The comment embeds an image only for a row
-that is not clean and for one collapsed block with the core montages; clean detailed rows
+that is not clean, for each fix-proof capture, and for one collapsed block with the core montages; clean detailed rows
 are linked on the branch. A fork PR has no write token: the montages are an artifact, the
 comment text has no images, and the table is in the job summary.
-Baseline runs also keep their full set of montages in the run artifacts and skip
-`visual-publish`: a full capture can exceed its 80-file bound. Their comments link
-to the artifacts instead of embedding images from `pr-visuals`.
+Baseline runs also keep their full set of montages in the run artifacts. The trusted
+base-branch comment renderer selects at most 80 inline images (fix proof first), and
+`visual-publish` validates every montage before publishing only those selected images.
+The full candidate remains an artifact and is not accepted as a new baseline by this step.
 
 **Reproduce a comment locally** (next to another stack: its own project and ports):
 

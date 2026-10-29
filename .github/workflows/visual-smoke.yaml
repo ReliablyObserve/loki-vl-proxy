@@ -13,8 +13,8 @@ name: Visual smoke
 # a write token run code of the BASE branch (a sparse checkout of bench/visual at the
 # base commit) and treat what the first job produced as untrusted data:
 #   visual-smoke    read-only: plan, stack, capture, compare, gate
-#   visual-publish  contents: write, same-repo non-baseline PRs: validates the
-#                   montages and replaces pr-<N>/ on pr-visuals (publish.py of the base)
+#   visual-publish  contents: write, same-repo PRs: validates the bounded
+#                   inline montages and replaces pr-<N>/ on pr-visuals (publish.py of the base)
 #   visual-comment  pull-requests: write, same-repo PRs: renders the sticky comment
 #                   with visual_comment.py of the base, which escapes every string that
 #                   comes from the pull request
@@ -29,7 +29,8 @@ name: Visual smoke
 # pull request into main) captures every page of bench/visual/spec.json at its
 # own ranges (plan.py --all) instead of the pages the change selects. The captures
 # are uploaded as `visual-baseline-candidate` and the comment ends with a "new
-# baseline candidate" section. Nothing is committed or published as a baseline.
+# baseline candidate" section. The bounded inline montages are published as
+# review proof; the full candidate is never committed as an accepted baseline.
 
 on:
   pull_request:
@@ -89,7 +90,7 @@ jobs:
           BASE="$(git rev-parse HEAD^1)"
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           if [ "$BASELINE" = "true" ]; then
-            python3 bench/visual/plan.py --all --out "$OUT/plan.json" > /dev/null
+            python3 bench/visual/plan.py --all --base "$BASE" --out "$OUT/plan.json" > /dev/null
           else
             python3 bench/visual/plan.py --base "$BASE" --out "$OUT/plan.json" > /dev/null
           fi
@@ -205,9 +206,9 @@ jobs:
     needs: [scope, visual-smoke]
     # Same-repo PRs only: a fork's token cannot write. !cancelled(), not always(): a run
     # that a newer push cancelled must not overwrite the folder with stale images.
-    # A baseline captures every page and can exceed publish.py's 80-file bound; the
-    # complete proof stays in visual-baseline-candidate and visual-montage artifacts.
-    if: "!cancelled() && needs.scope.outputs.baseline != 'true' && needs.visual-smoke.result != 'skipped' && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository"
+    # A baseline captures every page; publish only the bounded montages embedded
+    # by the trusted base-branch renderer. The full set stays in run artifacts.
+    if: "!cancelled() && needs.visual-smoke.result != 'skipped' && needs.visual-smoke.outputs.run == 'true' && github.event.pull_request.head.repo.full_name == github.repository"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -224,8 +225,23 @@ jobs:
 
       - name: Is there a publisher on the base branch?
         id: have
+        env:
+          BASELINE: ${{ needs.scope.outputs.baseline }}
         run: |
-          if [ -f bench/visual/publish.py ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "::notice::the base branch has no bench/visual/publish.py yet; montages stay in the run artifact"; echo "have=false" >> "$GITHUB_OUTPUT"; fi
+          if [ ! -f bench/visual/publish.py ]; then
+            echo "::notice::the base branch has no bench/visual/publish.py yet; montages stay in the run artifact"
+            echo "have=false" >> "$GITHUB_OUTPUT"
+          elif python3 bench/visual/publish.py --help | grep -q -- --names-file && \
+               python3 bench/visual/visual_comment.py --help | grep -q -- --images; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "bounded=true" >> "$GITHUB_OUTPUT"
+          elif [ "$BASELINE" = "true" ]; then
+            echo "::notice::the base branch cannot publish bounded baseline montages yet; they stay in the run artifact"
+            echo "have=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=true" >> "$GITHUB_OUTPUT"
+            echo "bounded=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         if: steps.have.outputs.have == 'true'
@@ -239,12 +255,27 @@ jobs:
         env:
           PUBLISH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BOUNDED: ${{ steps.have.outputs.bounded }}
+          VISUAL_CHANGE_EXPECTED: ${{ contains(github.event.pull_request.labels.*.name, 'visual-change-expected') }}
         run: |
           set -euo pipefail
-          # publish.py re-validates every entry (regular PNG files, plain names, size, count) and
-          # replaces pr-<N>/ with one parentless commit.
-          python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
-            --remote "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$BOUNDED" = "true" ]; then
+            # Both scripts come from the trusted base branch. The renderer chooses
+            # the <=80 files it will embed; publish.py validates every untrusted
+            # montage and the selection before replacing pr-<N>/.
+            python3 bench/visual/visual_comment.py --out /tmp/visual-data --mode branch \
+              --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
+              --md /tmp/visual-publish-comment.md --verdict /tmp/visual-publish-verdict.json \
+              --images /tmp/visual-publish-images.json > /dev/null
+            python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
+              --names-file /tmp/visual-publish-images.json --remote "https://github.com/${GITHUB_REPOSITORY}.git"
+          else
+            # Older base branches support only the non-baseline, <=80-file path.
+            python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
+              --remote "https://github.com/${GITHUB_REPOSITORY}.git"
+          fi
 
   visual-comment:
     name: visual-comment
@@ -306,7 +337,7 @@ jobs:
             // the job summary of the run has the table.
             const body = fs.existsSync('/tmp/comment.md') ? fs.readFileSync('/tmp/comment.md', 'utf8')
               : `${marker}\n### ⚠️ Visual smoke: ${process.env.RESULT === 'success' ? 'passed' : 'see the run'}\n\nThe table for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` is in the job summary of ${runUrl}.\n`;
-            // A baseline run adds a fixed section: no data of the pull request, only where the captures are.
+            // A baseline run adds a fixed section pointing to the full candidate artifact.
             const candidate = process.env.BASELINE === 'true'
               ? `\n\n<details open><summary>🧭 New baseline candidate</summary>\n\nThis pull request got the baseline run: every page of \`bench/visual/spec.json\` was captured at its own ranges. The captures are the \`visual-baseline-candidate\` artifact of ${runUrl}; nothing was committed or published as a baseline. Accept them by copying what you want to keep into a pull request.\n\n</details>\n`
               : '';

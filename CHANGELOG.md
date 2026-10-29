@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Baseline visual-smoke runs show their fix proof as an inline main | PR | Loki
+  montage in the pull request.** The trusted base-branch publisher selects at
+  most 80 comment images from a full baseline capture, validates every PNG, and
+  publishes only that bounded set. The full capture remains in run artifacts.
+
 - **Wide binary metric aggregations stay within the manual response budget.**
   When a per-stream operand exceeds the 64 MiB response limit before its outer
   aggregation can reduce it, the proxy retries on disjoint evaluation-step

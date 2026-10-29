@@ -242,19 +242,31 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
 BASELINE_WHY = "baseline run: every page"
 
 
-def plan_all(spec=None):
+def plan_all(spec=None, cases=(), case_gaps=None):
     """The baseline run's plan: every page of the spec at its own ranges, no budget and no trimming.
 
     Same shape as plan(), so ci_run.py and visual_comment.py need no special case; `baseline` marks it.
     """
     spec = spec or load_spec()
+    case_gaps = case_gaps if case_gaps is not None else (load_cases() if cases else {})
+    fix_cases = {}
+    for cid in cases:
+        gap = case_gaps.get(cid, {})
+        listed = [p["id"] for p in spec["pages"] if cid in (p.get("fixes") or [])]
+        if not listed and (gap.get("status") != "fixed" or gap.get("impact") not in VISUAL_IMPACTS):
+            continue
+        fix_cases[cid] = {"entries": listed, "status": gap.get("status", ""), "impact": gap.get("impact", ""),
+                          "exempt": gap.get("visual_reason", "") if gap.get("visual") == "none" else ""}
     entries = {p["id"]: {"ranges": ranges_of(p, spec), "why": [BASELINE_WHY], "core": bool(p.get("core")),
                          "kind": p["kind"]} for p in spec["pages"]}
+    for cid, case in fix_cases.items():
+        for pid in case["entries"]:
+            entries[pid].setdefault("fixes", []).append(cid)
     captures = sum(len([r for r in e["ranges"] if r != LIVE]) + (1 if e["ranges"] == [LIVE] else 0)
                    for e in entries.values())
     return {"run": bool(entries), "baseline": True, "changed": 0, "relevant": [], "ignored": [],
             "core_range": spec["core_range"], "entries": entries, "captures": captures, "trimmed": [], "dropped": [],
-            "fix_cases": {}, "fix_trimmed": []}
+            "fix_cases": fix_cases, "fix_trimmed": []}
 
 
 def check(spec=None, items=None, cases=None):
@@ -321,7 +333,7 @@ def main():
         print(f"bench/visual plan: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
         return 1 if problems else 0
     if args.all:
-        result = plan_all()
+        result = plan_all(cases=changed_cases(args.base, args.head) if args.base else ())
         if args.out:
             dump_json(args.out, result)
         print(json.dumps(result, indent=1))

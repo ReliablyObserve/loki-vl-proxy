@@ -39,6 +39,13 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_baseline_comment_bounds_inline_images_to_publish_limit(self):
+        a = argparse.Namespace(**vars(ARGS))
+        images = [comment.image(a, f"page-{i}-1h", META) for i in range(85)]
+        self.assertEqual(sum(image.startswith("![") for image in images), 80)
+        self.assertEqual(len(a.image_names), 80)
+        self.assertIn("artifact", images[-1])
+
     def render(self, rows, cases, mode="branch"):
         a = argparse.Namespace(**{**vars(ARGS), "mode": mode})
         return comment.render(rows, {}, fix_plan(rows, cases), META, a)
@@ -50,6 +57,7 @@ class FixProofTest(unittest.TestCase):
         self.assertLess(text.index("#### Fix proof"), text.index("| page | range | set |"))
         self.assertIn("✅ fixed", text)
         self.assertIn("p1-1h.png", text[text.index("#### Fix proof"):text.index("#### Regression check")])
+        self.assertNotIn("<details", text[text.index("#### Fix proof"):text.index("#### Regression check")])
         self.assertEqual(v["fix_proof"], {"semantics/case-a": "fixed"})
 
     def test_verdicts(self):
