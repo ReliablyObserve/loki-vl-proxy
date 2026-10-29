@@ -139,6 +139,7 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
 | `parser-error-and-label-collision` | 13 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
+| `quality/query-range-settled-steps` | 9 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
 | `semantics/unwrap-conversion-error` | 8 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
 | `semantics/extracted-suffix-collision` | 5 | 10.62s (X1 json filter level_extracted, by level, 24h) | 3.48s | 0.05s | 0.05s | — |
 | `semantics/json-extracted-metric-pushdown` | 4 | 10.62s (X1 json filter level_extracted, by level, 24h) | 3.48s | 0.05s | 0.05s | — |
