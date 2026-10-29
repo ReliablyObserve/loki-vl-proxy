@@ -611,9 +611,26 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 	return offset, strings.TrimSpace(stripped), nil
 }
 
+// operandsKeepTheirParsers reports a binary expression, or a vector
+// aggregation over one, under any label transforms: its operands are
+// evaluated through their own handlers, each probing its own query, and the
+// binary reads them from the request, so each keeps its own parser as Loki
+// evaluates it (pkg/logql/evaluator.go:385, a step evaluator per side).
+// Dropping one parser from the whole query would take it from the operand
+// that needs it, and the text rewrite of a metric query (removeParserStage)
+// cuts everything after a stage that is the last before its range.
+func operandsKeepTheirParsers(logql string) bool {
+	expr, err := logqlpkg.Parse(stripLabelTransforms(logql))
+	if err != nil {
+		return false
+	}
+	_, _, aggregated := binaryAggregationChain(expr)
+	return aggregated || isBinaryExpr(expr)
+}
+
 func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
 	opStart := time.Now()
-	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") {
+	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") || operandsKeepTheirParsers(logql) {
 		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}
@@ -1099,7 +1116,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	streamLabelCache := make(map[string]map[string]string, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
-	exposure := p.lineFieldExposure(spec.baseQuery)
+	exposure := p.bareParserMetricExposure(originalQuery, spec.baseQuery)
 
 	smBuf := metadataMapPool.Get().(map[string]string)
 	pfBuf := metadataMapPool.Get().(map[string]string)
@@ -1171,10 +1188,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
-		if includeParsedInMetric || len(captureLabels) > 0 {
-			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
-			addParsedSeriesLabels(metric, parsedFields, spec.unwrapField, captureLabels, includeParsedInMetric)
-		}
+		p.addBareParserMetricFields(metric, entry, desc, spec.unwrapField, exposure, captureLabels, includeParsedInMetric, exposureCache, smBuf, pfBuf)
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
 		if !ok {
@@ -1217,6 +1231,51 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
 	})
 	return result, nil
+}
+
+func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineFieldExposure {
+	if exposure := p.lineFieldExposure(baseQuery); exposure != nil || !p.lokiCompatibleProfile() {
+		return exposure
+	}
+	// ParseLogQuery rejects unwrap outside a range function. The bare parser
+	// metric has that range function, so read its pipeline there.
+	expr, err := logqlpkg.Parse(originalQuery)
+	if err != nil {
+		return nil
+	}
+	rate, ok := expr.(*logqlpkg.RangeAggregation)
+	if !ok {
+		return nil
+	}
+	logs, ok := rate.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return nil
+	}
+	exposure := pipelineAddsLabels(logs.Pipeline)
+	return &exposure
+}
+
+func (p *Proxy) addBareParserMetricFields(metric map[string]string, entry map[string]interface{}, desc cachedLogQueryStreamDescriptor, unwrapField string, exposure *lineFieldExposure, captureLabels []string, includeParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) {
+	if !includeParsed && len(captureLabels) == 0 {
+		return
+	}
+	var parsedFields, metadataFields map[string]string
+	if exposure != nil && len(exposure.extractions) > 0 {
+		// A named extraction exposes only its requested line fields. The older
+		// metadata classifier treats every stored VL field as parsed, turning
+		// an unrelated per-line id into a metric series label.
+		_, metadataFields, parsedFields, _ = p.classifyEntryFieldsWithFlags(entry, desc.rawLabels, true, exposure, exposureCache, smBuf, pfBuf)
+	} else {
+		_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+	}
+	addParsedSeriesLabels(metric, parsedFields, unwrapField, captureLabels, includeParsed)
+	if includeParsed {
+		for key, value := range metadataFields {
+			if key != unwrapField {
+				metric[key] = value
+			}
+		}
+	}
 }
 
 // busiestBareParserSeries keeps the limit series with the highest summed

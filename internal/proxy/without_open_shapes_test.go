@@ -280,10 +280,8 @@ func openShapeKeys(series map[string]string) map[string]string {
 // TestWithoutTopKBottomKKeepsEveryLabelLikeLoki when
 // semantics/topk-bottomk-without-strips-label was fixed.
 //
-// conformance: semantics/without-empty-grouping-range-collapses, semantics/without-comparison-inside-ignored, metric-series-identity
+// conformance: semantics/without-empty-grouping-range-collapses, metric-series-identity
 func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
-	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
-	rate := func(instant bool) map[string][]float64 { return openShapeStreams("rate", 5*time.Minute, instant) }
 	for _, tc := range []struct {
 		row     string
 		query   string
@@ -301,19 +299,6 @@ func TestWithoutShapesStillDifferFromLoki(t *testing.T) {
 		{"without-empty-grouping-range-collapses", `sum without () (max_over_time({app="uw"} | unwrap amount [5m]))`, false, true,
 			`{-}=`, func(bool) map[string]string {
 				return openShapeKeys(toSeries(openShapeStreams("max_over_time", 5*time.Minute, false)))
-			}},
-		// a comparison inside the without: the filter is not applied before the sum.
-		{"without-comparison-inside-ignored", `sum without (pod) (` + unwrapRate + ` > 0.33)`, false, false,
-			`{ns=x}=0.813333,1.06,1.23333 {ns=y}=0.92,1.41333,1.5`, func(i bool) map[string]string {
-				return openShapeGroup(rate(i), "sum", func(v float64) bool { return v > 0.33 }, true)
-			}},
-		{"without-comparison-inside-ignored", `sum without (pod) (` + unwrapRate + ` > 0.33)`, true, false,
-			`{ns=x}=1.23333 {ns=y}=1.5`, func(i bool) map[string]string {
-				return openShapeGroup(rate(i), "sum", func(v float64) bool { return v > 0.33 }, true)
-			}},
-		{"without-comparison-inside-ignored", `sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]) > 35)`, true, false,
-			`{ns=x}=138 {ns=y}=154`, func(i bool) map[string]string {
-				return openShapeGroup(openShapeStreams("max_over_time", 5*time.Minute, i), "sum", func(v float64) bool { return v > 35 }, true)
 			}},
 	} {
 		name := fmt.Sprintf("%s/%s/instant=%v", tc.row, tc.query, tc.instant)
@@ -418,6 +403,45 @@ func TestWithoutNestedAggregationMatchesLoki(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestWithoutComparisonInsideMatchesLoki: a comparison inside a `sum without`
+// filters the series of the inner vector before the sum, as Loki evaluates the
+// comparison (vectorBinop) and then the aggregation (VectorAggEvaluator.Next,
+// pkg/logql/evaluator.go:451-466): the aggregation over a binary sends it to the
+// binary evaluator and folds the filtered series. Range and instant for the
+// rate; instant for max_over_time (its range values are another row:
+// semantics/unwrap-over-time-range-windows).
+//
+// conformance: semantics/without-comparison-inside-ignored, metric-series-identity
+func TestWithoutComparisonInsideMatchesLoki(t *testing.T) {
+	const unwrapRate = `rate({app="uw"} | unwrap amount [5m])`
+	for _, tc := range []struct {
+		query   string
+		instant bool
+		loki    func(instant bool) map[string]string
+	}{
+		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, false, func(i bool) map[string]string {
+			return openShapeGroup(openShapeStreams("rate", 5*time.Minute, i), "sum", func(v float64) bool { return v > 0.33 }, true)
+		}},
+		{`sum without (pod) (` + unwrapRate + ` > 0.33)`, true, func(i bool) map[string]string {
+			return openShapeGroup(openShapeStreams("rate", 5*time.Minute, i), "sum", func(v float64) bool { return v > 0.33 }, true)
+		}},
+		{`sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]) > 35)`, true, func(i bool) map[string]string {
+			return openShapeGroup(openShapeStreams("max_over_time", 5*time.Minute, i), "sum", func(v float64) bool { return v > 35 }, true)
+		}},
+	} {
+		t.Run(fmt.Sprintf("%s/instant=%v", tc.query, tc.instant), func(t *testing.T) {
+			got := openShapeRun(t, tc.query, tc.instant)
+			if got.code != http.StatusOK {
+				t.Fatalf("%d %s", got.code, got.raw)
+			}
+			gotCanon, wantCanon := openShapeCanon(got.series), openShapeCanon(tc.loki(tc.instant))
+			if gotCanon != wantCanon {
+				t.Fatalf("proxy %s, Loki %s", gotCanon, wantCanon)
+			}
+		})
 	}
 }
 

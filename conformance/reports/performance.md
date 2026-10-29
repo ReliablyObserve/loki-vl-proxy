@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 77 items are locked; 5 carry an effort exception.
+30 of 78 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -396,6 +396,7 @@ None measured.
 | `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.29s / 0.33s (6h) | — / — | same | locked 2026-10-27 |
 | `range_function-count-over-time` | 2 × 4 ranges | 7 same | worst 1.73s / 0.01s (24h) | 2.16s / 0.02s | differs | locked 2026-10-27 |
 | `range_function-rate` | 5 × 5 ranges | 14 same | worst 1.71s / 0.01s (24h) | 1.91s / 0.03s | differs | not locked |
+| `semantics/aggregation-over-binary-dropped` | — | not measured | | | | not locked |
 | `semantics/detected-level-filter-before-parser-pushdown` | 3 × 3 ranges | 9 same | worst 0.38s / 0.01s (24h) | 0.24s / 0.01s | same; 2 slower than Loki cold | not locked |
 | `semantics/extracted-suffix-collision` | 16 × 5 ranges | 36 same | worst 10.62s / 0.05s (24h) | 3.48s / 0.05s | same; 5 slower than Loki cold | not locked |
 | `semantics/json-error-filter-metric-split-pushdown` | 5 × 3 ranges | 15 same | worst 1.72s / 0.01s (24h) | 2.90s / 0.04s | same | locked 2026-10-27 |

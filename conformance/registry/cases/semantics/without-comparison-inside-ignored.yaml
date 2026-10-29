@@ -1,5 +1,5 @@
 id: semantics/without-comparison-inside-ignored
-title: sum without over a range function filtered by a comparison inside the aggregation ignores the filter (open)
+title: sum without over a range function filtered by a comparison inside the aggregation sums only the series that pass, like Loki (fixed)
 proves:
   - metric-series-identity
   - loki_api_v1_query_range
@@ -17,6 +17,15 @@ why: |
   ends at the range aggregation. A comparison around the aggregation
   (`sum without (pod) (...) > 0.33`) is answered by the binary route and is right.
   Measured through the handlers on emulated VictoriaLogs v1.52.0 over 8 streams (ns x and y, pods a to d) and 40 lines (TestWithoutShapesStillDifferFromLoki, internal/proxy); Loki's answer is computed from the same rows with the evaluator of Loki v3.7.7 and was not run against a Loki here. On origin/main query_range answers the same; at an instant main answers one series `{}` (2.73333 for the rate form, 292 for `max_over_time` with the threshold 35) where this branch folds per ns without the filter ({ns=x} = 138 against Loki's 36, {ns=y} = 154 on both). Also pinned: a comparison around the aggregation drops the series on query_range for max_over_time, min_over_time, sum_over_time and rate (TestWithoutComparisonAboveEveryValueDropsEverySeries). Found while fixing semantics/unwrap-sum-without-collapses.
+
+  Fixed with semantics/aggregation-over-binary-dropped: an aggregation over a
+  binary (a comparison is one) goes to the binary evaluator, which filters the
+  series of the inner vector, and the aggregation folds what is left per step.
+  On the fixture the proxy now answers Loki's values: query_range {ns=x} =
+  0.333333, {ns=y} = 1.41333,1.5; instant {ns=x} = 0.333333, {ns=y} = 1.5; and
+  for max_over_time > 35 at an instant {ns=x} = 36, {ns=y} = 154
+  (TestWithoutComparisonInsideMatchesLoki; these cases were pinned as still
+  different in TestWithoutShapesStillDifferFromLoki and moved out of it).
 
   Measured on generator data with `| logfmt amount` (Loki 3.7.7 and VictoriaLogs v1.52.0 on an isolated stack, instant and query_range; the rates of the inner series straddle the threshold): with the threshold 40, Loki answers {level=error} = 2026.35 and {level=info} = 29352.49 (only the series above 40 are summed); the proxy answers 3852.43 and 29352.49, summing every series of the error group.
 
@@ -36,12 +45,13 @@ compare:
   expect: |
     Only the series above the threshold are summed.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#741"
   impact: explore-visible
   effort: M
-  area: 'internal/translator tryTranslateMetricQueryWithout (the comparison after the range aggregation is dropped)'
+  area: 'internal/proxy binary_aggregation.go (an aggregation over a comparison routes to the binary evaluator)'
   loki: 'pkg/logql/evaluator.go:451-466 VectorAggEvaluator.Next over the filtered vector of the comparison (vectorBinop)'
-  proxy: 'every series of the range aggregation is summed; the filter is not applied'
-  planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, rate with the threshold, range and instant); an e2e test vs Loki in group semantics when fixed'
+  proxy: 'the comparison filters the series on the binary evaluator, then the aggregation folds them'
+  planned_test: 'TestCompat_AggregationOverBinary (test/e2e-compat; its sum without over a comparison shape); TestWithoutComparisonInsideMatchesLoki (internal/proxy, rate with the threshold, range and instant; max_over_time at an instant)'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed).'
   clusters: []

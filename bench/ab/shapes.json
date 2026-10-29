@@ -2666,6 +2666,49 @@
     }
    ]
   },
+  "aggregation-over-binary": {
+   "description": "An aggregation over a binary expression aggregates the whole binary (PR for semantics/aggregation-over-binary-dropped): each operand is its own VictoriaLogs stats query, the proxy joins the aggregated operand series and folds them per step. B1 is the visual page's shape (a sum by over a rate divided by a literal), B2 a sum by over a ratio of two per-stream metrics, B3 the instant `sum(2 * ...)` that answered 400, B4 the query of semantics/binary-ignoring-matching (an outer sum over `+ ignoring(machine)`). Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "B1 sum by over rate divided by a literal",
+     "query": "sum by (service_name) (rate({service_name=\"api-gateway\"}[5m]) / 2)",
+     "covers": [
+      "semantics/aggregation-over-binary-dropped",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "B2 sum by over a ratio of two per-stream metrics",
+     "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))",
+     "covers": [
+      "semantics/aggregation-over-binary-dropped",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "B3 sum over a literal times count, instant",
+     "query": "sum(2 * count_over_time({service_name=\"api-gateway\"}[5m]))",
+     "covers": [
+      "semantics/aggregation-over-binary-dropped",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "B4 outer sum over ignoring(machine)",
+     "query": "sum by (cluster) (sum by (cluster) (rate({namespace=\"prod\"}[5m])) + ignoring(machine) sum by (cluster, machine) (rate({namespace=\"prod\"}[5m])))",
+     "covers": [
+      "semantics/aggregation-over-binary-dropped",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
   "nested-aggregation": {
    "description": "A vector aggregation over another one keeps every level's own `by` (semantics/nested-aggregation-outer-by-native-routes, with the `without` levels of semantics/without-over-inner-aggregation-collapses and semantics/without-nested-under-aggregation): the translator sent the nest to VictoriaLogs as one outer aggregation and dropped the outer grouping, so an instant query and a tumbling window (range == step, `[$__auto]`) answered one series without labels where Loki answers one per group. N1-N8 are range queries over tumbling windows (two-level nests of sum, max, min, avg and count, a three-level chain, a `| json` and a `| logfmt` inner level, a `without` over a level that names its labels), N9-N13 the same forms as instant queries, N13 with an innermost `without`, N14-N15 sliding windows (range 5m over the step), which the proxy folds from the innermost level's series (a nest of sums goes through the same fold). N16 is the innermost `without` on a tumbling window, which VictoriaLogs folds itself when the excluded labels are plain names (the proxy folds the series rows otherwise: a parser, an underscore or derived label, a sliding window). The selector leaves out the OTel-instrumented streams and the otel-collector: Loki carries their structured metadata (trace_id, span_id) in the series, so an inner level grouped by pod counts per line there, a series identity difference that predates the nest fix and is not what this set measures. Run with the control set.",
    "ranges": [

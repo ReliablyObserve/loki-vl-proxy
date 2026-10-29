@@ -2394,6 +2394,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
+				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
+			}
 			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
@@ -2525,6 +2528,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	binOp, isBinary := parsedForRouting.(*logqlpkg.BinOpExpr)
 	if isBinary {
 		// A binary expression evaluates its operands through this handler, which
@@ -2563,6 +2570,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		} else {
 			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
+	} else if p.proxyBinaryAggregation(sc, r, parsedForRouting, "matrix") {
+		withoutLabels = nil // folded by the aggregation itself
 	} else if isStatsQuery(logsqlQuery) {
 		stepsRun.arm()
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
@@ -2726,6 +2735,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
+				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
+			}
 			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
@@ -2835,6 +2847,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
 	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
+	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
+		// The label transforms belong to an operand, which applies its own.
+		labelReplaceSpecs, labelJoinSpec = nil, nil
+	}
 	binOp, isBinary := parsedForRoutingQ.(*logqlpkg.BinOpExpr)
 	if isBinary {
 		// The operands of a binary expression fold and are limited on their own
@@ -2863,6 +2879,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		} else {
 			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
 		}
+	} else if p.proxyBinaryAggregation(sc, r, parsedForRoutingQ, "vector") {
+		withoutLabels = nil // folded by the aggregation itself
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -224,6 +226,7 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 		ts     interface{}
 	}
 	groups := make(map[string]*groupEntry)
+	labelSets := make(map[string]map[string]string)
 
 	for _, series := range resp.Data.Result {
 		// Strip excluded labels
@@ -234,7 +237,8 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 			}
 		}
 
-		key := metricKeyStr(filtered)
+		key := binaryLabelKey(filtered) // escaped: `a="b,c=d"` is not `a="b",c="d"`
+		labelSets[key] = filtered
 		val := 0.0
 		var ts interface{}
 		if len(series.Value) >= 2 {
@@ -257,9 +261,10 @@ func applyWithoutVector(body []byte, exclude map[string]bool, merge withoutMerge
 		}
 	}
 
-	// Build result
+	// Build result, in label order as Loki sorts the vector (pkg/logql/engine.go).
 	result := []map[string]interface{}{}
-	for _, g := range groups {
+	for _, key := range keysInLabelOrder(labelSets) {
+		g := groups[key]
 		result = append(result, map[string]interface{}{
 			"metric": g.metric,
 			"value":  []interface{}{g.ts, strconv.FormatFloat(g.value, 'f', -1, 64)},
@@ -298,6 +303,7 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 		order  map[string]interface{}
 	}
 	groups := make(map[string]*groupedSeries)
+	labelSets := make(map[string]map[string]string)
 	for _, series := range resp.Data.Result {
 		filtered := make(map[string]string)
 		for k, v := range series.Metric {
@@ -305,7 +311,8 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 				filtered[k] = v
 			}
 		}
-		key := metricKeyStr(filtered)
+		key := binaryLabelKey(filtered) // escaped: `a="b,c=d"` is not `a="b",c="d"`
+		labelSets[key] = filtered
 		group := groups[key]
 		if group == nil {
 			metric := make(map[string]interface{}, len(filtered))
@@ -343,7 +350,8 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool, merge withoutMerge
 	}
 
 	result := []map[string]interface{}{}
-	for _, group := range groups {
+	for _, key := range keysInLabelOrder(labelSets) { // as Loki's sort.Sort(matrix)
+		group := groups[key]
 		type sampleTime struct {
 			key     string
 			seconds float64
@@ -662,6 +670,9 @@ func excludeKey(metric map[string]string, exclude map[string]bool) string {
 	return strings.Join(parts, ",")
 }
 
+// metricKeyStr is a label set as sorted `name=value` text joined by commas. It
+// is not a unique key (a value may hold `,` or `=`): a fold keys by
+// binaryLabelKey.
 func metricKeyStr(metric map[string]string) string {
 	var parts []string
 	for k, v := range metric {
@@ -856,6 +867,11 @@ var sortCallRE = regexp.MustCompile(`(^|[^\w])sort(_desc)?\s*\(`)
 // queryIsSortable reports whether a query orders by value (evaluator.go
 // Sortable: a sort or sort_desc anywhere in it).
 func queryIsSortable(logql string) bool { return sortCallRE.MatchString(logql) }
+
+// keysInLabelOrder returns the keys of the label sets in Loki's series order.
+func keysInLabelOrder(sets map[string]map[string]string) []string {
+	return slices.SortedFunc(maps.Keys(sets), func(a, b string) int { return compareLabelSets(sets[a], sets[b]) })
+}
 
 // compareLabelSets is Prometheus' labels.Compare: label by label in name
 // order, the name first and then the value, a shorter prefix first.

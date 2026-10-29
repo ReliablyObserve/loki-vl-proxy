@@ -226,6 +226,12 @@ jobs:
       - name: Fuzz smoke (rate_counter one-sample proof vs Loki)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRateCounterOneSample$' -fuzztime=12s
 
+      - name: Fuzz smoke (fold an aggregation over a binary)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzFoldBinaryAggregation$' -fuzztime=12s
+
+      - name: Fuzz smoke (parser probe leaves a binary to its operands)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzParserProbeLeavesBinaries$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

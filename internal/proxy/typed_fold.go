@@ -504,7 +504,12 @@ func (b typedBody) fold(level foldLevel) typedBody {
 		}
 	}
 	out := typedBody{vector: b.vector, series: make([]typedSeries, 0, len(order))}
-	sort.Slice(order, func(i, j int) bool { return order[i].key < order[j].key })
+	// Loki's series order (labels.Compare: pkg/logql/engine.go:569 sorts an
+	// instant vector, :604 sort.Sort a matrix): label by label in name order,
+	// the name and then the value, a shorter set first. The key's
+	// length-prefixed text is not that order ({x="a"} before {job="a",x="a"},
+	// {pod="b"} before {pod="ab"}).
+	slices.SortFunc(order, func(a, b *typedGroup) int { return compareTypedGroupKeys(a.key, b.key) })
 	for _, group := range order {
 		slices.SortFunc(group.cells, func(a, c typedCell) int {
 			switch {
@@ -629,4 +634,29 @@ func foldLevels(body []byte, levels ...foldLevel) ([]byte, bool) {
 		folded = folded.fold(level)
 	}
 	return folded.encode(), true
+}
+
+// compareTypedGroupKeys is labels.Compare over two group keys: each key is
+// its labels sorted by name, written `<len>:<name>=<len>:<value>;`, so it is
+// read back without allocating.
+func compareTypedGroupKeys(a, b string) int {
+	for a != "" && b != "" {
+		var x, y string
+		for range 2 { // the name, then the value
+			x, a = nextTypedKeyPart(a)
+			y, b = nextTypedKeyPart(b)
+			if c := strings.Compare(x, y); c != 0 {
+				return c
+			}
+		}
+	}
+	return len(a) - len(b) // a shorter label set first
+}
+
+// nextTypedKeyPart reads one `<len>:<text>` and the separator after it.
+func nextTypedKeyPart(s string) (string, string) {
+	colon := strings.IndexByte(s, ':')
+	n, _ := strconv.Atoi(s[:colon])
+	start := colon + 1
+	return s[start : start+n], s[start+n+1:]
 }
