@@ -146,6 +146,38 @@ func TestAggregationOverBinaryWithoutNamedExtractionKeepsStreamIdentity(t *testi
 	}
 }
 
+// A long comparison can create more per-stream samples than the manual
+// response budget allows before sum without collapses them. It must still
+// answer the full evaluation grid with the same values and labels.
+func TestAggregationOverBinaryWideRangeRetriesWithinResponseBudget(t *testing.T) {
+	const step = 20 * time.Second
+	end := binaryAggregationAt
+	start := end - int64(2*time.Hour)
+	rows := make([]emuRow, 0, 5*361)
+	for pod := 0; pod < 5; pod++ {
+		stream := fmt.Sprintf(`{app="uw",job="a",pod="p%d"}`, pod)
+		for at := start; at <= end; at += int64(step) {
+			rows = append(rows, emuRow{ts: at, stream: stream, value: 1000})
+		}
+	}
+	query := `sum without (pod) (rate({app="uw"} | logfmt amount | unwrap amount [20s]) > 40)`
+	want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}, query, start, end, step)
+	if len(want) != 1 {
+		t.Fatalf("fixture should return one folded series, got %v", want)
+	}
+	for _, points := range want {
+		if len(points) < 300 {
+			t.Fatalf("fixture should exercise the full evaluation grid, got %d points", len(points))
+		}
+	}
+	got, _ := binaryAggregationAnswerFor(t, &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}, "0", query, start, end, step, func(cfg *Config) {
+		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = 64 << 10
+	})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("budgeted range differs: got %v, want %v", got, want)
+	}
+}
+
 func TestAggregationOverBinaryBareLogMetricsUseStatsBuckets(t *testing.T) {
 	emu := &vlEmulator{t: t, rows: binaryAggregationRows(), version: "v1.52.0"}
 	query := `sum by (job) (rate({app="uw"}[1m]) / count_over_time({app="uw"}[1m]))`

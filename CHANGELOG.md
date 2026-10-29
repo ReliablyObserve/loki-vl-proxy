@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wide binary metric aggregations stay within the manual response budget.**
+  When a per-stream operand exceeds the 64 MiB response limit before its outer
+  aggregation can reduce it, the proxy retries on disjoint evaluation-step
+  ranges and merges the folded answer. A 6h Grafana `sum without (pod)` over a
+  named `logfmt amount` unwrap previously showed a panel error (#741).
+
 - **A `sum`, `avg`, `min`, `max` or `count` over a binary expression aggregates
   the whole binary, as Loki does, instead of only its first operand.**
   `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`

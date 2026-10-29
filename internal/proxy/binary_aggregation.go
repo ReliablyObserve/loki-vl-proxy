@@ -78,20 +78,13 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 		p.proxyBinaryLogQL(w, cloneMetricQueryRequest(r, fast.String()), fast, resultType)
 		return true
 	}
-	buf := &bufferedResponseWriter{}
-	p.proxyBinaryLogQL(buf, r, binary, resultType)
-	body := buf.body
-	if buf.code == 0 || buf.code == http.StatusOK {
-		for _, agg := range chain {
-			body = foldBinaryAggregation(body, agg)
-		}
-	}
+	buf := p.binaryAggregationResponse(r, binary, chain, resultType, 0)
 	copyHeaders(w.Header(), buf.Header())
 	w.Header().Set("Content-Type", "application/json")
 	if buf.code != 0 {
 		w.WriteHeader(buf.code)
 	}
-	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the binary evaluator's own JSON
+	_, _ = w.Write(buf.body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the binary evaluator's own JSON
 	return true
 }
 
