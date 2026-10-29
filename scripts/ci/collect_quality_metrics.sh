@@ -43,6 +43,13 @@ capture_or_default() {
       kill "$pid" >/dev/null 2>&1 || true
       wait "$pid" >/dev/null 2>&1 || true
       log_step "${label} timed out after ${timeout_seconds}s; using fallback"
+      if [ -n "${QUALITY_DIAGNOSTICS_DIR:-}" ]; then
+        mkdir -p "$QUALITY_DIAGNOSTICS_DIR"
+        cp "$err_file" "$QUALITY_DIAGNOSTICS_DIR/${label}.stderr"
+        if [ "$label" = "tests_and_coverage" ] && [ -f "$TMP_DIR/go-test-events.json" ]; then
+          cp "$TMP_DIR/go-test-events.json" "$QUALITY_DIAGNOSTICS_DIR/go-test-events.json"
+        fi
+      fi
       cat "$err_file" >&2 || true
       printf '%s' "$fallback"
       return 0
@@ -55,10 +62,15 @@ capture_or_default() {
     log_step "completed ${label}"
     cat "$out_file"
     return 0
+  else
+    status=$?
   fi
 
-  status=$?
-  log_step "${label} failed or timed out (exit=${status}); using fallback"
+  log_step "${label} failed (exit=${status}); using fallback"
+  if [ -n "${QUALITY_DIAGNOSTICS_DIR:-}" ]; then
+    mkdir -p "$QUALITY_DIAGNOSTICS_DIR"
+    cp "$err_file" "$QUALITY_DIAGNOSTICS_DIR/${label}.stderr"
+  fi
   cat "$err_file" >&2 || true
   printf '%s' "$fallback"
   return 0
@@ -90,7 +102,18 @@ collect_tests_and_coverage() {
   fi
   local cover_file="$TMP_DIR/coverage.out"
   local events_file="$TMP_DIR/go-test-events.json"
-  go test ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"
+  if go test ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
+    :
+  else
+    local test_status=$?
+    if [ -n "${QUALITY_DIAGNOSTICS_DIR:-}" ]; then
+      mkdir -p "$QUALITY_DIAGNOSTICS_DIR"
+      cp "$events_file" "$QUALITY_DIAGNOSTICS_DIR/go-test-events.json"
+    fi
+    log_step "go test -json failed (exit=${test_status}); failing test events:"
+    jq -r 'select(.Action == "fail") | [.Package, (.Test // "package")] | @tsv' "$events_file" >&2 || true
+    return "$test_status"
+  fi
   local test_count coverage
   test_count="$(jq -r 'select(.Action=="pass" and .Test != null) | .Test' "$events_file" | wc -l | tr -d ' ')"
   coverage="$(go tool cover -func="$cover_file" | tail -1 | awk '{print substr($3, 1, length($3)-1)}')"
@@ -291,6 +314,8 @@ if [ "${QUALITY_SKIP_PERF:-0}" = "1" ]; then
   PERF_MODE="skipped"
 fi
 
+tests_pid=""
+compat_pid=""
 capture_async tests_and_coverage '{"count":0,"coverage_pct":0}' 900 "$tests_file" tests_pid collect_tests_and_coverage
 capture_async compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 "$compat_file" compat_pid collect_compat
 

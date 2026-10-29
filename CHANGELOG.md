@@ -129,6 +129,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The scanner and request handling accept uppercase LogQL keywords, including
   aggregation names, pipeline stages, and binary modifiers. The unreachable
   `group()` and `label_join()` translation and response rewriting are removed.
+- **PR quality reports distinguish missing test metrics from a measured
+  regression (#748).** When coverage collection fails, the report shows
+  unavailable values and uploads the Go test events and stderr for diagnosis
+  instead of presenting the fallback as zero tests and zero coverage.
 
 ## [2.45.0] - 2026-10-29
 
