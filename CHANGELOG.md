@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Grouped `stddev` and `stdvar` fold each group's series values at every step,
+  like Loki (#738).** Previously `stddev by (service_name)
+  (count_over_time({...}[5m]))` and `stdvar without (pod) (...)` returned a
+  line count or an instant response without `resultType`. The proxy now reads
+  either position of `by` or `without`, computes the operand's per-series
+  values through VictoriaLogs, and applies Loki's population variance or
+  standard deviation to each group. The result keeps the group labels and
+  matrix/vector type, and the series limit applies to the folded groups.
+  Parsed-label grouping with an explicit JSON `keep` stage is verified on
+  sliding and tumbling ranges. Nested and binary forms, bare parser series
+  identity, and kept logfmt sliding windows remain registered differences.
+
 ## [2.47.0] - 2026-10-29
 
 ### Fixed

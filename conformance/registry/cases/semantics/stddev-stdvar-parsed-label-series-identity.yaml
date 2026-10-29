@@ -15,6 +15,21 @@ why: |
   Loki, one on the proxy), and the same holds for an ungrouped or `without` fold
   over a parser operand.
 
+  This remains visible with the generator's exact bare parser query:
+  `stddev by (level) (count_over_time({service_name="payment-service"} | logfmt [5m]))`.
+  Loki separates the parsed-field series and answers zero for singleton groups;
+  the proxy combines their stream-level counts and answers nonzero. An explicit
+  JSON `| keep method, service_name, pod` operand has matching series identity
+  and is a bounded positive proof, not a fix for the bare parser query.
+
+  A second observed sliding-window difference on VictoriaLogs v1.52.0 is
+  `stddev by (method) (count_over_time({service_name=~"stdgrp-1793296793953025000-.+"} | logfmt | keep method, service_name, pod [5m]))`
+  over the fixture's 10m–25m range at step 1m. Loki answers two parsed groups
+  (GET and POST), while the proxy answers one unlabeled group; `stdvar` has the
+  same difference. The fixture ID is generated per test run. The bounded JSON
+  `| keep method, service_name, pod` scene matches, but does not establish parity for
+  kept logfmt on sliding windows.
+
   A `by` a parsed label is translated with that label in the operand's first
   stats group on tumbling and instant queries (semantics/stddev-stdvar-grouped-
   values). On a sliding range query the manual range evaluator names a series by
@@ -26,7 +41,7 @@ request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'stddev by (app) (count_over_time({env="production"} | logfmt [1m]))'
+    query: 'stddev by (level) (count_over_time({service_name="payment-service"} | logfmt [5m]))'
     start: 'now-1h'
     end: 'now'
     step: '60'

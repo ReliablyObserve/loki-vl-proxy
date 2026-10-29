@@ -970,10 +970,46 @@
   {
    "id": "explore-stddev-by-app",
    "kind": "explore",
-   "query": "stddev by (service_name) (count_over_time({env=\"production\"}[$__auto]))",
+   "query": "stddev by (service_name) (count_over_time({service_name=~\"api-gateway|payment-service\"}[$__auto]))",
    "covers": [
     "semantics/stddev-stdvar-grouped-values",
     "heavy-metric-fetch-bounds",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stddev-stdvar-grouped-values"
+   ]
+  },
+  {
+   "id": "explore-stdvar-without-pod",
+   "kind": "explore",
+   "query": "stdvar without (pod) (count_over_time({service_name=~\"api-gateway|payment-service\"}[$__auto]))",
+   "covers": [
+    "semantics/stddev-stdvar-grouped-values",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stddev-stdvar-grouped-values"
+   ]
+  },
+  {
+   "id": "explore-stddev-trailing-by",
+   "kind": "explore",
+   "query": "stddev(count_over_time({service_name=~\"api-gateway|payment-service\"}[$__auto])) by (service_name)",
+   "covers": [
+    "semantics/stddev-stdvar-grouped-values",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/stddev-stdvar-grouped-values"
+   ]
+  },
+  {
+   "id": "explore-stddev-parsed-method",
+   "kind": "explore",
+   "query": "stddev by (method) (count_over_time({service_name=\"api-gateway\"} | json | keep method, app, pod [$__auto]))",
+   "covers": [
+    "semantics/stddev-stdvar-grouped-values",
     "loki_api_v1_query_range"
    ],
    "fixes": [

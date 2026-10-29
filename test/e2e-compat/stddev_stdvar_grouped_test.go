@@ -47,6 +47,10 @@ var stddevGroupedStreams = []struct{ service, pod string }{
 // field), so every label set the metrics carry is identical on both backends.
 func ensureStddevGroupedFixtures(t *testing.T) *stddevGroupedFixtures {
 	t.Helper()
+	// The registry comparisons use this shared rich fixture too. Seed it before
+	// the private 11-hour fixture so all grouped tests in one process observe
+	// the same production-like data generation.
+	ensureDataIngested(t)
 	stddevGroupedOnce.Do(func() {
 		now := time.Now()
 		id := now.UnixNano()
@@ -64,7 +68,7 @@ func ensureStddevGroupedFixtures(t *testing.T) *stddevGroupedFixtures {
 			// line sits on a window edge.
 			for i := 0; i < 180; i += k + 1 {
 				ts := fx.s0.Add(time.Duration(3+2*k)*time.Second + time.Duration(i)*10*time.Second)
-				msg := fmt.Sprintf("tick %d", i)
+				msg := fmt.Sprintf(`{"method":%q,"tick":%d}`, []string{"GET", "POST"}[k%2], i)
 				fields := map[string]string{"_time": ts.UTC().Format(time.RFC3339Nano), "_msg": msg, "detected_level": "unknown"}
 				for name, value := range labels {
 					fields[name] = value
@@ -142,15 +146,20 @@ func TestCompat_StddevStdvarGrouped(t *testing.T) {
 		{"range longer than the step", "10m", 3 * time.Minute, 12 * time.Minute, 27 * time.Minute},
 		{"instant", "5m", 0, 0, 20 * time.Minute},
 	}
-	groupings := []struct{ name, pre, post string }{
-		{"ungrouped", "", ""},
-		{"by service", "by (service_name)", ""},
-		{"by service trailing", "", "by (service_name)"},
-		{"by service and pod", "by (service_name, pod)", ""},
-		{"by ()", "by ()", ""},
-		{"without pod", "without (pod)", ""},
-		{"without service trailing", "", "without (service_name)"},
-		{"without ()", "without ()", ""},
+	groupings := []struct {
+		name, pre, post string
+		wrap            int
+	}{
+		{"ungrouped", "", "", 0},
+		{"by service", "by (service_name)", "", 0},
+		{"by service trailing", "", "by (service_name)", 0},
+		{"by service and pod", "by (service_name, pod)", "", 0},
+		{"by ()", "by ()", "", 0},
+		{"without pod", "without (pod)", "", 0},
+		{"without service trailing", "", "without (service_name)", 0},
+		{"without ()", "without ()", "", 0},
+		{name: "by service parenthesized", pre: "by (service_name)", wrap: 1},
+		{name: "by service double parenthesized", pre: "by (service_name)", wrap: 2},
 	}
 	// Loki waits for its first head block cut; a cold stack answers metrics empty.
 	waitFor := fx.s0.Add(20 * time.Minute)
@@ -166,6 +175,9 @@ func TestCompat_StddevStdvarGrouped(t *testing.T) {
 			for _, g := range groupings {
 				operand := fmt.Sprintf("count_over_time(%s[%s])", fx.selector, sh.window)
 				query := fmt.Sprintf("%s %s (%s) %s", op, g.pre, operand, g.post)
+				if g.wrap > 0 {
+					query = strings.Repeat("(", g.wrap) + query + strings.Repeat(")", g.wrap)
+				}
 				t.Run(sh.name+"/"+op+"/"+g.name, func(t *testing.T) {
 					run := func(base string) map[string]map[string]string {
 						if sh.step == 0 {
@@ -181,20 +193,77 @@ func TestCompat_StddevStdvarGrouped(t *testing.T) {
 					loki, proxy := run(lokiURL), run(proxyURL)
 					compareUnwrapSumSeries(t, query, loki, proxy)
 					if g.name == "by service" && op == "stddev" {
+						if len(loki) != 3 {
+							t.Fatalf("%s: fixture must yield three service groups, Loki returned %d: %v", query, len(loki), loki)
+						}
 						// The pod of service b is alone: its group is 0, not its count.
+						seenSingle, seenUnequal := false, false
 						for key, points := range loki {
-							if !strings.Contains(key, "service_name=stdgrp-") || !strings.HasSuffix(key, "-b") {
+							if !strings.Contains(key, "service_name=stdgrp-") {
 								continue
 							}
 							for ts, v := range points {
-								if v != "0" {
+								if strings.HasSuffix(key, "-b") && v != "0" {
 									t.Fatalf("%s {%s} t=%s: Loki sanity: a group of one series has stddev %s, want 0", query, key, ts, v)
 								}
+								if strings.HasSuffix(key, "-b") {
+									seenSingle = true
+								} else if value, err := strconv.ParseFloat(v, 64); err == nil && value > 0 {
+									seenUnequal = true
+								}
 							}
+						}
+						if !seenSingle || !seenUnequal {
+							t.Fatalf("%s: fixture must prove a singleton zero and a multi-series nonzero group; singleton=%t unequal=%t", query, seenSingle, seenUnequal)
 						}
 					}
 				})
 			}
+		}
+	}
+}
+
+// An explicit keep stage gives the operand a bounded, reproducible series
+// identity: method is parsed from the log line, while service_name and pod are
+// stream labels. This exercises the supported parsed-field grouping without
+// claiming parity for a bare parser operand (the separately registered gap).
+// conformance: semantics/stddev-stdvar-grouped-values, loki_api_v1_query_range
+func TestCompat_StddevStdvarGroupedParsedFieldKept(t *testing.T) {
+	fx := ensureStddevGroupedFixtures(t)
+	for _, op := range []string{"stddev", "stdvar"} {
+		query := fmt.Sprintf("%s by (method) (count_over_time(%s | json | keep method, service_name, pod [5m]))", op, fx.selector)
+		for _, shape := range []struct {
+			name string
+			step time.Duration
+		}{
+			{"sliding", time.Minute},
+			{"tumbling", 5 * time.Minute},
+		} {
+			t.Run(op+"/"+shape.name, func(t *testing.T) {
+				start, end := fx.s0.Add(10*time.Minute), fx.s0.Add(25*time.Minute)
+				loki := slidingRangeSeries(t, lokiURL, query, start, end, shape.step, nil)
+				proxy := slidingRangeSeries(t, proxyURL, query, start, end, shape.step, nil)
+				compareUnwrapSumSeries(t, query, loki, proxy)
+				if len(loki) != 2 {
+					t.Fatalf("%s: want GET and POST parsed groups, Loki returned %d: %v", query, len(loki), loki)
+				}
+				for _, method := range []string{"GET", "POST"} {
+					points, ok := loki["method="+method]
+					if !ok {
+						t.Fatalf("%s: Loki has no parsed method=%s group: %v", query, method, loki)
+					}
+					nonzero := false
+					for _, raw := range points {
+						value, err := strconv.ParseFloat(raw, 64)
+						if err == nil && value > 0 {
+							nonzero = true
+						}
+					}
+					if !nonzero {
+						t.Fatalf("%s: method=%s must contain unequal per-stream values: %v", query, method, points)
+					}
+				}
+			})
 		}
 	}
 }
@@ -243,6 +312,7 @@ func TestCompat_StddevStdvarGroupedInstantResultType(t *testing.T) {
 // range and instant, and compares the proxy with Loki: series, labels, values.
 // conformance: semantics/stddev-stdvar-grouped-values, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_StddevStdvarGroupedRegistryQueries(t *testing.T) {
+	ensureDataIngested(t)
 	end := time.Now().Add(-time.Minute).Truncate(time.Minute)
 	for _, query := range []string{
 		`stddev by (app) (count_over_time({env="production"}[5m]))`,

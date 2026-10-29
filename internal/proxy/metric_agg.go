@@ -151,7 +151,16 @@ func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
 	if !ok || (agg.Op != logqlpkg.VectorStddev && agg.Op != logqlpkg.VectorStdvar) {
 		return instantMetricPostAgg{}, false
 	}
-	rest := strings.TrimSpace(strings.TrimPrefix(logql, string(agg.Op)))
+	// Fully enclosing parentheses do not change the aggregation. Strip only
+	// complete pairs, leaving the operand and its quoted contents untouched.
+	source := strings.TrimSpace(logql)
+	for strings.HasPrefix(source, "(") && closingParenIndex(source) == len(source)-1 {
+		source = strings.TrimSpace(source[1 : len(source)-1])
+	}
+	if !strings.HasPrefix(source, string(agg.Op)) {
+		return instantMetricPostAgg{}, false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(source, string(agg.Op)))
 	if !strings.HasPrefix(rest, "(") {
 		// A leading grouping clause: skip it to the operand.
 		open := strings.IndexByte(rest, '(')
@@ -198,7 +207,7 @@ func (p *Proxy) capFoldedGroups(w http.ResponseWriter, r *http.Request, body []b
 	}
 	capped, err := capSeriesToLimit(r.Context(), body, limit)
 	if err != nil {
-		p.writeError(w, badRequestStatusOr(err, http.StatusBadRequest), err.Error())
+		p.writeErr(w, r.Context(), err)
 		return nil, false
 	}
 	return capped, true
@@ -284,17 +293,6 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	// across the returned series of each group.
 	if postAgg, ok := parseStddevStdvarQuery(logql); ok {
 		return postAgg, true
-	}
-	for _, name := range []string{"stddev", "stdvar"} {
-		prefix := name + "("
-		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
-			continue
-		}
-		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
-		if inner == "" {
-			return instantMetricPostAgg{}, false
-		}
-		return instantMetricPostAgg{name: name, inner: inner}, true
 	}
 	if postAgg, ok := parseTopKPostAgg(logql); ok {
 		return postAgg, true
@@ -583,9 +581,11 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if !dispatched {
 		if isStatsQuery(translatedInner) {
 			statsR := r
-			if foldWithout {
+			if foldWithout || postAgg.name == "stddev" || postAgg.name == "stdvar" {
 				// The ranking wraps the folded series: the stats query must not apply
 				// it to the per-stream rows, which hold a different set than the fold.
+				// A wrapped stddev/stdvar also needs the operand as the request's
+				// query so instant stats compatibility reads its original window.
 				statsR = cloneMetricQueryRequest(r, postAgg.inner)
 			}
 			p.proxyStatsQuery(sc, statsR, translatedInner)
@@ -846,7 +846,7 @@ func newStddevGroups(g *logqlpkg.Grouping) *stddevGroups {
 
 func (g *stddevGroups) add(metric map[string]string, ts, v float64) {
 	labels := stddevGroupLabels(metric, g.grouping)
-	key := metricKeyStr(labels)
+	key := binaryLabelKey(labels)
 	if g.acc[key] == nil {
 		g.labels[key] = labels
 		g.acc[key] = map[float64]*stddevAccumulator{}

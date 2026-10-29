@@ -33,7 +33,11 @@ func TestParseStddevStdvarPostAgg(t *testing.T) {
 	}{
 		{query: `stddev by (app) (` + op + `)`, name: "stddev", inner: op, by: []string{"app"}, ok: true},
 		{query: `stddev by(app)(` + op + `)`, name: "stddev", inner: op, by: []string{"app"}, ok: true},
+		{query: `stddev by(service_name)(count_over_time({service_name=~"stdgrp-.+"}[5m]))`, name: "stddev", inner: `count_over_time({service_name=~"stdgrp-.+"}[5m])`, by: []string{"service_name"}, ok: true},
+		{query: `(stddev by(app)(` + op + `))`, name: "stddev", inner: op, by: []string{"app"}, ok: true},
+		{query: `((stddev by(app)(` + op + `)))`, name: "stddev", inner: op, by: []string{"app"}, ok: true},
 		{query: `stdvar by (app, level) (` + op + `)`, name: "stdvar", inner: op, by: []string{"app", "level"}, ok: true},
+		{query: `((stdvar without (pod) (` + op + `)))`, name: "stdvar", inner: op, by: []string{"pod"}, without: true, ok: true},
 		{query: `stddev (` + op + `) by (app)`, name: "stddev", inner: op, by: []string{"app"}, ok: true},
 		{query: `stdvar without (app) (` + op + `)`, name: "stdvar", inner: op, by: []string{"app"}, without: true, ok: true},
 		{query: `stdvar(` + op + `) without (app)`, name: "stdvar", inner: op, by: []string{"app"}, without: true, ok: true},
@@ -231,6 +235,22 @@ func TestStddevStdvarFoldEdgeCases(t *testing.T) {
 			want:   []foldPoint{{map[string]string{"app": "a"}, [][2]string{{"100", "2"}}}},
 		},
 		{
+			name: "punctuation and missing label keep distinct groups stddev", op: "stddev", grouping: groupingOf("by", "app", "b"),
+			series: []string{sample(`"app":"a,b=c"`, "2"), sample(`"app":"a","b":"c"`, "6")},
+			want: []foldPoint{
+				{map[string]string{"app": "a", "b": "c"}, [][2]string{{"100", "0"}}},
+				{map[string]string{"app": "a,b=c"}, [][2]string{{"100", "0"}}},
+			},
+		},
+		{
+			name: "punctuation and missing label keep distinct groups stdvar", op: "stdvar", grouping: groupingOf("by", "app", "b"),
+			series: []string{sample(`"app":"a,b=c"`, "2"), sample(`"app":"a","b":"c"`, "6")},
+			want: []foldPoint{
+				{map[string]string{"app": "a", "b": "c"}, [][2]string{{"100", "0"}}},
+				{map[string]string{"app": "a,b=c"}, [][2]string{{"100", "0"}}},
+			},
+		},
+		{
 			// Welford's update keeps the variance of large, close values; a
 			// sum of squares loses it.
 			name: "large close values", op: "stdvar", grouping: groupingOf("by", "app"),
@@ -263,6 +283,19 @@ func TestStddevStdvarFoldEdgeCases(t *testing.T) {
 			{map[string]string{"app": "b"}, [][2]string{{"100", "0"}}},
 		})
 	})
+	for _, op := range []string{"stddev", "stdvar"} {
+		t.Run("instant punctuation and missing label/"+op, func(t *testing.T) {
+			body := foldVectorBody(inst(`"app":"a,b=c"`, "2"), inst(`"app":"a","b":"c"`, "6"))
+			rt, got := decodeFold(t, applyInstantStddevAgg(body, op, groupingOf("by", "app", "b")))
+			if rt != "vector" {
+				t.Fatalf("resultType %q", rt)
+			}
+			compareFold(t, got, []foldPoint{
+				{map[string]string{"app": "a", "b": "c"}, [][2]string{{"100", "0"}}},
+				{map[string]string{"app": "a,b=c"}, [][2]string{{"100", "0"}}},
+			})
+		})
+	}
 	t.Run("instant empty vector", func(t *testing.T) {
 		rt, got := decodeFold(t, applyInstantStddevAgg(foldVectorBody(), "stddev", groupingOf("without", "app")))
 		if rt != "vector" || len(got) != 0 {
@@ -397,6 +430,59 @@ func foldedStdProxy(t *testing.T, rows []emuRow) *Proxy {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// Parentheses around the outer aggregation are valid LogQL and must still
+// fold the operand's unequal series values. The old text split passed the
+// whole grouped expression as the operand, then folded one series to zero.
+// conformance: semantics/stddev-stdvar-grouped-values
+func TestStddevStdvarParenthesizedOuterQuery(t *testing.T) {
+	var rows []emuRow
+	for pod, n := range map[string]int{"p0": 2, "p1": 6} {
+		for i := 0; i < n; i++ {
+			rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(10+i)*1e9, stream: fmt.Sprintf(`{app="a",pod=%q}`, pod), value: 1, msg: "line"})
+		}
+	}
+	p := foldedStdProxy(t, rows)
+	inner := `count_over_time({env="production"}[5m])`
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		{`(stddev by(app)(` + inner + `))`, "2"},
+		{`((stddev by(app)(` + inner + `)))`, "2"},
+		{`((stdvar by(app)(` + inner + `)))`, "4"},
+	} {
+		for _, ranged := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/range=%t", tc.query, ranged), func(t *testing.T) {
+				code, body := foldedStdRequest(t, p, tc.query, ranged)
+				if code != 200 {
+					t.Fatalf("HTTP %d: %s", code, body)
+				}
+				resultType, got := decodeFold(t, body)
+				wantType := "vector"
+				if ranged {
+					wantType = "matrix"
+				}
+				if resultType != wantType || len(got) != 1 || !reflect.DeepEqual(got[0].metric, map[string]string{"app": "a"}) {
+					t.Fatalf("type=%s series=%v, want one app=a %s", resultType, got, wantType)
+				}
+				found := false
+				for _, point := range got[0].values {
+					ts, _ := strconv.ParseFloat(point[0], 64)
+					if ts == 1_800_000_300 {
+						found = true
+						if !closeFold(point[1], tc.want) {
+							t.Fatalf("last value %s, want %s", point[1], tc.want)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("no final-step value in %v", got)
+				}
+			})
+		}
+	}
 }
 
 // Loki counts max_query_series on the answer of the aggregation
