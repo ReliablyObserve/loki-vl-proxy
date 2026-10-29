@@ -776,6 +776,12 @@ class GateTest(unittest.TestCase):
         self.assertNotIn("![det-b-15m]", text)           # clean detailed row: linked, not embedded
         self.assertIn("pr-visuals/pr-7", text)
 
+    def test_branch_comment_links_full_artifact_for_unpublished_clean_rows(self):
+        a = argparse.Namespace(**{**vars(ARGS), "artifact_url": "https://example.test/artifact/9"})
+        text, _ = comment.render([row("det-a", "1h")], {}, plan(("det-a", "1h")), META, a)
+        self.assertNotIn("![det-a-1h]", text)
+        self.assertIn("Full montage set: [artifact](https://example.test/artifact/9)", text)
+
     def test_core_entry_at_other_ranges_is_detailed_and_live_pixels_do_not_warn(self):
         rows = [row("core-a", "1h"), row("core-a", "6h"), row("tail", "live")]
         p = plan(("core-a", "1h"), ("core-a", "6h"), ("tail", "live"), core=("core-a",))

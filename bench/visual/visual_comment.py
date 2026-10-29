@@ -526,7 +526,8 @@ def render(rows, pixeldiff, plan, meta, a):
             for i in core:
                 lines += [f"**{esc(key(i['row']))}**", "", image(a, key(i["row"]), meta), ""]
             lines += ["</details>"]
-        lines += ["", f"All montages of this run: [`pr-visuals/pr-{int(a.pr)}`](https://github.com/{a.repo}/tree/pr-visuals/pr-{int(a.pr)})."]
+        lines += ["", f"Published inline montages: [`pr-visuals/pr-{int(a.pr)}`](https://github.com/{a.repo}/tree/pr-visuals/pr-{int(a.pr)})."
+                  + (f" Full montage set: [artifact]({a.artifact_url})." if a.artifact_url else "")]
     else:
         lines += ["", "Montages (base | PR | Loki): " + (f"[artifact]({a.artifact_url})" if a.artifact_url else "in the run's artifacts")
                   + ". They are not on the repository for this run."]

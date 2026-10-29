@@ -198,14 +198,14 @@ nothing is published and the comment is a fixed text; the job summary has the ta
 run cancelled by a newer push never publishes.
 
 **Images.** `publish.py` replaces `pr-<number>/` on the orphan `pr-visuals` branch with
-the run's montages as one commit with no parent (the previous tree plus the change),
+the comment's selected montages as one commit with no parent (the previous tree plus the change),
 pushed with `--force-with-lease`, so the branch never keeps history; commits are by the
 github-actions identity (CI cannot sign; every push-triggered workflow of the repository
 runs for `main` only, and a push with the workflow token starts none).
 `visual-smoke-cleanup.yaml` removes the folder when the pull request closes and, weekly,
 every folder whose pull request is not open. The comment embeds an image only for a row
 that is not clean, for each fix-proof capture, and for one collapsed block with the core montages; clean detailed rows
-are linked on the branch. A fork PR has no write token: the montages are an artifact, the
+remain in the full artifact linked in the comment. A fork PR has no write token: the montages are an artifact, the
 comment text has no images, and the table is in the job summary.
 Baseline runs also keep their full set of montages in the run artifacts. The trusted
 base-branch comment renderer selects at most 80 inline images (fix proof first), and
