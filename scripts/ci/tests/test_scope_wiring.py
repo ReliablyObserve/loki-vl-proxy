@@ -339,10 +339,12 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", publish["body"])
         self.assertIn("--images /tmp/visual-publish-images.json", publish["body"])
         self.assertIn("--names-file /tmp/visual-publish-images.json", publish["body"])
-        self.assertIn('elif [ "$BASELINE" = "true" ]; then', publish["body"])
-        # A base without the new bounded publisher falls back to artifact mode.
+        self.assertIn("--mode branch", publish["body"])
+        self.assertIn("/tmp/visual-publish-selected", publish["body"])
+        # An older base uses its own renderer and publisher with a staged <=80 image set.
         self.assertIn("!cancelled()", jobs["visual-comment"]["if"])
         self.assertIn("visual-publish", jobs["visual-comment"]["needs"])
+        self.assertIn("replaceAll('<details><summary>', '<details open><summary>')", jobs["visual-comment"]["body"])
 
     def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
         jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())

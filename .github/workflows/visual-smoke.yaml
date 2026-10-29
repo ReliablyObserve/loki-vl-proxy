@@ -225,20 +225,18 @@ jobs:
 
       - name: Is there a publisher on the base branch?
         id: have
-        env:
-          BASELINE: ${{ needs.scope.outputs.baseline }}
         run: |
-          if [ ! -f bench/visual/publish.py ]; then
-            echo "::notice::the base branch has no bench/visual/publish.py yet; montages stay in the run artifact"
+          if [ ! -f bench/visual/publish.py ] || [ ! -f bench/visual/visual_comment.py ]; then
+            echo "::notice::the base branch has no visual publisher or renderer yet; montages stay in the run artifact"
             echo "have=false" >> "$GITHUB_OUTPUT"
           elif python3 bench/visual/publish.py --help | grep -q -- --names-file && \
                python3 bench/visual/visual_comment.py --help | grep -q -- --images; then
             echo "have=true" >> "$GITHUB_OUTPUT"
             echo "bounded=true" >> "$GITHUB_OUTPUT"
-          elif [ "$BASELINE" = "true" ]; then
-            echo "::notice::the base branch cannot publish bounded baseline montages yet; they stay in the run artifact"
-            echo "have=false" >> "$GITHUB_OUTPUT"
           else
+            # The older trusted base renderer already emits the exact inline
+            # montage URLs. Stage only those files before calling its <=80-file
+            # publisher; never run a PR-controlled script with this write token.
             echo "have=true" >> "$GITHUB_OUTPUT"
             echo "bounded=false" >> "$GITHUB_OUTPUT"
           fi
@@ -272,8 +270,40 @@ jobs:
             python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
               --names-file /tmp/visual-publish-images.json --remote "https://github.com/${GITHUB_REPOSITORY}.git"
           else
-            # Older base branches support only the non-baseline, <=80-file path.
-            python3 bench/visual/publish.py publish --montage /tmp/visual-data/montage --pr "$PR" \
+            # Compatibility with a trusted base before --images/--names-file:
+            # render its own comment, then allowlist only its inline PNG names.
+            python3 bench/visual/visual_comment.py --out /tmp/visual-data --mode branch \
+              --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
+              --md /tmp/visual-publish-comment.md --verdict /tmp/visual-publish-verdict.json > /dev/null
+            python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import shutil
+          import stat
+
+          repo = os.environ["REPO"]
+          pr = str(int(os.environ["PR"]))
+          prefix = f"https://raw.githubusercontent.com/{repo}/pr-visuals/pr-{pr}/"
+          markdown = pathlib.Path(os.environ.get("VISUAL_PREVIEW", "/tmp/visual-publish-comment.md")).read_text(encoding="utf-8")
+          pattern = re.compile(r"!\[[^\]\n]*\]\(" + re.escape(prefix) + r"([A-Za-z0-9][A-Za-z0-9_.-]*\.png)\?v=[0-9a-f]{0,8}\)")
+          names = sorted(set(pattern.findall(markdown)))
+          if not names or len(names) > 80:
+              raise SystemExit(f"trusted comment selected {len(names)} images; expected 1..80")
+          source = pathlib.Path(os.environ.get("VISUAL_MONTAGE_DIR", "/tmp/visual-data/montage"))
+          staged = pathlib.Path(os.environ.get("VISUAL_STAGED_DIR", "/tmp/visual-publish-selected"))
+          staged.mkdir(mode=0o700)
+          for name in names:
+              path = source / name
+              info = path.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_size > 300_000:
+                  raise SystemExit(f"invalid montage {name}")
+              shutil.copyfile(path, staged / name)
+          print(f"staged {len(names)} trusted-rendered inline montages")
+          PY
+            # The base publisher validates every staged file again and replaces
+            # only this PR's folder on pr-visuals.
+            python3 bench/visual/publish.py publish --montage /tmp/visual-publish-selected --pr "$PR" \
               --remote "https://github.com/${GITHUB_REPOSITORY}.git"
           fi
 
@@ -327,6 +357,7 @@ jobs:
           RAN: ${{ needs.visual-smoke.outputs.run }}
           RESULT: ${{ needs.visual-smoke.result }}
           BASELINE: ${{ needs.scope.outputs.baseline }}
+          PUBLISHED: ${{ needs.visual-publish.outputs.published }}
         with:
           script: |
             const fs = require('fs');
@@ -335,11 +366,21 @@ jobs:
             // A rendered file is the base branch's renderer's output. Without one (the base has no renderer yet,
             // or the job died) the comment is a fixed text that carries no data from the pull request;
             // the job summary of the run has the table.
-            const body = fs.existsSync('/tmp/comment.md') ? fs.readFileSync('/tmp/comment.md', 'utf8')
+            let body = fs.existsSync('/tmp/comment.md') ? fs.readFileSync('/tmp/comment.md', 'utf8')
               : `${marker}\n### ⚠️ Visual smoke: ${process.env.RESULT === 'success' ? 'passed' : 'see the run'}\n\nThe table for \`${context.payload.pull_request.head.sha.slice(0, 10)}\` is in the job summary of ${runUrl}.\n`;
+            // The trusted older base renderer puts fix screenshots in collapsed
+            // details. Open that section so every shipped fix is visible in the
+            // CI comment; leave the full regression table collapsed as rendered.
+            if (process.env.PUBLISHED === 'true') {
+              const start = body.indexOf('#### Fix proof');
+              const end = body.indexOf('#### Regression check', start);
+              if (start >= 0 && end > start) {
+                body = body.slice(0, start) + body.slice(start, end).replaceAll('<details><summary>', '<details open><summary>') + body.slice(end);
+              }
+            }
             // A baseline run adds a fixed section pointing to the full candidate artifact.
             const candidate = process.env.BASELINE === 'true'
-              ? `\n\n<details open><summary>🧭 New baseline candidate</summary>\n\nThis pull request got the baseline run: every page of \`bench/visual/spec.json\` was captured at its own ranges. The captures are the \`visual-baseline-candidate\` artifact of ${runUrl}; nothing was committed or published as a baseline. Accept them by copying what you want to keep into a pull request.\n\n</details>\n`
+              ? `\n\n<details open><summary>🧭 New baseline candidate</summary>\n\nThis pull request got the baseline run: every page of \`bench/visual/spec.json\` was captured at its own ranges. The full candidate is the \`visual-baseline-candidate\` artifact of ${runUrl}; only bounded inline review images were published, and the candidate was not accepted as a baseline.\n\n</details>\n`
               : '';
             const text = body + candidate;
             const { owner, repo } = context.repo;
