@@ -10,6 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import report  # noqa: E402
+import comment  # noqa: E402
 
 
 def raw_rows(statuses, signatures):
@@ -51,6 +52,32 @@ def timed(seconds, cache=None, targets=("main", "branch", "loki"), runs=3, **ext
                 row["cache"] = cache[target][run]
             rows.append(row)
     return {"set": "x", "runs": runs, "rows": rows, **extra}
+
+
+class PointCountParityTest(unittest.TestCase):
+    def test_equal_sum_cannot_hide_missing_points(self):
+        for series in ("1", "ranked"):
+            with self.subTest(series=series):
+                self.assertEqual(report.parity(
+                    f"series={series} points=2 sum=4",
+                    f"series={series} points=3 sum=4", 0.01), "differs")
+
+    def test_equal_point_counts_keep_sum_tolerance(self):
+        self.assertTrue(report.parity(
+            "series=1 points=2 sum=4", "series=1 points=2 sum=4.01", 0.01).startswith("same"))
+
+    def test_missing_points_are_a_regression_in_the_summary(self):
+        complete = "series=1 points=3 sum=4"
+        summary = summarize(raw_rows({"main": 200, "branch": 200, "loki": 200},
+                                     {"main": complete, "branch": "series=1 points=2 sum=4", "loki": complete}),
+                            whole=True)
+        row = summary["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "differs")
+        self.assertEqual(row["baseline_parity_vs_reference"], "same")
+        self.assertEqual(row["parity_vs_baseline"], "differs")
+        _, verdict = comment.render([summary], {}, {})
+        self.assertEqual(verdict["exit"], 1)
+        self.assertEqual(verdict["new_differences"], 1)
 
 
 class VerdictTest(unittest.TestCase):

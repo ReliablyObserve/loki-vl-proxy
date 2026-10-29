@@ -102,7 +102,8 @@ def parity(a, b, tolerance):
     # A sample that is not a number is a wrong answer whatever the sums say.
     if not_numbers(a) != not_numbers(b):
         return "differs"
-    if ma and mb and ma.group(1) == mb.group(1):
+    # Sum tolerance never excuses missing samples, including ranked answers.
+    if ma and mb and ma.group(1) == mb.group(1) and ma.group(2) == mb.group(2):
         sa, sb = float(ma.group(3)), float(mb.group(3))
         rel = abs(sa - sb) / max(abs(sa), 1e-9)
         if rel <= tolerance:
