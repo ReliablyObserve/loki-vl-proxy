@@ -18,7 +18,9 @@ jobs:
 
   report:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    # The base-vs-PR snapshots and load benchmarks measure runtime changes.
+    # Forced CI on docs or workflow files does not need this report.
+    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

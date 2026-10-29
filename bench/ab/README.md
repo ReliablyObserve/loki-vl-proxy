@@ -6,9 +6,15 @@ degraded (a fixed control set is unchanged). This directory holds the tooling
 and the saved results, so each run can be compared with the ones before it.
 
 Both proofs also run on their own: a small A/B smoke on every pull request
-that touches runtime code (a sticky comment with the table), and a full run
+that touches runtime Go code or module dependencies (a sticky comment with the
+table), and a full run
 from `main` every day whose results and history are committed through a bot
 pull request. See [Automation](#automation).
+
+Release metadata, documentation, CI, tests, Helm charts and harness-only PRs skip
+the A/B stack. Their unit/static checks remain active. The product-evidence scope
+is independent of the broader CI lanes: forcing full CI or a baseline does not
+turn an infrastructure-only diff into a product comparison.
 
 The current result signatures compare aggregate fingerprints. Metric sum
 tolerance requires the same series signature and point count, including ranked
@@ -332,14 +338,14 @@ and `-probes.json`.
 
 ## Automation
 
-### Every pull request: the A/B smoke
+### Product pull requests: the A/B smoke
 
 `.github/workflows/perf-ab.yaml` (check `perf-smoke`) runs
-`pr_smoke.py` on each push to a pull request:
+`pr_smoke.py` on each push to an eligible product pull request:
 
-1. `selection.py` maps the changed files to shapes (below). A change to docs,
-   CI, tests, the Helm chart or registry text selects nothing: the job ends in
-   seconds, and an existing comment is updated to say the run was skipped.
+1. The shared scope gate skips the job for docs, CI, tests, chart, registry or
+   harness-only changes. On product PRs, `selection.py` maps the changed files
+   to shapes (below).
 2. A fresh Loki and VictoriaLogs start from the e2e compose file with
    `docker-compose.ab.yml` (own project, container names and ports). While
    the log generator seeds a fixed 86-minute window into both (about 75 lines/s,

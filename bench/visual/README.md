@@ -1,6 +1,6 @@
 # Visual proof for a pull request
 
-Every PR carries before/after Grafana screenshots of the panels it affects,
+Each eligible product PR carries before/after Grafana screenshots of the panels it affects,
 with Loki as the reference, plus a comparison of the panel data Grafana
 receives. This folder is the reusable tooling.
 
@@ -80,8 +80,8 @@ capture (`ui.details`, `errors`) and named in the comment.
 
 ## In CI
 
-`.github/workflows/visual-smoke.yaml` runs this tooling on every pull request,
-like the A/B performance smoke does, and posts one sticky comment.
+`.github/workflows/visual-smoke.yaml` runs this tooling on eligible product pull
+requests, like the A/B performance smoke, and posts one sticky comment.
 
 **What runs.** `plan.py` reads the changed files (base = the merge commit's first
 parent) and picks captures in two tiers:
@@ -89,8 +89,10 @@ parent) and picks captures in two tiers:
 - *Core set*: the `spec.json` entries marked `"core": true` (Explore logs,
   count, rate, JSON unwrap aggregation, ranked and binary metric graphs,
   Drilldown landing, a service's Logs and Fields), 9 captures at `core_range`
-  (1h). They run on every PR, including docs, tests, CI and infrastructure
-  changes. Their montages are open in the bot comment.
+  (1h). They run on product PRs changing runtime Go code or module dependencies.
+  Release metadata, docs, CI, tests, charts and evidence-harness-only changes skip
+  the visual stack and A/B; their static and unit checks still run. Their montages
+  are open in the bot comment when the visual job runs.
 - *Detailed set*: entries whose `covers` (conformance registry ids, as in
   `bench/ab/shapes.json`) point at a source file the change touches, at
   `ci_ranges` (15m, 1h, 6h), plus the entries a change to `spec.json` adds or

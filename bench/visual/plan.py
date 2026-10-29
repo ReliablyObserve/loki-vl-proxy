@@ -12,9 +12,9 @@ this imports: the mapping from code to registry items is not repeated here):
             file the change touches, at ci_ranges. Also the entries a change to
             spec.json adds or edits. Trimmed to a capture budget when needed.
 
-A change that touches nothing visual (docs, CI, Helm, tests, registry text)
-runs nothing. Changes to this tooling, the stack harness or the workflow run
-the core set, so the pipeline proves itself.
+A change that touches no runtime product input (docs, CI, Helm, tests,
+registry text or the evidence tooling itself) runs nothing. Product changes
+retain the core controls and their selected targeted proofs.
 
   plan.py --base origin/main --out plan.json      files from git diff base...HEAD
   plan.py --files internal/proxy/x.go             explicit file list
@@ -169,11 +169,11 @@ def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cas
         if reason not in why[pid]:
             why[pid].append(reason)
 
-    # Every pull request runs the small core set, including docs and CI-only
-    # changes. Changed registry cases add their own fix scenes below.
-    out = {"run": True, "changed": len(files), "relevant": relevant,
+    out = {"run": ab.product_evidence(files), "changed": len(files), "relevant": relevant,
            "ignored": [f for f in files if f not in relevant], "core_range": spec["core_range"],
            "entries": {}, "captures": 0, "trimmed": [], "dropped": [], "fix_cases": {}, "fix_trimmed": []}
+    if not out["run"]:
+        return out
     for cid in cases:
         gap = case_gaps.get(cid, {})
         listed = [p["id"] for p in spec["pages"] if cid in (p.get("fixes") or [])]

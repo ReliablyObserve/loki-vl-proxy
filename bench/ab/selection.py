@@ -15,9 +15,8 @@ Rules, per changed path:
                                  control smoke subset
   cmd/, go.mod, go.sum           the whole control set (flags, wiring and
                                  the module graph reach every query)
-  bench/ab/shapes.json           the shapes the change adds or edits, plus smoke
-  A/B harness, stack and data    the control smoke subset (bench/ab/*.py,
-  (see HARNESS)                  docker-compose files, Loki config, generator)
+  bench/ab/shapes.json           in a product PR: added or edited shapes, plus smoke
+  A/B harness, stack and data    in a product PR: control smoke subset
   everything else                nothing: docs, CI, Helm chart, Dockerfile,
                                  tests, registry text and website do not
                                  change the host-built binary
@@ -43,6 +42,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, ROOT)
+from scripts.ci.change_scope import product_evidence  # noqa: E402
 SHAPES = "bench/ab/shapes.json"
 REGISTRY = "conformance/registry"
 IMPLEMENTATION = f"{REGISTRY}/generated/proxy/implementation.json"
@@ -57,7 +58,7 @@ TOKEN = re.compile(r"[A-Za-z0-9_./:-]+")
 # The A/B builds are host `go build`s, so the Dockerfile is not what they
 # measure; the toolchain and module graph are.
 RUNTIME_ALL = ("go.mod", "go.sum")
-# The measurement itself: a change here must prove the pipeline still runs.
+# These paths contribute controls when the PR also changes the product.
 HARNESS = (
     "bench/ab/perf_matrix.py", "bench/ab/report.py", "bench/ab/stack.py", "bench/ab/selection.py",
     "bench/ab/pr_smoke.py", "bench/ab/comment.py", "bench/ab/docker-compose.ab.yml",
@@ -180,6 +181,10 @@ def select(files, base=None, spec=None, items=None, head=None):
 
     kinds = {f: classify(f) for f in files}
     relevant = [f for f, k in kinds.items() if k != "ignored"]
+    evidence = product_evidence(files)
+    if not evidence:
+        return {"run": False, "changed": len(files), "relevant": [], "ignored": list(files),
+                "sets": {}, "why": {}}
     control = spec["sets"].get(CONTROL, {"shapes": []})["shapes"]
     smoke = [s for s in control if s.get("smoke")]
     code = {f for f, k in kinds.items() if k == "code"}
@@ -198,7 +203,7 @@ def select(files, base=None, spec=None, items=None, head=None):
         elif kind == "shapes" and base:
             for set_name, shape_name in changed_shapes(base, head):
                 add(set_name, shape_name, "shape added or edited")
-    if relevant:
+    if evidence:
         for shape in smoke:
             add(CONTROL, shape["name"], "control smoke")
     sets = {}

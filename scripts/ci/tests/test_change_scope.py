@@ -753,6 +753,35 @@ def decide(changes, base="main", labels=()):
     return baseline(paths, changes, base, labels)[0]
 
 
+class ProductEvidenceTests(unittest.TestCase):
+    def test_shipped_go_and_module_graph_need_evidence(self):
+        for path in ("cmd/loki-vl-proxy/main.go", "internal/proxy/proxy.go",
+                     "pkg/cache/cache.go", "go.mod", "go.sum"):
+            with self.subTest(path=path):
+                self.assertTrue(change_scope.product_evidence([path]))
+
+    def test_non_runtime_changes_do_not_need_evidence(self):
+        for path in ("README.md", "CHANGELOG.md", "docs/a.md", ".github/workflows/ci.yaml",
+                     ".github/workflows/change-scope.yaml", "scripts/ci/change_scope.py",
+                     "scripts/ci/collect_quality_metrics.sh", "bench/ab/perf_matrix.py",
+                     "bench/visual/plan.py", "conformance/registry/cases/x.yaml",
+                     "test/e2e-compat/log-generator.py", "internal/proxy/proxy_test.go",
+                     "internal/proxy/testdata/fixture.go", "charts/loki-vl-proxy/values.yaml",
+                     "Dockerfile", "dashboard/x.json", "alerting/x.yaml"):
+            with self.subTest(path=path):
+                self.assertFalse(change_scope.product_evidence([path]))
+
+    def test_mixed_and_renamed_paths_are_conservative(self):
+        self.assertTrue(change_scope.product_evidence(["docs/a.md", "internal/proxy/proxy.go"]))
+        self.assertTrue(change_scope.product_evidence(["internal/proxy/proxy.go", "docs/a.md"]))
+        self.assertTrue(change_scope.product_evidence(["docs/old.md", "internal/proxy/deleted.go"]))
+
+    def test_missing_or_unknown_paths_fail_toward_evidence(self):
+        for paths in ([], ["  "], ["../outside.go"], ["new_product/handler.go"]):
+            with self.subTest(paths=paths):
+                self.assertTrue(change_scope.product_evidence(paths))
+
+
 # Recorded pull requests of #678 to #894 (shipped changed lines, shipped files, lines in the entry points) and
 # whether the trigger selects them; the replay in the pull request description lists the 200.
 RECORDED = [
@@ -917,6 +946,22 @@ class BaselineCLITests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return out.read_text()
 
+    def test_evidence_ignores_forced_product_and_baseline_labels(self):
+        for files, labels in ((["docs/a.md"], "baseline"),
+                              ([".github/workflows/change-scope.yaml"], "ci-full"),
+                              (["scripts/ci/change_scope.py"], "baseline")):
+            with self.subTest(files=files, labels=labels):
+                output = self.run_with(files, [(files[0], 3)], "--base-ref", "main",
+                                       "--labels", labels, "--force-product")
+                self.assertIn("product=true\n", output)
+                self.assertIn("baseline=true\n", output)
+                self.assertIn("evidence=false\n", output)
+
+    def test_evidence_runs_for_mixed_runtime_change(self):
+        output = self.run_with(["docs/a.md", "internal/proxy/proxy.go"],
+                               [("docs/a.md", 3), ("internal/proxy/proxy.go", 2)], "--base-ref", "main")
+        self.assertIn("evidence=true\n", output)
+
     def test_a_big_pull_request_into_main(self):
         stat = [(f"internal/proxy/f{i}.go", 1) for i in range(41)]
         self.assertEqual(self.run_with([p for p, _ in stat], stat, "--base-ref", "main"), BASELINE_FLAGS)
@@ -938,12 +983,12 @@ class BaselineCLITests(unittest.TestCase):
         # The workflow passes --force-product for a ci-full or baseline label.
         stat = [("docs/a.md", 3)]
         self.assertEqual(self.run_with(["docs/a.md"], stat, "--base-ref", "main", "--labels", "bug,baseline",
-                                       "--force-product"), BASELINE_FLAGS)
+                                       "--force-product"), BASELINE_NO_EVIDENCE)
 
     def test_ci_full_on_an_infra_pull_request_gets_the_full_product_ci_and_the_baseline(self):
         stat = [(".github/workflows/ci.yaml", 400)]
         self.assertEqual(self.run_with([".github/workflows/ci.yaml"], stat, "--base-ref", "main", "--labels",
-                                       "ci-full", "--force-product"), BASELINE_FLAGS)
+                                       "ci-full", "--force-product"), BASELINE_NO_EVIDENCE)
 
     def test_an_unreadable_numstat_means_no_baseline_and_every_lane(self):
         out = self.run_cli("--files-from", "-", "--numstat", "/nonexistent/numstat", "--base-ref", "main",
@@ -1176,11 +1221,13 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(dead, [], "globs that match no tracked file")
 
 
-ALL_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=false\n"
-NO_FLAGS = "product=false\nstack=false\nperf=false\nbaseline=false\n"
-STACK_FLAGS = "product=false\nstack=true\nperf=true\nbaseline=false\n"
-PERF_FLAGS = "product=false\nstack=false\nperf=true\nbaseline=false\n"
-BASELINE_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=true\n"
+ALL_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=false\nevidence=true\n"
+NO_FLAGS = "product=false\nstack=false\nperf=false\nbaseline=false\nevidence=false\n"
+STACK_FLAGS = "product=false\nstack=true\nperf=true\nbaseline=false\nevidence=false\n"
+PERF_FLAGS = "product=false\nstack=false\nperf=true\nbaseline=false\nevidence=false\n"
+BASELINE_FLAGS = "product=true\nstack=true\nperf=true\nbaseline=true\nevidence=true\n"
+FULL_NO_EVIDENCE = "product=true\nstack=true\nperf=true\nbaseline=false\nevidence=false\n"
+BASELINE_NO_EVIDENCE = "product=true\nstack=true\nperf=true\nbaseline=true\nevidence=false\n"
 
 
 class CLITests(unittest.TestCase):
@@ -1227,7 +1274,7 @@ class CLITests(unittest.TestCase):
                                   "--github-output", str(out), "--summary", str(summary),
                                   stdin="docs/a.md\n")
             self.assertEqual(result.returncode, 0)
-            self.assertEqual(out.read_text(), ALL_FLAGS)
+            self.assertEqual(out.read_text(), FULL_NO_EVIDENCE)
             self.assertIn("--force-product", summary.read_text())
 
     def test_empty_input_is_product(self):
@@ -1273,7 +1320,7 @@ class CLITests(unittest.TestCase):
             "bench/ab/perf_matrix.py\nbench/ab/README.md\n": PERF_FLAGS,
             "bench/ab/perf_matrix.py\ntest/e2e-compat/vmauth.yml\n": STACK_FLAGS,
             "bench/ab/perf_matrix.py\ninternal/proxy/proxy.go\n": ALL_FLAGS,
-            "test/e2e-compat/vmauth.yml\nscripts/ci/change_scope.py\n": ALL_FLAGS,
+            "test/e2e-compat/vmauth.yml\nscripts/ci/change_scope.py\n": FULL_NO_EVIDENCE,
         }
         for stdin, want in cases.items():
             with self.subTest(stdin=stdin), tempfile.TemporaryDirectory() as tmp:
@@ -1326,7 +1373,7 @@ class CLITests(unittest.TestCase):
 
     def test_product_output_is_unchanged_by_the_ships_flag_existing(self):
         result = self.run_cli("--files-from", "-", stdin="internal/x_test.go\n")
-        self.assertEqual(result.stdout, ALL_FLAGS)
+        self.assertEqual(result.stdout, FULL_NO_EVIDENCE)
 
     def test_summary_table(self):
         with tempfile.TemporaryDirectory() as tmp:

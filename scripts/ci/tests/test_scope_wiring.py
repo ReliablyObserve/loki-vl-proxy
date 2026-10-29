@@ -8,7 +8,8 @@ only; the parser understands the block layout the workflows use) and assert:
 - every job that reads `needs.scope` lists `scope` in `needs`, and in ci.yaml
   uses the gate of its lane (product, stack, or the stack gate of a job that
   follows `test`) or, for the two aggregators, `if: always()`;
-- every job of every workflow gates on the lane it belongs to, and on no other;
+- every job of every workflow gates on its lane or the independent product
+  evidence output, and on no other;
 - every ci.yaml job is gated directly or through a gated job;
 - no job downstream of `test` can run when `test` failed, and only the stack
   jobs, with exactly the gate below, can run when `test` was skipped;
@@ -21,6 +22,8 @@ only; the parser understands the block layout the workflows use) and assert:
 import re
 import unittest
 from pathlib import Path
+
+from scripts.ci.change_scope import product_evidence
 
 REPO = Path(__file__).resolve().parents[3]
 WORKFLOWS = REPO / ".github" / "workflows"
@@ -46,14 +49,12 @@ CI_GATES = {
 }
 # The lane output every other workflow's gated job reads: (file, job) -> lane.
 WORKFLOW_LANES = {
-    ("perf-ab.yaml", "perf-smoke"): "perf",
     ("compat-loki.yaml", "loki-pinned"): "stack",
     ("compat-vl.yaml", "vl-pinned"): "stack",
     ("compat-drilldown.yaml", "drilldown-pinned-runtime"): "stack",
     ("compat-drilldown.yaml", "drilldown-grafana-pr-matrix"): "stack",
     ("e2e-pipeline.yml", "e2e-pipeline"): "stack",
     ("security-pr.yaml", "security-runtime"): "stack",
-    ("pr-quality-report.yaml", "report"): "product",
 }
 LANES = ("product", "stack", "perf")
 ALWAYS_ON = ("lint", "helm")
@@ -265,14 +266,34 @@ class ScopeWiringTest(unittest.TestCase):
                     if other != lane:
                         self.assertNotIn(f"needs.scope.outputs.{other}", condition)
 
-    def test_visual_smoke_runs_on_every_pull_request_change(self):
+    def test_visual_smoke_requires_product_evidence(self):
         jobs = parse_jobs((WORKFLOWS / "visual-smoke.yaml").read_text())
         capture = jobs["visual-smoke"]
         self.assertIn("scope", capture["needs"])
-        self.assertNotIn("needs.scope.outputs.stack != 'false'", capture["if"])
-        self.assertNotIn("needs.scope.outputs.product != 'false'", capture["if"])
+        self.assertIn("needs.scope.outputs.evidence == 'true'", capture["if"])
         self.assertIn("plan.py --base", capture["body"])
         self.assertIn("Core set montages", jobs["visual-comment"]["body"])
+
+    def test_ab_smoke_requires_product_evidence(self):
+        jobs = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())
+        self.assertEqual(jobs["perf-smoke"]["if"],
+                         "${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}")
+
+    def test_quality_report_requires_product_evidence_even_for_forced_ci(self):
+        job = parse_jobs((WORKFLOWS / "pr-quality-report.yaml").read_text())["report"]
+        self.assertIn("scope", job["needs"])
+        self.assertEqual(job["if"], "${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}")
+        self.assertFalse(product_evidence(["scripts/ci/change_scope.py", ".github/workflows/change-scope.yaml"]))
+        self.assertFalse(product_evidence(["docs/release.md", "CHANGELOG.md"]))
+        self.assertTrue(product_evidence(["scripts/ci/change_scope.py", "internal/proxy/proxy.go"]))
+
+    def test_scope_exposes_evidence_independently_of_forced_product(self):
+        text = (WORKFLOWS / "change-scope.yaml").read_text()
+        self.assertIn("value: ${{ jobs.scope.outputs.evidence }}", text)
+        self.assertIn("evidence: ${{ steps.result.outputs.evidence }}", text)
+        self.assertIn("CLASSIFIED_EVIDENCE: ${{ steps.classify.outputs.evidence }}", text)
+        self.assertIn('if [ "$CLASSIFIED_EVIDENCE" = "false" ]; then evidence=false; fi', text)
+        self.assertNotIn('if [ "$product" = "true" ]; then evidence=true; fi', text)
 
     def test_every_workflow_reading_scope_declares_it(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):
@@ -327,8 +348,8 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertIn('selection.py --base "$BASE"', job["body"])  # an ordinary pull request keeps the selection
         self.assertIn('--baseline-candidate "$OUT/baseline-candidate"', job["body"])
         self.assertIn("name: perf-baseline-candidate", job["body"])
-        # The gate is unchanged: a baseline never makes the job run when its lane says no.
-        self.assertEqual(job["if"], "${{ !cancelled() && needs.scope.outputs.perf != 'false' }}")
+        # A baseline on a non-runtime PR does not run A/B.
+        self.assertEqual(job["if"], "${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}")
 
     def test_the_visual_workflow_captures_every_page_on_a_baseline(self):
         text = (WORKFLOWS / "visual-smoke.yaml").read_text()
