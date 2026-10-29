@@ -494,11 +494,10 @@ def render(rows, pixeldiff, plan, meta, a):
         text, v = errored(a, meta, "no capture for: " + (", ".join(verdict["missing"][:6]) or "any planned page"))
         return text, dict(v, missing=verdict["missing"])
     proofs = fix_proofs(items, plan)
-    if a.mode == "branch":
-        required = {key(i["row"]) for _, _, caps, _, _ in proofs for i, _ in caps}
-        required.update(key(i["row"]) for i in items if i["core"])
-        if len(required) > MAX_FILES:
-            return errored(a, meta, f"required fix and core montages ({len(required)}) exceed the {MAX_FILES}-image publish limit")
+    required = {key(i["row"]) for _, _, caps, _, _ in proofs for i, _ in caps}
+    required.update(key(i["row"]) for i in items if i["core"])
+    if len(required) > MAX_FILES:
+        return errored(a, meta, f"required fix and core montages ({len(required)}) exceed the {MAX_FILES}-image publish limit")
     if verdict["exit"] == 1:
         icon, text = "❌", "failed"
     else:

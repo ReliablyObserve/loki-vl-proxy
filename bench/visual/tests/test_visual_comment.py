@@ -70,9 +70,12 @@ class FixProofTest(unittest.TestCase):
         rows.append(row(page="core"))
         p = plan(*[(r["page"], r["range"]) for r in rows], core=("core",))
         p["fix_cases"] = {"semantics/case-a": {"entries": fixes, "exempt": ""}}
-        text, verdict = comment.render(rows, {}, p, META, argparse.Namespace(**vars(ARGS)))
-        self.assertEqual(verdict["exit"], 3)
-        self.assertIn("required fix and core montages", text)
+        for mode in ("branch", "artifact"):
+            with self.subTest(mode=mode):
+                a = argparse.Namespace(**{**vars(ARGS), "mode": mode})
+                text, verdict = comment.render(rows, {}, p, META, a)
+                self.assertEqual(verdict["exit"], 3)
+                self.assertIn("required fix and core montages", text)
 
     def test_clean_core_montages_are_open_in_the_bot_comment(self):
         base = plan(("core-logs", "1h"), ("core-rate", "1h"), core=("core-logs", "core-rate"))
