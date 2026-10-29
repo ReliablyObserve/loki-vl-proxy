@@ -146,6 +146,54 @@ func TestAggregationOverBinaryWithoutNamedExtractionKeepsStreamIdentity(t *testi
 	}
 }
 
+func TestAggregationOverBinaryBareLogMetricsUseStatsBuckets(t *testing.T) {
+	emu := &vlEmulator{t: t, rows: binaryAggregationRows(), version: "v1.52.0"}
+	query := `sum by (job) (rate({app="uw"}[1m]) / count_over_time({app="uw"}[1m]))`
+	got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, time.Minute)
+	if len(got) == 0 {
+		t.Fatal("expected nonempty ratio")
+	}
+	if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+		t.Fatalf("bare log metrics read raw rows instead of stats buckets: %v", raw)
+	}
+}
+
+func TestAggregationOverBinarySumRateScalarUsesGroupedStats(t *testing.T) {
+	rows := binaryAggregationRows()
+	query := `sum by (job) (rate({app="uw"}[1m]) / 2)`
+	base := `sum by (job) (rate({app="uw"}[1m])) / 2`
+	for _, step := range []time.Duration{0, time.Minute} {
+		emu := &vlEmulator{t: t, rows: rows, version: "v1.52.0"}
+		got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("step %v: got %v, want %v", step, got, want)
+		}
+		for _, stats := range emu.endpointCalls("/select/logsql/stats_query_range") {
+			if strings.Contains(stats, "_stream") {
+				t.Fatalf("step %v: retained expensive per-stream grouping: %s", step, stats)
+			}
+		}
+	}
+}
+
+func TestAggregationOverBinaryRateCountRatioUsesActiveStreamCount(t *testing.T) {
+	rows := binaryAggregationRows()
+	query := `sum by (job) (rate({app="uw"}[1m]) / count_over_time({app="uw"}[1m]))`
+	base := `count by (job) (count_over_time({app="uw"}[1m])) / 60`
+	for _, step := range []time.Duration{0, time.Minute} {
+		emu := &vlEmulator{t: t, rows: rows, version: "v1.52.0"}
+		got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("step %v: got %v, want %v", step, got, want)
+		}
+		if step > 0 && len(emu.endpointCalls("/select/logsql/stats_query_range")) != 1 {
+			t.Fatalf("step %v: expected one grouped stats read, got %v", step, emu.endpointCalls("/select/logsql/stats_query_range"))
+		}
+	}
+}
+
 // TestAggregationOverBinaryEdgeCases: a vector aggregation over a binary
 // expression aggregates the binary's answer, per step, like Loki
 // (pkg/logql/evaluator.go newBinOpStepEvaluator then VectorAggEvaluator.Next):

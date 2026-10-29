@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -64,6 +65,19 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 		p.writeError(w, http.StatusBadRequest, msg)
 		return true
 	}
+	if fast := sumRateScalarDivision(chain, binary); fast != nil {
+		// A log-line rate has a non-negative finite sample per active stream.
+		// Summing those samples before division preserves the answer and lets
+		// the existing grouped stats route avoid a costly per-stream read.
+		p.proxyBinaryLogQL(w, cloneMetricQueryRequest(r, fast.String()), fast, resultType)
+		return true
+	}
+	if fast := sumRateCountRatio(chain, binary); fast != nil {
+		// For each active stream, rate/count_over_time is one divided by the
+		// window seconds. Count active streams in one grouped stats query.
+		p.proxyBinaryLogQL(w, cloneMetricQueryRequest(r, fast.String()), fast, resultType)
+		return true
+	}
 	buf := &bufferedResponseWriter{}
 	p.proxyBinaryLogQL(buf, r, binary, resultType)
 	body := buf.body
@@ -79,6 +93,53 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	}
 	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the binary evaluator's own JSON
 	return true
+}
+
+func sumRateScalarDivision(chain []*logqlpkg.VectorAggregation, binary *logqlpkg.BinOpExpr) *logqlpkg.BinOpExpr {
+	if len(chain) != 1 || chain[0].Op != logqlpkg.VectorSum || binary.Op != "/" || binary.ReturnBool || binary.VectorMatching != nil {
+		return nil
+	}
+	divisor, scalar := binaryScalarValue(binary.Right, 0)
+	if !scalar || divisor <= 0 || math.IsInf(divisor, 0) || math.IsNaN(divisor) {
+		return nil
+	}
+	rate, ok := binary.Left.(*logqlpkg.RangeAggregation)
+	if !ok || rate.Op != logqlpkg.RangeRate || rate.Grouping != nil {
+		return nil
+	}
+	logs, ok := rate.Inner.(*logqlpkg.LogQuery)
+	if !ok || len(logs.Pipeline) != 0 {
+		return nil
+	}
+	agg := *chain[0]
+	agg.Inner = rate
+	return &logqlpkg.BinOpExpr{Left: &agg, Right: binary.Right, Op: "/"}
+}
+
+func sumRateCountRatio(chain []*logqlpkg.VectorAggregation, binary *logqlpkg.BinOpExpr) *logqlpkg.BinOpExpr {
+	if len(chain) != 1 || chain[0].Op != logqlpkg.VectorSum || binary.Op != "/" || binary.ReturnBool || binary.VectorMatching != nil {
+		return nil
+	}
+	if chain[0].Grouping == nil || chain[0].Grouping.Without {
+		return nil
+	}
+	rate, leftOK := binary.Left.(*logqlpkg.RangeAggregation)
+	count, rightOK := binary.Right.(*logqlpkg.RangeAggregation)
+	if !leftOK || !rightOK || rate.Op != logqlpkg.RangeRate || count.Op != logqlpkg.RangeCountOverTime || rate.Grouping != nil || count.Grouping != nil || rate.Range != count.Range || rate.Offset != count.Offset || rate.Inner.String() != count.Inner.String() {
+		return nil
+	}
+	logs, ok := rate.Inner.(*logqlpkg.LogQuery)
+	if !ok || len(logs.Pipeline) != 0 {
+		return nil
+	}
+	window, ok := parsePositiveStepDuration(rate.Range)
+	if !ok || window.Seconds() <= 0 {
+		return nil
+	}
+	agg := *chain[0]
+	agg.Op = logqlpkg.VectorCount
+	agg.Inner = count
+	return &logqlpkg.BinOpExpr{Left: &agg, Right: &logqlpkg.LiteralExpr{Value: window.Seconds()}, Op: "/"}
 }
 
 // foldBinaryAggregation applies one aggregation to a matrix or vector body:
