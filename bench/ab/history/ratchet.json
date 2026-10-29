@@ -140,6 +140,13 @@
   "shape": "logs plain"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "control",
+  "shape": "logs plain"
+ },
+ {
   "added": "2026-10-23",
   "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
   "range": "1h",
@@ -152,6 +159,13 @@
   "range": "24h",
   "set": "control",
   "shape": "logs | json"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "control",
+  "shape": "logs | logfmt"
  },
  {
   "added": "2026-10-22",
@@ -187,6 +201,20 @@
   "range": "24h",
   "set": "control",
   "shape": "stream-label count by app"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "control",
+  "shape": "topk rate by app"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "control",
+  "shape": "topk rate by app"
  },
  {
   "added": "2026-10-22",
@@ -483,6 +511,13 @@
   "shape": "J2 json no-error count by app, namespace"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "json-error-split",
+  "shape": "J3 json no-error count by parsed method"
+ },
+ {
   "added": "2026-10-23",
   "commit": "4e4f3e8a56146da8ee3f1b32e106349281b22c3b",
   "range": "24h",
@@ -693,6 +728,139 @@
   "shape": "I grafana volume of B"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-matcher-anchoring",
+  "shape": "M1 multi-value variable, log query"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-matcher-anchoring",
+  "shape": "M2 multi-value variable, count by app"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-matcher-anchoring",
+  "shape": "M2 multi-value variable, count by app"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-matcher-anchoring",
+  "shape": "M4 alternation over many streams, count"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-matcher-anchoring",
+  "shape": "M4 alternation over many streams, count"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-matcher-anchoring",
+  "shape": "M5 json label filter, literal alternation"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-matcher-anchoring",
+  "shape": "M5 json label filter, literal alternation"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "instant",
+  "set": "label-replace",
+  "shape": "L1 label_replace over sum by rate, instant"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-replace",
+  "shape": "L2 label_replace over sum by rate"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "label-replace",
+  "shape": "L2 label_replace over sum by rate"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-replace",
+  "shape": "L2 label_replace over sum by rate"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-replace",
+  "shape": "L3 topk over label_replace over sum by count"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "label-replace",
+  "shape": "L3 topk over label_replace over sum by count"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-replace",
+  "shape": "L3 topk over label_replace over sum by count"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "instant",
+  "set": "label-replace",
+  "shape": "L4 label_replace over bare count_over_time, instant"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "label-replace",
+  "shape": "L6 label_replace over json sum by"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "label-replace",
+  "shape": "L6 label_replace over json sum by"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "label-replace",
+  "shape": "L6 label_replace over json sum by"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "instant",
+  "set": "label-replace",
+  "shape": "L8 label_replace over sum by level count, instant"
+ },
+ {
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "24h",
@@ -705,6 +873,20 @@
   "range": "24h",
   "set": "level-filter",
   "shape": "LF10 drilldown logs, level pill multi-select, json service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF11 drilldown logs volume by level, existing level"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF11 drilldown logs volume by level, existing level"
  },
  {
   "added": "2026-10-27",
@@ -752,6 +934,13 @@
   "added": "2026-10-28",
   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
   "range": "24h",
+  "set": "level-filter",
+  "shape": "LF20 logfmt count by detected_level"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
   "set": "level-filter",
   "shape": "LF20 logfmt count by detected_level"
  },
@@ -950,6 +1139,13 @@
   "range": "6h",
   "set": "level-filter-stored",
   "shape": "LS7 rate of level stream label by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS8 json count by level_extracted, collision"
  },
  {
   "added": "2026-10-22",
@@ -1204,9 +1400,23 @@
   "shape": "N9 instant sum of max"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR1 logs, or alternatives"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR1 logs, or alternatives"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "3h",
   "set": "parenthesized-range-or-filters",
   "shape": "OR1 logs, or alternatives"
  },
@@ -1216,6 +1426,13 @@
   "range": "6h",
   "set": "parenthesized-range-or-filters",
   "shape": "OR1 logs, or alternatives"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR2 logs, negated or alternatives"
  },
  {
   "added": "2026-10-22",
@@ -1228,6 +1445,13 @@
   "added": "2026-10-28",
   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
   "range": "3h",
+  "set": "parenthesized-range-or-filters",
+  "shape": "OR2 logs, negated or alternatives"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
   "set": "parenthesized-range-or-filters",
   "shape": "OR2 logs, negated or alternatives"
  },
@@ -1449,6 +1673,13 @@
   "shape": "P4 nginx count_over_time, GET request pattern"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A1 nginx include GET, log query"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -1477,9 +1708,30 @@
   "shape": "A4 nginx exclude GET, count_over_time"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A5 drilldown exclude, volume by detected_level"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A5 drilldown exclude, volume by detected_level"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A8 nginx include two literals, count_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
   "set": "pattern-line-filter-anchoring",
   "shape": "A8 nginx include two literals, count_over_time"
  },
@@ -1510,6 +1762,13 @@
   "range": "1h",
   "set": "plain-name-after-parser",
   "shape": "P7 json rate by level, level regexp"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "plain-name-after-parser",
+  "shape": "P8 json count by a name that is no stream label"
  },
  {
   "added": "2026-10-22",
@@ -1554,9 +1813,9 @@
   "shape": "SF2 logs, logfmt extraction list"
  },
  {
-  "added": "2026-10-22",
-  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
-  "range": "24h",
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
   "set": "stage-field-exposure",
   "shape": "SF3 logs, json then line_format"
  },
@@ -1564,6 +1823,27 @@
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF3 logs, json then line_format"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF4 logs, line_format without a parser"
+ },
+ {
+  "added": "2026-10-22",
+  "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
+  "range": "24h",
+  "set": "stage-field-exposure",
+  "shape": "SF4 logs, line_format without a parser"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
   "set": "stage-field-exposure",
   "shape": "SF4 logs, line_format without a parser"
  },
@@ -1617,11 +1897,32 @@
   "shape": "SF9 volume, logfmt label_format rename"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E1 json duration_ms sum by service"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
   "set": "unwrap-conversion-error",
   "shape": "E1 json duration_ms sum by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E1 json duration_ms sum by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E4 logfmt size_bytes max by service"
  },
  {
   "added": "2026-10-22",
@@ -1631,11 +1932,60 @@
   "shape": "E4 logfmt size_bytes max by service"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E4 logfmt size_bytes max by service"
+ },
+ {
   "added": "2026-10-28",
   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
   "range": "instant",
   "set": "unwrap-conversion-error",
   "shape": "E5 json duration_ms sum, instant"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E8 json duration_ms sum by service, namespace prod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E8 json duration_ms sum by service, namespace prod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E8 json duration_ms sum by service, namespace prod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E9 logfmt latency_ms sum by service, namespace prod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E9 logfmt latency_ms sum by service, namespace prod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-conversion-error",
+  "shape": "E9 logfmt latency_ms sum by service, namespace prod"
  },
  {
   "added": "2026-10-22",
@@ -1648,6 +1998,13 @@
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
+  "set": "unwrap-duration-seconds",
+  "shape": "D2 logfmt ttl duration rate by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
   "set": "unwrap-duration-seconds",
   "shape": "D2 logfmt ttl duration rate by service"
  },
@@ -1666,6 +2023,27 @@
   "shape": "D4 logfmt ttl duration rate, instant"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G1 logfmt amount sum_over_time, no filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G1 logfmt amount sum_over_time, no filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G1 logfmt amount sum_over_time, no filter"
+ },
+ {
   "added": "2026-10-24",
   "commit": "d86b34bd6e0b1aaedc37fa34846ac28a9ef52249",
   "range": "instant",
@@ -1678,6 +2056,62 @@
   "range": "instant",
   "set": "unwrap-gate",
   "shape": "G12 json duration_ms sum_over_time, instant"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G2 json duration_ms sum_over_time, no filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G2 json duration_ms sum_over_time, no filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G2 json duration_ms sum_over_time, no filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G3 logfmt amount sum_over_time, error filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G3 logfmt amount sum_over_time, error filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G3 logfmt amount sum_over_time, error filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G4 json duration_ms sum_over_time, error filter"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G4 json duration_ms sum_over_time, error filter"
  },
  {
   "added": "2026-10-24",
@@ -1715,6 +2149,83 @@
   "shape": "G6 json duration_ms sum by rate"
  },
  {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G9 json duration_ms max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G9 json duration_ms max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G9 json duration_ms max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W1 sum without pod, max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W1 sum without pod, max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W2 sum without pod, sum_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W3 sum without pod, rate"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W3 sum without pod, rate"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W4 max without pod, max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W4 max without pod, max_over_time"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-sum-without",
+  "shape": "W4 max without pod, max_over_time"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "instant",
@@ -1727,6 +2238,27 @@
   "range": "instant",
   "set": "unwrap-sum-without",
   "shape": "W6 sum without pod, rate, instant"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W7 topk 5 of sum without pod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W7 topk 5 of sum without pod"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "6h",
+  "set": "unwrap-sum-without",
+  "shape": "W7 topk 5 of sum without pod"
  },
  {
   "added": "2026-10-28",
@@ -1853,6 +2385,48 @@
   "range": "6h",
   "set": "unwrap-ungrouped-sum",
   "shape": "U8 logfmt amount rate by service (grouped)"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U1 json duration_ms sum by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "instant",
+  "set": "unwrap-validity",
+  "shape": "U10 instant sum_over_time unwrap"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U12 json duration_ms over every service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U2 json duration_ms max by service"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U3 json duration_ms sliding sum"
+ },
+ {
+  "added": "2026-10-29",
+  "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
+  "range": "1h",
+  "set": "unwrap-validity",
+  "shape": "U4 logfmt size_bytes sum by service"
  },
  {
   "added": "2026-10-22",
