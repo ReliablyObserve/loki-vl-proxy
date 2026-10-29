@@ -1117,6 +1117,19 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	exposure := p.lineFieldExposure(spec.baseQuery)
+	if exposure == nil && p.lokiCompatibleProfile() {
+		// ParseLogQuery rejects unwrap outside a range function. The bare
+		// parser metric already has that range function, so read its pipeline
+		// there to retain the extraction-list exposure rules.
+		if expr, err := logqlpkg.Parse(originalQuery); err == nil {
+			if ra, ok := expr.(*logqlpkg.RangeAggregation); ok {
+				if lq, ok := ra.Inner.(*logqlpkg.LogQuery); ok {
+					parsed := pipelineAddsLabels(lq.Pipeline)
+					exposure = &parsed
+				}
+			}
+		}
+	}
 
 	smBuf := metadataMapPool.Get().(map[string]string)
 	pfBuf := metadataMapPool.Get().(map[string]string)
@@ -1189,8 +1202,24 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
 		if includeParsedInMetric || len(captureLabels) > 0 {
-			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+			var parsedFields map[string]string
+			var metadataFields map[string]string
+			if exposure != nil && len(exposure.extractions) > 0 {
+				// Named extraction lists expose only the requested line fields.
+				// classifyEntryMetadataFields treats every stored VL field as parsed;
+				// that turns an unrelated per-line id into a metric series label.
+				_, metadataFields, parsedFields, _ = p.classifyEntryFieldsWithFlags(entry, desc.rawLabels, true, exposure, exposureCache, smBuf, pfBuf)
+			} else {
+				_, parsedFields = p.classifyEntryMetadataFields(entry, desc.rawLabels, desc.streamLabels, desc.translatedLabels, exposure, true, exposureCache, smBuf, pfBuf)
+			}
 			addParsedSeriesLabels(metric, parsedFields, spec.unwrapField, captureLabels, includeParsedInMetric)
+			if includeParsedInMetric {
+				for key, value := range metadataFields {
+					if key != spec.unwrapField {
+						metric[key] = value
+					}
+				}
+			}
 		}
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]

@@ -27,11 +27,15 @@ func binaryAggregationAnswer(t *testing.T, emu *vlEmulator, query string, start,
 }
 
 // binaryAggregationAnswerFor is binaryAggregationAnswer for the tenants orgID names.
-func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
+func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query string, start, end int64, step time.Duration, configure ...func(*Config)) (map[string]map[int64]float64, string) {
 	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
+	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second}
+	for _, apply := range configure {
+		apply(&cfg)
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +111,38 @@ func binaryAggregationRows() []emuRow {
 		row(50, p1, 1), row(30, p1, 2), row(10, p1, 3),
 		row(40, p2, 4),
 		row(45, p3, 5), row(5, p3, 7),
+	}
+}
+
+// A named parser extraction exposes only its named labels to Loki. Fields
+// VictoriaLogs stores beside the line must not become series labels after a
+// comparison inside a without aggregation.
+func TestAggregationOverBinaryWithoutNamedExtractionKeepsStreamIdentity(t *testing.T) {
+	rows, end := extractionListFixture()
+	for _, tc := range []struct {
+		parser string
+		groups int
+		route  bool
+	}{
+		{"logfmt amount", 2, false},
+		{"logfmt amount, route", 6, true},
+	} {
+		t.Run(tc.parser, func(t *testing.T) {
+			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+			query := `sum without (pod) (rate({app="uw"} | ` + tc.parser + ` | unwrap amount [5m]) > 0)`
+			got, _ := binaryAggregationAnswerFor(t, emu, "0", query, end-900e9, end, time.Minute, func(cfg *Config) {
+				cfg.LabelStyle = LabelStyleUnderscores
+				cfg.MetadataFieldMode = MetadataFieldModeTranslated
+			})
+			if len(got) != tc.groups {
+				t.Fatalf("got %d series, want %d; stats=%v raw=%v", len(got), tc.groups, emu.endpointCalls("/select/logsql/stats_query_range"), emu.endpointCalls("/select/logsql/query"))
+			}
+			for labels := range got {
+				if strings.Contains(labels, `"id"`) || (strings.Contains(labels, `"route"`) != tc.route) {
+					t.Fatalf("wrong parser exposure in series labels: %s", labels)
+				}
+			}
+		})
 	}
 }
 
