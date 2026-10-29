@@ -2294,6 +2294,9 @@ func (p *Proxy) resolvedMaxStatsQuerySeries(ctx context.Context) int {
 			return scope.foldBudget
 		}
 	}
+	if folded, _ := ctx.Value(foldedGroupsKey{}).(bool); folded && limit > 0 && limit < foldedGroupsSeriesCeiling {
+		return foldedGroupsSeriesCeiling
+	}
 	return limit
 }
 

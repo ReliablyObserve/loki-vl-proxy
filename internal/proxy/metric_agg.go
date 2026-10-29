@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -132,6 +133,142 @@ type instantMetricPostAgg struct {
 	// group is the by()/without() clause of topk and bottomk: k series are kept
 	// per group (nil: one group).
 	group *logqlpkg.Grouping
+	// grouping is the by/without clause of a stddev or stdvar; nil aggregates
+	// every series into one.
+	grouping *logqlpkg.Grouping
+}
+
+// parseStddevStdvarQuery recognises stddev and stdvar over a vector with a
+// `by`/`without` clause in either position, which Loki folds across the series
+// of each group (pkg/logql/evaluator.go VectorAggEvaluator.Next). The operand
+// is sliced from the query as written, the way the translator reads it.
+func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
+	expr, err := logqlpkg.Parse(logql)
+	if err != nil {
+		return instantMetricPostAgg{}, false
+	}
+	agg, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || (agg.Op != logqlpkg.VectorStddev && agg.Op != logqlpkg.VectorStdvar) {
+		return instantMetricPostAgg{}, false
+	}
+	// Fully enclosing parentheses do not change the aggregation. Strip only
+	// complete pairs, leaving the operand and its quoted contents untouched.
+	source := strings.TrimSpace(logql)
+	for strings.HasPrefix(source, "(") && closingParenIndex(source) == len(source)-1 {
+		source = strings.TrimSpace(source[1 : len(source)-1])
+	}
+	if !strings.HasPrefix(source, string(agg.Op)) {
+		return instantMetricPostAgg{}, false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(source, string(agg.Op)))
+	if !strings.HasPrefix(rest, "(") {
+		// A leading grouping clause: skip it to the operand.
+		open := strings.IndexByte(rest, '(')
+		if open < 0 {
+			return instantMetricPostAgg{}, false
+		}
+		rest = strings.TrimSpace(rest[open+1+strings.IndexByte(rest[open+1:], ')')+1:])
+	}
+	end := closingParenIndex(rest)
+	if end < 0 {
+		return instantMetricPostAgg{}, false
+	}
+	return instantMetricPostAgg{name: string(agg.Op), inner: strings.TrimSpace(rest[1:end]), grouping: agg.Grouping}, true
+}
+
+// foldedGroupsKey marks a stddev or stdvar whose operand's series are folded
+// into groups by the proxy: Loki counts max_query_series on that answer
+// (pkg/logql/engine.go), so the operand's own answer is bounded by
+// foldedGroupsSeriesCeiling instead and the limit applies to the groups.
+type foldedGroupsKey struct{}
+
+// foldedGroupsSeriesCeiling bounds the series of a folded operand; a tenant
+// limit above it keeps its own.
+const foldedGroupsSeriesCeiling = 20000
+
+// foldAcrossSeries marks r as the request of a stddev or stdvar fold: the
+// manual range evaluator stops counting its series (as for foldUngroupedSum, the
+// raw-row budget still bounds the memory) and the stats readers count up to
+// foldedGroupsSeriesCeiling.
+func foldAcrossSeries(r *http.Request, postAgg instantMetricPostAgg) *http.Request {
+	if postAgg.name != "stddev" && postAgg.name != "stdvar" {
+		return r
+	}
+	ctx := context.WithValue(r.Context(), foldedSumKey{}, true)
+	return r.WithContext(context.WithValue(ctx, foldedGroupsKey{}, true))
+}
+
+// capFoldedGroups applies the tenant's series limit to the groups a stddev or
+// stdvar answers, Loki's error for a plain client and the busiest series with
+// its warning for Logs Drilldown. It reports false after writing the error.
+func (p *Proxy) capFoldedGroups(w http.ResponseWriter, r *http.Request, body []byte, postAgg instantMetricPostAgg, limit int) ([]byte, bool) {
+	if postAgg.name != "stddev" && postAgg.name != "stdvar" {
+		return body, true
+	}
+	capped, err := capSeriesToLimit(r.Context(), body, limit)
+	if err != nil {
+		p.writeErr(w, r.Context(), err)
+		return nil, false
+	}
+	return capped, true
+}
+
+var (
+	postAggParserStageRE = regexp.MustCompile(`\|\s*(?:json|logfmt|pattern|regexp|unpack)\b`)
+	postAggFirstByRE     = regexp.MustCompile(`\| stats by \(([^)]*)\)`)
+	postAggMathAliasRE   = regexp.MustCompile(`\| math [^|]* as (\w+)`)
+)
+
+// translatePostAggOperand translates the operand of a post-aggregation. The
+// operand of a stddev or stdvar `by` a parsed label is translated as the
+// series-level form the vector aggregations count, min, max and avg use, whose
+// first stats pipe groups by the listed labels and the series identity; the
+// final stats pipe is dropped, as the fold across the series is the proxy's.
+// What is left must answer one metric per series, the shape of a bare range
+// aggregation, which the manual range evaluator knows: the alias of a function
+// no math pipe reads is removed, and a rate's math pipe (a second metric in a
+// stats_query answer) is followed by a series-level stats over its result, the
+// shape of a grouped rate.
+func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetricPostAgg) (string, error) {
+	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
+		translated, err := p.translateQueryWithContext(ctx, "max by ("+strings.Join(g.Labels, ", ")+") ("+postAgg.inner+")")
+		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
+			operand := translated[:i]
+			first := strings.Index(operand, "| stats ")
+			by := postAggFirstByRE.FindStringSubmatch(operand[first:])
+			math := postAggMathAliasRE.FindAllStringSubmatch(operand[first:], -1)
+			switch {
+			case len(math) == 0:
+				return strings.TrimSuffix(operand, " as __lvp_inner"), nil
+			case by != nil:
+				return operand + " | stats by (" + by[1] + ") sum(" + math[len(math)-1][1] + ")", nil
+			}
+		}
+	}
+	return p.translateQueryWithContext(ctx, postAgg.inner)
+}
+
+// closingParenIndex returns the index of the parenthesis closing the one s
+// opens, skipping quoted strings, or -1.
+func closingParenIndex(s string) int {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '"', '`':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if c == '"' && s[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
@@ -147,20 +284,15 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 		}
 		return instantMetricPostAgg{name: name, inner: inner}, true
 	}
-	// stddev/stdvar as outer aggregations over an already-aggregated metric
-	// (e.g., stddev(sum by(app)(count_over_time({...}[5m])))).
-	// VL has no direct equivalent; the proxy executes the inner query then
-	// applies the aggregation across the returned series.
-	for _, name := range []string{"stddev", "stdvar"} {
-		prefix := name + "("
-		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
-			continue
-		}
-		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
-		if inner == "" {
-			return instantMetricPostAgg{}, false
-		}
-		return instantMetricPostAgg{name: name, inner: inner}, true
+	// stddev/stdvar as outer aggregations over a metric
+	// (e.g., stddev by (app) (count_over_time({...}[5m]))). The values to fold
+	// are the inner query's, one per Loki series, which VictoriaLogs computes
+	// with native stats; it has no stdvar, and its stddev (v1.49+) would leave
+	// the sliding-window evaluator, which reads the first stats pipe, without
+	// the fold. The proxy executes the inner query then applies the aggregation
+	// across the returned series of each group.
+	if postAgg, ok := parseStddevStdvarQuery(logql); ok {
+		return postAgg, true
 	}
 	if postAgg, ok := parseTopKPostAgg(logql); ok {
 		return postAgg, true
@@ -396,7 +528,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	// Parse the inner LogQL expression to drive routing via typed AST.
 	parsedInner, _ := logqlpkg.Parse(postAgg.inner)
 
-	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
+	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -422,6 +554,8 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
+	seriesLimit := p.resolvedMaxStatsQuerySeries(r.Context())
+	r = foldAcrossSeries(r, postAgg)
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -447,9 +581,11 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	if !dispatched {
 		if isStatsQuery(translatedInner) {
 			statsR := r
-			if foldWithout {
+			if foldWithout || postAgg.name == "stddev" || postAgg.name == "stdvar" {
 				// The ranking wraps the folded series: the stats query must not apply
 				// it to the per-stream rows, which hold a different set than the fold.
+				// A wrapped stddev/stdvar also needs the operand as the request's
+				// query so instant stats compatibility reads its original window.
 				statsR = cloneMetricQueryRequest(r, postAgg.inner)
 			}
 			p.proxyStatsQuery(sc, statsR, translatedInner)
@@ -489,6 +625,11 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 			return
 		}
 	}
+	result, ok := p.capFoldedGroups(w, r, result, postAgg, seriesLimit)
+	if !ok {
+		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -504,7 +645,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	// A range the settled steps cache evaluates is recorded with its request.
 	silent := queryStepsSilent(r.Context())
-	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
+	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
@@ -533,6 +674,8 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	if foldWithout {
 		r = p.withWithoutFold(r)
 	}
+	seriesLimit := p.resolvedMaxStatsQuerySeries(r.Context())
+	r = foldAcrossSeries(r, postAgg)
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
@@ -550,22 +693,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	handled := false
-	if postAgg.name == "topk" || postAgg.name == "bottomk" {
-		spec, ok := parseStatsCompatSpec(translatedInner)
-		orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
-		if ok && hasOrig && orig.Window > 0 {
-			fn := normalizeManualMetricFunction(spec, orig)
-			switch fn {
-			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
-				// Rank every series per step from VictoriaLogs window stats
-				// instead of truncating to the busiest series first.
-				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
-				handled = p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
-			}
-		}
-	}
+	handled := p.proxyRankedTopKRange(sc, innerR, translatedInner, postAgg)
 	if !handled {
 		p.proxyStatsQueryRange(sc, innerR, translatedInner)
 	}
@@ -611,6 +739,13 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 			return
 		}
 	}
+	result, ok := p.capFoldedGroups(w, r, result, postAgg, seriesLimit)
+	if !ok {
+		if code := unwrapRecordedStatus(r.Context(), http.StatusBadRequest); !silent {
+			p.metrics.RecordRequest("query_range", code, time.Since(start))
+		}
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -623,77 +758,175 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 }
 
+func (p *Proxy) proxyRankedTopKRange(sc *statusCapture, innerR *http.Request, translatedInner string, postAgg instantMetricPostAgg) bool {
+	if postAgg.name != "topk" && postAgg.name != "bottomk" {
+		return false
+	}
+	spec, ok := parseStatsCompatSpec(translatedInner)
+	orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
+	if !ok || !hasOrig || orig.Window <= 0 {
+		return false
+	}
+	fn := normalizeManualMetricFunction(spec, orig)
+	switch fn {
+	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+		spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
+		// Rank every series per step from VictoriaLogs window stats
+		// instead of truncating to the busiest series first.
+		rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
+		return p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
+	}
+	return false
+}
+
 // applyMatrixPostAggregation applies topk/bottomk/sort/stddev/stdvar to a matrix result.
 func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
 	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
-		return applyMatrixStddevAgg(body, postAgg.name)
+		return applyMatrixStddevAgg(body, postAgg.name, postAgg.grouping)
 	}
 	return applyMatrixSortTopkAgg(body, postAgg)
 }
 
-// applyMatrixStddevAgg computes population stddev/stdvar across all series
-// at each timestamp and returns a single unlabelled series.
-func applyMatrixStddevAgg(body []byte, funcName string) []byte {
+// stddevAccumulator folds the values of one group the way Loki's
+// VectorAggEvaluator does (pkg/logql/evaluator.go): seeded with the first
+// value, then Welford's update; the population variance is m2/n, the standard
+// deviation its square root, 0 for a group of one value.
+type stddevAccumulator struct{ mean, m2, n float64 }
+
+func (a *stddevAccumulator) add(v float64) {
+	a.n++
+	if a.n == 1 {
+		a.mean = v
+		return
+	}
+	delta := v - a.mean
+	a.mean += delta / a.n
+	a.m2 += delta * (v - a.mean)
+}
+
+func (a *stddevAccumulator) result(funcName string) float64 {
+	if funcName == "stdvar" {
+		return a.m2 / a.n
+	}
+	return math.Sqrt(a.m2 / a.n)
+}
+
+// stddevGroupLabels returns the labels of the group a series falls into: `by`
+// keeps the listed labels the series has, `without` drops them, no grouping
+// keeps none (__name__ is never kept, as in VectorAggEvaluator).
+func stddevGroupLabels(metric map[string]string, g *logqlpkg.Grouping) map[string]string {
+	out := map[string]string{}
+	if g == nil {
+		return out
+	}
+	if !g.Without {
+		for _, name := range g.Labels {
+			if v, ok := metric[name]; ok && v != "" {
+				out[name] = v
+			}
+		}
+		return out
+	}
+	for name, v := range metric {
+		if name != "__name__" && v != "" {
+			out[name] = v
+		}
+	}
+	for _, name := range g.Labels {
+		delete(out, name)
+	}
+	return out
+}
+
+// stddevGroups holds the accumulators of the groups at each time, in the
+// order of the groups' label sets.
+type stddevGroups struct {
+	grouping *logqlpkg.Grouping
+	labels   map[string]map[string]string
+	acc      map[string]map[float64]*stddevAccumulator
+}
+
+func newStddevGroups(g *logqlpkg.Grouping) *stddevGroups {
+	return &stddevGroups{grouping: g, labels: map[string]map[string]string{}, acc: map[string]map[float64]*stddevAccumulator{}}
+}
+
+func (g *stddevGroups) add(metric map[string]string, ts, v float64) {
+	labels := stddevGroupLabels(metric, g.grouping)
+	key := binaryLabelKey(labels)
+	if g.acc[key] == nil {
+		g.labels[key] = labels
+		g.acc[key] = map[float64]*stddevAccumulator{}
+	}
+	if g.acc[key][ts] == nil {
+		g.acc[key][ts] = &stddevAccumulator{}
+	}
+	g.acc[key][ts].add(v)
+}
+
+type stddevSeries struct {
+	labels map[string]string
+	points [][]any // (time, value) in time order
+}
+
+// series returns the groups ordered by label set.
+func (g *stddevGroups) series(funcName string) []stddevSeries {
+	keys := make([]string, 0, len(g.acc))
+	for key := range g.acc {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]stddevSeries, 0, len(keys))
+	for _, key := range keys {
+		times := make([]float64, 0, len(g.acc[key]))
+		for ts := range g.acc[key] {
+			times = append(times, ts)
+		}
+		sort.Float64s(times)
+		points := make([][]any, 0, len(times))
+		for _, ts := range times {
+			points = append(points, []any{ts, strconv.FormatFloat(g.acc[key][ts].result(funcName), 'f', -1, 64)})
+		}
+		out = append(out, stddevSeries{g.labels[key], points})
+	}
+	return out
+}
+
+// applyMatrixStddevAgg computes population stddev/stdvar across the series of
+// each group at each timestamp, one series per group (Loki answers a group only
+// at the steps where one of its series has a point). An answer with no
+// resultType holds no rows and is an empty matrix.
+func applyMatrixStddevAgg(body []byte, funcName string, grouping *logqlpkg.Grouping) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
 			ResultType string `json:"resultType"`
 			Result     []struct {
-				Metric map[string]interface{} `json:"metric"`
-				Values [][]interface{}        `json:"values"`
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "matrix" {
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || (resp.Data.ResultType != "matrix" && resp.Data.ResultType != "") {
 		return body
 	}
-
-	// Collect values per timestamp across all series.
-	tsValues := make(map[float64][]float64)
-	var tsOrder []float64
-	seen := make(map[float64]struct{})
+	groups := newStddevGroups(grouping)
 	for _, s := range resp.Data.Result {
 		for _, v := range s.Values {
 			if len(v) < 2 {
 				continue
 			}
-			ts, err := parseFloat(v[0])
-			if err != nil {
-				continue
-			}
-			val, err := parseFloat(v[1])
-			if err != nil {
-				continue
-			}
-			tsValues[ts] = append(tsValues[ts], val)
-			if _, ok := seen[ts]; !ok {
-				seen[ts] = struct{}{}
-				tsOrder = append(tsOrder, ts)
+			ts, errT := parseFloat(v[0])
+			val, errV := parseFloat(v[1])
+			if errT == nil && errV == nil {
+				groups.add(s.Metric, ts, val)
 			}
 		}
 	}
-	sort.Slice(tsOrder, func(i, j int) bool { return tsOrder[i] < tsOrder[j] })
-
-	values := make([][]interface{}, 0, len(tsOrder))
-	for _, ts := range tsOrder {
-		var agg float64
-		if funcName == "stdvar" {
-			agg = populationVariance(tsValues[ts])
-		} else {
-			agg = populationStddev(tsValues[ts])
-		}
-		values = append(values, []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)})
+	result := make([]map[string]any, 0)
+	for _, g := range groups.series(funcName) {
+		result = append(result, map[string]any{"metric": g.labels, "values": g.points})
 	}
-
-	out, err := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"resultType": "matrix",
-			"result": []map[string]interface{}{
-				{"metric": map[string]string{}, "values": values},
-			},
-		},
-	})
+	out, err := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": result}})
 	if err != nil {
 		return body
 	}
@@ -794,63 +1027,45 @@ func parseFloat(v interface{}) (float64, error) {
 
 func applyInstantVectorPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
 	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
-		return applyInstantStddevAgg(body, postAgg.name)
+		return applyInstantStddevAgg(body, postAgg.name, postAgg.grouping)
 	}
 	return applyInstantSortTopkAgg(body, postAgg)
 }
 
-// applyInstantStddevAgg computes population stddev/stdvar across all series
-// in an instant vector and returns a single unlabelled scalar.
-func applyInstantStddevAgg(body []byte, funcName string) []byte {
+// applyInstantStddevAgg computes population stddev/stdvar across the series of
+// each group in an instant vector, one sample per group. An answer with no
+// resultType holds no rows and is an empty vector.
+func applyInstantStddevAgg(body []byte, funcName string, grouping *logqlpkg.Grouping) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
 			ResultType string `json:"resultType"`
 			Result     []struct {
-				Metric map[string]interface{} `json:"metric"`
-				Value  []interface{}          `json:"value"`
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "vector" {
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || (resp.Data.ResultType != "vector" && resp.Data.ResultType != "") {
 		return body
 	}
-
-	// Collect all series values and the timestamp from the first series.
-	var vals []float64
-	var ts float64
-	for i, s := range resp.Data.Result {
+	groups := newStddevGroups(grouping)
+	for _, s := range resp.Data.Result {
 		if len(s.Value) < 2 {
 			continue
 		}
-		if i == 0 {
-			ts, _ = parseFloat(s.Value[0])
+		ts, errT := parseFloat(s.Value[0])
+		val, errV := parseFloat(s.Value[1])
+		if errT == nil && errV == nil {
+			groups.add(s.Metric, ts, val)
 		}
-		if v, err := parseFloat(s.Value[1]); err == nil {
-			vals = append(vals, v)
-		}
 	}
-
-	if len(vals) == 0 {
-		// Loki aggregates an empty input vector into an empty vector.
-		return []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
+	// Loki aggregates an empty input vector into an empty vector.
+	result := make([]map[string]any, 0)
+	for _, g := range groups.series(funcName) {
+		result = append(result, map[string]any{"metric": g.labels, "value": g.points[0]})
 	}
-	var agg float64
-	if funcName == "stdvar" {
-		agg = populationVariance(vals)
-	} else {
-		agg = populationStddev(vals)
-	}
-
-	out, err := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"resultType": "vector",
-			"result": []map[string]interface{}{
-				{"metric": map[string]string{}, "value": []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)}},
-			},
-		},
-	})
+	out, err := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": result}})
 	if err != nil {
 		return body
 	}
@@ -916,31 +1131,6 @@ func vectorPointValue(value []interface{}) float64 {
 	default:
 		return 0
 	}
-}
-
-// populationStddev computes the population standard deviation of vals.
-func populationStddev(vals []float64) float64 {
-	n := float64(len(vals))
-	if n == 0 {
-		return 0
-	}
-	mean := 0.0
-	for _, v := range vals {
-		mean += v
-	}
-	mean /= n
-	variance := 0.0
-	for _, v := range vals {
-		d := v - mean
-		variance += d * d
-	}
-	return math.Sqrt(variance / n)
-}
-
-// populationVariance computes the population variance of vals.
-func populationVariance(vals []float64) float64 {
-	d := populationStddev(vals)
-	return d * d
 }
 
 func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {

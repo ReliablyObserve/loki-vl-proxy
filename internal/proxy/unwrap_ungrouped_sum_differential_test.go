@@ -309,6 +309,12 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 				v, _ := strconv.ParseFloat(rec.f[m[1]], 64)
 				rec.f[m[3]] = strconv.FormatFloat(v/div, 'f', -1, 64)
 			}
+			// A math pipe after the last stats pipe adds a metric to the answer
+			// (VictoriaLogs' stats_query accepts it, "since it adds additional
+			// metrics"): one row per numeric field, the stats results included.
+			if len(names) > 0 {
+				names = append(names, m[3])
+			}
 			continue
 		}
 		if m := emuMathCopyRE.FindStringSubmatch(pipe); m != nil {

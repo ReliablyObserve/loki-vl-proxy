@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -155,7 +156,15 @@ func TestUppercaseKeywordsSendTheLowercaseBackendRequests(t *testing.T) {
 					if len(lower) == 0 {
 						t.Fatalf("the lower-case form %q reached no backend call, the comparison proves nothing", tc.lower)
 					}
-					if upper := run(t, endpoint, variant, tc.upper); strings.Join(upper, "\n") != strings.Join(lower, "\n") {
+					upper := run(t, endpoint, variant, tc.upper)
+					if variant == "multitenant" {
+						// Tenant fanout can issue the same translated request once or twice
+						// depending on coalescing. Compare translated URLs here; tenant
+						// fanout counts are covered by the tenant tests.
+						lower = slices.Compact(lower)
+						upper = slices.Compact(upper)
+					}
+					if strings.Join(upper, "\n") != strings.Join(lower, "\n") {
 						t.Fatalf("backend requests differ\n upper %q\n lower %q", upper, lower)
 					}
 				})

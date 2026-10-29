@@ -1,0 +1,38 @@
+id: semantics/stddev-stdvar-nested-or-binary
+title: stddev and stdvar nested in another expression or under a binary operator keep the group count (open)
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Only a stddev or stdvar that is the whole query takes the route that runs its
+  operand and folds the series of each group (parseInstantMetricPostAggQuery).
+  Nested in another expression, `sum(stddev by (app) (count_over_time(..[5m])))`,
+  or under a binary operator, `stddev by (app) (count_over_time(..[5m])) / 2`,
+  the translator still emits the single-pipe `stats by (app) count()` of the
+  operand's range function: the group's line count where Loki folds the values of
+  the group's series (pkg/logql/evaluator.go VectorAggEvaluator.Next).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'stddev by (app) (count_over_time({env="production"}[5m])) / 2'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    Loki's values.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator tryTranslateMetricQueryWithout stddev/stdvar outer aggregation; internal/proxy binary and nested metric evaluation'
+  loki: 'pkg/logql/evaluator.go:400-529 newVectorAggEvaluator / VectorAggEvaluator.Next'
+  proxy: 'the single-pipe group count of the operand'
+  planned_test: 'TestCompat_StddevStdvarNestedAndBinary (test/e2e-compat, group core)'
+  clusters: []
