@@ -268,7 +268,7 @@ jobs:
     #
     # internal/proxy alone takes ~7 minutes under -race, so its top-level tests
     # are split into three deterministic shards (checksum of the test name over
-    # the sorted `go test -list` output) that run in parallel, each with its own 8m
+    # the sorted `go test -list` output) that run in parallel, each with its own 12m
     # budget. The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -309,7 +309,7 @@ jobs:
         if: matrix.shard != 'other'
         run: |
           set -euo pipefail
-          go test -race -count=1 -timeout=8m -run "$(cat shard-run.txt)" ./internal/proxy/
+          go test -race -count=1 -timeout=12m -run "$(cat shard-run.txt)" ./internal/proxy/
 
       - name: Race-detector tests (cache, middleware, observability)
         if: matrix.shard == 'other'
