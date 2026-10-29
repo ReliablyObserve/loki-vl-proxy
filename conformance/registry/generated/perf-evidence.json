@@ -72759,6 +72759,7 @@
       "warm_p50": 0.006
     }
   ],
+  "semantics/aggregation-over-binary-dropped": [],
   "semantics/detected-level-filter-before-parser-pushdown": [
     {
       "baseline": "release",

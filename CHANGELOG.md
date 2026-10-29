@@ -11,6 +11,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `sum`, `avg`, `min`, `max` or `count` over a binary expression aggregates
+  the whole binary, as Loki does, instead of only its first operand.**
+  `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
+  answered the aggregated rate alone, `sum(rate({app="x"}[1m]) / 2)` lost the
+  `/ 2`, a comparison (`max(rate(...) > 0.5)`) filtered nothing, and `on()`,
+  `ignoring()` and `group_left` under an aggregation were ignored: all with a 200
+  and wrong values on query_range. On an instant query, a literal or a nested
+  binary as the first operand (`sum(2 * rate(...))`) answered 400 "log queries are
+  not supported as an instant query type". Loki (3.7.9, as 3.7.7) joins the operands per
+  series (`pkg/logql/evaluator.go:791` `newBinOpStepEvaluator`, `:955`
+  `vectorBinop`, `:1096` `resultMetric`; a comparison keeps the left value or,
+  with `bool`, answers 0 or 1) and then folds the joined series per step by the
+  aggregation's grouping (`VectorAggEvaluator.Next`, `:435-630`). The proxy sent
+  only a top-level binary to its binary evaluator; under an aggregation the
+  translator kept the first operand's stats chain and dropped the rest. Now
+  query and query_range send an aggregation (by, without or no grouping, nested
+  aggregations included) over a binary to the binary evaluator: each operand
+  stays a native VictoriaLogs stats query through its own handler, the proxy
+  joins the aggregated operand series and folds them per step, with no raw rows
+  and work bounded by the operands' series. An operand keeps its own parser when
+  the query names both `| json` and `| logfmt`, and an offset on one side only
+  is accepted as for a bare binary. Such a query also went through the proxy's
+  parser probe, which drops the parser that does not fit the lines from the
+  whole query; in a metric query its text rewrite took a stage's parameters up
+  to the next `|`, so when the dropped stage was the last one before an
+  operand's range it cut the rest of the query: the aggregation then answered
+  the 400 above on /query and log streams on /query_range, and a top-level
+  binary of such operands answered its left operand alone with a 200 (sum by
+  job 10 and 12 on the unit fixture, where Loki answers 2.5 and 6). The probe
+  now leaves a binary, and an aggregation over one, to its operands, each
+  probed on its own; a query of one operand naming both parsers is probed as
+  before (still cut there: not covered here). A `label_replace` (or the proxy's `label_join`,
+  which Loki's grammar does not have) around
+  such an aggregation (the shape the differential corpus found on /query)
+  is evaluated the same way and the transform applies to the folded answer,
+  with each operand still reading the request's own parsers; a transform inside
+  an operand (`sum(label_replace(a, ...) / b)`) is applied by that operand, not
+  again to the answer. The series the proxy folds (this, and every `without`)
+  keep every label set apart, a value holding `,` or `=` included, and come in
+  Loki's order (`labels.Compare`, `pkg/logql/engine.go:569` and `:604`), in the
+  typed fold too, which ordered its groups by their key text (`{x="a"}` before
+  `{job="a",x="a"}`, `{pod="api-2"}` before `{pod="api-10"}`) (#741). This also gives Loki's values for
+  `sum by (cluster) (sum by (cluster) (A) + ignoring(machine) sum by (cluster,
+  machine) (B))`, the query of `semantics/binary-ignoring-matching`: on the
+  unit fixture the proxy answered one unlabeled series valued 6 where Loki
+  answers `{job="a"}` 8 and `{job="b"}` 4. That row stays open for its error
+  text. It also closes `semantics/without-comparison-inside-ignored`:
+  `sum without (pod) (rate({...} | unwrap amount [5m]) > 0.33)` summed every
+  series, the comparison dropped (on the unit fixture `{ns="x"}` 1.23333 at an
+  instant where Loki answers 0.333333, the only pod above the threshold); the
+  comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
+  rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
+
 - **`sum(rate_counter(... | logfmt | unwrap x [r]))` answers Loki's zeros
   when every parsed series holds one sample, from VictoriaLogs stats.** Loki
   rates `rate_counter` per series of its sample extractor, the stream plus
@@ -307,59 +360,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fires on `status="500"`. The heavy-query and metadata-scan queues answer
   `429` with Loki's text only; the flags they name are in the log line.
   Error texts no longer carry VictoriaLogs' reason: read it in the proxy log.
-
-- **A `sum`, `avg`, `min`, `max` or `count` over a binary expression aggregates
-  the whole binary, as Loki does, instead of only its first operand.**
-  `sum by (job) (rate({app="api-gateway"}[1m]) / count_over_time({app="api-gateway"}[1m]))`
-  answered the aggregated rate alone, `sum(rate({app="x"}[1m]) / 2)` lost the
-  `/ 2`, a comparison (`max(rate(...) > 0.5)`) filtered nothing, and `on()`,
-  `ignoring()` and `group_left` under an aggregation were ignored: all with a 200
-  and wrong values on query_range. On an instant query, a literal or a nested
-  binary as the first operand (`sum(2 * rate(...))`) answered 400 "log queries are
-  not supported as an instant query type". Loki (3.7.9, as 3.7.7) joins the operands per
-  series (`pkg/logql/evaluator.go:791` `newBinOpStepEvaluator`, `:955`
-  `vectorBinop`, `:1096` `resultMetric`; a comparison keeps the left value or,
-  with `bool`, answers 0 or 1) and then folds the joined series per step by the
-  aggregation's grouping (`VectorAggEvaluator.Next`, `:435-630`). The proxy sent
-  only a top-level binary to its binary evaluator; under an aggregation the
-  translator kept the first operand's stats chain and dropped the rest. Now
-  query and query_range send an aggregation (by, without or no grouping, nested
-  aggregations included) over a binary to the binary evaluator: each operand
-  stays a native VictoriaLogs stats query through its own handler, the proxy
-  joins the aggregated operand series and folds them per step, with no raw rows
-  and work bounded by the operands' series. An operand keeps its own parser when
-  the query names both `| json` and `| logfmt`, and an offset on one side only
-  is accepted as for a bare binary. Such a query also went through the proxy's
-  parser probe, which drops the parser that does not fit the lines from the
-  whole query; in a metric query its text rewrite took a stage's parameters up
-  to the next `|`, so when the dropped stage was the last one before an
-  operand's range it cut the rest of the query: the aggregation then answered
-  the 400 above on /query and log streams on /query_range, and a top-level
-  binary of such operands answered its left operand alone with a 200 (sum by
-  job 10 and 12 on the unit fixture, where Loki answers 2.5 and 6). The probe
-  now leaves a binary, and an aggregation over one, to its operands, each
-  probed on its own; a query of one operand naming both parsers is probed as
-  before (still cut there: not covered here). A `label_replace` (or the proxy's `label_join`,
-  which Loki's grammar does not have) around
-  such an aggregation (the shape the differential corpus found on /query)
-  is evaluated the same way and the transform applies to the folded answer,
-  with each operand still reading the request's own parsers; a transform inside
-  an operand (`sum(label_replace(a, ...) / b)`) is applied by that operand, not
-  again to the answer. The series the proxy folds (this, and every `without`)
-  keep every label set apart, a value holding `,` or `=` included, and come in
-  Loki's order (`labels.Compare`, `pkg/logql/engine.go:569` and `:604`), in the
-  typed fold too, which ordered its groups by their key text (`{x="a"}` before
-  `{job="a",x="a"}`, `{pod="api-2"}` before `{pod="api-10"}`) (#741). This also gives Loki's values for
-  `sum by (cluster) (sum by (cluster) (A) + ignoring(machine) sum by (cluster,
-  machine) (B))`, the query of `semantics/binary-ignoring-matching`: on the
-  unit fixture the proxy answered one unlabeled series valued 6 where Loki
-  answers `{job="a"}` 8 and `{job="b"}` 4. That row stays open for its error
-  text. It also closes `semantics/without-comparison-inside-ignored`:
-  `sum without (pod) (rate({...} | unwrap amount [5m]) > 0.33)` summed every
-  series, the comparison dropped (on the unit fixture `{ns="x"}` 1.23333 at an
-  instant where Loki answers 0.333333, the only pod above the threshold); the
-  comparison now filters the series before the sum. Registry: `semantics/aggregation-over-binary-dropped`; new open
-  rows `semantics/binary-step-grid` and `semantics/binary-division-by-zero-nan`.
 
 ## [2.43.0] - 2026-10-28
 
