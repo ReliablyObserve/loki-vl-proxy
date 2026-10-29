@@ -1956,6 +1956,8 @@ func parseUnquotedStringArgs(s string) []string {
 		s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s[len(quoted):]), ","))
 	}
 	return args
+}
+
 // SplitLabelReplace splits label_replace(v, "dst", "repl", "src", "regex") into
 // the inner expression v and its label arguments.
 func SplitLabelReplace(logql string) (inner string, spec LabelReplaceSpec, ok bool) {

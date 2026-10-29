@@ -211,7 +211,7 @@ func (s absentOverTimeCompatSpec) series() (labels map[string]string, value stri
 	}
 	for i := len(s.labelReplaces) - 1; i >= 0; i-- {
 		spec := s.labelReplaces[i]
-		replaceLabel(labels, regexp.MustCompile("^(?:"+spec.Regex+")$"), spec)
+		labels = replaceLabel(labels, regexp.MustCompile("^(?:"+spec.Regex+")$"), spec)
 	}
 	return labels, value, true
 }
