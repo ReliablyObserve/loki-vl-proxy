@@ -1,5 +1,5 @@
 id: profiles/keep-removes-derived-service-name
-title: `| keep` removes service_name the proxy derived for a stream without one (open)
+title: `| keep` removes service_name the proxy derived for a stream without one (fixed)
 proves:
   - service-name-derivation
   - loki_api_v1_query_range
@@ -21,19 +21,20 @@ request:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
-  mode: observed
+  mode: exact
   fields: [streams.stream]
   expect: |
     Only the kept labels.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 90dc4542842eb4c03fea851b52bbda94dce08910
   impact: explore-visible
   effort: S
   area: 'internal/proxy service_name derivation after keep/drop'
   loki: 'pkg/logql/log/keep_labels.go:15-44 KeepLabels.Process'
-  proxy: 'derived service_name re-added after keep'
+  proxy: 'translated stream labels now obey bare keep/drop even when absent from the stored _stream'
   planned_test: 'TestCompat_KeepRemovesDerivedServiceName (test/e2e-compat, group semantics)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  note: 'Reproduced on main a1d16276 against Loki 3.7.9; the paired E2E fixture checks default and categorize-labels responses. The separate structured-metadata keep case remains open.'
   clusters:
     - 0acfebdb
     - 3e6bb855
