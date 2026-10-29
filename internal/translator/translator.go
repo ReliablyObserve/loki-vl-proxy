@@ -3048,12 +3048,6 @@ func applyServiceNameGrouping(query string, caps logsql.Capabilities) string {
 // one of them.
 func applyDerivedGroupings(query string, caps logsql.Capabilities, streamFields map[string]bool) string {
 	query = applyServiceNameGrouping(query, caps)
-	if strings.Contains(query, UnwrapValueAlias) {
-		// An unwrap query keeps the series identity it had: its per-series
-		// values and their stream identity are registered apart
-		// (semantics/unwrap-per-series-identity-raw-rows).
-		return applyDetectedLevelGrouping(query, detectedLevelKnownFields(streamFields))
-	}
 	return ApplyStreamIdentityDetectedLevel(query, streamFields)
 }
 
@@ -3076,7 +3070,7 @@ func addDetectedLevelToStreamIdentity(query string) string {
 	const marker = "| stats by ("
 	var b strings.Builder
 	for rest := query; ; {
-		idx := strings.Index(rest, marker)
+		idx := topLevelPipePrefix(rest, marker)
 		if idx < 0 {
 			b.WriteString(rest)
 			return b.String()
@@ -3137,7 +3131,7 @@ func applyDetectedLevelGrouping(query string, existingFields []string) string {
 	}
 	chain := BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping, nil)
 	return applyDerivedGrouping(query, detectedLevelLabelName, func(q string) string {
-		if strings.Contains(q, detectedLevelChainMarker) {
+		if topLevelPipePrefix(q, detectedLevelChainMarker) >= 0 {
 			return q // already derived: the chain must run once
 		}
 		pipeAt := firstTopLevelPipe(q)
@@ -3186,7 +3180,7 @@ func WithDerivedServiceName(query string, caps logsql.Capabilities) string {
 func statsGroupsByLabel(query, label string) bool {
 	const marker = "| stats by ("
 	for rest := query; ; {
-		idx := strings.Index(rest, marker)
+		idx := topLevelPipePrefix(rest, marker)
 		if idx < 0 {
 			return false
 		}
@@ -3202,6 +3196,24 @@ func statsGroupsByLabel(query, label string) bool {
 		}
 		rest = rest[end:]
 	}
+}
+
+// topLevelPipePrefix finds a pipe stage outside LogsQL's quoted strings.
+// Source selectors and filters may contain text that looks exactly like a
+// stats or derivation stage; treating it as syntax mutates the user's data.
+func topLevelPipePrefix(query, prefix string) int {
+	for offset := 0; offset < len(query); {
+		next := firstTopLevelPipe(query[offset:])
+		if next < 0 {
+			return -1
+		}
+		idx := offset + next
+		if strings.HasPrefix(query[idx:], prefix) {
+			return idx
+		}
+		offset = idx + 1
+	}
+	return -1
 }
 
 // FirstTopLevelPipe returns the index of the first '|' of a LogsQL query

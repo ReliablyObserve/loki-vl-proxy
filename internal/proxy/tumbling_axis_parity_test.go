@@ -195,7 +195,9 @@ func newTumblingFakeVL(t *testing.T, lines []tumblingLine) (*httptest.Server, *t
 			_, _ = w.Write(body)
 		case "/select/logsql/query":
 			fake.mu.Lock()
-			fake.rawCalls++
+			if !strings.Contains(r.Form.Get("query"), "| stats ") {
+				fake.rawCalls++
+			}
 			fake.mu.Unlock()
 			start := parseFakeVLTime(t, r.Form.Get("start"))
 			end := parseFakeVLTime(t, r.Form.Get("end"))

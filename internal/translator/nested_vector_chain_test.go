@@ -109,7 +109,7 @@ func TestNestedVectorAggregationEmitsOneStatsPipePerLevel(t *testing.T) {
 			}
 			continue
 		}
-		if got != tc.want {
+		if withoutDetectedLevelShape(got) != tc.want {
 			t.Errorf("%s: %s\n got %s\nwant %s", tc.name, tc.logql, got, tc.want)
 		}
 	}

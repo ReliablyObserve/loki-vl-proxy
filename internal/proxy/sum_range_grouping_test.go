@@ -20,6 +20,11 @@ func TestSumAllLogRangeUsesStatsFastPath(t *testing.T) {
 			t.Run(function+"/"+format, func(t *testing.T) {
 				calls := 0
 				backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/select/logsql/query" && strings.Contains(r.FormValue("query"), "| stats ") {
+						// The bounded field-presence probe is an aggregate, not a raw-row metric read.
+						w.WriteHeader(http.StatusOK)
+						return
+					}
 					if r.URL.Path != "/select/logsql/stats_query_range" {
 						t.Errorf("aggregate-all must retain stats fast path, got %s", r.URL.Path)
 						http.Error(w, "unexpected endpoint", http.StatusInternalServerError)

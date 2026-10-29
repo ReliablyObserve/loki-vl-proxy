@@ -453,6 +453,11 @@ func TestContract_QueryRange_MatrixFormat_SlidingRateUsesAnchoredStatsBuckets(t 
 	)
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" && strings.Contains(r.FormValue("query"), "| stats ") {
+			// Field-presence probe, not a raw-row metric fetch.
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Errorf("unexpected path %s; sliding rate must use anchored stats buckets", r.URL.Path)
 			http.Error(w, "wrong endpoint", http.StatusBadRequest)
@@ -524,6 +529,10 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateRelabelsBucketsToLokiTimes
 	var receivedStart, receivedEnd string
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" && strings.Contains(r.FormValue("query"), "| stats ") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Errorf("unexpected path %s; tumbling rate (range==step) must use stats", r.URL.Path)
 			http.Error(w, "wrong endpoint", http.StatusBadRequest)

@@ -170,8 +170,10 @@ func (p *Proxy) unwrapGroupPushdown(spec statsCompatSpec, manualFunc, query stri
 	var kept []string
 	for _, g := range spec.GroupBy {
 		// The series identity the translation adds after the outer labels: the
-		// stream, the line, and the stored level a stream's series is labelled by.
-		if g == "_stream" || g == "_msg" || (g == "level" && !vlLabels[g]) {
+		// stream, the line, and the stored or derived level a stream's series
+		// is labelled by. The outer max/min discards these inner labels.
+		if g == "_stream" || g == "_msg" || (g == "level" && !vlLabels[g]) ||
+			(g == "detected_level" && !vlLabels[g]) {
 			continue
 		}
 		kept = append(kept, g)

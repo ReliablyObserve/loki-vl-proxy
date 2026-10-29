@@ -73,7 +73,7 @@ func TestFirstLastOverTimeBareIsOneValuePerSeries(t *testing.T) {
 	}{
 		{`first_over_time({app="p"} | logfmt | unwrap amount [5m])`, "row_min", "_stream, _msg"},
 		{`last_over_time({app="p"} | json | unwrap amount [5m])`, "row_max", "_stream, _msg"},
-		{`last_over_time({app="p"} | unwrap amount [5m])`, "row_max", "_stream, level"},
+		{`last_over_time({app="p"} | unwrap amount [5m])`, "row_max", "_stream, level, detected_level"},
 		{`last_over_time({app="p"} | logfmt | unwrap amount [5m]) by (pod)`, "row_max", "pod"},
 		{`first_over_time({app="p"} | logfmt | unwrap amount [5m]) by ()`, "row_min", ""},
 		// A range-level by (...) groups the samples before the range function

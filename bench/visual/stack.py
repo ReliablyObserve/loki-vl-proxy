@@ -29,6 +29,7 @@ import importlib.util
 import subprocess
 import sys
 import time
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("ab_stack", os.path.join(HERE, "..", "ab", "stack.py"))
@@ -112,6 +113,21 @@ def seed_vl_only(st, start, end, out):
     sink.shutdown()
 
 
+def seed_unknown_level_fixture(st, end):
+    """Mirror plain lines with no severity so the unknown-level metric has a real visual discriminator."""
+    labels = {"service_name": "visual-detected-level", "app": "visual-detected-level",
+              "env": "production", "pod": "visual-detected-level-1"}
+    values = [[str((end - 3600 + i * 30) * 1_000_000_000 + 500_000_000),
+               f"ordinary visual sample {i}"] for i in range(119)]
+    payload = json.dumps({"streams": [{"stream": labels, "values": values}]}).encode()
+    for url in (f"{st.loki}/loki/api/v1/push",
+                f"{st.vl}/insert/loki/api/v1/push?disable_message_parsing=1"):
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": "application/json", "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+
+
 def up(a):
     os.makedirs(a.out, exist_ok=True)
     st = stack(a.project, a.overlay, a.no_level_label)
@@ -145,6 +161,7 @@ def up(a):
         if a.hours > a.loki_hours:
             ab.log(f"seeding VictoriaLogs only: {a.hours}h .. {a.loki_hours}h before the end")
             seed_vl_only(st, end - int(a.hours * 3600), loki_start, a.out)
+        seed_unknown_level_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         st.seed(end - loki_start, end)
     specs, procs = [], []

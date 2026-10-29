@@ -1257,10 +1257,24 @@
   {
    "id": "explore-rate-detected-level-unknown",
    "kind": "explore",
-   "query": "sum without (pod) (rate({service_name=\"api-gateway\"}[$__auto]))",
+   "query": "sum without (pod) (rate({service_name=\"visual-detected-level\"}[$__auto]))",
+   "ranges": ["15m", "1h"],
    "covers": [
     "semantics/detected-level-missing-from-stats-answers",
     "severity-detected-level-derivation",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/detected-level-missing-from-stats-answers"
+   ]
+  },
+  {
+   "id": "explore-rate-drop-detected-level",
+   "kind": "explore",
+   "query": "sum without (pod, level) (rate({service_name=\"api-gateway\"} | drop detected_level [$__auto]))",
+   "ranges": ["15m", "1h"],
+   "covers": [
+    "semantics/detected-level-missing-from-stats-answers",
     "loki_api_v1_query_range"
    ],
    "fixes": [

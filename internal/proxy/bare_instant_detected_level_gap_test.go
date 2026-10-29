@@ -5,25 +5,27 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
-// Pins an open gap, not a goal: a bare range function over a stream with no
-// level label carries detected_level="unknown" on query_range, as Loki labels it,
-// and lacks it on an instant query (the instant stats answer is labelled from
-// the stream alone). The same holds for the function under a label_replace,
-// which changes no label but its destination. When "detected_level, unknown
-// included, on every route" lands (#750), flip the instant expectation and set
-// the registry row to fixed.
+// A bare range function over a stream with no level label carries
+// detected_level="unknown" on both query_range and instant answers, including
+// under label_replace, as Loki labels it.
 // conformance: semantics/instant-bare-range-detected-level-unknown
-func TestInstantBareRangeLacksDetectedLevelUnknown(t *testing.T) {
+func TestInstantBareRangeHasDetectedLevelUnknown(t *testing.T) {
 	const stream = `{\"app\":\"api-gateway\",\"env\":\"prod-eu\",\"probe\":\"a1\"}`
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/stats_query" || r.URL.Path == "/select/logsql/stats_query_range" {
+			if !strings.Contains(r.FormValue("query"), "| stats by (_stream, level, detected_level)") {
+				t.Errorf("expected stream grouping to derive detected_level: %s", r.FormValue("query"))
+			}
+		}
 		switch r.URL.Path {
 		case "/select/logsql/stats_query":
-			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"_stream":"%s"},"value":[1704067260,"0.5"]}]}}`, stream)
+			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"_stream":"%s","detected_level":"unknown"},"value":[1704067260,"0.5"]}]}}`, stream)
 		case "/select/logsql/stats_query_range":
-			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"%s"},"values":[[1704067200,"1"]]}]}}`, stream)
+			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"%s","detected_level":"unknown"},"values":[[1704067200,"1"]]}]}}`, stream)
 		default:
 			fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
 		}
@@ -49,11 +51,8 @@ func TestInstantBareRangeLacksDetectedLevelUnknown(t *testing.T) {
 				t.Fatalf("%s %s: HTTP %d, %d series\n%s", endpoint, query, a.code, len(a.series), a.body)
 			}
 			level, has := a.series[0].Metric["detected_level"]
-			if endpoint == "query_range" && (!has || level != "unknown") {
+			if !has || level != "unknown" {
 				t.Errorf("%s %s: detected_level=%q (present %v), want unknown\n%s", endpoint, query, level, has, a.body)
-			}
-			if endpoint == "query" && has {
-				t.Errorf("%s %s: detected_level=%q is present: the gap is closed, flip this test and the registry row\n%s", endpoint, query, level, a.body)
 			}
 		}
 	}

@@ -309,8 +309,10 @@ func runDLScenario(t *testing.T, s dlScenario, version string) map[string]*dlSer
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", s.query, res.Code, res.Body)
 	}
-	if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
-		t.Fatalf("%s: the metric read raw rows: %s", s.query, raw[0])
+	for _, query := range emu.endpointCalls("/select/logsql/query") {
+		if !strings.Contains(query, "| stats ") {
+			t.Fatalf("%s: the metric read raw rows: %s", s.query, query)
+		}
 	}
 	var resp struct {
 		Data struct {

@@ -468,7 +468,7 @@ func TestStreamIdentityGroupsByDetectedLevel(t *testing.T) {
 	}{
 		{"count by label: inner series identity", `count by (pod) (count_over_time({app="x"}[5m]))`, []string{"pod, _stream, level, detected_level", "pod"}, true},
 		{"max without: both stages", `max without (pod) (count_over_time({app="x"}[5m]))`, []string{"_stream, level, detected_level", "_stream, level, detected_level"}, true},
-		{"rate without", `sum without (pod) (rate({app="x"}[5m]))`, []string{"_stream, level, detected_level"}, true},
+		{"rate without", `sum without (pod) (rate({app="x"}[5m]))`, []string{"_stream, level, detected_level", "_stream, level, detected_level"}, true},
 		{"already grouped by detected_level", `count by (detected_level) (count_over_time({app="x"}[5m]))`, []string{"detected_level, _stream, level", "detected_level"}, true},
 		{"sum by label: no stream identity", `sum by (pod) (count_over_time({app="x"}[5m]))`, []string{"pod"}, false},
 		{"parser pipeline: stream only", `count by (pod) (count_over_time({app="x"} | json [5m]))`, []string{"pod, _stream", "pod"}, false},
@@ -528,6 +528,29 @@ func TestApplyStreamIdentityDetectedLevelKeepsStageOrder(t *testing.T) {
 	}
 }
 
+func TestApplyStreamIdentityDetectedLevelIgnoresQuotedPipeText(t *testing.T) {
+	for _, literal := range []string{
+		`"literal | stats by (_stream, level)"`,
+		"`literal | stats by (_stream, level)`",
+		`"literal \" | stats by (_stream, level)"`,
+	} {
+		query := `app:=` + literal + ` | stats by (_stream, level) count()`
+		got := ApplyStreamIdentityDetectedLevel(query, nil)
+		if !strings.Contains(got, `app:=`+literal) {
+			t.Fatalf("quoted selector was modified: %s", got)
+		}
+		if !strings.HasSuffix(got, `| stats by (_stream, level, detected_level) count()`) {
+			t.Fatalf("real stats grouping was not modified: %s", got)
+		}
+	}
+	query := `app:="literal | format if (detected_level:*) \"<detected_level>\" as __dl_s" | stats by (_stream, level) count()`
+	got := ApplyStreamIdentityDetectedLevel(query, nil)
+	if !strings.Contains(got, `app:="literal | format if (detected_level:*) \"<detected_level>\" as __dl_s"`) ||
+		!strings.Contains(got, ` | format if (detected_level:*) "<detected_level>" as __dl_s`) {
+		t.Fatalf("quoted chain marker prevented real derivation or was modified: %s", got)
+	}
+}
+
 // withoutDetectedLevelShape removes what ApplyStreamIdentityDetectedLevel adds
 // to a stream-identity grouping, for the tests that pin the shape of the stats
 // pipes apart from the derivation of detected_level.
@@ -539,5 +562,6 @@ func withoutDetectedLevelShape(query string) string {
 			query = query[:start] + query[start+stop+len(end):]
 		}
 	}
+	query = strings.ReplaceAll(query, ", detected_level, ", ", ")
 	return strings.ReplaceAll(query, ", detected_level)", ")")
 }

@@ -78,6 +78,16 @@ type vlEmulator struct {
 	widest int
 }
 
+func (e *vlEmulator) levelOf(level, msg string) string {
+	if e.deriveLevel != nil {
+		return e.deriveLevel(level, msg)
+	}
+	if level != "" {
+		return level
+	}
+	return "unknown"
+}
+
 func (e *vlEmulator) record(path, query string) {
 	e.mu.Lock()
 	e.calls = append(e.calls, emuCall{path, query})
@@ -91,6 +101,12 @@ func (e *vlEmulator) endpointCalls(path string) []string {
 	var out []string
 	for _, c := range e.calls {
 		if c.path == path {
+			// /query also carries a bounded stats-only field-presence probe.
+			// Callers asking for raw-row reads mean the queries that return rows,
+			// not this aggregate probe.
+			if path == "/select/logsql/query" && strings.Contains(c.query, "| stats ") {
+				continue
+			}
 			out = append(out, c.query)
 		}
 	}
@@ -189,8 +205,8 @@ func (e *vlEmulator) serveRaw(w http.ResponseWriter, r *http.Request) {
 		for k, v := range row.labels {
 			fields[k] = v
 		}
-		if e.deriveLevel != nil && strings.Contains(r.FormValue("query"), `format "<__dl>" as detected_level`) {
-			fields["detected_level"] = e.deriveLevel(fields["level"], fields["_msg"])
+		if strings.Contains(r.FormValue("query"), `format "<__dl>" as detected_level`) {
+			fields["detected_level"] = e.levelOf(fields["level"], fields["_msg"])
 		}
 		line, _ := json.Marshal(fields)
 		_, _ = w.Write(append(line, '\n'))
@@ -267,8 +283,8 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	// a delete pipe removes the fields it names (`| drop detected_level`).
 	var fieldOps []func(f map[string]string)
 	for _, pipe := range pipes[:first] {
-		if pipe == `format "<__dl>" as detected_level` && e.deriveLevel != nil {
-			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.deriveLevel(f["level"], f["_msg"]) })
+		if pipe == `format "<__dl>" as detected_level` {
+			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOf(f["level"], f["_msg"]) })
 		}
 		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
 			fieldOps = append(fieldOps, func(f map[string]string) {

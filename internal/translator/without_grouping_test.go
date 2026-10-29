@@ -65,7 +65,7 @@ func TestWithoutKeepsSeriesInLastStatsPipe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.logql, err)
 		}
-		if g := lastStatsGrouping(got); g != tc.want {
+		if g := lastStatsGrouping(withoutDetectedLevelShape(got)); g != tc.want {
 			t.Errorf("%s: last stats pipe grouped by (%s), want (%s)\n%s", tc.logql, g, tc.want, got)
 		}
 		excluded := strings.ReplaceAll(tc.logql[strings.Index(tc.logql, "(")+1:strings.Index(tc.logql, ")")], " ", "")

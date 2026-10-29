@@ -117,7 +117,7 @@ func (s dlUnknownShape) run(t *testing.T, fx *dlUnknownFixture, base, query stri
 // Loki's series (the labels with detected_level="unknown" for the lines no rule
 // gives a level, and the level the body gives for the others) with Loki's
 // values, at an instant, over a tumbling window and over a sliding window.
-// conformance: semantics/detected-level-missing-from-stats-answers, severity-exposure-surfaces, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/detected-level-missing-from-stats-answers, semantics/instant-bare-range-detected-level-unknown, semantics/without-instant-detected-level-unknown, severity-exposure-surfaces, metric-series-identity, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_DetectedLevelUnknownInStatsAnswers(t *testing.T) {
 	fx := ensureDLUnknownFixture(t)
 	fx.waitForLoki(t)
