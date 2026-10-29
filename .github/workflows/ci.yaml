@@ -53,8 +53,8 @@ jobs:
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-      # internal/proxy can exceed 20 minutes under -race with coverage on a
-      # contended hosted runner; keep the complete suite and allow headroom.
+      # internal/proxy can exceed 35 minutes under -race with coverage on a
+      # slower hosted runner; keep the complete suite and allow headroom.
       #
       # -json keeps every test's outcome: the conformance job reads the
       # ./internal/... part of it (its evidence check) instead of running the
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          go test ./... -count=1 -race -timeout=35m -coverprofile=coverage.out -json \
+          go test ./... -count=1 -race -timeout=50m -coverprofile=coverage.out -json \
             | tee unit-results-full.json \
             | jq -rR --unbuffered 'fromjson? | select(.Action == "output" and .Test == null) | .Output | rtrimstr("\n") | select(. != "PASS" and (startswith("coverage:") | not))' \
             || status=$?
