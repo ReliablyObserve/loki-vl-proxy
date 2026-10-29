@@ -281,6 +281,7 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/stream_metadata_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
@@ -303,6 +304,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
@@ -476,6 +478,10 @@
     "profiles/grafana-shows-loki-error-text": [
       "internal/proxy/loki_profile_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
+    ],
+    "profiles/keep-removes-derived-service-name": [
+      "internal/proxy/stream_metadata_test.go",
+      "test/e2e-compat/keep_service_name_test.go"
     ],
     "profiles/label-browse-params-ignored": [
       "internal/proxy/loki_profile_test.go",
@@ -1706,6 +1712,10 @@
     "internal/proxy/stored_level_series_limit_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
+    "internal/proxy/stream_metadata_test.go": [
+      "loki_api_v1_query_range",
+      "profiles/keep-removes-derived-service-name"
+    ],
     "internal/proxy/sum_without_differential_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -2112,6 +2122,10 @@
     "test/e2e-compat/json_instant_volume_stats_test.go": [
       "semantics/json-instant-volume-stats"
     ],
+    "test/e2e-compat/keep_service_name_test.go": [
+      "loki_api_v1_query_range",
+      "profiles/keep-removes-derived-service-name"
+    ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -2380,7 +2394,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 236,
+  "tests_with_markers": 238,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2418,7 +2432,6 @@
     "profiles/json-extraction-list-missing-key",
     "profiles/json-line-stored-without-line",
     "profiles/json-number-label-text",
-    "profiles/keep-removes-derived-service-name",
     "profiles/keep-structured-metadata-key",
     "profiles/label-endpoints-window-and-data",
     "profiles/metadata-default-lookback",
@@ -2474,5 +2487,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 194
+  "wired_items": 195
 }
