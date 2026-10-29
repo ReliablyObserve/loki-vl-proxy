@@ -325,6 +325,11 @@ class RankedAnswerTest(unittest.TestCase):
         self.assertEqual(row["loki_new"], [])
         self.assertEqual(row["pr_vs_loki"], "1/1 identical")
 
+    def test_uppercase_topk_uses_the_same_ranked_comparison(self):
+        expr = 'TOPK(2, SUM BY (service_name, level) (COUNT_OVER_TIME({env="production"}[5s])))'
+        _, row = self.run_compare(ranked_capture(self.PROXY, expr), ranked_capture(self.PROXY, expr), ranked_capture(self.LOKI, expr))
+        self.assertEqual(row["loki_diffs"], [])
+
     def test_the_union_of_series_differing_by_one_is_still_a_difference_for_other_queries(self):
         expr = 'sum by (service_name, level) (count_over_time({env="production"}[5s]))'
         _, row = self.run_compare(ranked_capture(self.PROXY, expr), ranked_capture(self.PROXY, expr), ranked_capture(self.LOKI, expr))

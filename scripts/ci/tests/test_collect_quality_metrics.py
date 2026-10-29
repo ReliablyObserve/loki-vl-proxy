@@ -48,6 +48,10 @@ case "$*" in
   "test ./... "*"-json")
     for a in "$@"; do case "$a" in -coverprofile=*) printf 'mode: set\\n' > "${a#-coverprofile=}";; esac; done
     cat "$STUB_EVENTS"
+    if [ "${STUB_GO_TEST_FAIL:-0}" = "1" ]; then
+      echo "simulated go test failure" >&2
+      exit 42
+    fi
     ;;
   "tool cover -func="*)
     printf 'p/a/a.go:1:\\tf\\t100.0%%\\ntotal:\\t(statements)\\t%s\\n' "$STUB_COVERAGE"
@@ -108,7 +112,7 @@ class CollectQualityMetricsTest(unittest.TestCase):
         cls.garbage = cls.run_script("garbage", "oops")
 
     @classmethod
-    def run_script(cls, name, snapshot=None):
+    def run_script(cls, name, snapshot=None, extra_env=None):
         out, log = cls.dir / f"{name}.json", cls.dir / f"{name}.calls"
         log.write_text("")
         env = {
@@ -121,6 +125,7 @@ class CollectQualityMetricsTest(unittest.TestCase):
             "QUALITY_SKIP_PERF": "1",
         }
         env.pop("QUALITY_TESTS_SNAPSHOT", None)
+        env.update(extra_env or {})
         if snapshot is not None:
             path = cls.dir / f"{name}.snapshot"
             path.write_text(snapshot if isinstance(snapshot, str) else json.dumps(snapshot))
@@ -131,6 +136,7 @@ class CollectQualityMetricsTest(unittest.TestCase):
             raise AssertionError(done.stderr)
         calls = log.read_text().splitlines()
         return {"result": json.loads(out.read_text()), "bytes": out.read_text(), "calls": calls,
+                "stderr": done.stderr,
                 "test_runs": [c for c in calls if c.startswith("go test ./...")]}
 
     def test_without_a_snapshot_the_tests_run_and_are_counted(self):
@@ -157,6 +163,33 @@ class CollectQualityMetricsTest(unittest.TestCase):
             self.assertEqual(len(run["test_runs"]), 1)
             self.assertEqual(run["result"], self.computed["result"])
 
+    def test_failed_test_collection_preserves_events_and_reports_real_exit(self):
+        diagnostics = self.dir / "failed-test-diagnostics"
+        run = self.run_script("failed-tests", extra_env={
+            "STUB_GO_TEST_FAIL": "1",
+            "QUALITY_DIAGNOSTICS_DIR": str(diagnostics),
+        })
+        self.assertEqual(run["result"]["tests"], {"count": 0, "coverage_pct": 0})
+        self.assertIn("tests_and_coverage failed (exit=42)", run["stderr"])
+        self.assertEqual((diagnostics / "go-test-events.json").read_text(),
+                         (self.dir / "events.jsonl").read_text())
+        self.assertIn("simulated go test failure", (diagnostics / "tests_and_coverage.stderr").read_text())
+
+    def test_failed_collection_renders_unavailable_not_regressed_coverage(self):
+        base = self.dir / "render-base.json"
+        head = self.dir / "render-head.json"
+        output = self.dir / "render-failed-collection.md"
+        base.write_text(self.computed["bytes"])
+        failed = json.loads(self.computed["bytes"])
+        failed["tests"] = {"count": 0, "coverage_pct": 0}
+        head.write_text(json.dumps(failed))
+        subprocess.run(["bash", str(REPO / "scripts" / "ci" / "render_pr_report.sh"),
+                        str(base), str(head), str(output)], check=True, cwd=REPO)
+        report = output.read_text()
+        self.assertIn("| Test count | 5 | unavailable | n/a |", report)
+        self.assertIn("| Coverage | 83.4% | unavailable | n/a |", report)
+        self.assertIn("Test count and coverage could not be collected", report)
+
 
 class WorkflowWiringTest(unittest.TestCase):
     TEXT = (REPO / ".github" / "workflows" / "pr-quality-report.yaml").read_text()
@@ -173,6 +206,11 @@ class WorkflowWiringTest(unittest.TestCase):
 
     def test_a_zero_collection_is_not_saved(self):
         self.assertIn("jq -e '.tests.count > 0' /tmp/pr-base-quality.json", self.TEXT)
+
+    def test_failure_diagnostics_are_uploaded(self):
+        self.assertIn("QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head", self.TEXT)
+        self.assertIn("QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base", self.TEXT)
+        self.assertIn("name: pr-quality-diagnostics", self.TEXT)
 
 
 if __name__ == "__main__":

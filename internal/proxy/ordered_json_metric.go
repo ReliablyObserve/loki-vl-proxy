@@ -120,7 +120,7 @@ type orderedJSONMetricPlan struct {
 	groupServiceName bool
 }
 
-// handleOrderedJSONMetricUnderTransform answers a label_replace or label_join
+// handleOrderedJSONMetricUnderTransform answers a label_replace
 // around a metric that the ordered JSON evaluator owns: the evaluator answers
 // the expression under the transforms, as Loki evaluates it, and the transforms
 // are applied to what it answered. A query it does not own, or whose transform
@@ -134,7 +134,7 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 		return false
 	}
 	_, transforms, invalid := parseLabelTransformMarkers(translated)
-	if invalid != "" || (len(transforms.replaces) == 0 && transforms.join == nil) {
+	if invalid != "" || len(transforms.replaces) == 0 {
 		return false
 	}
 	buffered := &bufferedResponseWriter{header: make(http.Header)}

@@ -108,7 +108,7 @@ func isIdentByte(c byte) bool {
 // wrapped by, a marker the proxy post-processes (group, binary, without):
 // appending a stats pipe after one would corrupt it.
 func carriesTranslationMarker(query string) bool {
-	return strings.Contains(query, groupMarker) || strings.Contains(query, WithoutMarkerSuffix) || strings.HasPrefix(query, BinaryMetricPrefix)
+	return strings.Contains(query, WithoutMarkerSuffix) || strings.HasPrefix(query, BinaryMetricPrefix)
 }
 
 // tryTranslateVectorChain translates a vector aggregation over another one

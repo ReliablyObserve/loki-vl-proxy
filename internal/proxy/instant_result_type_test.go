@@ -147,11 +147,11 @@ func instantShapes() []instantShape {
 		{"sum without", `sum without (app) (` + count + `)`, "vector"},
 		{"avg without", `avg without (app) (` + count + `)`, "vector"},
 		{"sum without nothing", `sum without () (` + count + `)`, "vector"},
-		// label_replace and label_join
+		// label_replace; label_join is rejected by Loki's parser
 		{"label_replace", `label_replace(sum by (app) (` + count + `), "x", "$1", "app", "(.*)")`, "vector"},
 		{"label_replace line filter", `label_replace(bytes_over_time((` + instantNS + ` |= "baz" |~ "blip" != "flip" !~ "flap")[5m]), "buzz", "$2", "bar", "(.*):(.*)")`, "vector"},
 		{"label_replace nested", `label_replace(label_replace(sum by (app) (` + count + `), "x", "$1", "app", "(.*)"), "y", "$1", "x", "(.*)")`, "vector"},
-		{"label_join", `label_join(sum by (app, level) (` + count + `), "z", "-", "app", "level")`, "vector"},
+		{"label_join", `label_join(sum by (app, level) (` + count + `), "z", "-", "app", "level")`, "error"},
 		{"label_replace of avg without", `label_replace(avg without (app) (` + count + `), "x", "$1", "level", "(.*)")`, "vector"},
 		// binary operations
 		{"vector add", `sum by (app) (` + rate + `) + sum by (app) (` + rate + `)`, "vector"},
@@ -350,8 +350,8 @@ func TestInstantQueryAlwaysHasLokiResultType(t *testing.T) {
 	}
 }
 
-// A backend failure under a post-processed query (without, label_replace,
-// label_join) keeps the failing status: the buffered answer used to be sent
+// A backend failure under a post-processed query (without, label_replace)
+// keeps the failing status: the buffered answer used to be sent
 // with 200, an error body under a success status.
 // conformance: semantics/instant-result-type-missing, loki_api_v1_query
 func TestInstantQueryPostProcessedBackendFailureKeepsStatus(t *testing.T) {
@@ -363,7 +363,6 @@ func TestInstantQueryPostProcessedBackendFailureKeepsStatus(t *testing.T) {
 		for _, q := range []string{
 			`stdvar without (app) (count_over_time(` + instantNS + `[1m]))`,
 			`label_replace(sum by (app) (count_over_time(` + instantNS + `[1m])), "x", "$1", "app", "(.*)")`,
-			`label_join(sum by (app, level) (count_over_time(` + instantNS + `[1m])), "z", "-", "app", "level")`,
 		} {
 			a := askInstant(t, p, q, "0", nil)
 			if a.code != tc.code || a.resp.Status != "error" {
@@ -483,7 +482,6 @@ func TestInstantLabelTransformOfBinaryEvaluatesTheBinary(t *testing.T) {
 		`label_replace(sum by (app) (` + count + `) * 2, "x", "$1", "app", "(.*)")`,
 		`label_replace(2 * sum by (app) (` + count + `), "x", "$1", "app", "(.*)")`,
 		`label_replace(label_replace(sum by (app) (` + count + `) * 2, "x", "$1", "app", "(.*)"), "y", "$1", "app", "(.*)")`,
-		`label_join(sum by (app) (` + count + `) * 2, "z", "-", "app", "app")`,
 	} {
 		a := askInstant(t, p, q, "0", nil)
 		requireInstantAnswer(t, q, a, "vector", false)
@@ -506,15 +504,12 @@ func TestStripLabelTransforms(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{`rate({a="b"}[1m])`, `rate({a="b"}[1m])`},
 		{`label_replace(rate({a="b"}[1m]), "x", "$1", "a", "(.*)")`, `rate({a="b"}[1m])`},
-		{`label_join(sum by (a, b) (rate({a="b"}[1m])), "z", "-", "a", "b")`, `sum by (a, b) (rate({a="b"}[1m]))`},
-		{`label_join(label_replace( x + y , "x", "$1", "a", "(.*)"), "z", "-", "a")`, `x + y`},
 		{`label_replace(rate({a="b"}[1m])`, `label_replace(rate({a="b"}[1m])`}, // no argument list: left as it is
 		// strings and brackets hide their commas and parentheses
 		{`label_replace(rate({a=") , ("}[5m]), "d","$1","s","(.*)")`, `rate({a=") , ("}[5m])`},
 		{`label_replace(rate({a="x"} |= ")" [5m]) + rate({b="z"}[5m]), "d","$1","s","(.*)")`, `rate({a="x"} |= ")" [5m]) + rate({b="z"}[5m])`},
 		{`label_replace(rate({a=~"x(y"}[5m]) + rate({b="z"}[5m]), "d","$1","s","(.*)")`, `rate({a=~"x(y"}[5m]) + rate({b="z"}[5m])`},
 		{"label_replace(rate({a=\"x\"} |= `,)(` [5m]) + rate({b=\"z\"}[5m]), \"d\",\"$1\",\"s\",\"(.*)\")", "rate({a=\"x\"} |= `,)(` [5m]) + rate({b=\"z\"}[5m])"},
-		{`label_join(label_replace(rate({a="\",)"}[5m]), "d","$1","s","(.*)"), "z", "-", "a")`, `rate({a="\",)"}[5m])`},
 		{`label_replace(`, `label_replace(`},
 	} {
 		if got := stripLabelTransforms(tc.in); got != tc.want {
@@ -556,7 +551,7 @@ func TestStripLabelTransformsWholeCallOnly(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{`label_replace(a, "d","$1","s","(.*)")`, `a`},
 		{`  label_replace(a, "d","$1","s","(.*)")  `, `a`},
-		{`label_replace(label_join(a + b, "z","-","s"), "d","$1","s","(.*)")`, `a + b`},
+		{`label_replace(label_replace(a + b, "z","$1","s","(.*)"), "d","$1","s","(.*)")`, `a + b`},
 	} {
 		if got := stripLabelTransforms(tc.in); got != tc.want {
 			t.Errorf("stripLabelTransforms(%q) = %q, want %q", tc.in, got, tc.want)

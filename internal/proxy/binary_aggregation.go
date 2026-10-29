@@ -52,7 +52,7 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	if _, _, ok := binaryAggregationChain(routed); !ok {
 		return false
 	}
-	// Under a label_replace or label_join the handler has cloned the request
+	// Under a label_replace the handler has cloned the request
 	// to the expression inside it, and applies the transform to the answer.
 	chain, binary, ok := binaryAggregationChain(binaryRequestExpr(r))
 	if !ok {

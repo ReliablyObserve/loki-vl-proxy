@@ -42,10 +42,17 @@ def run(files, **kw):
 
 
 class PlanTest(unittest.TestCase):
-    def test_docs_ci_tests_run_nothing(self):
+    def test_docs_ci_tests_still_run_the_core_regression_set(self):
         out = run(["docs/testing.md", ".github/workflows/ci.yaml", "internal/proxy/x_test.go", "CHANGELOG.md"])
-        self.assertFalse(out["run"])
-        self.assertEqual(out["entries"], {})
+        self.assertTrue(out["run"])
+        self.assertEqual(list(out["entries"]), ["core-logs"])
+        self.assertEqual(out["entries"]["core-logs"]["ranges"], ["1h"])
+        self.assertEqual(out["captures"], 1)
+
+    def test_empty_change_set_still_runs_core(self):
+        out = run([])
+        self.assertTrue(out["run"])
+        self.assertEqual(list(out["entries"]), ["core-logs"])
 
     def test_tooling_change_runs_the_core_set_only(self):
         out = run(["bench/visual/compare.py"])
@@ -110,11 +117,13 @@ class PlanTest(unittest.TestCase):
         gaps = {"semantics/case-z": {"status": "open", "impact": "explore-visible"}}
         out = run(["conformance/registry/cases/semantics/case-z.yaml"], cases=["semantics/case-z"], case_gaps=gaps)
         self.assertEqual(out["fix_cases"], {})
-        self.assertFalse(out["run"])
+        self.assertTrue(out["run"])
+        self.assertEqual(list(out["entries"]), ["core-logs"])
 
     def test_exempt_or_unlisted_case_is_reported_without_entries(self):
         out = run(["conformance/registry/cases/semantics/case-c.yaml"], cases=["semantics/case-c"], case_gaps=GAPS)
-        self.assertFalse(out["run"])
+        self.assertTrue(out["run"])
+        self.assertEqual(list(out["entries"]), ["core-logs"])
         self.assertEqual(out["fix_cases"]["semantics/case-c"]["exempt"], "api-only")
 
     def test_check_resolves_covers(self):
@@ -171,6 +180,35 @@ def git(repo, *a):
 
 
 class BaselinePlanTest(unittest.TestCase):
+    def test_real_core_covers_logs_drilldown_rate_unwrap_rank_and_binary_on_every_pr(self):
+        expected = {"explore-logs-plain", "explore-metric-plain", "dd-landing",
+                    "dd-service-logs", "dd-fields", "lvl-explore-rate-errors-by-service",
+                    "explore-unwrap-sum", "explore-topk-by-per-step", "explore-sum-by-over-binary"}
+        for files in ([], ["README.md"], [".github/workflows/ci.yaml"], ["internal/proxy/proxy.go"]):
+            result = plan.plan(files, max_captures=1)
+            self.assertTrue(result["run"])
+            core = {page for page, entry in result["entries"].items() if entry["core"]}
+            self.assertEqual(core, expected)
+            self.assertTrue(all(result["entries"][page]["ranges"] == ["1h"] for page in core))
+            self.assertTrue(core.isdisjoint(result["dropped"]))
+
+    def test_pr748_fix_scenes_survive_full_and_bounded_plans(self):
+        case = "semantics/proxy-accepts-operators-not-in-loki"
+        expected = {"explore-748-reject-group", "explore-748-reject-label-join",
+                    "explore-748-uppercase-sum", "explore-748-uppercase-topk-rate",
+                    "explore-748-uppercase-json-unwrap", "explore-748-uppercase-on",
+                    "explore-748-uppercase-bool", "explore-748-uppercase-offset"}
+        spec = plan.load_spec()
+        actual = {p["id"] for p in spec["pages"] if case in p.get("fixes", [])}
+        self.assertEqual(actual, expected)
+        gaps = {case: {"status": "fixed", "impact": "explore-visible"}}
+        for result in (plan.plan_all(spec, cases=[case], case_gaps=gaps),
+                       plan.plan(["conformance/registry/cases/semantics/proxy-accepts-operators-not-in-loki.yaml"],
+                                 spec=spec, cases=[case], case_gaps=gaps, max_captures=1)):
+            self.assertEqual(set(result["fix_cases"][case]["entries"]), expected)
+            self.assertTrue(all(result["entries"][page]["ranges"] == ["1h"] for page in expected))
+            self.assertTrue(expected.isdisjoint(result["dropped"]))
+
     def test_baseline_keeps_changed_case_fix_proof(self):
         got = plan.plan_all(SPEC, cases=["semantics/case-a"], case_gaps=GAPS)
         self.assertEqual(got["fix_cases"]["semantics/case-a"]["entries"], ["fix-page", "fix-page-2"])

@@ -150,11 +150,11 @@ The rejected rows form groups of their own, so every other group aggregates exac
 | `avg(rate({...}[5m])) by (x)` | same normalized-rate path grouped by `(x)` |
 | `topk(10, rate({...}[5m]))` | normalized-rate path with stream grouping; on range queries the proxy ranks series independently at each timestamp, so a range can return more than `k` distinct series, each with only its winning samples |
 
-Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`, `group`, `label_replace`, `label_join`.
+Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`, `label_replace`.
 
-`group()` returns `1` for every series that has data. The inner metric is translated normally for grouping/presence detection; the proxy normalises all result values to `1` in post-processing.
+Loki has no `group()` and no `label_join()` (nor the PromQL math and time functions): any name outside Loki's function tokens is a 400 `parse error at line 1, col N: syntax error: unexpected IDENTIFIER` on both query endpoints. Keywords are read in any case, as Loki's lexer does (`TOPK(3, ...)`, `SUM BY (a) (...)`).
 
-`label_replace(v, dst, repl, src, regex)` and `label_join(v, dst, sep, src1, ...)` are handled via a marker-suffix pattern: the inner expression is translated to VL, the spec is base64-encoded and embedded as a query suffix, the proxy strips the marker before sending to VL and applies the label operation to the matrix response.
+`label_replace(v, dst, repl, src, regex)` is handled via a marker-suffix pattern: the inner expression is translated to VL, the spec is base64-encoded and embedded as a query suffix, the proxy strips the marker before sending to VL and applies the label operation to the matrix response.
 
 `count_values(label, v)` is not LogQL — Loki v3.7.7 has no such aggregation. Queries using `count_values` get Loki's parse error (`parse error at line 1, col 1: syntax error: unexpected IDENTIFIER`, at the position of the name).
 
@@ -188,7 +188,6 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | Subquery `max_over_time(rate(...)[1h:5m])` | Not LogQL: Loki's grammar has no `[range:step]` form. Rejected with Loki's HTTP 400 parse error (`syntax error: unexpected RATE, expecting NUMBER or { or (`) before any backend call |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
 | `label_replace(expr, dst, repl, src, regex)` | Proxy post-processing: inner expr translated to VL, spec embedded as marker, applied to matrix response (Prometheus semantics: no-match leaves dst unchanged) |
-| `label_join(v, dst, sep, src1, ...)` | Proxy post-processing: same marker pattern as `label_replace`; missing src labels are skipped |
 
 ### Parser-Stage Metric Compatibility Path
 

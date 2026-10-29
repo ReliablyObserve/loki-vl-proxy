@@ -100,7 +100,20 @@ HEAD_LABELS_BYPASS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.la
 BASE_LABELS_BYPASS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_allocs_per_op')"
 HEAD_PERF_MODE="$(json_field "$HEAD_JSON" '.performance.mode // "full"')"
 
-COVERAGE_DELTA="$(format_delta "$HEAD_COVERAGE" "$BASE_COVERAGE" higher 0.1 0.1 1)"
+TESTS_STATE_NOTE="- Test count and coverage were collected for this PR."
+if jq -e '.tests.count == 0 and .tests.coverage_pct == 0' "$HEAD_JSON" >/dev/null; then
+  # The collector's fallback is an unavailable measurement, not zero tests or
+  # zero coverage. Keep the raw fallback in the JSON artifact for diagnosis.
+  HEAD_TESTS="unavailable"
+  HEAD_COVERAGE="unavailable"
+  TESTS_DELTA="n/a"
+  COVERAGE_DELTA="n/a"
+  TESTS_STATE_NOTE="- Test count and coverage could not be collected for this PR. See the quality diagnostics artifact; the separate test check remains authoritative."
+else
+  TESTS_DELTA="$((HEAD_TESTS-BASE_TESTS))"
+  COVERAGE_DELTA="$(format_delta "$HEAD_COVERAGE" "$BASE_COVERAGE" higher 0.1 0.1 1)"
+  HEAD_COVERAGE="${HEAD_COVERAGE}%"
+fi
 LOKI_DELTA="$(format_delta "$HEAD_LOKI_PCT" "$BASE_LOKI_PCT" higher 0.1 0.1 1)"
 DRILL_DELTA="$(format_delta "$HEAD_DRILL_PCT" "$BASE_DRILL_PCT" higher 0.1 0.1 1)"
 VL_DELTA="$(format_delta "$HEAD_VL_PCT" "$BASE_VL_PCT" higher 0.1 0.1 1)"
@@ -159,8 +172,8 @@ Compared against base branch \`main\`.
 
 | Signal | Base | PR | Delta |
 |---|---:|---:|---:|
-| Test count | ${BASE_TESTS} | ${HEAD_TESTS} | $((HEAD_TESTS-BASE_TESTS)) |
-| Coverage | ${BASE_COVERAGE}% | ${HEAD_COVERAGE}% | ${COVERAGE_DELTA} |
+| Test count | ${BASE_TESTS} | ${HEAD_TESTS} | ${TESTS_DELTA} |
+| Coverage | ${BASE_COVERAGE}% | ${HEAD_COVERAGE} | ${COVERAGE_DELTA} |
 
 ### Compatibility
 
@@ -174,7 +187,8 @@ ${PERFORMANCE_SECTION}
 
 ### State
 
-- Coverage, compatibility, and sampled performance are reported here from the same PR workflow.
+${TESTS_STATE_NOTE}
+- Compatibility and sampled performance are reported here from the same PR workflow.
 - This is a delta report, not a release gate by itself. Required checks still decide merge safety.
 ${PERFORMANCE_STATE_NOTE}
 - Delta states use the same noise guards as the quality gate (percent + absolute + low-baseline checks), so report labels match merge-gate behavior.

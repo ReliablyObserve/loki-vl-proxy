@@ -341,7 +341,7 @@ func preserveMetricStreamIdentity(originalLogQL, translatedLogsQL string, withou
 	if strings.Contains(translatedLogsQL, "| stats by (") {
 		return translatedLogsQL
 	}
-	// A label_replace or label_join around the metric does not change which
+	// A label_replace around the metric does not change which
 	// series it yields: the identity is that of the expression under it.
 	metric := stripLabelTransforms(originalLogQL)
 	if len(withoutLabels) > 0 || isBareMetricFunctionQuery(strings.TrimSpace(metric)) {

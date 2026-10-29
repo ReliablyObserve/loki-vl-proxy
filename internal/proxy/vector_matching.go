@@ -735,40 +735,7 @@ func applyArithmeticOp(left, right float64, op string) float64 {
 	}
 }
 
-// --- group() / label_replace() / label_join() post-processing ---
-
-// matrixResponseRW is a minimal struct for parsing and re-encoding a Loki matrix response.
-type matrixResponseRW struct {
-	Status string `json:"status"`
-	Data   struct {
-		ResultType string `json:"resultType"`
-		Result     []struct {
-			Metric map[string]string `json:"metric"`
-			Values [][]interface{}   `json:"values"`
-		} `json:"result"`
-	} `json:"data"`
-}
-
-// applyGroupNormalization sets every sample value in a matrix response to "1",
-// implementing group() semantics (return 1 for each series that has data).
-func applyGroupNormalization(body []byte) []byte {
-	var resp matrixResponseRW
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
-		return body
-	}
-	for i := range resp.Data.Result {
-		for j := range resp.Data.Result[i].Values {
-			if len(resp.Data.Result[i].Values[j]) >= 2 {
-				resp.Data.Result[i].Values[j][1] = "1"
-			}
-		}
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return out
-}
+// --- label_replace() post-processing ---
 
 // transformSeriesLabels rewrites the label set of every series of a matrix or
 // a vector answer with fn, keeping the rest of the answer as it is. Series
@@ -939,55 +906,29 @@ func replaceLabel(in map[string]string, re *regexp.Regexp, spec translator.Label
 	return out
 }
 
-// applyLabelJoin applies label_join to every series of a matrix or vector
-// answer: the destination label is the values of the source labels, the
-// absent ones skipped, joined by the separator. Loki v3.7.7 has no label_join;
-// accepting it is the open gap semantics/proxy-accepts-operators-not-in-loki.
-func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
-	return transformSeriesLabels(body, func(in map[string]string) map[string]string {
-		parts := make([]string, 0, len(spec.SrcLabels))
-		for _, src := range spec.SrcLabels {
-			if v := in[src]; v != "" {
-				parts = append(parts, v)
-			}
-		}
-		out := make(map[string]string, len(in)+1)
-		for k, v := range in {
-			out[k] = v
-		}
-		out[spec.DstLabel] = strings.Join(parts, spec.Separator)
-		return out
-	})
-}
-
-// labelTransforms are the label_replace and label_join calls of a query, in
+// labelTransforms are the label_replace calls of a query, in
 // the order they apply: the innermost first.
 type labelTransforms struct {
 	replaces []translator.LabelReplaceSpec
-	join     *translator.LabelJoinSpec
 }
 
-// parseLabelTransformMarkers strips the label_replace and label_join markers
+// parseLabelTransformMarkers strips the label_replace markers
 // the translator left in a query. It returns Loki's parse error text when a
 // label_replace regexp does not compile.
 func parseLabelTransformMarkers(logsql string) (string, labelTransforms, string) {
 	logsql, replaces := translator.ParseAllLabelReplaceMarkers(logsql)
-	logsql, join := translator.ParseLabelJoinMarker(logsql)
 	for _, spec := range replaces {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			return logsql, labelTransforms{}, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err)
 		}
 	}
-	return logsql, labelTransforms{replaces: replaces, join: join}, ""
+	return logsql, labelTransforms{replaces: replaces}, ""
 }
 
 // apply runs the transforms over a matrix or vector answer.
 func (t labelTransforms) apply(body []byte) []byte {
 	for _, spec := range t.replaces {
 		body = applyLabelReplace(body, spec)
-	}
-	if t.join != nil {
-		body = applyLabelJoin(body, *t.join)
 	}
 	return body
 }

@@ -508,7 +508,7 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 }
 
 // TestInstantAggregationFailureIsRedacted: an instant query that is rewritten
-// after VictoriaLogs answers (without, group, label_replace, label_join) and
+// after VictoriaLogs answers (without, label_replace) and
 // whose backend call fails keeps the failure's status and answers it in Loki's
 // error format, with the backend's echo of the query removed, as query_range does.
 //
@@ -519,7 +519,6 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 		for _, query := range []string{
 			`sum without (pod) (count_over_time(` + sel + `[5m]))`,
 			`sum without (pod) (max_over_time(` + sel + ` | logfmt | unwrap amount [5m]))`,
-			`group(count_over_time(` + sel + `[5m]))`,
 			`label_replace(sum by (app) (count_over_time(` + sel + `[5m])), "dst", "$1", "app", "(.*)")`,
 		} {
 			t.Run(fmt.Sprintf("%d/%s", backendStatus, query), func(t *testing.T) {

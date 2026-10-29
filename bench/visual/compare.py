@@ -173,7 +173,7 @@ def same(a, b):
 
 def is_ranked(key):
     """True for a topk or bottomk query request (its expression starts with the operator, as in bench/ab's signature)."""
-    return key[0] == "query" and str(key[2] or "").lstrip().startswith(("topk", "bottomk"))
+    return key[0] == "query" and str(key[2] or "").lstrip().lower().startswith(("topk", "bottomk"))
 
 
 def same_ranked(a, b):

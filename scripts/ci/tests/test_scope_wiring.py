@@ -47,7 +47,6 @@ CI_GATES = {
 # The lane output every other workflow's gated job reads: (file, job) -> lane.
 WORKFLOW_LANES = {
     ("perf-ab.yaml", "perf-smoke"): "perf",
-    ("visual-smoke.yaml", "visual-smoke"): "stack",
     ("compat-loki.yaml", "loki-pinned"): "stack",
     ("compat-vl.yaml", "vl-pinned"): "stack",
     ("compat-drilldown.yaml", "drilldown-pinned-runtime"): "stack",
@@ -265,6 +264,15 @@ class ScopeWiringTest(unittest.TestCase):
                 for other in LANES:
                     if other != lane:
                         self.assertNotIn(f"needs.scope.outputs.{other}", condition)
+
+    def test_visual_smoke_runs_on_every_pull_request_change(self):
+        jobs = parse_jobs((WORKFLOWS / "visual-smoke.yaml").read_text())
+        capture = jobs["visual-smoke"]
+        self.assertIn("scope", capture["needs"])
+        self.assertNotIn("needs.scope.outputs.stack != 'false'", capture["if"])
+        self.assertNotIn("needs.scope.outputs.product != 'false'", capture["if"])
+        self.assertIn("plan.py --base", capture["body"])
+        self.assertIn("Core set montages", jobs["visual-comment"]["body"])
 
     def test_every_workflow_reading_scope_declares_it(self):
         for path in sorted(WORKFLOWS.glob("*.y*ml")):

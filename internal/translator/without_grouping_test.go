@@ -159,7 +159,6 @@ func TestFoldingWithoutOp(t *testing.T) {
 		{`sort(sum without (pod) (` + m + `))`, "sum"},
 		{`sort_desc(sum without (pod) (` + m + `))`, "sum"},
 		{`label_replace(sum without (pod) (` + m + `), "d", "$1", "app", "(.*)")`, "sum"},
-		{`label_join(sum without (pod) (` + m + `), "d", "-", "app", "ns")`, "sum"},
 		{`topk(3, label_replace(sum without (pod) (` + m + `), "d", "$1", "app", "(.*)"))`, "sum"},
 		{`stddev(sum without (pod) (` + m + `))`, "sum"},
 		// Operators the fold does not prove.
