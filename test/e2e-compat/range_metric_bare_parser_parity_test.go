@@ -3,7 +3,9 @@
 package e2e_compat
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -22,6 +24,57 @@ import (
 type vlPathRecorder struct {
 	mu    sync.Mutex
 	paths map[string]int
+}
+
+// recorderReadTransport buffers query responses before the recorder forwards
+// them. An interrupted VictoriaLogs response can otherwise leave the test's
+// extra reverse-proxy hop with a partial 200 body. Only transport/read failures
+// are retried, once; valid backend error responses pass through unchanged. The
+// proxy sends these read-only queries as POSTs, so their form body is replayed.
+type recorderReadTransport struct{ base http.RoundTripper }
+
+func (tr recorderReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodGet && req.Method != http.MethodPost {
+		return tr.base.RoundTrip(req)
+	}
+	var requestBody []byte
+	if req.Body != nil {
+		var err error
+		requestBody, err = io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		replay := req.Clone(req.Context())
+		if requestBody != nil {
+			replay.Body = io.NopCloser(bytes.NewReader(requestBody))
+			replay.ContentLength = int64(len(requestBody))
+		}
+		resp, err := tr.base.RoundTrip(replay)
+		if err != nil {
+			if attempt == 0 && req.Context().Err() == nil {
+				continue
+			}
+			return nil, err
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			if attempt == 0 && resp.StatusCode < http.StatusBadRequest && req.Context().Err() == nil {
+				continue
+			}
+			return nil, readErr
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp.ContentLength = int64(len(body))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		resp.Header.Del("Transfer-Encoding")
+		resp.TransferEncoding = nil
+		return resp, nil
+	}
+	return nil, io.ErrUnexpectedEOF
 }
 
 func (rec *vlPathRecorder) reset() map[string]int {
@@ -44,6 +97,9 @@ func newDeclaredStreamFieldsProxy(t *testing.T) (string, *vlPathRecorder) {
 	}
 	rec := &vlPathRecorder{paths: map[string]int{}}
 	forward := httputil.NewSingleHostReverseProxy(target)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	forward.Transport = recorderReadTransport{base: transport}
+	t.Cleanup(transport.CloseIdleConnections)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.mu.Lock()
 		rec.paths[r.URL.Path]++
