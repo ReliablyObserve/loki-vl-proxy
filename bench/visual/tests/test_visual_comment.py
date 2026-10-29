@@ -3,10 +3,12 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import visual_comment as comment  # noqa: E402
+import publish  # noqa: E402
 
 ARGS = argparse.Namespace(mode="branch", repo="o/r", pr="7", run_url="https://example.test/run/1", artifact_url="")
 META = {"base": "b" * 40, "head": "a" * 40}
@@ -39,6 +41,39 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_warning_overflow_keeps_every_fix_and_core_montage_published(self):
+        fixes = [f"fix-{n}" for n in range(8)]
+        cores = [f"core-{n}" for n in range(9)]
+        details = [f"warning-{n:03d}" for n in range(85)]
+        rows = ([row(page=p, main_pr_diffs=["query: differs"], loki_main_n=1) for p in fixes]
+                + [row(page=p) for p in cores]
+                + [row(page=p, main_pr_config=["configuration differs"]) for p in details])
+        p = plan(*[(r["page"], r["range"]) for r in rows], core=cores)
+        p["fix_cases"] = {"semantics/case-a": {"entries": fixes, "exempt": ""}}
+        a = argparse.Namespace(**{**vars(ARGS), "image_names": []})
+        text, verdict = comment.render(rows, {}, p, META, a)
+        required = {name + "-1h.png" for name in fixes + cores}
+        urls = set(re.findall(r"https://raw\.githubusercontent\.com/o/r/pr-visuals/pr-7/([^/?]+\.png)\?v=[0-9a-f]+", text))
+        self.assertEqual(verdict["exit"], 0)
+        self.assertEqual(len(a.image_names), publish.MAX_FILES)
+        self.assertTrue(required.issubset(a.image_names))
+        self.assertEqual(urls, set(a.image_names))
+        with tempfile.TemporaryDirectory() as src:
+            for name in a.image_names:
+                with open(os.path.join(src, name), "wb") as f:
+                    f.write(b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(publish.montages(src, a.image_names), a.image_names)
+
+    def test_required_fix_and_core_images_over_budget_fail_explicitly(self):
+        fixes = [f"fix-{n:02d}" for n in range(publish.MAX_FILES)]
+        rows = [row(page=p, main_pr_diffs=["query: differs"], loki_main_n=1) for p in fixes]
+        rows.append(row(page="core"))
+        p = plan(*[(r["page"], r["range"]) for r in rows], core=("core",))
+        p["fix_cases"] = {"semantics/case-a": {"entries": fixes, "exempt": ""}}
+        text, verdict = comment.render(rows, {}, p, META, argparse.Namespace(**vars(ARGS)))
+        self.assertEqual(verdict["exit"], 3)
+        self.assertIn("required fix and core montages", text)
+
     def test_clean_core_montages_are_open_in_the_bot_comment(self):
         base = plan(("core-logs", "1h"), ("core-rate", "1h"), core=("core-logs", "core-rate"))
         text, verdict = comment.render([row(page="core-logs"), row(page="core-rate")], {}, base, META,

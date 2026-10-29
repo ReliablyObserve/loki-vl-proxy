@@ -486,17 +486,27 @@ def render(rows, pixeldiff, plan, meta, a):
     if verdict["missing"] or not items:
         text, v = errored(a, meta, "no capture for: " + (", ".join(verdict["missing"][:6]) or "any planned page"))
         return text, dict(v, missing=verdict["missing"])
+    proofs = fix_proofs(items, plan)
+    if a.mode == "branch":
+        required = {key(i["row"]) for _, _, caps, _, _ in proofs for i, _ in caps}
+        required.update(key(i["row"]) for i in items if i["core"])
+        if len(required) > MAX_FILES:
+            return errored(a, meta, f"required fix and core montages ({len(required)}) exceed the {MAX_FILES}-image publish limit")
     if verdict["exit"] == 1:
         icon, text = "❌", "failed"
     else:
         icon = "✅"
         text = "passed" + (" with warnings" if verdict["warnings"] or verdict["expected"] else "")
     lines = header(icon, text, a, meta, plan)
-    proofs = fix_proofs(items, plan)
     if proofs:
         lines += fix_section(a, meta, proofs, plan.get("fix_trimmed") if isinstance(plan.get("fix_trimmed"), list) else (),
                              plan.get("core_range", "1h"))
         verdict["fix_proof"] = {cid: v for cid, _, _, v, _ in proofs}
+    if a.mode == "branch":
+        # Reserve the fixed regression set before warning details consume the bounded publish list.
+        for i in items:
+            if i["core"]:
+                image(a, key(i["row"]), meta)
     items.sort(key=lambda i: (not i["core"], i["row"]["page"], ORDER[i["row"]["range"]]))
     if proofs:
         lines += ["", "#### Regression check"]
