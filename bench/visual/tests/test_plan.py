@@ -171,6 +171,12 @@ def git(repo, *a):
 
 
 class BaselinePlanTest(unittest.TestCase):
+    def test_baseline_keeps_changed_case_fix_proof(self):
+        got = plan.plan_all(SPEC, cases=["semantics/case-a"], case_gaps=GAPS)
+        self.assertEqual(got["fix_cases"]["semantics/case-a"]["entries"], ["fix-page", "fix-page-2"])
+        self.assertEqual(got["entries"]["fix-page"]["fixes"], ["semantics/case-a"])
+        self.assertEqual(got["captures"], plan.plan_all(SPEC)["captures"])
+
     def test_every_page_at_its_own_ranges(self):
         got = plan.plan_all(SPEC)
         self.assertTrue(got["run"])

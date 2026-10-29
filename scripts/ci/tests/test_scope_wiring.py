@@ -327,17 +327,24 @@ class ScopeWiringTest(unittest.TestCase):
         jobs = parse_jobs(text)
         body = jobs["visual-smoke"]["body"]
         self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", body)
-        self.assertIn('plan.py --all --out "$OUT/plan.json"', body)
+        self.assertIn('plan.py --all --base "$BASE" --out "$OUT/plan.json"', body)
         self.assertIn('plan.py --base "$BASE" --out "$OUT/plan.json"', body)
         self.assertIn("name: visual-baseline-candidate", body)
         self.assertIn("scope", jobs["visual-comment"]["needs"])
-        # A full baseline can exceed the publisher's bounded file count; its artifact is the proof.
+        # A full baseline can exceed the publisher's bounded file count; only
+        # montages selected by the trusted base-branch renderer are published.
         publish = jobs["visual-publish"]
         self.assertIn("scope", publish["needs"])
-        self.assertIn("needs.scope.outputs.baseline != 'true'", publish["if"])
-        # A skipped publisher must not suppress the artifact-link comment.
+        self.assertNotIn("needs.scope.outputs.baseline != 'true'", publish["if"])
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", publish["body"])
+        self.assertIn("--images /tmp/visual-publish-images.json", publish["body"])
+        self.assertIn("--names-file /tmp/visual-publish-images.json", publish["body"])
+        self.assertIn("--mode branch", publish["body"])
+        self.assertIn("/tmp/visual-publish-selected", publish["body"])
+        # An older base uses its own renderer and publisher with a staged <=80 image set.
         self.assertIn("!cancelled()", jobs["visual-comment"]["if"])
         self.assertIn("visual-publish", jobs["visual-comment"]["needs"])
+        self.assertIn("replaceAll('<details><summary>', '<details open><summary>')", jobs["visual-comment"]["body"])
 
     def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
         jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())
@@ -351,7 +358,7 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertIn("needs.scope.outputs.stack != 'false'", jobs["vl-pinned"]["if"])
         self.assertNotIn("baseline", jobs["vl-pinned"]["if"])
 
-    def test_a_baseline_run_commits_and_pushes_nothing(self):
+    def test_a_baseline_run_writes_only_bounded_visual_proof(self):
         for name in self.HEAVY:
             with self.subTest(name):
                 text = (WORKFLOWS / name).read_text()
@@ -359,8 +366,9 @@ class ScopeWiringTest(unittest.TestCase):
                     if "baseline" not in job["body"].lower():
                         continue
                     if name == "visual-smoke.yaml" and job_name == "visual-publish":
-                        self.assertIn("needs.scope.outputs.baseline != 'true'", job["if"])
-                        continue  # this write-token job cannot start on a baseline run
+                        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", job["body"])
+                        self.assertIn("--names-file /tmp/visual-publish-images.json", job["body"])
+                        continue  # only trusted base-branch code publishes bounded proof PNGs
                     for forbidden in ("git push", "git commit", "contents: write", "commit_via_api", "gh pr create"):
                         self.assertNotIn(forbidden, job["body"], f"{name}:{job_name}")
 

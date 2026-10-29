@@ -100,6 +100,18 @@ class PublishTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             publish.montages(self.montage(**{f"f{i}": 1 for i in range(publish.MAX_FILES + 1)}))
 
+    def test_large_baseline_publishes_only_the_bounded_rendered_montages(self):
+        src = self.montage(**{f"page-{i}": 1 for i in range(publish.MAX_FILES + 15)})
+        chosen = ["page-1.png", "page-2.png"]
+        publish.publish(src, 737, self.remote, "pr-visuals", selected=chosen)
+        self.assertEqual(self.tree(), ["pr-737/page-1.png", "pr-737/page-2.png"])
+        with self.assertRaises(SystemExit):
+            publish.montages(src, selected=["../outside.png"])
+        with self.assertRaises(SystemExit):
+            publish.montages(src, selected=["page-1.png"] * (publish.MAX_FILES + 1))
+        with self.assertRaises(SystemExit):
+            publish.montages(src, selected=[])
+
 
 if __name__ == "__main__":
     unittest.main()

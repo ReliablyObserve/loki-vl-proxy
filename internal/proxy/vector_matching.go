@@ -917,22 +917,26 @@ func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
 		return body
 	}
 	return transformSeriesLabels(body, func(in map[string]string) map[string]string {
-		src := in[spec.SrcLabel]
-		idx := re.FindStringSubmatchIndex(src)
-		if idx == nil {
-			return in
-		}
-		res := re.ExpandString(nil, spec.Replacement, src, idx)
-		out := make(map[string]string, len(in)+1)
-		for k, v := range in {
-			out[k] = v
-		}
-		delete(out, spec.DstLabel)
-		if len(res) > 0 {
-			out[spec.DstLabel] = string(res)
-		}
-		return out
+		return replaceLabel(in, re, spec)
 	})
+}
+
+func replaceLabel(in map[string]string, re *regexp.Regexp, spec translator.LabelReplaceSpec) map[string]string {
+	src := in[spec.SrcLabel]
+	idx := re.FindStringSubmatchIndex(src)
+	if idx == nil {
+		return in
+	}
+	res := re.ExpandString(nil, spec.Replacement, src, idx)
+	out := make(map[string]string, len(in)+1)
+	for k, v := range in {
+		out[k] = v
+	}
+	delete(out, spec.DstLabel)
+	if len(res) > 0 {
+		out[spec.DstLabel] = string(res)
+	}
+	return out
 }
 
 // applyLabelJoin applies label_join to every series of a matrix or vector

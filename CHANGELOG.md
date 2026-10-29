@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Baseline visual-smoke runs show their fix proof as an inline main | PR | Loki
+  montage in the pull request.** The trusted base-branch publisher selects at
+  most 80 comment images from a full baseline capture, validates every PNG, and
+  publishes only that bounded set. The full capture remains in run artifacts.
+
+- **`absent_over_time` answers the series valued 1 at the steps without data, and
+  nothing at the steps with data, after a parser stage, on query_range and
+  instant queries, under a vector aggregation and with an offset, as Loki
+  does.** Loki 3.7.7 returns one series, labelled by the stream selector's
+  equality matchers, at each step whose window (t-range, t] holds no line the
+  pipeline keeps, and no series where it does (`pkg/logql/evaluator.go`
+  AbsentRangeVectorEvaluator.Next, `absentLabels`; the extractor keeps no
+  labels, `pkg/logql/syntax/extractor.go`). With a parser stage the proxy
+  inverted it: `absent_over_time({service_name="api-gateway"} | json [1m])` over
+  data returned 2026 series (a series per stream and parsed label set, valued
+  by a line count) where Loki returns none, and `absent_over_time({...} | json |
+  nonexistant_field="foo" [1m])`, which no line matches, returned nothing where
+  Loki returns `{service_name="api-gateway"}` at every step. Without a parser
+  the answer was also wrong in other ways found by a differential test against
+  a Loki reference: a tumbling window was one step early (VictoriaLogs buckets
+  `[T, T+step)` were read as Loki's `(T-range, T]`), a range that is not the
+  step was ignored, steps were taken on an epoch grid where Loki steps from
+  `start`, an instant query was hidden by older data, `sum(absent_over_time(...))`
+  returned the inner count instead of the unlabelled series, and a label named
+  by more than one matcher (`{app="a", app=~".+"}`) was kept where Loki drops it.
+  Now the presence of samples comes from VictoriaLogs stats (an ungrouped
+  `sum(count_over_time(...))`, or `sum(rate(...))` with an unwrapped label, whose
+  line without the label is no sample), with the parser stage and its label
+  filters pushed down (a label filter on a JSON-parsed field keeps using the
+  existing ordered-JSON route, which reads bounded rows only where VictoriaLogs'
+  unpack cannot give Loki's parse), and the proxy inverts it on Loki's step grid,
+  matching each step by index so a start with milliseconds still lines up;
+  vector aggregations fold the single series as Loki does (`by` and `without`
+  keep or drop labels, `count` is 1, `stddev` and `stdvar` are 0, `topk` and
+  `bottomk` keep it). A failed or degraded VictoriaLogs answer (an error,
+  Grafana's partial-result reply) is passed on, never inverted into a series of
+  ones that would fire every absence alert. An unwrapped value Loki's conversion
+  rejects now fails `absent_over_time` with Loki's 400 pipeline error, as it does
+  `rate`, where the proxy answered 200; parser error lines keep the behaviour of
+  `count_over_time`. A `sort`/`sort_desc` around it keeps the series whole instead of
+  answering the inner count, a `label_replace` around it rewrites the absent
+  series' labels, and `absent_over_time(...) by (app)` is Loki's 400 `grouping not
+  allowed for absent_over_time aggregation` instead of a 200 with counts. A
+  multi-tenant request (`X-Scope-OrgID: a|b`) used to answer a `__tenant_id__`
+  series at every step of an empty tenant even when another tenant had data;
+  Loki's multi-tenant querier merges the tenants' samples before the evaluator
+  runs, so a step is absent only when no tenant has a line there and the series
+  never carries `__tenant_id__`, which the proxy now matches. A Drilldown
+  series-limit partial (the warning is in the body) is passed on, not inverted
+  (#737).
+
 ## [2.46.0] - 2026-10-29
 
 ### Fixed

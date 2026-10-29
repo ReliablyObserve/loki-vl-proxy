@@ -39,6 +39,13 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_baseline_comment_bounds_inline_images_to_publish_limit(self):
+        a = argparse.Namespace(**vars(ARGS))
+        images = [comment.image(a, f"page-{i}-1h", META) for i in range(85)]
+        self.assertEqual(sum(image.startswith("![") for image in images), 80)
+        self.assertEqual(len(a.image_names), 80)
+        self.assertIn("artifact", images[-1])
+
     def render(self, rows, cases, mode="branch"):
         a = argparse.Namespace(**{**vars(ARGS), "mode": mode})
         return comment.render(rows, {}, fix_plan(rows, cases), META, a)
@@ -50,6 +57,7 @@ class FixProofTest(unittest.TestCase):
         self.assertLess(text.index("#### Fix proof"), text.index("| page | range | set |"))
         self.assertIn("✅ fixed", text)
         self.assertIn("p1-1h.png", text[text.index("#### Fix proof"):text.index("#### Regression check")])
+        self.assertNotIn("<details", text[text.index("#### Fix proof"):text.index("#### Regression check")])
         self.assertEqual(v["fix_proof"], {"semantics/case-a": "fixed"})
 
     def test_verdicts(self):
@@ -767,6 +775,12 @@ class GateTest(unittest.TestCase):
         self.assertEqual(text.count("![det-b-1h]"), 1)   # the failing row
         self.assertNotIn("![det-b-15m]", text)           # clean detailed row: linked, not embedded
         self.assertIn("pr-visuals/pr-7", text)
+
+    def test_branch_comment_links_full_artifact_for_unpublished_clean_rows(self):
+        a = argparse.Namespace(**{**vars(ARGS), "artifact_url": "https://example.test/artifact/9"})
+        text, _ = comment.render([row("det-a", "1h")], {}, plan(("det-a", "1h")), META, a)
+        self.assertNotIn("![det-a-1h]", text)
+        self.assertIn("Full montage set: [artifact](https://example.test/artifact/9)", text)
 
     def test_core_entry_at_other_ranges_is_detailed_and_live_pixels_do_not_warn(self):
         rows = [row("core-a", "1h"), row("core-a", "6h"), row("tail", "live")]

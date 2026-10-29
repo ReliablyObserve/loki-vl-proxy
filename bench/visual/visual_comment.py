@@ -45,8 +45,8 @@ Every string that comes from the pull request (page names, queries, banner text,
 differences) is escaped before it reaches the markdown, so the comment cannot be
 made to carry markup or links.
 
-mode "branch": montages are on the pr-visuals branch; only rows that are not
-clean, and one collapsed block with the core montages, embed an image. mode
+mode "branch": montages are on the pr-visuals branch; fix proof, rows that are
+not clean, and one collapsed block with the core montages embed up to 80 images. mode
 "artifact" (fork PRs, or a publish that did not happen): text only, with the
 artifact link.
 """
@@ -57,6 +57,7 @@ import re
 import sys
 
 from compare import error_text
+from publish import MAX_FILES
 from vio import dump_json, load_json, write_text
 
 MARKER = "<!-- visual-smoke -->"
@@ -384,7 +385,7 @@ def fix_failures(proofs):
             if entries and not any(v in FIX_PROVEN for _, v in caps)]
 
 
-def fix_section(a, meta, proofs, trimmed=()):
+def fix_section(a, meta, proofs, trimmed=(), core_range="1h"):
     lines = ["", "#### Fix proof", "",
              ("Captures of the exact cases this pull request adds or fixes (registry case, base | PR | Loki). "
               + "The verdict compares the PR with Loki where the base did not match. The gate fails a case unless one "
@@ -404,7 +405,13 @@ def fix_section(a, meta, proofs, trimmed=()):
             same = "identical" if not r["main_pr_diffs"] else f"differs ({len(r['main_pr_diffs'])})"
             lines.append(f"| {esc(r['page'])} | {esc(r['range'])} | {same} | {vs_loki(r)} | {FIX_ICON.get(v, '')} {v} |")
         if a.mode == "branch":
+            primary = next(((i, v) for i, v in caps if i["row"]["range"] == core_range), caps[0] if caps else None)
+            if primary:
+                name = key(primary[0]["row"])
+                lines += ["", f"**{esc(name)} — base | PR | Loki**", "", image(a, name, meta), ""]
             for i, v in caps:
+                if (i, v) == primary:
+                    continue
                 name = key(i["row"])
                 lines += ["", f"<details{' open' if v in ('still differs', 'regressed') else ''}><summary>{esc_html(name)}: {esc_html(v)}</summary>", "",
                           image(a, name, meta), "", "</details>"]
@@ -419,6 +426,13 @@ def rawbase(a):
 def image(a, name, meta):
     if not SAFE_NAME.match(name):
         return ""
+    if not hasattr(a, "image_names"):
+        a.image_names = []
+    filename = name + ".png"
+    if filename not in a.image_names:
+        if len(a.image_names) >= MAX_FILES:
+            return f"[montage in run artifact]({a.artifact_url})" if a.artifact_url else "montage in run artifact"
+        a.image_names.append(filename)
     return f"![{name}]({rawbase(a)}/{name}.png?v={re.sub(r'[^0-9a-f]', '', str(meta.get('head', '')))[:8]})"
 
 
@@ -480,7 +494,8 @@ def render(rows, pixeldiff, plan, meta, a):
     lines = header(icon, text, a, meta, plan)
     proofs = fix_proofs(items, plan)
     if proofs:
-        lines += fix_section(a, meta, proofs, plan.get("fix_trimmed") if isinstance(plan.get("fix_trimmed"), list) else ())
+        lines += fix_section(a, meta, proofs, plan.get("fix_trimmed") if isinstance(plan.get("fix_trimmed"), list) else (),
+                             plan.get("core_range", "1h"))
         verdict["fix_proof"] = {cid: v for cid, _, _, v, _ in proofs}
     items.sort(key=lambda i: (not i["core"], i["row"]["page"], ORDER[i["row"]["range"]]))
     if proofs:
@@ -511,7 +526,8 @@ def render(rows, pixeldiff, plan, meta, a):
             for i in core:
                 lines += [f"**{esc(key(i['row']))}**", "", image(a, key(i["row"]), meta), ""]
             lines += ["</details>"]
-        lines += ["", f"All montages of this run: [`pr-visuals/pr-{int(a.pr)}`](https://github.com/{a.repo}/tree/pr-visuals/pr-{int(a.pr)})."]
+        lines += ["", f"Published inline montages: [`pr-visuals/pr-{int(a.pr)}`](https://github.com/{a.repo}/tree/pr-visuals/pr-{int(a.pr)})."
+                  + (f" Full montage set: [artifact]({a.artifact_url})." if a.artifact_url else "")]
     else:
         lines += ["", "Montages (base | PR | Loki): " + (f"[artifact]({a.artifact_url})" if a.artifact_url else "in the run's artifacts")
                   + ". They are not on the repository for this run."]
@@ -529,6 +545,7 @@ def main():
     ap.add_argument("--expected-change", action="store_true", help=f"the pull request carries the label {LABEL}")
     ap.add_argument("--md", default="")
     ap.add_argument("--verdict", default="")
+    ap.add_argument("--images", default="", help="write the bounded list of montage filenames embedded in branch mode")
     a = ap.parse_args()
     a.expected_change = a.expected_change or os.environ.get("VISUAL_CHANGE_EXPECTED") == "true"
     a.pr = re.sub(r"[^0-9]", "", str(a.pr)) or "0"
@@ -545,6 +562,8 @@ def main():
         text, verdict = render(rows, px, plan, meta, a)
     write_text(a.md or os.path.join(a.out, "comment.md"), text)
     dump_json(a.verdict or os.path.join(a.out, "verdict.json"), verdict)
+    if a.images:
+        dump_json(a.images, getattr(a, "image_names", []))
     print(text)
     return 0  # the verdict ("exit" in verdict.json), not this status, decides
 

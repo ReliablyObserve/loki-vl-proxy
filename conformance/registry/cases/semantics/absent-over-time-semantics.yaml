@@ -1,15 +1,62 @@
 id: semantics/absent-over-time-semantics
-title: absent_over_time answers when data exists and stays empty when it is absent, after a parser (open)
+title: absent_over_time is the series valued 1 at the steps without data and nothing at the steps with data, after a parser too (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
   Loki's absent_over_time returns one series (labelled from the selector's
-  equality matchers) only for steps without data. With a parser stage the
-  proxy inverts it: `absent_over_time({service_name="api-gateway"} | json
-  [1m])` (data present) returns 2026 series where Loki returns none, and
+  equality matchers) only for steps without data: AbsentRangeVectorEvaluator.Next
+  answers a step whose window (t-range, t] holds no sample with that series
+  valued 1 and a step that holds one with nothing (pkg/logql/evaluator.go:754-778),
+  and absentLabels (:1320-1345) keeps a label the selector pins with exactly one
+  equality matcher (a regexp or inequality matcher on the same name, or a value
+  of "", leaves it out). The sample extractor keeps no labels
+  (pkg/logql/syntax/extractor.go:44-48), so every line the pipeline keeps is a
+  sample whatever a parser extracted. With a parser stage the proxy inverted
+  it: `absent_over_time({service_name="api-gateway"} | json [1m])` (data
+  present) returned 2026 series where Loki returns none, and
   `absent_over_time({...} | json | nonexistant_field="foo" [1m])` (no line
-  matches) returns nothing where Loki returns `{service_name="api-gateway"}`.
+  matches) returned nothing where Loki returns `{service_name="api-gateway"}`.
+
+  Root cause: three independent faults, found with a reference evaluator over
+  generated rows. (1) parseBareParserMetricCompatSpecAST accepted every range
+  function, so an absent_over_time with a parser stage went to the raw-row
+  bare-parser evaluator, which has no absent semantics and answered a series per
+  stream and parsed label set valued by a line count (internal/proxy
+  query_translation.go, proxy.go:2325 ahead of the absent branch). (2) The
+  absent branch itself read VictoriaLogs buckets [T, T+step) as if they were
+  Loki's windows (T-range, T] and ignored a range that is not the step: a
+  tumbling answer was one step early, a sliding one wrong. It also stepped on
+  an epoch grid (ceil(start/step)*step) where Loki steps from start (Loki aligns
+  only with -querier.align-querier-with-step, off by default), and its instant
+  form asked VictoriaLogs for every row up to `time`, so older data hid the
+  absence. (3) `sum(absent_over_time(...))` and the other vector aggregations
+  went through the generic translation and returned the inner count; the
+  matcher labels ignored the "one equality matcher per name" rule.
+
+  Fixed: absent_over_time asks the metric path for the presence of samples,
+  `sum(count_over_time(<log query>[r]))` (ungrouped, as Loki's extractor keeps no
+  labels) or `sum(rate(<log query with unwrap>[r]))` (Loki has no count_over_time
+  with unwrap; a line without the unwrapped label is no sample), which VictoriaLogs
+  answers as one stats series with a point at each step whose window holds a line,
+  on Loki's window bounds and step grid, parser and label filters pushed down (a
+  label filter on a JSON-parsed field keeps using the existing ordered-JSON route,
+  which reads bounded rows only where VictoriaLogs' unpack cannot give Loki's
+  parse). The answer is those steps inverted on start, start+step, ... end, each
+  matched to a presence point by index, so a start with milliseconds lines up. Vector
+  aggregations fold the single series as VectorAggEvaluator does (grouping keeps
+  or drops labels, count 1, stddev and stdvar 0, topk and bottomk keep it whole).
+  A sort around it keeps the series whole, a label_replace around it rewrites
+  the absent series' labels, and a grouping on it is Loki's 400 `parse error :
+  grouping not allowed for absent_over_time aggregation` (syntax/ast.go:1439-1447).
+  Multi-tenant (`X-Scope-OrgID: a|b`): Loki's MultiTenantQuerier merges the
+  tenants' samples before the evaluator runs (pkg/querier/multi_tenant_querier.go
+  SelectSamples), so a step is absent only when no tenant has a line, and the
+  series never carries __tenant_id__; the proxy takes each tenant's absent answer
+  and keeps the steps every tenant holds.
+  An answer that is not a clean 200 (a VictoriaLogs failure, the Grafana
+  partial-result reply, the split-residual suppression, a body `warnings` array) is passed on, never
+  inverted into a series of ones.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -27,13 +74,15 @@ compare:
   expect: |
     One series {service_name="api-gateway"} at every step.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#737"
   impact: explore-visible
   effort: S
-  area: 'internal/translator absent_over_time (parser pipelines)'
-  loki: 'pkg/logql/evaluator.go:647-664, :1320 absentLabels'
-  proxy: 'inverted with a parser'
-  planned_test: 'TestCompat_AbsentOverTimeWithParser (test/e2e-compat, group semantics)'
+  area: 'internal/proxy absent_over_time.go (parseAbsentOverTimeCompatSpec, presenceAnswer, buildAbsentOverTimeMatrix); parseBareParserMetricCompatSpecAST'
+  loki: 'pkg/logql/evaluator.go:647-664, :754-778 AbsentRangeVectorEvaluator, :1320-1345 absentLabels; pkg/logql/range_vector.go:251,:628; pkg/logql/syntax/extractor.go:44-48; pkg/logql/log/metrics_extraction.go:214-231'
+  proxy: 'the inversion of an ungrouped sum(count_over_time) (sum(rate) with unwrap) answered from VictoriaLogs stats, on Loki steps'
+  planned_test: 'TestCompat_AbsentOverTime and TestCompat_AbsentOverTimeUnderVectorAggregation (test/e2e-compat, group semantics); TestAbsentOverTimeDifferential, TestAbsentOverTimeUnderVectorAggregation, TestAbsentOverTimeLabelsEdgeTable, TestParseAbsentOverTimeCompatSpecEdgeTable, TestAbsentOverTimeSeriesFoldEdgeTable, TestAbsentOverTimeParserStageEdgeTable, TestAbsentOverTimeDoesNotInvertFailedPresence, TestAbsentOverTimeInstantEdgeTable, TestAbsentOverTimeGroupingIsLokisParseError, TestAbsentOverTimePassesOnWarningInBody, TestAbsentOverTimeMultiTenant, TestAbsentOverTimePresenceQueryKeepsEveryStage (internal/proxy); TestCompat_AbsentOverTimeLabelReplace, TestCompat_AbsentOverTimeGroupingRejected (test/e2e-compat)'
+  note: 'Differential over generated rows (starts with milliseconds, offset, instant, sliding and tumbling windows) on VictoriaLogs v1.52, v1.40 (no offset argument) and with no version. An unwrapped value Loki cannot convert now fails absent_over_time with Loki 400 pipeline error, as rate does (it was a 200). A parser error line is answered as for count_over_time (parse-error*). Not run yet: the e2e against Loki.'
   clusters:
     - 2336e2a5
     - 4dfd84f7

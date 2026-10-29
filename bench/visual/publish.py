@@ -12,9 +12,9 @@ a push that loses a race with another job is rebuilt on the new tip. The PR's
 folder is removed and rewritten, nothing else is touched. The commit is by the
 github-actions identity (CI cannot sign).
 
-The montage directory is untrusted (a pull request built it): it is accepted only
-when every entry is a regular file (no symlink, no directory) named like
-`page-range.png`, within 300 KB, and there are at most 80 of them.
+The montage directory is untrusted (a pull request built it): every entry must
+be a regular file (no symlink, no directory) named like `page-range.png`, within
+300 KB. At most 80 selected montages are published, even for a larger baseline.
 
 The token, when PUBLISH_TOKEN is set, goes to git as an Authorization header,
 never into the command line, the remote URL or the output. The repository's
@@ -26,6 +26,7 @@ branch's checkout: it holds a write token.
 """
 import argparse
 import base64
+import json
 import os
 import re
 import shutil
@@ -49,8 +50,8 @@ def git(repo, *args, check=True, auth=None):
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
-def montages(src):
-    """The files to publish, validated: regular files only, plain PNG names, within the size and count limits."""
+def montages(src, selected=None):
+    """Validate every file, then return the bounded set the trusted comment renderer embeds."""
     names = sorted(os.listdir(src))
     bad = []
     for n in names:
@@ -59,6 +60,14 @@ def montages(src):
             bad.append(n)
     if bad:
         raise SystemExit(f"refusing to publish (name, type or size): {bad[:5]}")
+    if selected is not None:
+        if not isinstance(selected, list) or any(not isinstance(n, str) or n not in names for n in selected):
+            raise SystemExit("refusing to publish names outside the validated montage directory")
+        if not selected:
+            raise SystemExit("refusing to publish an empty inline montage selection")
+        if len(selected) != len(set(selected)):
+            raise SystemExit("refusing to publish duplicate montage names")
+        names = selected
     if len(names) > MAX_FILES:
         raise SystemExit(f"refusing to publish {len(names)} files (limit {MAX_FILES})")
     return names
@@ -95,8 +104,8 @@ def run_change(change, remote, branch, token="", attempts=4):
         raise SystemExit("could not push to " + branch)
 
 
-def publish(src, pr, remote, branch, token="", attempts=4):
-    names = montages(src)
+def publish(src, pr, remote, branch, token="", attempts=4, selected=None):
+    names = montages(src, selected)
     folder = f"pr-{int(pr)}"
 
     def change(repo):
@@ -127,10 +136,15 @@ def main():
     ap.add_argument("--keep", default="")
     ap.add_argument("--remote", required=True)
     ap.add_argument("--branch", default="pr-visuals")
+    ap.add_argument("--names-file", help="JSON list of montage names rendered inline by the trusted base-branch comment renderer")
     a = ap.parse_args()
     token = os.environ.get("PUBLISH_TOKEN", "")
     if a.cmd == "publish":
-        print(publish(a.montage, a.pr, a.remote, a.branch, token))
+        selected = None
+        if a.names_file:
+            with open(a.names_file, encoding="utf-8") as f:
+                selected = json.load(f)
+        print(publish(a.montage, a.pr, a.remote, a.branch, token, selected=selected))
     elif a.cmd == "remove":
         print(remove({str(int(a.pr))}, a.remote, a.branch, token))
     else:
