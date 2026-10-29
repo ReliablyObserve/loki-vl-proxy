@@ -693,22 +693,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	handled := false
-	if postAgg.name == "topk" || postAgg.name == "bottomk" {
-		spec, ok := parseStatsCompatSpec(translatedInner)
-		orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
-		if ok && hasOrig && orig.Window > 0 {
-			fn := normalizeManualMetricFunction(spec, orig)
-			switch fn {
-			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
-				// Rank every series per step from VictoriaLogs window stats
-				// instead of truncating to the busiest series first.
-				rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
-				handled = p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
-			}
-		}
-	}
+	handled := p.proxyRankedTopKRange(sc, innerR, translatedInner, postAgg)
 	if !handled {
 		p.proxyStatsQueryRange(sc, innerR, translatedInner)
 	}
@@ -771,6 +756,27 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		p.metrics.RecordRequest("query_range", code, elapsed)
 		p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 	}
+}
+
+func (p *Proxy) proxyRankedTopKRange(sc *statusCapture, innerR *http.Request, translatedInner string, postAgg instantMetricPostAgg) bool {
+	if postAgg.name != "topk" && postAgg.name != "bottomk" {
+		return false
+	}
+	spec, ok := parseStatsCompatSpec(translatedInner)
+	orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
+	if !ok || !hasOrig || orig.Window <= 0 {
+		return false
+	}
+	fn := normalizeManualMetricFunction(spec, orig)
+	switch fn {
+	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+		spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
+		// Rank every series per step from VictoriaLogs window stats
+		// instead of truncating to the busiest series first.
+		rankedR := innerR.WithContext(withRangeTopK(innerR.Context(), postAgg.k, postAgg.name == "topk", postAgg.group))
+		return p.proxyManualRangeMetricRange(sc, rankedR, spec, orig, fn)
+	}
+	return false
 }
 
 // applyMatrixPostAggregation applies topk/bottomk/sort/stddev/stdvar to a matrix result.
