@@ -114,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job 10 and 12 on the unit fixture, where Loki answers 2.5 and 6). The probe
   now leaves a binary, and an aggregation over one, to its operands, each
   probed on its own; a query of one operand naming both parsers is probed as
-  before (still cut there: not covered here). A `label_replace` around
+  before (still cut there: not covered here). A `label_replace` (or the proxy's `label_join`,
+  which Loki's grammar does not have) around
   such an aggregation (the shape the differential corpus found on /query)
   is evaluated the same way and the transform applies to the folded answer,
   with each operand still reading the request's own parsers; a transform inside
