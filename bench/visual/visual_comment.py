@@ -379,10 +379,16 @@ def fix_proofs(items, plan):
 
 
 def fix_failures(proofs):
-    """A case with entries needs a capture that is fixed, improved or base failed; the base side alone proves nothing."""
-    return [f"fix proof {cid}: no capture shows the PR closer to Loki ({verdict or 'not captured'})"
-            for cid, entries, caps, verdict, _ in proofs
-            if entries and not any(v in FIX_PROVEN for _, v in caps)]
+    """Require positive proof without an unfinished or regressed required capture."""
+    failures = []
+    for cid, entries, caps, verdict, _ in proofs:
+        if not entries:
+            continue
+        if verdict in ("regressed", "still differs"):
+            failures.append(f"fix proof {cid}: required capture {verdict}")
+        elif not any(v in FIX_PROVEN for _, v in caps):
+            failures.append(f"fix proof {cid}: no capture shows the PR closer to Loki ({verdict or 'not captured'})")
+    return failures
 
 
 def fix_section(a, meta, proofs, trimmed=(), core_range="1h"):
@@ -390,7 +396,8 @@ def fix_section(a, meta, proofs, trimmed=(), core_range="1h"):
              ("Captures of the exact cases this pull request adds or fixes (registry case, base | PR | Loki). "
               + "The verdict compares the PR with Loki where the base did not match. The gate fails a case unless one "
               + "capture is fixed or improved, or, beyond the Loki data window, the base failed where Loki and the PR "
-              + "both answered with data (the label does not excuse it; only `visual: none` on the case does)."), ""]
+              + "both answered with data. A required capture that still differs or regresses fails the case even when "
+              + "another capture is fixed (the label does not excuse it; only `visual: none` on the case does)."), ""]
     if trimmed:
         lines += [f"Trimmed to the core range for the fix-capture budget (not dropped): {esc(', '.join(map(str, trimmed)))}.", ""]
     for cid, entries, caps, verdict, exempt in proofs:

@@ -232,6 +232,20 @@ class FixProofTest(unittest.TestCase):
         rows[1]["loki_diffs"] = ["x", "y"]; rows[1]["loki_main_n"] = 1  # not an improvement: more differences than the base
         text, v = self.render(rows, {"semantics/case-a": ["p1"]})
         self.assertEqual(v["fix_proof"]["semantics/case-a"], "still differs")
+        self.assertEqual(v["exit"], 1)
+
+    def test_one_fixed_scene_cannot_hide_another_unfinished_fix_scene(self):
+        rows = [row(page="fixed", main_pr_diffs=["query A: value differs"], loki_main_n=1),
+                row(page="unfinished", loki_main_n=1, loki_diffs=["query B: value differs"], loki_new=[])]
+        p = fix_plan(rows, {"semantics/case-a": ["fixed", "unfinished"]})
+        for expected in (False, True):
+            with self.subTest(expected_change=expected):
+                a = argparse.Namespace(**{**vars(ARGS), "expected_change": expected})
+                _, verdict = comment.render(rows, {}, p, META, a)
+                self.assertEqual(verdict["fix_proof"]["semantics/case-a"], "still differs")
+                self.assertEqual(verdict["exit"], 1)
+                self.assertTrue(any("semantics/case-a" in f and "still differs" in f
+                                    for f in verdict["failures"]))
 
     def test_exempt_and_unlisted_cases_are_listed(self):
         p = fix_plan([row()], {"semantics/case-a": ["explore-a"]})
