@@ -3,10 +3,12 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import visual_comment as comment  # noqa: E402
+import publish  # noqa: E402
 
 ARGS = argparse.Namespace(mode="branch", repo="o/r", pr="7", run_url="https://example.test/run/1", artifact_url="")
 META = {"base": "b" * 40, "head": "a" * 40}
@@ -39,6 +41,42 @@ def fix_plan(rows, cases):
 
 
 class FixProofTest(unittest.TestCase):
+    def test_warning_overflow_keeps_every_fix_and_core_montage_published(self):
+        fixes = [f"fix-{n}" for n in range(8)]
+        cores = [f"core-{n}" for n in range(9)]
+        details = [f"warning-{n:03d}" for n in range(85)]
+        rows = ([row(page=p, main_pr_diffs=["query: differs"], loki_main_n=1) for p in fixes]
+                + [row(page=p) for p in cores]
+                + [row(page=p, main_pr_config=["configuration differs"]) for p in details])
+        p = plan(*[(r["page"], r["range"]) for r in rows], core=cores)
+        p["fix_cases"] = {"semantics/case-a": {"entries": fixes, "exempt": ""}}
+        a = argparse.Namespace(**{**vars(ARGS), "image_names": []})
+        text, verdict = comment.render(rows, {}, p, META, a)
+        required = {name + "-1h.png" for name in fixes + cores}
+        urls = set(re.findall(r"https://raw\.githubusercontent\.com/o/r/pr-visuals/pr-7/([^/?]+\.png)\?v=[0-9a-f]+", text))
+        self.assertEqual(verdict["exit"], 0)
+        self.assertEqual(len(a.image_names), publish.MAX_FILES)
+        self.assertTrue(required.issubset(a.image_names))
+        self.assertEqual(urls, set(a.image_names))
+        with tempfile.TemporaryDirectory() as src:
+            for name in a.image_names:
+                with open(os.path.join(src, name), "wb") as f:
+                    f.write(b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(publish.montages(src, a.image_names), a.image_names)
+
+    def test_required_fix_and_core_images_over_budget_fail_explicitly(self):
+        fixes = [f"fix-{n:02d}" for n in range(publish.MAX_FILES)]
+        rows = [row(page=p, main_pr_diffs=["query: differs"], loki_main_n=1) for p in fixes]
+        rows.append(row(page="core"))
+        p = plan(*[(r["page"], r["range"]) for r in rows], core=("core",))
+        p["fix_cases"] = {"semantics/case-a": {"entries": fixes, "exempt": ""}}
+        for mode in ("branch", "artifact"):
+            with self.subTest(mode=mode):
+                a = argparse.Namespace(**{**vars(ARGS), "mode": mode})
+                text, verdict = comment.render(rows, {}, p, META, a)
+                self.assertEqual(verdict["exit"], 3)
+                self.assertIn("required fix and core montages", text)
+
     def test_clean_core_montages_are_open_in_the_bot_comment(self):
         base = plan(("core-logs", "1h"), ("core-rate", "1h"), core=("core-logs", "core-rate"))
         text, verdict = comment.render([row(page="core-logs"), row(page="core-rate")], {}, base, META,
@@ -197,6 +235,20 @@ class FixProofTest(unittest.TestCase):
         rows[1]["loki_diffs"] = ["x", "y"]; rows[1]["loki_main_n"] = 1  # not an improvement: more differences than the base
         text, v = self.render(rows, {"semantics/case-a": ["p1"]})
         self.assertEqual(v["fix_proof"]["semantics/case-a"], "still differs")
+        self.assertEqual(v["exit"], 1)
+
+    def test_one_fixed_scene_cannot_hide_another_unfinished_fix_scene(self):
+        rows = [row(page="fixed", main_pr_diffs=["query A: value differs"], loki_main_n=1),
+                row(page="unfinished", loki_main_n=1, loki_diffs=["query B: value differs"], loki_new=[])]
+        p = fix_plan(rows, {"semantics/case-a": ["fixed", "unfinished"]})
+        for expected in (False, True):
+            with self.subTest(expected_change=expected):
+                a = argparse.Namespace(**{**vars(ARGS), "expected_change": expected})
+                _, verdict = comment.render(rows, {}, p, META, a)
+                self.assertEqual(verdict["fix_proof"]["semantics/case-a"], "still differs")
+                self.assertEqual(verdict["exit"], 1)
+                self.assertTrue(any("semantics/case-a" in f and "still differs" in f
+                                    for f in verdict["failures"]))
 
     def test_exempt_and_unlisted_cases_are_listed(self):
         p = fix_plan([row()], {"semantics/case-a": ["explore-a"]})

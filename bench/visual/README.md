@@ -136,7 +136,9 @@ with data and no error; the PR's values there are not compared, so the case shou
 Loki-compared capture) or **undecided** (no Loki data at that range). The case verdict is the worst problem, else the best proof; a case whose captures are only
 not-reproduced is **unproven**. **Gate:** a case with entries fails the run unless at least one
 Loki-compared capture is fixed or improved, or one capture is base failed (a fix for a failure that only
-appears at long ranges, such as a row limit, cannot be compared with Loki's shorter data window in CI). The label `visual-change-expected` does not excuse it; only a
+appears at long ranges, such as a row limit, cannot be compared with Loki's shorter data window in CI).
+Any required fix capture that **still differs** or **regresses** fails the case, even if another
+capture is fixed; a positive example cannot hide an unfinished scenario. The label `visual-change-expected` does not excuse it; only a
 reviewed `visual: none` on the case does. Fix captures that differ base vs PR by design do not count
 against `--max-recapture`. An old `plan.json` without `fix_cases` renders as before.
 
