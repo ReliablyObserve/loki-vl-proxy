@@ -10,6 +10,12 @@ that touches runtime code (a sticky comment with the table), and a full run
 from `main` every day whose results and history are committed through a bot
 pull request. See [Automation](#automation).
 
+The current result signatures compare aggregate fingerprints. Metric sum
+tolerance requires the same series signature and point count, including ranked
+answers; missing points are differences even when their sums match. These
+fingerprints do not establish equality of every label, timestamp, sample value
+or log line. Use the Loki compatibility tests for those comparisons.
+
 | file | purpose |
 |---|---|
 | `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. Shapes marked `"smoke": true` run on every code change. |
