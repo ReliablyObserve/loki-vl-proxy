@@ -1491,7 +1491,7 @@ func applyBareFieldMutationToStreamLabels(
 			continue
 		}
 		// Keep: remove if NOT in keep set (and keep set is non-empty).
-		if len(keepFields) > 0 {
+		if len(keepFields) > 0 && !isSpecialKeepLabel(rawKey) {
 			// Translate rawKey to loki label for keep-set lookup.
 			lokiKey := rawKey
 			if lt != nil {
@@ -1503,10 +1503,6 @@ func applyBareFieldMutationToStreamLabels(
 				}
 			}
 		}
-	}
-
-	if len(toRemove) == 0 {
-		return "", nil, false
 	}
 
 	// Build new raw/translated maps without the removed keys.
@@ -1523,14 +1519,36 @@ func applyBareFieldMutationToStreamLabels(
 		if lt != nil {
 			vlKey = lt.ToVL(k)
 		}
-		if _, skip := toRemove[vlKey]; !skip {
-			newTrans[k] = v
+		if _, skip := toRemove[vlKey]; skip {
+			continue
 		}
+		if _, drop := dropSet[k]; drop {
+			continue
+		}
+		if len(keepFields) > 0 && !isSpecialKeepLabel(k) {
+			if _, keep := keepSet[k]; !keep {
+				if _, keep = keepSet[vlKey]; !keep {
+					continue
+				}
+			}
+		}
+		newTrans[k] = v
+	}
+	if len(toRemove) == 0 && len(newTrans) == len(translatedLabels) {
+		return "", nil, false
 	}
 
 	// Rebuild the stream key from newRaw.
 	key := canonicalLabelsKey(newRaw)
 	return key, newTrans, true
+}
+
+func isSpecialKeepLabel(name string) bool {
+	switch name {
+	case "__error__", "__error_details__", "__preserve_error__":
+		return true
+	}
+	return false
 }
 
 // applyKeepConditions removes fields from sm/pf where a keep condition exists for that field

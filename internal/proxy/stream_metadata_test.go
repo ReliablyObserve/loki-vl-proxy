@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -483,6 +484,62 @@ func TestApplyBareFieldMutationToStreamLabels(t *testing.T) {
 			wantChange: true,
 		},
 		{
+			name:       "bare keep removes derived service name absent from raw stream",
+			keepFields: []string{"level"},
+			rawLabels:  map[string]string{"app": "api", "level": "info"},
+			translated: map[string]string{"app": "api", "level": "info", "service_name": "api"},
+			wantLabels: map[string]string{"level": "info"},
+			wantChange: true,
+		},
+		{
+			name:       "bare keep removes only derived service name when raw fields are already kept",
+			keepFields: []string{"level"},
+			rawLabels:  map[string]string{"level": "info"},
+			translated: map[string]string{"level": "info", "service_name": "api"},
+			wantLabels: map[string]string{"level": "info"},
+			wantChange: true,
+		},
+		{
+			name:       "bare keep preserves Loki parser error labels",
+			keepFields: []string{"level"},
+			rawLabels:  map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON", "__preserve_error__": "true"},
+			translated: map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON", "__preserve_error__": "true"},
+			wantLabels: map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON", "__preserve_error__": "true"},
+			wantChange: false,
+		},
+		{
+			name:       "bare keep preserves synthetic Loki parser error labels",
+			keepFields: []string{"level"},
+			rawLabels:  map[string]string{"level": "info"},
+			translated: map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON"},
+			wantLabels: map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON"},
+			wantChange: false,
+		},
+		{
+			name:       "bare drop explicitly removes Loki parser error label",
+			dropFields: []string{"__error__"},
+			rawLabels:  map[string]string{"level": "info"},
+			translated: map[string]string{"level": "info", "__error__": "JSONParserErr", "__error_details__": "bad JSON"},
+			wantLabels: map[string]string{"level": "info", "__error_details__": "bad JSON"},
+			wantChange: true,
+		},
+		{
+			name:       "bare keep retains explicitly named derived service name",
+			keepFields: []string{"service_name"},
+			rawLabels:  map[string]string{"app": "api"},
+			translated: map[string]string{"app": "api", "service_name": "api"},
+			wantLabels: map[string]string{"service_name": "api"},
+			wantChange: true,
+		},
+		{
+			name:       "bare drop removes explicitly named derived service name",
+			dropFields: []string{"service_name"},
+			rawLabels:  map[string]string{"app": "api"},
+			translated: map[string]string{"app": "api", "service_name": "api"},
+			wantLabels: map[string]string{"app": "api"},
+			wantChange: true,
+		},
+		{
 			name:       "bare drop of absent field is no-op",
 			dropFields: []string{"missing"},
 			rawLabels:  map[string]string{"app": "api", "env": "prod"},
@@ -521,6 +578,82 @@ func TestApplyBareFieldMutationToStreamLabels(t *testing.T) {
 			for k, v := range tt.wantLabels {
 				if got[k] != v {
 					t.Fatalf("label %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestApplyBareFieldMutationToStreamLabels_Aliases(t *testing.T) {
+	lt := NewLabelTranslator(LabelStylePassthrough, []FieldMapping{{VLField: "service.name", LokiLabel: "service_name"}})
+	raw := map[string]string{"service.name": "checkout", "level": "info"}
+	translated := map[string]string{"service_name": "checkout", "level": "info"}
+	for _, tc := range []struct {
+		name string
+		keep []string
+		drop []string
+		want map[string]string
+	}{
+		{name: "keep alias", keep: []string{"service_name"}, want: map[string]string{"service_name": "checkout"}},
+		{name: "keep other label", keep: []string{"level"}, want: map[string]string{"level": "info"}},
+		{name: "drop alias", drop: []string{"service_name"}, want: map[string]string{"level": "info"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got, changed := applyBareFieldMutationToStreamLabels(tc.drop, tc.keep, raw, translated, lt)
+			if !changed || len(got) != len(tc.want) {
+				t.Fatalf("changed=%v labels=%v, want %v", changed, got, tc.want)
+			}
+			for key, want := range tc.want {
+				if got[key] != want {
+					t.Fatalf("label %s=%q, want %q", key, got[key], want)
+				}
+			}
+		})
+	}
+}
+
+// conformance: profiles/keep-removes-derived-service-name, loki_api_v1_query_range
+func TestLogQuery_KeepRemovesDerivedServiceName(t *testing.T) {
+	var backendQueries atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			backendQueries.Add(1)
+			_, _ = w.Write([]byte(`{"_time":"2026-10-01T17:21:10Z","_msg":"hello","_stream":"{app=\"checkout\",level=\"info\"}","app":"checkout","level":"info"}` + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"values":[]}`))
+	}))
+	defer backend.Close()
+	for _, path := range []string{"buffered", "streamed", "windowed"} {
+		t.Run(path, func(t *testing.T) {
+			p := lineFieldsProxy(t, backend.URL, path)
+			for _, categorized := range []bool{false, true} {
+				beforeQueries := backendQueries.Load()
+				q := url.Values{"query": {`{app="checkout"} | keep level`}, "start": {"1790871720000000000"}, "end": {"1790875320000000000"}, "limit": {"10"}}
+				req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+q.Encode(), nil)
+				if categorized {
+					req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+				}
+				w := httptest.NewRecorder()
+				p.handleQueryRange(w, req)
+				if path == "windowed" && backendQueries.Load()-beforeQueries < 2 {
+					t.Fatalf("windowed path made only %d backend query", backendQueries.Load()-beforeQueries)
+				}
+				if w.Code != http.StatusOK {
+					t.Fatalf("categorized=%v status=%d body=%s", categorized, w.Code, w.Body.String())
+				}
+				var result struct {
+					Data struct {
+						Result []struct {
+							Stream map[string]string `json:"stream"`
+						} `json:"result"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Data.Result) != 1 || len(result.Data.Result[0].Stream) != 1 || result.Data.Result[0].Stream["level"] != "info" {
+					t.Fatalf("categorized=%v result=%v, want only level=info", categorized, result.Data.Result)
 				}
 			}
 		})

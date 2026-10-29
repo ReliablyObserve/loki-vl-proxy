@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A bare `| keep` removes a derived `service_name` unless requested.**
+  Rows without a stored service label previously gained `service_name` after
+  the proxy applied `| keep level`, leaving an extra stream label that Loki
+  removes. The streamed, buffered, and windowed query paths now apply keep
+  and drop to translated stream labels as well as stored fields, while keeping
+  Loki's special parser-error labels under `keep`.
+
 - **Grouped `stddev` and `stdvar` fold each group's series values at every step,
   like Loki (#738).** Previously `stddev by (service_name)
   (count_over_time({...}[5m]))` and `stdvar without (pod) (...)` returned a

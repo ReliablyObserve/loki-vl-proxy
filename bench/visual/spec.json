@@ -491,6 +491,23 @@
    ]
   },
   {
+   "id": "explore-keep-derived-service-name",
+   "kind": "explore",
+   "query": "{app=\"otel-collector\"} | keep level,detected_level",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "profiles/keep-removes-derived-service-name",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/keep-removes-derived-service-name"
+   ]
+  },
+  {
    "id": "lvl-explore-logs-keep-dl",
    "kind": "explore",
    "query": "{service_name=\"api-gateway\"} | keep detected_level",
