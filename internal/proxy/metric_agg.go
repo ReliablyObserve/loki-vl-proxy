@@ -136,6 +136,9 @@ type instantMetricPostAgg struct {
 	// grouping is the by/without clause of a stddev or stdvar; nil aggregates
 	// every series into one.
 	grouping *logqlpkg.Grouping
+	// outer folds the ranked samples from the innermost layer outward.
+	outer *instantMetricPostAgg
+	text  string
 }
 
 // parseStddevStdvarQuery recognises stddev and stdvar over a vector with a
@@ -273,6 +276,9 @@ func closingParenIndex(s string) int {
 
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	logql = strings.TrimSpace(logql)
+	if postAgg, ok := parseAggregationOverRanking(logql); ok {
+		return postAgg, true
+	}
 	for _, name := range []string{"sort_desc", "sort"} {
 		prefix := name + "("
 		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
@@ -334,45 +340,136 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 // per grouping key). The inner expression is the source text, not a
 // reserialised AST.
 func parseTopKPostAgg(logql string) (instantMetricPostAgg, bool) {
-	rest := strings.TrimSpace(logql)
-	name := ""
-	for _, candidate := range []string{"topk", "bottomk"} {
-		if strings.HasPrefix(rest, candidate) {
-			name, rest = candidate, strings.TrimSpace(rest[len(candidate):])
-			break
+	for _, name := range []string{"topk", "bottomk"} {
+		args, ok := aggregationArgs(logql, name)
+		if !ok {
+			continue
 		}
+		comma := topLevelCommaIndex(args)
+		parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+		va, ok := parsed.(*logqlpkg.VectorAggregation)
+		if err != nil || !ok || comma <= 0 || !va.HasParam || int(va.Param) <= 0 {
+			return instantMetricPostAgg{}, false
+		}
+		inner := strings.TrimSpace(args[comma+1:])
+		if inner == "" {
+			return instantMetricPostAgg{}, false
+		}
+		return instantMetricPostAgg{name: name, inner: inner, k: int(va.Param), group: va.Grouping}, true
 	}
-	if name == "" {
-		return instantMetricPostAgg{}, false
+	return instantMetricPostAgg{}, false
+}
+
+// aggregationArgs returns the text between the parentheses that hold the
+// operand (and, for topk and bottomk, the parameter) of the aggregation name
+// written at the start of logql, in any of its spellings: `name(args)`,
+// `name by (l) (args)` and `name(args) by (l)`.
+func aggregationArgs(logql, name string) (string, bool) {
+	rest := strings.TrimSpace(logql)
+	if len(rest) < len(name) || !strings.EqualFold(rest[:len(name)], name) {
+		return "", false
 	}
+	rest = rest[len(name):]
+	if rest != "" && (rest[0] == '_' || rest[0] >= 'a' && rest[0] <= 'z' || rest[0] >= '0' && rest[0] <= '9') {
+		return "", false // a longer name: count_over_time is not count
+	}
+	rest = strings.TrimSpace(rest)
 	leading := false
 	if i := strings.IndexByte(rest, '('); i > 0 {
 		// `by (l) (k, expr)`: the label list comes before the arguments.
 		close := closingParen(rest, i)
 		if close < 0 {
-			return instantMetricPostAgg{}, false
+			return "", false
 		}
 		rest, leading = strings.TrimSpace(rest[close+1:]), true
 	}
 	if !strings.HasPrefix(rest, "(") {
-		return instantMetricPostAgg{}, false
+		return "", false
 	}
 	close := closingParen(rest, 0)
 	if close < 0 || (leading && strings.TrimSpace(rest[close+1:]) != "") {
+		return "", false
+	}
+	return rest[1:close], true
+}
+
+// parseAggregationOverRanking reads an aggregation chain whose innermost
+// ranking layer (topk, bottomk, sort or sort_desc) sits under other vector
+// aggregations: `sum(topk(3, x))`, `max by (app) (bottomk(2, x))`,
+// `topk(2, topk(3, x))`, `topk(3, sort(x))`. Loki evaluates each layer on the
+// vector of one step (pkg/logql/evaluator.go VectorAggEvaluator.Next), so the
+// ranking layer is the post-aggregation the proxy runs on VictoriaLogs' series
+// and the layers above it fold what survived. A query with the ranking layer
+// outermost, or without one, keeps its own route.
+func parseAggregationOverRanking(logql string) (instantMetricPostAgg, bool) {
+	lower := strings.ToLower(logql)
+	if !strings.Contains(lower, "topk") && !strings.Contains(lower, "bottomk") && !strings.Contains(lower, "sort") {
 		return instantMetricPostAgg{}, false
 	}
-	args := rest[1:close]
-	comma := topLevelCommaIndex(args)
-	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
-	va, ok := parsed.(*logqlpkg.VectorAggregation)
-	if err != nil || !ok || comma <= 0 || !va.HasParam || int(va.Param) <= 0 {
+	expr, err := logqlpkg.Parse(logql)
+	if err != nil {
 		return instantMetricPostAgg{}, false
 	}
-	inner := strings.TrimSpace(args[comma+1:])
-	if inner == "" {
+	var layers []*logqlpkg.VectorAggregation
+	for node := expr; ; {
+		va, ok := node.(*logqlpkg.VectorAggregation)
+		if !ok {
+			break
+		}
+		layers = append(layers, va)
+		node = va.Inner
+	}
+	ranking := -1
+	for i, va := range layers {
+		switch va.Op {
+		case logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+			ranking = i
+		}
+	}
+	if ranking < 1 {
 		return instantMetricPostAgg{}, false
 	}
-	return instantMetricPostAgg{name: name, inner: inner, k: int(va.Param), group: va.Grouping}, true
+	text := unwrapParens(logql)
+	var outer *instantMetricPostAgg
+	for _, va := range layers[:ranking] {
+		switch va.Op {
+		case logqlpkg.VectorSum, logqlpkg.VectorAvg, logqlpkg.VectorMin, logqlpkg.VectorMax, logqlpkg.VectorCount,
+			logqlpkg.VectorTopK, logqlpkg.VectorBottomK, logqlpkg.VectorSort, logqlpkg.VectorSortDesc:
+		default:
+			// stddev and stdvar keep their own route.
+			return instantMetricPostAgg{}, false
+		}
+		args, ok := aggregationArgs(text, string(va.Op))
+		if !ok {
+			return instantMetricPostAgg{}, false
+		}
+		if comma := topLevelCommaIndex(args); va.HasParam && comma > 0 {
+			args = args[comma+1:]
+		}
+		text = unwrapParens(args)
+		outer = &instantMetricPostAgg{name: string(va.Op), k: int(va.Param), group: va.Grouping, outer: outer}
+	}
+	name := string(layers[ranking].Op)
+	postAgg, ok := parseTopKPostAgg(text)
+	if name == "sort" || name == "sort_desc" {
+		var args string
+		args, ok = aggregationArgs(text, name)
+		postAgg = instantMetricPostAgg{name: name, inner: strings.TrimSpace(args)}
+	}
+	if !ok || postAgg.name != name || postAgg.inner == "" {
+		return instantMetricPostAgg{}, false
+	}
+	postAgg.outer, postAgg.text = outer, text
+	return postAgg, true
+}
+
+// unwrapParens strips the parentheses that wrap the whole of s.
+func unwrapParens(s string) string {
+	s = strings.TrimSpace(s)
+	for strings.HasPrefix(s, "(") && closingParen(s, 0) == len(s)-1 {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 // closingParen returns the index of the ")" that closes the "(" at s[open],
@@ -562,6 +659,15 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 	seriesLimit := p.resolvedMaxStatsQuerySeries(r.Context())
 	r = foldAcrossSeries(r, postAgg)
+	if postAgg.outer != nil {
+		// The stats handlers read the query from the request: hand them the
+		// operand of the ranking layer, which is ranked below once its
+		// without() labels are merged, and leave the series limit to the
+		// answer of the whole query.
+		r = withFoldedSeries(r)
+		_ = r.ParseForm()
+		r.Form.Set("query", postAgg.inner)
+	}
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -636,6 +742,10 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
+	result, ok = p.applyOuterPostAggregation(w, r, "query", start, result, postAgg.outer, false)
+	if !ok {
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -690,6 +800,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Clone the request and replace "query" with the unwrapped inner expression so the
 	// stats compat layer can correctly identify the inner metric function.
 	innerR := r.Clone(r.Context())
+	if postAgg.outer != nil {
+		innerR = withFoldedSeries(innerR)
+	}
 	_ = innerR.ParseForm()
 	innerR.Form.Set("query", postAgg.inner)
 
@@ -752,6 +865,10 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		}
 		return
 	}
+	result, ok = p.applyOuterPostAggregation(w, r, "query_range", start, result, postAgg.outer, true)
+	if !ok {
+		return
+	}
 	copyHeaders(w.Header(), bw.Header())
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -791,6 +908,71 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 		return applyMatrixStddevAgg(body, postAgg.name, postAgg.grouping)
 	}
 	return applyMatrixSortTopkAgg(body, postAgg)
+}
+
+// applyOuterPostAggregation applies the aggregations written around the
+// ranking layer to its answer, layer by layer from the innermost, and limits
+// the series of the final answer: Loki counts max_query_series on the result of
+// the whole query (pkg/logql/engine.go JoinSampleVector), not on the vector a
+// layer below hands up. It writes the error and reports false when the limit
+// is exceeded.
+func (p *Proxy) applyOuterPostAggregation(w http.ResponseWriter, r *http.Request, endpoint string, start time.Time, body []byte, outer *instantMetricPostAgg, matrix bool) ([]byte, bool) {
+	if outer == nil {
+		return body, true
+	}
+	for layer := outer; layer != nil; layer = layer.outer {
+		switch {
+		case layer.name == "sum" || layer.name == "avg" || layer.name == "min" || layer.name == "max" || layer.name == "count":
+			body = applyWithoutGrouping(body, foldExcludeLabels(body, layer.group), layer.name)
+		case matrix:
+			body = applyMatrixSortTopkAgg(body, *layer)
+		default:
+			body = applyInstantSortTopkAgg(body, *layer)
+		}
+	}
+	capped, err := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
+	if err != nil {
+		p.writeErr(w, r.Context(), err)
+		p.metrics.RecordRequest(endpoint, unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+		return nil, false
+	}
+	return capped, true
+}
+
+// foldExcludeLabels lists the labels applyWithoutGrouping drops to fold the
+// series of body as the aggregation with grouping g does: all of them without
+// a clause, the listed ones and __name__ for without(), and every label but
+// the listed ones for by().
+func foldExcludeLabels(body []byte, g *logqlpkg.Grouping) []string {
+	switch {
+	case g == nil || (!g.Without && len(g.Labels) == 0):
+		return []string{withoutAllLabels}
+	case g.Without:
+		return append(append([]string{}, g.Labels...), "__name__")
+	}
+	keep := make(map[string]bool, len(g.Labels))
+	for _, name := range g.Labels {
+		keep[name] = true
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(body, &resp)
+	seen := map[string]bool{}
+	var drop []string
+	for _, series := range resp.Data.Result {
+		for name := range series.Metric {
+			if !keep[name] && !seen[name] {
+				seen[name] = true
+				drop = append(drop, name)
+			}
+		}
+	}
+	return drop
 }
 
 // stddevAccumulator folds the values of one group the way Loki's

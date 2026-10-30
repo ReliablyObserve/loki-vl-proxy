@@ -262,7 +262,9 @@ func (p *Proxy) writeSlidingWindowStatsRange(w http.ResponseWriter, ctx context.
 	}
 	var body []byte
 	if topK, ranked := rangeTopKFromContext(ctx); ranked {
-		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), topK, start, step, p.limits().BufferedBackendBodyBytes)
+		// With an aggregation around the ranking the series of the query are
+		// counted on its answer (manualSeriesLimit), not on this union.
+		body, err = stats.encodeTopK(ctx, withBytes, scale, steps, p.manualSeriesLimit(ctx), topK, start, step, p.limits().BufferedBackendBodyBytes)
 	} else {
 		body, err = stats.encodeBusiest(ctx, withBytes, scale, steps, p.resolvedMaxStatsQuerySeries(ctx), start, step, p.limits().BufferedBackendBodyBytes)
 	}

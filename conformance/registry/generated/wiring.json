@@ -33,6 +33,7 @@
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/sliding_window_stats_test.go",
+      "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go"
     ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
@@ -228,6 +229,8 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
       "internal/proxy/tenant_query_limits_test.go",
+      "internal/proxy/topk_over_aggregation_differential_test.go",
+      "internal/proxy/topk_over_aggregation_test.go",
       "internal/proxy/topk_range_edge_test.go",
       "internal/proxy/tumbling_axis_parity_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
@@ -252,6 +255,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
+      "test/e2e-compat/topk_over_aggregation_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
       "test/e2e-compat/unwrap_over_time_window_test.go",
@@ -283,6 +287,8 @@
       "internal/proxy/stats_extent_cache_test.go",
       "internal/proxy/stream_metadata_test.go",
       "internal/proxy/tenant_query_limits_test.go",
+      "internal/proxy/topk_over_aggregation_differential_test.go",
+      "internal/proxy/topk_over_aggregation_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
       "internal/proxy/topk_tie_nondeterminism_test.go",
@@ -319,6 +325,7 @@
       "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
+      "test/e2e-compat/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_range_per_step_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
@@ -905,6 +912,11 @@
       "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/topk_range_per_step_test.go"
     ],
+    "semantics/topk-over-vector-aggregation": [
+      "internal/proxy/topk_over_aggregation_differential_test.go",
+      "internal/proxy/topk_over_aggregation_test.go",
+      "test/e2e-compat/topk_over_aggregation_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -1153,7 +1165,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 363,
+  "registry_items": 364,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1767,6 +1779,17 @@
       "semantics/topk-bottomk-without-strips-label",
       "semantics/topk-grouped-spellings"
     ],
+    "internal/proxy/topk_over_aggregation_differential_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/topk-over-vector-aggregation"
+    ],
+    "internal/proxy/topk_over_aggregation_test.go": [
+      "heavy-metric-fetch-bounds",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/topk-over-vector-aggregation"
+    ],
     "internal/proxy/topk_range_differential_test.go": [
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
@@ -2288,6 +2311,11 @@
       "semantics/tenant-numeric-canonical",
       "tenant-numeric-routing"
     ],
+    "test/e2e-compat/topk_over_aggregation_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/topk-over-vector-aggregation"
+    ],
     "test/e2e-compat/topk_range_per_step_test.go": [
       "limits/top-n-ranking-not-silent",
       "loki_api_v1_query_range",
@@ -2394,7 +2422,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 238,
+  "tests_with_markers": 241,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2487,5 +2515,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 195
+  "wired_items": 196
 }

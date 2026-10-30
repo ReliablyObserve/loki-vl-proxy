@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Aggregations around `topk`, `bottomk`, `sort` and `sort_desc` fold the ranked samples at each step, like Loki (#749).** `sum(topk(3, ...))`, grouped sum/avg/min/max/count, and nested rankings now return metric vectors or matrices instead of stream responses, errors or empty results. VictoriaLogs computes the operand values; the proxy applies each ranking and outer aggregation in order. The series limit applies to the final answer. Ties at the ranking cutoff retain Loki’s allowed ambiguity; stddev/stdvar and binary expressions outside the supported aggregation chain remain registered differences.
+
 - **Native stats metrics retain Loki's derived `detected_level=unknown` and
   respect a `drop detected_level` stage (#750).** Stream-grouped range and
   instant metrics now carry the derived level through the VictoriaLogs stats
