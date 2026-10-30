@@ -13,6 +13,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
 
 // TestCompat_LabelsFullRangeFixture proves that the first /labels and
@@ -24,13 +27,9 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 	id := strconv.FormatInt(time.Now().UnixNano(), 36)
 	app := "labels-full-range-" + id
 	uniq := "lfr_" + id
-	// The proxy buckets metadata cache keys (5 minutes for a 2h window), so an
-	// unscoped window reused by a rerun could be answered from the previous
-	// run's cache. Shift the range end back by a per-run multiple of 5 minutes:
-	// runs 5s to 5min apart always land in different buckets.
-	now := time.Now().UTC()
-	runShift := time.Duration(now.Unix()%300/5) * 5 * time.Minute
-	rangeEnd := now.Truncate(5 * time.Minute).Add(-time.Hour - runShift)
+	// Align the historical window to whole hours so its inventory buckets
+	// can also be populated by an earlier request with different bounds.
+	rangeEnd := time.Now().UTC().Truncate(time.Hour).Add(-2 * time.Hour)
 
 	type fixtureStream struct {
 		labels map[string]string
@@ -43,8 +42,18 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 		// More than 6h before the range end: outside any recent-values cap.
 		{labels: map[string]string{"app": app, "env": "old", uniq: "gamma"}, at: rangeEnd.Add(-8 * time.Hour), lines: 4},
 	}
-	totalLines := 0
-	for _, s := range streams {
+	newFixtureProxy := func() string {
+		return newErrLayerProxy(t, vlURL, func(cfg *proxy.Config) {
+			cfg.Cache = cache.New(5*time.Minute, 1000)
+			cfg.LabelValuesIndexedCache = true
+		})
+	}
+	ingest := func(s fixtureStream) {
+		fields := make([]string, 0, len(s.labels))
+		for name := range s.labels {
+			fields = append(fields, name)
+		}
+		sort.Strings(fields)
 		lines := make([]string, 0, s.lines)
 		values := make([][]string, 0, s.lines)
 		for i := 0; i < s.lines; i++ {
@@ -58,9 +67,8 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 			lines = append(lines, string(encoded))
 			values = append(values, []string{strconv.FormatInt(ts.UnixNano(), 10), msg})
 		}
-		totalLines += s.lines
 		status, body := hardeningRequest(t, http.MethodPost,
-			vlURL+"/insert/jsonline?_stream_fields="+url.QueryEscape("app,env,"+uniq),
+			vlURL+"/insert/jsonline?_stream_fields="+url.QueryEscape(strings.Join(fields, ",")),
 			strings.Join(lines, "\n")+"\n", map[string]string{"Content-Type": "application/stream+json"})
 		if status != http.StatusOK {
 			t.Fatalf("VictoriaLogs ingest: %d %s", status, body)
@@ -70,6 +78,23 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 		if status != http.StatusNoContent {
 			t.Fatalf("Loki ingest: %d %s", status, body)
 		}
+	}
+	// A previous fixture left app/pod in this old hour. Prime a positive
+	// sealed bucket with different request bounds before backfilling new labels.
+	// Its normal historical TTL must not become this cold-response test setup.
+	ingest(fixtureStream{labels: map[string]string{"app": "warm-history-" + id, "pod": "old-pod"}, at: rangeEnd.Add(-90 * time.Minute), lines: 1})
+	if status, body := hardeningRequest(t, http.MethodPost, vlURL+"/internal/force_flush", "", nil); status != http.StatusOK {
+		t.Fatalf("VictoriaLogs baseline flush: %d %s", status, body)
+	}
+	warmProxyURL := newFixtureProxy()
+	warm := url.Values{"start": {strconv.FormatInt(rangeEnd.Add(-3*time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(rangeEnd.Add(time.Hour).UnixNano(), 10)}}
+	if names := labelsFullRangeStrings(t, warmProxyURL+"/loki/api/v1/labels?"+warm.Encode()); !slices.Contains(names, "app") || !slices.Contains(names, "pod") {
+		t.Fatalf("warm historical inventory lacks baseline labels: %v", names)
+	}
+	totalLines := 0
+	for _, s := range streams {
+		totalLines += s.lines
+		ingest(s)
 	}
 	if status, body := hardeningRequest(t, http.MethodPost, vlURL+"/internal/force_flush", "", nil); status != http.StatusOK {
 		t.Fatalf("VictoriaLogs flush: %d %s", status, body)
@@ -128,6 +153,28 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 		t.Fatalf("VictoriaLogs fixture count mismatch (want %d): %s", totalLines, vlBody)
 	}
 
+	// Row visibility does not prove that the native metadata endpoints have
+	// indexed the fixture. Check them directly without warming a proxy cache.
+	nativeParams := url.Values{"query": {selector}, "start": {fullStart.Format(time.RFC3339Nano)}, "end": {rangeEnd.Format(time.RFC3339Nano)}}
+	deadline = time.Now().Add(90 * time.Second)
+	for {
+		names := labelsFullRangeNativeStrings(t, vlURL+"/select/logsql/stream_field_names?"+nativeParams.Encode())
+		valuesParams, _ := url.ParseQuery(nativeParams.Encode())
+		valuesParams.Set("field", uniq)
+		values := labelsFullRangeNativeStrings(t, vlURL+"/select/logsql/stream_field_values?"+valuesParams.Encode())
+		if slices.Contains(names, "app") && slices.Contains(names, "env") && slices.Contains(names, uniq) && slices.Equal(values, wantValues) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("VictoriaLogs native metadata did not index the fixture: names %v, %s values %v", names, uniq, values)
+		}
+		time.Sleep(time.Second)
+	}
+	// This fixture proves a cold first response. Earlier tests can populate
+	// sealed historical inventory buckets before these backdated rows arrive;
+	// changing endpoint bounds does not isolate those shared hour/day entries.
+	// Keep caching enabled, but start with a private empty cache after ingest.
+	fixtureProxyURL := newFixtureProxy()
 	wantLabels := []string{"app", "env", uniq, "service_name"}
 	// Unscoped, as Grafana's label browser asks: the shared stack holds other
 	// data, so compare only the fixture's labels and values. The window ends
@@ -141,7 +188,7 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 	unscoped.Set("start", strconv.FormatInt(rangeEnd.Add(-2*time.Hour).UnixNano(), 10))
 	unscoped.Set("end", strconv.FormatInt(rangeEnd.UnixNano(), 10))
 	lokiAll := labelsFullRangeStrings(t, lokiURL+"/loki/api/v1/labels?"+unscoped.Encode())
-	proxyAll := labelsFullRangeStrings(t, proxyURL+"/loki/api/v1/labels?"+unscoped.Encode())
+	proxyAll := labelsFullRangeStrings(t, fixtureProxyURL+"/loki/api/v1/labels?"+unscoped.Encode())
 	for _, name := range wantLabels {
 		if !slices.Contains(lokiAll, name) {
 			t.Fatalf("Loki unscoped /labels missing fixture label %q: %v", name, lokiAll)
@@ -151,7 +198,7 @@ func TestCompat_LabelsFullRangeFixture(t *testing.T) {
 		}
 	}
 	lokiUniq := labelsFullRangeStrings(t, lokiURL+"/loki/api/v1/label/"+uniq+"/values?"+unscoped.Encode())
-	proxyUniq := labelsFullRangeStrings(t, proxyURL+"/loki/api/v1/label/"+uniq+"/values?"+unscoped.Encode())
+	proxyUniq := labelsFullRangeStrings(t, fixtureProxyURL+"/loki/api/v1/label/"+uniq+"/values?"+unscoped.Encode())
 	// gamma is 8h before this window. Loki answers label values for streams
 	// still held by the ingester from its in-memory index, which is not
 	// time-precise, so it may add gamma; VictoriaLogs filters by time exactly.
@@ -229,4 +276,23 @@ func labelsFullRangeStrings(t *testing.T, target string) []string {
 	}
 	sort.Strings(resp.Data)
 	return resp.Data
+}
+
+// labelsFullRangeNativeStrings reads a VictoriaLogs metadata listing directly.
+func labelsFullRangeNativeStrings(t *testing.T, target string) []string {
+	t.Helper()
+	var resp struct {
+		Values []struct {
+			Value string `json:"value"`
+		} `json:"values"`
+	}
+	if err := json.Unmarshal(labelsFullRangeGet(t, target), &resp); err != nil {
+		t.Fatalf("decode VictoriaLogs metadata: %v", err)
+	}
+	values := make([]string, 0, len(resp.Values))
+	for _, item := range resp.Values {
+		values = append(values, item.Value)
+	}
+	sort.Strings(values)
+	return values
 }
