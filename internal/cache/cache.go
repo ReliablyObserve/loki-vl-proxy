@@ -33,6 +33,7 @@ type TierStatsSnapshot struct {
 	Hits      int64
 	Misses    int64
 	StaleHits int64
+	Evictions int64
 }
 
 type StatsSnapshot struct {
@@ -996,12 +997,19 @@ func (c *Cache) Stats() StatsSnapshot {
 			Hits:      c.l1Stats.hits.Load(),
 			Misses:    c.l1Stats.misses.Load(),
 			StaleHits: c.l1Stats.staleHits.Load(),
+			Evictions: c.Evictions.Load(),
 		},
 		L2: TierStatsSnapshot{
 			Requests:  c.l2Stats.requests.Load(),
 			Hits:      c.l2Stats.hits.Load(),
 			Misses:    c.l2Stats.misses.Load(),
 			StaleHits: c.l2Stats.staleHits.Load(),
+			Evictions: func() int64 {
+				if c.l2 != nil {
+					return c.l2.Evictions.Load()
+				}
+				return 0
+			}(),
 		},
 		L3: TierStatsSnapshot{
 			Requests:  c.l3Stats.requests.Load(),

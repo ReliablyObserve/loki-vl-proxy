@@ -11,10 +11,13 @@ import (
 
 func TestMetrics_Handler_EmitsCacheTierMetricsFromProvider(t *testing.T) {
 	m := NewMetrics()
+	m.SetCoalescerStatsProvider(func() CoalescerStats {
+		return CoalescerStats{Total: 8, Saved: 3, WaitCount: 3, WaitNanos: 42000000}
+	})
 	m.SetCacheStatsProvider(func() cache.StatsSnapshot {
 		return cache.StatsSnapshot{
-			L1:                 cache.TierStatsSnapshot{Requests: 11, Hits: 7, Misses: 4, StaleHits: 1},
-			L2:                 cache.TierStatsSnapshot{Requests: 5, Hits: 3, Misses: 2, StaleHits: 1},
+			L1:                 cache.TierStatsSnapshot{Requests: 11, Hits: 7, Misses: 4, StaleHits: 1, Evictions: 2},
+			L2:                 cache.TierStatsSnapshot{Requests: 5, Hits: 3, Misses: 2, StaleHits: 1, Evictions: 3},
 			L3:                 cache.TierStatsSnapshot{Requests: 2, Hits: 1, Misses: 1},
 			BackendFallthrough: 6,
 			Entries:            13,
@@ -33,10 +36,16 @@ func TestMetrics_Handler_EmitsCacheTierMetricsFromProvider(t *testing.T) {
 		`loki_vl_proxy_cache_tier_requests_total{tier="l1_memory"} 11`,
 		`loki_vl_proxy_cache_tier_hits_total{tier="l2_disk"} 3`,
 		`loki_vl_proxy_cache_tier_misses_total{tier="l3_peer"} 1`,
+		`loki_vl_proxy_cache_tier_evictions_total{tier="l1_memory"} 2`,
+		`loki_vl_proxy_cache_tier_evictions_total{tier="l2_disk"} 3`,
 		`loki_vl_proxy_cache_tier_stale_hits_total{tier="l1_memory"} 1`,
 		`loki_vl_proxy_cache_backend_fallthrough_total 6`,
 		`loki_vl_proxy_cache_objects{tier="l2_disk"} 19`,
 		`loki_vl_proxy_cache_bytes{tier="l1_memory"} 17`,
+		`loki_vl_proxy_coalesced_total 8`,
+		`loki_vl_proxy_coalesced_saved_total 3`,
+		`loki_vl_proxy_coalesced_wait_nanoseconds_total 42000000`,
+		`loki_vl_proxy_coalesced_wait_count_total 3`,
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("expected cache tier metric %q in output", needle)
@@ -46,10 +55,13 @@ func TestMetrics_Handler_EmitsCacheTierMetricsFromProvider(t *testing.T) {
 
 func TestOTLPPusher_BuildPayload_IncludesCacheTierMetrics(t *testing.T) {
 	m := NewMetrics()
+	m.SetCoalescerStatsProvider(func() CoalescerStats {
+		return CoalescerStats{Total: 8, Saved: 3, WaitCount: 3, WaitNanos: 42000000}
+	})
 	m.SetCacheStatsProvider(func() cache.StatsSnapshot {
 		return cache.StatsSnapshot{
-			L1:                 cache.TierStatsSnapshot{Requests: 9, Hits: 5, Misses: 4, StaleHits: 1},
-			L2:                 cache.TierStatsSnapshot{Requests: 3, Hits: 2, Misses: 1, StaleHits: 1},
+			L1:                 cache.TierStatsSnapshot{Requests: 9, Hits: 5, Misses: 4, StaleHits: 1, Evictions: 2},
+			L2:                 cache.TierStatsSnapshot{Requests: 3, Hits: 2, Misses: 1, StaleHits: 1, Evictions: 3},
 			L3:                 cache.TierStatsSnapshot{Requests: 1, Hits: 1},
 			BackendFallthrough: 2,
 			Entries:            7,
@@ -82,9 +94,14 @@ func TestOTLPPusher_BuildPayload_IncludesCacheTierMetrics(t *testing.T) {
 		"loki_vl_proxy_cache_tier_hits_total",
 		"loki_vl_proxy_cache_tier_misses_total",
 		"loki_vl_proxy_cache_tier_stale_hits_total",
+		"loki_vl_proxy_cache_tier_evictions_total",
 		"loki_vl_proxy_cache_backend_fallthrough_total",
 		"loki_vl_proxy_cache_objects",
 		"loki_vl_proxy_cache_bytes",
+		"loki_vl_proxy_coalesced_total",
+		"loki_vl_proxy_coalesced_saved_total",
+		"loki_vl_proxy_coalesced_wait_nanoseconds_total",
+		"loki_vl_proxy_coalesced_wait_count_total",
 	} {
 		if !names[required] {
 			t.Fatalf("expected OTLP payload to include %s; names=%v", required, names)

@@ -1177,7 +1177,7 @@
           },
           "expr": "rate(loki_vl_proxy_coalesced_saved_total[5m])",
           "legendFormat": "saved backend calls/s",
-          "refId": "A"
+          "refId": "B"
         }
       ]
     },
@@ -2234,8 +2234,8 @@
     {
       "type": "timeseries",
       "id": 46,
-      "title": "Cache Misses by Tier and Hot-Key Index",
-      "description": "Cache misses per second. An L0 hot-key miss is a first observation; L1/L2/L3 lookup misses cascade to the next tier or backend.",
+      "title": "Cache Misses and Evictions by Tier and Hot-Key Index",
+      "description": "Cache misses per second and memory/disk capacity or expiry evictions. An L0 hot-key miss is a first observation; L1/L2/L3 lookup misses cascade to the next tier or backend.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2299,6 +2299,24 @@
           "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}[5m])",
           "legendFormat": "L3 peer misses/s",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}[5m])",
+          "legendFormat": "L1 evictions/s",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}[5m])",
+          "legendFormat": "L2 evictions/s",
+          "refId": "F"
         }
       ]
     },
@@ -2340,27 +2358,45 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_cache_objects{tier=\"memory\"}",
+          "expr": "loki_vl_proxy_cache_objects{tier=\"l0\"}",
+          "legendFormat": "L0 hot-key entries",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}",
           "legendFormat": "L1 objects",
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_cache_bytes{tier=\"memory\"}",
+          "expr": "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}",
+          "legendFormat": "L2 objects",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}",
           "legendFormat": "L1 bytes",
-          "refId": "A"
+          "refId": "D"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "loki_vl_proxy_cache_bytes{tier=\"disk\"}",
+          "expr": "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}",
           "legendFormat": "L2 bytes",
-          "refId": "A"
+          "refId": "E"
         }
       ]
     },
@@ -3910,6 +3946,50 @@
           },
           "expr": "sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total{status=~\"5..\"}[5m])) / sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total[5m]))",
           "legendFormat": "{{tenant}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 79,
+      "title": "Coalesced Request Wait (Average)",
+      "description": "Average time that duplicate requests waited for an in-flight backend response. Zero means no requests joined a concurrent request during the interval.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 177,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(loki_vl_proxy_coalesced_wait_nanoseconds_total[5m])) / clamp_min(sum(rate(loki_vl_proxy_coalesced_wait_count_total[5m])), 1) / 1e9",
+          "legendFormat": "average waiter delay",
           "refId": "A"
         }
       ]

@@ -46,8 +46,10 @@ type Metrics struct {
 	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
 
 	// Singleflight coalescing stats
-	coalescedTotal atomic.Int64 // requests served from coalesced results
-	coalescedSaved atomic.Int64 // backend requests saved by coalescing
+	coalescedTotal         atomic.Int64 // requests served from coalesced results
+	coalescedSaved         atomic.Int64 // backend requests saved by coalescing
+	coalescedStatsProvider func() CoalescerStats
+	coalescedProviderMu    sync.RWMutex
 
 	// Translation stats
 	translationsTotal atomic.Int64
@@ -145,6 +147,14 @@ type Metrics struct {
 	knownTenants          map[string]struct{}
 	knownClients          map[string]struct{}
 	cacheStatsProvider    func() cache.StatsSnapshot
+}
+
+// CoalescerStats is a process-wide snapshot of duplicate backend work avoided.
+type CoalescerStats struct {
+	Total     int64
+	Saved     int64
+	WaitCount int64
+	WaitNanos int64
 }
 
 type histogram struct {
@@ -416,6 +426,29 @@ func (m *Metrics) SetCacheStatsProvider(fn func() cache.StatsSnapshot) {
 	m.mu.Unlock()
 }
 
+// SetCoalescerStatsProvider attaches the live request-coalescer counters.
+func (m *Metrics) SetCoalescerStatsProvider(fn func() CoalescerStats) {
+	if m == nil {
+		return
+	}
+	m.coalescedProviderMu.Lock()
+	m.coalescedStatsProvider = fn
+	m.coalescedProviderMu.Unlock()
+}
+
+func (m *Metrics) coalescerStats() CoalescerStats {
+	if m == nil {
+		return CoalescerStats{}
+	}
+	m.coalescedProviderMu.RLock()
+	fn := m.coalescedStatsProvider
+	m.coalescedProviderMu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return CoalescerStats{Total: m.coalescedTotal.Load(), Saved: m.coalescedSaved.Load()}
+}
+
 func (m *Metrics) cacheStatsSnapshot() (cache.StatsSnapshot, bool) {
 	if m == nil {
 		return cache.StatsSnapshot{}, false
@@ -538,6 +571,11 @@ func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l1_memory", stats.L1.Misses)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l2_disk", stats.L2.Misses)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l3_peer", stats.L3.Misses)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_evictions_total Cache entries evicted or rejected by tier capacity/expiry policies.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_evictions_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_evictions_total{tier=%q} %d\n", "l1_memory", stats.L1.Evictions)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_evictions_total{tier=%q} %d\n", "l2_disk", stats.L2.Evictions)
 
 	sb.WriteString("# HELP loki_vl_proxy_cache_tier_stale_hits_total Stale responses served from local cache tiers.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_stale_hits_total counter\n")
@@ -2075,10 +2113,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	// Singleflight coalescing stats
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_total Requests served from coalesced results.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_coalesced_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_total %d\n", m.coalescedTotal.Load())
+	coalesced := m.coalescerStats()
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_total %d\n", coalesced.Total)
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_saved_total Backend requests saved by coalescing.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_coalesced_saved_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_saved_total %d\n", m.coalescedSaved.Load())
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_saved_total %d\n", coalesced.Saved)
+	sb.WriteString("# HELP loki_vl_proxy_coalesced_wait_nanoseconds_total Total time duplicate requests waited for an in-flight backend response.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_coalesced_wait_nanoseconds_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_wait_nanoseconds_total %d\n", coalesced.WaitNanos)
+	sb.WriteString("# HELP loki_vl_proxy_coalesced_wait_count_total Number of duplicate requests that waited for an in-flight backend response.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_coalesced_wait_count_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_wait_count_total %d\n", coalesced.WaitCount)
 
 	sb.WriteString("# HELP loki_vl_proxy_window_cache_hit_total Query-range window cache hits.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_cache_hit_total counter\n")

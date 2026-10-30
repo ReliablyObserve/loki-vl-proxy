@@ -267,8 +267,10 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 		p.sumMetric("loki_vl_proxy_patterns_snapshot_misses_total", "Pattern snapshot fallback lookups that missed.", "", p.counterDP("loki_vl_proxy_patterns_snapshot_misses_total", p.metrics.patternsSnapshotMissesTotal.Load(), now)),
 		p.sumMetric("loki_vl_proxy_patterns_snapshot_reused_total", "Pattern responses served from snapshot fallback payloads.", "", p.counterDP("loki_vl_proxy_patterns_snapshot_reused_total", p.metrics.patternsSnapshotReusedTotal.Load(), now)),
 		p.sumMetric("loki_vl_proxy_patterns_low_coverage_responses_total", "Pattern responses flagged as low coverage and likely degraded.", "", p.counterDP("loki_vl_proxy_patterns_low_coverage_responses_total", p.metrics.patternsLowCoverageResponsesTotal.Load(), now)),
-		p.sumMetric("loki_vl_proxy_coalesced_total", "Requests served from coalesced results.", "", p.counterDP("loki_vl_proxy_coalesced_total", p.metrics.coalescedTotal.Load(), now)),
-		p.sumMetric("loki_vl_proxy_coalesced_saved_total", "Backend requests saved by coalescing.", "", p.counterDP("loki_vl_proxy_coalesced_saved_total", p.metrics.coalescedSaved.Load(), now)),
+		p.sumMetric("loki_vl_proxy_coalesced_total", "Requests served from coalesced results.", "", p.counterDP("loki_vl_proxy_coalesced_total", p.metrics.coalescerStats().Total, now)),
+		p.sumMetric("loki_vl_proxy_coalesced_saved_total", "Backend requests saved by coalescing.", "", p.counterDP("loki_vl_proxy_coalesced_saved_total", p.metrics.coalescerStats().Saved, now)),
+		p.sumMetric("loki_vl_proxy_coalesced_wait_nanoseconds_total", "Total time duplicate requests waited for an in-flight backend response.", "ns", p.counterDP("loki_vl_proxy_coalesced_wait_nanoseconds_total", p.metrics.coalescerStats().WaitNanos, now)),
+		p.sumMetric("loki_vl_proxy_coalesced_wait_count_total", "Number of duplicate requests that waited for an in-flight backend response.", "", p.counterDP("loki_vl_proxy_coalesced_wait_count_total", p.metrics.coalescerStats().WaitCount, now)),
 		p.gaugeMetric("loki_vl_proxy_uptime_seconds", "Proxy uptime.", "s", p.gaugeDP("loki_vl_proxy_uptime_seconds", time.Since(p.metrics.startTime).Seconds(), now)),
 		p.gaugeMetric("loki_vl_proxy_active_requests", "Current in-flight requests.", "{request}", p.gaugeDP("loki_vl_proxy_active_requests", float64(p.metrics.activeRequests.Load()), now)),
 	)
@@ -362,6 +364,13 @@ func (p *OTLPPusher) cacheTierMetrics(now int64) []map[string]interface{} {
 			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L1.Misses, now, attr("tier", "l1_memory")),
 			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L2.Misses, now, attr("tier", "l2_disk")),
 			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L3.Misses, now, attr("tier", "l3_peer")),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_cache_tier_evictions_total",
+			"Cache entries evicted or rejected by tier capacity/expiry policies.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_tier_evictions_total", stats.L1.Evictions, now, attr("tier", "l1_memory")),
+			p.counterDP("loki_vl_proxy_cache_tier_evictions_total", stats.L2.Evictions, now, attr("tier", "l2_disk")),
 		),
 		p.sumMetric(
 			"loki_vl_proxy_cache_tier_stale_hits_total",

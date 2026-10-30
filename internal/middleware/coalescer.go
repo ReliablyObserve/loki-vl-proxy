@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -78,6 +79,9 @@ type Coalescer struct {
 	disabled       bool           // when true, bypass singleflight (raw passthrough)
 	ActiveShared   atomic.Int64   // requests currently sharing a coalesced result
 	CoalescedTotal atomic.Int64   // total coalesced (deduplicated) requests
+	CoalescedSaved atomic.Int64   // backend calls avoided by duplicate requests
+	WaitCount      atomic.Int64
+	WaitNanos      atomic.Int64
 }
 
 func NewCoalescer() *Coalescer {
@@ -104,8 +108,14 @@ type coalescedResponse struct {
 // The key should uniquely identify the request (e.g., method + path + query).
 // When the coalescer is disabled, fn is called directly for every request.
 func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
+	status, headers, body, _, err := c.do(key, fn)
+	return status, headers, body, err
+}
+
+func (c *Coalescer) do(key string, fn func() (*http.Response, error)) (int, http.Header, []byte, bool, error) {
 	if c.disabled {
-		return c.callDirect(fn)
+		status, headers, body, err := c.callDirect(fn)
+		return status, headers, body, false, err
 	}
 
 	result, err, shared := c.group.Do(key, func() (interface{}, error) {
@@ -128,9 +138,8 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 	})
 
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, shared, err
 	}
-
 	if shared {
 		c.CoalescedTotal.Add(1)
 		c.ActiveShared.Add(1)
@@ -138,7 +147,7 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 	}
 
 	cr := result.(*coalescedResponse)
-	return cr.status, nil, cr.body, nil
+	return cr.status, nil, cr.body, shared, nil
 }
 
 // callDirect calls fn without singleflight — used when coalescer is disabled.
@@ -185,7 +194,13 @@ func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.
 	c.inflight[key]++
 	c.inflightMu.Unlock()
 
-	status, headers, body, err := c.Do(key, fn)
+	started := time.Now()
+	status, headers, body, shared, err := c.do(key, fn)
+	if count > 0 && shared {
+		c.CoalescedSaved.Add(1)
+		c.WaitCount.Add(1)
+		c.WaitNanos.Add(time.Since(started).Nanoseconds())
+	}
 
 	c.inflightMu.Lock()
 	c.inflight[key]--

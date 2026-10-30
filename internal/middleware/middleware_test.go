@@ -349,6 +349,15 @@ func TestCoalescer_DoWithGuard_JoinsInFlight(t *testing.T) {
 			t.Errorf("goroutine %d: expected status 200, got %d", i, statuses[i])
 		}
 	}
+	if got := c.CoalescedSaved.Load(); got != 2 {
+		t.Errorf("expected exactly 2 backend calls saved, got %d", got)
+	}
+	if got := c.WaitCount.Load(); got != 2 {
+		t.Errorf("expected wait timing for 2 joined requests, got %d", got)
+	}
+	if got := c.WaitNanos.Load(); got <= 0 {
+		t.Errorf("expected positive aggregate coalescer wait time, got %d ns", got)
+	}
 }
 
 // TestCoalescer_ErrorPropagation verifies errors are returned to all waiters.
