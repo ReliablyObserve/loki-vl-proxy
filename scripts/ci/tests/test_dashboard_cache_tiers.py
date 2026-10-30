@@ -45,6 +45,10 @@ class DashboardCacheTierTests(unittest.TestCase):
                     }
                     self.assertEqual(selected, emitted[kind])
                     self.assertEqual(len(expressions), len(emitted[kind]))
+                    self.assertEqual(
+                        {target["refId"] for target in panel["targets"]},
+                        {"A", "B", "C", "D"},
+                    )
                     self.assertIn("hot-key", panel["description"])
 
         self.assertEqual(DASHBOARDS[0].read_bytes(), DASHBOARDS[1].read_bytes())

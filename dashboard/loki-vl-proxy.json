@@ -2209,7 +2209,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[5m])",
           "legendFormat": "L1 memory hits/s",
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -2218,7 +2218,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}[5m])",
           "legendFormat": "L2 disk hits/s",
-          "refId": "A"
+          "refId": "C"
         },
         {
           "datasource": {
@@ -2227,7 +2227,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}[5m])",
           "legendFormat": "L3 peer hits/s",
-          "refId": "A"
+          "refId": "D"
         }
       ]
     },
@@ -2280,7 +2280,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}[5m])",
           "legendFormat": "L1 misses/s",
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
@@ -2289,7 +2289,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}[5m])",
           "legendFormat": "L2 misses/s",
-          "refId": "A"
+          "refId": "C"
         },
         {
           "datasource": {
@@ -2298,7 +2298,7 @@
           },
           "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}[5m])",
           "legendFormat": "L3 peer misses/s",
-          "refId": "A"
+          "refId": "D"
         }
       ]
     },

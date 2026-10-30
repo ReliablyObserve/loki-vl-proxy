@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The shipped cache activity dashboard now uses the cache tiers exported by
   the proxy.** Its hit and miss panels previously selected nonexistent
   `compat`, `memory`, and `disk` tier labels, leaving those series blank. The
-  panels now select `l0`, `l1_memory`, `l2_disk`, and `l3_peer`, and identify L0
-  as the hot-key index rather than a response-cache lookup tier.
+  panels now select `l0`, `l1_memory`, `l2_disk`, and `l3_peer`, use distinct
+  Grafana query references, and identify L0 as the hot-key index rather than
+  a response-cache lookup tier.
 
 - **Native stats metrics retain Loki's derived `detected_level=unknown` and
   respect a `drop detected_level` stage (#750).** Stream-grouped range and
