@@ -1,0 +1,2 @@
+# Machine-produced cache proof reports.
+bench/cache-placement/results/**/*.json linguist-generated=true
