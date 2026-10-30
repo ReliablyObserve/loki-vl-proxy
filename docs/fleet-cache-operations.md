@@ -36,6 +36,20 @@ flowchart TD
     PLACE --> ANSWER
 ```
 
+A peer lookup is targeted, not broadcast: after local RAM/SSD misses, the proxy
+calculates the key owner and backups from the membership ring, skips itself,
+and tries those replicas in order. It stops at the first valid hit. RF=1 permits
+one remote candidate; RF=2 permits owner then backup. Publication also targets
+only the configured placements. This is cache-value transfer, not forwarding the
+whole client query to another evaluator.
+
+Remote hits add network bytes and owner work. Bounded frontend shadows absorb
+repeats; keeping RF copies rather than a copy per frontend frees capacity for
+more distinct shared keys. A large cached response, hot owner or slow network can
+still cost more than another path. Compare peer bytes/latency and owner load with
+VictoriaLogs calls, scanned ranges and response bytes before selecting capacity
+or replication settings.
+
 ## Placement and failure choices
 
 Pooled placement requires peer discovery, a consistent peer configuration and `-peer-write-through=true` (the default). RF includes the owner. Keys rejected by the peer publication filter, values above the peer body limit, and ordinary writes below `-peer-write-through-min-ttl` retain local fallback behavior. Forwarded-credential entries are not published.
@@ -169,6 +183,6 @@ The [bounded three-node HTTP capacity test](../internal/cache/peer_capacity_e2e_
 
 Both datasets exceed one node's capacity. Tests also cover shadow churn, owner disk promotion, RF-specific recovery and safe misses after loss.
 
-The [real three-proxy/Loki/VictoriaLogs reports](../bench/cache-placement/results/2026-10-30/README.md) record RF=1 with **664 requests / 35 passing case events / 264.566 s**, and RF=2 with **666 requests / 35 passing case events / 239.620 s**. Those totals describe the integration runs, not a controlled RF performance comparison.
+The [real three-proxy/Loki/VictoriaLogs reports](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/cache-placement/results/2026-10-30/README.md) record RF=1 with **664 requests / 35 passing case events / 264.566 s**, and RF=2 with **666 requests / 35 passing case events / 239.620 s**. Those totals describe the integration runs, not a controlled RF performance comparison.
 
 Visual evidence covers **nine scenes and 27 screenshots**: **79/79 main-versus-change answers identical**, with **zero new Loki differences**. Seven shared existing Loki discrepancies remain. The evidence establishes placement and checked response preservation; it does not claim zero semantic gaps, automatic rebalancing, or universal warm-latency wins.

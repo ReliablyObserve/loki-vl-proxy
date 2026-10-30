@@ -25,7 +25,7 @@ The three-node HTTP proof uses production L1/L2 caches and peer handlers, with a
 | RF=1 | 150 | 150 | 450 | 0 |
 | RF=2 | 90 | 180 | 270 | 0 |
 
-Both datasets exceed one node capacity. Tests check every key against its configured replica set, shadow churn without owned-entry eviction, one L2 read followed by L1 reuse after owner restart, RF=2 backup recovery, and explicit RF=1 recomputation on owner loss. Fault/expiry/eviction sequences allow safe misses and verify every hit; they do not claim linearizable storage or zero backend reads after arbitrary loss. See the [capacity test](../internal/cache/peer_capacity_e2e_test.go), [fault sequence model](../internal/cache/peer_capacity_fuzz_test.go), [metadata placement test](../internal/proxy/shared_placement_test.go), and [raw integration/visual reports](../bench/cache-placement/results/2026-10-30/README.md).
+Both datasets exceed one node capacity. Tests check every key against its configured replica set, shadow churn without owned-entry eviction, one L2 read followed by L1 reuse after owner restart, RF=2 backup recovery, and explicit RF=1 recomputation on owner loss. Fault/expiry/eviction sequences allow safe misses and verify every hit; they do not claim linearizable storage or zero backend reads after arbitrary loss. See the [capacity test](../internal/cache/peer_capacity_e2e_test.go), [fault sequence model](../internal/cache/peer_capacity_fuzz_test.go), [metadata placement test](../internal/proxy/shared_placement_test.go), and [raw integration/visual reports](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/cache-placement/results/2026-10-30/README.md).
 
 ## Overview
 

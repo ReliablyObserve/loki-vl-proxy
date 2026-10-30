@@ -1053,10 +1053,10 @@ jobs:
           docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
           docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
-      - name: Prove pooled capacity through three HTTP peers
+      - name: Prove pooled capacity and targeted cold-reader reuse
         shell: bash
         run: |
-          go test -v -count=1 -run '^TestPeerCapacityDatasetExceedsSingleNode$' ./internal/cache/ | tee "$RUNNER_TEMP/fleet-capacity-proof.txt"
+          go test -v -count=1 -run '^(TestPeerCapacityDatasetExceedsSingleNode|TestPeerReader.*)$' ./internal/cache/ | tee "$RUNNER_TEMP/fleet-capacity-proof.txt"
 
       - name: Fuzz bounded peer capacity and failure sequences
         shell: bash
