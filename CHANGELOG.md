@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   records are bounded before decompression and cannot fall back to an older
   legacy copy. No dependencies are added.
 
+## [2.48.2] - 2026-10-30
+
 ### Added
 
 - **Cache-tier evictions and request-coalescing wait are observable.** Prometheus and OTLP now export memory and disk eviction counts, coalesced backend calls saved, and aggregate waiter time. The operations dashboard includes eviction-rate and average-wait panels.
