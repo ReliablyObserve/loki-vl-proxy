@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Disk cache writes use bounded asynchronous batches and LRU capacity eviction.**
+  The default batch trigger is 1000 entries or 4 MiB, with a 16 MiB pending/flushing
+  queue and a separately bounded recency index. Hits update recency without disk
+  writes. New versioned records use S2 by default, support zstd/gzip/raw, validate
+  decoded size and checksums, and keep legacy raw/gzip read compatibility. Peer
+  responses reuse bounded compression scratch and avoid unnecessary parsing work.
+
+### Security
+
+- **Peer TTLs reject values that overflow duration conversion.** Malformed disk
+  records are bounded before decompression and cannot fall back to an older
+  legacy copy. No dependencies are added.
+
 ### Added
 
 - **Cache-tier evictions and request-coalescing wait are observable.** Prometheus and OTLP now export memory and disk eviction counts, coalesced backend calls saved, and aggregate waiter time. The operations dashboard includes eviction-rate and average-wait panels.
