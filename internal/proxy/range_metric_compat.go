@@ -3043,16 +3043,17 @@ func rateCounterWindow(values []float64, windowSeconds float64) float64 {
 	return increase / windowSeconds
 }
 
-// foldedSumKey marks a manual range metric whose series are added up by the
-// outer sum after the evaluator: Loki counts max_query_series on that answer,
-// not on the series the range aggregation yields.
+// foldedSumKey marks a manual range metric whose series are added up (or
+// otherwise folded) by the aggregation around it after the evaluator: Loki
+// counts max_query_series on that answer, not on the series the range
+// aggregation yields.
 type foldedSumKey struct{}
 
 // manualSeriesLimit is the series bound of a manual range metric's own answer,
 // in the raw collector and in the builders; none when foldUngroupedSum adds the
 // series up afterwards (the raw-row budget still bounds the memory).
 func (p *Proxy) manualSeriesLimit(ctx context.Context) int {
-	if folded, _ := ctx.Value(foldedSumKey{}).(bool); folded {
+	if folded, _ := ctx.Value(foldedSumKey{}).(bool); folded || outerSeriesFolded(ctx) {
 		return 0
 	}
 	return p.resolvedMaxStatsQuerySeries(ctx)

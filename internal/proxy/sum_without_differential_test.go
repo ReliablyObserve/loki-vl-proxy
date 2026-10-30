@@ -920,13 +920,16 @@ func TestWithoutFoldRowBudgetError(t *testing.T) {
 					params.Set("end", strconv.FormatInt(base/1e9, 10))
 					params.Set("step", "60")
 				}
-				res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-				body := res.Body.String()
-				if tc.wantRowText && (res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit")) {
-					t.Fatalf("%d %s, want the row-limit error naming the flag as a 400", res.Code, body)
-				}
-				if !tc.wantRowText && (res.Code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (4)") || strings.Contains(body, "-manual-range-metric-row-limit")) {
-					t.Fatalf("%d %s, want Loki's series limit error of the tenant's limit as a 400", res.Code, body)
+				for _, guarded := range []string{query, "sum(topk(2, " + query + "))"} {
+					params.Set("query", guarded)
+					res := doCompatProxyRequest(p, target+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
+					body := res.Body.String()
+					if tc.wantRowText && (res.Code != http.StatusBadRequest || strings.Contains(body, "maximum number of series") || !strings.Contains(body, "-manual-range-metric-row-limit")) {
+						t.Fatalf("%s: %d %s, want the row-limit error naming the flag as a 400", guarded, res.Code, body)
+					}
+					if !tc.wantRowText && (res.Code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (4)") || strings.Contains(body, "-manual-range-metric-row-limit")) {
+						t.Fatalf("%s: %d %s, want Loki's series limit error of the tenant's limit as a 400", guarded, res.Code, body)
+					}
 				}
 			})
 		}

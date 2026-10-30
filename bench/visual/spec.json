@@ -37,6 +37,19 @@
  },
  "pages": [
   {
+   "id": "explore-sum-over-topk",
+   "kind": "explore",
+   "query": "sum by (service_name) (topk(3, sum by (service_name, level) (count_over_time({env=\"production\", service_name=~\"api-gateway|frontend-ssr|cache-redis\"}[$__auto]))))",
+   "covers": [
+    "semantics/topk-over-vector-aggregation",
+    "heavy-metric-fetch-bounds",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/topk-over-vector-aggregation"
+   ]
+  },
+  {
    "id": "explore-logs-plain",
    "kind": "explore",
    "query": "{env=\"production\"}",

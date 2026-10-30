@@ -143,6 +143,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/nested-aggregation-outer-by-native-routes` — A vector aggregation over another one keeps every level's own by on the native routes (fixed) | #746 | 0 | 0 |
 | `semantics/proxy-accepts-operators-not-in-loki` — group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed) | #748 | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
+| `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |
 | `semantics/unwrap-duration-seconds` — '`unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed)' | #729 | 0 | 0 |
 | `semantics/unwrap-first-last-under-aggregation` — first_over_time and last_over_time with unwrap under an aggregation answer 200 with Loki's series, and Loki's values at an instant (fixed) | #728 | 0 | 0 |

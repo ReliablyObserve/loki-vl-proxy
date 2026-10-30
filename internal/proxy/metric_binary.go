@@ -1709,12 +1709,16 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	// Loki applies max_query_series to instant queries as well: an error for a
 	// plain client, a partial vector with a warning for Logs Drilldown.
-	capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
-	if capErr != nil {
-		p.writeErr(w, r.Context(), capErr)
-		return
+	// An inner manual fold can still read under its row budget or grouped
+	// variance ceiling; an outer ranking must not bypass those read bounds.
+	if folding, _ := r.Context().Value(foldedSumKey{}).(bool); !outerSeriesFolded(r.Context()) || folding {
+		capped, capErr := capSeriesToLimit(r.Context(), body, p.resolvedMaxStatsQuerySeries(r.Context()))
+		if capErr != nil {
+			p.writeErr(w, r.Context(), capErr)
+			return
+		}
+		body = capped
 	}
-	body = capped
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }
