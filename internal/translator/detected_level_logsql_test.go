@@ -449,3 +449,119 @@ func FuzzStoredLevelCopyFilter(f *testing.F) {
 		}
 	})
 }
+
+// Loki's series are the stream plus the structured metadata of the entry, and
+// detected_level is always among it ("unknown" when no rule finds a level). A
+// grouping that names a series by its stream and level therefore also groups by
+// the derived detected_level; any other grouping keeps its cost.
+//
+// conformance: semantics/detected-level-missing-from-stats-answers, severity-exposure-surfaces
+func TestStreamIdentityGroupsByDetectedLevel(t *testing.T) {
+	const chainStart = `format if (detected_level:*) "<detected_level>" as __dl_s keep_original_fields`
+	const chainEnd = `format "<__dl>" as detected_level | delete __dl, __dl_*, __j_*, __l_*`
+	cases := []struct {
+		name  string
+		query string
+		// wantBy lists the by() lists of the stats pipes, in order.
+		wantBy []string
+		chain  bool
+	}{
+		{"count by label: inner series identity", `count by (pod) (count_over_time({app="x"}[5m]))`, []string{"pod, _stream, level, detected_level", "pod"}, true},
+		{"max without: both stages", `max without (pod) (count_over_time({app="x"}[5m]))`, []string{"_stream, level, detected_level", "_stream, level, detected_level"}, true},
+		{"rate without", `sum without (pod) (rate({app="x"}[5m]))`, []string{"_stream, level, detected_level", "_stream, level, detected_level"}, true},
+		{"already grouped by detected_level", `count by (detected_level) (count_over_time({app="x"}[5m]))`, []string{"detected_level, _stream, level", "detected_level"}, true},
+		{"sum by label: no stream identity", `sum by (pod) (count_over_time({app="x"}[5m]))`, []string{"pod"}, false},
+		{"parser pipeline: stream only", `count by (pod) (count_over_time({app="x"} | json [5m]))`, []string{"pod, _stream", "pod"}, false},
+		{"ungrouped sum", `sum(count_over_time({app="x"}[5m]))`, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TranslateLogQLWithLabels(tc.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var by []string
+			for rest := got; ; {
+				i := strings.Index(rest, "| stats by (")
+				if i < 0 {
+					break
+				}
+				rest = rest[i+len("| stats by ("):]
+				end := strings.IndexByte(rest, ')')
+				by = append(by, rest[:end])
+			}
+			if strings.Join(by, " ; ") != strings.Join(tc.wantBy, " ; ") {
+				t.Fatalf("by lists %q, want %q\nquery %s", by, tc.wantBy, got)
+			}
+			if has := strings.Contains(got, chainStart) && strings.Contains(got, chainEnd); has != tc.chain {
+				t.Fatalf("detected_level chain present = %v, want %v\nquery %s", has, tc.chain, got)
+			}
+			if n := strings.Count(got, chainStart); n > 1 {
+				t.Fatalf("the chain is inserted %d times: %s", n, got)
+			}
+		})
+	}
+}
+
+// The chain goes before the first pipe of the query, so a stage that removes
+// detected_level (`| drop detected_level`) still removes it from the series, as
+// in Loki, and the grouping then names no value for it.
+//
+// conformance: semantics/detected-level-missing-from-stats-answers
+func TestApplyStreamIdentityDetectedLevelKeepsStageOrder(t *testing.T) {
+	got := ApplyStreamIdentityDetectedLevel(`app:="x" | delete detected_level | stats by (_stream, level) count()`, nil)
+	chain := strings.Index(got, "format if (detected_level:*)")
+	del := strings.Index(got, "| delete detected_level |")
+	if chain < 0 || del < 0 || chain > del {
+		t.Fatalf("the chain must precede the user's stages: %s", got)
+	}
+	if !strings.HasSuffix(got, "| stats by (_stream, level, detected_level) count()") {
+		t.Fatalf("stats pipe does not group by detected_level: %s", got)
+	}
+	if again := ApplyStreamIdentityDetectedLevel(got, nil); strings.Count(again, "format if (detected_level:*)") != 1 {
+		t.Fatalf("a second pass inserts the chain again: %s", again)
+	}
+	for _, q := range []string{`app:="x" | stats count()`, `app:="x" | stats by (pod) count()`, `app:="x" | stats by (_stream) count()`, `*`} {
+		if ApplyStreamIdentityDetectedLevel(q, nil) != q {
+			t.Fatalf("%q must not change", q)
+		}
+	}
+}
+
+func TestApplyStreamIdentityDetectedLevelIgnoresQuotedPipeText(t *testing.T) {
+	for _, literal := range []string{
+		`"literal | stats by (_stream, level)"`,
+		"`literal | stats by (_stream, level)`",
+		`"literal \" | stats by (_stream, level)"`,
+	} {
+		query := `app:=` + literal + ` | stats by (_stream, level) count()`
+		got := ApplyStreamIdentityDetectedLevel(query, nil)
+		if !strings.Contains(got, `app:=`+literal) {
+			t.Fatalf("quoted selector was modified: %s", got)
+		}
+		if !strings.HasSuffix(got, `| stats by (_stream, level, detected_level) count()`) {
+			t.Fatalf("real stats grouping was not modified: %s", got)
+		}
+	}
+	query := `app:="literal | format if (detected_level:*) \"<detected_level>\" as __dl_s" | stats by (_stream, level) count()`
+	got := ApplyStreamIdentityDetectedLevel(query, nil)
+	if !strings.Contains(got, `app:="literal | format if (detected_level:*) \"<detected_level>\" as __dl_s"`) ||
+		!strings.Contains(got, ` | format if (detected_level:*) "<detected_level>" as __dl_s`) {
+		t.Fatalf("quoted chain marker prevented real derivation or was modified: %s", got)
+	}
+}
+
+// withoutDetectedLevelShape removes what ApplyStreamIdentityDetectedLevel adds
+// to a stream-identity grouping, for the tests that pin the shape of the stats
+// pipes apart from the derivation of detected_level.
+func withoutDetectedLevelShape(query string) string {
+	start := strings.Index(query, " | format if (detected_level:*)")
+	if start >= 0 {
+		const end = "| delete __dl, __dl_*, __j_*, __l_*"
+		if stop := strings.Index(query[start:], end); stop >= 0 {
+			query = query[:start] + query[start+stop+len(end):]
+		}
+	}
+	query = strings.ReplaceAll(query, ", detected_level, ", ", ")
+	return strings.ReplaceAll(query, ", detected_level)", ")")
+}

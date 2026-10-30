@@ -87,7 +87,7 @@ func TestPushDownWithoutEmitsTheFoldAsStatsPipes(t *testing.T) {
 			t.Errorf("%s: not pushed down: %s", tc.name, tc.logql)
 			continue
 		}
-		if got != tc.want {
+		if withoutDetectedLevelShape(got) != tc.want {
 			t.Errorf("%s: %s\n got %s\nwant %s", tc.name, tc.logql, got, tc.want)
 		}
 	}

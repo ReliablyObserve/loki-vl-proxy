@@ -51,6 +51,9 @@ func PushDownWithout(logql, series string, labelFn, toLoki LabelTranslateFunc) (
 		firstAbove = subtractLabels(levels[innermost-1].labels, excluded)
 	}
 	by := "_stream, level"
+	if topLevelPipePrefix(series, detectedLevelChainMarker) >= 0 {
+		by += ", detected_level"
+	}
 	if len(firstAbove) > 0 {
 		by += ", " + normalizeByLabels(strings.Join(firstAbove, ", "), labelFn)
 	}
@@ -149,33 +152,54 @@ func withoutPushdownLevels(logql string, labelFn, toLoki LabelTranslateFunc) ([]
 // A stats pipe keeps only the fields it groups by and computes, so the labels
 // the levels above read are grouped by from the first pipe on.
 func cutSeriesStats(series, op, by, cut string) (string, bool) {
-	if strings.Contains(strings.ReplaceAll(series, "sum_len(_msg)", ""), "_msg") || strings.Contains(series, "unpack_") || carriesTranslationMarker(series) {
+	shape := withoutDetectedLevelGroupingChain(series)
+	if strings.Contains(strings.ReplaceAll(shape, "sum_len(_msg)", ""), "_msg") || strings.Contains(shape, "unpack_") || carriesTranslationMarker(shape) {
 		return "", false
+	}
+	seriesStats := withoutSeriesStats
+	if topLevelPipePrefix(series, detectedLevelChainMarker) >= 0 {
+		seriesStats = "| stats by (_stream, level, detected_level) "
 	}
 	statsBy := "| stats by (" + by + ") "
 	switch strings.Count(series, "| stats ") {
 	case 2:
-		last := strings.LastIndex(series, withoutSeriesStats)
-		if strings.Count(series, withoutSeriesStats) != 2 || last < 0 {
+		last := strings.LastIndex(series, seriesStats)
+		if strings.Count(series, seriesStats) != 2 || last < 0 {
 			return "", false
 		}
-		head, tail := series[:last], series[last+len(withoutSeriesStats):]
+		head, tail := series[:last], series[last+len(seriesStats):]
 		if tail == "" || strings.Contains(tail, "|") {
 			return "", false
 		}
-		return strings.Replace(head, withoutSeriesStats, statsBy, 1) + cut + statsBy + tail, true
+		return strings.Replace(head, seriesStats, statsBy, 1) + cut + statsBy + tail, true
 	case 1:
-		first := strings.Index(series, withoutSeriesStats)
-		if op != "sum" || strings.Count(series, withoutSeriesStats) != 1 || first < 0 {
+		first := strings.Index(series, seriesStats)
+		if op != "sum" || strings.Count(series, seriesStats) != 1 || first < 0 {
 			return "", false
 		}
-		head, fn := series[:first], series[first+len(withoutSeriesStats):]
+		head, fn := series[:first], series[first+len(seriesStats):]
 		if fn != "count()" && fn != "sum_len(_msg)" {
 			return "", false
 		}
 		return head + statsBy + fn + " as __lvp_inner " + cut + statsBy + "sum(__lvp_inner)", true
 	}
 	return "", false
+}
+
+// The generated level derivation reads _msg, but it is not a user parser
+// stage. Remove only that complete generated chain for pushdown eligibility;
+// the returned query above still executes it before the stats aggregation.
+func withoutDetectedLevelGroupingChain(query string) string {
+	start := topLevelPipePrefix(query, detectedLevelChainMarker)
+	if start < 0 {
+		return query
+	}
+	const end = "| delete __dl, __dl_*, __j_*, __l_*"
+	stop := topLevelPipePrefix(query[start:], end)
+	if stop < 0 {
+		return query
+	}
+	return query[:start] + query[start+stop+len(end):]
 }
 
 // pushDownLabel reports whether cutting name out of the stream text is the

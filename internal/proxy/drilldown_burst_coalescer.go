@@ -24,11 +24,36 @@ var (
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
 	drilldownParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|unpack_logfmt|json|logfmt)\b[^|]*`)
-	// drilldownDeletePipeRE matches | delete pipes that are safe to drop when
-	// rewriting to a conditional-count fast path (column-indexed fields don't
-	// need __error__ cleanup before a count() if aggregation).
+	// drilldownDeletePipeRE matches | delete pipes; stripInternalDeletePipes
+	// drops the ones that are safe to drop when rewriting to a conditional-count
+	// fast path (column-indexed fields don't need __error__ cleanup before a
+	// count() if aggregation).
 	drilldownDeletePipeRE = regexp.MustCompile(`\|\s*delete\b[^|]*`)
 )
+
+// internalDeleteFields are the fields the proxy's own pipes write and delete:
+// the parse error fields, the detected_level scratch fields and the translator's
+// scratch prefixes. A delete of only these never changes a result.
+var internalDeleteFields = map[string]bool{
+	"__error__": true, "__error_details__": true,
+	"__dl": true, "__dl_*": true, "__j_*": true, "__l_*": true,
+	"__lxsv_*": true, "__lxp*": true,
+}
+
+// stripInternalDeletePipes removes the | delete pipes of query that name only
+// internal fields. A delete of a label the client dropped (`| drop level`,
+// `| drop detected_level`) stays: the stats group by it afterwards.
+func stripInternalDeletePipes(query string) string {
+	return drilldownDeletePipeRE.ReplaceAllStringFunc(query, func(pipe string) string {
+		names := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(pipe, "|")), "delete"))
+		for _, name := range strings.Split(names, ",") {
+			if !internalDeleteFields[strings.TrimSpace(name)] {
+				return pipe
+			}
+		}
+		return ""
+	})
+}
 
 // allFiltersAreExistenceChecks returns true when every | filter clause in the
 // VL base query is a pure field-not-empty existence check — Loki: field!="" or

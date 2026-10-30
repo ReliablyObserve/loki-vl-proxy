@@ -66,6 +66,9 @@ type vlEmulator struct {
 	rows    []emuRow
 	field   string // the unwrapped label
 	version string // "" answers no version
+	// deriveLevel is Loki's detected_level of a row (its stored level field and
+	// line), applied where the translator's detected_level pipe chain is.
+	deriveLevel func(level, msg string) string
 
 	mu    sync.Mutex
 	calls []emuCall
@@ -73,6 +76,16 @@ type vlEmulator struct {
 	// function (the unwrap counter's group aside): VictoriaLogs' work and the
 	// proxy's series budget scale with it, and an ungrouped sum needs one.
 	widest int
+}
+
+func (e *vlEmulator) levelOf(level, msg string) string {
+	if e.deriveLevel != nil {
+		return e.deriveLevel(level, msg)
+	}
+	if level != "" {
+		return level
+	}
+	return "unknown"
 }
 
 func (e *vlEmulator) record(path, query string) {
@@ -88,6 +101,12 @@ func (e *vlEmulator) endpointCalls(path string) []string {
 	var out []string
 	for _, c := range e.calls {
 		if c.path == path {
+			// /query also carries a bounded stats-only field-presence probe.
+			// Callers asking for raw-row reads mean the queries that return rows,
+			// not this aggregate probe.
+			if path == "/select/logsql/query" && strings.Contains(c.query, "| stats ") {
+				continue
+			}
 			out = append(out, c.query)
 		}
 	}
@@ -186,6 +205,9 @@ func (e *vlEmulator) serveRaw(w http.ResponseWriter, r *http.Request) {
 		for k, v := range row.labels {
 			fields[k] = v
 		}
+		if strings.Contains(r.FormValue("query"), `format "<__dl>" as detected_level`) {
+			fields["detected_level"] = e.levelOf(fields["level"], fields["_msg"])
+		}
 		line, _ := json.Marshal(fields)
 		_, _ = w.Write(append(line, '\n'))
 	}
@@ -255,7 +277,24 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	// parsers keep every generated row (all values are numbers), and the window
 	// phase filter of a window shorter than the step keeps the lines inside one.
 	var phaseAnchor, phaseStep, phaseWindow int64
+	// fieldOps are the pipes before the first stats pipe that change fields, in
+	// order: the translator's detected_level chain ends by writing the field (the
+	// emulator applies Loki's rule to the row instead of running its pipes), and
+	// a delete pipe removes the fields it names (`| drop detected_level`).
+	var fieldOps []func(f map[string]string)
 	for _, pipe := range pipes[:first] {
+		if pipe == `format "<__dl>" as detected_level` {
+			fieldOps = append(fieldOps, func(f map[string]string) { f["detected_level"] = e.levelOf(f["level"], f["_msg"]) })
+		}
+		if names, ok := strings.CutPrefix(pipe, "delete "); ok {
+			fieldOps = append(fieldOps, func(f map[string]string) {
+				for _, name := range strings.Split(names, ", ") {
+					if !strings.HasSuffix(name, "*") {
+						delete(f, name)
+					}
+				}
+			})
+		}
 		if m := emuPhaseMathRE.FindStringSubmatch(pipe); m != nil {
 			phaseAnchor, _ = strconv.ParseInt(m[1], 10, 64)
 			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
@@ -298,6 +337,9 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 		}
 		for k, v := range row.labels {
 			f[k] = v
+		}
+		for _, op := range fieldOps {
+			op(f)
 		}
 		recs = append(recs, emuRec{t: row.ts, f: f})
 	}

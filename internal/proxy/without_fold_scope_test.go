@@ -121,11 +121,11 @@ func TestWithoutFoldIsLimitedToTheOperatorsItProves(t *testing.T) {
 		want  [4]string
 	}{
 		{`topk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=d,service_name=uw}=36,36,36 {app=uw,detected_level=unknown,ns=y,pod=d,service_name=uw}=40,40,40`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=d,service_name=uw}=36 {app=uw,ns=y,pod=d,service_name=uw}=40`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=d,service_name=uw}=36,36,36 {app=uw,detected_level=unknown,ns=y,pod=d,service_name=uw}=40,40,40`, `400 series limit (1)`, `200 {app=uw,detected_level=unknown,ns=x,pod=d,service_name=uw}=36 {app=uw,detected_level=unknown,ns=y,pod=d,service_name=uw}=40`, `400 series limit (1)`}},
 		{`bottomk without (pod) (1, max_over_time({app="uw"} | unwrap amount [5m]))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=33,33,33 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=37,37,37`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=a,service_name=uw}=33 {app=uw,ns=y,pod=a,service_name=uw}=37`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=33,33,33 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=37,37,37`, `400 series limit (1)`, `200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=33 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=37`, `400 series limit (1)`}},
 		{`topk without (pod) (1, rate({app="uw"}[5m]))`,
-			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=0.00666667,0.01,0.0166667 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=0.00666667,0.0133333,0.0166667`, `400 series limit (1)`, `200 {app=uw,ns=x,pod=a,service_name=uw}=0.0166667 {app=uw,ns=y,pod=a,service_name=uw}=0.0166667`, `400 series limit (1)`}},
+			[4]string{`200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=0.00666667,0.01,0.0166667 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=0.00666667,0.0133333,0.0166667`, `400 series limit (1)`, `200 {app=uw,detected_level=unknown,ns=x,pod=a,service_name=uw}=0.0166667 {app=uw,detected_level=unknown,ns=y,pod=a,service_name=uw}=0.0166667`, `400 series limit (1)`}},
 		{`max(sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,
 			[4]string{`200 {}=138,90,42`, `200 {}=138,90,42`, `200 {}=154`, `200 {}=154`}},
 		{`sum by (ns) (sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m])))`,

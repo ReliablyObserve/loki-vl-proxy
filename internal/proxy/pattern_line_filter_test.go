@@ -137,7 +137,19 @@ func TestPatternLineFilterAnchoringReachesVictoriaLogs(t *testing.T) {
 				if strings.Contains(c.query, `.* GET .*`) {
 					t.Errorf("unanchored pattern regexp still reaches VictoriaLogs: %s %s", c.path, c.query)
 				}
-				if !strings.Contains(c.query, tc.want) {
+				// A metric may derive detected_level between the anchored
+				// selector and pattern extraction. Both stages must still reach
+				// the same backend request in their original order.
+				parts := strings.SplitN(tc.want, " | extract ", 2)
+				anchor, extract := -1, -1
+				if len(parts) == 1 {
+					extract = strings.Index(c.query, tc.want)
+					anchor = extract
+				} else {
+					anchor = strings.Index(c.query, parts[0])
+					extract = strings.Index(c.query, " | extract "+parts[1])
+				}
+				if anchor < 0 || extract < anchor {
 					continue
 				}
 				found = true
@@ -147,7 +159,7 @@ func TestPatternLineFilterAnchoringReachesVictoriaLogs(t *testing.T) {
 				if c.path == "/select/logsql/query" && c.limit != "37" {
 					t.Errorf("log query limit %q, want the client's 37 (VictoriaLogs applies it after the exact filter)", c.limit)
 				}
-				if c.path != "/select/logsql/query" && !strings.Contains(c.query[strings.Index(c.query, tc.want):], "| stats ") {
+				if c.path != "/select/logsql/query" && !strings.Contains(c.query[extract:], "| stats ") {
 					t.Errorf("pattern filter is not inside the stats query: %s", c.query)
 				}
 			}

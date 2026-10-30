@@ -510,6 +510,11 @@ func TestQueryRange_SummedBytesWithUnusedJSONScalesFromSumLen(t *testing.T) {
 	statsCalled := false
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/query":
+			if !strings.Contains(r.FormValue("query"), "| stats ") {
+				t.Errorf("unexpected raw-row query: %q", r.FormValue("query"))
+			}
+			w.WriteHeader(http.StatusOK)
 		case "/select/logsql/stats_query_range":
 			statsCalled = true
 			if got := r.FormValue("query"); !strings.Contains(got, `app:="nginx"`) {
@@ -574,6 +579,10 @@ func TestQueryRange_SummedBytesWithUnusedJSONScalesFromSumLen(t *testing.T) {
 func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" && strings.Contains(r.FormValue("query"), "| stats ") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -989,6 +998,10 @@ func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 	base := time.Unix(1700000040, 0).UTC() // step-aligned, as Loki aligns metric ranges
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
+			if strings.Contains(r.FormValue("query"), "| stats ") {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			// Manual path: log-fetch endpoint
 			manualPathHit = true
 			w.Header().Set("Content-Type", "application/stream+json")

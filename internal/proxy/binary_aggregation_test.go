@@ -185,8 +185,10 @@ func TestAggregationOverBinaryBareLogMetricsUseStatsBuckets(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("expected nonempty ratio")
 	}
-	if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
-		t.Fatalf("bare log metrics read raw rows instead of stats buckets: %v", raw)
+	for _, raw := range emu.endpointCalls("/select/logsql/query") {
+		if !strings.Contains(raw, "| stats ") {
+			t.Fatalf("bare log metrics read raw rows instead of stats buckets: %s", raw)
+		}
 	}
 }
 

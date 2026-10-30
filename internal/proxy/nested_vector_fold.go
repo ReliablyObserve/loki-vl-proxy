@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -211,14 +212,16 @@ func (p *Proxy) withSlidingWithoutCut(r *http.Request, spec statsCompatSpec, ori
 	default:
 		return statsAggFunc
 	}
-	if spec.ByExplicit || len(spec.GroupBy) != 2 || spec.GroupBy[0] != "_stream" || spec.GroupBy[1] != "level" || queryUsesParserStages(spec.BaseQuery) || !lineFiltersOnly(origSpec.BaseQuery) {
+	streamGroup := len(spec.GroupBy) >= 2 && spec.GroupBy[0] == "_stream" && spec.GroupBy[1] == "level" &&
+		(len(spec.GroupBy) == 2 || len(spec.GroupBy) == 3 && spec.GroupBy[2] == "detected_level")
+	if spec.ByExplicit || !streamGroup || queryUsesParserStages(spec.BaseQuery) || !lineFiltersOnly(origSpec.BaseQuery) {
 		return statsAggFunc
 	}
 	cut, ok := translator.WithoutStreamCut(r.FormValue("query"), p.labelTranslator.ToVL, p.labelTranslator.ToLoki)
 	if !ok {
 		return statsAggFunc
 	}
-	return statsAggFunc + " " + cut + "| stats by (_stream, level) " + folded
+	return statsAggFunc + " " + cut + "| stats by (" + strings.Join(spec.GroupBy, ", ") + ") " + folded
 }
 
 // lineFiltersOnly reports whether a log query is a stream selector with line

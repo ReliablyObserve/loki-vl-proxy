@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // conformance: parsed-label-series-identity
@@ -98,5 +99,31 @@ func TestParserCaptures_StatsBucketsKeepCaptureLabels(t *testing.T) {
 	}
 	if len(response.Data.Result) != 2 || !seen["job_a"] || !seen["job_b"] {
 		t.Fatalf("expected one series per capture value, got %v", response.Data.Result)
+	}
+}
+
+// The captures name the series with the stream, the level and the detected_level
+// Loki derives; VictoriaLogs computes it before the capture stage runs.
+// conformance: semantics/detected-level-missing-from-stats-answers
+func TestParserCaptures_BareMetricGroupsByDetectedLevel(t *testing.T) {
+	for _, tc := range []struct{ name, query, by, stage string }{
+		{"regexp", `count_over_time({app="x"} | regexp "job_id=(?P<jid>\\w+)" [1m])`, "by (_stream, level, jid, detected_level) ", "| extract_regexp"},
+		{"pattern", `count_over_time({app="x"} | pattern "<_> <method>" [1m])`, "by (_stream, level, method, detected_level) ", "| extract "},
+		{"logfmt", `count_over_time({app="x"} | logfmt [1m])`, "by (_stream, level, detected_level) ", "| unpack_logfmt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			translated, err := translator.TranslateLogQL(tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := preserveMetricStreamIdentity(tc.query, translated, nil)
+			if !strings.Contains(got, tc.by) {
+				t.Fatalf("got %q, want the grouping %q", got, tc.by)
+			}
+			chain, stage := strings.Index(got, derivedLevelChainStart), strings.LastIndex(got, tc.stage) // the user's stage follows the chain, which has its own
+			if chain < 0 || stage < chain || !strings.Contains(got[chain:stage], `as detected_level`) {
+				t.Fatalf("the detected_level pipes must precede %q: %s", tc.stage, got)
+			}
+		})
 	}
 }

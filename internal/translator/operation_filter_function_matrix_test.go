@@ -162,6 +162,7 @@ func TestMatrix_MetricFunctions_AllSupported(t *testing.T) {
 			if err != nil {
 				t.Fatalf("translate metric function: %v", err)
 			}
+			got = withoutDetectedLevelShape(got)
 			for _, want := range tc.wantFragments {
 				if !strings.Contains(got, want) {
 					t.Fatalf("expected %q in translation, got %q", want, got)

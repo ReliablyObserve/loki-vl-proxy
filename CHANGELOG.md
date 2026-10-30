@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native stats metrics retain Loki's derived `detected_level=unknown` and
+  respect a `drop detected_level` stage (#750).** Stream-grouped range and
+  instant metrics now carry the derived level through the VictoriaLogs stats
+  answer, including `by` and `without` aggregations, while a dropped level
+  stays absent. The visual proof seeds severity-free lines in both backends so
+  the unknown metric differs on main and matches Loki on the PR; a second scene
+  covers dropping the derived label. The bounded raw-row fallback and older
+  backend behavior remain separate registered compatibility checks.
+
 ## [2.47.1] - 2026-10-29
 
 ### Fixed

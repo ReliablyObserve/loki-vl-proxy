@@ -238,6 +238,7 @@
       "test/e2e-compat/aggregation_over_binary_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
@@ -280,6 +281,7 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/stream_metadata_test.go",
       "internal/proxy/tenant_query_limits_test.go",
       "internal/proxy/topk_range_differential_test.go",
       "internal/proxy/topk_range_edge_test.go",
@@ -297,10 +299,12 @@
       "test/e2e-compat/aggregation_over_binary_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
@@ -371,6 +375,7 @@
       "internal/translator/unwrap_ungrouped_sum_test.go",
       "internal/translator/without_grouping_test.go",
       "test/e2e-compat/absent_over_time_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
@@ -473,6 +478,10 @@
     "profiles/grafana-shows-loki-error-text": [
       "internal/proxy/loki_profile_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
+    ],
+    "profiles/keep-removes-derived-service-name": [
+      "internal/proxy/stream_metadata_test.go",
+      "test/e2e-compat/keep_service_name_test.go"
     ],
     "profiles/label-browse-params-ignored": [
       "internal/proxy/loki_profile_test.go",
@@ -622,6 +631,12 @@
     "semantics/detected-level-filter-before-parser-pushdown": [
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
+    "semantics/detected-level-missing-from-stats-answers": [
+      "internal/proxy/detected_level_unknown_differential_test.go",
+      "internal/proxy/parser_capture_identity_test.go",
+      "internal/translator/detected_level_logsql_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
+    ],
     "semantics/detected-level-pipes-known-differences": [
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
@@ -671,7 +686,8 @@
       "test/e2e-compat/extracted_suffix_collision_test.go"
     ],
     "semantics/instant-bare-range-detected-level-unknown": [
-      "internal/proxy/bare_instant_detected_level_gap_test.go"
+      "internal/proxy/bare_instant_detected_level_gap_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
     ],
     "semantics/instant-result-type-missing": [
       "internal/proxy/instant_result_type_test.go",
@@ -998,6 +1014,9 @@
     "semantics/without-empty-grouping-range-collapses": [
       "internal/proxy/without_open_shapes_test.go"
     ],
+    "semantics/without-instant-detected-level-unknown": [
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
+    ],
     "semantics/without-nested-under-aggregation": [
       "internal/proxy/without_open_shapes_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -1041,8 +1060,10 @@
     ],
     "severity-exposure-surfaces": [
       "internal/proxy/detected_level_response_test.go",
+      "internal/proxy/detected_level_unknown_differential_test.go",
       "internal/translator/detected_level_logsql_test.go",
-      "test/e2e-compat/detected_level_test.go"
+      "test/e2e-compat/detected_level_test.go",
+      "test/e2e-compat/detected_level_unknown_stats_test.go"
     ],
     "severity/normalisation-table": [
       "test/e2e-compat/detected_level_corpus_test.go"
@@ -1132,7 +1153,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 362,
+  "registry_items": 363,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1297,6 +1318,10 @@
     ],
     "internal/proxy/detected_level_test.go": [
       "severity-detected-level-derivation"
+    ],
+    "internal/proxy/detected_level_unknown_differential_test.go": [
+      "semantics/detected-level-missing-from-stats-answers",
+      "severity-exposure-surfaces"
     ],
     "internal/proxy/drilldown_breakdown_exact_test.go": [
       "limits/drilldown-breakdown-exact",
@@ -1556,7 +1581,8 @@
       "semantics/parenthesized-log-range"
     ],
     "internal/proxy/parser_capture_identity_test.go": [
-      "parsed-label-series-identity"
+      "parsed-label-series-identity",
+      "semantics/detected-level-missing-from-stats-answers"
     ],
     "internal/proxy/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter",
@@ -1685,6 +1711,10 @@
     ],
     "internal/proxy/stored_level_series_limit_test.go": [
       "semantics/json-metric-detected-level-derivation"
+    ],
+    "internal/proxy/stream_metadata_test.go": [
+      "loki_api_v1_query_range",
+      "profiles/keep-removes-derived-service-name"
     ],
     "internal/proxy/sum_without_differential_test.go": [
       "limits/drilldown-partial-with-warning",
@@ -1883,6 +1913,7 @@
       "severity-detected-level-derivation"
     ],
     "internal/translator/detected_level_logsql_test.go": [
+      "semantics/detected-level-missing-from-stats-answers",
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
@@ -2001,6 +2032,15 @@
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
     ],
+    "test/e2e-compat/detected_level_unknown_stats_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/detected-level-missing-from-stats-answers",
+      "semantics/instant-bare-range-detected-level-unknown",
+      "semantics/without-instant-detected-level-unknown",
+      "severity-exposure-surfaces"
+    ],
     "test/e2e-compat/detected_level_variants_test.go": [
       "semantics/json-metric-detected-level-derivation"
     ],
@@ -2081,6 +2121,10 @@
     ],
     "test/e2e-compat/json_instant_volume_stats_test.go": [
       "semantics/json-instant-volume-stats"
+    ],
+    "test/e2e-compat/keep_service_name_test.go": [
+      "loki_api_v1_query_range",
+      "profiles/keep-removes-derived-service-name"
     ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
@@ -2350,7 +2394,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 234,
+  "tests_with_markers": 238,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2388,7 +2432,6 @@
     "profiles/json-extraction-list-missing-key",
     "profiles/json-line-stored-without-line",
     "profiles/json-number-label-text",
-    "profiles/keep-removes-derived-service-name",
     "profiles/keep-structured-metadata-key",
     "profiles/label-endpoints-window-and-data",
     "profiles/metadata-default-lookback",
@@ -2437,7 +2480,6 @@
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
-    "semantics/without-instant-detected-level-unknown",
     "service-name-derivation",
     "severity/detected-level-filter-json-level",
     "severity/detected-level-stage-side-effects",
@@ -2445,5 +2487,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 192
+  "wired_items": 195
 }
