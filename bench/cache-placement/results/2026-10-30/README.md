@@ -1,0 +1,9 @@
+# Peer placement proof, 2026-10-30
+
+`fleet-rf1.json` records the full three-proxy/Loki/VictoriaLogs run with RF=1: 664 requests, 35 passing test/subtest events. `fleet-rf2.json` records RF=2 using the same final image on a fresh stack: 666 requests, 35 passing test/subtest events. Reports include per-request backend/peer activity and phase latency distributions; these are integration measurements, not a claim that all warm queries beat Loki.
+
+The bounded HTTP capacity test (`TestPeerCapacityDatasetExceedsSingleNode`) independently proves per-key replica placement and working sets larger than one node: RF1 150 distinct keys / 150 disk copies / 450 warm reads; RF2 90 / 180 / 270. Each node has 64 slots and 16 KiB per tier. Warm requests add zero counted deterministic backend computations. Other tests cover expiry, shadow budgets, auth, memory-only values, restart, RF-specific owner loss and bounded fault sequences.
+
+Visual files compare main `7c59fafa50fcfbb5379871e77eb4fe14b154339e`, the placement change and Loki on the same existing seeded stack and fixed time window. Nine scenes, 27 screenshots, 79/79 main/PR answers identical, no new Loki difference. Seven shared Loki discrepancies remain in the raw comparison (one detected-level series discrepancy and six index/stats discrepancies); they are not reported as fixed. Two representative main/PR/Loki montages are retained here. A broad UI banner detector matches an ordinary fixture log message on all three sides of the Drilldown landing page; panels render and no panel errors occur.
+
+The capacity proof uses production cache stores and HTTP peer transport with a counted test backend. The fleet proof uses real Loki/VictoriaLogs. Neither establishes rebalancing after membership changes, removal of historical nonowner records, or distributed invalidation epochs. See [operational placement and limits](../../../../docs/fleet-cache.md#pooled-ram-and-ssd-placement).

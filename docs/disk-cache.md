@@ -11,6 +11,8 @@ cache keys, including their tenant and authentication identity, remain intact.
 
 See the [cache storage verification](benchmarks/cache-storage-2026-10-30.md) for
 matched benchmarks, allocation profiles and restart/peer regression evidence.
+See [fleet operations](fleet-cache-operations.md) for replica capacity, combined
+RAM budgets and how cache reuse reduces VictoriaLogs work.
 
 ## Capacity and memory
 

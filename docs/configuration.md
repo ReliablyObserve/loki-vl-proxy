@@ -395,7 +395,7 @@ Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (tra
 | `-metadata-edge-refresh-budget` | — | `100ms` | How long such a request waits for its edge refresh before it gets the last answer. An idle VictoriaLogs answers in 5-40 ms (exact answers). Under heavy load the edge listing took 0.35-2.6 s; this budget turns those waits into answers bounded by `-metadata-max-staleness`. `0` serves the last answer at once whenever one is within the bound. |
 | `-labels-cache-warm` | — | `true` | Warm the labels cache for the 1h, 6h, 24h and 7d time-picker presets at startup and keep them warm in the background (every 75% of `-labels-cache-ttl`). Each refresh is a label-name scan of up to 7 days in VictoriaLogs, per replica. Set `false` on replicas that serve no interactive label pickers (batch/API-only replicas, test variants): label requests are still cached and answered, only the proactive scans stop. |
 | `-compat-cache-enabled` | — | `true` | Enable the Tier0 compatibility-edge response cache for safe GET read endpoints |
-| `-compat-cache-max-percent` | — | `10` | Percent of `-cache-max-bytes` reserved for Tier0 (`0` disables, max `50`) |
+| `-compat-cache-max-percent` | — | `10` | Additional Tier0 budget as a percent of `-cache-max-bytes` (`0` disables, max `50`); does not reduce primary L1 |
 
 ### Tier0 Compatibility-Edge Cache
 
@@ -404,7 +404,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 - It runs only after tenant validation and route classification.
 - It only applies to safe `GET` read endpoints such as `query`, `query_range`, `series`, labels, volume, patterns, and Drilldown metadata endpoints.
 - It does not apply to `/tail`, websocket upgrades, writes, deletes, admin/debug paths, or non-JSON responses.
-- Its budget is derived from `-cache-max-bytes`, so `-compat-cache-max-percent=10` means Tier0 gets 10% of the primary L1 memory budget.
+- Its budget is additional to primary L1: `-compat-cache-max-percent=10` adds a separate Tier0 cache sized at 10% of `-cache-max-bytes`; the primary cache keeps its full limit.
 - Tenant-map and field-mapping reloads invalidate Tier0 immediately.
 
 ### Per-Endpoint TTLs
@@ -1085,6 +1085,9 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 
 ## Peer Cache
 
+For RF tradeoffs, resource budgets and backend protection, see
+[Operating the fleet cache](fleet-cache-operations.md).
+
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-peer-self` | — | — | This instance address used for peer-cache ownership and fetches |
@@ -1122,7 +1125,7 @@ Peer-cache notes:
 - `POST /admin/cache/flush` (admin listener, requires `-server.register-instrumentation=true`) purges this instance's caches; add `?peers=1` to also send `POST /_cache/purge` to every peer in the ring (each peer purges only itself)
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`
-- with `-peer-write-through=true` (default), writes with TTL above threshold are pushed to the key's replicas with their full TTL; a writer that is not a replica keeps a short-lived memory shadow to reduce hot-pod disk skew
+- with `-peer-write-through=true` (default), writes with TTL above threshold are pushed to the key's replicas with their full TTL; a writer that is not a replica keeps only a memory shadow (at most 30s; at most 10% of L1 bytes and entry slots across all shadows), without an extra disk copy; shadow admission cannot evict owned/local entries
 - values above the peers' accepted body size (8 MiB) are not pushed (`loki_vl_proxy_peer_cache_push_too_large_total`); entries a replica keeps in memory only stay off the fetching replica's disk too
 - a replica that lost its disk refills on first lookup, one peer round trip per key; hits served by a replica other than the owner are counted in `loki_vl_proxy_peer_cache_backup_hits_total`
 - set `-peer-auth-token` fleet-wide whenever peer cache is enabled; it avoids transient startup or discovery-flap `403` responses caused by IP-membership-only peer auth

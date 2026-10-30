@@ -472,7 +472,7 @@ func run(
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
 	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
-	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Percent of -cache-max-bytes reserved for the Tier0 compatibility-edge cache (0 disables, max 50)")
+	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1")
 
 	// Disk cache flags
 	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")

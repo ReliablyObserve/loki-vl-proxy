@@ -348,7 +348,7 @@ extraArgs:
   # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
-  # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
+  # compat-cache-max-percent: "10"              # Additional Tier0 budget as % of L1 limit (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
   # backend-min-version: "v1.49.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk

@@ -1053,25 +1053,46 @@ jobs:
           docker load --input "$RUNNER_TEMP/proxy-image/proxy-image.tar"
           docker tag loki-vl-proxy:ci "$PROXY_IMAGE"
 
-      - name: Start 3-proxy fleet with VictoriaLogs and Loki
-        working-directory: test/e2e-fleet
+      - name: Prove pooled capacity through three HTTP peers
+        shell: bash
         run: |
-          docker compose up -d --no-build --wait --wait-timeout 180
-          docker compose ps
+          go test -v -count=1 -run '^TestPeerCapacityDatasetExceedsSingleNode$' ./internal/cache/ | tee "$RUNNER_TEMP/fleet-capacity-proof.txt"
 
-      # TestFleetPeerCacheProof restarts and recreates the proxies itself with
-      # `docker compose` from test/e2e-fleet (same project as the step above).
-      - name: Run fleet cache tests
-        env:
-          FLEET_PROOF_REPORT: ${{ runner.temp }}/fleet-peer-cache-proof.json
-        run: go test -v -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers)$' ./test/e2e-fleet/
+      - name: Fuzz bounded peer capacity and failure sequences
+        shell: bash
+        run: |
+          go test -run '^$' -fuzz '^FuzzPeerCapacitySequences$' -fuzztime=15s -parallel=2 -timeout=2m ./internal/cache/ | tee "$RUNNER_TEMP/fleet-capacity-fuzz.txt"
+
+      # Each RF gets fresh data and fresh disks. Keep the required e2e-fleet
+      # context unchanged and reuse the one image built above.
+      - name: Run three-proxy cache proof for RF1 and RF2
+        run: |
+          for rf in 1 2; do
+            export FLEET_PROXY_EXTRA_ARG="-peer-replication-factor=$rf"
+            export FLEET_PROOF_REPORT="$RUNNER_TEMP/fleet-peer-cache-proof-rf$rf.json"
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+            docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers)$' ./test/e2e-fleet/
+            docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
+          done
 
       - name: Upload fleet peer cache proof report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: fleet-peer-cache-proof
-          path: ${{ runner.temp }}/fleet-peer-cache-proof.json
+          path: |
+            ${{ runner.temp }}/fleet-peer-cache-proof-rf*.json
+            ${{ runner.temp }}/fleet-capacity-proof.txt
+            ${{ runner.temp }}/fleet-capacity-fuzz.txt
+          if-no-files-found: ignore
+
+      - name: Retain failing peer capacity fuzz inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: fleet-capacity-fuzz-corpus
+          path: internal/cache/testdata/fuzz/FuzzPeerCapacitySequences/
           if-no-files-found: ignore
 
       - name: Fleet logs on failure

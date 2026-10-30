@@ -15,7 +15,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cache-max-bytes` | int | `defaultCacheMaxBytes` | `extraArgs.cache-max-bytes` | Maximum in-memory L1 cache size in bytes |
 | `-cache-ttl` | duration | `1m0s` | `extraArgs.cache-ttl` | Cache TTL for label/metadata queries |
 | `-compat-cache-enabled` | bool | `true` | `extraArgs.compat-cache-enabled` | Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints |
-| `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Percent of -cache-max-bytes reserved for the Tier0 compatibility-edge cache (0 disables, max 50) |
+| `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Additional Tier0 compatibility-edge cache budget as a percent of -cache-max-bytes (0 disables, max 50); does not reduce primary L1 |
 | `-disk-cache-codec` | string | `"s2"` | `extraArgs.disk-cache-codec` | Disk cache codec: s2, zstd, gzip or raw; new records identify their own codec |
 | `-disk-cache-compress` | bool | `true` | `extraArgs.disk-cache-compress` | Compress disk cache values using -disk-cache-codec; false writes raw records |
 | `-disk-cache-flush-bytes` | int64 | `4194304` | `extraArgs.disk-cache-flush-bytes` | Flush after this many queued bytes, including keys and queue overhead |

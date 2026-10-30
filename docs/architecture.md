@@ -263,7 +263,7 @@ flowchart TD
 - It runs only after tenant validation, auth checks, request logging setup, and route classification.
 - It only serves cacheable `GET` read endpoints such as `query`, `query_range`, `series`, labels, volume, patterns, and Drilldown metadata.
 - It never covers `/tail`, write/delete/admin paths, websocket upgrades, or non-JSON responses.
-- Its memory budget is derived from `-cache-max-bytes` through `-compat-cache-max-percent`, defaulting to 10% and capped at 50%.
+- Its separate memory budget is added to primary L1, sized from `-cache-max-bytes` through `-compat-cache-max-percent` (default 10%, maximum 50%); it does not subtract from primary L1.
 - Tenant-map and field-mapping reloads invalidate Tier0 immediately so label translation and metadata exposure changes cannot go stale.
 
 ### Cold Storage Routing

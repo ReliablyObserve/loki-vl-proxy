@@ -5,11 +5,33 @@ description: "L3 peer cache design: consistent hashing, zstd/gzip transfers, pee
 
 # Fleet Cache Architecture
 
+For capacity choices, default resource budgets, backend protection and measured
+benefits, see [Operating the fleet cache](fleet-cache-operations.md).
+
+## Pooled RAM and SSD placement
+
+For eligible shared keys in a stable ring, only the configured replicas retain full-TTL RAM and disk copies. RF=2 (default) means owner plus one backup; RF=1 means owner only. A nonowner requester can retain an L1 shadow for at most 30 seconds. Shadows share the total L1 ceiling and are additionally limited to 10% of its key/value bytes and entry slots, with their own LRU; admitting a shadow cannot evict an owned or explicitly local entry. Source expiry remains separate from shadow residency so a short shadow does not look artificially old or become fresh again.
+
+Shared metadata responses and label inventories use this placement too. Requests that cannot be published (including forwarded credentials, peer-size limits, or the configured TTL threshold) retain local fallback behavior. Full query-range frontend responses and explicitly local caches remain local; memory-only peer data stays off disk, including read-ahead. Disabling write-through retains local storage behavior. These categories must not be counted as globally pooled capacity.
+
+A replica disk hit promotes into its RAM without rewriting disk or peers. Local purge generations reject an older captured disk result after a purge; this does not provide a distributed invalidation epoch. A backend deletion does not automatically invalidate all cached answers: coordinate cache flushes after deletes or rely on configured TTLs. In-flight remote writes and membership changes require operational care. This placement change does not migrate historical disk copies or rebalance existing data on ring changes.
+
+For equally sized nodes, a balanced stable workload has an approximate full-copy capacity of `N / RF` times one node, before shadows, metadata, imbalance, and local-only entries. Logical RAM budgets count keys and values, not process RSS. Placement adds 16 bytes of per-entry bookkeeping on 64-bit builds, plus roughly 48 bytes per actual shadow list element. Disk budgets count logical records; bbolt can retain freed pages in its physical file.
+
+The three-node HTTP proof uses production L1/L2 caches and peer handlers, with a counted deterministic backend. Each node has 64 slots and 16 KiB in each tier:
+
+| Configuration | Distinct keys | Disk copies | Round-robin warm reads | Additional backend reads |
+|---|---:|---:|---:|---:|
+| RF=1 | 150 | 150 | 450 | 0 |
+| RF=2 | 90 | 180 | 270 | 0 |
+
+Both datasets exceed one node capacity. Tests check every key against its configured replica set, shadow churn without owned-entry eviction, one L2 read followed by L1 reuse after owner restart, RF=2 backup recovery, and explicit RF=1 recomputation on owner loss. Fault/expiry/eviction sequences allow safe misses and verify every hit; they do not claim linearizable storage or zero backend reads after arbitrary loss. See the [capacity test](../internal/cache/peer_capacity_e2e_test.go), [fault sequence model](../internal/cache/peer_capacity_fuzz_test.go), [metadata placement test](../internal/proxy/shared_placement_test.go), and [raw integration/visual reports](../bench/cache-placement/results/2026-10-30/README.md).
+
 ## Overview
 
 The fleet cache enables multiple Loki-VL-proxy replicas to share cached data with minimal network overhead. Each key lives on its **replicas**: the **owner**, determined by consistent hashing, and the next distinct peers clockwise on the ring (`-peer-replication-factor`, default 2: owner and one backup). Other peers fetch from the replicas on local miss, owner first, and keep short-lived **shadow copies**. With write-through enabled (default), eligible long-TTL writes are pushed to every replica, so hot traffic pinned to one pod still warms the full fleet. A replica stores a pushed copy in memory and on disk and serves it from either, and never pushes it on.
 
-Losing a replica costs no recompute: an owner that restarted without its disk asks its backup for its keys (one peer round trip per key, on first lookup), and while an owner is down, or slower than `-peer-timeout`, other peers get its keys from the backup. A copy is kept with the TTL it had left on the replica that served it, never extended, and a copy with less than 5 s left is never served. Values above the peers' 8 MiB body limit and entries computed with a user's forwarded credentials are never pushed.
+With RF=2 and a fresh, reachable backup, losing a replica needs no recompute: an owner that restarted without its disk asks its backup for its keys (one peer round trip per key, on first lookup), and while an owner is down, or slower than `-peer-timeout`, other peers get its keys from the backup. A copy is kept with the TTL it had left on the replica that served it, never extended, and a copy with less than 5 s left is never served. Values above the peers' 8 MiB body limit and entries computed with a user's forwarded credentials are never pushed.
 
 ```mermaid
 flowchart TD
@@ -86,7 +108,7 @@ sequenceDiagram
     A->>B: GET /_cache/get?key=...
     B->>B: L1 check → HIT
     B-->>A: value + X-Cache-TTL-Ms: 42000
-    A->>A: store shadow (TTL=42s)
+    A->>A: store shadow (residency <=30s; source TTL=42s)
     A-->>C: response (1 hop)
 ```
 
@@ -145,7 +167,7 @@ sequenceDiagram
 
     N->>O: GET /_cache/get?key=...
     O-->>N: 200 + X-Cache-TTL-Ms: 40000
-    Note over N: stores shadow with TTL=40s (not 60s!)
+    Note over N: stores shadow for <=30s, preserving source expiry at t=60s
 
     Note over O: t=55s: 5s remaining
 

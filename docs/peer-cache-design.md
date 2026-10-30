@@ -31,7 +31,7 @@ flowchart TD
 | Decision | Rationale |
 |----------|-----------|
 | Consistent hashing (not gossip) | Zero background traffic, deterministic routing |
-| Owner write-through + shadow copies | Non-owner long-TTL writes can warm owner shards while local shadows stay short-lived |
+| Owner write-through + shadow copies | Eligible writes retain full copies on configured replicas; nonowner shadows use at most 30s and 10% of L1 bytes/entries and cannot evict owned/local entries |
 | TTL preservation (not extension) | Never serve stale data beyond original intent |
 | MinUsableTTL = 5s | Don't transfer data that expires in transit |
 | Per-peer circuit breaker | Isolate failures, auto-recover after cooldown |

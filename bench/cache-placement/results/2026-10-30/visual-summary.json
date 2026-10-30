@@ -1,0 +1,59 @@
+{
+  "scenes": 9,
+  "screenshots": 27,
+  "requests_compared": 79,
+  "main_pr_regressions": 0,
+  "new_loki_differences": 0,
+  "existing_loki_differences": 7,
+  "all_settled": true,
+  "pr_backend_errors": 0,
+  "pr_ui": {
+    "dd-fields": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "dd-landing": {
+      "noData": 0,
+      "banners": [
+        "Cannot read property\", \"level\": \"error\"} "
+      ],
+      "panelErrors": 0
+    },
+    "dd-service-logs": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "explore-logs-plain": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "explore-metric-plain": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "explore-sum-by-over-binary": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "explore-topk-by-per-step": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "explore-unwrap-sum": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    },
+    "lvl-explore-rate-errors-by-service": {
+      "noData": 0,
+      "banners": [],
+      "panelErrors": 0
+    }
+  }
+}
