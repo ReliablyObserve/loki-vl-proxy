@@ -120,8 +120,9 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 
 	p := newWindowingTestProxy(t, vlBackend.URL)
 	start := time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
-	// Use 3 windows initially, then expand to 4 windows to verify cached window reuse
-	// with exactly one additional backend call for the newly covered window.
+	// Use 3 windows initially, then expand to 4 windows. The first two
+	// windows retain their backend budget and are reused; the third is fetched
+	// again when its remaining-row budget changes with the expanded range.
 	const initialRangeDuration = 3 * time.Hour
 	const expandedRangeDuration = 4 * time.Hour
 	endA := start + int64(initialRangeDuration) - 1
@@ -148,14 +149,131 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 	if wB.Code != http.StatusOK {
 		t.Fatalf("unexpected status for expanded range: %d body=%s", wB.Code, wB.Body.String())
 	}
-	if got := backendCalls.Load(); got != 4 {
-		t.Fatalf("expected exactly one additional backend call after expansion, got %d", got)
+	if got := backendCalls.Load(); got != 5 {
+		t.Fatalf("expected one new window and one budget-changed refetch after expansion, got %d calls", got)
 	}
 	mu.Lock()
 	if len(seenWindows) != 4 {
 		t.Fatalf("expected 4 unique windows after expansion, got %d", len(seenWindows))
 	}
 	mu.Unlock()
+}
+
+// A later window may be fetched with only the remaining request budget. That
+// fragment must not satisfy a shifted request which needs more rows from it.
+func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		malformed      bool
+		firstRows      int
+		shiftedRows    int
+		shiftedLastRow int
+	}{
+		{name: "all-valid", firstRows: 5, shiftedRows: 5, shiftedLastRow: 4},
+		{name: "one-malformed", malformed: true, firstRows: 4, shiftedRows: 4, shiftedLastRow: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now().Add(-24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+			third := start + int64(2*time.Hour)
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/select/logsql/query" {
+					t.Errorf("unexpected backend path %q", r.URL.Path)
+					return
+				}
+				_ = r.ParseForm()
+				windowStart, err := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+				if err != nil {
+					t.Errorf("parse window start: %v", err)
+					return
+				}
+				limit, err := strconv.Atoi(r.Form.Get("limit"))
+				if err != nil {
+					t.Errorf("parse limit: %v", err)
+					return
+				}
+				available := 0
+				switch windowStart {
+				case start:
+					available = 1
+				case third:
+					available = 5
+				}
+				for i := 0; i < min(available, limit); i++ {
+					if tc.malformed && windowStart == third && i == 1 {
+						_, _ = w.Write([]byte("{malformed}\n"))
+						continue
+					}
+					_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":%q,\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+						time.Unix(0, windowStart+int64(i)*int64(time.Second)).UTC().Format(time.RFC3339Nano),
+						fmt.Sprintf("window-%d-row-%d", windowStart, i))
+				}
+			}))
+			defer backend.Close()
+
+			p := newWindowingTestProxy(t, backend.URL)
+			p.queryRangeAlignWindows = true
+			query := url.QueryEscape(`{app="nginx"}`)
+			fetch := func(from, to int64) []string {
+				t.Helper()
+				req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=5&direction=forward", query, from, to), nil)
+				resp := httptest.NewRecorder()
+				p.handleQueryRange(resp, req)
+				if resp.Code != http.StatusOK {
+					t.Fatalf("query_range status %d: %s", resp.Code, resp.Body.String())
+				}
+				var payload struct {
+					Data struct {
+						Result []struct {
+							Values [][]string `json:"values"`
+						} `json:"result"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+					t.Fatalf("decode query_range: %v", err)
+				}
+				var lines []string
+				for _, series := range payload.Data.Result {
+					for _, value := range series.Values {
+						lines = append(lines, value[1])
+					}
+				}
+				return lines
+			}
+			first := fetch(start, third+int64(time.Hour)-1)
+			if len(first) != tc.firstRows {
+				t.Fatalf("initial window returned %d rows, want %d: %v", len(first), tc.firstRows, first)
+			}
+			shifted := fetch(third, third+int64(2*time.Hour)-1)
+			if len(shifted) != tc.shiftedRows {
+				t.Fatalf("shifted window returned %d rows, want %d through row %d: %v", len(shifted), tc.shiftedRows, tc.shiftedLastRow, shifted)
+			}
+			if shifted[0] != fmt.Sprintf("window-%d-row-0", third) || shifted[len(shifted)-1] != fmt.Sprintf("window-%d-row-%d", third, tc.shiftedLastRow) {
+				t.Fatalf("shifted window missing expected first/last row: %v", shifted)
+			}
+		})
+	}
+}
+
+func TestQueryRangeWindowCacheKey_IsolatesBackendBudgetAndDirection(t *testing.T) {
+	p := &Proxy{}
+	window := queryRangeWindow{startNs: 1, endNs: 2}
+	shape := newLogQueryShape(`{app="nginx"}`)
+	request := func(direction string) *http.Request {
+		return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?direction="+direction, nil)
+	}
+	key := func(queryLimit string, windowLimit int, direction string) string {
+		return p.queryRangeWindowCacheKey(request(direction), `{app="nginx"}`, queryLimit, windowLimit, window, shape, false, false)
+	}
+	base := key("5", 5, "forward")
+	if base == key("5", 4, "forward") {
+		t.Fatal("a four-row backend fragment must not satisfy a five-row window")
+	}
+	if base == key("6", 5, "forward") {
+		t.Fatal("different request limits must remain isolated")
+	}
+	if base == key("5", 5, "backward") {
+		t.Fatal("opposite query directions must remain isolated")
+	}
 }
 
 func TestQueryRangeWindow_LimitAndDirection(t *testing.T) {
@@ -337,7 +455,7 @@ func TestQueryRangeWindow_WarmQueryRangeWindowsAsync_PrimesCache(t *testing.T) {
 	if err := req.ParseForm(); err != nil {
 		t.Fatalf("parse form: %v", err)
 	}
-	cacheKey := p.queryRangeWindowCacheKey(req, `{app="nginx"}`, "100", window, newLogQueryShape(req.FormValue("query")), false, false)
+	cacheKey := p.queryRangeWindowCacheKey(req, `{app="nginx"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
 
 	p.warmQueryRangeWindowsAsync(req, `{app="nginx"}`, "100", []queryRangeWindow{window}, newLogQueryShape(req.FormValue("query")), false, false)
 	deadline := time.Now().Add(2 * time.Second)
@@ -429,7 +547,7 @@ func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *
 	if err := req.ParseForm(); err != nil {
 		t.Fatalf("parse form: %v", err)
 	}
-	cacheKey := (&Proxy{}).queryRangeWindowCacheKey(req, `{app="api"}`, "100", window, newLogQueryShape(req.FormValue("query")), false, false)
+	cacheKey := (&Proxy{}).queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
 
 	pc := newNonOwnerPeerCacheForKey(t, ownerURL.Host, cacheKey)
 	defer pc.Close()
@@ -451,7 +569,7 @@ func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *
 		t.Fatalf("create proxy: %v", err)
 	}
 
-	cacheKey = p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", window, newLogQueryShape(req.FormValue("query")), false, false)
+	cacheKey = p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
 	if _, err := p.fetchQueryRangeWindow(context.Background(), req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false); err != nil {
 		t.Fatalf("fetchQueryRangeWindow returned error: %v", err)
 	}
