@@ -1,0 +1,11 @@
+{
+ "dd-fields-1h": 0.0011,
+ "dd-landing-1h": 0.02156,
+ "dd-service-logs-1h": 0.0011,
+ "explore-logs-plain-1h": 0.00081,
+ "explore-metric-plain-1h": 0.0004,
+ "explore-sum-by-over-binary-1h": 0.0004,
+ "explore-topk-by-per-step-1h": 0.0004,
+ "explore-unwrap-sum-1h": 0.0004,
+ "lvl-explore-rate-errors-by-service-1h": 0.0004
+}

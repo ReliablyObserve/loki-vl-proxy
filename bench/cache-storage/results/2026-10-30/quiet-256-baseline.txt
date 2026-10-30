@@ -1,0 +1,11 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskPolicyHit/256B/random-18         	  374230	       866.0 ns/op	 295.62 MB/s	         0 writecalls/op	    1372 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18         	  355704	      1058 ns/op	 241.94 MB/s	         0 writecalls/op	    1374 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18         	  414237	       889.6 ns/op	 287.79 MB/s	         0 writecalls/op	    1375 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18         	  351554	       920.7 ns/op	 278.06 MB/s	         0 writecalls/op	    1375 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18         	  400400	       831.8 ns/op	 307.77 MB/s	         0 writecalls/op	    1371 B/op	      11 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache	4.018s

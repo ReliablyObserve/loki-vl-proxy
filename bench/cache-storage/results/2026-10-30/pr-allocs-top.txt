@@ -1,0 +1,17 @@
+File: cache.test
+Type: alloc_space
+Time: 2026-10-30 21:08:26 CET
+Showing nodes accounting for 824.84MB, 95.14% of 867.01MB total
+Dropped 71 nodes (cum <= 4.34MB)
+Showing top 10 nodes out of 40
+      flat  flat%   sum%        cum   cum%
+  316.40MB 36.49% 36.49%   316.40MB 36.49%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*DiskCache).Set
+  198.46MB 22.89% 59.38%   298.67MB 34.45%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*diskBatch).encode
+   84.01MB  9.69% 69.07%   100.21MB 11.56%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.encodeDiskRecord
+   62.50MB  7.21% 76.28%    62.50MB  7.21%  go.etcd.io/bbolt.(*Cursor).search
+   59.51MB  6.86% 83.15%    59.51MB  6.86%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*DiskCache).newIndexEntry
+   46.19MB  5.33% 88.47%    46.19MB  5.33%  go.etcd.io/bbolt/internal/common.ReadInodeFromPage
+      21MB  2.42% 90.89%   148.69MB 17.15%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*diskBatch).putRecord
+      14MB  1.61% 92.51%       14MB  1.61%  go.etcd.io/bbolt.cloneBytes (inline)
+   11.68MB  1.35% 93.86%    11.68MB  1.35%  github.com/klauspost/compress/s2.encodeBlock
+   11.10MB  1.28% 95.14%    70.10MB  8.09%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*diskBatch).apply

@@ -1,0 +1,29 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+                                     │ cache-disk-hit-quiet-baseline-64k.txt │ cache-disk-hit-quiet-final-64k.txt │
+                                     │                       sec/op                       │          sec/op           vs base               │
+DiskPolicyHit/65536B/compressible-18                                         55.27µ ± ∞ ¹               41.47µ ± ∞ ¹  -24.97% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                     │ cache-disk-hit-quiet-baseline-64k.txt │ cache-disk-hit-quiet-final-64k.txt │
+                                     │                        B/s                         │           B/s             vs base               │
+DiskPolicyHit/65536B/compressible-18                                        1.104Gi ± ∞ ¹              1.472Gi ± ∞ ¹  +33.27% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                     │ cache-disk-hit-quiet-baseline-64k.txt │ cache-disk-hit-quiet-final-64k.txt │
+                                     │                   writecalls/op                    │        writecalls/op          vs base           │
+DiskPolicyHit/65536B/compressible-18                                          0.000 ± ∞ ¹                    0.000 ± ∞ ¹  ~ (p=1.000 n=5) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+
+                                     │ cache-disk-hit-quiet-baseline-64k.txt │ cache-disk-hit-quiet-final-64k.txt │
+                                     │                        B/op                        │           B/op            vs base               │
+DiskPolicyHit/65536B/compressible-18                                       144.20Ki ± ∞ ¹              64.58Ki ± ∞ ¹  -55.22% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                     │ cache-disk-hit-quiet-baseline-64k.txt │ cache-disk-hit-quiet-final-64k.txt │
+                                     │                     allocs/op                      │        allocs/op          vs base               │
+DiskPolicyHit/65536B/compressible-18                                          26.00 ± ∞ ¹                10.00 ± ∞ ¹  -61.54% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95

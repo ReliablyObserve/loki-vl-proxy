@@ -1,0 +1,106 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+                                     │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt │
+                                     │                        sec/op                        │      sec/op       vs base                │
+DiskPolicyHit/256B/compressible-18                                            1010.0n ± ∞ ¹       912.3n ± ∞ ¹         ~ (p=0.151 n=5)
+DiskPolicyHit/256B/random-18                                                   852.9n ± ∞ ¹      1695.0n ± ∞ ¹   +98.73% (p=0.008 n=5)
+DiskPolicyHit/4096B/compressible-18                                            5.628µ ± ∞ ¹       4.485µ ± ∞ ¹         ~ (p=0.421 n=5)
+DiskPolicyHit/4096B/random-18                                                  4.516µ ± ∞ ¹       4.234µ ± ∞ ¹    -6.24% (p=0.016 n=5)
+DiskPolicyHit/65536B/compressible-18                                           35.99µ ± ∞ ¹       52.45µ ± ∞ ¹         ~ (p=0.222 n=5)
+DiskPolicyHit/65536B/random-18                                                 52.89µ ± ∞ ¹       35.65µ ± ∞ ¹   -32.60% (p=0.008 n=5)
+DiskPolicyBatch/batch1-18                                                  7651224.0n ± ∞ ¹       255.1n ± ∞ ¹  -100.00% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                                  84309.0n ± ∞ ¹       295.6n ± ∞ ¹   -99.65% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                                 16898.0n ± ∞ ¹       248.0n ± ∞ ¹   -98.53% (p=0.008 n=5)
+DiskPolicyLegacyExpirySweep-18                                            8042056.00n ± ∞ ¹       58.50n ± ∞ ¹  -100.00% (p=0.008 n=5)
+geomean                                                                        36.00µ             1.506µ         -95.82%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                     │ cache-disk-policy-baseline-combined.txt │    cache-disk-policy-final.txt    │
+                                     │                         B/s                          │        B/s          vs base                    │
+DiskPolicyHit/256B/compressible-18                                            241.7Mi ± ∞ ¹        267.6Mi ± ∞ ¹             ~ (p=0.151 n=5)
+DiskPolicyHit/256B/random-18                                                  286.2Mi ± ∞ ¹        144.0Mi ± ∞ ¹       -49.68% (p=0.008 n=5)
+DiskPolicyHit/4096B/compressible-18                                           694.0Mi ± ∞ ¹        870.9Mi ± ∞ ¹             ~ (p=0.421 n=5)
+DiskPolicyHit/4096B/random-18                                                 865.0Mi ± ∞ ¹        922.5Mi ± ∞ ¹        +6.65% (p=0.016 n=5)
+DiskPolicyHit/65536B/compressible-18                                          1.696Gi ± ∞ ¹        1.164Gi ± ∞ ¹             ~ (p=0.222 n=5)
+DiskPolicyHit/65536B/random-18                                                1.154Gi ± ∞ ¹        1.712Gi ± ∞ ¹       +48.37% (p=0.008 n=5)
+DiskPolicyBatch/batch1-18                                                     527.3Ki ± ∞ ¹   15677607.4Ki ± ∞ ¹  +2972838.89% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                                   46.33Mi ± ∞ ¹     13212.97Mi ± ∞ ¹    +28419.56% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                                  231.2Mi ± ∞ ¹      15750.2Mi ± ∞ ¹     +6713.53% (p=0.008 n=5)
+geomean                                                                       198.1Mi              1.765Gi            +812.48%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                     │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt  │
+                                     │                    writecalls/op                     │ writecalls/op  vs base                    │
+DiskPolicyHit/256B/compressible-18                                              0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyHit/256B/random-18                                                    0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyHit/4096B/compressible-18                                             0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyHit/4096B/random-18                                                   0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyHit/65536B/compressible-18                                            0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyHit/65536B/random-18                                                  0.000 ± ∞ ¹     0.000 ± ∞ ¹         ~ (p=1.000 n=5) ²
+DiskPolicyBatch/batch1-18                                                   5048.000m ± ∞ ¹    1.553m ± ∞ ¹   -99.97% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                                   69.120m ± ∞ ¹    1.629m ± ∞ ¹   -97.64% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                                  23.170m ± ∞ ¹    1.654m ± ∞ ¹   -92.86% (p=0.008 n=5)
+DiskPolicyLegacyExpirySweep-18                                                  2.000 ± ∞ ¹     0.000 ± ∞ ¹  -100.00% (p=0.008 n=5)
+geomean                                                                                   ³                  ?                      ³ ⁴
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+³ summaries must be >0 to compute geomean
+⁴ ratios must be >0 to compute geomean
+
+                                     │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt  │
+                                     │                         B/op                         │     B/op       vs base                    │
+DiskPolicyHit/256B/compressible-18                                             1146.0 ± ∞ ¹     848.0 ± ∞ ¹   -26.00% (p=0.008 n=5)
+DiskPolicyHit/256B/random-18                                                  1.343Ki ± ∞ ¹   1.000Ki ± ∞ ¹   -25.53% (p=0.008 n=5)
+DiskPolicyHit/4096B/compressible-18                                          11.575Ki ± ∞ ¹   4.578Ki ± ∞ ¹   -60.45% (p=0.008 n=5)
+DiskPolicyHit/4096B/random-18                                                16.272Ki ± ∞ ¹   9.219Ki ± ∞ ¹   -43.35% (p=0.008 n=5)
+DiskPolicyHit/65536B/compressible-18                                         144.22Ki ± ∞ ¹   64.58Ki ± ∞ ¹   -55.22% (p=0.008 n=5)
+DiskPolicyHit/65536B/random-18                                                216.6Ki ± ∞ ¹   136.5Ki ± ∞ ¹   -36.99% (p=0.008 n=5)
+DiskPolicyBatch/batch1-18                                                 24486066.00 ± ∞ ¹     97.00 ± ∞ ¹  -100.00% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                                  252799.0 ± ∞ ¹     101.0 ± ∞ ¹   -99.96% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                                  35510.0 ± ∞ ¹     102.0 ± ∞ ¹   -99.71% (p=0.008 n=5)
+DiskPolicyLegacyExpirySweep-18                                                30.72Mi ± ∞ ¹    0.00Mi ± ∞ ¹  -100.00% (p=0.008 n=5)
+geomean                                                                       94.52Ki                        ?                      ² ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                                     │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt │
+                                     │                      allocs/op                       │  allocs/op    vs base                    │
+DiskPolicyHit/256B/compressible-18                                              11.00 ± ∞ ¹    10.00 ± ∞ ¹    -9.09% (p=0.008 n=5)
+DiskPolicyHit/256B/random-18                                                    11.00 ± ∞ ¹    10.00 ± ∞ ¹    -9.09% (p=0.008 n=5)
+DiskPolicyHit/4096B/compressible-18                                             19.00 ± ∞ ¹    10.00 ± ∞ ¹   -47.37% (p=0.008 n=5)
+DiskPolicyHit/4096B/random-18                                                   19.00 ± ∞ ¹    10.00 ± ∞ ¹   -47.37% (p=0.008 n=5)
+DiskPolicyHit/65536B/compressible-18                                            26.00 ± ∞ ¹    10.00 ± ∞ ¹   -61.54% (p=0.008 n=5)
+DiskPolicyHit/65536B/random-18                                                  26.00 ± ∞ ¹    10.00 ± ∞ ¹   -61.54% (p=0.008 n=5)
+DiskPolicyBatch/batch1-18                                                    5509.000 ± ∞ ¹    1.000 ± ∞ ¹   -99.98% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                                    61.000 ± ∞ ¹    1.000 ± ∞ ¹   -98.36% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                                   12.000 ± ∞ ¹    1.000 ± ∞ ¹   -91.67% (p=0.008 n=5)
+DiskPolicyLegacyExpirySweep-18                                                 7.497k ± ∞ ¹   0.000k ± ∞ ¹  -100.00% (p=0.008 n=5)
+geomean                                                                         62.38                       ?                      ² ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² summaries must be >0 to compute geomean
+³ ratios must be >0 to compute geomean
+
+                             │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt  │
+                             │                  committedvalues/op                  │ committedvalues/op  vs base               │
+DiskPolicyBatch/batch1-18                                            1000.00m ± ∞ ¹         79.51m ± ∞ ¹  -92.05% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                          1000.00m ± ∞ ¹         83.25m ± ∞ ¹  -91.67% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                         1000.00m ± ∞ ¹         84.67m ± ∞ ¹  -91.53% (p=0.008 n=5)
+geomean                                                                 1.000               82.45m        -91.76%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                             │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt │
+                             │                      flushes/op                      │    flushes/op      vs base               │
+DiskPolicyBatch/batch1-18                                         1024000.00µ ± ∞ ¹        77.60µ ± ∞ ¹  -99.99% (p=0.008 n=5)
+DiskPolicyBatch/batch100-18                                         10120.00µ ± ∞ ¹        81.90µ ± ∞ ¹  -99.19% (p=0.008 n=5)
+DiskPolicyBatch/batch1000-18                                         1035.00µ ± ∞ ¹        82.70µ ± ∞ ¹  -92.01% (p=0.008 n=5)
+geomean                                                                22.05m              80.70µ        -99.63%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                               │ cache-disk-policy-baseline-combined.txt │ cache-disk-policy-final.txt │
+                               │                     fixturekeys                      │      fixturekeys       vs base           │
+DiskPolicyLegacyExpirySweep-18                                           1.024k ± ∞ ¹            1.024k ± ∞ ¹  ~ (p=1.000 n=5) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal

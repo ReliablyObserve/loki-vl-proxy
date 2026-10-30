@@ -1,0 +1,24 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkPeerCacheFetchPayload/bytes=128/repetitive-18         	    4219	     88083 ns/op	   1.45 MB/s	    9113 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=128/repetitive-18         	    4302	     82726 ns/op	   1.55 MB/s	    9102 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=128/repetitive-18         	    3979	     87324 ns/op	   1.47 MB/s	    9106 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=128/incompressible-18     	    4497	     78856 ns/op	   1.62 MB/s	    9096 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=128/incompressible-18     	    5954	     81400 ns/op	   1.57 MB/s	    9097 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=128/incompressible-18     	    4418	     81228 ns/op	   1.58 MB/s	    9095 B/op	     113 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/repetitive-18        	    4312	     83450 ns/op	  49.08 MB/s	   17324 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/repetitive-18        	    4922	     90741 ns/op	  45.14 MB/s	   16080 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/repetitive-18        	    4012	    106512 ns/op	  38.46 MB/s	   16082 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/incompressible-18    	    2922	    152821 ns/op	  26.80 MB/s	   31674 B/op	     132 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/incompressible-18    	    3351	    142110 ns/op	  28.82 MB/s	   31680 B/op	     132 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=4096/incompressible-18    	    3290	    108960 ns/op	  37.59 MB/s	   31678 B/op	     132 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/repetitive-18      	    1449	    238630 ns/op	1098.54 MB/s	  511972 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/repetitive-18      	    1663	    231655 ns/op	1131.61 MB/s	  410605 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/repetitive-18      	    1845	    227435 ns/op	1152.61 MB/s	  410602 B/op	     120 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/incompressible-18  	    1212	    273364 ns/op	 958.96 MB/s	 1719884 B/op	     145 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/incompressible-18  	    1323	    258291 ns/op	1014.92 MB/s	 1719894 B/op	     145 allocs/op
+BenchmarkPeerCacheFetchPayload/bytes=262144/incompressible-18  	    1430	    267808 ns/op	 978.85 MB/s	 1719890 B/op	     145 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache	7.452s
