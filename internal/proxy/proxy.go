@@ -1366,6 +1366,14 @@ func New(cfg Config) (*Proxy, error) {
 		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
+	p.metrics.SetCoalescerStatsProvider(func() metrics.CoalescerStats {
+		return metrics.CoalescerStats{
+			Total:     p.coalescer.CoalescedTotal.Load(),
+			Saved:     p.coalescer.CoalescedSaved.Load(),
+			WaitCount: p.coalescer.WaitCount.Load(),
+			WaitNanos: p.coalescer.WaitNanos.Load(),
+		}
+	})
 	p.metadataScanLimiter = newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, resolveMetadataScanFloor(cfg.BackendMinConcurrentMetadataScans),
 		cfg.BackendHeavyQueryQueueWait, resolveMetadataScanHeadroom(cfg.BackendMetadataScanMemoryHeadroom),
 		resolveMetadataScanTolerance(cfg.BackendMetadataScanLatencyTolerance), p.sampleBackendSignals)

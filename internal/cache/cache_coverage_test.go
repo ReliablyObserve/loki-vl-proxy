@@ -146,6 +146,23 @@ func TestGetSharedWithTTL_MissRecordsBackendFallthrough(t *testing.T) {
 	}
 }
 
+func TestStats_ExposeMemoryAndDiskEvictionsByTier(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{Path: tempDBPath(t), Compression: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dc.Close()
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+	c.SetL2(dc)
+	c.Evictions.Store(4)
+	dc.Evictions.Store(7)
+	stats := c.Stats()
+	if stats.L1.Evictions != 4 || stats.L2.Evictions != 7 {
+		t.Fatalf("evictions should be attributed to their cache tiers: %+v", stats)
+	}
+}
+
 func TestSetLocalAndDiskWithTTL_PersistsWithoutNeedingPeerTier(t *testing.T) {
 	dc, err := NewDiskCache(DiskCacheConfig{
 		Path:        tempDBPath(t),
