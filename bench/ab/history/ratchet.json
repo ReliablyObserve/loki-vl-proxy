@@ -1,5 +1,54 @@
 [
  {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "aggregation-over-binary",
+  "shape": "B1 sum by over rate divided by a literal"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "aggregation-over-binary",
+  "shape": "B1 sum by over rate divided by a literal"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "aggregation-over-binary",
+  "shape": "B1 sum by over rate divided by a literal"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "instant",
+  "set": "aggregation-over-binary",
+  "shape": "B3 sum over a literal times count, instant"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "aggregation-over-binary",
+  "shape": "B4 outer sum over ignoring(machine)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "aggregation-over-binary",
+  "shape": "B4 outer sum over ignoring(machine)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "aggregation-over-binary",
+  "shape": "B4 outer sum over ignoring(machine)"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -749,6 +798,13 @@
   "shape": "M2 multi-value variable, count by app"
  },
  {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "label-matcher-anchoring",
+  "shape": "M3 single-value variable, log query"
+ },
+ {
   "added": "2026-10-29",
   "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
   "range": "1h",
@@ -913,6 +969,13 @@
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "24h",
+  "set": "level-filter",
+  "shape": "LF16 drilldown label breakdown, level filter"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
   "set": "level-filter",
   "shape": "LF16 drilldown label breakdown, level filter"
  },
@@ -1090,6 +1153,13 @@
   "range": "6h",
   "set": "level-filter-stored",
   "shape": "LS1 logs, level stream label"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "level-filter-stored",
+  "shape": "LS2 logs, level stream label regexp, all services"
  },
  {
   "added": "2026-10-27",
@@ -1778,6 +1848,111 @@
   "shape": "P9 instant logfmt by level"
  },
  {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "sliding-sum-without",
+  "shape": "SW2 sum without pod, bytes_over_time"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "sliding-sum-without",
+  "shape": "SW2 sum without pod, bytes_over_time"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "sliding-sum-without",
+  "shape": "SW2 sum without pod, bytes_over_time"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "sliding-sum-without",
+  "shape": "SW3 sum without pod and version, line filter"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "sliding-sum-without",
+  "shape": "SW3 sum without pod and version, line filter"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "sliding-sum-without",
+  "shape": "SW3 sum without pod and version, line filter"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "sliding-sum-without",
+  "shape": "SW4 trailing sum without pod"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "sliding-sum-without",
+  "shape": "SW4 trailing sum without pod"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "sliding-sum-without",
+  "shape": "SW4 trailing sum without pod"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "sliding-sum-without",
+  "shape": "SW5 sum without pod, rate (control)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "sliding-sum-without",
+  "shape": "SW5 sum without pod, rate (control)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "sliding-sum-without",
+  "shape": "SW5 sum without pod, rate (control)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "sliding-sum-without",
+  "shape": "SW6 max without pod (control)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "sliding-sum-without",
+  "shape": "SW6 max without pod (control)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "sliding-sum-without",
+  "shape": "SW6 max without pod (control)"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
@@ -1916,6 +2091,20 @@
   "range": "6h",
   "set": "unwrap-conversion-error",
   "shape": "E1 json duration_ms sum by service"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "1h",
+  "set": "unwrap-conversion-error",
+  "shape": "E2 json duration_ms p95 by service"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
+  "set": "unwrap-conversion-error",
+  "shape": "E2 json duration_ms p95 by service"
  },
  {
   "added": "2026-10-29",
@@ -2184,9 +2373,23 @@
   "shape": "W1 sum without pod, max_over_time"
  },
  {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
+  "set": "unwrap-sum-without",
+  "shape": "W1 sum without pod, max_over_time"
+ },
+ {
   "added": "2026-10-29",
   "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
   "range": "1h",
+  "set": "unwrap-sum-without",
+  "shape": "W2 sum without pod, sum_over_time"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "24h",
   "set": "unwrap-sum-without",
   "shape": "W2 sum without pod, sum_over_time"
  },
@@ -2271,6 +2474,13 @@
   "added": "2026-10-28",
   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
   "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W8 sum without pod, count_over_time (production)"
+ },
+ {
+  "added": "2026-10-30",
+  "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+  "range": "6h",
   "set": "unwrap-sum-without",
   "shape": "W8 sum without pod, count_over_time (production)"
  },
