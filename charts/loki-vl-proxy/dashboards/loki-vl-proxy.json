@@ -2163,8 +2163,8 @@
     {
       "type": "timeseries",
       "id": 45,
-      "title": "Cache Hit Rate by Tier",
-      "description": "Cache hits per tier per second. High T0 = repeated identical requests served at edge. High L1/L2 = window reuse active.",
+      "title": "Cache Hits by Tier and Hot-Key Index",
+      "description": "Cache hits per second. L0 is the hot-key index sidecar, not a lookup tier; L1/L2/L3 are memory, disk, and peer lookup tiers.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2198,8 +2198,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"compat\"}[5m])",
-          "legendFormat": "T0 compat hits/s",
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}[5m])",
+          "legendFormat": "L0 hot-key hits/s",
           "refId": "A"
         },
         {
@@ -2207,35 +2207,35 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"memory\"}[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[5m])",
           "legendFormat": "L1 memory hits/s",
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"disk\"}[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}[5m])",
           "legendFormat": "L2 disk hits/s",
-          "refId": "A"
+          "refId": "C"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_peer_cache_hits_total[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}[5m])",
           "legendFormat": "L3 peer hits/s",
-          "refId": "A"
+          "refId": "D"
         }
       ]
     },
     {
       "type": "timeseries",
       "id": 46,
-      "title": "Cache Miss Rate by Tier",
-      "description": "Cache misses per tier \u2014 each miss cascades to the next tier or backend.",
+      "title": "Cache Misses by Tier and Hot-Key Index",
+      "description": "Cache misses per second. An L0 hot-key miss is a first observation; L1/L2/L3 lookup misses cascade to the next tier or backend.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2269,8 +2269,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"compat\"}[5m])",
-          "legendFormat": "T0 misses/s",
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}[5m])",
+          "legendFormat": "L0 hot-key misses/s",
           "refId": "A"
         },
         {
@@ -2278,27 +2278,27 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"memory\"}[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}[5m])",
           "legendFormat": "L1 misses/s",
-          "refId": "A"
+          "refId": "B"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"disk\"}[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}[5m])",
           "legendFormat": "L2 misses/s",
-          "refId": "A"
+          "refId": "C"
         },
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(loki_vl_proxy_peer_cache_misses_total[5m])",
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}[5m])",
           "legendFormat": "L3 peer misses/s",
-          "refId": "A"
+          "refId": "D"
         }
       ]
     },
