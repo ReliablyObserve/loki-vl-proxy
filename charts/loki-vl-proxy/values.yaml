@@ -812,7 +812,10 @@ networkPolicy:
   #  - namespaceSelector:
   #      matchLabels:
   #        kubernetes.io/metadata.name: monitoring
-  # Allow egress to VictoriaLogs backend
+  # Allow egress to VictoriaLogs backend. With peerCache.enabled=true, the
+  # chart also allows TCP 3100 to same-release pods in this namespace.
+  # Cross-release or external peers and discovery endpoints require explicit
+  # egress rules here (and matching ingress at the destination).
   egress:
     - to: []
       ports:
