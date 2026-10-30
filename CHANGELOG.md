@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Cache-tier evictions and request-coalescing wait are observable.** Prometheus and OTLP now export memory and disk eviction counts, coalesced backend calls saved, and aggregate waiter time. The operations dashboard includes eviction-rate and average-wait panels.
 
+## [2.48.1] - 2026-10-30
+
 ### Fixed
 
 - **Shifted log ranges keep their full row limit when reusing aligned windows.**
