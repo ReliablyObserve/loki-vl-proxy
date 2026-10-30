@@ -143,7 +143,7 @@ A failed owner may cost up to `-peer-timeout` (default `2s`) before backup/fallb
 Useful existing metrics include:
 
 - `loki_vl_proxy_cache_tier_hits_total`, `loki_vl_proxy_cache_tier_misses_total` and `loki_vl_proxy_cache_tier_evictions_total`, with `tier="l1_memory"`, `"l2_disk"` or `"l3_peer"` as applicable.
-- `loki_vl_proxy_cache_bytes` and `loki_vl_proxy_cache_objects` for local L1/L2 occupancy.
+- `loki_vl_proxy_cache_bytes`: L1 accounts stored key/value bytes; L2 reports the physical bbolt file size, including retained free pages. It does not report logical admission bytes or remaining capacity under `-disk-cache-max-bytes`. `loki_vl_proxy_cache_objects` reports local object counts.
 - `loki_vl_proxy_cache_backend_fallthrough_total` for misses through all cache tiers.
 - `loki_vl_proxy_peer_cache_fetch_duration_seconds`, with owner/backup and hit/miss/error labels.
 - `loki_vl_proxy_coalesced_saved_total`, `loki_vl_proxy_coalesced_wait_nanoseconds_total` and `loki_vl_proxy_coalesced_wait_count_total` for local duplicate suppression and waiting.
