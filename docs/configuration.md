@@ -423,11 +423,18 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-disk-cache-path` | — | — | Path to bbolt DB file (empty = disabled) |
-| `-disk-cache-compress` | — | `true` | Gzip compression for disk cache |
-| `-disk-cache-flush-size` | — | `100` | Flush write buffer after N entries |
+| `-disk-cache-compress` | — | `true` | Compress using the selected codec; false forces raw records |
+| `-disk-cache-codec` | — | `s2` | S2, zstd, gzip or raw; new records identify their codec |
+| `-disk-cache-flush-bytes` | — | `4194304` | Flush after 4 MiB queued bytes including metadata |
+| `-disk-cache-max-buffer-bytes` | — | `16777216` | Bound pending and flushing queue bytes together |
+| `-disk-cache-max-entries` | — | `100000` | Persisted L2 entries; evict least recently used |
+| `-disk-cache-max-index-bytes` | — | `16777216` | Estimated LRU metadata budget (128 bytes plus key length per entry) |
+| `-disk-cache-flush-size` | — | `1000` | Flush write buffer after N entries |
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
 | `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes. Empty `/labels` and `/label/{name}/values` answers are cached for max(`30s`, this, `-peer-write-through-min-ttl`), so they still overwrite an older non-empty copy on disk and peers when either minimum is raised (new labels can then take that long to appear after an empty answer) |
-| `-disk-cache-max-bytes` | — | `0` | Maximum on-disk L2 cache size in bytes (`0` = unlimited) |
+| `-disk-cache-max-bytes` | — | `0` | Logical encoded record and key byte cap (`0` disables the byte cap); bbolt retains free pages |
+
+See [Disk cache](disk-cache.md) for memory accounting, format upgrades and purge behavior.
 
 ## Cold Storage Backend
 

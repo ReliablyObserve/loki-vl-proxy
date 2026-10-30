@@ -3,8 +3,11 @@ package cache
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	gzip "github.com/klauspost/compress/gzip"
+	bolt "go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 	"io"
 	"log/slog"
 	"math"
@@ -12,197 +15,238 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	bolt "go.etcd.io/bbolt"
 )
 
-var dataBucket = []byte("cache")
-
-var gzipWriteBufferPool = sync.Pool{
-	New: func() interface{} {
-		return bytes.NewBuffer(make([]byte, 0, 4096))
-	},
-}
-
-var gzipWriterPool = sync.Pool{
-	New: func() interface{} {
-		return gzip.NewWriter(io.Discard)
-	},
-}
-
+var dataBucket = []byte("cache_records_v1")
+var legacyDataBucket = []byte("cache")
+var gzipWriteBufferPool = sync.Pool{New: func() interface{} { return bytes.NewBuffer(make([]byte, 0, 4096)) }}
+var gzipWriterPool = sync.Pool{New: func() interface{} { return gzip.NewWriter(io.Discard) }}
 var gzipReaderPool sync.Pool
 
-// DiskCache is an L2 on-disk cache backed by bbolt (B+ tree).
-// Optimized for sequential I/O patterns (AWS ST1 HDD-friendly):
-//   - Write-back buffer: batches writes to reduce IOPS
-//   - Gzip compression: reduces disk I/O volume
-//   - Sequential B+ tree layout for disk-friendly access
+// DiskCache batches bounded raw writes into bbolt and tracks disk recency in
+// memory. Hits never persist recency; its ordering resets after a restart.
+// Index and write queue have separate budgets (MaxIndexBytes + MaxBufferBytes).
+// Codec output, bbolt pages and temporary transaction state are additional memory.
 type DiskCache struct {
-	db          *bolt.DB
-	compression bool
-	writeBuf    map[string]diskEntry
-	writeMu     sync.Mutex
-	flushSize   int // flush buffer after this many entries
-	minTTL      time.Duration
-	maxBytes    int64
-	sweepCursor []byte // accessed only inside serialized bbolt write transactions
-	log         *slog.Logger
-	done        chan struct{} // signals background flusher to stop
-
-	// Stats
-	Hits        atomic.Int64
-	Misses      atomic.Int64
-	Writes      atomic.Int64
-	Evictions   atomic.Int64
-	FlushCount  atomic.Int64
-	BytesOnDisk atomic.Int64
+	db              *bolt.DB
+	compression     bool // legacy bucket decoding only
+	codec           diskCodec
+	writeMu         sync.Mutex // queue, index and lifecycle state; never held over disk commits
+	flushMu         sync.Mutex // orders flush, purge and close
+	writeBuf        map[string]diskEntry
+	flushing        map[string]diskEntry
+	flushingBytes   int64
+	bufferBytes     int64 // pending + flushing raw values, keys and conservative metadata
+	flushSize       int
+	flushBytes      int64
+	maxBufferBytes  int64
+	maxEntryBytes   int
+	minTTL          time.Duration
+	maxBytes        int64
+	maxEntries      int
+	maxIndexBytes   int64
+	index           map[string]*diskLRUEntry
+	indexBytes      int64
+	logicalBytes    int64
+	newest, oldest  *diskLRUEntry
+	nextExpiry      int64
+	dirty           bool
+	sequence        uint64
+	closing, closed bool
+	closeOnce       sync.Once
+	lastFlushErr    error
+	closeErr        error
+	done            chan struct{}
+	workerDone      chan struct{}
+	flushRequest    chan struct{}
+	log             *slog.Logger
+	Hits            atomic.Int64
+	Misses          atomic.Int64
+	Writes          atomic.Int64
+	Evictions       atomic.Int64
+	RejectedWrites  atomic.Int64
+	FlushCount      atomic.Int64
+	BytesOnDisk     atomic.Int64
 }
 
 type diskEntry struct {
 	Value     []byte
-	ExpiresAt int64 // unix nano
+	ExpiresAt int64
+	state     *diskEntryState
 }
 
-// DiskCacheConfig configures the L2 disk cache.
+type diskEntryState struct {
+	cancelled  atomic.Bool
+	lastAccess uint64 // protected by writeMu; shared by pending/flushing readers
+}
+
 type DiskCacheConfig struct {
-	Path          string        // Path to bbolt database file
-	MaxBytes      int64         // Max disk usage (0 = unlimited)
-	FlushInterval time.Duration // How often to flush write buffer (default: 5s)
-	FlushSize     int           // Flush after N buffered writes (default: 100)
-	MinTTL        time.Duration // Skip disk writes for entries with TTL below this threshold
-	Compression   bool          // Gzip compress values (default: true)
+	Path           string
+	MaxBytes       int64         // logical encoded value + key bytes; physical bbolt file can be larger
+	FlushInterval  time.Duration // default 5s
+	FlushSize      int           // default 1000 unique pending writes
+	FlushBytes     int64         // default 4MiB pending raw queue charge
+	MaxBufferBytes int64         // default 16MiB pending + flushing queue charge
+	MaxEntries     int           // default 100000 committed index entries
+	MaxIndexBytes  int64         // default 16MiB conservative 128+len(key) index charge
+	MaxEntryBytes  int           // default and hard ceiling 256MiB decoded value
+	MinTTL         time.Duration
+	Compression    bool   // legacy read flag; selects S2 for new writes if Codec is empty
+	Codec          string // raw, s2, zstd or gzip; empty with Compression=false selects raw
 }
 
-// NewDiskCache creates an L2 disk cache.
 func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
-	opts := bolt.DefaultOptions
-	opts.NoSync = true     // Async sync — faster writes, safe with write buffer
-	opts.NoGrowSync = true // Skip grow sync for sequential write performance
+	if cfg.MaxBytes < 0 || cfg.FlushInterval < 0 || cfg.FlushSize < 0 || cfg.FlushBytes < 0 || cfg.MaxBufferBytes < 0 || cfg.MaxEntries < 0 || cfg.MaxIndexBytes < 0 || cfg.MaxEntryBytes < 0 || cfg.MinTTL < 0 {
+		return nil, fmt.Errorf("negative disk cache configuration")
+	}
+	codec, err := parseDiskCodec(cfg.Codec)
+	if err != nil {
+		return nil, err
+	}
+	if !cfg.Compression {
+		codec = diskCodecRaw
+	}
+	if cfg.FlushSize == 0 {
+		cfg.FlushSize = 1000
+	}
+	if cfg.FlushBytes == 0 {
+		cfg.FlushBytes = 4 << 20
+	}
+	if cfg.MaxBufferBytes == 0 {
+		cfg.MaxBufferBytes = 16 << 20
+	}
+	if cfg.MaxEntries == 0 {
+		cfg.MaxEntries = 100000
+	}
+	if cfg.MaxIndexBytes == 0 {
+		cfg.MaxIndexBytes = 16 << 20
+	}
+	if cfg.MaxEntryBytes == 0 || cfg.MaxEntryBytes > diskRecordMaxDecoded {
+		cfg.MaxEntryBytes = diskRecordMaxDecoded
+	}
+	if cfg.FlushInterval == 0 {
+		cfg.FlushInterval = 5 * time.Second
+	}
+	// DefaultOptions is shared globally. Mutating it races unrelated bbolt users.
+	opts := *bolt.DefaultOptions
+	opts.NoSync = true
+	opts.NoGrowSync = true
 	opts.FreelistType = bolt.FreelistMapType
-
-	db, err := bolt.Open(cfg.Path, 0600, opts)
+	db, err := bolt.Open(cfg.Path, 0600, &opts)
 	if err != nil {
 		return nil, fmt.Errorf("open disk cache: %w", err)
 	}
-
-	// Create bucket
-	if err := db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(dataBucket)
-		return err
-	}); err != nil {
+	dc := &DiskCache{db: db, compression: cfg.Compression, codec: codec, writeBuf: make(map[string]diskEntry),
+		flushSize: cfg.FlushSize, flushBytes: cfg.FlushBytes, maxBufferBytes: cfg.MaxBufferBytes,
+		maxEntryBytes: cfg.MaxEntryBytes, minTTL: cfg.MinTTL, maxBytes: cfg.MaxBytes,
+		maxEntries: cfg.MaxEntries, maxIndexBytes: cfg.MaxIndexBytes, index: make(map[string]*diskLRUEntry),
+		done: make(chan struct{}), workerDone: make(chan struct{}), flushRequest: make(chan struct{}, 1),
+		log: slog.Default().With("component", "disk_cache")}
+	if err = dc.rebuildIndex(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("create bucket: %w", err)
+		return nil, fmt.Errorf("initialize disk cache: %w", err)
 	}
-
-	flushSize := cfg.FlushSize
-	if flushSize == 0 {
-		flushSize = 100
-	}
-
-	logger := slog.Default().With("component", "disk_cache")
-
-	dc := &DiskCache{
-		db:          db,
-		compression: cfg.Compression,
-		writeBuf:    make(map[string]diskEntry),
-		flushSize:   flushSize,
-		minTTL:      cfg.MinTTL,
-		maxBytes:    cfg.MaxBytes,
-		log:         logger,
-		done:        make(chan struct{}),
-	}
-
-	// Start background flusher
-	interval := cfg.FlushInterval
-	if interval == 0 {
-		interval = 5 * time.Second
-	}
-	go dc.backgroundFlush(interval)
-
+	go dc.backgroundFlush(cfg.FlushInterval)
 	return dc, nil
 }
 
-// Get retrieves a value from disk cache.
-func (dc *DiskCache) Get(key string) ([]byte, bool) {
-	value, _, ok := dc.GetWithTTL(key)
-	return value, ok
-}
-
-// GetWithTTL retrieves a fresh value from disk cache with its remaining TTL.
+func (dc *DiskCache) Get(key string) ([]byte, bool) { v, _, ok := dc.GetWithTTL(key); return v, ok }
 func (dc *DiskCache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 	return dc.getWithTTL(key, false)
 }
-
-// GetStaleWithTTL retrieves the last retained value from disk, even if expired.
-// The returned TTL may be negative when the entry is stale.
 func (dc *DiskCache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
 	return dc.getWithTTL(key, true)
 }
-
 func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
-	// Check write buffer first
 	dc.writeMu.Lock()
-	if entry, ok := dc.writeBuf[key]; ok {
+	if dc.closed || dc.closing {
+		dc.writeMu.Unlock()
+		dc.Misses.Add(1)
+		return nil, 0, false
+	}
+	entry, ok := dc.writeBuf[key]
+	if !ok {
+		entry, ok = dc.flushing[key]
+	}
+	if ok {
+		cancelled := entry.state != nil && entry.state.cancelled.Load()
+		if entry.state != nil && !cancelled {
+			dc.sequence++
+			entry.state.lastAccess = dc.sequence
+		}
 		dc.writeMu.Unlock()
 		remaining := time.Unix(0, entry.ExpiresAt).Sub(clockNow())
-		if remaining <= 0 && !allowStale {
+		if cancelled || (remaining <= 0 && !allowStale) {
 			dc.Misses.Add(1)
 			return nil, 0, false
 		}
 		dc.Hits.Add(1)
 		return entry.Value, remaining, true
 	}
+	item := dc.index[key]
+	if item == nil || item.invalid {
+		dc.writeMu.Unlock()
+		dc.Misses.Add(1)
+		return nil, 0, false
+	}
+	generation := item.generation
 	dc.writeMu.Unlock()
-
-	// Check disk
+	// Copy out before decoding so compression work does not extend the bbolt
+	// reader transaction and delay a writer that needs to grow its mmap.
 	var raw []byte
-	_ = dc.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(dataBucket)
-		if v := b.Get([]byte(key)); v != nil {
-			raw = make([]byte, len(v))
-			copy(raw, v)
+	native := false
+	err := dc.db.View(func(tx *bolt.Tx) error {
+		if b := tx.Bucket(dataBucket); b != nil {
+			if value := b.Get([]byte(key)); value != nil {
+				if err := dc.validateStoredDiskRecord(value, true); err != nil {
+					return err
+				}
+				raw = bytes.Clone(value)
+				native = true
+				return nil
+			}
+		}
+		if b := tx.Bucket(legacyDataBucket); b != nil {
+			if value := b.Get([]byte(key)); value != nil {
+				if err := dc.validateStoredDiskRecord(value, false); err != nil {
+					return err
+				}
+				raw = bytes.Clone(value)
+			}
 		}
 		return nil
 	})
-
-	if raw == nil {
-		dc.Misses.Add(1)
-		return nil, 0, false
-	}
-
-	// Decompress
-	if dc.compression {
-		var err error
-		raw, err = decompress(raw)
-		if err != nil {
-			dc.Misses.Add(1)
-			return nil, 0, false
+	var decoded diskEntry
+	if err == nil && raw != nil {
+		if native {
+			decoded, err = decodeNativeDiskRecordLimit(raw, dc.maxEntryBytes)
+		} else {
+			decoded, err = decodeLegacyDiskRecord(raw, dc.compression, dc.maxEntryBytes)
 		}
 	}
-
-	// Check expiry (first 8 bytes = expiry timestamp)
-	if len(raw) < 8 {
+	remaining := time.Unix(0, decoded.ExpiresAt).Sub(clockNow())
+	if err != nil || raw == nil || (remaining <= 0 && !allowStale) {
+		dc.writeMu.Lock()
+		if current := dc.index[key]; current != nil && current.generation == generation {
+			current.invalid = true
+			dc.dirty = true
+		}
+		dc.writeMu.Unlock()
+		dc.requestFlush()
 		dc.Misses.Add(1)
 		return nil, 0, false
 	}
-	expiresAt := int64(binary.BigEndian.Uint64(raw[:8]))
-	remaining := time.Unix(0, expiresAt).Sub(clockNow())
-	if remaining <= 0 && !allowStale {
-		dc.Misses.Add(1)
-		dc.Evictions.Add(1)
-		go func() {
-			_ = dc.db.Update(func(tx *bolt.Tx) error {
-				return tx.Bucket(dataBucket).Delete([]byte(key))
-			})
-		}()
-		return nil, 0, false
+	dc.writeMu.Lock()
+	if current := dc.index[key]; current != nil && current.generation == generation {
+		dc.sequence++
+		current.lastAccess = dc.sequence
+		dc.touch(current)
 	}
-
+	dc.writeMu.Unlock()
 	dc.Hits.Add(1)
-	return raw[8:], remaining, true
+	return decoded.Value, remaining, true
 }
 
-// MinTTL returns the minimum TTL a write needs to reach disk (0: no minimum).
 func (dc *DiskCache) MinTTL() time.Duration {
 	if dc == nil {
 		return 0
@@ -210,138 +254,65 @@ func (dc *DiskCache) MinTTL() time.Duration {
 	return dc.minTTL
 }
 
-// Set stores a value in the write buffer (will be flushed to disk).
+// Set only admits to the bounded raw queue. A single worker performs threshold
+// flushes, so calls under the L1 mutex never commit disk transactions.
 func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
-	if ttl <= 0 {
-		return
-	}
-	if dc.minTTL > 0 && ttl < dc.minTTL {
-		return
-	}
-
 	dc.writeMu.Lock()
-	dc.writeBuf[key] = diskEntry{
-		Value:     value,
-		ExpiresAt: clockNow().Add(ttl).UnixNano(),
+	if dc.closed || dc.closing {
+		dc.writeMu.Unlock()
+		return
 	}
-	shouldFlush := len(dc.writeBuf) >= dc.flushSize
+	charge := diskQueueCharge(key, value)
+	used := dc.bufferBytes
+	if old, ok := dc.writeBuf[key]; ok {
+		used -= diskQueueCharge(key, old.Value)
+	}
+	reject := key == "" || len(key) > bolt.MaxKeySize || ttl <= 0 || (dc.minTTL > 0 && ttl < dc.minTTL) || len(value) > dc.maxEntryBytes || charge > dc.maxBufferBytes || used > dc.maxBufferBytes-charge
+	if !reject && dc.codec == diskCodecRaw && dc.maxBytes > 0 {
+		reject = int64(len(key))+int64(diskRecordHeaderSize)+int64(len(value)) > dc.maxBytes
+	}
+	if reject {
+		dc.rejectLocked(key)
+		dc.writeMu.Unlock()
+		dc.requestFlush()
+		return
+	}
+	dc.sequence++
+	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: dc.sequence}}
+	dc.bufferBytes = used + charge
+	if item := dc.index[key]; item != nil {
+		item.invalid = false
+	}
+	shouldFlush := len(dc.writeBuf) >= dc.flushSize || dc.pendingChargeLocked() >= dc.flushBytes
 	dc.writeMu.Unlock()
-
 	if shouldFlush {
-		dc.Flush()
+		dc.requestFlush()
 	}
 }
 
-// Flush writes buffered entries to disk in a single batch transaction.
-func (dc *DiskCache) Flush() {
-	dc.writeMu.Lock()
-	buf := dc.writeBuf
-	dc.writeBuf = make(map[string]diskEntry)
-	dc.writeMu.Unlock()
-
-	err := dc.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(dataBucket)
-
-		// Use LeafInuse (actual stored key+value bytes in leaf pages) rather
-		// than the bbolt file size, which never shrinks after deletes and
-		// includes B-tree overhead and free pages. This prevents the cap from
-		// triggering before the effective working set is full.
-		currentBytes := int64(0)
-		if dc.maxBytes > 0 {
-			currentBytes = int64(b.Stats().LeafInuse)
-		}
-		currentBytes -= dc.sweepExpired(b)
-		if currentBytes < 0 {
-			currentBytes = 0
-		}
-
-		for key, entry := range buf {
-			encoded, ok := encodeDiskEntry(entry)
-			if !ok {
-				continue
-			}
-
-			// Compress
-			if dc.compression {
-				var err error
-				encoded, err = compress(encoded)
-				if err != nil {
-					continue
-				}
-			}
-			if dc.maxBytes > 0 {
-				candidateBytes := currentBytes
-				// Deduct the old entry size on overwrites so the cap reflects
-				// net content bytes rather than cumulative write volume.
-				if existing := b.Get([]byte(key)); existing != nil {
-					candidateBytes -= int64(len(existing))
-				}
-				if candidateBytes+int64(len(encoded)) > dc.maxBytes {
-					dc.Evictions.Add(1)
-					continue
-				}
-				currentBytes = candidateBytes
-			}
-
-			if err := b.Put([]byte(key), encoded); err != nil {
-				return err
-			}
-			dc.Writes.Add(1)
-			currentBytes += int64(len(encoded))
-		}
-		return nil
-	})
-	if err != nil {
-		dc.log.Warn("disk cache flush failed", "error", err)
-	}
-
-	dc.FlushCount.Add(1)
+func diskQueueCharge(key string, value []byte) int64 {
+	return 128 + int64(len(key)) + int64(len(value))
 }
-
-// Scan a bounded slice on every flush, even when there are no pending writes.
-// Reading only the expiry header avoids inflating an entire compressed value.
-// Repeated ticks eventually visit unread keys from past sliding time windows.
-func (dc *DiskCache) sweepExpired(b *bolt.Bucket) int64 {
-	cursor := b.Cursor()
-	key, value := cursor.First()
-	if len(dc.sweepCursor) > 0 {
-		key, value = cursor.Seek(dc.sweepCursor)
-		if key == nil {
-			key, value = cursor.First()
-		}
+func (dc *DiskCache) pendingChargeLocked() int64 { return dc.bufferBytes - dc.flushingBytes }
+func (dc *DiskCache) rejectLocked(key string) {
+	dc.RejectedWrites.Add(1)
+	if old, ok := dc.writeBuf[key]; ok {
+		dc.bufferBytes -= diskQueueCharge(key, old.Value)
+		delete(dc.writeBuf, key)
 	}
-	now := clockNow().UnixNano()
-	deadline := time.Now().Add(10 * time.Millisecond)
-	var reclaimed int64
-	for scanned := 0; key != nil && scanned < 1024; scanned++ {
-		var header [8]byte
-		valid := false
-		if dc.compression {
-			reader, err := gzip.NewReader(bytes.NewReader(value))
-			if err == nil {
-				_, err = io.ReadFull(reader, header[:])
-				valid = err == nil
-				_ = reader.Close()
-			}
-		} else if len(value) >= 8 {
-			copy(header[:], value[:8])
-			valid = true
-		}
-		if !valid || int64(binary.BigEndian.Uint64(header[:])) <= now {
-			reclaimed += int64(len(key) + len(value))
-			if err := cursor.Delete(); err != nil {
-				dc.log.Warn("disk cache expiry delete failed", "error", err)
-				break
-			}
-			dc.Evictions.Add(1)
-		}
-		key, value = cursor.Next()
-		if time.Now().After(deadline) {
-			break
-		}
+	if entry, ok := dc.flushing[key]; ok && entry.state != nil {
+		entry.state.cancelled.Store(true)
 	}
-	dc.sweepCursor = append(dc.sweepCursor[:0], key...)
-	return reclaimed
+	if item := dc.index[key]; item != nil {
+		item.invalid = true
+		dc.dirty = true
+	}
+}
+func (dc *DiskCache) requestFlush() {
+	select {
+	case dc.flushRequest <- struct{}{}:
+	default:
+	}
 }
 
 func encodeDiskEntry(entry diskEntry) ([]byte, bool) {
@@ -354,48 +325,79 @@ func encodeDiskEntry(entry diskEntry) ([]byte, bool) {
 	return encoded, true
 }
 
-// Close stops the background flusher, flushes pending writes, and closes the database.
-// Purge deletes all entries from the disk cache. Used by the admin cache-flush
-// endpoint so benchmarks can start from a completely cold state.
+func (dc *DiskCache) Flush() { dc.flushMu.Lock(); defer dc.flushMu.Unlock(); dc.flushLocked() }
+
 func (dc *DiskCache) Purge() {
+	dc.flushMu.Lock()
+	defer dc.flushMu.Unlock()
 	dc.writeMu.Lock()
+	if dc.closed {
+		dc.writeMu.Unlock()
+		return
+	}
 	dc.writeBuf = make(map[string]diskEntry)
+	dc.flushing = nil
+	dc.bufferBytes = 0
+	dc.flushingBytes = 0
+	dc.index = make(map[string]*diskLRUEntry)
+	dc.newest, dc.oldest = nil, nil
+	dc.indexBytes, dc.logicalBytes, dc.nextExpiry = 0, 0, 0
+	dc.dirty = false
 	dc.writeMu.Unlock()
-	_ = dc.db.Update(func(tx *bolt.Tx) error {
-		if err := tx.DeleteBucket(dataBucket); err != nil {
-			return err
+	if err := dc.db.Update(func(tx *bolt.Tx) error {
+		for _, name := range [][]byte{dataBucket, legacyDataBucket} {
+			if err := tx.DeleteBucket(name); err != nil && err != boltErrors.ErrBucketNotFound {
+				return err
+			}
+			if _, err := tx.CreateBucket(name); err != nil {
+				return err
+			}
 		}
-		_, err := tx.CreateBucket(dataBucket)
-		return err
-	})
+		return nil
+	}); err != nil {
+		dc.log.Warn("disk cache purge failed", "error", err)
+	}
 }
 
 func (dc *DiskCache) Close() error {
-	select {
-	case <-dc.done:
-	default:
+	dc.closeOnce.Do(func() {
+		dc.writeMu.Lock()
+		dc.closing = true
+		dc.writeMu.Unlock()
 		close(dc.done)
-	}
-	dc.Flush()
-	return dc.db.Close()
+		<-dc.workerDone
+		dc.flushMu.Lock()
+		for dc.flushLocked() {
+			dc.writeMu.Lock()
+			more := len(dc.writeBuf) > 0 || dc.dirty || (dc.nextExpiry != 0 && dc.nextExpiry <= clockNow().UnixNano())
+			dc.writeMu.Unlock()
+			if !more {
+				break
+			}
+		}
+		dc.writeMu.Lock()
+		dc.closed = true
+		dc.writeMu.Unlock()
+		dc.closeErr = errors.Join(dc.lastFlushErr, dc.db.Close())
+		dc.flushMu.Unlock()
+	})
+	return dc.closeErr
 }
 
-// Size returns the number of entries and bytes on disk.
+// Size reports indexed committed entries and physical file bytes. MaxBytes caps
+// logical encoded key+value bytes; free bbolt pages keep the file high-water mark.
 func (dc *DiskCache) Size() (entries int, bytes int64) {
-	_ = dc.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(dataBucket)
-		entries = b.Stats().KeyN
-		return nil
-	})
-	fi, err := os.Stat(dc.db.Path())
-	if err == nil {
+	dc.writeMu.Lock()
+	entries = len(dc.index)
+	dc.writeMu.Unlock()
+	if fi, err := os.Stat(dc.db.Path()); err == nil {
 		bytes = fi.Size()
 	}
 	dc.BytesOnDisk.Store(bytes)
 	return entries, bytes
 }
-
 func (dc *DiskCache) backgroundFlush(interval time.Duration) {
+	defer close(dc.workerDone)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -404,10 +406,11 @@ func (dc *DiskCache) backgroundFlush(interval time.Duration) {
 			return
 		case <-ticker.C:
 			dc.Flush()
+		case <-dc.flushRequest:
+			dc.Flush()
 		}
 	}
 }
-
 func compress(data []byte) ([]byte, error) {
 	buf := gzipWriteBufferPool.Get().(*bytes.Buffer)
 	buf.Reset()

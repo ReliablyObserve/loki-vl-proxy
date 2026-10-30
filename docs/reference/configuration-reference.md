@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (231), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (236), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -16,10 +16,15 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-cache-ttl` | duration | `1m0s` | `extraArgs.cache-ttl` | Cache TTL for label/metadata queries |
 | `-compat-cache-enabled` | bool | `true` | `extraArgs.compat-cache-enabled` | Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints |
 | `-compat-cache-max-percent` | int | `defaultCompatCachePercent` | `extraArgs.compat-cache-max-percent` | Percent of -cache-max-bytes reserved for the Tier0 compatibility-edge cache (0 disables, max 50) |
-| `-disk-cache-compress` | bool | `true` | `extraArgs.disk-cache-compress` | Gzip compression for disk cache |
+| `-disk-cache-codec` | string | `"s2"` | `extraArgs.disk-cache-codec` | Disk cache codec: s2, zstd, gzip or raw; new records identify their own codec |
+| `-disk-cache-compress` | bool | `true` | `extraArgs.disk-cache-compress` | Compress disk cache values using -disk-cache-codec; false writes raw records |
+| `-disk-cache-flush-bytes` | int64 | `4194304` | `extraArgs.disk-cache-flush-bytes` | Flush after this many queued bytes, including keys and queue overhead |
 | `-disk-cache-flush-interval` | duration | `5s` | `extraArgs.disk-cache-flush-interval` | Write buffer flush interval |
-| `-disk-cache-flush-size` | int | `100` | `extraArgs.disk-cache-flush-size` | Flush write buffer after N entries |
-| `-disk-cache-max-bytes` | int64 | `0` | `extraArgs.disk-cache-max-bytes` | Maximum on-disk L2 cache size in bytes (0 = unlimited) |
+| `-disk-cache-flush-size` | int | `1000` | `extraArgs.disk-cache-flush-size` | Flush write buffer after N entries |
+| `-disk-cache-max-buffer-bytes` | int64 | `16777216` | `extraArgs.disk-cache-max-buffer-bytes` | Maximum pending and flushing bytes combined, including queue overhead |
+| `-disk-cache-max-bytes` | int64 | `0` | `extraArgs.disk-cache-max-bytes` | Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages |
+| `-disk-cache-max-entries` | int | `100000` | `extraArgs.disk-cache-max-entries` | Maximum persisted L2 entries; least recently used entries are evicted |
+| `-disk-cache-max-index-bytes` | int64 | `16777216` | `extraArgs.disk-cache-max-index-bytes` | Maximum estimated L2 recency-index bytes (128 plus key length per entry) |
 | `-disk-cache-min-ttl` | duration | `30s` | `extraArgs.disk-cache-min-ttl` | Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies |
 | `-disk-cache-path` | string | (empty) | `persistence.* (chart-managed)` | Path to L2 disk cache (bbolt). Empty disables. |
 | `-label-values-hot-limit` | int | `200` | `extraArgs.label-values-hot-limit` | Default number of label values returned for empty-query browse requests when indexed cache is enabled |

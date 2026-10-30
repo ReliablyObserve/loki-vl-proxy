@@ -220,6 +220,21 @@ CI splits `test/e2e-compat` into five groups, each on a fresh stack, and runs th
 - E2E test coverage
 - Documentation improvements
 
+## Dependencies and boundary testing
+
+Prefer the standard library and small local helpers for framing, accounting,
+queues and eviction policies. Before adding a module, explain why an existing
+dependency or a small maintainable helper is insufficient, including the
+transitive dependency cost. Keep complex compression and cryptographic
+algorithms in established, pinned libraries; do not replace them with custom
+implementations to reduce module counts.
+
+Changes at disk and peer boundaries need malformed-input and resource-limit
+tests, fuzz seeds, race checks, restart/rollback/purge regression coverage and
+end-to-end evidence. Review allocation and latency changes with matching
+before/after fixtures, and run the dependency vulnerability checks. State
+remaining performance or security limits in the PR evidence.
+
 ## Documentation Policy
 
 `docs/` documents the project as it is: operational and user-facing guides, final

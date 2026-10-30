@@ -18,15 +18,15 @@ flowchart TD
     subgraph Fleet["Proxy Fleet"]
         subgraph P1["Proxy A"]
             L1a["L1 Memory<br/>LRU + TTL"]
-            L2a["L2 Disk<br/>bbolt + gzip"]
+            L2a["L2 Disk<br/>bbolt + S2 / zstd"]
         end
         subgraph P2["Proxy B"]
             L1b["L1 Memory<br/>LRU + TTL"]
-            L2b["L2 Disk<br/>bbolt + gzip"]
+            L2b["L2 Disk<br/>bbolt + S2 / zstd"]
         end
         subgraph P3["Proxy C"]
             L1c["L1 Memory<br/>LRU + TTL"]
-            L2c["L2 Disk<br/>bbolt + gzip"]
+            L2c["L2 Disk<br/>bbolt + S2 / zstd"]
         end
     end
 
@@ -49,6 +49,9 @@ flowchart TD
     style VL fill:#0f3460,color:#fff
     style LB fill:#16213e,color:#fff
 ```
+
+The disk tier uses bounded write batching and an in-memory LRU index. See
+[Disk cache](disk-cache.md) for codec compatibility, defaults and memory/disk budgets.
 
 ## Request Flow
 

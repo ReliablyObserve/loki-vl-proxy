@@ -299,8 +299,8 @@ func TestDiskCache_MaxBytesSkipsFlushEntriesBeyondBudget(t *testing.T) {
 	if _, ok := dc.Get("large"); ok {
 		t.Fatal("expected oversized entry to be skipped")
 	}
-	if dc.Evictions.Load() == 0 {
-		t.Fatal("expected max-bytes skip to increment evictions")
+	if dc.RejectedWrites.Load() == 0 {
+		t.Fatal("expected oversized admission to increment rejected writes")
 	}
 }
 
