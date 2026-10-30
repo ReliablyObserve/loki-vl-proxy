@@ -374,6 +374,10 @@ func (p *Proxy) warmQueryRangeWindowsAsync(
 		maxWarm = len(windows)
 	}
 	toWarm := append([]queryRangeWindow(nil), windows[:maxWarm]...)
+	warmLimit, err := strconv.Atoi(queryLimit)
+	if err != nil || warmLimit <= 0 {
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 		defer cancel()
@@ -383,7 +387,7 @@ func (p *Proxy) warmQueryRangeWindowsAsync(
 				return
 			default:
 			}
-			_, _ = p.fetchQueryRangeWindow(ctx, r, logsqlQuery, queryLimit, 1000, window, shape, categorizedLabels, emitStructuredMetadata)
+			_, _ = p.fetchQueryRangeWindow(ctx, r, logsqlQuery, queryLimit, warmLimit, window, shape, categorizedLabels, emitStructuredMetadata)
 		}
 	}()
 }
@@ -457,7 +461,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 	}
 	defer cancel()
 
-	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, window, shape, categorizedLabels, emitStructuredMetadata)
+	// A later window may be read with only the request's remaining row budget.
+	// Key by that actual backend limit: a shorter fragment cannot answer a
+	// shifted request which needs more rows from the same aligned window.
+	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, windowLimit, window, shape, categorizedLabels, emitStructuredMetadata)
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
@@ -807,6 +814,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 	r *http.Request,
 	logsqlQuery string,
 	queryLimit string,
+	windowLimit int,
 	window queryRangeWindow,
 	shape logQueryShape,
 	categorizedLabels bool,
@@ -814,11 +822,13 @@ func (p *Proxy) queryRangeWindowCacheKey(
 ) string {
 	parts := []string{
 		"query_range_window",
+		"budget-v1",
 		r.Header.Get("X-Scope-OrgID"),
 		logLineCacheKeyVersion,
 		logsqlQuery,
 		r.FormValue("direction"),
 		queryLimit,
+		strconv.Itoa(windowLimit),
 		strconv.FormatInt(window.startNs, 10),
 		strconv.FormatInt(window.endNs, 10),
 		strconv.FormatBool(categorizedLabels),

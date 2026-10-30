@@ -364,7 +364,7 @@ func TestQueryRangeWindowCacheKey_SeparatesParsedStreamShapes(t *testing.T) {
 	window := queryRangeWindow{startNs: 1, endNs: 2}
 	keyFor := func(logql string) string {
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(logql), nil)
-		return p.queryRangeWindowCacheKey(req, `app:="checkout"`, "100", window, newLogQueryShape(logql), false, false)
+		return p.queryRangeWindowCacheKey(req, `app:="checkout"`, "100", 100, window, newLogQueryShape(logql), false, false)
 	}
 	base := keyFor(`{app="checkout"} | json`)
 	for _, other := range []string{

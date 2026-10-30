@@ -321,6 +321,7 @@
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_range_settled_steps_test.go",
+      "test/e2e-compat/query_range_window_budget_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
@@ -869,6 +870,9 @@
       "internal/proxy/unknown_logql_names_test.go",
       "test/e2e-compat/operators_not_in_loki_test.go"
     ],
+    "semantics/query-range-window-budget": [
+      "test/e2e-compat/query_range_window_budget_test.go"
+    ],
     "semantics/scalar-sample-time-units": [
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
@@ -1156,6 +1160,7 @@
       "internal/proxy/vector_agg_series_differential_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/absent_over_time_test.go",
+      "test/e2e-compat/query_range_window_budget_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_over_time_short_range_test.go",
@@ -1165,7 +1170,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 364,
+  "registry_items": 365,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2247,6 +2252,11 @@
       "semantics/unwrap-sum-without-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "test/e2e-compat/query_range_window_budget_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/query-range-window-budget",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -2422,7 +2432,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 241,
+  "tests_with_markers": 242,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2515,5 +2525,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 196
+  "wired_items": 197
 }

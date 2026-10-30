@@ -1,0 +1,42 @@
+id: semantics/query-range-window-budget
+title: A shifted log range does not reuse a window truncated by an earlier request's remaining limit
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  An aligned historical log window can be fetched after earlier windows have
+  consumed part of a query's row limit. That window's backend read is capped
+  by the remaining budget, so its cached rows are not necessarily complete
+  for a later request beginning in that window. The cache key must distinguish
+  the actual backend read limit, including when the original query limit is
+  unchanged. Counting converted rows cannot establish completeness because
+  malformed or filtered backend rows can consume the read budget.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="window-budget-fixture"}'
+    direction: forward
+    limit: '5'
+    start: 'historical-aligned-hour-minus-2h'
+    end: 'historical-aligned-hour-plus-1h'
+compare:
+  mode: exact
+  fields: [data.result]
+  expect: |
+    After the first request populates the aligned window cache, a second
+    request starting at the formerly truncated window returns all five lines
+    in that window, matching Loki. No line is silently omitted.
+gap:
+  status: fixed
+  fixed_by: '#929'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'The failure requires two requests in order: the first primes a residual-budget cache entry and the second shifts its range. A single screenshot cannot prove the cache transition; an API comparison against Loki covers it.'
+  effort: S
+  area: 'internal/proxy/query_range_windowing.go fetchQueryRangeWindow and queryRangeWindowCacheKey'
+  loki: 'Loki query_range limit and results cache semantics'
+  proxy: 'cache key includes actual backend read limit and a version segment'
+  planned_test: 'TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow (internal/proxy); TestCompat_QueryRangeWindowBudget (test/e2e-compat, core)'
+  clusters: []

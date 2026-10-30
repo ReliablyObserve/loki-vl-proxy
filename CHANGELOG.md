@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Shifted log ranges keep their full row limit when reusing aligned windows.**
+  A cached window read with only the previous request's remaining row budget
+  could truncate a later range starting in that window. Window cache entries
+  now include the actual backend read limit in their key, and background
+  warming uses the request's limit.
+
 ## [2.48.0] - 2026-10-30
 
 ### Fixed
