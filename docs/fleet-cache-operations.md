@@ -59,6 +59,32 @@ For equally sized nodes, a balanced, stable workload has a theoretical distinct 
 
 Three nodes with a configured **32 GiB logical disk budget each** therefore offer about **96 GiB at RF=1**, or **48 GiB at RF=2**, before overheads, imbalance, local-only data and capacity reserved for other uses. This is arithmetic, not measured usable or physical storage. Entry/index limits can bind first; bbolt can retain freed pages in its physical file. Historical nonowner records are not migrated away by this change, and existing records are not automatically redistributed when ring membership changes.
 
+## Scaling readers and owners
+
+Adding frontend replicas increases capacity for concurrent requests. Query
+evaluation remains in the receiving proxy; adding proxies does not automatically
+split one query's computation across them. Per-query window and backend fetch
+concurrency are separate mechanisms.
+
+The default Helm DNS discovery selects all pods in the release, so scaling that
+release also changes the ownership ring. To scale readers while keeping a warm
+owner pool fixed, use a separate reader deployment with an owner-only HTTP or
+static discovery list. List individual owner addresses matching their
+`-peer-self` identities, rather than a load-balanced address hiding several
+owners. Both deployments must share the peer token. Consistent backend endpoint
+and authentication configuration is also needed to reuse the same cache keys.
+
+With the default chart NetworkPolicy, enabling peer cache permits TCP 3100 to
+same-release pods. Cross-release or external owners require explicit reader
+egress and owner ingress rules; HTTP discovery also needs access to its registry.
+Readiness does not prove owner discovery or cache warmth: check `/_cache/peers`
+and actual backend reads before treating a new reader as warm.
+
+Owner-pool growth changes placement without transferring existing records.
+Measure cold-reader reuse and owner-ring expansion separately. The three-node
+capacity proof below establishes its bounded workload; linear throughput on
+larger deployments still requires measurement.
+
 ## Which requests reuse work
 
 | Request pattern | Reuse available | Work that may still reach VictoriaLogs |

@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decoded size and checksums, and keep legacy raw/gzip read compatibility. Peer
   responses reuse bounded compression scratch and avoid unnecessary parsing work.
 
+### Fixed
+
+- **Helm permits peer-cache traffic under the default NetworkPolicy.** When
+  peer caching is enabled, TCP 3100 egress is allowed only to same-release pods
+  in the release namespace. Existing backend, DNS and operator egress rules are
+  preserved. External peer pools still require explicit network rules.
+
 ### Security
 
 - **Peer TTLs reject values that overflow duration conversion.** Malformed disk
