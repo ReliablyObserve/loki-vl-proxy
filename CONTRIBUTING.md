@@ -22,8 +22,11 @@ go test ./...
 
 ## Pull Request Evidence Rules
 
-Every pull request must have a current-head **Visual smoke** CI comment with two
-separate kinds of evidence:
+Product pull requests that change the host-built proxy (runtime Go code or its
+module dependencies) must have a current-head **Visual smoke** CI comment with
+two separate kinds of evidence. Release metadata, documentation, CI, test-only,
+chart-only and evidence-harness-only changes skip Visual smoke and performance
+A/B; their relevant static and unit checks still run.
 
 1. **Proof of the actual changes.** Each change visible in Grafana has a targeted
    capture reproducing its trigger, with `main | PR | Loki` screenshots side by
@@ -34,8 +37,8 @@ separate kinds of evidence:
    A deliberately rejected query must show Loki's matching rejection, rather
    than being treated as an unexplained panel error.
 2. **General regression controls.** A fixed, bounded core set of log views,
-   metric graphs and Drilldown pages runs on every PR, including documentation
-   and CI changes. The core set is independent of the PR's selected fix scenes
+   metric graphs and Drilldown pages runs on each eligible product PR.
+   The core set is independent of the PR's selected fix scenes
    and cannot be removed to make the PR pass. Compare the underlying responses,
    series, values and errors as well as the screenshots; new empty panels or
    errors are regressions even when the screenshots look similar.
@@ -91,14 +94,14 @@ python3 scripts/ci/check_changelog_pr.py --base origin/main --head HEAD
 
 ## CI Scope
 
-`change_scope.py` also sorts each changed path into a lane (`lane()`; `classify()` answers whether it is the full product lane). A change runs the jobs of the highest lane any of its paths needs; lint, helm, Security / static, CodeQL and the visual core regression set run in every lane. The visual plan adds targeted proof scenes for the actual change:
+`change_scope.py` also sorts each changed path into a lane (`lane()`; `classify()` answers whether it is the full product lane). A change runs the jobs of the highest lane any of its paths needs; lint, helm, Security / static and CodeQL run in every lane. Separately, `evidence=true` enables Visual smoke, performance A/B and the base-vs-PR quality report only when runtime Go code or module dependencies change. Recognized non-product changes skip these comparisons even when a label forces full CI. Unknown or unreadable paths conservatively retain evidence. Eligible visual plans retain core controls and targeted proof scenes:
 
 | Lane | Paths | Jobs it adds |
 | --- | --- | --- |
 | infra | `.github/`, `scripts/`, `docs/`, `website/`, `examples/`, Markdown at the root and under `bench/` and `test/` (Markdown under `conformance/`, `charts/`, `cmd/`, `internal/`, `pkg/`, `dashboard/` and `alerting/` stays product: a gate reads it or it ships), the benchmark Loki configs, compose files no job starts | none |
-| perf | `bench/ab/` (except the files `bench/visual`, `bench/parity` and the conformance gate read: `stack.py`, `selection.py`, `shapes.json`, the compose overlays) | perf-smoke; the `bench/ab` unit tests run in lint |
-| stack | compose files and configs the CI stacks mount (`test/e2e-compat/loki-local-config.yaml`, `grafana-*.yaml`, `vm*.yml`, `nginx-tail.conf`, the e2e-compat, e2e-fleet and e2e-pipeline compose files) | the jobs that start a stack: e2e-compat, e2e-fleet, e2e-ui, tuple-smoke, compat-*, e2e-pipeline, Security / runtime, visual-smoke, perf-smoke |
-| product | everything else: Go, charts, `go.mod`, `Dockerfile`, the registry, the gates, the classifier and its workflow | all of them |
+| perf | `bench/ab/` (except the files `bench/visual`, `bench/parity` and the conformance gate read: `stack.py`, `selection.py`, `shapes.json`, the compose overlays) | the `bench/ab` unit tests run in lint; harness-only diffs skip runtime comparisons |
+| stack | compose files and configs the CI stacks mount (`test/e2e-compat/loki-local-config.yaml`, `grafana-*.yaml`, `vm*.yml`, `nginx-tail.conf`, the e2e-compat, e2e-fleet and e2e-pipeline compose files) | e2e-compat, e2e-fleet, e2e-ui, tuple-smoke, compat-*, e2e-pipeline and Security / runtime |
+| product | everything else: Go, charts, `go.mod`, `Dockerfile`, the registry, the gates, the classifier and its workflow | full verification; Visual smoke, A/B and the quality report additionally require `evidence=true` |
 
 A path no rule recognises counts as product, and so does an empty file list. Add the `ci-full` label to force a full run. Pushes to `main` always run everything. The bench module tests (they include the check that keeps the benchmark Loki configs equal to the CI one) run in lint, not in the Go unit test job, so a pull request that skips the unit tests still runs them.
 
@@ -108,6 +111,7 @@ A very large change to the proxy re-measures everything once, so that later pull
 
 - It runs for a pull request into `main` whose shipped diff is big (`ships()` paths only, so tests and testdata do not count): more than 1,500 changed lines, or more than 40 files, or at least 150 changed lines in the files every query passes through (`BASELINE_ENTRY_POINTS` in `scripts/ci/change_scope.py`: the route table, the translation entry, the request scope, the cache keys, the middleware and `translator.go`).
 - The `baseline` label forces it (and the full product CI). Add the label, then push or re-run the workflows: the label is read when they run. `ci-full` forces it too, together with the full product CI.
+- The visual, A/B and quality comparisons still require `evidence=true`; labels do not enable them for release, CI, documentation or harness-only diffs.
 - A pull request whose base is not `main` (a stacked one) starts none of these workflows and never gets it. Each layer is judged on its own diff once it targets `main` (retargeting fires `edited`, which these workflows do not listen for, so the run starts with the next push or a re-run): a big change split into layers that are each under the thresholds does not trigger, and several big layers trigger once each. Put the `baseline` label on the last layer of a split refactor.
 - Results are artifacts and a "new baseline candidate" section of the A/B and visual comments: `perf-baseline-candidate` (`over-2x-loki.json`, the above-2x Loki list as it would become, which a person can copy over `bench/ab/history/over-2x-loki.json`; `acceptance-day.json`, a report of the run's distribution; a summary) and `visual-baseline-candidate` (the captures). Nothing is committed to `main`. `bench/ab/history/acceptance.json` is rebuilt from the daily history, so it is not replaced by hand: the next daily run after the merge (it runs whenever a measured path changed on `main`) writes the real new distribution, and the run on the pull request is its preview, measured with the smoke's profile (4 runs, 1h) rather than the daily's (7 runs, up to 24h).
 

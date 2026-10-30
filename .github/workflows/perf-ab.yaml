@@ -45,7 +45,7 @@ jobs:
   perf-smoke:
     name: perf-smoke
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.perf != 'false' }}
+    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}
     runs-on: ubuntu-latest
     # The smoke selects a handful of shapes; the baseline run measures all of them.
     timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}

@@ -42,23 +42,36 @@ def run(files, **kw):
 
 
 class PlanTest(unittest.TestCase):
-    def test_docs_ci_tests_still_run_the_core_regression_set(self):
+    def test_docs_ci_tests_skip_captures(self):
         out = run(["docs/testing.md", ".github/workflows/ci.yaml", "internal/proxy/x_test.go", "CHANGELOG.md"])
-        self.assertTrue(out["run"])
-        self.assertEqual(list(out["entries"]), ["core-logs"])
-        self.assertEqual(out["entries"]["core-logs"]["ranges"], ["1h"])
-        self.assertEqual(out["captures"], 1)
+        self.assertFalse(out["run"])
+        self.assertEqual(out["entries"], {})
+        self.assertEqual(out["captures"], 0)
 
     def test_empty_change_set_still_runs_core(self):
         out = run([])
         self.assertTrue(out["run"])
         self.assertEqual(list(out["entries"]), ["core-logs"])
 
-    def test_tooling_change_runs_the_core_set_only(self):
+    def test_tooling_change_skips_captures(self):
         out = run(["bench/visual/compare.py"])
+        self.assertFalse(out["run"])
+        self.assertEqual(out["captures"], 0)
+
+    def test_release_metadata_skips_captures(self):
+        out = run(["CHANGELOG.md", "README.md", "charts/loki-vl-proxy/Chart.yaml"])
+        self.assertFalse(out["run"])
+        self.assertEqual(out["entries"], {})
+
+    def test_mixed_product_and_ci_keeps_core_controls(self):
+        out = run(["internal/cache/cache.go", ".github/workflows/ci.yaml"])
         self.assertTrue(out["run"])
-        self.assertEqual({k: v["ranges"] for k, v in out["entries"].items()}, {"core-logs": ["1h"]})
-        self.assertEqual(out["captures"], 1)
+        self.assertIn("core-logs", out["entries"])
+
+    def test_registry_only_skips_fix_captures(self):
+        out = run(["conformance/registry/cases/semantics/case-a.yaml"], cases=["semantics/case-a"], case_gaps=GAPS)
+        self.assertFalse(out["run"])
+        self.assertEqual(out["entries"], {})
 
     def test_code_selects_the_entries_that_cover_it(self):
         out = run(["internal/proxy/ordered_json_metric.go"])
@@ -87,8 +100,8 @@ class PlanTest(unittest.TestCase):
         self.assertIn("core-logs", out["entries"])
 
     def test_fix_proof_is_selected_first_at_all_ranges_when_a_case_changes(self):
-        out = run(["conformance/registry/cases/semantics/case-a.yaml"], cases=["semantics/case-a"], case_gaps=GAPS)
-        self.assertTrue(out["run"])  # a registry-only change runs nothing else, but a fix proof runs
+        out = run(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-a.yaml"], cases=["semantics/case-a"], case_gaps=GAPS)
+        self.assertTrue(out["run"])
         self.assertEqual(list(out["entries"])[:2], ["fix-page", "fix-page-2"])
         self.assertEqual(out["entries"]["fix-page"]["ranges"], ["15m", "1h"])  # fix proof: ranges Loki holds
         self.assertEqual(out["entries"]["fix-page"]["why"], ["fix proof: semantics/case-a"])
@@ -96,7 +109,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(out["fix_cases"]["semantics/case-a"]["entries"], ["fix-page", "fix-page-2"])
 
     def test_untouched_cases_are_not_selected(self):
-        out = run(["conformance/registry/cases/semantics/case-b.yaml"], cases=["semantics/case-b"], case_gaps=GAPS)
+        out = run(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-b.yaml"], cases=["semantics/case-b"], case_gaps=GAPS)
         self.assertEqual(list(out["entries"]), ["fix-page-2", "core-logs"])  # fix proof first, then the core set
         self.assertNotIn("fix-page", out["entries"])
         out = run(["internal/proxy/ordered_json_metric.go"])  # code change, no case: pages are selected by code only
@@ -115,13 +128,13 @@ class PlanTest(unittest.TestCase):
 
     def test_new_open_case_without_an_entry_is_not_reported(self):
         gaps = {"semantics/case-z": {"status": "open", "impact": "explore-visible"}}
-        out = run(["conformance/registry/cases/semantics/case-z.yaml"], cases=["semantics/case-z"], case_gaps=gaps)
+        out = run(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-z.yaml"], cases=["semantics/case-z"], case_gaps=gaps)
         self.assertEqual(out["fix_cases"], {})
         self.assertTrue(out["run"])
         self.assertEqual(list(out["entries"]), ["core-logs"])
 
     def test_exempt_or_unlisted_case_is_reported_without_entries(self):
-        out = run(["conformance/registry/cases/semantics/case-c.yaml"], cases=["semantics/case-c"], case_gaps=GAPS)
+        out = run(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-c.yaml"], cases=["semantics/case-c"], case_gaps=GAPS)
         self.assertTrue(out["run"])
         self.assertEqual(list(out["entries"]), ["core-logs"])
         self.assertEqual(out["fix_cases"]["semantics/case-c"]["exempt"], "api-only")
@@ -165,7 +178,7 @@ class PlanTest(unittest.TestCase):
     def test_fix_captures_beyond_the_budget_narrow_to_the_core_range_and_are_never_dropped(self):
         spec = {**SPEC, "pages": SPEC["pages"] + [
             {"id": f"extra-{n}", "kind": "explore", "covers": ["case-only"], "fixes": ["semantics/case-a"]} for n in range(10)]}
-        out = plan.plan(["conformance/registry/cases/semantics/case-a.yaml"], spec=spec, items=ITEMS,
+        out = plan.plan(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-a.yaml"], spec=spec, items=ITEMS,
                         cases=["semantics/case-a"], case_gaps=GAPS, max_captures=1)
         self.assertEqual(len(out["entries"]) - 1, 12)  # every fix entry still there, plus the core set
         # a fix-only entry is captured at the ranges Loki holds (15m, 1h): 9 entries fill the 18-capture budget
@@ -180,11 +193,11 @@ def git(repo, *a):
 
 
 class BaselinePlanTest(unittest.TestCase):
-    def test_real_core_covers_logs_drilldown_rate_unwrap_rank_and_binary_on_every_pr(self):
+    def test_real_core_covers_product_changes(self):
         expected = {"explore-logs-plain", "explore-metric-plain", "dd-landing",
                     "dd-service-logs", "dd-fields", "lvl-explore-rate-errors-by-service",
                     "explore-unwrap-sum", "explore-topk-by-per-step", "explore-sum-by-over-binary"}
-        for files in ([], ["README.md"], [".github/workflows/ci.yaml"], ["internal/proxy/proxy.go"]):
+        for files in ([], ["internal/cache/cache.go"], ["internal/proxy/proxy.go"], ["go.mod"]):
             result = plan.plan(files, max_captures=1)
             self.assertTrue(result["run"])
             core = {page for page, entry in result["entries"].items() if entry["core"]}
@@ -203,7 +216,7 @@ class BaselinePlanTest(unittest.TestCase):
         self.assertEqual(actual, expected)
         gaps = {case: {"status": "fixed", "impact": "explore-visible"}}
         for result in (plan.plan_all(spec, cases=[case], case_gaps=gaps),
-                       plan.plan(["conformance/registry/cases/semantics/proxy-accepts-operators-not-in-loki.yaml"],
+                       plan.plan(["internal/cache/cache.go", "conformance/registry/cases/semantics/proxy-accepts-operators-not-in-loki.yaml"],
                                  spec=spec, cases=[case], case_gaps=gaps, max_captures=1)):
             self.assertEqual(set(result["fix_cases"][case]["entries"]), expected)
             self.assertTrue(all(result["entries"][page]["ranges"] == ["1h"] for page in expected))

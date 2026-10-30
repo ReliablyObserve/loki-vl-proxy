@@ -58,9 +58,9 @@ jobs:
   visual-smoke:
     name: visual-smoke
     needs: [scope]
-    # Every pull request runs the core Grafana regression set, including docs and CI-only changes.
-    # Scope still decides whether the larger baseline is required.
-    if: ${{ !cancelled() && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
+    # Only runtime changes can produce a meaningful before/after Grafana proof.
+    # A forced CI/baseline label does not make a docs or CI-only diff measurable.
+    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
     runs-on: ubuntu-latest
     # The planned pages of a change are a few captures; the baseline run captures every page.
     timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}

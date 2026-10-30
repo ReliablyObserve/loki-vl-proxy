@@ -21,15 +21,15 @@ few product jobs verify. A change runs the jobs of the highest lane any of its
 paths needs:
 
     infra    lint, helm, Security / static, CodeQL (always on, every lane)
-    perf     + perf-smoke
+    perf     + the performance lane (A/B separately requires evidence)
     stack    + every job that starts a compose stack (image, tuple-smoke,
                e2e-compat, e2e-fleet, e2e-ui, e2e-pipeline, the compat-*
                pinned jobs, Security / runtime, visual-smoke)
     product  + the Go unit tests, race, fuzz, bench, conformance, quality report
 
-The lanes are cumulative, so the CLI reports three flags, each "false" only when
-the lane's jobs may be skipped: product=false (no Go-level job), stack=false
-(no stack job), perf=false (no perf-smoke). A lane rule sits after the infra
+The lanes are cumulative, so the CLI reports three lane flags, each "false"
+only when the lane's jobs may be skipped: product=false (no Go-level job),
+stack=false (no stack job), perf=false (no performance-lane job). A lane rule sits after the infra
 table, so a path an infra rule names stays infra, and every path that matches
 no rule at all is product.
 
@@ -53,6 +53,11 @@ gets the baseline, label or not: it pays once, when the stack lands. Where the
 lane flags fail towards running more, baseline fails towards running less: an
 error, an empty diff or an unreadable label list reports baseline=false.
 
+`evidence` is independent of the CI lanes and labels: it is true when runtime
+Go code or the module graph changes, so visual, A/B and quality proofs can
+measure the change. A forced product run on CI, release or docs files still has
+evidence=false. Empty, invalid and unknown path lists fail toward evidence.
+
 A second, narrower question is whether a change SHIPS: whether it alters
 something users receive (the proxy binary, the container image, the Helm
 chart, the dashboards and alert rules). Only a change that ships cuts a
@@ -66,8 +71,8 @@ Usage:
     git diff --name-only TAG..HEAD | change_scope.py --files-from - --ships
 
 The CLI always exits 0 once it can report a result. On an empty list or any
-internal error it reports product=true, stack=true and perf=true, and
-baseline=false. With --ships it reports
+internal error it reports product=true, stack=true, perf=true and evidence=true,
+and baseline=false. With --ships it reports
 ships=true|false instead: an empty list or an internal error reports
 ships=true, as the release bot always has, and the bot's own checks (the
 changelog and the release labels) stay the deciding gate in that case.
@@ -360,6 +365,38 @@ def scope(paths):
     return scope_lane(paths) == PRODUCT
 
 
+def product_evidence(paths):
+    """Whether a PR changes runtime code the visual, A/B and quality jobs measure.
+
+    This is deliberately independent of the CI lanes: gate machinery, labels
+    and test-only changes can force product CI without changing the proxy. An
+    empty, invalid or unrecognized path fails toward collecting evidence.
+    """
+    if not paths:
+        return True
+    for path in paths:
+        clean = normalize(path)
+        if clean is None:
+            return True
+        if clean in ("go.mod", "go.sum"):
+            return True
+        if any(glob_match(root, clean) for root in GO_ROOTS):
+            if clean.endswith(".go") and ships(clean):
+                return True
+            continue
+        # Other shipped files (chart, image, dashboard, alerts) are not inputs
+        # to the host-built proxy in either evidence harness.
+        if ships(clean):
+            continue
+        # These default to the product CI lane but are evidence/test inputs,
+        # not a change to the runtime being measured.
+        if clean.startswith(("bench/", "conformance/", "test/")):
+            continue
+        if lane(clean)[1] == DEFAULT_RULE:
+            return True
+    return False
+
+
 def ships(path):
     """True when the path is part of something users receive.
 
@@ -507,13 +544,13 @@ def build_parser():
     return parser
 
 
-FLAG_NAMES = ("product", "stack", "perf", "baseline")
+FLAG_NAMES = ("product", "stack", "perf", "baseline", "evidence")
 # What an error reports: every lane on, the baseline off.
-ALL_TRUE = {"product": True, "stack": True, "perf": True, "baseline": False}
+ALL_TRUE = {"product": True, "stack": True, "perf": True, "baseline": False, "evidence": True}
 
 
 def emit(value, github_output, name="product"):
-    """Report one flag, or (name="lanes") the three lane flags of a dict."""
+    """Report one flag, or (name="lanes") all scope outputs of a dict."""
     if name == "lanes":
         lines = ["%s=%s" % (key, str(value.get(key, False)).lower()) for key in FLAG_NAMES]
     else:
@@ -571,6 +608,8 @@ def main(argv=None):
             note = "No changed paths were provided, so the change counts as product."
         else:
             flags = lane_flags(scope_lane(paths))
+        if paths:
+            flags["evidence"] = product_evidence(paths)
         # Fails towards the cheaper answer: no paths, no diff or any error is no baseline.
         if paths and args.base_ref:
             numstat = []

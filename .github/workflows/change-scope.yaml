@@ -5,9 +5,11 @@ name: Change scope
 #   product  the Go unit tests, race, fuzz, bench, conformance and the quality
 #            report: the paths that change the proxy or its evidence
 #   stack    every job that starts a compose stack (a superset of product)
-#   perf     the A/B smoke (a superset of stack)
-#   baseline the heavy re-measure that can become the new baseline: every A/B set,
-#            every visual page and the whole VictoriaLogs matrix. "true" only for
+#   perf     the performance lane (a superset of stack); A/B itself also needs evidence
+#   evidence runtime Go/module changes that visual, A/B and quality can measure;
+#            independent of the cumulative lanes and forced CI labels
+#   baseline the heavy re-measure that can become the new baseline: every A/B set
+#            and visual page when evidence=true, plus the VictoriaLogs matrix. "true" only for
 #            a pull request into main that carries the `baseline` or `ci-full` label or whose
 #            shipped diff is big (change_scope.py: BASELINE_*); never for a stacked
 #            pull request. Fails the other way round: any doubt is "false".
@@ -34,9 +36,15 @@ on:
         value: ${{ jobs.scope.outputs.stack }}
       perf:
         description: >-
-          "false" only when no changed path needs the A/B smoke
-          (stack implies perf); "true" otherwise.
+          "false" only when no changed path needs the performance lane
+          (stack implies perf); A/B separately requires evidence=true.
         value: ${{ jobs.scope.outputs.perf }}
+      evidence:
+        description: >-
+          "true" for runtime Go/module changes or an unreadable/unknown diff;
+          "false" for recognized CI, release, docs and test-only changes,
+          even when ci-full or baseline forces the product CI lanes.
+        value: ${{ jobs.scope.outputs.evidence }}
       baseline:
         description: >-
           "true" only for a pull request into main with the baseline or ci-full
@@ -58,6 +66,7 @@ jobs:
       product: ${{ steps.result.outputs.product }}
       stack: ${{ steps.result.outputs.stack }}
       perf: ${{ steps.result.outputs.perf }}
+      evidence: ${{ steps.result.outputs.evidence }}
       baseline: ${{ steps.result.outputs.baseline }}
     steps:
       - name: Decide whether the classifier applies
@@ -98,7 +107,7 @@ jobs:
               {
                 echo "### Change scope"
                 echo
-                echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\`, \`baseline=false\` ($reason)."
+                echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\`, \`evidence=true\`, \`baseline=false\` ($reason)."
               } >> "$GITHUB_STEP_SUMMARY"
             fi
           else
@@ -146,15 +155,18 @@ jobs:
           CLASSIFIED_PRODUCT: ${{ steps.classify.outputs.product }}
           CLASSIFIED_STACK: ${{ steps.classify.outputs.stack }}
           CLASSIFIED_PERF: ${{ steps.classify.outputs.perf }}
+          CLASSIFIED_EVIDENCE: ${{ steps.classify.outputs.evidence }}
           CLASSIFIED_BASELINE: ${{ steps.classify.outputs.baseline }}
         run: |
           # A lane is skipped only on an explicit "false" from a classifier that
           # ran, on a pull request that is not forced; anything else keeps it.
+          # Evidence is independent of the forced lanes and labels.
           # The baseline goes the other way: only an explicit "true" from a
           # classifier that ran on a pull request diff.
           product=true
           stack=true
           perf=true
+          evidence=true
           baseline=false
           if [ "$GATE_OUTCOME" = "success" ] && [ "$DIFF" = "true" ] \
              && [ "$CLASSIFY_OUTCOME" = "success" ]; then
@@ -164,6 +176,7 @@ jobs:
               if [ "$CLASSIFIED_PERF" = "false" ]; then perf=false; fi
             fi
             if [ "$CLASSIFIED_BASELINE" = "true" ]; then baseline=true; fi
+            if [ "$CLASSIFIED_EVIDENCE" = "false" ]; then evidence=false; fi
           fi
           # The lanes are nested: a lane that runs keeps the ones below it, and
           # the baseline is a product run.
@@ -174,6 +187,7 @@ jobs:
             echo "product=$product"
             echo "stack=$stack"
             echo "perf=$perf"
+            echo "evidence=$evidence"
             echo "baseline=$baseline"
           } >> "$GITHUB_OUTPUT"
-          echo "Change scope: product=$product stack=$stack perf=$perf baseline=$baseline"
+          echo "Change scope: product=$product stack=$stack perf=$perf evidence=$evidence baseline=$baseline"

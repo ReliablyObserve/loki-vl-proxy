@@ -67,9 +67,9 @@ class SelectTest(unittest.TestCase):
             result = pick([path])
             self.assertEqual(result["sets"], {"control": ["logs plain", "json volume", "rate"]}, path)
 
-    def test_harness_change_runs_smoke(self):
+    def test_harness_change_skips_smoke(self):
         for path in ("bench/ab/perf_matrix.py", "test/e2e-compat/log-generator.py", ".github/workflows/perf-ab.yaml"):
-            self.assertEqual(pick([path])["sets"], {"control": ["logs plain"]}, path)
+            self.assertFalse(pick([path])["run"], path)
 
     def test_bench_tests_are_not_harness(self):
         self.assertFalse(pick(["bench/ab/tests/test_selection.py"])["run"])
