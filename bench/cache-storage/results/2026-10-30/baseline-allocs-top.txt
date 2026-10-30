@@ -1,0 +1,17 @@
+File: cache.test
+Type: alloc_space
+Time: 2026-10-30 20:56:03 CET
+Showing nodes accounting for 15656.86MB, 99.36% of 15757.50MB total
+Dropped 100 nodes (cum <= 78.79MB)
+Showing top 10 nodes out of 41
+      flat  flat%   sum%        cum   cum%
+12660.01MB 80.34% 80.34% 12660.01MB 80.34%  github.com/klauspost/compress/flate.(*dictDecoder).init (inline)
+ 1252.71MB  7.95% 88.29% 13912.73MB 88.29%  github.com/klauspost/compress/flate.NewReaderOpts
+  803.28MB  5.10% 93.39%   803.28MB  5.10%  github.com/klauspost/compress/flate.(*huffmanDecoder).init
+  258.17MB  1.64% 95.03% 14170.90MB 89.93%  github.com/klauspost/compress/gzip.NewReader (inline)
+  188.92MB  1.20% 96.23%   188.92MB  1.20%  github.com/klauspost/compress/flate.newFastEnc (inline)
+  188.37MB  1.20% 97.42%   188.37MB  1.20%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.encodeDiskEntry (inline)
+  138.52MB  0.88% 98.30%   138.52MB  0.88%  github.com/klauspost/compress/flate.(*fastGen).addBlock
+  130.55MB  0.83% 99.13%   356.77MB  2.26%  github.com/klauspost/compress/flate.NewWriter (inline)
+   29.79MB  0.19% 99.32%   226.22MB  1.44%  github.com/klauspost/compress/flate.(*compressor).init
+    6.53MB 0.041% 99.36% 13894.03MB 88.17%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*DiskCache).Set

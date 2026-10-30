@@ -1,0 +1,28 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │                     sec/op                     │        sec/op         vs base               │
+DiskPolicyCommittedBatch-18                                    7933.1µ ± 12%           319.7µ ± 27%  -95.97% (p=0.002 n=6)
+
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │                      B/s                       │        B/s          vs base                 │
+DiskPolicyCommittedBatch-18                                    49.24Mi ± 10%      1221.99Mi ± 21%  +2381.79% (p=0.002 n=6)
+
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │              committedrecords/op               │   committedrecords/op     vs base           │
+DiskPolicyCommittedBatch-18                                       100.0 ± 0%                 100.0 ± 0%  ~ (p=1.000 n=6) ¹
+¹ all samples are equal
+
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │               writecalls/record                │   writecalls/record    vs base              │
+DiskPolicyCommittedBatch-18                                      68.11m ± 1%             65.37m ± 0%  -4.02% (p=0.002 n=6)
+
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │                      B/op                      │         B/op          vs base               │
+DiskPolicyCommittedBatch-18                                  27580.1Ki ± 43%           106.1Ki ± 0%  -99.62% (p=0.002 n=6)
+
+                            │ cache-disk-committed-baseline.txt │ cache-disk-committed-final.txt │
+                            │                   allocs/op                    │      allocs/op        vs base               │
+DiskPolicyCommittedBatch-18                                     6855.5 ± 40%             999.0 ± 0%  -85.43% (p=0.002 n=6)
