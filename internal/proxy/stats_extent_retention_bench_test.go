@@ -12,6 +12,23 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
+// The returned bytes are identical, so compare the warm codec read without
+// the changing cache state of the whole-handler moving-window benchmark.
+func BenchmarkStatsExtentDecodeOwned(b *testing.B) {
+	fixture := statsRetentionFixture(10000, false)
+	encoded, err := encodeStatsExtentChunk(fixture)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		decoded, err := decodeStatsExtentChunk(encoded)
+		if err != nil || decoded.from != fixture.from {
+			b.Fatalf("decoded extent: %v", err)
+		}
+	}
+}
+
 // Run with -benchtime=1x in a fresh process. The custom heap metric is a
 // post-GC retained delta, not allocation throughput or process RSS. RAM and
 // the disk queue hold the same value, not two independent payload copies.
