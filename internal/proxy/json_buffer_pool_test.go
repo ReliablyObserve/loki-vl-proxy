@@ -119,6 +119,34 @@ func TestResetFJParserClearsFailedParse(t *testing.T) {
 	}
 }
 
+func TestResetFJParserUsesLargestInputAfterSmallParse(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("first_parse_failed=%v", failed), func(t *testing.T) {
+			parser := &fj.Parser{}
+			large := `{"large":"` + strings.Repeat("x", maxPooledStatsParserInputSize+1)
+			if !failed {
+				large += `"}`
+			}
+			largest := len(large)
+			if _, err := parser.Parse(large); (err != nil) != failed {
+				t.Fatalf("first parse err=%v, want failure=%v", err, failed)
+			}
+			if _, err := parser.Parse(`{"small":42}`); err != nil {
+				t.Fatal(err)
+			}
+			// Fastjson keeps its previous working-copy capacity after a small
+			// parse. Returning by the last input's length would retain it.
+			if reflect.ValueOf(*parser).FieldByName("b").Cap() <= maxPooledStatsParserInputSize {
+				t.Fatal("fixture must retain oversized parser storage after the small parse")
+			}
+			resetFJParserForReuse(parser, largest)
+			if !reflect.ValueOf(*parser).IsZero() {
+				t.Fatal("maximum input size must clear state even after a later small parse")
+			}
+		})
+	}
+}
+
 func TestStatsJSONOutputIndependentOfPoolReuse(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)

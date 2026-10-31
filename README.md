@@ -99,7 +99,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 | Endpoints whose registry state is `proven` | **11 of 33** (33%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 23 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
-| Known differences from Loki (ranked) | **88**: 68 open, 12 documented, 6 owner-kept, 2 upstream |
+| Known differences from Loki (ranked) | **87**: 67 open, 12 documented, 6 owner-kept, 2 upstream |
 
 The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected). Differences kept on purpose are listed as documented or owner-kept.
 

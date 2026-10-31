@@ -3,7 +3,7 @@
 Measured on 2026-10-31 with Go 1.27.3, Linux/arm64 proxy binaries, Loki 3.7.9
 and VictoriaLogs 1.52.0 in an isolated Docker stack. The baseline is main
 `27ee67a14c1b56ec4bf7a3bd8dd869e42ba6ad25`. Candidate binary SHA-256:
-`3026221d5e402e5e428c9fb69e79c4ab5f8bc623cdf87a503ff16e49a6d3f228`.
+`f32086ca03fc7d752d880eb873d6e63797a5df7ff756730a686fbedbcc38bc58`.
 Both binaries use `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath
 -ldflags="-s -w" ./cmd/proxy`; their hashes are recorded in the summaries.
 
@@ -17,12 +17,12 @@ and correctness evidence, not a controlled latency comparison.
 
 | Build and range | Requests with complete Loki-matching answers | Sampled peak RSS | Outcome |
 |---|---:|---:|---|
-| Main, 12h | 3 / 6 | 2,038 MiB | OOM flag; three connections lost |
-| Candidate, 12h | 6 / 6 | 745 MiB | Running, no OOM |
-| Candidate, 48h | 6 / 6 | 844 MiB | Running, no OOM |
+| Main, 12h | 3 / 6 | 2,035 MiB | OOM flag; three connections lost |
+| Candidate, 12h | 6 / 6 | 554 MiB | Running, no OOM |
+| Candidate, 48h | 6 / 6 | 661 MiB | Running, no OOM |
 
 The initial main reproduction also ended with Docker `OOMKilled=true` and
-exit 137; its state is retained in `main-initial-oom-state.json`. The repeated
+exit 137; its state is retained in `main-initial-oom-state.json`. The final public-harness
 main control above reproduced the OOM flag and failed requests with already
 warm backends. Every successful main response also matched Loki.
 

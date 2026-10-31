@@ -121,7 +121,8 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 	// place (eachBucketPoint) and only each series' labels are parsed, with a
 	// pooled parser, as collectRangeMetricHits reads its buckets.
 	parser := statsQRFJPool.Get()
-	defer statsQRFJPool.Put(parser)
+	largestMetricInput := 0
+	defer func() { releaseFJParser(&statsQRFJPool, parser, largestMetricInput) }()
 	var resultErr error
 	_, _ = jsonparser.ArrayEach(body, func(res []byte, _ jsonparser.ValueType, _ int, _ error) {
 		if resultErr != nil {
@@ -131,6 +132,9 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 			return
 		}
 		metricRaw, _, _, _ := jsonparser.Get(res, "metric")
+		if len(metricRaw) > largestMetricInput {
+			largestMetricInput = len(metricRaw)
+		}
 		metric, err := parser.ParseBytes(metricRaw)
 		if err != nil {
 			resultErr = fmt.Errorf("parse stats response: %w", err)
