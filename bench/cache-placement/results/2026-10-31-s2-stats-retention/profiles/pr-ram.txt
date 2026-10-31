@@ -1,0 +1,50 @@
+File: s2-pr.test
+Type: inuse_space
+Time: 2026-10-31 20:19:19 CET
+Showing nodes accounting for 59.36MB, 100% of 59.36MB total
+      flat  flat%   sum%        cum   cum%
+   13.72MB 23.12% 23.12%    13.72MB 23.12%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.encodeStatsExtentChunk
+   12.78MB 21.52% 44.65%    12.78MB 21.52%  github.com/klauspost/compress/flate.(*fastGen).Reset
+   11.36MB 19.14% 63.79%    11.36MB 19.14%  bytes.growSlice
+    8.96MB 15.09% 78.88%    18.76MB 31.61%  github.com/klauspost/compress/flate.NewWriter (inline)
+    5.32MB  8.96% 87.84%     9.81MB 16.52%  github.com/klauspost/compress/flate.(*compressor).init
+    3.99MB  6.71% 94.56%     3.99MB  6.71%  github.com/klauspost/compress/flate.newFastEnc (inline)
+    1.20MB  2.02% 96.57%     1.20MB  2.02%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.statsRetentionFixture
+       1MB  1.69% 98.26%        1MB  1.69%  runtime.mallocgc
+    0.53MB   0.9% 99.16%     0.53MB   0.9%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).storeEntryLocked
+    0.50MB  0.84%   100%     0.50MB  0.84%  github.com/klauspost/compress/flate.newHuffmanEncoder (inline)
+         0     0%   100%    11.36MB 19.14%  bytes.(*Buffer).Write
+         0     0%   100%    11.36MB 19.14%  bytes.(*Buffer).grow
+         0     0%   100%    11.36MB 19.14%  fmt.Fprintf
+         0     0%   100%     0.53MB   0.9%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).SetWithTTL (inline)
+         0     0%   100%     0.53MB   0.9%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).setPlacedWithTTL
+         0     0%   100%     0.53MB   0.9%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).setWithTTL (inline)
+         0     0%   100%    31.54MB 53.14%  github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.init
+         0     0%   100%    31.54MB 53.14%  github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.init.func2 (inline)
+         0     0%   100%    15.45MB 26.03%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.BenchmarkStatsExtentRetainedCache.func1
+         0     0%   100%    11.36MB 19.14%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.init
+         0     0%   100%    11.36MB 19.14%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.makeNDJSONLines
+         0     0%   100%    12.78MB 21.52%  github.com/klauspost/compress/flate.(*Writer).Reset
+         0     0%   100%    12.78MB 21.52%  github.com/klauspost/compress/flate.(*compressor).reset
+         0     0%   100%     0.50MB  0.84%  github.com/klauspost/compress/flate.newHuffmanBitWriter
+         0     0%   100%    18.76MB 31.61%  github.com/klauspost/compress/gzip.(*Writer).Flush
+         0     0%   100%    12.78MB 21.52%  github.com/klauspost/compress/gzip.(*Writer).Reset (inline)
+         0     0%   100%    18.76MB 31.61%  github.com/klauspost/compress/gzip.(*Writer).Write
+         0     0%   100%    12.78MB 21.52%  github.com/klauspost/compress/gzip.(*Writer).init
+         0     0%   100%     0.50MB  0.84%  runtime.(*scavengerState).init
+         0     0%   100%     0.50MB  0.84%  runtime.allocm
+         0     0%   100%     0.50MB  0.84%  runtime.bgscavenge
+         0     0%   100%    42.90MB 72.28%  runtime.doInit (inline)
+         0     0%   100%    42.90MB 72.28%  runtime.doInit1
+         0     0%   100%    42.90MB 72.28%  runtime.main
+         0     0%   100%     0.50MB  0.84%  runtime.mstart
+         0     0%   100%     0.50MB  0.84%  runtime.mstart0
+         0     0%   100%     0.50MB  0.84%  runtime.mstart1
+         0     0%   100%     0.50MB  0.84%  runtime.newm
+         0     0%   100%        1MB  1.69%  runtime.newobject
+         0     0%   100%     0.50MB  0.84%  runtime.resetspinning
+         0     0%   100%     0.50MB  0.84%  runtime.schedule
+         0     0%   100%     0.50MB  0.84%  runtime.startm
+         0     0%   100%     0.50MB  0.84%  runtime.wakep
+         0     0%   100%    15.45MB 26.03%  testing.(*B).run1.func1
+         0     0%   100%    15.45MB 26.03%  testing.(*B).runN

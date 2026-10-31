@@ -1113,7 +1113,15 @@ func encodeStatsExtentChunk(c *statsExtentChunk) ([]byte, error) {
 			b = appendStatsExtentBytes(b, point.raw)
 		}
 	}
-	return s2.Encode(nil, b), nil
+	encoded := s2.Encode(nil, b)
+	if cap(encoded) != len(encoded) {
+		// Cache owners charge len, but retain the entire backing allocation.
+		// Release S2's worst-case output capacity before handing it to them.
+		compact := make([]byte, len(encoded))
+		copy(compact, encoded)
+		encoded = compact
+	}
+	return encoded, nil
 }
 
 func appendStatsExtentBytes(b, v []byte) []byte {

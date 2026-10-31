@@ -205,6 +205,9 @@ jobs:
       - name: Fuzz smoke (stats series JSON compatibility)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzStatsJSONSeriesTransformDifferential$' -fuzztime=12s
 
+      - name: Fuzz smoke (owned stats extent encoding)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzStatsExtentOwnedEncoding$' -fuzztime=12s
+
       - name: Fuzz smoke (Loki client error mapping)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzLokiClientError$' -fuzztime=12s
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Compressed stats cache entries release excess backing storage.**
+  Stats extents retain an owned buffer sized to their S2-encoded length instead
+  of the codec's worst-case output allocation. This reduces memory retained by
+  RAM entries and pending disk/peer writes without changing stored bytes,
+  keys, deadlines or cache placement. Compaction adds an allocation and copy
+  when output has excess capacity; logical cache budgets are unchanged.
+
 ## [2.53.0] - 2026-10-31
 
 ### Fixed

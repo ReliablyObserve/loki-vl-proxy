@@ -1,0 +1,639 @@
+{
+  "cell_files": [
+    {
+      "cell": {
+        "ID": "native-exact-rf1-tier0false-repeat0",
+        "Index": 61,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "exact",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          122,
+          123
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-exact-rf1-tier0false-repeat0.json",
+      "path": "main/native-exact-rf1-tier0false-repeat0.json.gz",
+      "sha256": "9f180639358c2bc70c93a89104b5cd0c6fdf71fd495e90d91cd77bd2c7b13f22",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.388729,
+            "loki_p95_ms": 1.7816190499999989,
+            "proxy_p50_ms": 0.17881249999999999,
+            "proxy_p95_ms": 0.23956844999999996,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-exact-rf2-tier0false-repeat0",
+        "Index": 63,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "exact",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          126,
+          127
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-exact-rf2-tier0false-repeat0.json",
+      "path": "main/native-exact-rf2-tier0false-repeat0.json.gz",
+      "sha256": "3011f0105e8fe54f55e76c7adf6cbd7c2fdc47c72fcd6dbc48e70c6726f7c811",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.6146875,
+            "loki_p95_ms": 2.1044253,
+            "proxy_p50_ms": 0.225875,
+            "proxy_p95_ms": 0.2944520499999999,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-shifted-rf1-tier0false-repeat0",
+        "Index": 65,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "shifted",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          130,
+          131
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-shifted-rf1-tier0false-repeat0.json",
+      "path": "main/native-shifted-rf1-tier0false-repeat0.json.gz",
+      "sha256": "219d2f2e0ae33cd33bf9f3c18a1c2bd04bda68bdee260bd01947e06c8a46d794",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 3.671333,
+            "loki_p95_ms": 4.893787799999999,
+            "proxy_p50_ms": 6.0067915,
+            "proxy_p95_ms": 7.14289585,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-shifted-rf2-tier0false-repeat0",
+        "Index": 67,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "shifted",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          134,
+          135
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-shifted-rf2-tier0false-repeat0.json",
+      "path": "main/native-shifted-rf2-tier0false-repeat0.json.gz",
+      "sha256": "42d0ef84b6fbc2c5f2a6426bf7700ea4cc50d3af0cd72eaa2ee7604d3b31f132",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 2.8014374999999996,
+            "loki_p95_ms": 4.510635399999999,
+            "proxy_p50_ms": 4.672333500000001,
+            "proxy_p95_ms": 6.7524086500000005,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-refresh-rf1-tier0false-repeat0",
+        "Index": 69,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "refresh",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          138,
+          139
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-refresh-rf1-tier0false-repeat0.json",
+      "path": "main/native-refresh-rf1-tier0false-repeat0.json.gz",
+      "sha256": "fc365343b7df14b3b6a843a762fed9d1fe7fba82df4cdaac2987f74b971d1cb2",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 3.416875,
+            "loki_p95_ms": 6.023487499999998,
+            "proxy_p50_ms": 6.5458955,
+            "proxy_p95_ms": 7.8258708,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-refresh-rf2-tier0false-repeat0",
+        "Index": 71,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "refresh",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          142,
+          143
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-refresh-rf2-tier0false-repeat0.json",
+      "path": "main/native-refresh-rf2-tier0false-repeat0.json.gz",
+      "sha256": "3730cbf7bef7465083bcc1cec552949dfe2c3d55758d10d32245f23d15c69fd2",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 3.3105415000000002,
+            "loki_p95_ms": 4.023656249999998,
+            "proxy_p50_ms": 6.155271,
+            "proxy_p95_ms": 7.871937199999999,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-restart-rf1-tier0false-repeat0",
+        "Index": 73,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "restart",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          146,
+          147
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-restart-rf1-tier0false-repeat0.json",
+      "path": "main/native-restart-rf1-tier0false-repeat0.json.gz",
+      "sha256": "896ea94f455779869a500f2a88cc0aaf6290c67d38b344d42e52feba95209ccc",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.353604,
+            "loki_p95_ms": 1.9722374999999994,
+            "proxy_p50_ms": 1.3301665,
+            "proxy_p95_ms": 2.0728857499999997,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-restart-rf2-tier0false-repeat0",
+        "Index": 75,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "restart",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          150,
+          151
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-restart-rf2-tier0false-repeat0.json",
+      "path": "main/native-restart-rf2-tier0false-repeat0.json.gz",
+      "sha256": "17c2a5e189c30fbe3a40f2b0e8806eb59065a8b6d980d73654e7bf7eb3068247",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.308583,
+            "loki_p95_ms": 2.2434021,
+            "proxy_p50_ms": 0.9449995,
+            "proxy_p95_ms": 1.6872964499999996,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-owner-loss-rf1-tier0false-repeat0",
+        "Index": 77,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "owner-loss",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          154,
+          155
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-owner-loss-rf1-tier0false-repeat0.json",
+      "path": "main/native-owner-loss-rf1-tier0false-repeat0.json.gz",
+      "sha256": "61bc395ea5941e2b031f6d2e260ab8b4808a945101dd6a0443bfe7a35a1fa7a1",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.4692919999999998,
+            "loki_p95_ms": 2.514229149999998,
+            "proxy_p50_ms": 1.453,
+            "proxy_p95_ms": 1.77682115,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    },
+    {
+      "cell": {
+        "ID": "native-owner-loss-rf2-tier0false-repeat0",
+        "Index": 79,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "owner-loss",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          158,
+          159
+        ],
+        "Samples": 20
+      },
+      "errors": null,
+      "namespace_claim": "/private/tmp/s2-fleet-proof-20261031/namespace-claims/9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375/native-owner-loss-rf2-tier0false-repeat0.json",
+      "path": "main/native-owner-loss-rf2-tier0false-repeat0.json.gz",
+      "sha256": "6f84b5a91ed6c62446719d7f257be328f0cb8594ddfbde7047722c396d5ca7cb",
+      "summary": {
+        "equal_reference": 20,
+        "latency_by_success_class": {
+          "success_nonempty": {
+            "loki_p50_ms": 1.3614169999999999,
+            "loki_p95_ms": 1.9262027499999994,
+            "proxy_p50_ms": 0.825708,
+            "proxy_p95_ms": 0.9581701999999999,
+            "samples": 20
+          }
+        },
+        "reference_classes": {
+          "success_nonempty": 20
+        },
+        "responses": 20,
+        "successful_valid_200": 20
+      }
+    }
+  ],
+  "fixture": {
+    "Probe": "cacheperf-1793473865048118000",
+    "End": 1793379600,
+    "RecentEnd": 1793473800,
+    "Streams": 320,
+    "Lines": 192000,
+    "SHA256": "9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375"
+  },
+  "fixture_plan": {
+    "Version": 1,
+    "ShardsPerCell": 2,
+    "Repeats": 2,
+    "NamespaceCells": 160,
+    "FixtureSHA256": "9fd6c179e8f0efe83513c005ba47c7ce936df6b3a86395a6a60afb58a5c1e375"
+  },
+  "manifest": {
+    "aggregate_tier_attribution": "unattributed; tier=l0 is a hot-key sidecar, not compatibility Tier0",
+    "backend_image_identity_scope": "requested image references only; actual container image IDs must be captured separately",
+    "binary": "/private/tmp/s2-proxy-main",
+    "binary_build_settings": {
+      "-buildmode": "exe",
+      "-compiler": "gc",
+      "CGO_CFLAGS": "",
+      "CGO_CPPFLAGS": "",
+      "CGO_CXXFLAGS": "",
+      "CGO_ENABLED": "1",
+      "CGO_LDFLAGS": "",
+      "GOARCH": "arm64",
+      "GOARM64": "v8.0",
+      "GOOS": "darwin",
+      "vcs": "git",
+      "vcs.modified": "false",
+      "vcs.revision": "fe43377f2ac78bdd4069d5ad5220f1a6ceeb6007",
+      "vcs.time": "2026-10-31T19:04:07Z"
+    },
+    "binary_go_version": "go1.27.3",
+    "binary_sha256": "b72493555bbf3cb5d8ef6fc03a06fff3e56207f61768efe1d03fd26c6d255cd9",
+    "compose_spec_sha256": "b055ee350a7cf6c83c1a1a863010e1178599a6916401f43c582523d7f711ac4e",
+    "fixture_scope": "independent disjoint per-cell shard groups; reference cache keys separate; backend chunk/OS caches may already be warm",
+    "focused_harness_sha256": "b92cd7c874b295434ada87395f9c6ef28895f5dc929287fef077e944d866eac7",
+    "layer_attribution_harness_sha256": "073d526410a7355d28b5ed84f37cd85c1b163dddd10de2ec3b8d0625594995bc",
+    "loki_config_sha256": "f2f93ac998c5d0a22b97ffdf4c038d2e47194b6357d3ff4e9f463b7c6463d90b",
+    "measurement_host": {
+      "arch": "arm64",
+      "go": "go1.27.3",
+      "os": "darwin"
+    },
+    "namespace_claim_policy": "persistent exclusive fixture+cell claim before any priming; reuse is rejected even after interrupted runs",
+    "observer_scope": "paired ledger/wire active-response completion plus bounded500ms quiet period(up to3s) for asynchronous replica work",
+    "operation": "measure",
+    "requested_backend_images": {
+      "loki": "grafana/loki:3.7.9",
+      "victorialogs": "victoriametrics/victoria-logs:v1.52.0"
+    },
+    "resource_scope": "logical admission limits are not physical SSD caps; bbolt lengths/allocated blocks and GoSys/kernel Maxrss are separate; no per-semantic-layer allocator or occupancy inferred",
+    "run_id": "20261031T191959.796604000Z",
+    "samples_per_cell": 20,
+    "selected_cells": [
+      {
+        "ID": "native-exact-rf1-tier0false-repeat0",
+        "Index": 61,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "exact",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          122,
+          123
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-exact-rf2-tier0false-repeat0",
+        "Index": 63,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "exact",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          126,
+          127
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-shifted-rf1-tier0false-repeat0",
+        "Index": 65,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "shifted",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          130,
+          131
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-shifted-rf2-tier0false-repeat0",
+        "Index": 67,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "shifted",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          134,
+          135
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-refresh-rf1-tier0false-repeat0",
+        "Index": 69,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "refresh",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          138,
+          139
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-refresh-rf2-tier0false-repeat0",
+        "Index": 71,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "refresh",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          142,
+          143
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-restart-rf1-tier0false-repeat0",
+        "Index": 73,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "restart",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          146,
+          147
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-restart-rf2-tier0false-repeat0",
+        "Index": 75,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "restart",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          150,
+          151
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-owner-loss-rf1-tier0false-repeat0",
+        "Index": 77,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "owner-loss",
+        "RF": 1,
+        "Tier0": false,
+        "Shards": [
+          154,
+          155
+        ],
+        "Samples": 20
+      },
+      {
+        "ID": "native-owner-loss-rf2-tier0false-repeat0",
+        "Index": 79,
+        "Repeat": 0,
+        "Shape": "native",
+        "State": "owner-loss",
+        "RF": 2,
+        "Tier0": false,
+        "Shards": [
+          158,
+          159
+        ],
+        "Samples": 20
+      }
+    ],
+    "semantic_cache_dimensions": [
+      "proxy_loki_facing",
+      "proxy_vl_backend",
+      "reference_loki_server"
+    ],
+    "shards_per_cell": 2,
+    "shared_harness_sha256": "27c39b2e54b583dc827798a42fbfeee26430323838069046c253495e29af4c8d",
+    "source_ref_claim": "fe43377f2ac78bdd4069d5ad5220f1a6ceeb6007",
+    "source_revision_available": true,
+    "source_tree_modified": "false",
+    "storage_limits": {
+      "additional_compat_percent": 10,
+      "disk_codec": "s2",
+      "disk_entries": 100000,
+      "estimated_index_bytes": 16777216,
+      "flush_trigger_bytes": 4194304,
+      "logical_disk_bytes": 67108864,
+      "primary_entries": 1024,
+      "primary_ram_bytes": 67108864,
+      "profiling_on_timed_runs": false,
+      "write_queue_bytes": 16777216
+    },
+    "timing_scope": "descriptive instrumented same-host latency; other user services may contend; no universal speedup or scaling claim",
+    "unsupported_layer_metrics": "null is unsupported/missing, never a measured zero"
+  },
+  "wire_ledger_sha256": "94c9ecf28b76aeb8dafe8358835a190972406afaa7e3d81f32ad868a4ab47ac0",
+  "wire_log": "main-wire.jsonl.gz",
+  "startup_first_cell_vl_responses": [
+    {
+      "path": "/health",
+      "response_bytes": 2
+    },
+    {
+      "path": "/metrics",
+      "response_bytes": 35109
+    },
+    {
+      "path": "/health",
+      "response_bytes": 2
+    },
+    {
+      "path": "/health",
+      "response_bytes": 2
+    },
+    {
+      "path": "/metrics",
+      "response_bytes": 35109
+    },
+    {
+      "path": "/health",
+      "response_bytes": 2
+    },
+    {
+      "path": "/health",
+      "response_bytes": 2
+    },
+    {
+      "path": "/metrics",
+      "response_bytes": 35109
+    },
+    {
+      "path": "/health",
+      "response_bytes": 2
+    }
+  ],
+  "wire_uncompressed_sha256": "94c9ecf28b76aeb8dafe8358835a190972406afaa7e3d81f32ad868a4ab47ac0"
+}

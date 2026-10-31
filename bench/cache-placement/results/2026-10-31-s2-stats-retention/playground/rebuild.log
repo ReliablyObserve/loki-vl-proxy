@@ -1,0 +1,148 @@
+29.5.2
+Rebuilding 12 proxy variants in existing project e2e-compat; image loki-vl-proxy:s2-378a08b
+Existing Loki/VL containers and named volumes are retained.
+#0 building with "colima-lvp" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.05kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd
+#3 DONE 1.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 98B done
+#4 DONE 0.0s
+
+#5 [stage-1 1/3] FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+#5 resolve gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab 0.0s done
+#5 DONE 0.0s
+
+#6 [builder 1/6] FROM docker.io/library/golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd
+#6 resolve docker.io/library/golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd 0.0s done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 7.21MB 0.1s done
+#7 DONE 0.1s
+
+#8 [builder 2/6] WORKDIR /app
+#8 CACHED
+
+#9 [builder 3/6] COPY go.mod go.sum ./
+#9 CACHED
+
+#10 [builder 4/6] RUN go mod download
+#10 DONE 3.4s
+
+#11 [builder 5/6] COPY . .
+#11 DONE 0.5s
+
+#12 [builder 6/6] RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=dev-fields -X main.revision=378a08ba1648fcdf8bb2501f77cbb00a7601807f -X main.buildTime=unknown" -o /loki-vl-proxy ./cmd/proxy &&     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /healthcheck ./cmd/healthcheck
+#12 DONE 10.6s
+
+#5 [stage-1 1/3] FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+#5 CACHED
+
+#13 [stage-1 2/3] COPY --from=builder /loki-vl-proxy /usr/local/bin/loki-vl-proxy
+#13 DONE 0.0s
+
+#14 [stage-1 3/3] COPY --from=builder /healthcheck /usr/local/bin/healthcheck
+#14 DONE 0.0s
+
+#15 exporting to image
+#15 exporting layers
+#15 exporting layers 0.5s done
+#15 exporting manifest sha256:d393a8efc2a0d51448d7a0de63b3fed3d2279e4bda77ab8b9eebd92d90b9f420 done
+#15 exporting config sha256:238d435e036371c31bbde5572712b3092eb6b7276629d3e346de7c61abf6cd39 done
+#15 exporting attestation manifest sha256:657db92d589ed8e3c2dfb54c2f6a85807cec1bc163c305f99ffbc51393a10cee 0.0s done
+#15 exporting manifest list sha256:cebd86f08d5c7aebd7b27f2700bf5cce4e4a36eb70959ec6c8b2d3b1d5e8ed6e done
+#15 naming to docker.io/library/loki-vl-proxy:s2-378a08b done
+#15 unpacking to docker.io/library/loki-vl-proxy:s2-378a08b 0.1s done
+#15 DONE 0.6s
+
+View build details: docker-desktop://dashboard/build/colima-lvp/colima-lvp/i84pc9re0yshwe62cs93srqgj
+ Container e2e-proxy Recreate 
+ Container e2e-proxy-native-metadata Recreate 
+ Container e2e-proxy-no-metadata Recreate 
+ Container e2e-proxy-otel-hybrid Recreate 
+ Container e2e-proxy-patterns-autodetect Recreate 
+ Container e2e-proxy-peer-a Recreate 
+ Container e2e-proxy-underscore Recreate 
+ Container e2e-proxy-tail-native Recreate 
+ Container e2e-proxy-vmauth Recreate 
+ Container e2e-proxy-peer-b Recreate 
+ Container e2e-proxy-translated-metadata Recreate 
+ Container e2e-proxy-tail Recreate 
+ Container e2e-proxy-tail-native Recreated 
+ Container e2e-proxy-translated-metadata Recreated 
+ Container e2e-proxy-tail Recreated 
+ Container e2e-proxy-no-metadata Recreated 
+ Container e2e-proxy-native-metadata Recreated 
+ Container e2e-proxy-otel-hybrid Recreated 
+ Container e2e-proxy-underscore Recreated 
+ Container e2e-proxy-vmauth Recreated 
+ Container e2e-proxy Recreated 
+ Container e2e-log-generator Recreate 
+ Container e2e-proxy-patterns-autodetect Recreated 
+ Container e2e-proxy-peer-b Recreated 
+ Container e2e-proxy-peer-a Recreated 
+ Container e2e-log-generator Recreated 
+ Container e2e-proxy-vmauth Starting 
+ Container e2e-proxy-peer-b Starting 
+ Container e2e-proxy-peer-a Starting 
+ Container e2e-proxy-tail-native Starting 
+ Container e2e-proxy-translated-metadata Starting 
+ Container e2e-proxy-underscore Starting 
+ Container e2e-proxy-native-metadata Starting 
+ Container e2e-proxy-tail Starting 
+ Container e2e-proxy-patterns-autodetect Starting 
+ Container e2e-proxy-otel-hybrid Starting 
+ Container e2e-proxy-no-metadata Starting 
+ Container e2e-proxy Starting 
+ Container e2e-proxy-vmauth Started 
+ Container e2e-proxy-tail Started 
+ Container e2e-proxy-peer-a Started 
+ Container e2e-proxy Started 
+ Container e2e-proxy Waiting 
+ Container e2e-proxy-native-metadata Started 
+ Container e2e-proxy-patterns-autodetect Started 
+ Container e2e-proxy-otel-hybrid Started 
+ Container e2e-proxy-no-metadata Started 
+ Container e2e-proxy-peer-b Started 
+ Container e2e-proxy-translated-metadata Started 
+ Container e2e-proxy-underscore Started 
+ Container e2e-proxy-tail-native Started 
+ Container e2e-proxy Healthy 
+ Container e2e-log-generator Starting 
+ Container e2e-log-generator Started 
+e2e-grafana
+NAME                            IMAGE                                                                                        COMMAND                  SERVICE                             CREATED          STATUS                    PORTS
+e2e-grafana                     grafana/grafana:13.2.1                                                                       "/run.sh"                grafana                             2 weeks ago      Up 4 seconds              0.0.0.0:3002->3000/tcp, [::]:3002->3000/tcp
+e2e-log-generator               python:3.12-alpine@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4   "python /scripts/log…"   log-generator                       21 seconds ago   Up 4 seconds              
+e2e-loki                        grafana/loki:3.7.7                                                                           "/usr/bin/loki -conf…"   loki                                2 weeks ago      Up 2 hours                0.0.0.0:13101->3100/tcp, [::]:13101->3100/tcp
+e2e-proxy                       loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy                       21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13100->3100/tcp, [::]:13100->3100/tcp
+e2e-proxy-native-metadata       loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-native-metadata       21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13106->3100/tcp, [::]:13106->3100/tcp
+e2e-proxy-no-metadata           loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-no-metadata           21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13108->3100/tcp, [::]:13108->3100/tcp
+e2e-proxy-otel-hybrid           loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-otel-hybrid           21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13111->3100/tcp, [::]:13111->3100/tcp
+e2e-proxy-patterns-autodetect   loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-patterns-autodetect   21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13110->3100/tcp, [::]:13110->3100/tcp
+e2e-proxy-peer-a                loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-peer-a                21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13150->3100/tcp, [::]:13150->3100/tcp
+e2e-proxy-peer-b                loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-peer-b                21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13151->3100/tcp, [::]:13151->3100/tcp
+e2e-proxy-tail                  loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-tail                  21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13103->3100/tcp, [::]:13103->3100/tcp
+e2e-proxy-tail-native           loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-tail-native           21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13105->3100/tcp, [::]:13105->3100/tcp
+e2e-proxy-translated-metadata   loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-translated-metadata   21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13107->3100/tcp, [::]:13107->3100/tcp
+e2e-proxy-underscore            loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-underscore            21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13102->3100/tcp, [::]:13102->3100/tcp
+e2e-proxy-vmauth                loki-vl-proxy:s2-378a08b                                                                     "/usr/local/bin/loki…"   loki-vl-proxy-vmauth                21 seconds ago   Up 10 seconds (healthy)   0.0.0.0:13109->3100/tcp, [::]:13109->3100/tcp
+e2e-tail-ingress                nginx:1.27-alpine                                                                            "/docker-entrypoint.…"   tail-ingress                        2 weeks ago      Up 2 weeks (healthy)      80/tcp, 0.0.0.0:13104->8080/tcp, [::]:13104->8080/tcp
+e2e-victorialogs                victoriametrics/victoria-logs:v1.52.0                                                        "/victoria-logs-prod…"   victorialogs                        2 weeks ago      Up 2 weeks (healthy)      0.0.0.0:19428->9428/tcp, [::]:19428->9428/tcp
+e2e-victoriametrics             victoriametrics/victoria-metrics:v1.119.0                                                    "/victoria-metrics-p…"   victoriametrics                     2 weeks ago      Up 2 weeks (healthy)      0.0.0.0:18428->8428/tcp, [::]:18428->8428/tcp
+e2e-vmalert                     victoriametrics/vmalert:v1.138.0                                                             "/vmalert-prod -http…"   vmalert                             2 weeks ago      Up 2 weeks (healthy)      0.0.0.0:18880->8880/tcp, [::]:18880->8880/tcp
+e2e-vmauth                      victoriametrics/vmauth:v1.138.0                                                              "/vmauth-prod -auth.…"   vmauth                              2 weeks ago      Up 2 weeks (healthy)      8427/tcp
+e2e-vmauth-ring                 victoriametrics/vmauth:v1.138.0                                                              "/vmauth-prod -auth.…"   vmauth-ring                         2 weeks ago      Up 2 weeks (healthy)      0.0.0.0:13200->8427/tcp, [::]:13200->8427/tcp
+Verified: all proxy variants use sha256:cebd86f08d5c7aebd7b27f2700bf5cce4e4a36eb70959ec6c8b2d3b1d5e8ed6e; fresh logs visible through proxy and Loki.
+Fields: explicit 500-series limit verified; over-limit charts display Loki partial-result warnings.
+Grafana: http://127.0.0.1:3002
+Proxy metrics: http://127.0.0.1:13100/metrics

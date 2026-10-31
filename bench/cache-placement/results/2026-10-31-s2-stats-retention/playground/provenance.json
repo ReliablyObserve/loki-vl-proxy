@@ -1,0 +1,22 @@
+{
+  "image_source": "378a08ba1648fcdf8bb2501f77cbb00a7601807f",
+  "image_identity": "sha256:cebd86f08d5c7aebd7b27f2700bf5cce4e4a36eb70959ec6c8b2d3b1d5e8ed6e",
+  "production_identical_to": "74900fedce7ee537900895979096adbdbd3a77fc",
+  "grafana": "13.2.1",
+  "drilldown": "2.5.2",
+  "loki": "3.7.7",
+  "victorialogs": "1.52.0",
+  "deployment": "all12 proxy variants rebuilt/recreated/healthy, backend volumes preserved, fresh generated logs verified through proxy and Loki, patterns limit500 verified",
+  "browser": {
+    "ranges_hours": [24, 48],
+    "tests_passed": 2,
+    "test_duration_seconds": 9.6,
+    "fixture_values_per_test": 510,
+    "frames_per_field": 500,
+    "datasource_name": "Loki (via VL proxy vmauth)",
+    "partial_notice_visible": true,
+    "api_errors": 0,
+    "page_errors": 0
+  },
+  "scope": "candidate-only no-UI-regression proof; not main/PR/Loki screenshot comparison or query-latency timing"
+}

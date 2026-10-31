@@ -1,0 +1,20 @@
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/raw
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/s2
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/zstd
+--- PASS: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart (0.03s)
+    --- PASS: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/raw (0.01s)
+    --- PASS: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/s2 (0.01s)
+    --- PASS: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/zstd (0.01s)
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/empty
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/small
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/compressible
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/varied-values
+--- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity (0.01s)
+    --- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/empty (0.00s)
+    --- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/small (0.00s)
+    --- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/compressible (0.01s)
+    --- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/varied-values (0.00s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	0.681s

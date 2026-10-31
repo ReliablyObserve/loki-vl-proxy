@@ -1,0 +1,11 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsExtentRetainedCache/ram-4         	       1	  50094417 ns/op	     50320 charged-B/entry	     50291 encoded-B/entry	    180658 heap-B/entry	    180070 retained-cap-B/entry
+BenchmarkStatsExtentRetainedCache/ram-and-disk-queue-4         	       1	  45565375 ns/op	     50320 charged-B/entry	     50291 encoded-B/entry	    180803 heap-B/entry	    180070 retained-cap-B/entry
+BenchmarkStatsExtentEncodeOwned/empty-4                        	       1	      3041 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4                        	       1	      3542 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	    2256 B/op	       7 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4                 	       1	    159917 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1154256 B/op	      27 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4                	       1	    289792 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  834768 B/op	      25 allocs/op
+PASS

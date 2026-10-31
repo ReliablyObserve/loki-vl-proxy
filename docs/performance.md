@@ -49,6 +49,17 @@ Before #862 the proxy cached only exact windows. A Grafana refresh moves the win
 
 Metric `query_range` now keeps the VictoriaLogs stats buckets it has read (`-query-range-extent-cache`, on by default) and asks only for the buckets a moved or widened window lacks. Answers are byte-for-byte those of the uncached path. Finished buckets older than `-query-range-freshness` (10m, Loki's `max_cache_freshness`) are kept per tenant, query, step and offset for `-query-range-extent-cache-ttl` (1h, Loki's default validity), in memory, on disk and on the peer fleet when those tiers are configured.
 
+Stats extents use S2-encoded buffers sized to the compressed payload before
+cache ownership. This releases the codec's excess output capacity from RAM
+entries and pending disk/peer writes. Encoded bytes, keys, expiry and placement
+stay unchanged. Compaction costs an allocation and compressed-length copy when
+excess capacity exists; warm reads do not encode. Logical cache charges still
+count payload/key length, not process RSS, allocator size classes or transient
+encoding scratch. This change does not establish a hard process memory bound.
+The [dated memory and parity proof](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/cache-placement/results/2026-10-31-s2-stats-retention/README.md)
+retains main/PR heap measurements, copy costs, byte-identity checks and the
+three-proxy RF1/RF2 regression results.
+
 A/B at 6h, p50 of the runs after the first, measured on `ff3b9337` during #862 review (released in 2.35.0):
 
 | shape | mode | main | with #862 | Loki |

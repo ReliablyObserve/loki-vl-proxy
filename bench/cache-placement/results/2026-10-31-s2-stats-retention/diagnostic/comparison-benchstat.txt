@@ -1,0 +1,50 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                       │ /private/tmp/s2-benchmark-proof-20261031/main.txt │ /private/tmp/s2-benchmark-proof-20261031/pr.txt │
+                                       │                      sec/op                       │          sec/op            vs base              │
+StatsExtentWarmDrilldownBreakdown-4                                           51.60m ±  9%                50.05m ± 10%       ~ (p=0.699 n=6)
+StatsExtentEncodeOwned/empty-4                                                45.92n ± 11%                42.97n ± 10%       ~ (p=0.310 n=6)
+StatsExtentEncodeOwned/small-4                                                385.6n ± 38%                404.5n ± 22%       ~ (p=0.310 n=6)
+StatsExtentEncodeOwned/compressible-4                                         170.8µ ± 11%                183.1µ ±  9%       ~ (p=0.132 n=6)
+StatsExtentEncodeOwned/varied-values-4                                        260.9µ ± 11%                240.6µ ± 10%  -7.80% (p=0.026 n=6)
+geomean                                                                       33.26µ                      32.86µ        -1.20%
+
+                                       │ /private/tmp/s2-benchmark-proof-20261031/main.txt │ /private/tmp/s2-benchmark-proof-20261031/pr.txt │
+                                       │                       B/op                        │          B/op           vs base                 │
+StatsExtentWarmDrilldownBreakdown-4                                           49.09Mi ± 2%             49.25Mi ± 1%        ~ (p=0.589 n=6)
+StatsExtentEncodeOwned/empty-4                                                  32.00 ± 0%               32.00 ± 0%        ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/small-4                                                  704.0 ± 0%               832.0 ± 0%  +18.18% (p=0.002 n=6)
+StatsExtentEncodeOwned/compressible-4                                         1.039Mi ± 0%             1.094Mi ± 0%   +5.28% (p=0.002 n=6)
+StatsExtentEncodeOwned/varied-values-4                                        815.3Ki ± 0%             919.4Ki ± 0%  +12.76% (p=0.002 n=6)
+geomean                                                                       62.27Ki                  66.68Ki        +7.08%
+¹ all samples are equal
+
+                                       │ /private/tmp/s2-benchmark-proof-20261031/main.txt │ /private/tmp/s2-benchmark-proof-20261031/pr.txt │
+                                       │                     allocs/op                     │       allocs/op         vs base                 │
+StatsExtentWarmDrilldownBreakdown-4                                           14.33k ± 14%              14.65k ± 6%        ~ (p=0.615 n=6)
+StatsExtentEncodeOwned/empty-4                                                 1.000 ±  0%               1.000 ± 0%        ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/small-4                                                 4.000 ±  0%               5.000 ± 0%  +25.00% (p=0.002 n=6)
+StatsExtentEncodeOwned/compressible-4                                          24.00 ±  0%               25.00 ± 0%   +4.17% (p=0.002 n=6)
+StatsExtentEncodeOwned/varied-values-4                                         23.00 ±  0%               24.00 ± 0%   +4.35% (p=0.002 n=6)
+geomean                                                                        31.63                     33.77        +6.79%
+¹ all samples are equal
+
+                                       │ /private/tmp/s2-benchmark-proof-20261031/main.txt │ /private/tmp/s2-benchmark-proof-20261031/pr.txt │
+                                       │                   encoded-B/op                    │      encoded-B/op        vs base                │
+StatsExtentEncodeOwned/empty-4                                                  25.00 ± 0%                25.00 ± 0%       ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/small-4                                                  127.0 ± 0%                127.0 ± 0%       ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/compressible-4                                         49.11Ki ± 0%              49.11Ki ± 0%       ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/varied-values-4                                        98.94Ki ± 0%              98.94Ki ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                       1.959Ki                   1.959Ki       +0.00%
+¹ all samples are equal
+
+                                       │ /private/tmp/s2-benchmark-proof-20261031/main.txt │ /private/tmp/s2-benchmark-proof-20261031/pr.txt │
+                                       │                 retained-cap-B/op                 │   retained-cap-B/op     vs base                 │
+StatsExtentEncodeOwned/empty-4                                                  25.00 ± 0%               25.00 ± 0%        ~ (p=1.000 n=6) ¹
+StatsExtentEncodeOwned/small-4                                                  246.0 ± 0%               127.0 ± 0%  -48.37% (p=0.002 n=6)
+StatsExtentEncodeOwned/compressible-4                                        175.85Ki ± 0%             49.11Ki ± 0%  -72.07% (p=0.002 n=6)
+StatsExtentEncodeOwned/varied-values-4                                       142.28Ki ± 0%             98.94Ki ± 0%  -30.46% (p=0.002 n=6)
+geomean                                                                       3.480Ki                  1.959Ki       -43.73%
+¹ all samples are equal

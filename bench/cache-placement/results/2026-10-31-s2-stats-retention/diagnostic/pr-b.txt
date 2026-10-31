@@ -1,0 +1,20 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       6	  52880674 ns/op	51747593 B/op	   14857 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  47477696 ns/op	51543365 B/op	   14440 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  50037488 ns/op	51841026 B/op	   15063 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7552070	        47.35 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 8255815	        43.47 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 8878803	        39.16 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  962330	       392.8 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  962276	       408.2 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  980847	       403.4 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    2119	    173118 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146912 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1905	    183852 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146790 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1830	    165735 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146697 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1538	    230564 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941515 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1506	    250125 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941227 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1444	    265020 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941475 B/op	      24 allocs/op
+PASS
