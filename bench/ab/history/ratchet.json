@@ -1015,6 +1015,13 @@
   "shape": "LF21 logfmt count by detected_level, level filter"
  },
  {
+  "added": "2026-10-31",
+  "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
+  "range": "24h",
+  "set": "level-filter",
+  "shape": "LF21 logfmt count by detected_level, level filter"
+ },
+ {
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "1h",
@@ -2390,6 +2397,13 @@
   "added": "2026-10-30",
   "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
   "range": "24h",
+  "set": "unwrap-sum-without",
+  "shape": "W2 sum without pod, sum_over_time"
+ },
+ {
+  "added": "2026-10-31",
+  "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
+  "range": "6h",
   "set": "unwrap-sum-without",
   "shape": "W2 sum without pod, sum_over_time"
  },

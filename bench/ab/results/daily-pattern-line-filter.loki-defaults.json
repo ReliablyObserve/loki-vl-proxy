@@ -1,6 +1,6 @@
 {
  "label": "daily-pattern-line-filter-loki-defaults",
- "date": "2026-10-30",
+ "date": "2026-10-31",
  "set": "pattern-line-filter",
  "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "P1 api-gateway empty pattern",
    "range": "1h",
    "p50": {
-    "release": 0.008,
-    "main": 0.008,
+    "release": 0.009,
+    "main": 0.009,
     "loki": 0.005
    },
    "p95": {
-    "release": 0.008,
-    "main": 0.009,
-    "loki": 0.006
+    "release": 0.01,
+    "main": 0.01,
+    "loki": 0.005
    },
    "cold": {
-    "release": 0.015,
-    "main": 0.007,
-    "loki": 0.02
+    "release": 0.019,
+    "main": 0.01,
+    "loki": 0.028
    },
    "status": {
     "release": "200",
@@ -138,19 +138,19 @@
    "shape": "P2 api-gateway not empty pattern, line filter",
    "range": "1h",
    "p50": {
-    "release": 0.041,
-    "main": 0.042,
-    "loki": 0.017
+    "release": 0.057,
+    "main": 0.06,
+    "loki": 0.019
    },
    "p95": {
-    "release": 0.044,
-    "main": 0.046,
-    "loki": 0.026
+    "release": 0.065,
+    "main": 0.074,
+    "loki": 0.021
    },
    "cold": {
-    "release": 0.045,
-    "main": 0.054,
-    "loki": 0.017
+    "release": 0.064,
+    "main": 0.073,
+    "loki": 0.02
    },
    "status": {
     "release": "200",
@@ -158,9 +158,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 34.46,
-    "main": 34.46,
-    "loki": 34.46
+    "release": 93.11,
+    "main": 93.11,
+    "loki": 93.11
    },
    "cache": {
     "loki": {
@@ -234,25 +234,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.98
+   "speedup": 0.95
   },
   {
    "shape": "P3 nginx count_over_time, pattern with spaces",
    "range": "1h",
    "p50": {
-    "release": 0.004,
-    "main": 0.004,
-    "loki": 0.009
+    "release": 0.003,
+    "main": 0.003,
+    "loki": 0.005
    },
    "p95": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.01
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.006
    },
    "cold": {
-    "release": 0.011,
-    "main": 0.008,
-    "loki": 0.019
+    "release": 0.006,
+    "main": 0.005,
+    "loki": 0.014
    },
    "status": {
     "release": "200",
@@ -260,9 +260,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 34.46,
-    "main": 34.46,
-    "loki": 34.46
+    "release": 93.11,
+    "main": 93.11,
+    "loki": 93.11
    },
    "stale": [
     "release",
@@ -307,7 +307,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 4612
+       "bytesReceived": 4596
       },
       "statsResult": {
        "entriesFound": 6,
@@ -354,11 +354,11 @@
    "p95": {
     "release": 0.004,
     "main": 0.004,
-    "loki": 0.005
+    "loki": 0.006
    },
    "cold": {
-    "release": 0.008,
-    "main": 0.008,
+    "release": 0.006,
+    "main": 0.006,
     "loki": 0.013
    },
    "status": {
@@ -367,9 +367,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 34.46,
-    "main": 34.46,
-    "loki": 34.46
+    "release": 93.11,
+    "main": 93.11,
+    "loki": 93.11
    },
    "cache": {
     "loki": {
@@ -409,7 +409,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85948
+       "bytesReceived": 85939
       },
       "statsResult": {
        "entriesFound": 6,
@@ -446,8 +446,8 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.47.1",
- "commit": "0f98cff74344ea5df93d7de3d0a0bbc9e5a304a4",
+ "baseline_ref": "v2.48.2",
+ "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
  "proxy_align": {
   "release": "off",
   "main": "off"
