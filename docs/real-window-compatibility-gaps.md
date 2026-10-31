@@ -58,14 +58,14 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 | | Now |
 |---|---|
-| Loki endpoints the proxy routes | **24 of 27** (89%) |
-| Endpoints with tests that compare the proxy against Loki | **18 of 27** (67%) |
-| Endpoints whose registry state is `proven` | **11 of 27** (41%) |
-| Routed endpoints answered natively by VictoriaLogs | 5 of 24 |
+| Loki endpoints the proxy routes | **25 of 27** (93%) |
+| Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
+| Endpoints whose registry state is `proven` | **12 of 27** (44%) |
+| Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
 | Known differences from Loki (ranked) | **87**: 67 open, 12 documented, 6 owner-kept, 2 upstream |
 
-Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/label`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
+Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 

@@ -2,11 +2,11 @@
   "endpoints": 28,
   "execution": {
     "hybrid": 4,
-    "native_vl": 6,
-    "not_implemented": 3,
+    "native_vl": 7,
+    "not_implemented": 2,
     "proxy_side": 15
   },
-  "implemented": 25,
+  "implemented": 26,
   "loki_version": "v3.7.7",
   "optional_management": {
     "endpoints": 1,
@@ -32,27 +32,27 @@
     },
     "with_differential_tests": 0
   },
-  "proven": 11,
+  "proven": 12,
   "read_api": {
     "endpoints": 27,
     "execution": {
       "hybrid": 4,
-      "native_vl": 5,
-      "not_implemented": 3,
+      "native_vl": 6,
+      "not_implemented": 2,
       "proxy_side": 15
     },
-    "implemented": 24,
-    "proven": 11,
+    "implemented": 25,
+    "proven": 12,
     "scope": "loki-read-api",
     "scores": {
-      "coverage": 0.6667,
-      "implementation": 0.8889,
-      "native_share_of_implemented": 0.2083
+      "coverage": 0.7037,
+      "implementation": 0.9259,
+      "native_share_of_implemented": 0.24
     },
     "state": {
-      "gap": 3,
+      "gap": 2,
       "partial": 13,
-      "proven": 11,
+      "proven": 12,
       "unknown": 0,
       "waived": 0
     },
@@ -62,25 +62,21 @@
         "path": "/loki/api/v1/cache/generation_numbers"
       },
       {
-        "optional": false,
-        "path": "/loki/api/v1/label"
-      },
-      {
         "optional": true,
         "path": "/loki/api/v1/index/shards"
       }
     ],
-    "with_differential_tests": 18
+    "with_differential_tests": 19
   },
   "scores": {
-    "coverage": 0.6429,
-    "implementation": 0.8929,
-    "native_share_of_implemented": 0.24
+    "coverage": 0.6786,
+    "implementation": 0.9286,
+    "native_share_of_implemented": 0.2692
   },
   "state": {
-    "gap": 3,
+    "gap": 2,
     "partial": 14,
-    "proven": 11,
+    "proven": 12,
     "unknown": 0,
     "waived": 0
   },
@@ -90,5 +86,5 @@
     "stats_functions": 14,
     "version_gated": 2
   },
-  "with_differential_tests": 18
+  "with_differential_tests": 19
 }

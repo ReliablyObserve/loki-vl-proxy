@@ -15,9 +15,9 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 
 | Read API signal | Registry evidence |
 |---|---|
-| Routed endpoints | 24/27 |
-| Endpoints with Loki differential tests | 18/27 |
-| Endpoints declared `proven` | 11/27 |
+| Routed endpoints | 25/27 |
+| Endpoints with Loki differential tests | 19/27 |
+| Endpoints declared `proven` | 12/27 |
 
 Routing, linked tests and declared proof are different signals; none means
 every LogQL shape or every backend version is compatible. See the
@@ -28,7 +28,6 @@ Read routes without an implementation:
 | Route | Current scope |
 |---|---|
 | `/loki/api/v1/cache/generation_numbers` | Not implemented |
-| `/loki/api/v1/label` | Not implemented |
 | `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
 
 `index/shards` is not required by the pinned Grafana/Drilldown request paths

@@ -686,7 +686,9 @@
     },
     {
       "differential_tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/labels_alias_test.go"
+        ],
         "ui": [],
         "unit": []
       },
@@ -696,11 +698,19 @@
         "POST"
       ],
       "path": "/loki/api/v1/label",
-      "proxy_route": null,
+      "proxy_route": {
+        "handler": "handleLabels",
+        "pattern": "/loki/api/v1/label",
+        "route": "labels"
+      },
       "tests": {
-        "e2e": [],
+        "e2e": [
+          "test/e2e-compat/labels_alias_test.go"
+        ],
         "ui": [],
-        "unit": []
+        "unit": [
+          "internal/proxy/labels_alias_test.go"
+        ]
       }
     },
     {
@@ -807,6 +817,7 @@
           "test/e2e-compat/features_test.go",
           "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/label_freshness_e2e_test.go",
+          "test/e2e-compat/labels_alias_test.go",
           "test/e2e-compat/labels_full_range_test.go",
           "test/e2e-compat/labels_zero_width_test.go",
           "test/e2e-compat/line_fields_parity_test.go",
@@ -843,6 +854,7 @@
           "test/e2e-compat/heavy_query_protection_test.go",
           "test/e2e-compat/label_cache_e2e_test.go",
           "test/e2e-compat/label_freshness_e2e_test.go",
+          "test/e2e-compat/labels_alias_test.go",
           "test/e2e-compat/labels_full_range_test.go",
           "test/e2e-compat/labels_zero_width_test.go",
           "test/e2e-compat/line_fields_parity_test.go",
@@ -885,6 +897,7 @@
           "internal/proxy/label_metadata_freshness_test.go",
           "internal/proxy/label_negative_cache_test.go",
           "internal/proxy/label_surface_test.go",
+          "internal/proxy/labels_alias_test.go",
           "internal/proxy/labels_fields_scale_bench_test.go",
           "internal/proxy/labels_inclusive_end_test.go",
           "internal/proxy/labels_perf_test.go",
