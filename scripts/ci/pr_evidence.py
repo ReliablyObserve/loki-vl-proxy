@@ -47,7 +47,7 @@ def read_artifact(raw, allowed):
             expanded += item.file_size
             if expanded > 48 * 1024 * 1024:
                 raise ValueError("expanded artifact exceeds limit")
-            limit = MAX_JSON if name.endswith(".json") and name != "unit-results.json" else 12 * 1024 * 1024
+            limit = MAX_JSON if name.endswith(".json") and name not in {"unit-results.json", "pr-base-quality.json", "pr-head-quality.json"} else 12 * 1024 * 1024
             if item.file_size > limit or name in result:
                 raise ValueError("oversized or duplicate artifact member")
             value = archive.read(item).decode("utf-8")
@@ -71,7 +71,7 @@ def latest_run(runs, head):
     return max((r for r in runs if r.get("head_sha") == head), key=lambda r: (r["id"], r.get("run_attempt", 1)), default=None)
 
 
-def coverage_pct(text):
+def coverage_blocks(text):
     blocks = {}
     for line in text.splitlines()[1:]:
         location, statements, count = line.rsplit(" ", 2)
@@ -82,8 +82,24 @@ def coverage_pct(text):
         if old[0] != statements:
             raise ValueError("inconsistent coverage block")
         blocks[location] = (statements, max(count, old[1]))
+    return blocks
+
+
+def coverage_pct(text):
+    blocks = coverage_blocks(text)
     total = sum(n for n, _ in blocks.values())
     return 100 * sum(n for n, hit in blocks.values() if hit) / total if total else None
+
+
+def package_coverage(text):
+    packages = {}
+    for location, (statements, hit) in coverage_blocks(text).items():
+        package = location.rsplit("/", 1)[0] if "/" in location else "."
+        entry = packages.setdefault(package, {"covered": 0, "total": 0})
+        entry["total"] += statements
+        if hit:
+            entry["covered"] += statements
+    return {package: {**entry, "pct": 100 * entry["covered"] / entry["total"]} for package, entry in packages.items() if entry["total"]}
 
 
 def unit_summary(text):
@@ -93,13 +109,67 @@ def unit_summary(text):
         if not isinstance(event, dict):
             raise ValueError("expected test event object")
         if event.get("Test") and event.get("Action") in {"pass", "fail", "skip"}:
-            events[event["Package"], event["Test"]] = event["Action"]
+            key = (event["Package"], event["Test"])
+            if events.get(key) != "fail":
+                events[key] = event["Action"]
     return {"scope": "internal packages (existing CI artifact)",
             **{label: sum(action == event for action in events.values()) for label, event in (("passed", "pass"), ("failed", "fail"), ("skipped", "skip"))},
             "top_level_passed": sum(action == "pass" and "/" not in name for (_, name), action in events.items()),
             "subtests_passed": sum(action == "pass" and "/" in name for (_, name), action in events.items()),
             "packages": len({pkg for pkg, _ in events}),
-            "failed_names": [f"{pkg}:{name}" for (pkg, name), action in events.items() if action == "fail"][:30]}
+            "failed_names": [f"{pkg}:{name}" for (pkg, name), action in events.items() if action == "fail"][:30],
+            "outcomes": {f"{pkg}\t{name}": action for (pkg, name), action in events.items()}}
+
+
+def log_scope(text, context):
+    """Read existing verbose job output; this never starts a test process."""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    lines = [re.sub(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z\s?", "", line) for line in text.splitlines()]
+    checkout = None
+    for index, line in enumerate(lines[:-1]):
+        if "[command]" in line and "git log -1 --format=%H" in line:
+            match = re.fullmatch(r"[a-f0-9]{40}", lines[index + 1].strip())
+            if match:
+                checkout = match.group()
+                break
+    if not checkout:
+        return {"state": "unavailable", "note": "Checkout identity missing from retained log."}
+    if checkout not in {context.get("head"), context.get("merge")}:
+        return {"state": "stale", "note": "Log belongs to a different tested revision."}
+    events, versions, playwright, runs = [], {}, {}, []
+    for line in lines:
+        match = re.match(r"\s*--- (PASS|FAIL|SKIP): (\S+) \(", line)
+        if match:
+            events.append({"Action": match[1].lower(), "Package": "job", "Test": match[2]})
+        version = re.fullmatch(r"\s*(LOKI_IMAGE|VICTORIALOGS_IMAGE|GRAFANA_IMAGE|PROXY_IMAGE):\s*(\S+)\s*", line)
+        if version:
+            values = versions.setdefault(version[1], [])
+            if version[2] not in values and len(values) < 5:
+                values.append(version[2])
+        if re.match(r"\s*Running \d+ tests? using \d+ workers?", line) and playwright:
+            runs.append(playwright)
+            playwright = {}
+        result = re.match(r"\s*(\d+) (passed|failed|skipped|flaky|interrupted|did not run)(?:\s|$)", line)
+        if result:
+            playwright["not_run" if result[2] == "did not run" else result[2]] = int(result[1])
+    if events:
+        summary = unit_summary("\n".join(json.dumps(event) for event in events))
+        summary.pop("outcomes")
+        summary.update(state="available", kind="Go", scope="Go cases in one retained CI job", source=checkout, versions=versions)
+        return summary
+    if playwright:
+        runs.append(playwright)
+    if runs:
+        return {"state": "available", "kind": "Playwright", "source": checkout, "versions": versions,
+                "runs": [{key: run.get(key, 0) for key in ("passed", "failed", "skipped", "flaky", "interrupted", "not_run")} for run in runs]}
+    return {"state": "unavailable", "note": "No recognized named-test outcomes in retained log.", "source": checkout, "versions": versions}
+
+
+def api_test_job(kind, name):
+    return (kind == "ci" and (name.startswith("e2e-compat (") or name.startswith("e2e-ui (") or name == "e2e-fleet")
+            or kind == "loki" and name == "loki-pinned"
+            or kind == "vl" and name == "vl-pinned"
+            or kind == "drilldown" and (name == "drilldown-pinned-runtime" or name.startswith("drilldown-grafana-pr-matrix (")))
 
 
 class GitHub:
@@ -197,6 +267,16 @@ def collect(api, pr):
                 if tests is not None and current_meta(data.get("quality-meta.json", {}), context, "ci"):
                     data["ci-regression-summary.json"] = {"source": data["quality-meta.json"]["head"], "tests": unit_summary(tests),
                         "coverage": {"overall_pct": coverage_pct(cov) if cov else None, "cache_pct": coverage_pct(cache) if cache else None}}
+            for job in jobs:
+                if not api_test_job(kind, job["name"]) or job.get("status") != "completed" or job.get("conclusion") == "skipped":
+                    continue
+                try:
+                    raw = api.request(f"actions/jobs/{int(job['id'])}/logs", binary=True)
+                    scope = log_scope(raw.decode("utf-8", errors="replace"), context)
+                except (ValueError, TypeError, OSError, AttributeError, RecursionError):
+                    scope = {"state": "unavailable", "note": "Detailed job log unavailable; job conclusion remains authoritative."}
+                scope.update(name=job["name"])
+                source.setdefault("test_scopes", []).append(scope)
         except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile, RuntimeError, UnicodeError, AttributeError, OverflowError, RecursionError):
             source.update(state="error", note="Evidence could not be read safely; see the original CI run.", artifacts={})
     return result
@@ -252,12 +332,29 @@ def publish(api, pr, evidence, output, dry_run=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provenance")
+    parser.add_argument("--summarize-tests")
+    parser.add_argument("--coverage-profile")
+    parser.add_argument("--coverage-percent", type=float)
+    parser.add_argument("--test-exit-code", type=int, default=0)
     parser.add_argument("--pr", type=int)
     parser.add_argument("--out", default="pr-quality-report.md")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.provenance:
         provenance(args.provenance)
+        return
+    if args.summarize_tests:
+        raw = Path(args.summarize_tests).read_text()
+        summary = unit_summary(raw)
+        events = raw.splitlines()
+        count = sum(1 for line in events if (event := strict_json(line)).get("Action") == "pass" and event.get("Test"))
+        snapshot = {"count": count if not args.test_exit_code else 0, "coverage_pct": args.coverage_percent if not args.test_exit_code else 0,
+                    "outcomes": summary["outcomes"], "execution_state": "complete" if not args.test_exit_code else "failed"}
+        if args.test_exit_code:
+            snapshot["test_exit_code"] = args.test_exit_code
+        else:
+            snapshot["package_coverage"] = package_coverage(Path(args.coverage_profile).read_text())
+        print(json.dumps(snapshot))
         return
     api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
     if args.pr:

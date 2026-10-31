@@ -618,13 +618,42 @@ unmeasured evictions and unavailable layer statistics remain explicitly
 unmeasured. Synthetic handler `ns/op` is elapsed time; `B/op` and `allocs/op`
 describe allocation traffic, not retained RAM or process CPU.
 
+API quality uses the full declared registry inventory, with base/PR counts for
+implemented endpoints, linked Loki differential tests, declared proven endpoints,
+behavior/translation states, known gap states and error-layer exceptions.
+These are checked-in contract declarations, not a runtime compatibility
+percentage. Registry surface versions remain visible separately from runtime
+stack versions. The small smoke scores contribute candidate-only component
+detail: both collector invocations can share the candidate Docker image, so
+their scores are not a base-versus-PR runtime comparison. Actual revision
+runtime comparisons come from the existing A/B job, which builds separate
+base and PR binaries and queries Loki.
+
+The existing quality test runs retain package-qualified full test/subtest names
+and outcomes, plus statement-weighted package coverage. Comparisons identify
+newly failing/skipped, removed, recovered and new passing cases; counts of
+top-level tests and child cases stay separate. Failed runs retain the observed
+outcomes and exit code and fail the quality gate. Their incomplete populations
+cannot imply removed tests or absence-based improvements, and partial coverage
+is not compared as a complete profile. Cached base snapshots retain these fields;
+older snapshots without them have no exact-case comparison.
+
+Existing completed API, semantic, E2E and Grafana job logs supply broader
+candidate execution scopes. Their checkout SHA must match the current tested
+head/merge revision. The report shows observed pass/fail/skip counts and logged
+stack versions; Playwright invocations, flakes, interruptions and tests not run
+remain explicit. Expired, unrecognized or stale logs are unavailable. Profiles
+are not pooled into one compatibility score, and candidate-only scope counts
+are not presented as main-versus-PR regressions. Reading these results starts no
+additional tests or measurement workloads.
+
 An unavailable base test/coverage snapshot is not zero and produces no delta.
 Passing 11/11 smoke contracts does not mean full Loki compatibility or that the
 entire configured version matrix ran. Internal-package test outcomes come from
 the existing `unit-results` artifact (retained for one day); overall coverage
 comes from the existing whole-suite coverage profile.
 
-The existing measurement job collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and reports medians of 7 benchmark samples (`-count=7 -benchtime=2s -cpu=1` with `GOMAXPROCS=1`) and 3 high-concurrency load-test runs (`scripts/ci/collect_quality_metrics.sh`). The base commit's test count and coverage depend only on that commit, so they are cached per base SHA (`actions/cache`, read back through `QUALITY_TESTS_SNAPSHOT`): a later run of the same pull request against the same base does not run the base's tests again. Synthetic elapsed timings, load-test throughput and smoke scores are measured on the same runner; they do not establish whole-stack CPU or RAM savings.
+The existing measurement job collects test count, named outcomes and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and reports medians of 7 benchmark samples (`-count=7 -benchtime=2s -cpu=1` with `GOMAXPROCS=1`) and 3 high-concurrency load-test runs (`scripts/ci/collect_quality_metrics.sh`). The base commit's outcomes and coverage are cached per base SHA and collector/parser version (`actions/cache`, read back through `QUALITY_TESTS_SNAPSHOT`): a later run against the same base reuses them. Synthetic elapsed timings, load-test throughput and smoke scores are measured on the same runner; they do not establish whole-stack CPU or RAM savings.
 The collector runs test/coverage, compatibility scores, benchmark medians, and load metrics in parallel with bounded fallbacks so a single slow signal does not block the whole report gate.
 The PR quality workflow now skips benchmark/load perf smoke when no perf-sensitive files changed, so docs/metadata-only PRs do not report noisy runner jitter as fake regressions.
 The quality gate compares base/head with relative and absolute regression thresholds and ignores low-baseline noise, so tiny shared-runner jitter does not fail required checks.

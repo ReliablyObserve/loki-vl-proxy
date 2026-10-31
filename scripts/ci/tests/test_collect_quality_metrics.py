@@ -141,13 +141,25 @@ class CollectQualityMetricsTest(unittest.TestCase):
 
     def test_without_a_snapshot_the_tests_run_and_are_counted(self):
         self.assertEqual(len(self.computed["test_runs"]), 1)
-        self.assertEqual(self.computed["result"]["tests"], {"count": EXPECTED_COUNT, "coverage_pct": 83.4})
+        tests = self.computed["result"]["tests"]
+        self.assertEqual((tests["count"], tests["coverage_pct"]), (EXPECTED_COUNT, 83.4))
+        self.assertEqual(tests["outcomes"]["p/a\tTestTwo/sub"], "pass")
+        self.assertEqual(tests["outcomes"]["p/b\tTestSkipped"], "skip")
+        self.assertEqual(tests["outcomes"]["p/b\tTestBroken"], "fail")
+        self.assertEqual(tests["package_coverage"], {})
 
     def test_a_snapshot_replaces_the_test_run_and_nothing_else_changes(self):
         self.assertEqual(self.read_back["test_runs"], [])
         self.assertEqual(self.read_back["result"], self.computed["result"])
         # byte for byte, not only equal as data
         self.assertEqual(self.read_back["bytes"], self.computed["bytes"])
+
+    def test_large_named_case_inventory_does_not_use_shell_argument_space(self):
+        events = self.dir / "large-events.jsonl"
+        events.write_text("".join(json.dumps({"Action": "pass", "Package": "p/a", "Test": "Test" + "LongCase" * 12 + str(index)}) + "\n" for index in range(12000)))
+        run = self.run_script("large-cases", extra_env={"STUB_EVENTS": str(events)})
+        self.assertEqual(run["result"]["tests"]["count"], 12000)
+        self.assertEqual(len(run["result"]["tests"]["outcomes"]), 12000)
 
     def test_the_compatibility_scores_are_still_measured_with_a_snapshot(self):
         scored = [c for c in self.read_back["calls"] if c.startswith("go test -v -tags=e2e")]
@@ -169,7 +181,10 @@ class CollectQualityMetricsTest(unittest.TestCase):
             "STUB_GO_TEST_FAIL": "1",
             "QUALITY_DIAGNOSTICS_DIR": str(diagnostics),
         })
-        self.assertEqual(run["result"]["tests"], {"count": 0, "coverage_pct": 0})
+        tests = run["result"]["tests"]
+        self.assertEqual((tests["count"], tests["coverage_pct"]), (0, 0))
+        self.assertEqual((tests["execution_state"], tests["test_exit_code"]), ("failed", 42))
+        self.assertEqual(tests["outcomes"]["p/b\tTestBroken"], "fail")
         self.assertIn("tests_and_coverage failed (exit=42)", run["stderr"])
         self.assertEqual((diagnostics / "go-test-events.json").read_text(),
                          (self.dir / "events.jsonl").read_text())
@@ -202,7 +217,7 @@ class WorkflowWiringTest(unittest.TestCase):
 
     def test_the_cache_key_names_the_base_commit_and_the_script(self):
         self.assertIn("github.event.pull_request.base.sha }}\n", self.TEXT)
-        self.assertIn("hashFiles('scripts/ci/collect_quality_metrics.sh')", self.TEXT)
+        self.assertIn("hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py')", self.TEXT)
 
     def test_a_zero_collection_is_not_saved(self):
         self.assertIn("jq -e '.tests.count > 0' /tmp/pr-base-quality.json", self.TEXT)

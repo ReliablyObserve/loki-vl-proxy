@@ -64,6 +64,38 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(summary["failed_names"], ["internal/cache:TestC"])
         self.assertEqual(summary["skipped"], 1)
 
+    def test_full_named_outcomes_preserve_skipped_children_and_failed_repeats(self):
+        events = [{"Action": a, "Package": p, "Test": t} for a, p, t in
+                  [("skip", "a", "TestA/edge"), ("pass", "a", "TestA"),
+                   ("fail", "b", "TestA"), ("pass", "b", "TestA")]]
+        summary = self.m.unit_summary("\n".join(map(json.dumps, events)))
+        self.assertEqual(summary["outcomes"], {"a\tTestA/edge": "skip", "a\tTestA": "pass", "b\tTestA": "fail"})
+
+    def test_package_coverage_is_weighted_by_statement_blocks(self):
+        text = "mode: atomic\np/a/f.go:1.1,2.1 9 1\np/a/g.go:1.1,2.1 1 0\np/b/h.go:1.1,2.1 2 0\n"
+        self.assertEqual(self.m.package_coverage(text), {"p/a": {"covered": 9, "total": 10, "pct": 90}, "p/b": {"covered": 0, "total": 2, "pct": 0}})
+
+    def test_existing_api_log_results_are_source_verified_and_deduplicated(self):
+        log = "\n".join("2026-10-31T20:00:00Z " + line for line in [
+            "[command]/usr/bin/git log -1 --format=%H", "a" * 40,
+            "  LOKI_IMAGE: grafana/loki:3.7.9", "--- PASS: TestQuery (0.01s)",
+            "    --- SKIP: TestQuery/known (0.00s)", "--- PASS: TestQuery (0.01s)",
+            "--- FAIL: TestLimits (0.01s)", "--- PASS: TestLimits (0.01s)"])
+        result = self.m.log_scope(log, {"head": "b" * 40, "merge": "a" * 40})
+        self.assertEqual(result["state"], "available")
+        self.assertEqual((result["passed"], result["failed"], result["skipped"]), (1, 1, 1))
+        self.assertEqual(result["versions"], {"LOKI_IMAGE": ["grafana/loki:3.7.9"]})
+        self.assertEqual(self.m.log_scope(log, {"head": "c" * 40})["state"], "stale")
+
+    def test_empty_or_unfinished_logs_are_not_zero_test_success(self):
+        self.assertEqual(self.m.log_scope("setup only", {"head": "a" * 40})["state"], "unavailable")
+
+    def test_multiple_playwright_commands_keep_separate_results_and_instability(self):
+        lines = ["[command]/usr/bin/git log -1 --format=%H", "a" * 40, "Running 14 tests using 2 workers", "  10 passed (1m)", "  3 failed", "  1 flaky", "Running 9 tests using 1 worker", "  7 passed (20s)", "  1 interrupted", "  1 did not run"]
+        result = self.m.log_scope("\n".join(lines), {"head": "a" * 40})
+        self.assertNotIn("passed", result)
+        self.assertEqual(result["runs"], [{"passed": 10, "failed": 3, "skipped": 0, "flaky": 1, "interrupted": 0, "not_run": 0}, {"passed": 7, "failed": 0, "skipped": 0, "flaky": 0, "interrupted": 1, "not_run": 1}])
+
     def test_latest_attempt_is_selected_and_unrelated_heads_ignored(self):
         runs = [{"id": 1, "head_sha": "h", "run_attempt": 1}, {"id": 2, "head_sha": "old"},
                 {"id": 3, "head_sha": "h", "run_attempt": 2}]

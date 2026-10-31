@@ -19,6 +19,32 @@ def snapshot(count=10, coverage=85):
 
 
 class ReportTests(unittest.TestCase):
+    def test_report_exposes_real_inventory_and_exact_case_changes(self):
+        base, head = snapshot(), snapshot()
+        base["tests"]["outcomes"] = {"api\tTestQuery": "pass", "api\tTestQuery/edge": "pass", "api\tTestRemoved": "pass"}
+        head["tests"]["outcomes"] = {"api\tTestQuery": "fail", "api\tTestQuery/edge": "skip"}
+        inventory = {"state": "available", "surface_version": "v3.7.7", "endpoints": {"total": 33, "implemented": 23, "differential": 18, "declared_proven": 11}, "gaps": {"open": 67}}
+        base["quality_inventory"], head["quality_inventory"] = inventory, inventory
+        report = self.render(base=base, head=head)
+        focus = report.split("<details>", 1)[0]
+        self.assertIn("newly failing", focus)
+        self.assertIn("newly skipped", focus)
+        self.assertIn("removed", focus)
+        self.assertIn("23/33 endpoints implemented", focus)
+        self.assertIn("67 open compatibility gaps", focus)
+        self.assertIn("Endpoints: linked differential tests", report)
+        self.assertIn("Full test name", report)
+
+    def test_broader_scopes_show_candidate_evidence_without_fake_base(self):
+        report = self.render(evidence={"sources": {"loki": {"state": "completed", "conclusion": "success", "test_scopes": [
+            {"state": "available", "name": "loki-pinned", "kind": "Go", "passed": 420, "failed": 0, "skipped": 8, "versions": {"LOKI_IMAGE": ["grafana/loki:3.7.9"]}},
+            {"state": "unavailable", "name": "missing-log", "note": "Expired"}]}}})
+        self.assertIn("Broader API/Grafana execution: 1 scopes", report.split("<details>", 1)[0])
+        self.assertIn("420", report)
+        self.assertIn("Candidate only", report)
+        self.assertIn("3.7.9", report)
+        self.assertIn("missing-log | unavailable | unavailable", report)
+
     def test_successful_run_with_stale_artifacts_warns_above_fold(self):
         report = self.render(evidence={"sources": {"perf": {"state": "completed", "conclusion": "success", "note": "Stale source identity; measurements omitted."}}})
         self.assertIn("Stale source identity", report.split("<details>", 1)[0])
@@ -57,8 +83,8 @@ class ReportTests(unittest.TestCase):
 
     def test_smoke_is_scoped_and_synthetic_costs_collapsed(self):
         report = self.render()
-        self.assertIn("Smoke contracts", report)
-        self.assertIn("not full API compatibility", report)
+        self.assertIn("API contract coverage and regression changes", report)
+        self.assertIn("not full runtime compatibility", report)
         self.assertIn("<details><summary>Synthetic handler microbenchmarks", report)
         self.assertNotIn("CPU cost |", report)
         self.assertIn("elapsed time", report)

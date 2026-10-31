@@ -152,6 +152,14 @@ class PoolOverheadOverrideTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0,
             f"gate failed unexpectedly: {result.stderr}")
 
+    def test_known_test_failure_is_not_treated_as_missing_measurement(self):
+        base, head = self._baseline(), self._baseline()
+        head["tests"] = {"count": 0, "coverage_pct": 0, "execution_state": "failed", "test_exit_code": 42,
+                         "outcomes": {"api\tTestQuery": "fail"}}
+        result = self._run_gate(base, head)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PR unit tests failed", result.stderr)
+
     def test_pool_overhead_beyond_overrides_still_fails(self):
         """A real regression (3× the override allowance) MUST still fail —
         the override is a calibrated allowance, not a 'turn off the gate'."""

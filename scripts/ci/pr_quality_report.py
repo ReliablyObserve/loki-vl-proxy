@@ -6,6 +6,7 @@ import math
 import re
 import sys
 from pathlib import Path
+from quality_comparison import analyze
 
 
 def mapping(value):
@@ -67,6 +68,20 @@ def table(columns, rows):
             *("| " + " | ".join(row) + " |" for row in rows)]
 
 
+def execution_scopes(sources):
+    scopes = []
+    for name, source in sources.items():
+        if source.get("state") != "completed":
+            continue
+        for scope in records(source.get("test_scopes")):
+            runs = records(scope.get("runs"))
+            if scope.get("kind") == "Playwright" and runs:
+                scopes += [(name, {**scope, **run, "name": str(scope.get("name")) + f" / invocation {index}"}) for index, run in enumerate(runs, 1)]
+            else:
+                scopes.append((name, scope))
+    return scopes
+
+
 def test_details(base, head, ci):
     b, h = base.get("tests", {}), head.get("tests", {})
     valid = lambda t: numeric(t.get("count")) and t["count"] > 0 and numeric(t.get("coverage_pct"))
@@ -92,17 +107,6 @@ def test_details(base, head, ci):
     if counts.get("failed_names"):
         lines += ["Failing tests: " + ", ".join(cell(x) for x in counts["failed_names"][:8]) + "."]
     return lines
-
-
-def smoke_details(base, head):
-    rows = []
-    for key, label in (("loki", "Loki API"), ("drilldown", "Logs Drilldown"), ("vl", "VictoriaLogs")):
-        values = []
-        for sample in (base, head):
-            t = sample.get("compatibility", {}).get(key, {})
-            values.append(f"{fmt(t.get('passed'))}/{fmt(t.get('total'))} ({fmt(t.get('pct'), '%')})" if numeric(t.get("total")) and t["total"] > 0 else "unavailable")
-        rows.append([label, *values])
-    return ["Selected smoke contracts, not full API compatibility or full version-matrix coverage.", "", *table(["Track", "Base passing", "PR passing"], rows)]
 
 
 def bench_details(base, head):
@@ -259,9 +263,21 @@ def render(base, head, evidence):
     if context:
         lines += ["Base " + cell(context.get("base", "unavailable")) + " → PR " + cell(context.get("head", "unavailable")) + "; tested merge " + cell(context.get("merge", "unavailable")) + ".", ""]
     focus, urgent = [], []
+    comparison = analyze(base, head)
+    for signal in comparison["signals"]:
+        target = focus if any(word in signal for word in (" new passing (", " recovered (", "inventory trend")) else urgent
+        target.append(signal)
+    inventory = mapping(head.get("quality_inventory"))
+    if inventory.get("state") == "available":
+        endpoints, gaps = mapping(inventory.get("endpoints")), mapping(inventory.get("gaps"))
+        focus.append("Declared API inventory: " + fmt(endpoints.get("implemented")) + "/" + fmt(endpoints.get("total")) +
+                     " endpoints implemented, " + fmt(endpoints.get("differential")) + " linked to Loki comparison tests, " +
+                     fmt(endpoints.get("declared_proven")) + " declared proven; " + fmt(gaps.get("open")) + " open compatibility gaps. These are registry counts, not a runtime pass percentage.")
     for key in ("base", "head"):
         sample = (base if key == "base" else head).get("tests", {})
-        if not numeric(sample.get("count")) or sample["count"] <= 0:
+        if sample.get("execution_state") == "failed":
+            urgent.append(f"{key.title()} Go test execution failed (exit {cell(sample.get('test_exit_code', 'unknown'))}); observed cases are retained and the population is incomplete.")
+        elif not numeric(sample.get("count")) or sample["count"] <= 0:
             focus.append(f"{key.title()} test/coverage collection unavailable; no comparison inferred.")
     btests, htests = (s.get("tests", {}) for s in (base, head))
     if all(numeric(t.get("count")) and t["count"] > 0 and numeric(t.get("coverage_pct")) for t in (btests, htests)):
@@ -318,6 +334,14 @@ def render(base, head, evidence):
             target = urgent if source.get("note") or source.get("state") in ("stale", "error") or source.get("conclusion") in ("failure", "timed_out", "cancelled") else focus
             target += [cell(name) + ": " + cell(source.get("state", "unavailable")) + " / " + cell(source.get("conclusion") or "result unavailable") +
                       ("; " + cell(source["note"]) if source.get("note") else "") + ". " + link(source)]
+    scopes = execution_scopes(sources)
+    available_scopes = [scope for _, scope in scopes if scope.get("state") == "available"]
+    if available_scopes:
+        bad = sum(numeric(scope.get("failed")) and scope["failed"] > 0 for scope in available_scopes)
+        skipped = sum(numeric(scope.get("skipped")) and scope["skipped"] > 0 for scope in available_scopes)
+        unstable = sum(any(numeric(scope.get(key)) and scope[key] > 0 for key in ("flaky", "interrupted", "not_run")) for scope in available_scopes)
+        target = urgent if bad or unstable else focus
+        target.append(f"Broader API/Grafana execution: {len(available_scopes)} scopes with retained test outcomes; {bad} contain failing cases, {skipped} contain skips and {unstable} report flaky/incomplete cases. Candidate-only proof, not a full compatibility percentage.")
     focus = urgent + focus
     if focus:
         lines += ["Focus signals:", "", *("- " + x for x in focus[:12]), ""]
@@ -329,7 +353,20 @@ def render(base, head, evidence):
         names += sorted(set(sources) - set(names))
         lines += fold("Evidence sources and revision status", table(["Source", "State", "Result", "Link", "Notes"], [[cell(key), cell(sources[key].get("state", "unavailable")), cell(sources[key].get("conclusion") or "pending / unavailable"), link(sources[key]), cell(sources[key].get("note", ""))] for key in names]) + ["", "Pending, stale, unavailable and skipped sources contribute no measurements."])
     lines += fold("Coverage and tests", test_details(base, head, ci))
-    lines += fold("Smoke contracts (selected checks)", smoke_details(base, head))
+    lines += fold("API contract coverage and regression changes", comparison["details"])
+    if scopes:
+        scope_rows = []
+        for name, scope in sorted(scopes, key=lambda item: (item[1].get("failed", 0) == 0, item[1].get("state") == "available", item[0], str(item[1].get("name")))):
+            measured = scope.get("state") == "available"
+            versions = ", ".join(cell(key) + "=" + cell(value) for key, values in mapping(scope.get("versions")).items() if isinstance(values, list) for value in values[:5])
+            scope_rows.append([cell(name) + " / " + cell(scope.get("name")), cell(scope.get("state")),
+                               fmt(scope.get("passed")) if measured else "unavailable", fmt(scope.get("failed")) if measured else "unavailable",
+                               fmt(scope.get("skipped")) if measured else "unavailable",
+                               fmt(scope.get("top_level_passed")) + " / " + fmt(scope.get("subtests_passed")) if scope.get("kind") == "Go" else "—",
+                               " / ".join(fmt(scope.get(key)) for key in ("flaky", "interrupted", "not_run")) if scope.get("kind") == "Playwright" else "not recorded",
+                               versions or cell(scope.get("note", ""))])
+        lines += fold("Broader API and Grafana execution scopes", ["Existing CI job logs, verified against the tested revision. Candidate only: these scopes have no paired base run here. Go counts include top-level cases and subtests; repeated identities count once and a failed repeat stays failed. Playwright invocations remain separate. Do not sum profiles as independent API coverage. Failed jobs can contain only partial observed populations.", "",
+                      *table(["CI source / scope", "Evidence", "Passing", "Failing", "Skipped", "Go pass parent / child", "Flaky / interrupted / not run", "Logged stack / note"], scope_rows[:20]), "", f"Showing {min(20, len(scopes))}/{len(scopes)} scopes; source links are above."])
     if verdict:
         lines += fold("Real workload A/B: base, PR and Loki", perf_details(perf))
     if vv:
