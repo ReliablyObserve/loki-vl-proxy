@@ -312,6 +312,12 @@ class PriorityTests(unittest.TestCase):
             coverage = (tree / "conformance/reports/coverage-map.md").read_text()
             self.assertIn("`/loki/api/v1/index/shards` | GET | gap (optional)", coverage)
             self.assertIn("Optional planner compatibility only", coverage)
+            # MDX treats bare {name} as a JavaScript expression. The shared
+            # scope text reaches both published pages and repository reports.
+            for rendered in (coverage, gaps):
+                for api_path in ("/api/prom/rules*", "/api/prom/label", "/api/prom/label/{name}/values",
+                                 "/api/prom/query", "/api/prom/series", "/api/prom/tail", "/loki/api/v1"):
+                    self.assertIn("`" + api_path + "`", rendered)
             summary = json.loads((registry / "generated/summary.json").read_text())
             self.assertEqual(summary["endpoints"], 3)
             self.assertEqual(summary["state"]["gap"], 3)

@@ -40,11 +40,11 @@ def state_field(identifier, field, track="loki"):
 # The one explanation of what the proxy serves, reused by every generated report.
 SCOPE_SENTENCE = ("The proxy serves Loki's read API; write endpoints such as push are not supported "
                   "(ingest goes to VictoriaLogs directly); delete may be supported, and the "
-                  "alerting-rules API remains in scope, including /api/prom/rules* for vmalert. "
-                  "The deprecated read aliases /api/prom/label, /api/prom/label/{name}/values, "
-                  "/api/prom/query, /api/prom/series and /api/prom/tail are unsupported and excluded "
+                  "alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. "
+                  "The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, "
+                  "`/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded "
                   "from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding "
-                  "/loki/api/v1 routes. No other write endpoint is planned.")
+                  "`/loki/api/v1` routes. No other write endpoint is planned.")
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEPRECATED_READ_ALIASES = {
     "api_prom_label": "/api/prom/label",

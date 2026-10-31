@@ -7,7 +7,7 @@ compares the endpoint against Loki, plus 2 when the proxy computes the result it
 An endpoint the owner named a priority for is placed by that first: `first` above all
 others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group. Optional gaps remain in the declared API inventory and compatibility scores.
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including /api/prom/rules* for vmalert. The deprecated read aliases /api/prom/label, /api/prom/label/{name}/values, /api/prom/query, /api/prom/series and /api/prom/tail are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding /loki/api/v1 routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|

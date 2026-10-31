@@ -9,7 +9,7 @@ Generated from the conformance registry by `conformance/scripts/coverage_map.py`
 
 Loki surface: **v3.7.7**, extracted from the Loki source.
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including /api/prom/rules* for vmalert. The deprecated read aliases /api/prom/label, /api/prom/label/{name}/values, /api/prom/query, /api/prom/series and /api/prom/tail are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding /loki/api/v1 routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 ## Scores
 
