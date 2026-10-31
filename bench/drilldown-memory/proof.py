@@ -177,6 +177,8 @@ class Harness:
                 if status == 200:
                     return
             except (OSError, urllib.error.URLError):
+                # A starting service may refuse connections before it is ready.
+                # Retry only until the fixed deadline; then fail the operation.
                 pass
             threading.Event().wait(.25)
         raise RuntimeError(service + ' not ready')
