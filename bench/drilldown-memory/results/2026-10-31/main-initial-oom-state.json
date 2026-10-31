@@ -1,0 +1,31 @@
+{
+  "Status": "exited",
+  "Running": false,
+  "Paused": false,
+  "Restarting": false,
+  "OOMKilled": true,
+  "Dead": false,
+  "Pid": 0,
+  "ExitCode": 137,
+  "Error": "",
+  "StartedAt": "2026-10-31T14:36:31.681887677Z",
+  "FinishedAt": "2026-10-31T14:37:32.641763595Z",
+  "Health": {
+    "Status": "unhealthy",
+    "FailingStreak": 0,
+    "Log": [
+      {
+        "Start": "2026-10-31T14:36:36.843575138Z",
+        "End": "2026-10-31T14:36:36.898978597Z",
+        "ExitCode": 0,
+        "Output": ""
+      },
+      {
+        "Start": "2026-10-31T14:37:06.899592597Z",
+        "End": "2026-10-31T14:37:06.981543347Z",
+        "ExitCode": 0,
+        "Output": ""
+      }
+    ]
+  }
+}

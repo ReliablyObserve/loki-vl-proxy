@@ -1,0 +1,12 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   10000	     30154 ns/op	 399.02 MB/s	   16436 B/op	      54 allocs/op
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   12502	     27285 ns/op	 440.98 MB/s	   16420 B/op	      54 allocs/op
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   12979	     28465 ns/op	 422.69 MB/s	   16378 B/op	      54 allocs/op
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   13135	     27219 ns/op	 442.05 MB/s	   16423 B/op	      54 allocs/op
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   10000	     30405 ns/op	 395.72 MB/s	   16433 B/op	      54 allocs/op
+BenchmarkStatsJSONSeriesCompare/small/per_series-4         	   10000	     32763 ns/op	 367.24 MB/s	   16378 B/op	      54 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	3.413s

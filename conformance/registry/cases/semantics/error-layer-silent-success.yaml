@@ -7,9 +7,9 @@ consumer: any
 why: |
   Patterns answers 200 [] for every backend failure; detected_fields and
   detected_field values answer 200 for timeouts, cancellations and broken
-  bodies; Drilldown stats answer 200 with a partial-results warning for every
-  stats failure (writeGrafanaStatsFailure); several routes decode a malformed
-  200 body as empty; native tail closes normally. 46 cells on 16 routes.
+  bodies; several routes decode a malformed 200 body as empty, including the
+  Drilldown stats route; native tail closes normally. 36 cells on 16 routes.
+  Classified Drilldown backend failures now keep their real error status.
   Loki answers the same failures with an error, and Drilldown's partial
   carve-out covers max_query_series only (pkg/querier/queryrange/limits.go:507-512,
   pkg/logql/engine.go:536-548). An empty chart instead of an error hides the

@@ -190,81 +190,6 @@ func sanitizeLimit(limitStr string, maxLimit int) string {
 	return limitStr
 }
 
-// writeDrilldownPartialFromUpstream converts an upstream VL 4xx/5xx error into
-// a Loki-compatible "200 OK with partial results" reply. Mirrors what Loki
-// itself does for Drilldown / Logs Explore traffic — see
-// pkg/querier/queryrange/limits.go::seriesLimiter.Do() upstream, which calls
-// IsLogsDrilldownRequest() and converts max-series-exceeded errors from
-// HTTP 500 ("too_many_series") into HTTP 200 + Warning header + partial
-// results so the panel renders an empty chart instead of erroring.
-//
-// Use this from any path that talks to VL on behalf of Grafana/Drilldown
-// traffic and would otherwise return a raw VL error. Non-Grafana / API
-// clients (curl, internal tooling) still see the real error via writeError —
-// we only swallow upstream failures for graceful-degradation paths.
-//
-// What Loki emits for partial results, and what we mirror:
-//
-//   - **`warnings: ["..."]` in the JSON body** (LokiResponse proto field 7).
-//     This is the authoritative channel — the Grafana Loki datasource and
-//     the Drilldown plugin both read warnings from the body, NOT from the
-//     HTTP header. Without this field present, Drilldown silently ignores
-//     the partial-results signal and renders the empty chart with no badge.
-//   - **`Warning` HTTP header** (RFC 7234 `199 - "..."`). Required for
-//     non-Grafana HTTP-aware clients and for log aggregation; Loki sets
-//     this in addition to the body field.
-//   - **`X-Proxy-Upstream-Status` / `X-Proxy-Upstream-Error`** (our debug
-//     headers). Operators tailing access logs see what VL actually said,
-//     so the conversion is observable but transparent to clients.
-//   - **`Cache-Control: no-store`**. Loki sets this on error/partial paths
-//     so frontend caches don't pin the empty reply. Without it, the next
-//     identical user query would hit our compat cache and silently
-//     re-serve the empty matrix even after VL recovered.
-//
-// vlStatus is the upstream code we suppressed. vlMsg comes from VL's
-// extracted error message and is surfaced verbatim in the body's warnings
-// array so operators and panel users see what actually failed.
-func (p *Proxy) writeDrilldownPartialFromUpstream(w http.ResponseWriter, vlStatus int, vlMsg string) {
-	if p.log != nil && p.log.Enabled(context.Background(), slog.LevelWarn) {
-		p.log.Log(context.Background(), slog.LevelWarn,
-			"converting VL upstream error to Drilldown partial-results reply",
-			"vl_status", vlStatus, "vl_msg", vlMsg)
-	}
-
-	// Sanitize VL message for header and body inclusion: first line only, trim
-	// to a sane length. Some VL errors include multi-line stack-trace detail
-	// which would break HTTP header serialization and bloat the body.
-	cleanMsg := vlMsg
-	if i := strings.IndexByte(cleanMsg, '\n'); i >= 0 {
-		cleanMsg = cleanMsg[:i]
-	}
-	if len(cleanMsg) > 200 {
-		cleanMsg = cleanMsg[:200]
-	}
-
-	// Headers Loki sets for partial-results / error-recovery paths.
-	w.Header().Set("Warning", `199 - "maximum query bounds exceeded; returning partial results"`)
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Proxy-Upstream-Status", strconv.Itoa(vlStatus))
-	if cleanMsg != "" {
-		w.Header().Set("X-Proxy-Upstream-Error", cleanMsg)
-	}
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
-
-	// Build the body with the same `warnings` array Loki emits. JSON-escape
-	// the upstream message so embedded quotes/backslashes don't break the
-	// payload (Drilldown will simply not render the badge if it can't parse).
-	warning := "maximum query bounds exceeded; returning partial results"
-	if cleanMsg != "" {
-		warning = warning + " (upstream: " + cleanMsg + ")"
-	}
-	warningJSON, _ := json.Marshal(warning)
-	_, _ = w.Write([]byte(`{"status":"success","warnings":[`))
-	_, _ = w.Write(warningJSON)
-	_, _ = w.Write([]byte(`],"data":{"resultType":"matrix","result":[]}}`))
-}
-
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	p.writeErrorCause(w, code, msg, nil)
 }
@@ -732,23 +657,11 @@ func (p *Proxy) writeBackendError(w http.ResponseWriter, status int, body []byte
 	return p.writeErr(w, context.Background(), p.redactedBackendStatusError("", status, body))
 }
 
-// writeGrafanaStatsFailure answers a failed stats call for Grafana-sourced
-// traffic: a rejected query is Loki's 400, every other failure keeps the
-// partial-results reply (writeDrilldownPartialFromUpstream).
+// writeGrafanaStatsFailure answers failed Grafana stats calls through the same
+// error contract as other Loki clients. Series-limit partial results are
+// produced by the series-limit paths, which still have an actual result.
 func (p *Proxy) writeGrafanaStatsFailure(w http.ResponseWriter, err error) {
-	// Loki's Drilldown partial-result carve-out covers max_query_series only; a
-	// full query queue stays a 429 for Grafana clients too, so panels show the
-	// rejection instead of an empty chart.
-	status := statusFromUpstreamErr(err)
-	if isUpstreamQueryRejected(err) || isHeavyQueryQueueFull(err) || status == 499 {
-		p.writeErr(w, context.Background(), err)
-		return
-	}
-	var hsc httpStatusCoder
-	if errors.As(err, &hsc) {
-		status = hsc.StatusCode()
-	}
-	p.writeDrilldownPartialFromUpstream(w, status, err.Error())
+	p.writeErr(w, context.Background(), err)
 }
 
 // shouldRecordBreakerFailure reports whether a failed backend call is evidence

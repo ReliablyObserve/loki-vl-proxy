@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Large Drilldown metric replies avoid a whole-response point tree.**
+  Supported stats JSON bodies over 1 MiB are transformed one series at a time,
+  reusing the existing label, timestamp and point writers. This reduces peak
+  memory during concurrent long-range Fields queries while preserving answers;
+  unsupported response shapes retain the compatibility fallback.
+- **Drilldown backend failures stay visible.** Storage and connection failures,
+  timeouts and queue rejections use the same sanitized Loki error contract as
+  other clients, instead of HTTP 200 with an empty matrix and a misleading
+  query-bounds warning. Series-limit partial results keep their existing data
+  and warning. Regression tests cover 12h and 2d field queries, concurrent
+  responses, cancellation and recovery without caching a failed answer.
+- **Large JSON response pools release oversized backing storage.** All shared
+  JSON encoding buffers and fastjson marshal scratch keep at most 64 KiB of
+  backing storage after release. Stats parsers discard retained state from
+  inputs over 1 MiB, including parse failures, while common smaller responses
+  retain parser reuse. These are pool retention thresholds, not response-size
+  limits or a hard process memory budget.
 - **Coalescing counters count actual followers.** A guarded caller joining a
   plain in-flight call now records the saved backend call and wait, including
   shared failures. A shared result's leader is never counted as a saved call.

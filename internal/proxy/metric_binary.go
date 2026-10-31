@@ -955,8 +955,17 @@ func relabelStatsQueryRange(body []byte, startNs, endNs int64, relabel func(int6
 // trimStatsQRByTimeFJShifted filters stats_query_range points and rewrites every
 // kept point's timestamp with relabel. keep receives the original timestamp.
 func trimStatsQRByTimeFJShifted(body []byte, keep func(int64) bool, relabel func(int64) int64) []byte {
+	if len(body) > maxPooledStatsParserInputSize {
+		if out, handled := trimStatsQRBySeries(body, keep, relabel); handled {
+			return out
+		}
+	}
+	return trimStatsQRByTimeFJShiftedFull(body, keep, relabel)
+}
+
+func trimStatsQRByTimeFJShiftedFull(body []byte, keep func(int64) bool, relabel func(int64) int64) []byte {
 	p := statsQRFJPool.Get()
-	defer statsQRFJPool.Put(p)
+	defer releaseFJParser(&statsQRFJPool, p, len(body))
 
 	v, err := p.ParseBytes(body)
 	if err != nil {
@@ -1009,11 +1018,11 @@ scanLoop:
 	// Rebuild the JSON response with filtered values arrays.
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer jsonBufPool.Put(buf)
+	defer releaseJSONBuffer(buf)
 	buf.Grow(len(body))
 
 	scratch := fjMarshalPool.Get().(*[]byte)
-	defer fjMarshalPool.Put(scratch)
+	defer releaseFJMarshalScratch(scratch)
 
 	buf.WriteByte('{')
 	needsComma := false
@@ -1142,13 +1151,25 @@ type trimTranslateResult struct {
 //
 // keep may be nil (no time filtering). If neither filtering nor label translation
 // is needed, the original body is returned unchanged with no allocation.
-//
-//nolint:gocyclo // combines two existing functions; branching is inherent to the schema variants.
 func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) []byte {
+	if len(body) > maxPooledStatsParserInputSize {
+		start := time.Now()
+		if out, operation, handled := p.trimAndTranslateStatsQRBySeries(body, keep, originalQuery); handled {
+			if operation != "" {
+				p.observeInternalOperation(ctx, "trim_translate_stats_qr", operation, time.Since(start))
+			}
+			return out
+		}
+	}
+	return p.trimAndTranslateStatsQRFJFull(ctx, body, keep, originalQuery)
+}
+
+//nolint:gocyclo // preserves the reference traversal across the three stats envelopes and label/point transformations.
+func (p *Proxy) trimAndTranslateStatsQRFJFull(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) []byte {
 	start := time.Now()
 
 	parser := statsTranslateFJPool.Get()
-	defer statsTranslateFJPool.Put(parser)
+	defer releaseFJParser(&statsTranslateFJPool, parser, len(body))
 
 	v, err := parser.ParseBytes(body)
 	if err != nil {
@@ -1223,84 +1244,12 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 				}
 			}
 
-			// Pass 2: compute translated metric labels (identical logic to translateStatsResponseLabelsWithContext).
-			metricVal := item.Get("metric")
-			if metricVal == nil || metricVal.Type() != fj.TypeObject {
-				continue
-			}
-
-			for k := range translated {
-				delete(translated, k)
-			}
-			changed := false
-			hadStream := false
-
-			metricVal.GetObject().Visit(func(k []byte, vv *fj.Value) {
-				key := string(k)
-				val := string(vv.GetStringBytes())
-				switch key {
-				case "__name__":
-					changed = true
-				case "_stream":
-					hadStream = true
-					for streamKey, streamValue := range parseStreamLabels(val) {
-						lokiKey := streamKey
-						if !p.labelTranslator.IsPassthrough() {
-							lokiKey = p.labelTranslator.ToLoki(streamKey)
-						}
-						if streamValue != "" || translated[lokiKey] == "" {
-							translated[lokiKey] = streamValue
-						}
-					}
-					changed = true
-				default:
-					lokiKey := key
-					if !p.labelTranslator.IsPassthrough() {
-						lokiKey = p.labelTranslator.ToLoki(key)
-					}
-					if lokiKey != key {
-						changed = true
-					}
-					if val != "" || translated[lokiKey] == "" {
-						translated[lokiKey] = val
-					}
-				}
-			})
-
-			for k := range syntheticLabels {
-				delete(syntheticLabels, k)
-			}
-			for k, val := range translated {
-				syntheticLabels[k] = val
-			}
-
-			serviceSignal := hasServiceSignal(syntheticLabels)
-			beforeSyntheticCount := len(syntheticLabels)
-			levelGrouping.apply(syntheticLabels, translated, hadStream)
-			if hadStream {
-				ensureSyntheticServiceName(syntheticLabels)
-				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
-					delete(syntheticLabels, "service_name")
-				}
-			}
-			if dropEmptyLabelValues(syntheticLabels) {
-				changed = true
-			}
-			if len(syntheticLabels) != beforeSyntheticCount {
-				changed = true
-			}
-			for key, value := range syntheticLabels {
-				if existing, ok := translated[key]; ok && existing == value {
-					continue
-				}
-				translated[key] = value
-				changed = true
-			}
+			metric, changed := p.translateStatsQRMetricFJ(item.Get("metric"), levelGrouping, translated, syntheticLabels)
 
 			if changed {
 				translatedCount++
 				needsRebuild = true
-				res.metric = cloneStringMap(syntheticLabels)
+				res.metric = cloneStringMap(metric)
 			}
 		}
 	}
@@ -1315,11 +1264,11 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 	// and returns the buffer zero-alloc instead of splicing a new []byte.
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer jsonBufPool.Put(buf)
+	defer releaseJSONBuffer(buf)
 	buf.Grow(len(body) + len(`{"status":"success",`))
 
 	scratch := fjMarshalPool.Get().(*[]byte)
-	defer fjMarshalPool.Put(scratch)
+	defer releaseFJMarshalScratch(scratch)
 	// Fix 2: pre-grow scratch to body length so values.MarshalTo doesn't
 	// chain-reallocate when serialising a large values array in one shot.
 	if cap(*scratch) < len(body) {

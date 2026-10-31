@@ -1,0 +1,691 @@
+[
+  {
+    "time": 1793459195.395189,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 4.047105335,
+      "go_memstats_alloc_bytes": 32478096.0,
+      "go_memstats_sys_bytes": 49719576.0,
+      "go_memstats_heap_inuse_bytes": 35217408.0,
+      "process_resident_memory_bytes": 22884352.0
+    }
+  },
+  {
+    "time": 1793459195.664112,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 4.312285002,
+      "go_memstats_alloc_bytes": 50085520.0,
+      "go_memstats_sys_bytes": 67545368.0,
+      "go_memstats_heap_inuse_bytes": 53682176.0,
+      "process_resident_memory_bytes": 40923136.0
+    }
+  },
+  {
+    "time": 1793459195.9504042,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 4.584578294,
+      "go_memstats_alloc_bytes": 85241192.0,
+      "go_memstats_sys_bytes": 105294104.0,
+      "go_memstats_heap_inuse_bytes": 88612864.0,
+      "process_resident_memory_bytes": 76365824.0
+    }
+  },
+  {
+    "time": 1793459196.3373818,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 4.929206252,
+      "go_memstats_alloc_bytes": 494292784.0,
+      "go_memstats_sys_bytes": 519076232.0,
+      "go_memstats_heap_inuse_bytes": 499474432.0,
+      "process_resident_memory_bytes": 485163008.0
+    }
+  },
+  {
+    "time": 1793459196.604278,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 5.248371086,
+      "go_memstats_alloc_bytes": 979002704.0,
+      "go_memstats_sys_bytes": 1019464184.0,
+      "go_memstats_heap_inuse_bytes": 984719360.0,
+      "process_resident_memory_bytes": 967901184.0
+    }
+  },
+  {
+    "time": 1793459196.8732731,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 5.514388127,
+      "go_memstats_alloc_bytes": 1308118840.0,
+      "go_memstats_sys_bytes": 1424583256.0,
+      "go_memstats_heap_inuse_bytes": 1314594816.0,
+      "process_resident_memory_bytes": 1339736064.0
+    }
+  },
+  {
+    "time": 1793459197.3242939,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 5.967187253,
+      "go_memstats_alloc_bytes": 2138884808.0,
+      "go_memstats_sys_bytes": 2172132104.0,
+      "go_memstats_heap_inuse_bytes": 2147295232.0,
+      "process_resident_memory_bytes": 2040074240.0
+    }
+  },
+  {
+    "time": 1793459197.6211689,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 6.256689086,
+      "go_memstats_alloc_bytes": 1944242920.0,
+      "go_memstats_sys_bytes": 2327952168.0,
+      "go_memstats_heap_inuse_bytes": 1950793728.0,
+      "process_resident_memory_bytes": 2074333184.0
+    }
+  },
+  {
+    "time": 1793459198.222955,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 6.840736253,
+      "go_memstats_alloc_bytes": 2551199712.0,
+      "go_memstats_sys_bytes": 2828086200.0,
+      "go_memstats_heap_inuse_bytes": 2561638400.0,
+      "process_resident_memory_bytes": 2133995520.0
+    }
+  },
+  {
+    "time": 1793459198.5190852,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 7.144075961,
+      "go_memstats_alloc_bytes": 2576688768.0,
+      "go_memstats_sys_bytes": 2828397496.0,
+      "go_memstats_heap_inuse_bytes": 2584543232.0,
+      "process_resident_memory_bytes": 2128457728.0
+    }
+  },
+  {
+    "time": 1793459198.8175309,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 7.432690127,
+      "go_memstats_alloc_bytes": 2595062264.0,
+      "go_memstats_sys_bytes": 2828397496.0,
+      "go_memstats_heap_inuse_bytes": 2603089920.0,
+      "process_resident_memory_bytes": 2121543680.0
+    }
+  },
+  {
+    "time": 1793459199.425659,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 7.861523461,
+      "go_memstats_alloc_bytes": 2704653824.0,
+      "go_memstats_sys_bytes": 2937449400.0,
+      "go_memstats_heap_inuse_bytes": 2712608768.0,
+      "process_resident_memory_bytes": 1891639296.0
+    }
+  },
+  {
+    "time": 1793459199.802441,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 8.348756128,
+      "go_memstats_alloc_bytes": 2718661400.0,
+      "go_memstats_sys_bytes": 2937711544.0,
+      "go_memstats_heap_inuse_bytes": 2726813696.0,
+      "process_resident_memory_bytes": 1997991936.0
+    }
+  },
+  {
+    "time": 1793459200.174918,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 8.735473086,
+      "go_memstats_alloc_bytes": 2721765104.0,
+      "go_memstats_sys_bytes": 2937711544.0,
+      "go_memstats_heap_inuse_bytes": 2729705472.0,
+      "process_resident_memory_bytes": 2041962496.0
+    }
+  },
+  {
+    "time": 1793459202.465315,
+    "error": "timed out"
+  },
+  {
+    "time": 1793459202.831458,
+    "status": 429,
+    "metrics": {}
+  },
+  {
+    "time": 1793459203.430238,
+    "status": 429,
+    "metrics": {}
+  },
+  {
+    "time": 1793459203.759957,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 12.403918713,
+      "go_memstats_alloc_bytes": 2969619288.0,
+      "go_memstats_sys_bytes": 3231976472.0,
+      "go_memstats_heap_inuse_bytes": 2977873920.0,
+      "process_resident_memory_bytes": 2040086528.0
+    }
+  },
+  {
+    "time": 1793459204.0654368,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 12.679513672,
+      "go_memstats_alloc_bytes": 2980068256.0,
+      "go_memstats_sys_bytes": 3231992856.0,
+      "go_memstats_heap_inuse_bytes": 2988081152.0,
+      "process_resident_memory_bytes": 2033758208.0
+    }
+  },
+  {
+    "time": 1793459204.446367,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 13.01589013,
+      "go_memstats_alloc_bytes": 2998238712.0,
+      "go_memstats_sys_bytes": 3231992856.0,
+      "go_memstats_heap_inuse_bytes": 3006291968.0,
+      "process_resident_memory_bytes": 2027606016.0
+    }
+  },
+  {
+    "time": 1793459204.8932962,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 13.386465214,
+      "go_memstats_alloc_bytes": 3017567600.0,
+      "go_memstats_sys_bytes": 3232255000.0,
+      "go_memstats_heap_inuse_bytes": 3026059264.0,
+      "process_resident_memory_bytes": 2013777920.0
+    }
+  },
+  {
+    "time": 1793459205.270091,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 13.824439547,
+      "go_memstats_alloc_bytes": 3039338088.0,
+      "go_memstats_sys_bytes": 3232255000.0,
+      "go_memstats_heap_inuse_bytes": 3048423424.0,
+      "process_resident_memory_bytes": 2003693568.0
+    }
+  },
+  {
+    "time": 1793459205.633145,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 14.207164381,
+      "go_memstats_alloc_bytes": 3054938832.0,
+      "go_memstats_sys_bytes": 3232889880.0,
+      "go_memstats_heap_inuse_bytes": 3064668160.0,
+      "process_resident_memory_bytes": 1990762496.0
+    }
+  },
+  {
+    "time": 1793459206.042072,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 14.571672006,
+      "go_memstats_alloc_bytes": 3079403936.0,
+      "go_memstats_sys_bytes": 3233152024.0,
+      "go_memstats_heap_inuse_bytes": 3089801216.0,
+      "process_resident_memory_bytes": 1987706880.0
+    }
+  },
+  {
+    "time": 1793459207.254103,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 14.977149131000001,
+      "go_memstats_alloc_bytes": 3194517880.0,
+      "go_memstats_sys_bytes": 3342466072.0,
+      "go_memstats_heap_inuse_bytes": 3205283840.0,
+      "process_resident_memory_bytes": 1957974016.0
+    }
+  },
+  {
+    "time": 1793459208.1780832,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 16.799209007,
+      "go_memstats_alloc_bytes": 3203792752.0,
+      "go_memstats_sys_bytes": 3342466072.0,
+      "go_memstats_heap_inuse_bytes": 3214909440.0,
+      "process_resident_memory_bytes": 1945415680.0
+    }
+  },
+  {
+    "time": 1793459208.715156,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 17.311634507,
+      "go_memstats_alloc_bytes": 3225486856.0,
+      "go_memstats_sys_bytes": 3342728216.0,
+      "go_memstats_heap_inuse_bytes": 3237535744.0,
+      "process_resident_memory_bytes": 1936506880.0
+    }
+  },
+  {
+    "time": 1793459209.1353862,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 17.634898174,
+      "go_memstats_alloc_bytes": 3377099760.0,
+      "go_memstats_sys_bytes": 3477363768.0,
+      "go_memstats_heap_inuse_bytes": 3389374464.0,
+      "process_resident_memory_bytes": 1943621632.0
+    }
+  },
+  {
+    "time": 1793459209.863295,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 18.084399591,
+      "go_memstats_alloc_bytes": 3390021144.0,
+      "go_memstats_sys_bytes": 3477363768.0,
+      "go_memstats_heap_inuse_bytes": 3402686464.0,
+      "process_resident_memory_bytes": 1945206784.0
+    }
+  },
+  {
+    "time": 1793459210.89821,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 19.487400591,
+      "go_memstats_alloc_bytes": 2924464024.0,
+      "go_memstats_sys_bytes": 3646901352.0,
+      "go_memstats_heap_inuse_bytes": 2940157952.0,
+      "process_resident_memory_bytes": 1928777728.0
+    }
+  },
+  {
+    "time": 1793459211.1813738,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 19.818535717,
+      "go_memstats_alloc_bytes": 2936855760.0,
+      "go_memstats_sys_bytes": 3646901352.0,
+      "go_memstats_heap_inuse_bytes": 2951454720.0,
+      "process_resident_memory_bytes": 2019233792.0
+    }
+  },
+  {
+    "time": 1793459211.5244029,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 20.12633055,
+      "go_memstats_alloc_bytes": 2943580224.0,
+      "go_memstats_sys_bytes": 3646901352.0,
+      "go_memstats_heap_inuse_bytes": 2958008320.0,
+      "process_resident_memory_bytes": 2029686784.0
+    }
+  },
+  {
+    "time": 1793459212.193398,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 20.461298967,
+      "go_memstats_alloc_bytes": 3176059464.0,
+      "go_memstats_sys_bytes": 3852700840.0,
+      "go_memstats_heap_inuse_bytes": 3190423552.0,
+      "process_resident_memory_bytes": 2020192256.0
+    }
+  },
+  {
+    "time": 1793459212.5794592,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 21.194299342,
+      "go_memstats_alloc_bytes": 3182615672.0,
+      "go_memstats_sys_bytes": 3852700840.0,
+      "go_memstats_heap_inuse_bytes": 3196944384.0,
+      "process_resident_memory_bytes": 2010734592.0
+    }
+  },
+  {
+    "time": 1793459213.040106,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 21.674550051,
+      "go_memstats_alloc_bytes": 3191642368.0,
+      "go_memstats_sys_bytes": 3852700840.0,
+      "go_memstats_heap_inuse_bytes": 3205734400.0,
+      "process_resident_memory_bytes": 1999499264.0
+    }
+  },
+  {
+    "time": 1793459213.321285,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 21.962996301,
+      "go_memstats_alloc_bytes": 3206848952.0,
+      "go_memstats_sys_bytes": 3852700840.0,
+      "go_memstats_heap_inuse_bytes": 3220897792.0,
+      "process_resident_memory_bytes": 1991950336.0
+    }
+  },
+  {
+    "time": 1793459213.668291,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 22.265186676,
+      "go_memstats_alloc_bytes": 3222154352.0,
+      "go_memstats_sys_bytes": 3852700840.0,
+      "go_memstats_heap_inuse_bytes": 3236823040.0,
+      "process_resident_memory_bytes": 1985818624.0
+    }
+  },
+  {
+    "time": 1793459214.385859,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 22.989339926,
+      "go_memstats_alloc_bytes": 3231233352.0,
+      "go_memstats_sys_bytes": 3852962984.0,
+      "go_memstats_heap_inuse_bytes": 3246219264.0,
+      "process_resident_memory_bytes": 1981673472.0
+    }
+  },
+  {
+    "time": 1793459214.70127,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 23.30942826,
+      "go_memstats_alloc_bytes": 3246982688.0,
+      "go_memstats_sys_bytes": 3853391016.0,
+      "go_memstats_heap_inuse_bytes": 3262701568.0,
+      "process_resident_memory_bytes": 1977339904.0
+    }
+  },
+  {
+    "time": 1793459215.183611,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 23.79859301,
+      "go_memstats_alloc_bytes": 3267126280.0,
+      "go_memstats_sys_bytes": 3853653160.0,
+      "go_memstats_heap_inuse_bytes": 3283533824.0,
+      "process_resident_memory_bytes": 1965993984.0
+    }
+  },
+  {
+    "time": 1793459215.464139,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 24.109528385,
+      "go_memstats_alloc_bytes": 3277888960.0,
+      "go_memstats_sys_bytes": 3853915304.0,
+      "go_memstats_heap_inuse_bytes": 3294846976.0,
+      "process_resident_memory_bytes": 1960333312.0
+    }
+  },
+  {
+    "time": 1793459216.185256,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 24.410741552,
+      "go_memstats_alloc_bytes": 3285994120.0,
+      "go_memstats_sys_bytes": 3854439592.0,
+      "go_memstats_heap_inuse_bytes": 3303096320.0,
+      "process_resident_memory_bytes": 1954455552.0
+    }
+  },
+  {
+    "time": 1793459216.493783,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 25.128167719,
+      "go_memstats_alloc_bytes": 3297765952.0,
+      "go_memstats_sys_bytes": 3854439592.0,
+      "go_memstats_heap_inuse_bytes": 3315351552.0,
+      "process_resident_memory_bytes": 1935978496.0
+    }
+  },
+  {
+    "time": 1793459216.8230011,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 25.445412219,
+      "go_memstats_alloc_bytes": 3302426008.0,
+      "go_memstats_sys_bytes": 3854455976.0,
+      "go_memstats_heap_inuse_bytes": 3320160256.0,
+      "process_resident_memory_bytes": 1917992960.0
+    }
+  },
+  {
+    "time": 1793459217.2755961,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 25.850072386,
+      "go_memstats_alloc_bytes": 3362946936.0,
+      "go_memstats_sys_bytes": 3854718120.0,
+      "go_memstats_heap_inuse_bytes": 3380781056.0,
+      "process_resident_memory_bytes": 1909719040.0
+    }
+  },
+  {
+    "time": 1793459217.5923898,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 26.209530345,
+      "go_memstats_alloc_bytes": 3365516512.0,
+      "go_memstats_sys_bytes": 3854718120.0,
+      "go_memstats_heap_inuse_bytes": 3383377920.0,
+      "process_resident_memory_bytes": 1901678592.0
+    }
+  },
+  {
+    "time": 1793459218.146975,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 26.534306262,
+      "go_memstats_alloc_bytes": 3368497400.0,
+      "go_memstats_sys_bytes": 3854718120.0,
+      "go_memstats_heap_inuse_bytes": 3386433536.0,
+      "process_resident_memory_bytes": 1899675648.0
+    }
+  },
+  {
+    "time": 1793459218.429446,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 27.071603678,
+      "go_memstats_alloc_bytes": 3371958656.0,
+      "go_memstats_sys_bytes": 3854718120.0,
+      "go_memstats_heap_inuse_bytes": 3389915136.0,
+      "process_resident_memory_bytes": 1890050048.0
+    }
+  },
+  {
+    "time": 1793459218.7188811,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 27.352362387,
+      "go_memstats_alloc_bytes": 3374543624.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3392593920.0,
+      "process_resident_memory_bytes": 1885847552.0
+    }
+  },
+  {
+    "time": 1793459219.0364742,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 27.646180429,
+      "go_memstats_alloc_bytes": 3377299328.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3395338240.0,
+      "process_resident_memory_bytes": 1877422080.0
+    }
+  },
+  {
+    "time": 1793459219.534492,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 28.111107804,
+      "go_memstats_alloc_bytes": 3380181944.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3398246400.0,
+      "process_resident_memory_bytes": 1866788864.0
+    }
+  },
+  {
+    "time": 1793459219.848211,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 28.464866179,
+      "go_memstats_alloc_bytes": 3383520784.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3401687040.0,
+      "process_resident_memory_bytes": 1861697536.0
+    }
+  },
+  {
+    "time": 1793459220.5474718,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 29.185836929,
+      "go_memstats_alloc_bytes": 3385941112.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3404210176.0,
+      "process_resident_memory_bytes": 1857634304.0
+    }
+  },
+  {
+    "time": 1793459220.836071,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 29.476404263,
+      "go_memstats_alloc_bytes": 3389199360.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3407454208.0,
+      "process_resident_memory_bytes": 1853476864.0
+    }
+  },
+  {
+    "time": 1793459221.221666,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 29.819789013,
+      "go_memstats_alloc_bytes": 3392151848.0,
+      "go_memstats_sys_bytes": 3854980264.0,
+      "go_memstats_heap_inuse_bytes": 3410485248.0,
+      "process_resident_memory_bytes": 1846849536.0
+    }
+  },
+  {
+    "time": 1793459222.58889,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 31.242092972,
+      "go_memstats_alloc_bytes": 3264173024.0,
+      "go_memstats_sys_bytes": 3855889576.0,
+      "go_memstats_heap_inuse_bytes": 3287015424.0,
+      "process_resident_memory_bytes": 1820389376.0
+    }
+  },
+  {
+    "time": 1793459222.897644,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 31.529564472,
+      "go_memstats_alloc_bytes": 3313093424.0,
+      "go_memstats_sys_bytes": 3855905960.0,
+      "go_memstats_heap_inuse_bytes": 3335159808.0,
+      "process_resident_memory_bytes": 1861902336.0
+    }
+  },
+  {
+    "time": 1793459223.3505101,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 31.873307306,
+      "go_memstats_alloc_bytes": 3326372296.0,
+      "go_memstats_sys_bytes": 3855905960.0,
+      "go_memstats_heap_inuse_bytes": 3348209664.0,
+      "process_resident_memory_bytes": 1853386752.0
+    }
+  },
+  {
+    "time": 1793459223.6934211,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 32.298355514,
+      "go_memstats_alloc_bytes": 3342652224.0,
+      "go_memstats_sys_bytes": 3855905960.0,
+      "go_memstats_heap_inuse_bytes": 3364225024.0,
+      "process_resident_memory_bytes": 1842601984.0
+    }
+  },
+  {
+    "time": 1793459224.104809,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 32.676909639,
+      "go_memstats_alloc_bytes": 3361495864.0,
+      "go_memstats_sys_bytes": 3855922344.0,
+      "go_memstats_heap_inuse_bytes": 3382878208.0,
+      "process_resident_memory_bytes": 1842171904.0
+    }
+  },
+  {
+    "time": 1793459224.488085,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 33.056204598,
+      "go_memstats_alloc_bytes": 3365958288.0,
+      "go_memstats_sys_bytes": 3855922344.0,
+      "go_memstats_heap_inuse_bytes": 3387179008.0,
+      "process_resident_memory_bytes": 1823662080.0
+    }
+  },
+  {
+    "time": 1793459224.868854,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 33.435783181,
+      "go_memstats_alloc_bytes": 3386496776.0,
+      "go_memstats_sys_bytes": 3855922344.0,
+      "go_memstats_heap_inuse_bytes": 3407618048.0,
+      "process_resident_memory_bytes": 1821515776.0
+    }
+  },
+  {
+    "time": 1793459225.391295,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 33.919891015,
+      "go_memstats_alloc_bytes": 3584918480.0,
+      "go_memstats_sys_bytes": 3855922344.0,
+      "go_memstats_heap_inuse_bytes": 3605282816.0,
+      "process_resident_memory_bytes": 1834414080.0
+    }
+  },
+  {
+    "time": 1793459225.7523892,
+    "status": 200,
+    "metrics": {
+      "loki_vl_proxy_uptime_seconds": 34.398237765,
+      "go_memstats_alloc_bytes": 3752583536.0,
+      "go_memstats_sys_bytes": 4015445192.0,
+      "go_memstats_heap_inuse_bytes": 3772407808.0,
+      "process_resident_memory_bytes": 1910378496.0
+    }
+  },
+  {
+    "time": 1793459226.167095,
+    "error": "Remote end closed connection without response"
+  }
+]

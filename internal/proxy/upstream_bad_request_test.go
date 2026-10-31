@@ -631,18 +631,16 @@ func TestClassifyVLError_RealVictoriaLogsTexts(t *testing.T) {
 
 // TestUpstreamBadRequest_GrafanaStatsQueries: a query VictoriaLogs rejects is
 // Loki's 400 for every client, Grafana included. A resource-limit failure or an
-// unrecognised 400 keeps the pre-existing handling: the partial-results reply
-// for Grafana-sourced stats queries, the backend status for direct API clients
-// on the stats paths, and 502 on the manual parser-metric path.
+// unrecognised backend 400 is a sanitized Loki 500 for every client and stats
+// path; it must not pretend the query succeeded with an empty bounds partial.
 func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 	clients := []struct {
 		name    string
 		headers map[string]string
-		grafana bool
 	}{
-		{"api", nil, false},
-		{"grafana_explore", map[string]string{"User-Agent": "Grafana/12.1.0", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana-explore"}, true},
-		{"grafana_drilldown", map[string]string{"User-Agent": "Grafana/12.1.0", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana-lokiexplore-app"}, true},
+		{"api", nil},
+		{"grafana_explore", map[string]string{"User-Agent": "Grafana/12.1.0", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana-explore"}},
+		{"grafana_drilldown", map[string]string{"User-Agent": "Grafana/12.1.0", "X-Grafana-Org-Id": "1", "X-Query-Tags": "Source=grafana-lokiexplore-app"}},
 	}
 	bodies := []struct {
 		name     string
@@ -661,21 +659,16 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 		{"storage_eof_400", http.StatusBadRequest, vlBodyMetadataFailure, false},
 		{"unknown_400", http.StatusBadRequest, vlBodyUnknown, false},
 	}
-	queries := []struct {
-		query string
-		// partial reports whether the path has the Grafana partial-results
-		// reply; the manual parser-metric path never had one.
-		partial bool
-	}{
-		{`sum(count_over_time({app="billing"}[1m]))`, true},
-		{`sum by (level) (count_over_time({app="billing"}[1m]))`, true},
-		{`count_over_time({app="billing"}[1m])`, true},
-		{`sum by (level) (count_over_time({app="billing"} | json [1m]))`, false},
+	queries := []string{
+		`sum(count_over_time({app="billing"}[1m]))`,
+		`sum by (level) (count_over_time({app="billing"}[1m]))`,
+		`count_over_time({app="billing"}[1m])`,
+		`sum by (level) (count_over_time({app="billing"} | json [1m]))`,
 	}
 	for _, body := range bodies {
 		for _, query := range queries {
 			for _, client := range clients {
-				t.Run(body.name+"/"+client.name+"/"+query.query, func(t *testing.T) {
+				t.Run(body.name+"/"+client.name+"/"+query, func(t *testing.T) {
 					vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if strings.HasPrefix(strings.TrimSpace(body.body), "{") {
 							w.Header().Set("Content-Type", "application/json")
@@ -687,29 +680,25 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 					p := newTestProxy(t, vl.URL)
 					// A known v1.45+ backend: tumbling stats buckets for any start.
 					p.storeBackendVersion("v1.50.0", "v1.50.0")
-					req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/query_range", map[string]string{"query": query.query, "step": "60"}), nil)
+					req := httptest.NewRequest(http.MethodGet, badRequestURL("/loki/api/v1/query_range", map[string]string{"query": query, "step": "60"}), nil)
 					for k, v := range client.headers {
 						req.Header.Set(k, v)
 					}
 					w := httptest.NewRecorder()
 					p.handleQueryRange(w, req)
-					switch {
-					case body.rejected:
+					if body.rejected {
 						assertLokiBadData(t, w)
 						return
-					case !query.partial || !client.grafana:
-						// Loki's 500 for a failed backend, never VictoriaLogs' 400/422
-						// (pkg/util/server/error.go:124-128).
-						if w.Code != http.StatusInternalServerError {
-							t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
-						}
-						return
 					}
-					if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"warnings"`) {
-						t.Fatalf("expected partial-results reply, got %d body=%s", w.Code, w.Body.String())
+					var envelope struct {
+						Status, Error string
+						Warnings      []string
 					}
-					if strings.Contains(w.Body.String(), "billing-secret-value") {
-						t.Fatalf("backend query echo leaked in partial reply: %s", w.Body.String())
+					if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil || w.Code != http.StatusInternalServerError || envelope.Status != "error" || envelope.Error != lokiErrInternal || len(envelope.Warnings) != 0 {
+						t.Fatalf("expected sanitized Loki 500, got %d body=%s", w.Code, w.Body.String())
+					}
+					if strings.Contains(w.Body.String(), "billing-secret-value") || w.Header().Get("Warning") != "" || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {
+						t.Fatalf("backend details or fabricated partial leaked: headers=%v body=%s", w.Header(), w.Body.String())
 					}
 				})
 			}

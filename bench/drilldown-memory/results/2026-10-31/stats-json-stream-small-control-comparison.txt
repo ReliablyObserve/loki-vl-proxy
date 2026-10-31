@@ -1,0 +1,20 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                          │ /private/tmp/stats-json-stream-small-candidate.txt │ /private/tmp/stats-json-stream-small-control.txt │
+                                          │                       sec/op                       │          sec/op            vs base               │
+StatsJSONSeriesCompare/small/per_series-4                                         29.31µ ± 12%                45.08µ ± 12%  +53.81% (p=0.002 n=6)
+
+                                          │ /private/tmp/stats-json-stream-small-candidate.txt │ /private/tmp/stats-json-stream-small-control.txt │
+                                          │                        B/s                         │            B/s             vs base               │
+StatsJSONSeriesCompare/small/per_series-4                                        391.8Mi ± 11%               254.6Mi ± 10%  -35.03% (p=0.002 n=6)
+
+                                          │ /private/tmp/stats-json-stream-small-candidate.txt │ /private/tmp/stats-json-stream-small-control.txt │
+                                          │                        B/op                        │              B/op                vs base         │
+StatsJSONSeriesCompare/small/per_series-4                                         16.04Ki ± 0%                      16.06Ki ± 0%  ~ (p=0.061 n=6)
+
+                                          │ /private/tmp/stats-json-stream-small-candidate.txt │ /private/tmp/stats-json-stream-small-control.txt │
+                                          │                     allocs/op                      │           allocs/op            vs base           │
+StatsJSONSeriesCompare/small/per_series-4                                           54.00 ± 0%                      54.00 ± 0%  ~ (p=1.000 n=6) ¹
+¹ all samples are equal

@@ -1,5 +1,5 @@
 id: semantics/error-layer-backend-text
-title: VictoriaLogs error messages reach the client on the Drilldown stats partial reply and the ruler passthrough (open)
+title: VictoriaLogs error messages reach the client on the ruler passthrough (open)
 proves:
   - status-400
   - status-500
@@ -13,9 +13,9 @@ why: |
   Server Error`, 400 `failed to parse the log query` (logqlmodel.ErrParse,
   pkg/logqlmodel/error.go:13) for a query VictoriaLogs rejects as unparsable,
   429 `too many outstanding requests`; VictoriaLogs' message stays in the log
-  line. 25 cells remain (151 before): the Logs Drilldown stats partial reply
-  (message in its warnings and X-Proxy-Upstream-Error/-Status headers) and the
-  rules and alerts routes, which copy the ruler's non-2xx body verbatim.
+  line. 15 cells remain on the rules and alerts routes, which copy the
+  ruler's non-2xx body verbatim. Drilldown stats failures use the same
+  sanitized error path as direct clients.
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
@@ -44,7 +44,7 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/proxy/http_utils.go writeError/writeBackendError/writeGrafanaStatsFailure/writeDrilldownPartialFromUpstream; alerting.go passthrough'
+  area: 'internal/proxy/http_utils.go writeError/writeBackendError/writeGrafanaStatsFailure; alerting.go passthrough'
   loki: 'pkg/util/server/error.go:56-130; pkg/logql/syntax parse errors for 400'
-  proxy: 'Drilldown stats partial reply warnings and X-Proxy-Upstream-* headers; ruler non-2xx body copied (alerting.go)'
+  proxy: 'ruler non-2xx body copied (alerting.go)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

@@ -15,8 +15,8 @@ why: |
   connections, truncated and malformed bodies answer 500; VictoriaLogs' 429
   answers Loki's 429; the 502/503 fallbacks are gone. 14 cells remain (167
   before), all on the rules and alerts routes, which pass the ruler's non-2xx
-  status and body through. The Drilldown partial reply turns every stats
-  failure into 200 (see error-layer-silent-success).
+  status and body through. Drilldown stats use the same sanitized failure
+  statuses as direct clients.
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure

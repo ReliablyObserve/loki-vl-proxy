@@ -1,0 +1,35 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                                      │ /private/tmp/stats-json-stream-bench-a.txt │ /private/tmp/stats-json-stream-bench-b.txt │
+                                                      │                   sec/op                   │       sec/op         vs base               │
+StatsJSONSeriesCompare/many_points/full_tree-4                                        11.75m ± 19%          13.36m ± 22%        ~ (p=0.180 n=6)
+StatsJSONSeriesCompare/many_points/per_series-4                                       19.74m ± 10%          19.19m ± 15%        ~ (p=0.065 n=6)
+StatsJSONSeriesCompare/many_short_series/full_tree-4                                  16.61m ± 18%          12.69m ± 16%  -23.58% (p=0.009 n=6)
+StatsJSONSeriesCompare/many_short_series/per_series-4                                 17.15m ±  9%          16.49m ± 28%        ~ (p=0.589 n=6)
+geomean                                                                               16.03m                15.22m         -5.07%
+
+                                                      │ /private/tmp/stats-json-stream-bench-a.txt │ /private/tmp/stats-json-stream-bench-b.txt │
+                                                      │                    B/s                     │         B/s          vs base               │
+StatsJSONSeriesCompare/many_points/full_tree-4                                      106.18Mi ± 16%         93.32Mi ± 18%        ~ (p=0.180 n=6)
+StatsJSONSeriesCompare/many_points/per_series-4                                      63.13Mi ± 11%         64.94Mi ± 18%        ~ (p=0.065 n=6)
+StatsJSONSeriesCompare/many_short_series/full_tree-4                                 67.72Mi ± 22%         88.78Mi ± 19%  +31.11% (p=0.009 n=6)
+StatsJSONSeriesCompare/many_short_series/per_series-4                                65.60Mi ± 10%         68.22Mi ± 22%        ~ (p=0.589 n=6)
+geomean                                                                              73.87Mi               77.83Mi         +5.36%
+
+                                                      │ /private/tmp/stats-json-stream-bench-a.txt │ /private/tmp/stats-json-stream-bench-b.txt │
+                                                      │                    B/op                    │         B/op          vs base              │
+StatsJSONSeriesCompare/many_points/full_tree-4                                        89.73Mi ± 0%           89.73Mi ± 0%       ~ (p=0.394 n=6)
+StatsJSONSeriesCompare/many_points/per_series-4                                       2.556Mi ± 0%           2.556Mi ± 0%       ~ (p=0.569 n=6)
+StatsJSONSeriesCompare/many_short_series/full_tree-4                                  63.21Mi ± 0%           63.21Mi ± 0%       ~ (p=0.818 n=6)
+StatsJSONSeriesCompare/many_short_series/per_series-4                                 2.802Mi ± 0%           2.802Mi ± 0%       ~ (p=0.814 n=6)
+geomean                                                                               14.20Mi                14.20Mi       -0.00%
+
+                                                      │ /private/tmp/stats-json-stream-bench-a.txt │ /private/tmp/stats-json-stream-bench-b.txt │
+                                                      │                 allocs/op                  │      allocs/op        vs base              │
+StatsJSONSeriesCompare/many_points/full_tree-4                                         135.1k ± 0%            135.1k ± 0%       ~ (p=0.232 n=6)
+StatsJSONSeriesCompare/many_points/per_series-4                                        3.038k ± 0%            3.038k ± 0%       ~ (p=0.318 n=6)
+StatsJSONSeriesCompare/many_short_series/full_tree-4                                   168.1k ± 0%            168.1k ± 0%       ~ (p=0.455 n=6)
+StatsJSONSeriesCompare/many_short_series/per_series-4                                  36.03k ± 0%            36.03k ± 0%       ~ (p=0.961 n=6)
+geomean                                                                                39.70k                 39.70k       -0.00%

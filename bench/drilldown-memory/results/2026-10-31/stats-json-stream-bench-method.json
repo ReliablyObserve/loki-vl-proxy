@@ -1,0 +1,65 @@
+{
+  "go": "go version go1.27.3 darwin/arm64",
+  "gomaxprocs": 4,
+  "samples": 6,
+  "large_benchtime": "200ms",
+  "small_benchtime": "300ms",
+  "large_fixtures": [
+    {
+      "series": 1000,
+      "points_per_series": 60,
+      "body_bytes": 1306532
+    },
+    {
+      "series": 12000,
+      "points_per_series": 2,
+      "body_bytes": 1178740
+    }
+  ],
+  "large_reference": "Same compiled binary calling retained full-tree implementation with the new1MiB parser retention cutoff. This is not original main warm pooling. Both algorithms compared within one benchmark process; repeated identical-source A/B captures host variance.",
+  "small_reference": "Original main metric_binary.go via Go overlay; only function definitions renamedFull and thin testing wrappers added so shared tests/benchmarks compile. Original inline label logic and original pool releases retained.",
+  "large_results": [
+    "stats-json-stream-bench-a.txt",
+    "stats-json-stream-bench-b.txt",
+    "stats-json-stream-bench-control.txt"
+  ],
+  "small_results": [
+    "stats-json-stream-small-original.txt",
+    "stats-json-stream-small-candidate.txt",
+    "stats-json-stream-small-control.txt",
+    "stats-json-stream-small-comparison.txt",
+    "stats-json-stream-small-control-comparison.txt"
+  ],
+  "allocation_red": "stats-json-stream-allocation-red.log:135,056allocations versus20,000budget when forcing currentfull-tree dispatch; final test adds12k-short-series and trim-only budgets.",
+  "limits": "Measures cumulative allocations, not peak RSS or end-to-end latency. Shared host with other compile/race/fuzz/live container work; no latency improvement claim. Large path still holds original input/output and one largest-series tree; unsupported/nonstandard/deep/large-metadata shapes fall back to reference.",
+  "source_files": [
+    {
+      "path": "internal/proxy/metric_binary.go",
+      "digest": "e936441640923499303ef3330d70508e256934c5bcd6892f910986b81063a125"
+    },
+    {
+      "path": "internal/proxy/stats_json_stream.go",
+      "digest": "de12b7cd570d6a05424cb8adf50c6a59e29e3a6ed65e46d86910faf58ffcc20f"
+    },
+    {
+      "path": "internal/proxy/json_buffer_pool.go",
+      "digest": "2b479e982e366333a554d2afaec17a3462711285b3540310952368e94f1bd734"
+    },
+    {
+      "path": "internal/proxy/proxy.go",
+      "digest": "b1fdcfe9f09dcb4c31c2775b5b3394291f4459a7b54736fbe3f3ebe0548b541e"
+    },
+    {
+      "path": "internal/proxy/query_translation.go",
+      "digest": "49b771b1ec563b9b67ba05d29817b72b620f6eb9099125be5fab71f8baf9462a"
+    },
+    {
+      "path": "internal/proxy/query_range_windowing.go",
+      "digest": "90c47cbd30f25f24cb8423dfdfa11452cc9f0f5e96b7a3014e8ea1f243dbb690"
+    },
+    {
+      "path": "internal/proxy/stream_processing.go",
+      "digest": "e41836ace7e9d9e96bd7f15dadf1bcc8870d9b410d292c5e72b911aa8a22f05a"
+    }
+  ]
+}

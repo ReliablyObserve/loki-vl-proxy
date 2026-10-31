@@ -76,6 +76,7 @@ var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_
 func marshalJSON(w http.ResponseWriter, v interface{}) {
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
+	defer releaseJSONBuffer(buf)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(buf).Encode(v); err != nil {
@@ -84,11 +85,6 @@ func marshalJSON(w http.ResponseWriter, v interface{}) {
 	} else {
 		w.Write(buf.Bytes())
 	}
-
-	if buf.Cap() <= maxPooledBufSize {
-		jsonBufPool.Put(buf)
-	}
-	// Oversized buffers are left for GC (prevents pool bloat)
 }
 
 // TenantMapping maps a string org ID to VL's numeric AccountID and ProjectID.

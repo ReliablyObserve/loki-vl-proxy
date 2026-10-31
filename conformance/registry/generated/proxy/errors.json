@@ -2,21 +2,39 @@
   "entries": [
     {
       "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "msg",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/absent_over_time.go:292"
+    },
+    {
+      "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "msg",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/absent_over_time.go:320"
+    },
+    {
+      "dynamic": false,
+      "error_type": "bad_data",
+      "expression": "\"invalid start, end or step\"",
+      "message": "invalid start, end or step",
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/absent_over_time.go:333"
+    },
+    {
+      "dynamic": true,
       "error_type": "internal",
       "expression": "fmt.Sprintf(\"failed to marshal rules response: %v\", err)",
       "message": "failed to marshal rules response: %v",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:78"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/alerting.go:144"
+      "where": "internal/proxy/alerting.go:79"
     },
     {
       "dynamic": false,
@@ -25,16 +43,7 @@
       "message": "alerting backend error",
       "status": null,
       "status_token": "resp.StatusCode",
-      "where": "internal/proxy/alerting.go:154"
-    },
-    {
-      "dynamic": false,
-      "error_type": "unavailable",
-      "expression": "\"invalid alerting backend response\"",
-      "message": "invalid alerting backend response",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/alerting.go:162"
+      "where": "internal/proxy/alerting.go:155"
     },
     {
       "dynamic": true,
@@ -43,16 +52,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/alerting.go:470"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/alerting.go:484"
+      "where": "internal/proxy/alerting.go:471"
     },
     {
       "dynamic": false,
@@ -61,16 +61,7 @@
       "message": "alerting backend error",
       "status": null,
       "status_token": "resp.StatusCode",
-      "where": "internal/proxy/alerting.go:490"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "fmt.Sprintf(\"invalid ruler backend response: %v\", err)",
-      "message": "invalid ruler backend response: %v",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/alerting.go:502"
+      "where": "internal/proxy/alerting.go:491"
     },
     {
       "dynamic": false,
@@ -79,7 +70,7 @@
       "message": "no rule groups found",
       "status": 404,
       "status_token": "http.StatusNotFound",
-      "where": "internal/proxy/alerting.go:527"
+      "where": "internal/proxy/alerting.go:528"
     },
     {
       "dynamic": true,
@@ -88,7 +79,7 @@
       "message": "failed to marshal rules response: %v",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:533"
+      "where": "internal/proxy/alerting.go:534"
     },
     {
       "dynamic": true,
@@ -97,7 +88,25 @@
       "message": "failed to marshal rules response: %v",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:547"
+      "where": "internal/proxy/alerting.go:548"
+    },
+    {
+      "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "msg",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/binary_aggregation.go:65"
+    },
+    {
+      "dynamic": true,
+      "error_type": "internal",
+      "expression": "err.Error()",
+      "message": null,
+      "status": 500,
+      "status_token": "http.StatusInternalServerError",
+      "where": "internal/proxy/binary_aggregation_range.go:45"
     },
     {
       "dynamic": true,
@@ -106,7 +115,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:107"
+      "where": "internal/proxy/binary_aggregation_range.go:51"
     },
     {
       "dynamic": true,
@@ -115,7 +124,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:117"
+      "where": "internal/proxy/binary_logql.go:120"
     },
     {
       "dynamic": true,
@@ -124,7 +133,16 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:161"
+      "where": "internal/proxy/binary_logql.go:130"
+    },
+    {
+      "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "err.Error()",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/binary_logql.go:174"
     },
     {
       "dynamic": false,
@@ -133,7 +151,7 @@
       "message": "unexpected literal for logical/set binary operation",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:249"
+      "where": "internal/proxy/binary_logql.go:262"
     },
     {
       "dynamic": true,
@@ -142,7 +160,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:256"
+      "where": "internal/proxy/binary_logql.go:269"
     },
     {
       "dynamic": true,
@@ -151,7 +169,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/binary_logql.go:287"
+      "where": "internal/proxy/binary_logql.go:300"
     },
     {
       "dynamic": true,
@@ -160,79 +178,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:294"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"cold backend error: \"+fetchErr.Error()",
-      "message": "cold backend error: ",
-      "status": null,
-      "status_token": "badRequestStatusOr(fetchErr, http.StatusBadGateway)",
-      "where": "internal/proxy/cold_dispatch.go:218"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "\"cold backend error: \"+err.Error()",
-      "message": "cold backend error: ",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:236"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "hotErr.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(hotErr)",
-      "where": "internal/proxy/cold_dispatch.go:318"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "\"cold backend error: \"+coldErr.Error()",
-      "message": "cold backend error: ",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:328"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "\"hot backend error: \"+hotErr.Error()",
-      "message": "hot backend error: ",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:346"
-    },
-    {
-      "dynamic": false,
-      "error_type": "unavailable",
-      "expression": "\"failed to read cold response\"",
-      "message": "failed to read cold response",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:375"
-    },
-    {
-      "dynamic": false,
-      "error_type": "unavailable",
-      "expression": "\"failed to merge hot+cold results\"",
-      "message": "failed to merge hot+cold results",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:384"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/cold_dispatch.go:444"
+      "where": "internal/proxy/binary_logql.go:307"
     },
     {
       "dynamic": true,
@@ -295,7 +241,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:71"
+      "where": "internal/proxy/http_utils.go:93"
     },
     {
       "dynamic": true,
@@ -304,7 +250,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:76"
+      "where": "internal/proxy/http_utils.go:98"
     },
     {
       "dynamic": true,
@@ -313,52 +259,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:81"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "code",
-      "where": "internal/proxy/http_utils.go:580"
-    },
-    {
-      "dynamic": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:589"
-    },
-    {
-      "dynamic": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 429,
-      "status_token": "http.StatusTooManyRequests",
-      "where": "internal/proxy/http_utils.go:596"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "status, err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "writeDrilldownPartialFromUpstream",
-      "where": "internal/proxy/http_utils.go:604"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:62"
+      "where": "internal/proxy/http_utils.go:103"
     },
     {
       "dynamic": false,
@@ -367,25 +268,7 @@
       "message": "invalid label values URL",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:108"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:186"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:220"
+      "where": "internal/proxy/label_handlers.go:130"
     },
     {
       "dynamic": true,
@@ -394,16 +277,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:307"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:315"
+      "where": "internal/proxy/label_handlers.go:330"
     },
     {
       "dynamic": true,
@@ -412,34 +286,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:416"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "httpStatus",
-      "where": "internal/proxy/label_handlers.go:442"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:548"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:729"
+      "where": "internal/proxy/label_handlers.go:438"
     },
     {
       "dynamic": false,
@@ -448,16 +295,7 @@
       "message": "missing field name in URL",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:782"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/label_handlers.go:822"
+      "where": "internal/proxy/label_handlers.go:801"
     },
     {
       "dynamic": true,
@@ -466,7 +304,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:1035"
+      "where": "internal/proxy/label_handlers.go:1053"
     },
     {
       "dynamic": true,
@@ -475,7 +313,7 @@
       "message": null,
       "status": null,
       "status_token": "writeBackendError",
-      "where": "internal/proxy/label_handlers.go:449"
+      "where": "internal/proxy/label_handlers.go:470"
     },
     {
       "dynamic": true,
@@ -488,21 +326,21 @@
     },
     {
       "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/manual_metric_budget.go:477"
-    },
-    {
-      "dynamic": true,
       "error_type": "bad_data",
       "expression": "err.Error()",
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:270"
+      "where": "internal/proxy/metric_agg.go:636"
+    },
+    {
+      "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "regexErr",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/metric_agg.go:644"
     },
     {
       "dynamic": true,
@@ -511,7 +349,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:297"
+      "where": "internal/proxy/metric_agg.go:680"
     },
     {
       "dynamic": true,
@@ -520,7 +358,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:302"
+      "where": "internal/proxy/metric_agg.go:685"
     },
     {
       "dynamic": false,
@@ -529,7 +367,7 @@
       "message": "unsupported instant aggregation target",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:320"
+      "where": "internal/proxy/metric_agg.go:705"
     },
     {
       "dynamic": true,
@@ -538,7 +376,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:347"
+      "where": "internal/proxy/metric_agg.go:735"
     },
     {
       "dynamic": true,
@@ -547,7 +385,16 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:367"
+      "where": "internal/proxy/metric_agg.go:766"
+    },
+    {
+      "dynamic": true,
+      "error_type": "bad_data",
+      "expression": "regexErr",
+      "message": null,
+      "status": 400,
+      "status_token": "http.StatusBadRequest",
+      "where": "internal/proxy/metric_agg.go:776"
     },
     {
       "dynamic": true,
@@ -556,25 +403,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:444"
-    },
-    {
-      "dynamic": false,
-      "error_type": "timeout",
-      "expression": "\"request cancelled waiting for stats_query_range slot\"",
-      "message": "request cancelled waiting for stats_query_range slot",
-      "status": 503,
-      "status_token": "http.StatusServiceUnavailable",
-      "where": "internal/proxy/metric_binary.go:190"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "upstream.err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(upstream.err)",
-      "where": "internal/proxy/metric_binary.go:233"
+      "where": "internal/proxy/metric_agg.go:854"
     },
     {
       "dynamic": true,
@@ -583,25 +412,16 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_binary.go:237"
+      "where": "internal/proxy/metric_binary.go:246"
     },
     {
       "dynamic": true,
-      "error_type": "unavailable",
+      "error_type": "internal",
       "expression": "fmt.Sprintf(\"manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes\", p.limits().BufferedBackendBodyBytes)",
       "message": "manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes",
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/metric_binary.go:240"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(err)",
-      "where": "internal/proxy/metric_binary.go:243"
+      "status": 500,
+      "status_token": "http.StatusInternalServerError",
+      "where": "internal/proxy/metric_binary.go:249"
     },
     {
       "dynamic": true,
@@ -610,43 +430,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_binary.go:261"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(err)",
-      "where": "internal/proxy/metric_binary.go:1677"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "capErr.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(capErr, http.StatusBadRequest)",
-      "where": "internal/proxy/metric_binary.go:1699"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"left query: \"+leftErr.Error()",
-      "message": "left query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(leftErr)",
-      "where": "internal/proxy/metric_binary.go:1854"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"right query: \"+rightErr.Error()",
-      "message": "right query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(rightErr)",
-      "where": "internal/proxy/metric_binary.go:1858"
+      "where": "internal/proxy/metric_binary.go:270"
     },
     {
       "dynamic": true,
@@ -655,43 +439,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/metric_binary.go:1869"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"left query: \"+e.Error()",
-      "message": "left query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(e)",
-      "where": "internal/proxy/metric_binary.go:1973"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"right query: \"+e.Error()",
-      "message": "right query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(e)",
-      "where": "internal/proxy/metric_binary.go:1985"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"left query: \"+leftErr.Error()",
-      "message": "left query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(leftErr)",
-      "where": "internal/proxy/metric_binary.go:1994"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "\"right query: \"+rightErr.Error()",
-      "message": "right query: ",
-      "status": null,
-      "status_token": "statusFromUpstreamErr(rightErr)",
-      "where": "internal/proxy/metric_binary.go:1998"
+      "where": "internal/proxy/metric_binary.go:1837"
     },
     {
       "dynamic": true,
@@ -700,7 +448,7 @@
       "message": null,
       "status": null,
       "status_token": "writeGrafanaStatsFailure",
-      "where": "internal/proxy/metric_binary.go:224"
+      "where": "internal/proxy/metric_binary.go:233"
     },
     {
       "dynamic": true,
@@ -709,7 +457,7 @@
       "message": null,
       "status": null,
       "status_token": "writeGrafanaStatsFailure",
-      "where": "internal/proxy/metric_binary.go:226"
+      "where": "internal/proxy/metric_binary.go:235"
     },
     {
       "dynamic": true,
@@ -718,7 +466,7 @@
       "message": null,
       "status": null,
       "status_token": "writeBackendError",
-      "where": "internal/proxy/metric_binary.go:231"
+      "where": "internal/proxy/metric_binary.go:240"
     },
     {
       "dynamic": true,
@@ -727,7 +475,7 @@
       "message": null,
       "status": null,
       "status_token": "writeBackendError",
-      "where": "internal/proxy/metric_binary.go:1683"
+      "where": "internal/proxy/metric_binary.go:1647"
     },
     {
       "dynamic": true,
@@ -790,7 +538,7 @@
       "message": "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:29"
+      "where": "internal/proxy/multitenant.go:30"
     },
     {
       "dynamic": true,
@@ -799,7 +547,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:34"
+      "where": "internal/proxy/multitenant.go:35"
     },
     {
       "dynamic": true,
@@ -808,7 +556,7 @@
       "message": "parse error : %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:41"
+      "where": "internal/proxy/multitenant.go:42"
     },
     {
       "dynamic": true,
@@ -817,16 +565,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:45"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "multiTenantFailureStatus(statusFromUpstreamErr(err))",
-      "where": "internal/proxy/multitenant.go:69"
+      "where": "internal/proxy/multitenant.go:46"
     },
     {
       "dynamic": true,
@@ -835,7 +574,7 @@
       "message": "failed to merge multi-tenant response: ",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/multitenant.go:135"
+      "where": "internal/proxy/multitenant.go:143"
     },
     {
       "dynamic": true,
@@ -844,7 +583,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:139"
+      "where": "internal/proxy/multitenant.go:147"
     },
     {
       "dynamic": false,
@@ -853,7 +592,7 @@
       "message": "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants",
       "status": 413,
       "status_token": "http.StatusRequestEntityTooLarge",
-      "where": "internal/proxy/multitenant.go:143"
+      "where": "internal/proxy/multitenant.go:151"
     },
     {
       "dynamic": true,
@@ -862,25 +601,7 @@
       "message": null,
       "status": null,
       "status_token": "code",
-      "where": "internal/proxy/multitenant.go:207"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/ordered_json_metric.go:187"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/ordered_json_metric.go:1691"
+      "where": "internal/proxy/multitenant.go:215"
     },
     {
       "dynamic": true,
@@ -892,31 +613,13 @@
       "where": "internal/proxy/patterns.go:193"
     },
     {
-      "dynamic": true,
-      "error_type": "bad_data",
-      "expression": "diag.badRequest.Error()",
-      "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:293"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/patterns.go:1395"
-    },
-    {
       "dynamic": false,
       "error_type": "bad_data",
       "expression": "\"delete requires X-Delete-Confirmation: true header for safety\"",
       "message": "delete requires X-Delete-Confirmation: true header for safety",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1446"
+      "where": "internal/proxy/patterns.go:1445"
     },
     {
       "dynamic": false,
@@ -925,7 +628,7 @@
       "message": "query parameter required for delete",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1455"
+      "where": "internal/proxy/patterns.go:1454"
     },
     {
       "dynamic": false,
@@ -934,7 +637,7 @@
       "message": "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1461"
+      "where": "internal/proxy/patterns.go:1460"
     },
     {
       "dynamic": false,
@@ -943,7 +646,7 @@
       "message": "both start and end parameters required for delete",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1471"
+      "where": "internal/proxy/patterns.go:1470"
     },
     {
       "dynamic": true,
@@ -952,7 +655,7 @@
       "message": "invalid start timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1482"
+      "where": "internal/proxy/patterns.go:1481"
     },
     {
       "dynamic": true,
@@ -961,7 +664,7 @@
       "message": "invalid end timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1487"
+      "where": "internal/proxy/patterns.go:1486"
     },
     {
       "dynamic": true,
@@ -970,7 +673,7 @@
       "message": "delete time range too wide: %s exceeds maximum %s",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1493"
+      "where": "internal/proxy/patterns.go:1492"
     },
     {
       "dynamic": false,
@@ -979,7 +682,7 @@
       "message": "end must be after start",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1500"
+      "where": "internal/proxy/patterns.go:1499"
     },
     {
       "dynamic": true,
@@ -988,7 +691,7 @@
       "message": "failed to translate query: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1508"
+      "where": "internal/proxy/patterns.go:1507"
     },
     {
       "dynamic": true,
@@ -997,7 +700,7 @@
       "message": "VL delete failed: ",
       "status": 502,
       "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/patterns.go:1535"
+      "where": "internal/proxy/patterns.go:1534"
     },
     {
       "dynamic": true,
@@ -1006,7 +709,7 @@
       "message": null,
       "status": null,
       "status_token": "resp.StatusCode",
-      "where": "internal/proxy/patterns.go:1544"
+      "where": "internal/proxy/patterns.go:1543"
     },
     {
       "dynamic": true,
@@ -1015,7 +718,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2187"
+      "where": "internal/proxy/proxy.go:2292"
     },
     {
       "dynamic": true,
@@ -1024,7 +727,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2282"
+      "where": "internal/proxy/proxy.go:2405"
     },
     {
       "dynamic": true,
@@ -1033,7 +736,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2320"
+      "where": "internal/proxy/proxy.go:2443"
     },
     {
       "dynamic": false,
@@ -1042,7 +745,7 @@
       "message": "invalid range selector",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2346"
+      "where": "internal/proxy/proxy.go:2469"
     },
     {
       "dynamic": true,
@@ -1051,7 +754,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2366"
+      "where": "internal/proxy/proxy.go:2492"
     },
     {
       "dynamic": true,
@@ -1060,7 +763,7 @@
       "message": "parse error : invalid regex in label_replace: %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2378"
+      "where": "internal/proxy/proxy.go:2502"
     },
     {
       "dynamic": false,
@@ -1069,7 +772,7 @@
       "message": "unsupported metric query: range aggregations require compatible unwrap or translator support",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2385"
+      "where": "internal/proxy/proxy.go:2514"
     },
     {
       "dynamic": true,
@@ -1078,7 +781,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2425"
+      "where": "internal/proxy/proxy.go:2569"
     },
     {
       "dynamic": true,
@@ -1087,7 +790,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2427"
+      "where": "internal/proxy/proxy.go:2571"
     },
     {
       "dynamic": true,
@@ -1096,7 +799,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2471"
+      "where": "internal/proxy/proxy.go:2615"
     },
     {
       "dynamic": true,
@@ -1105,7 +808,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2475"
+      "where": "internal/proxy/proxy.go:2619"
     },
     {
       "dynamic": true,
@@ -1114,7 +817,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2588"
+      "where": "internal/proxy/proxy.go:2738"
     },
     {
       "dynamic": false,
@@ -1123,7 +826,7 @@
       "message": "invalid range selector",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2636"
+      "where": "internal/proxy/proxy.go:2786"
     },
     {
       "dynamic": true,
@@ -1132,7 +835,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2655"
+      "where": "internal/proxy/proxy.go:2805"
     },
     {
       "dynamic": true,
@@ -1141,7 +844,7 @@
       "message": "parse error : invalid regex in label_replace: %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2668"
+      "where": "internal/proxy/proxy.go:2816"
     },
     {
       "dynamic": false,
@@ -1150,7 +853,7 @@
       "message": "unsupported metric query: range aggregations require compatible unwrap or translator support",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2675"
+      "where": "internal/proxy/proxy.go:2823"
     },
     {
       "dynamic": true,
@@ -1159,7 +862,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2713"
+      "where": "internal/proxy/proxy.go:2870"
     },
     {
       "dynamic": true,
@@ -1168,7 +871,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2715"
+      "where": "internal/proxy/proxy.go:2872"
     },
     {
       "dynamic": true,
@@ -1177,7 +880,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2725"
+      "where": "internal/proxy/proxy.go:2881"
     },
     {
       "dynamic": true,
@@ -1186,7 +889,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2732"
+      "where": "internal/proxy/proxy.go:2888"
     },
     {
       "dynamic": true,
@@ -1195,25 +898,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2753"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusBadGateway)",
-      "where": "internal/proxy/quantile_histogram.go:441"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/quantile_histogram.go:447"
+      "where": "internal/proxy/proxy.go:2906"
     },
     {
       "dynamic": true,
@@ -1235,15 +920,6 @@
     },
     {
       "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/query_range_windowing.go:301"
-    },
-    {
-      "dynamic": true,
       "error_type": "bad_data",
       "expression": "err.Error()",
       "message": null,
@@ -1254,56 +930,11 @@
     {
       "dynamic": false,
       "error_type": "bad_data",
-      "expression": "\"absent_over_time: missing range window\"",
-      "message": "absent_over_time: missing range window",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1714"
-    },
-    {
-      "dynamic": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1721"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/query_translation.go:1735"
-    },
-    {
-      "dynamic": false,
-      "error_type": "bad_data",
-      "expression": "\"absent_over_time: missing range window\"",
-      "message": "absent_over_time: missing range window",
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1772"
-    },
-    {
-      "dynamic": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1779"
-    },
-    {
-      "dynamic": false,
-      "error_type": "bad_data",
       "expression": "\"invalid start timestamp\"",
       "message": "invalid start timestamp",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1986"
+      "where": "internal/proxy/query_translation.go:1781"
     },
     {
       "dynamic": false,
@@ -1312,7 +943,7 @@
       "message": "invalid end timestamp",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1992"
+      "where": "internal/proxy/query_translation.go:1787"
     },
     {
       "dynamic": false,
@@ -1321,16 +952,7 @@
       "message": "invalid step",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1998"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/query_translation.go:2035"
+      "where": "internal/proxy/query_translation.go:1793"
     },
     {
       "dynamic": true,
@@ -1339,34 +961,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:2105"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(err)",
-      "where": "internal/proxy/query_translation.go:2163"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/query_translation.go:2184"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "resp.StatusCode, body",
-      "message": null,
-      "status": null,
-      "status_token": "writeBackendError",
-      "where": "internal/proxy/query_translation.go:1744"
+      "where": "internal/proxy/query_translation.go:1899"
     },
     {
       "dynamic": false,
@@ -1375,7 +970,7 @@
       "message": "invalid range metric query",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:450"
+      "where": "internal/proxy/range_metric_compat.go:464"
     },
     {
       "dynamic": true,
@@ -1384,7 +979,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:454"
+      "where": "internal/proxy/range_metric_compat.go:468"
     },
     {
       "dynamic": false,
@@ -1393,7 +988,7 @@
       "message": "invalid range metric query",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:526"
+      "where": "internal/proxy/range_metric_compat.go:544"
     },
     {
       "dynamic": true,
@@ -1402,7 +997,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:530"
+      "where": "internal/proxy/range_metric_compat.go:548"
     },
     {
       "dynamic": true,
@@ -1411,7 +1006,7 @@
       "message": "invalid start timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:657"
+      "where": "internal/proxy/range_metric_compat.go:671"
     },
     {
       "dynamic": true,
@@ -1420,7 +1015,7 @@
       "message": "invalid end timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:662"
+      "where": "internal/proxy/range_metric_compat.go:676"
     },
     {
       "dynamic": true,
@@ -1429,7 +1024,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:671"
+      "where": "internal/proxy/range_metric_compat.go:685"
     },
     {
       "dynamic": true,
@@ -1438,43 +1033,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:675"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusBadGateway)",
-      "where": "internal/proxy/range_metric_compat.go:771"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusBadGateway)",
-      "where": "internal/proxy/range_metric_compat.go:787"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/range_metric_compat.go:793"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/range_metric_compat.go:841"
+      "where": "internal/proxy/range_metric_compat.go:689"
     },
     {
       "dynamic": true,
@@ -1483,7 +1042,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:913"
+      "where": "internal/proxy/range_metric_compat.go:988"
     },
     {
       "dynamic": true,
@@ -1492,88 +1051,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:917"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusBadGateway)",
-      "where": "internal/proxy/range_metric_compat.go:924"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/range_metric_compat.go:929"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusBadGateway)",
-      "where": "internal/proxy/range_metric_compat.go:944"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/range_metric_compat.go:950"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, statusFromUpstreamErr(err))",
-      "where": "internal/proxy/sliding_window_stats.go:190"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/sliding_window_stats.go:208"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(err)",
-      "where": "internal/proxy/stream_processing.go:103"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "statusFromUpstreamErr(err)",
-      "where": "internal/proxy/stream_processing.go:128"
-    },
-    {
-      "dynamic": true,
-      "error_type": "unavailable",
-      "expression": "err.Error()",
-      "message": null,
-      "status": 502,
-      "status_token": "http.StatusBadGateway",
-      "where": "internal/proxy/stream_processing.go:150"
+      "where": "internal/proxy/range_metric_compat.go:992"
     },
     {
       "dynamic": true,
@@ -1631,49 +1109,21 @@
     },
     {
       "dynamic": true,
-      "error_type": null,
-      "expression": "msg",
-      "message": null,
-      "status": null,
-      "status_token": "statusCode",
-      "where": "internal/proxy/tail.go:71"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "badRequestStatusOr(err, http.StatusServiceUnavailable)",
-      "where": "internal/proxy/vector_agg_fold.go:87"
-    },
-    {
-      "dynamic": true,
       "error_type": "bad_data",
       "expression": "err.Error()",
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
       "where": "internal/proxy/volume.go:213"
-    },
-    {
-      "dynamic": true,
-      "error_type": null,
-      "expression": "err.Error()",
-      "message": null,
-      "status": null,
-      "status_token": "status",
-      "where": "internal/proxy/volume.go:238"
     }
   ],
   "summary": {
     "by_status": {
       "400": {
-        "count": 86,
-        "dynamic_sites": 65,
+        "count": 87,
+        "dynamic_sites": 67,
         "error_type": "bad_data",
         "messages": [
-          "absent_over_time: missing range window",
           "both start and end parameters required for delete",
           "delete requires X-Delete-Confirmation: true header for safety",
           "delete time range too wide: %s exceeds maximum %s",
@@ -1687,6 +1137,7 @@
           "invalid range selector",
           "invalid start timestamp",
           "invalid start timestamp: ",
+          "invalid start, end or step",
           "invalid step",
           "missing field name in URL",
           "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants",
@@ -1740,56 +1191,33 @@
           "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants"
         ]
       },
-      "429": {
-        "count": 1,
-        "dynamic_sites": 1,
-        "error_type": "bad_data",
-        "messages": []
-      },
       "500": {
-        "count": 6,
-        "dynamic_sites": 6,
+        "count": 8,
+        "dynamic_sites": 8,
         "error_type": "internal",
         "messages": [
           "failed to marshal rules response: %v",
-          "failed to merge multi-tenant response: "
-        ]
-      },
-      "502": {
-        "count": 13,
-        "dynamic_sites": 10,
-        "error_type": "unavailable",
-        "messages": [
-          "VL delete failed: ",
-          "cold backend error: ",
-          "failed to merge hot+cold results",
-          "failed to read cold response",
-          "hot backend error: ",
-          "invalid alerting backend response",
-          "invalid ruler backend response: %v",
+          "failed to merge multi-tenant response: ",
           "manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes"
         ]
       },
-      "503": {
+      "502": {
         "count": 1,
-        "dynamic_sites": 0,
-        "error_type": "timeout",
+        "dynamic_sites": 1,
+        "error_type": "unavailable",
         "messages": [
-          "request cancelled waiting for stats_query_range slot"
+          "VL delete failed: "
         ]
       },
       "derived": {
-        "count": 69,
-        "dynamic_sites": 67,
+        "count": 19,
+        "dynamic_sites": 17,
         "error_type": null,
         "messages": [
-          "alerting backend error",
-          "cold backend error: ",
-          "left query: ",
-          "right query: "
+          "alerting backend error"
         ]
       }
     },
-    "call_sites": 185
+    "call_sites": 124
   }
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,15 +156,14 @@ func TestMultiTenantFanout_TenantFailureFailsWholeRequest(t *testing.T) {
 	}
 }
 
-// A Grafana-sourced stats failure on one tenant is answered by that tenant's
-// handler with a 200 Drilldown partial-results reply. It is still a failed
-// tenant: the whole multi-tenant request fails with Loki's status and nothing
-// is merged or cached.
-func TestMultiTenantFanout_DrilldownPartialTenantFailsWholeRequest(t *testing.T) {
+// A Grafana-sourced backend failure stays an error for the tenant alone and
+// for a multi-tenant query: no healthy tenant's data is merged or cached until
+// every tenant recovers. Actual series-limit partials have separate coverage.
+func TestMultiTenantFanout_DrilldownTenantFailureFailsWholeRequest(t *testing.T) {
 	const path = "/loki/api/v1/query_range?query=sum+by+%28app%29+%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&start=1704063600000000000&end=1704067200000000000&step=300"
 	for _, mode := range tenantFailureModes {
 		if mode.wantStatus == http.StatusBadRequest {
-			// A rejected query is a 400, never a partial reply; covered above.
+			// A rejected query is covered above.
 			continue
 		}
 		t.Run(mode.name, func(t *testing.T) {
@@ -179,12 +179,27 @@ func TestMultiTenantFanout_DrilldownPartialTenantFailsWholeRequest(t *testing.T)
 				req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 				return req
 			}
-			// Precondition: the failing tenant alone gets the partial reply.
+			assertFailure := func(rec *httptest.ResponseRecorder) {
+				t.Helper()
+				wantText := lokiErrInternal
+				if mode.wantStatus == http.StatusGatewayTimeout {
+					wantText = lokiErrDeadlineExceeded
+				}
+				var envelope struct {
+					Status, Error string
+					Warnings      []string
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil || rec.Code != mode.wantStatus || envelope.Status != "error" || envelope.Error != wantText || len(envelope.Warnings) != 0 {
+					t.Fatalf("tenant failure hidden or unsanitized: %d %s", rec.Code, rec.Body.String())
+				}
+				if rec.Header().Get("Warning") != "" || rec.Header().Get(drilldownPartialUpstreamStatusHeader) != "" || rec.Header().Get("X-Multi-Tenant-Partial-Failures") != "" {
+					t.Fatalf("tenant failure labelled as a partial answer: %v", rec.Header())
+				}
+			}
+			// The failing tenant alone must expose the same Loki error contract.
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, newReq("tenant-a"))
-			if rec.Code != http.StatusOK || rec.Header().Get("X-Proxy-Upstream-Status") == "" || !strings.Contains(rec.Body.String(), `"warnings"`) {
-				t.Fatalf("single-tenant failure is not a Drilldown partial reply: %d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
-			}
+			assertFailure(rec)
 
 			mtKey, mtCacheable := p.multiTenantCacheKey(newReq("tenant-a|tenant-b"), "query_range")
 			compatKey, compatCacheable := p.compatCacheKey("query_range", newReq("tenant-a|tenant-b"))
@@ -194,8 +209,9 @@ func TestMultiTenantFanout_DrilldownPartialTenantFailsWholeRequest(t *testing.T)
 			rec = httptest.NewRecorder()
 			mux.ServeHTTP(rec, newReq("tenant-a|tenant-b"))
 			body := rec.Body.String()
-			if rec.Code != mode.wantStatus || strings.Contains(body, "beta-app") || !strings.Contains(body, `"status":"error"`) {
-				t.Fatalf("want the whole request to fail with %d, got %d body=%s", mode.wantStatus, rec.Code, body)
+			assertFailure(rec)
+			if strings.Contains(body, "beta-app") {
+				t.Fatalf("failed request merged the healthy tenant: %s", body)
 			}
 			if _, cached := p.cache.Get(mtKey); cached {
 				t.Fatal("failed request stored in the multi-tenant merge cache")

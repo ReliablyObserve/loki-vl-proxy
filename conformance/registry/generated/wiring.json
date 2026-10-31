@@ -46,7 +46,9 @@
     "limits/drilldown-breakdown-exact": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/drilldown_longrange_survival_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go"
     ],
     "limits/drilldown-partial-with-warning": [
@@ -272,6 +274,7 @@
       "internal/proxy/binary_matching_differential_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
@@ -307,6 +310,7 @@
       "test/e2e-compat/binary_ignoring_matching_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
@@ -1361,6 +1365,10 @@
       "loki_api_v1_detected_fields",
       "profiles/detected-fields-structured-metadata-beside-json-line"
     ],
+    "internal/proxy/drilldown_longrange_survival_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "loki_api_v1_query_range"
+    ],
     "internal/proxy/error_layer_gate_test.go": [
       "backend-deadlines-and-cancellation",
       "semantics/error-layer-backend-failure-status",
@@ -2077,6 +2085,10 @@
       "loki_api_v1_query_range",
       "parser-json"
     ],
+    "test/e2e-compat/drilldown_longrange_fields_burst_test.go": [
+      "limits/drilldown-breakdown-exact",
+      "loki_api_v1_query_range"
+    ],
     "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go": [
       "limits/drilldown-breakdown-exact"
     ],
@@ -2432,7 +2444,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 242,
+  "tests_with_markers": 244,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -1,0 +1,84 @@
+{
+  "services": {
+    "loki": {
+      "image": "grafana/loki:3.7.9",
+      "mem_limit": "3g",
+      "user": "0:0",
+      "ports": [
+        "127.0.0.1:63101:3100"
+      ],
+      "command": [
+        "-config.file=/etc/loki/local-config.yaml"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${PROOF_OUTPUT}/loki.yaml",
+          "target": "/etc/loki/local-config.yaml",
+          "read_only": true
+        },
+        "loki-data:/tmp/loki"
+      ]
+    },
+    "victorialogs": {
+      "image": "victoriametrics/victoria-logs:v1.52.0",
+      "mem_limit": "2g",
+      "ports": [
+        "127.0.0.1:63428:9428"
+      ],
+      "volumes": [
+        "vl-data:/vlogs"
+      ],
+      "command": [
+        "-storageDataPath=/vlogs",
+        "-retentionPeriod=3d",
+        "-memory.allowedBytes=512MiB",
+        "-search.maxConcurrentRequests=4",
+        "-search.maxQueryDuration=90s"
+      ]
+    },
+    "proxy": {
+      "image": "loki-vl-proxy:e2e-local",
+      "mem_limit": "2g",
+      "entrypoint": [
+        "/usr/local/bin/loki-vl-proxy"
+      ],
+      "environment": {
+        "GOMEMLIMIT": "2GiB"
+      },
+      "ports": [
+        "127.0.0.1:63310:3100"
+      ],
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${CANDIDATE_BINARY}",
+          "target": "/usr/local/bin/loki-vl-proxy",
+          "read_only": true
+        }
+      ],
+      "command": [
+        "-listen=:3100",
+        "-backend=http://victorialogs:9428",
+        "-max-stats-query-series=1000000",
+        "-max-concurrent=0",
+        "-rate-limit-per-second=0",
+        "-rate-limit-burst=0",
+        "-backend-timeout=90s",
+        "-label-style=underscores",
+        "-metadata-field-mode=translated",
+        "-emit-structured-metadata=true",
+        "-patterns-enabled=true",
+        "-patterns-autodetect-from-queries=true",
+        "-cache-ttl=5s",
+        "-metadata-default-lookback=1h",
+        "-log-level=info",
+        "-server.register-instrumentation=true"
+      ]
+    }
+  },
+  "volumes": {
+    "loki-data": {},
+    "vl-data": {}
+  }
+}

@@ -4,11 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"syscall"
 	"testing"
 )
+
+func TestGrafanaStatsFailure_PreservesFailures(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		text   string
+	}{
+		{"backend_unavailable", p.redactedBackendStatusError("", 503, []byte("private backend unavailable")), 500, lokiErrInternal},
+		{"connection_refused", &url.Error{Op: "Get", URL: "http://backend.private:3100/?query=private-selector", Err: syscall.ECONNREFUSED}, 500, lokiErrInternal},
+		{"service_disappeared", &net.DNSError{Err: "no such host", Name: "backend.private", IsNotFound: true}, 500, lokiErrInternal},
+		{"deadline", context.DeadlineExceeded, 504, lokiErrDeadlineExceeded},
+		{"wrapped_deadline", fmt.Errorf("private backend: %w", context.DeadlineExceeded), 504, lokiErrDeadlineExceeded},
+		{"cancelled", context.Canceled, 499, lokiErrClientCanceled},
+		{"queue_full", p.redactedBackendStatusError("", 429, []byte("private backend queue full")), 429, lokiTooManyOutstandingRequests},
+		{"query_rejected", p.redactedBackendStatusError("", 400, []byte(vlParseErrorBody)), 400, lokiErrParse},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			p.writeGrafanaStatsFailure(w, tc.err)
+			var body struct {
+				Status, Error string
+				Warnings      []string
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != tc.status || body.Status != "error" || body.Error != tc.text || len(body.Warnings) != 0 {
+				t.Fatalf("failure was hidden or misclassified: status=%d body=%s", w.Code, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "private") || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {
+				t.Fatalf("failure exposed backend details: headers=%v body=%s", w.Header(), w.Body.String())
+			}
+		})
+	}
+}
 
 func TestResponseCache_DoesNotStoreDrilldownPartialFailure(t *testing.T) {
 	p := newCompatTestProxy(t, "http://unused")
@@ -16,7 +56,12 @@ func TestResponseCache_DoesNotStoreDrilldownPartialFailure(t *testing.T) {
 	h := p.compatCacheMiddleware("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		if calls == 1 {
-			p.writeDrilldownPartialFromUpstream(w, http.StatusServiceUnavailable, "backend unavailable")
+			// Retain the cache guard for legacy partial-failure envelopes, even
+			// though backend failures now use the normal error response path.
+			w.Header().Set(drilldownPartialUpstreamStatusHeader, "503")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","warnings":["backend unavailable"],"data":{"resultType":"matrix","result":[]}}`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -1476,7 +1476,8 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		return nil, nil, &statsBucketsUnreadableError{"stats_query_range non-success status: " + status}
 	}
 	parser := statsQRFJPool.Get()
-	defer statsQRFJPool.Put(parser)
+	largestMetricInput := 0
+	defer func() { releaseFJParser(&statsQRFJPool, parser, largestMetricInput) }()
 
 	// Stream-grouped series carry the labels the raw evaluator derives from
 	// _stream and level.
@@ -1491,6 +1492,9 @@ func (p *Proxy) collectRangeMetricHitsAux(
 		}
 		metricRaw, _, _, _ := jsonparser.Get(res, "metric")
 		values, _, _, _ := jsonparser.Get(res, "values")
+		if len(metricRaw) > largestMetricInput {
+			largestMetricInput = len(metricRaw)
+		}
 		mv, err := parser.ParseBytes(metricRaw)
 		if err != nil {
 			resultErr = fmt.Errorf("parse stats_query_range response: %w", err)

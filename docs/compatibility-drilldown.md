@@ -132,11 +132,11 @@ Routing does not depend on the client: Explore, Drilldown, dashboard panels
 and direct API clients reach the same exact stats path. Only the answer above
 the series limit differs, as it does in Loki.
 
-When VictoriaLogs fails the direct `stats_query_range` call for a Grafana-sourced
-request, the proxy mirrors Loki's partial-results behaviour: HTTP 200 with
-`warnings`, a `Warning` header and `X-Proxy-Upstream-Status` /
-`X-Proxy-Upstream-Error` for operators. Non-Grafana clients receive the upstream
-error status.
+Failed `stats_query_range` calls use the same sanitized Loki error contract for
+Grafana and direct clients: backend failures return HTTP 500, timeouts 504,
+cancellations 499, queue rejections 429, and query parse failures 400. They do
+not become empty successful matrices. Loki's distinct series-limit partial
+results still carry their warnings.
 
 ## Long-Range Histograms And Grafana querySplitting
 
