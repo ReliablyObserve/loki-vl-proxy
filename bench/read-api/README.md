@@ -58,13 +58,16 @@ The next POST uses a missing-app selector before its GET control. It must not
 reuse the preceding app's labels. Loki omits `data` for this empty response;
 the proxy returns `data: []`. Both mean no labels; the raw shapes are retained.
 
-## Retained comparison
+## Historical retained comparison
 
 [Measured JSON](results/2026-10-31-labels-alias.json) records base `28a5a2f`
 and candidate `c320190`, the exact committed runtime sources used for the images.
-Subsequent proof/test-only commits do not change those measured identities.
+This capture predates the merge of #947. The branch now includes that S2 change
+after a rebase, so these rows are not measurements of the rebased head. The
+original measured identities remain unchanged; they must not be relabelled as
+the current main and candidate.
 
-| Signal | Main runtime | Candidate | Loki reference |
+| Signal | Historical main runtime | Historical candidate | Loki reference |
 |---|---|---|---|
 | Singular alias, GET and POST | 307 redirect | 200, same filtered labels as plural | 200 |
 | Filtered canonical POST immediately after GET, VL selects | 4 | 0 | Not collected |
