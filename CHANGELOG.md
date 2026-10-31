@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response freshness uses the stored age and that TTL, rather than deriving an
   incorrect age from the endpoint's shorter backend TTL.
 
+- **Drilldown field charts retry bounded ranking after a byte-limit overflow.**
+  A single-field breakdown can exhaust its response-byte budget before reaching
+  the configured series limit. It now retries the existing ranked query once,
+  preserving the tenant's limit, exact retained points and Loki's partial-result
+  warning. Cancellation stops the retry; ordinary clients and oversized ranked
+  replies retain explicit errors. No response or series budget is increased.
+- **Ranked field filters escape backslashes and control characters safely.**
+  Generated VictoriaLogs value literals use the standard quoting routine so
+  stored values cannot change the generated filter's syntax.
+
 ## [2.52.0] - 2026-10-31
 
 ### Fixed

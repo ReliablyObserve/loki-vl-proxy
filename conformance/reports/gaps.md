@@ -70,7 +70,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 34 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
-| limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 8 | proven |
+| limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 9 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 12 | partial |
 | resource_control | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | 2 | 1 | partial |

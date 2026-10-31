@@ -206,7 +206,13 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// within the limit needs no count below.
 	read := maxSeries
 	body, err := p.fetchStatsQueryRangeBody(r, logsqlQuery, tumblingWindow, maxSeries)
-	if errors.Is(err, errSeriesCountExceeded) && drilldown && rankable {
+	if err != nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	// The byte bound can stop a read before the series counter reaches the
+	// limit. The same ranking bounds both retries without increasing either
+	// budget, and still returns every series when it fits the tenant's limit.
+	if (errors.Is(err, errSeriesCountExceeded) || errors.Is(err, errBodyTooLarge)) && drilldown && rankable {
 		if p.cache != nil {
 			p.setLocalReadCacheWithTTL(overLimitKey, []byte("1"), drilldownOverLimitTTL)
 		}
@@ -597,9 +603,7 @@ func buildVLInFilter(field string, values []string) string {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
-		sb.WriteByte('"')
-		sb.WriteString(strings.ReplaceAll(v, `"`, `\"`))
-		sb.WriteByte('"')
+		sb.WriteString(strconv.Quote(v))
 	}
 	sb.WriteByte(')')
 	return sb.String()

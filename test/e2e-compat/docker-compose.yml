@@ -529,10 +529,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      # Match this stack's Loki (max_query_series: 1000000): Grafana's
-      # "patterns autodetect" datasource serves Logs Drilldown, which must
-      # see the series Loki would return.
-      - "-max-stats-query-series=1000000"
+      # CI defaults match this stack's Loki (max_query_series: 1000000).
+      # For an interactive playground, set PATTERNS_MAX_QUERY_SERIES=500
+      # explicitly: high-cardinality Fields then use the configured series
+      # limit with Loki's visible partial-result warning, not huge frames.
+      - "-max-stats-query-series=${PATTERNS_MAX_QUERY_SERIES:-1000000}"
       - '-tenant-default-limits={"max_entries_limit_per_query":0,"max_query_length":"721h","query_timeout":"5m","retention_period":"3d"}'
       - "-backend-timeout=5m"
       - "-ruler-backend=http://vmalert:8880"

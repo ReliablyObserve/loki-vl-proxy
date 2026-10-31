@@ -31,6 +31,32 @@ npm test
 
 CI runs each Go test group on its own fresh stack (see [E2E Compat Groups](#e2e-compat-groups-ciyaml)). Running several groups on one stack re-ingests fixtures, so run `docker compose down -v` before switching groups. Keep the `ui` profile off for Go parity runs: the continuous log generator changes cardinality during comparisons.
 
+### Interactive Fields limits
+
+The conformance stack deliberately allows 1,000,000 metric series, matching its
+reference Loki. That is unsuitable for browsing high-cardinality fields such as
+`trace_id`: the query can exceed the proxy's response budget, or produce tens
+of thousands of Grafana frames. For interactive use, explicitly apply Loki's
+stock 500-series limit to the patterns-autodetect datasource:
+
+```bash
+cd test/e2e-compat
+PATTERNS_MAX_QUERY_SERIES=500 docker compose --profile ui up -d --no-build loki-vl-proxy-patterns-autodetect log-generator grafana
+```
+
+Use the same `PROXY_IMAGE`, project name and override files as the existing
+stack when updating it. This command retains data volumes. The setting changes
+only the patterns-autodetect proxy; other variants and reference Loki retain
+their conformance limits. Do not use this override for parity runs that expect
+identical limits. An unset variable restores the 1,000,000-series CI default.
+
+Below the configured limit, responses remain complete. Above it, Drilldown gets
+partial series with Loki's warning; ordinary API clients get Loki's series-limit
+error. The proxy selects the busiest partial series, whereas Loki keeps the
+series it encounters first. A warning is not proof that all values were loaded:
+filter the service, field value or time range to inspect a narrower population.
+The public query `limit` parameter limits log lines, not metric series.
+
 ## Stack Architecture
 
 The compose stack at `test/e2e-compat/docker-compose.yml` runs:
