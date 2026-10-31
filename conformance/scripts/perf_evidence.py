@@ -844,8 +844,8 @@ def render_quality_summary(q, target_is_docs=False):
             f"`{row['path']}`" + (" (optional planner gap, low priority)" if row["optional"] else "")
             for row in stats["unrouted"]) + ".", ""]
     out += ["These are registry evidence counts, not a full runtime compatibility percentage. "
-            "Optional deletion management is excluded from the read totals; deprecated aliases "
-            "and write-only APIs are outside this score.", ""]
+            + "Optional deletion management is excluded from the read totals; deprecated aliases "
+            + "and write-only APIs are outside this score.", ""]
     top = [c for c in found if c["status"] == "open"][:5]
     if top:
         impacts = {c["impact"] for c in top}
