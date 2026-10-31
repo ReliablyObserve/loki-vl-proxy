@@ -1,0 +1,28 @@
+File: ordered-json-candidate.proxy.test
+Type: cpu
+Time: 2026-10-31 17:46:21 CET
+Duration: 2.40s, Total samples = 3.15s (131.10%)
+Showing nodes accounting for 2.98s, 94.60% of 3.15s total
+Dropped 97 nodes (cum <= 0.02s)
+Showing top 20 nodes out of 91
+      flat  flat%   sum%        cum   cum%
+        2s 63.49% 63.49%         2s 63.49%  runtime.pthread_cond_signal
+     0.51s 16.19% 79.68%      0.51s 16.19%  runtime.pthread_cond_wait
+     0.33s 10.48% 90.16%      0.33s 10.48%  runtime.usleep
+     0.02s  0.63% 90.79%      0.03s  0.95%  net/textproto.CanonicalMIMEHeaderKey
+     0.02s  0.63% 91.43%      0.03s  0.95%  regexp.(*Regexp).tryBacktrack
+     0.02s  0.63% 92.06%      0.02s  0.63%  runtime.madvise
+     0.02s  0.63% 92.70%      0.02s  0.63%  runtime.memmove
+     0.02s  0.63% 93.33%      0.02s  0.63%  runtime.pthread_kill
+     0.01s  0.32% 93.65%      0.04s  1.27%  regexp.(*Regexp).backtrack
+     0.01s  0.32% 93.97%      0.05s  1.59%  regexp.(*Regexp).replaceAll
+     0.01s  0.32% 94.29%      0.02s  0.63%  runtime.(*pageAlloc).update
+     0.01s  0.32% 94.60%      2.10s 66.67%  runtime.systemstack
+         0     0% 94.60%      1.95s 61.90%  _.goready.func1
+         0     0% 94.60%      0.02s  0.63%  bufio.NewReader
+         0     0% 94.60%      0.02s  0.63%  bufio.NewReaderSize (inline)
+         0     0% 94.60%      0.06s  1.90%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).GetWithAge
+         0     0% 94.60%      0.06s  1.90%  github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).getL1WithAge
+         0     0% 94.60%      0.19s  6.03%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).handleQueryRange
+         0     0% 94.60%      0.02s  0.63%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).queryRangeCacheKey
+         0     0% 94.60%      0.05s  1.59%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).validateQuery

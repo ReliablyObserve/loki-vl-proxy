@@ -2288,6 +2288,10 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 	return end.After(start) && end.Sub(start)/step > lokiMaxPointsPerSeries
 }
 
+// queryRangeResponseCacheTTL is shared by full-response admission and freshness
+// checks; the endpoint's short backend TTL is not the age of these entries.
+const queryRangeResponseCacheTTL = 5 * time.Minute
+
 // Loki: GET /loki/api/v1/query_range?query={...}&start=...&end=...&limit=...&step=...
 // VL stats: POST /select/logsql/stats_query_range with query, start, end, step
 // VL logs:  POST /select/logsql/query with query, start, end, limit
@@ -2350,8 +2354,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	cacheable := !p.streamResponse && !compatCacheIsActive(r.Context()) && stepsRun == nil
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
-		if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
-			if !p.shouldBypassRecentTailCache("query_range", CacheTTLs["query_range"], remaining, r) {
+		if cached, remaining, age, ok := p.cache.GetWithAge(cacheKey); ok {
+			if !p.shouldBypassStaleEntry("query_range", queryRangeResponseCacheTTL, remaining, age, r) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(cached)
 				elapsed := time.Since(start)
@@ -2465,7 +2469,24 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		defer unwrapLookup.finish("query_range", logqlQuery, start)
 	}
 
-	if p.handleOrderedJSONMetric(w, r, start, logqlQuery, true) {
+	// Ordered JSON metrics return before the normal response-cache write below.
+	// Keep their complete replies under the same bounded, local-only policy.
+	orderedWriter := w
+	var orderedCapture *compatCacheCaptureWriter
+	if cacheable && stepsRun == nil {
+		orderedCapture = newCompatCacheCaptureWriter(w, p.cache.MaxEntrySizeBytes())
+		orderedWriter = orderedCapture
+	}
+	orderedHandled := p.handleOrderedJSONMetric(orderedWriter, r, start, logqlQuery, true)
+	if orderedCapture != nil {
+		if orderedHandled && r.Context().Err() == nil && !unwrapLookup.failed() && compatCacheCaptureAllowed(orderedCapture.code, orderedCapture.flushed, orderedCapture.Header()) {
+			if body := orderedCapture.CapturedBody(); len(body) > 0 {
+				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
+			}
+		}
+		orderedCapture.Release()
+	}
+	if orderedHandled {
 		return
 	}
 
@@ -2630,12 +2651,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), 5*time.Minute)
+			p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), cacheOut...), seriesScope), queryRangeResponseCacheTTL)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), 5*time.Minute)
+				p.setLocalReadCacheWithTTL(cacheKey, addSeriesLimitWarning(append([]byte(nil), body...), seriesScope), queryRangeResponseCacheTTL)
 			}
 		}
 		cacheTap.Release()

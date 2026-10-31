@@ -1,0 +1,1 @@
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	2.994s

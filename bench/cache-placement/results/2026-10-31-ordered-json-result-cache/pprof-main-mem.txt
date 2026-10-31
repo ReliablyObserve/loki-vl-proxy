@@ -1,0 +1,27 @@
+File: ordered-json-main.proxy.test
+Type: alloc_space
+Time: 2026-10-31 17:46:14 CET
+Showing nodes accounting for 4.80GB, 89.75% of 5.34GB total
+Dropped 243 nodes (cum <= 0.03GB)
+Showing top 20 nodes out of 92
+      flat  flat%   sum%        cum   cum%
+    2.78GB 52.07% 52.07%     2.80GB 52.34%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.readBodyLimited
+    0.93GB 17.35% 69.42%     0.93GB 17.35%  reflect.mapassign_faststr0
+    0.23GB  4.35% 73.77%     0.23GB  4.35%  reflect.unsafe_New
+    0.14GB  2.68% 76.45%     0.14GB  2.68%  reflect.makemap
+    0.11GB  2.03% 78.48%     1.57GB 29.33%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.vlUnpackJSONLevel
+    0.09GB  1.62% 80.10%     0.09GB  1.62%  bufio.NewReaderSize
+    0.05GB  0.97% 81.07%     0.05GB  0.98%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*orderedJSONMetricPlan).mergeGroups
+    0.05GB  0.96% 82.03%     0.05GB  0.96%  strings.(*genericReplacer).Replace
+    0.04GB  0.82% 82.85%     0.04GB  0.82%  net/http.(*Request).WithContext
+    0.04GB  0.79% 83.64%     1.71GB 31.93%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.newJSONVolumeFakeVL.func1
+    0.04GB  0.79% 84.43%     0.05GB  0.89%  encoding/json/jsontext.wrapSyntacticError
+    0.04GB  0.74% 85.17%     0.05GB  0.98%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.buildHitsRangeMetricMatrix
+    0.04GB  0.74% 85.91%     0.04GB  0.79%  encoding/json/jsontext.wrapWithObjectName
+    0.04GB  0.72% 86.63%     0.04GB  0.72%  strings.(*Builder).WriteString
+    0.03GB  0.58% 87.20%     0.03GB  0.58%  internal/bytealg.MakeNoZero
+    0.03GB  0.56% 87.77%     0.03GB  0.56%  bytes.growSlice
+    0.03GB  0.53% 88.30%     0.03GB  0.53%  net/http.Header.Clone (inline)
+    0.03GB  0.49% 88.79%     0.14GB  2.61%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).orderedJSONStatsBuckets
+    0.03GB  0.48% 89.28%     0.03GB  0.65%  net/url.parseQuery
+    0.03GB  0.48% 89.75%     0.05GB  0.96%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).collectRangeMetricHitsAux.func3

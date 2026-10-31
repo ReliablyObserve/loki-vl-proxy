@@ -1,0 +1,28 @@
+File: ordered-json-main.proxy.test
+Type: cpu
+Time: 2026-10-31 17:46:10 CET
+Duration: 3.80s, Total samples = 4.11s (108.02%)
+Showing nodes accounting for 4.01s, 97.57% of 4.11s total
+Dropped 62 nodes (cum <= 0.02s)
+Showing top 20 nodes out of 75
+      flat  flat%   sum%        cum   cum%
+     2.29s 55.72% 55.72%      2.29s 55.72%  syscall.rawsyscalln
+     0.65s 15.82% 71.53%      0.65s 15.82%  runtime.pthread_cond_wait
+     0.64s 15.57% 87.10%      0.64s 15.57%  runtime.pthread_cond_signal
+     0.25s  6.08% 93.19%      0.25s  6.08%  runtime.kevent
+     0.15s  3.65% 96.84%      0.15s  3.65%  runtime.usleep
+     0.03s  0.73% 97.57%      0.03s  0.73%  runtime.pthread_kill
+         0     0% 97.57%      0.51s 12.41%  _.goready.func1
+         0     0% 97.57%      0.19s  4.62%  bufio.(*Reader).Peek
+         0     0% 97.57%      0.19s  4.62%  bufio.(*Reader).fill
+         0     0% 97.57%      2.07s 50.36%  bufio.(*Writer).Flush
+         0     0% 97.57%      0.05s  1.22%  encoding/json.Unmarshal (inline)
+         0     0% 97.57%      0.05s  1.22%  encoding/json/v2.Unmarshal
+         0     0% 97.57%      0.04s  0.97%  encoding/json/v2.makeMapArshaler.func3
+         0     0% 97.57%      0.05s  1.22%  encoding/json/v2.unmarshalDecode
+         0     0% 97.57%      0.06s  1.46%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.newJSONVolumeFakeVL.func1
+         0     0% 97.57%      0.05s  1.22%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.vlUnpackJSONLevel
+         0     0% 97.57%      0.22s  5.35%  internal/poll.(*FD).Read
+         0     0% 97.57%      2.07s 50.36%  internal/poll.(*FD).Write
+         0     0% 97.57%      2.29s 55.72%  internal/poll.ignoringEINTRIO (inline)
+         0     0% 97.57%      0.22s  5.35%  net.(*conn).Read
