@@ -213,6 +213,7 @@
     ],
     "loki_api_v1_label": [
       "internal/proxy/labels_alias_test.go",
+      "internal/proxy/labels_post_form_cache_test.go",
       "test/e2e-compat/labels_alias_test.go"
     ],
     "loki_api_v1_label_name_values": [
@@ -226,6 +227,7 @@
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/labels_alias_test.go",
+      "internal/proxy/labels_post_form_cache_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
@@ -1488,6 +1490,10 @@
     ],
     "internal/proxy/labels_inclusive_end_test.go": [
       "semantics/labels-end-inclusive-like-loki"
+    ],
+    "internal/proxy/labels_post_form_cache_test.go": [
+      "loki_api_v1_label",
+      "loki_api_v1_labels"
     ],
     "internal/proxy/lifecycle_leak_test.go": [
       "shutdown-releases-background-work"

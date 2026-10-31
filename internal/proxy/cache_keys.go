@@ -15,15 +15,21 @@ import (
 // /label/{name}/values and the label-name inventory. The same key addresses the
 // memory, disk (L2) and peer (L3) tiers and the stale-on-error lookup, so
 // bumping it makes entries written by older binaries unreachable everywhere.
-// "@full-range-v2": older binaries cached answers covering only the most recent
+// "@full-range-form-v3": older binaries cached answers covering only the most recent
 // minutes (names) or hours (values) of the requested range. '@' cannot appear
 // in a Loki label name or in an encoded query string, so versioned keys never
-// collide with unversioned ones.
-const labelMetadataCacheKeyVersion = "@full-range-v2"
+// collide with unversioned ones. The form version also fences entries written
+// by POST requests whose body parameters were absent from the key.
+const labelMetadataCacheKeyVersion = "@full-range-form-v3"
 
 // volumeCacheKeyVersion: older binaries cached volumes as line counts stamped
-// at bucket starts; volumes are now bytes stamped like Loki.
-const volumeCacheKeyVersion = "@bytes-v1"
+// at bucket starts; volumes are now bytes stamped like Loki. The form version
+// fences entries written under URL-only POST identities.
+const volumeCacheKeyVersion = "@bytes-form-v2"
+
+// indexStatsCacheKeyVersion fences URL-only POST identities, which could omit
+// a selector or window and collide with a different request's response.
+const indexStatsCacheKeyVersion = "@form-v1"
 
 // logLineCacheKeyVersion versions the cache keys of log query responses and
 // query_range windows, which the disk (L2) and peer (L3) tiers keep for up to
@@ -33,10 +39,11 @@ const volumeCacheKeyVersion = "@bytes-v1"
 const logLineCacheKeyVersion = "line-v3"
 
 // detectedMetadataCacheKeyVersion versions the cache keys of /detected_fields,
-// /detected_field/{name}/values and /detected_labels. "@detected-level-v1":
+// /detected_field/{name}/values and /detected_labels. "@detected-level-form-v2":
 // older binaries listed detected_level with parsers and the stored level
-// values, and hid a detected_level stream label.
-const detectedMetadataCacheKeyVersion = "@detected-level-v1"
+// values, and hid a detected_level stream label. The form version also fences
+// entries written under URL-only POST identities.
+const detectedMetadataCacheKeyVersion = "@detected-level-form-v2"
 
 // readCacheKeyVersion returns the key version segment for endpoint, if any.
 func readCacheKeyVersion(endpoint string) string {
@@ -45,6 +52,8 @@ func readCacheKeyVersion(endpoint string) string {
 		return labelMetadataCacheKeyVersion
 	case "volume", "volume_range":
 		return volumeCacheKeyVersion
+	case "index_stats":
+		return indexStatsCacheKeyVersion
 	case "detected_fields", "detected_field_values", "detected_labels":
 		return detectedMetadataCacheKeyVersion
 	default:
@@ -109,7 +118,8 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 }
 
 func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, extraParts []string) (canonicalReadCacheMemoKey, bool) {
-	if r == nil || len(extraParts) > 1 {
+	// POST identity includes form-body parameters absent from this URL-only memo.
+	if r == nil || r.Method == http.MethodPost || len(extraParts) > 1 {
 		return canonicalReadCacheMemoKey{}, false
 	}
 	key := canonicalReadCacheMemoKey{
@@ -125,6 +135,15 @@ func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, ext
 
 func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
 	params := r.URL.Query()
+	if r.Method == http.MethodPost {
+		// Match FormValue's body-before-URL precedence, including partial forms
+		// on parse errors. Normalize a copy so handlers still see the raw form.
+		_ = r.ParseForm()
+		params = make(url.Values, len(r.Form))
+		for name, values := range r.Form {
+			params[name] = append([]string(nil), values...)
+		}
+	}
 	normalizeReadCacheParams(endpoint, params)
 	switch endpoint {
 	case "detected_fields", "detected_field_values", "detected_labels":

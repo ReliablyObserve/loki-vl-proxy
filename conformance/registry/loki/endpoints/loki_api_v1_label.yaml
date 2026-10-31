@@ -8,7 +8,7 @@ generated:
   proxy_route: "labels"
   proxy_handler: "handleLabels"
   tests:
-    unit: 1
+    unit: 2
     unit_vs_loki: 0
     e2e: 1
     e2e_vs_loki: 1

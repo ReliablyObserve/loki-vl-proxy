@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Include form-body selectors and time bounds in POST read-cache identities.
+  Requests with different form parameters no longer share a URL-only memo or
+  metadata response. Matching GET/POST parameters can reuse metadata answers;
+  normalization preserves body precedence and the original request form.
+  Affected metadata cache namespaces are versioned so earlier ambiguous entries
+  cannot be reused from memory, disk or peers after upgrade.
+
 - Serve `GET/POST /loki/api/v1/label` directly through the existing labels
   handler, matching Loki's singular labels alias. Both paths share tenant/auth
   admission, request semantics and labels metadata-cache answers; the alias no longer

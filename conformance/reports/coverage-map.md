@@ -38,9 +38,9 @@ A route or a linked test is not a full compatibility claim.
 | `/loki/api/v1/index/stats` | GET, POST | proven | VictoriaLogs native | explore, datasource, api | 20 | 7 | internal/proxy/label_handlers.go:546 |
 | `/loki/api/v1/index/volume` | GET, POST | proven | proxy-side | drilldown, api | 29 | 10 | internal/proxy/volume.go:192 |
 | `/loki/api/v1/index/volume_range` | GET, POST | proven | proxy-side | drilldown, api | 21 | 4 | internal/proxy/volume.go:200 |
-| `/loki/api/v1/label` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 2 | 1 | internal/proxy/label_handlers.go:24 |
+| `/loki/api/v1/label` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 3 | 1 | internal/proxy/label_handlers.go:24 |
 | `/loki/api/v1/label/{name}/values` | GET, POST | partial | VictoriaLogs native | explore, drilldown, datasource, api | 50 | 15 | internal/proxy/label_handlers.go:124 |
-| `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 82 | 18 | internal/proxy/label_handlers.go:24 |
+| `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 84 | 18 | internal/proxy/label_handlers.go:24 |
 | `/loki/api/v1/patterns` | GET, POST | proven | hybrid | drilldown, api | 23 | 3 | internal/proxy/patterns.go:108 |
 | `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 104 | 40 | internal/proxy/proxy.go:2721 |
 | `/loki/api/v1/query_range` | GET, POST | proven | hybrid | explore, drilldown, api | 217 | 64 | internal/proxy/proxy.go:2301 |

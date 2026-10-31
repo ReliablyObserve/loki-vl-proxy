@@ -709,7 +709,8 @@
         ],
         "ui": [],
         "unit": [
-          "internal/proxy/labels_alias_test.go"
+          "internal/proxy/labels_alias_test.go",
+          "internal/proxy/labels_post_form_cache_test.go"
         ]
       }
     },
@@ -879,6 +880,7 @@
           "internal/middleware/compress_test.go",
           "internal/middleware/middleware_test.go",
           "internal/proxy/backend_heavy_test.go",
+          "internal/proxy/cache_keys_post_form_test.go",
           "internal/proxy/cache_locality_test.go",
           "internal/proxy/circuit_breaker_internal_cancel_test.go",
           "internal/proxy/compat_cache_freshness_test.go",
@@ -901,6 +903,7 @@
           "internal/proxy/labels_fields_scale_bench_test.go",
           "internal/proxy/labels_inclusive_end_test.go",
           "internal/proxy/labels_perf_test.go",
+          "internal/proxy/labels_post_form_cache_test.go",
           "internal/proxy/lifecycle_leak_test.go",
           "internal/proxy/loki_profile_test.go",
           "internal/proxy/memleak_test.go",

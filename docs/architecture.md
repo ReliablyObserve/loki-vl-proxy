@@ -297,6 +297,19 @@ flowchart LR
 
 Only **1** request reaches VictoriaLogs. All clients get the same response. Coalescing and cache keys include a scope fingerprint derived from the resolved tenant routing, backend identity, field mappings and forwarded identity, so requests from different tenants or authorization scopes never share a backend response.
 
+Metadata read keys include the effective POST form parameters, with body values
+taking precedence over URL values as they do in the handlers. Normalization uses
+a copy of the form; POST bypasses the URL-only key memo. Equivalent GET and POST
+requests can reuse metadata entries. The singular `/loki/api/v1/label` route uses
+the labels handler and metadata identity of `/loki/api/v1/labels`; the outer
+GET compatibility cache still distinguishes their paths.
+
+The affected label, detected-metadata, index-stats and volume namespaces fence
+entries created before form parameters were included. Upgrading can therefore
+cause initial metadata misses across memory, disk and peers. Old records become
+unreachable and follow existing expiry and eviction policies. This namespace
+change is an upgrade fence, not a distributed deletion-invalidation protocol.
+
 ## Query And Metadata Flow
 
 ```mermaid

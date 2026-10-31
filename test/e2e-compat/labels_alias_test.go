@@ -17,9 +17,11 @@ import (
 // conformance: loki_api_v1_label, loki_api_v1_labels
 func TestCompat_LabelsSingularAlias(t *testing.T) {
 	now := time.Now()
-	params := url.Values{"start": {strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(now.UnixNano(), 10)}}
+	params := url.Values{"start": {strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10)}, "end": {strconv.FormatInt(now.UnixNano(), 10)}, "query": {`{app="e2e-test"}`}}
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for name, base := range map[string]string{"Loki": lokiURL, "proxy": proxyURL} {
+	var lokiReference map[string]any
+	for _, backend := range []struct{ name, base string }{{"Loki", lokiURL}, {"proxy", proxyURL}} {
+		name, base := backend.name, backend.base
 		t.Run(name, func(t *testing.T) {
 			var reference map[string]any
 			for _, path := range []string{"/loki/api/v1/labels", "/loki/api/v1/label"} {
@@ -60,6 +62,11 @@ func TestCompat_LabelsSingularAlias(t *testing.T) {
 						reference = result
 					} else if !reflect.DeepEqual(reference, result) {
 						t.Fatalf("%s %s differs from canonical labels: got=%s reference=%v", method, path, body, reference)
+					}
+					if lokiReference == nil {
+						lokiReference = result
+					} else if !reflect.DeepEqual(lokiReference, result) {
+						t.Fatalf("%s %s differs from Loki: got=%s Loki=%v", method, path, body, lokiReference)
 					}
 				}
 			}
