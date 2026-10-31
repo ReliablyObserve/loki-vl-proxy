@@ -1,0 +1,27 @@
+File: ordered-json-candidate.proxy.test
+Type: alloc_space
+Time: 2026-10-31 17:46:23 CET
+Showing nodes accounting for 4259.20MB, 97.83% of 4353.76MB total
+Dropped 87 nodes (cum <= 21.77MB)
+Showing top 20 nodes out of 57
+      flat  flat%   sum%        cum   cum%
+ 2015.22MB 46.29% 46.29%  2015.22MB 46.29%  bufio.NewReaderSize (inline)
+  406.12MB  9.33% 55.61%   478.62MB 10.99%  net/url.parseQuery
+  263.56MB  6.05% 61.67%   263.56MB  6.05%  internal/bytealg.MakeNoZero
+  225.53MB  5.18% 66.85%   225.53MB  5.18%  bytes.growSlice
+  199.56MB  4.58% 71.43%   199.56MB  4.58%  net/http.Header.Clone
+  182.06MB  4.18% 75.61%   182.06MB  4.18%  net/textproto.MIMEHeader.Set
+  159.51MB  3.66% 79.28%   193.01MB  4.43%  time.newParseError
+  156.05MB  3.58% 82.86%   331.07MB  7.60%  net/http.readRequestLimit
+  151.05MB  3.47% 86.33%   151.05MB  3.47%  net/http.(*Request).WithContext (inline)
+   87.02MB  2.00% 88.33%    87.02MB  2.00%  net/textproto.(*Reader).ReadLine (inline)
+   86.02MB  1.98% 90.31%  2592.82MB 59.55%  net/http/httptest.NewRequestWithContext
+   74.50MB  1.71% 92.02%    74.50MB  1.71%  net/http/httptest.NewRecorder
+   66.51MB  1.53% 93.54%    66.51MB  1.53%  net/url.parse
+      48MB  1.10% 94.65%    48.52MB  1.11%  regexp.(*Regexp).replaceAll
+   46.50MB  1.07% 95.71%   525.12MB 12.06%  net/url.ParseQuery (inline)
+      36MB  0.83% 96.54%    84.52MB  1.94%  regexp.(*Regexp).ReplaceAllStringFunc
+   33.50MB  0.77% 97.31%    33.50MB  0.77%  internal/stringslite.Clone (inline)
+   19.50MB  0.45% 97.76%   278.56MB  6.40%  net/http.(*Request).ParseForm
+       3MB 0.069% 97.83%    25.94MB   0.6%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.makeNDJSONLines
+         0     0% 97.83%  2014.68MB 46.27%  bufio.NewReader (inline)

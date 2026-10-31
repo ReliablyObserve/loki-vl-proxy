@@ -854,6 +854,9 @@ func TestJSONValidSplitRawOnlyGroupIsNotASeries(t *testing.T) {
 	// One more real path is a real overflow, with Loki's error.
 	rows = append(rows, pushdownRow{ts: s0.Add(160 * time.Second), stream: map[string]string{"app": "api", "env": "prod"}, msg: `{"path":"/p9"}`})
 	fake.rows = rows
+	// This changes historical fixture data, so discard the previous complete
+	// response before testing the new evaluator outcome.
+	p.cache.InvalidatePrefix("query_range:")
 	if code, _, body := runSplitQuery(t, p, query, start, end, time.Minute); code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series") {
 		t.Fatalf("six real series: status %d body %s, want the series limit error", code, body)
 	}
@@ -1153,6 +1156,9 @@ func TestJSONValidSplitLevelSpellingsMergeUnderTheLimit(t *testing.T) {
 				for _, limit := range []int{5, 10} {
 					p.maxStatsQuerySeries = limit
 					fake.raw = 0
+					// Each limit exercises the evaluator independently, rather than
+					// the complete result retained by the preceding request.
+					p.cache.InvalidatePrefix("query_range:")
 					code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
 					if code != http.StatusOK || !reflect.DeepEqual(got, want) {
 						t.Fatalf("limit %d: status %d %.200s, got %v, want %v", limit, code, body, got, want)
@@ -1170,6 +1176,7 @@ func TestJSONValidSplitLevelSpellingsMergeUnderTheLimit(t *testing.T) {
 				// Past the guard the row evaluator answers, the same series.
 				p.maxStatsQuerySeries = 3
 				fake.raw = 0
+				p.cache.InvalidatePrefix("query_range:")
 				code, got, body := runSplitQuery(t, p, query, start, end, time.Minute)
 				if code != http.StatusOK || !reflect.DeepEqual(got, want) {
 					t.Fatalf("limit 3: status %d %.200s, got %v, want %v", code, body, got, want)

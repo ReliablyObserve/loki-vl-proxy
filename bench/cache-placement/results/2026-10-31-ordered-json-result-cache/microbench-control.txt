@@ -1,0 +1,28 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+                                     │ /private/tmp/ordered-json-bench-main-a.txt │ /private/tmp/ordered-json-bench-main-b.txt │
+                                     │                   sec/op                   │        sec/op         vs base              │
+OrderedJSONResultCache/cold/native-4                                 103.8µ ±  4%           102.6µ ± 12%       ~ (p=0.818 n=6)
+OrderedJSONResultCache/warm/native-4                                 4.083µ ±  3%           4.134µ ±  2%       ~ (p=0.310 n=6)
+OrderedJSONResultCache/cold/json-4                                   162.4µ ±  6%           167.9µ ± 62%       ~ (p=0.310 n=6)
+OrderedJSONResultCache/warm/json-4                                   152.8µ ± 40%           160.9µ ± 21%       ~ (p=0.240 n=6)
+geomean                                                              56.94µ                 58.17µ        +2.17%
+
+                                     │ /private/tmp/ordered-json-bench-main-a.txt │ /private/tmp/ordered-json-bench-main-b.txt │
+                                     │                    B/op                    │         B/op          vs base              │
+OrderedJSONResultCache/cold/native-4                                 167.5Ki ± 0%           167.4Ki ± 0%       ~ (p=0.394 n=6)
+OrderedJSONResultCache/warm/native-4                                 8.584Ki ± 0%           8.584Ki ± 0%       ~ (p=0.898 n=6)
+OrderedJSONResultCache/cold/json-4                                   242.7Ki ± 0%           242.7Ki ± 0%       ~ (p=0.180 n=6)
+OrderedJSONResultCache/warm/json-4                                   242.8Ki ± 0%           242.7Ki ± 0%       ~ (p=0.310 n=6)
+geomean                                                              95.94Ki                95.92Ki       -0.02%
+
+                                     │ /private/tmp/ordered-json-bench-main-a.txt │ /private/tmp/ordered-json-bench-main-b.txt │
+                                     │                 allocs/op                  │     allocs/op       vs base                │
+OrderedJSONResultCache/cold/native-4                                   602.0 ± 0%           602.0 ± 0%       ~ (p=1.000 n=6) ¹
+OrderedJSONResultCache/warm/native-4                                   54.00 ± 0%           54.00 ± 0%       ~ (p=1.000 n=6) ¹
+OrderedJSONResultCache/cold/json-4                                    2.184k ± 0%          2.184k ± 0%       ~ (p=1.000 n=6) ¹
+OrderedJSONResultCache/warm/json-4                                    2.184k ± 0%          2.184k ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                627.5                627.5       +0.00%
+¹ all samples are equal

@@ -1,0 +1,58 @@
+[
+  {
+    "source": "loki",
+    "hours": 24,
+    "status": 400,
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "main",
+    "hours": 24,
+    "status": 400,
+    "body": "{\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"errorType\":\"bad_data\",\"message\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"status\":\"error\"}\n",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "loki",
+    "hours": 24,
+    "status": 400,
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "pr",
+    "hours": 24,
+    "status": 400,
+    "body": "{\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"errorType\":\"bad_data\",\"message\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"status\":\"error\"}\n",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "loki",
+    "hours": 48,
+    "status": 400,
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "main",
+    "hours": 48,
+    "status": 400,
+    "body": "{\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"errorType\":\"bad_data\",\"message\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"status\":\"error\"}\n",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "loki",
+    "hours": 48,
+    "status": 400,
+    "body": "maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()",
+    "after_partial_cache_primed": true
+  },
+  {
+    "source": "pr",
+    "hours": 48,
+    "status": 400,
+    "body": "{\"error\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"errorType\":\"bad_data\",\"message\":\"maximum number of series (500) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()\",\"status\":\"error\"}\n",
+    "after_partial_cache_primed": true
+  }
+]

@@ -17,7 +17,7 @@ Ranked by which clients depend on it.
 | Item | Consumers | Tests | Why |
 |---|---|---:|---|
 | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | — | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
-| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 0 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
+| `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | — | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | — | 1 | Seeded from behaviour we have hit in production use; cases are named but not yet written or wired. |
 
 ## In progress
@@ -32,7 +32,7 @@ Proven in part; the rest is named in the item's cases.
 | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | — | 7 | Dotted names return Loki v3.7.7's parse error (message, line and column recorded from Loki for 192 query shapes, unit-te |
 | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | — | 34 | count, min, max and avg of count_over_time, bytes_over_time, rate, bytes_rate and the unwrap functions read one value pe |
 | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | — | 4 | `| regexp` and `| pattern` captures are part of the series identity on the instant, range and byte routes, proven agains |
-| `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 10 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
+| `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | — | 12 | The filtered-volume pushdown cases (underscore labels, filters without `drop __error__`, ungrouped sums, translated labe |
 | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-label-values-index` — A replica that lost its disk restores the label-values index from its peers | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
 | `peer-cache-metadata` — Label and detected-field answers are read from the ring owner and the disk tier | — | 1 | The multi-replica proof is TestFleetPeerCacheProof (test/e2e-fleet, CI job e2e-fleet: three proxies, VictoriaLogs and Lo |
@@ -53,8 +53,8 @@ Held by at least one test that declares it.
 | Item | Consumers | Tests | Why |
 |---|---|---:|---|
 | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | — | 8 | Every case is wired to a test: limiter saturation, fairness, the shared per-request queue budget, metadata staying unque |
-| `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 5 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
-| `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 8 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
+| `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | — | 6 | The timeout argument and the cancellation propagation are covered by TestBackendRequests_PassRemainingBudgetAsVLTimeout  |
+| `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | — | 9 | The registry tests in internal/config assert that every limit names a declared flag, that every flag is categorised, tha |
 | `tenant-label-isolation` — Tenant-label mode confines every request to its org | — | 4 | Unit tested in internal/proxy/multitenant_tenant_label_test.go: a table over twelve routes (query, range, labels, label  |
-| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 9 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
+| `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | — | 10 | Unit tested in internal/proxy/tenant_routing_test.go: a table over five routing configurations (default, strict, strict  |
 | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | — | 3 | internal/proxy/tenant_query_limits_test.go resolves every enforced limit through each configuration layer and tenant, co |

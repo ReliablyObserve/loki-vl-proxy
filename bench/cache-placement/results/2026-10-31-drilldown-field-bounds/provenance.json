@@ -1,0 +1,89 @@
+{
+  "main": {
+    "source": "0f9d8a6fa16da11a6f124ec3388a8da85caba035",
+    "binary_sha256": "b27efd96f9a65f4f7df6840315908bd6d667fad17178af4c625c4e38c504629d",
+    "production_sources_sha256": "e8679a218f491221804fa11476b95d92cd1bd16c95dc6a4f23c89dfe0eddba1c"
+  },
+  "candidate": {
+    "source": "9db35e2cf7bfce07670829a1e3ff64c8696e910b",
+    "binary_sha256": "05f3a264bb815f2c2dd6ba45d788611abf5224454af57913e2d03cdc1c2d2566",
+    "production_sources_sha256": "e4bbe3ff2d589ff3241f006da8534e6cf4fe507c95218d943996accaad425a98"
+  },
+  "metadata_main": "7a9f80b3713e96c5d3d08596b7bf23eaceae4fe1",
+  "metadata_main_production_identical_to_measured_main": true,
+  "toolchain": "go version go1.27.3 darwin/arm64",
+  "reference_loki": "3.7.9",
+  "loki_release_zip_sha256": "48acd15626d60ce357ac094c79d30eb9cc8be150b3b97e1360762506c3cd05a8",
+  "loki_binary_sha256": "bd73d04bbc0139822dc66bad7b3445c4a5fe0ba1ebf984ded7646d7b1c428014",
+  "victorialogs": "1.52.0",
+  "budgets": {
+    "primary_ram_mib": 256,
+    "additional_tier0_percent": 10,
+    "max_query_series": 500,
+    "backend_max_buffered_response_bytes": 67108864,
+    "GOMEMLIMIT": "2GiB (soft Go limit)",
+    "disk": "disabled",
+    "peers": "disabled",
+    "nodes_per_source": 1
+  },
+  "scope": "Both sources use identical500-series configuration. Exact-repeat control; no significant code speedup inferred. Dedicated Darwin process_resident_memory_bytes is Go MemStats.Sys, not OS RSS. VL CPU/RSS and physical device I/O not isolated. Shifted correctness is covered by the separate real e2e, not these timings.",
+  "ui_scope": {
+    "grafana": "13.2.1",
+    "drilldown": "2.5.2",
+    "backend_image_source": "9849ac00e83afaec55264209e17e5785b373a169",
+    "backend_image_manifest": "sha256:b7094ce89b1421390f2bb60b8e2a8c7a9c55d287c85b417ee9c437e68877434f",
+    "datasource": "existing vmauth variant, configured500",
+    "meaning": "Configuration/frontend control, not candidate-image A/B; candidate-image checks run in CI after push"
+  },
+  "source_manifest_definition": "SHA256 of git ls-tree records for non-test Go files under cmd/internal plus go.mod/go.sum",
+  "proxy_cli_arguments": {
+    "main": [
+      "drilldown-fields-main-proxy",
+      "-listen=127.0.0.1:14100",
+      "-backend=http://127.0.0.1:19428",
+      "-max-stats-query-series=500",
+      "-labels-cache-warm=false",
+      "-cache-ttl=5s",
+      "-label-style=underscores",
+      "-metadata-field-mode=translated",
+      "-emit-structured-metadata=true",
+      "-rate-limit-per-second=0",
+      "-rate-limit-burst=0",
+      "-max-concurrent=0",
+      "-backend-timeout=1m",
+      "-server.enable-pprof",
+      "-server.register-instrumentation=true",
+      "-server.admin-auth-token=<development token omitted>"
+    ],
+    "candidate": [
+      "proxy-integrated",
+      "-listen=127.0.0.1:14103",
+      "-backend=http://127.0.0.1:19428",
+      "-max-stats-query-series=500",
+      "-labels-cache-warm=false",
+      "-cache-ttl=5s",
+      "-label-style=underscores",
+      "-metadata-field-mode=translated",
+      "-emit-structured-metadata=true",
+      "-rate-limit-per-second=0",
+      "-rate-limit-burst=0",
+      "-max-concurrent=0",
+      "-backend-timeout=1m",
+      "-server.enable-pprof",
+      "-server.register-instrumentation=true",
+      "-server.admin-auth-token=<development token omitted>"
+    ]
+  },
+  "rebuilt_ui_scope": {
+    "backend_image_source": "875cb7c158d8fed442da225ea7bcc8e5339f897d",
+    "backend_image_identity": "sha256:fe09d95330c810a86eef90b5e393809f9da6eeb53e2ca4e66fbec82ad643f866",
+    "grafana": "13.2.1",
+    "drilldown": "2.5.2",
+    "reference_loki": "3.7.7",
+    "victorialogs": "1.52.0",
+    "datasource": "rebuilt vmauth variant, configured500",
+    "tests": "24h and48h, two passed in7.1s; unique dual-written510-value fixture per test",
+    "meaning": "Candidate-image frontend proof; not a main-versus-candidate latency comparison. Test durations are not query latency.",
+    "deployment": "All12 proxy variants recreated and healthy; existing Loki/VL volumes retained. Patterns datasource independently publishes max_query_series500. Fresh generated logs verified on proxy and Loki."
+  }
+}

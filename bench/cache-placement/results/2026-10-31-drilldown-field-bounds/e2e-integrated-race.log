@@ -1,0 +1,8 @@
+=== RUN   TestDrilldown_FieldBoundsByteOverflowMatchesLoki
+=== RUN   TestDrilldown_FieldBoundsByteOverflowMatchesLoki/24h0m0s
+=== RUN   TestDrilldown_FieldBoundsByteOverflowMatchesLoki/48h0m0s
+--- PASS: TestDrilldown_FieldBoundsByteOverflowMatchesLoki (5.16s)
+    --- PASS: TestDrilldown_FieldBoundsByteOverflowMatchesLoki/24h0m0s (2.39s)
+    --- PASS: TestDrilldown_FieldBoundsByteOverflowMatchesLoki/48h0m0s (2.72s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	6.903s

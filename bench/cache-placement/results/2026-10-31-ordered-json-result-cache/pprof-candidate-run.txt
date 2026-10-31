@@ -1,0 +1,7 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkOrderedJSONResultCache/warm/json-4         	  487875	      4585 ns/op	    9015 B/op	      54 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	2.936s

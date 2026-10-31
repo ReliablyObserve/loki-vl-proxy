@@ -1,0 +1,1 @@
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	6.611s
