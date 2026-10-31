@@ -73,5 +73,17 @@
       "-server.register-instrumentation=true",
       "-server.admin-auth-token=<development token omitted>"
     ]
+  },
+  "rebuilt_ui_scope": {
+    "backend_image_source": "875cb7c158d8fed442da225ea7bcc8e5339f897d",
+    "backend_image_identity": "sha256:fe09d95330c810a86eef90b5e393809f9da6eeb53e2ca4e66fbec82ad643f866",
+    "grafana": "13.2.1",
+    "drilldown": "2.5.2",
+    "reference_loki": "3.7.7",
+    "victorialogs": "1.52.0",
+    "datasource": "rebuilt vmauth variant, configured500",
+    "tests": "24h and48h, two passed in7.1s; unique dual-written510-value fixture per test",
+    "meaning": "Candidate-image frontend proof; not a main-versus-candidate latency comparison. Test durations are not query latency.",
+    "deployment": "All12 proxy variants recreated and healthy; existing Loki/VL volumes retained. Patterns datasource independently publishes max_query_series500. Fresh generated logs verified on proxy and Loki."
   }
 }

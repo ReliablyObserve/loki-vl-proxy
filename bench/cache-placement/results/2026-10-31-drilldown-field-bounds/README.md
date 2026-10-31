@@ -91,8 +91,21 @@ Every API error or page error fails the test; no blanket datasource-error allow.
 The local run uses existing Grafana 13.2.1 / Drilldown 2.5.2 and the stock500-series
 vmauth variant at source 9849ac0, so it is configuration/frontend contract proof,
 not a candidate-image A/B. Both tests pass in 11.6 s. The relevant selectors/message
-were checked unchanged in pinned Grafana 13.2.3 / Drilldown 2.6.0 sources; actual
-candidate-image rendering remains a CI/rebuilt-stack check.
+were checked unchanged in pinned Grafana 13.2.3 / Drilldown 2.6.0 sources.
+
+The rebuilt candidate image at source `875cb7c158d8fed442da225ea7bcc8e5339f897d`
+also passes both browser tests in 7.1 s against Grafana 13.2.1 / Drilldown 2.5.2,
+Loki 3.7.7 and VictoriaLogs 1.52.0. This run uses the rebuilt vmauth datasource
+and fresh unique fixtures; its test durations are not query-latency measurements.
+All twelve proxy variants were recreated and verified healthy, preserving
+backend data volumes. The patterns datasource separately publishes its explicit
+500-series limit, and fresh generated logs are visible through both proxy and
+Loki. See `ui-rebuilt.log`, `rebuilt-*-responses.json` and provenance.json.
+
+![Rebuilt candidate 24h Fields](rebuilt-fields-24h.png)
+![Rebuilt candidate 48h Fields](rebuilt-fields-48h.png)
+
+Earlier configuration/frontend control screenshots:
 
 ![24h controlled Fields](fields-24h.png)
 ![48h controlled Fields](fields-48h.png)
