@@ -44,3 +44,34 @@ different contract from VL API responses and backend-result fragments.
 
 See [Architecture](docs/architecture.md#cache-semantic-layers-and-storage-tiers)
 for the distinction between semantic layers and physical storage tiers.
+
+## Cache change evidence in pull requests
+
+Every PR that changes cache behavior must put a readable **main versus PR**
+matrix in its PR summary, with links to retained, reproducible evidence.
+
+- Identify measured base/candidate commits, dataset, versions, budgets, node
+  count, replication factor, Tier0 state and priming. Preserve the actual
+  measured source identities after a rebase; label older results historical.
+- Compare relevant cold, exact-repeat, shifted-window, refresh, disk-restart,
+  peer-loss and pressure cases. Mark every untested relevant state explicitly;
+  do not present exact-repeat results as proof of moving-window or fleet reuse.
+- Report answer parity/errors, p50/p95, VL request counts/ranges/body bytes and
+  peer requests. Give hit/lookup counts and exclusions by Loki/VL semantic
+  layer and physical tier; a bypass is not a cache miss or a zero-percent hit
+  rate. Keep reference Loki's own caches separate.
+- Include proxy CPU with its measurement scope, per-operation allocation,
+  retained logical RAM/SSD occupancy, process RSS, encoded disk traffic and
+  evictions/rejections. Report VL-server CPU/RSS separately when attributable.
+  Distinguish process-counter deltas from per-query CPU, lifetime RSS peaks
+  from simultaneous fleet peaks, and file length from physical IOPS/throughput.
+- Show the costs as well as gains: cold-admission overhead, memory retained,
+  regressions, unchanged cases and measurement uncertainty. Use "not measured"
+  or "not applicable" with a reason instead of an invented zero. Report
+  delayed priming/background work separately from measured-request work.
+- Explain which work is avoided and where reuse still stops. State effects on
+  freshness, completeness, tenant/auth isolation, placement, resource bounds
+  and invalidation; do not infer new guarantees from a higher hit ratio.
+
+Infrastructure, release metadata and documentation changes may mark this matrix
+not applicable with their scope reason; they must not claim runtime savings.
