@@ -1,6 +1,10 @@
 id: api_prom_query
-state: gap
+state: not-applicable
+scope_policy: deprecated-read-alias
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
-owner_decision: null
+  Unsupported deprecated read alias; use /loki/api/v1/query. Excluded from totals, gap lists and compatibility scores.
+owner_decision: |
+  Keep these five deprecated /api/prom read aliases unimplemented and exclude them from compatibility accounting (owner 2026-10-31).
+  The /api/prom/rules API and its namespace/group descendants remain in scope for vmalert.
+out_of_scope_methods: [GET, POST]
 waiver: null

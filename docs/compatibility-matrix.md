@@ -59,9 +59,10 @@ Representative covered combinations now include:
 
 This keeps the repo explicit about what must match Loki exactly versus what is a proxy-only Grafana contract.
 
-## Proxy-Only Contract Matrix
+## Query semantics and other contract suites
 
-Some important behaviors are intentionally not judged against Loki because they only exist in the proxy compatibility layer.
+The strict LogQL semantics matrix is one compatibility suite. Other suites cover
+Loki metadata APIs, Grafana/Drilldown behavior and proxy-specific recovery.
 
 Examples:
 
@@ -70,7 +71,11 @@ Examples:
 - stale-on-error helper behavior
 - bounded fallback and recovery behavior when VictoriaLogs discovery endpoints fail
 
-Those cases belong in the proxy contract suite, not the strict Loki semantics parity matrix.
+Drilldown metadata, fields, volume and patterns are Loki APIs, not proxy-only
+extensions. Their responses remain subject to Loki comparison in the dedicated
+core and Drilldown suites. Proxy-specific fallback and recovery have additional
+contract tests. Routing and test declarations are tracked separately from full
+parity in the [coverage map](compatibility-coverage.md).
 
 ## Support Window Policy
 

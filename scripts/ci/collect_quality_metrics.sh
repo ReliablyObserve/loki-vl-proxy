@@ -8,6 +8,7 @@ fi
 
 OUTPUT_JSON="$1"
 ROOT_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   if [ -d "$ROOT_DIR/test/e2e-compat" ]; then
@@ -72,6 +73,10 @@ capture_or_default() {
     cp "$err_file" "$QUALITY_DIAGNOSTICS_DIR/${label}.stderr"
   fi
   cat "$err_file" >&2 || true
+  if [ "$label" = "tests_and_coverage" ] && jq -e '.execution_state == "failed" and (.outcomes | type == "object")' "$out_file" >/dev/null 2>&1; then
+    cat "$out_file"
+    return 0
+  fi
   printf '%s' "$fallback"
   return 0
 }
@@ -97,7 +102,7 @@ collect_tests_and_coverage() {
   # all-zero file (a collection that timed out) is ignored.
   if [ -n "${QUALITY_TESTS_SNAPSHOT:-}" ] && jq -e '(.count > 0) and (.coverage_pct | type == "number")' "$QUALITY_TESTS_SNAPSHOT" >/dev/null 2>&1; then
     log_step "using the saved test count and coverage in ${QUALITY_TESTS_SNAPSHOT}"
-    jq -c '{count, coverage_pct}' "$QUALITY_TESTS_SNAPSHOT"
+    jq -c '{count, coverage_pct} + (if has("outcomes") then {outcomes} else {} end) + (if has("execution_state") then {execution_state} else {} end) + (if has("package_coverage") then {package_coverage} else {} end)' "$QUALITY_TESTS_SNAPSHOT"
     return 0
   fi
   local cover_file="$TMP_DIR/coverage.out"
@@ -112,15 +117,13 @@ collect_tests_and_coverage() {
     fi
     log_step "go test -json failed (exit=${test_status}); failing test events:"
     jq -r 'select(.Action == "fail") | [.Package, (.Test // "package")] | @tsv' "$events_file" >&2 || true
+    python3 "$SCRIPT_DIR/pr_evidence.py" --summarize-tests "$events_file" --test-exit-code "$test_status"
     return "$test_status"
   fi
-  local test_count coverage
-  test_count="$(jq -r 'select(.Action=="pass" and .Test != null) | .Test' "$events_file" | wc -l | tr -d ' ')"
+  local coverage
   coverage="$(go tool cover -func="$cover_file" | tail -1 | awk '{print substr($3, 1, length($3)-1)}')"
-  jq -n \
-    --argjson count "${test_count:-0}" \
-    --argjson coverage_pct "${coverage:-0}" \
-    '{count:$count,coverage_pct:$coverage_pct}'
+  python3 "$SCRIPT_DIR/pr_evidence.py" --summarize-tests "$events_file" \
+    --coverage-profile "$cover_file" --coverage-percent "${coverage:-0}"
 }
 
 run_score() {
@@ -333,23 +336,22 @@ else
   printf '%s\n' "$LOAD_DEFAULT" >"$load_file"
 fi
 
-TESTS_AND_COVERAGE="$(cat "$tests_file")"
-COMPAT="$(cat "$compat_file")"
-BENCHMARKS="$(cat "$benchmarks_file")"
-LOAD="$(cat "$load_file")"
+python3 "$SCRIPT_DIR/quality_scope.py" --root "$ROOT_DIR" > "$TMP_DIR/inventory.json"
 
 jq -n \
-  --argjson tests "$TESTS_AND_COVERAGE" \
-  --argjson compat "$COMPAT" \
-  --argjson benchmarks "$BENCHMARKS" \
-  --argjson load "$LOAD" \
+  --slurpfile tests "$tests_file" \
+  --slurpfile compat "$compat_file" \
+  --slurpfile benchmarks "$benchmarks_file" \
+  --slurpfile load "$load_file" \
+  --slurpfile inventory "$TMP_DIR/inventory.json" \
   --arg perf_mode "$PERF_MODE" \
   '{
-    tests: $tests,
-    compatibility: $compat,
+    tests: $tests[0],
+    quality_inventory: $inventory[0],
+    compatibility: $compat[0],
     performance: {
       mode: $perf_mode,
-      benchmarks: $benchmarks,
-      load: $load
+      benchmarks: $benchmarks[0],
+      load: $load[0]
     }
   }' >"$OUTPUT_JSON"

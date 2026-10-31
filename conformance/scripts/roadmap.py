@@ -67,8 +67,8 @@ def main():
               "follows."), "",
              SCOPE_SENTENCE, "",
              "## Where we are", "",
-             f"- Endpoints with a test comparing the proxy against Loki: "
-             f"**{summary['scores'].get('coverage', 0):.0%}**",
+             f"- Read endpoints with a test comparing the proxy against Loki: "
+             f"**{summary.get('read_api', summary)['scores'].get('coverage', 0):.0%}**",
              f"- Behaviour and feature items: "
              f"**{len(by_state.get('proven', []))} proven**, "
              f"{len(by_state.get('partial', []))} partial, "

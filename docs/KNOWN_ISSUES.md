@@ -1,11 +1,14 @@
 ---
 sidebar_label: Known Issues
 description: Known differences between loki-vl-proxy and native Loki, and workarounds where available.
+# CommonMark supports the generated HTML comment markers.
+mdx:
+  format: md
 ---
 
 # Known Differences and Known Issues
 
-Last updated against `main` on 2026-10-26.
+API inventory is generated from the route and conformance evidence below.
 
 This project is a Loki-compatible read proxy for VictoriaLogs. It is not a claim
 that VictoriaLogs is natively Loki or that every Loki behavior is reproduced in
@@ -13,6 +16,38 @@ the backend itself. This page tracks the differences, scope boundaries, and
 operational caveats that still matter in the current codebase.
 
 ## Intentional Scope Boundaries
+
+<!-- api-status:start -->
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+
+| Read API signal | Registry evidence |
+|---|---|
+| Routed endpoints | 24/27 |
+| Endpoints with Loki differential tests | 18/27 |
+| Endpoints declared `proven` | 11/27 |
+
+Routing, linked tests and declared proof are different signals; none means
+every LogQL shape or every backend version is compatible. See the
+[coverage map](compatibility-coverage.md) and [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
+
+Read routes without an implementation:
+
+| Route | Current scope |
+|---|---|
+| `/loki/api/v1/cache/generation_numbers` | Not implemented |
+| `/loki/api/v1/label` | Not implemented |
+| `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
+
+`index/shards` is not required by the pinned Grafana/Drilldown request paths
+or by proxy peer-cache lookup.
+
+`cache/generation_numbers` is not implemented; manual cache flush and
+eviction do not provide a distributed deletion generation.
+
+Rules reads under `/loki/api/v1/rules` and `/api/prom/rules`, including namespace
+and group lookups, are already routed. Configure `-ruler-backend` for vmalert;
+routing these reads does not implement rule writes or prove full ruler parity.
+<!-- api-status:end -->
 
 | Area | Current state |
 |---|---|
@@ -26,6 +61,7 @@ operational caveats that still matter in the current codebase.
 
 | Area | What to expect |
 |---|---|
+| POST metadata cache identity | The current helper keys metadata reads from URL parameters, omitting form-body selectors and bounds. Different POST forms at the same URL can reuse the previous selector's labels. Until [#949](https://github.com/ReliablyObserve/loki-vl-proxy/pull/949) lands, use GET with selector and range in the URL for affected metadata reads. Routing a POST does not prove its cache identity is correct. |
 | Label vs field surfaces | With `-label-style=underscores` and `-metadata-field-mode=hybrid`, label APIs remain Loki-safe (`service_name`) while field-oriented APIs can expose both `service.name` and `service_name`. This is expected compatibility behavior, not duplicate data corruption. |
 | Grafana dotted-field builder UX | Grafana builder paths can still tokenize dotted field names awkwardly even when the generated query executes correctly. For click-to-filter flows, underscore aliases are the safer UI path. |
 | Parsed-only field freshness | `detected_fields` and `detected_field/{name}/values` prefer native VictoriaLogs metadata when possible, but parsed-only or very new fields can still fall back to bounded sampling. That means freshness can differ from indexed metadata. |
@@ -73,7 +109,15 @@ equivalents.
 
 ### Where the proxy is slower than Loki
 
-As of 2026-10-29 the performance report lists 51 shape and range pairs where the proxy is slower than Loki on a cold request across the latest saved runs; the single daily run has 45 of 475 comparable cold pairs slower. The tracked above-2× list holds 165 shape, range and mode rows (55 first request, 110 repeat), including older observations awaiting two consecutive passing runs; each is treated as a defect. Among the largest are `| json` queries that filter or group on `level_extracted` (19.72 s against Loki's 4.66 s at 24h) and `detected_level` volume over `| json` (about 10 s at 24h against about 1 s, and the repeat is as slow). Unwrap metrics over 7d were 13.13 s against 0.005 s in the run of 2026-10-08, where Loki's cold time is unverified because no cache counters were recorded. A 7d Drilldown breakdown can fail on the 64 MiB response budget where Loki answers (`limits/drilldown-7d-breakdown-response-limit`). Repeated and refreshed metric windows were 10 to 200 times slower than Loki at 6h until #862, released in 2.35.0. The table, the registry item behind each row and the method are in [Performance: current position versus Loki](performance.md#current-position-versus-loki).
+The current counts, slowest query shapes and answer differences are generated
+from retained A/B runs in the [generated quality summary](real-window-compatibility-gaps.md#quality-and-performance-vs-loki-current),
+[performance report](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md)
+and [ranked parity gaps](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
+First request, repeat and refresh are separate measurements; the historical
+above-2× list also retains rows awaiting its consecutive-pass rule. An exact
+repeat improvement does not establish shifted-window or peer-loss performance.
+These reports retain the measured revision and date, rather than treating older
+measurements as timings for the current tree.
 
 ### Hot+Cold response merging
 
@@ -109,7 +153,7 @@ These are not current open issues in this codebase:
 - route-aware proxy, cache, and upstream request telemetry
 - prefixed app metrics under `loki_vl_proxy_*` with CI guard coverage
 - `max`, `min`, `count` and `avg` over a range function on `query_range` — one series per group, as in Loki, where the proxy returned one series per stream when the window is not the step (#734)
-- `/loki/api/v1/delete` — answers `404` by default like a Loki with deletion disabled, and is registered only with `-delete-api-enabled` (#855)
+- Default-disabled delete routing — answers `404` like Loki with deletion disabled and is registered only with `-delete-api-enabled` (#855). This fixes the route exposure boundary; actual VictoriaLogs deletion remains unsupported, as described above.
 - `label_replace()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
 - `label_join()` and `group()` — not in Loki 3.7.7's LogQL; both are a 400 parse error like Loki's (they were proxy-only extensions from v1.21.0)
 - bare label matcher malformed VL output — queries like `app="value"` (missing braces) now return a descriptive HTTP 400 instead of silently producing double-quoted VL syntax (v1.20.0)

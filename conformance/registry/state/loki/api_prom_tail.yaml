@@ -1,8 +1,10 @@
 id: api_prom_tail
-state: gap
+state: not-applicable
+scope_policy: deprecated-read-alias
 reason: |
-  Not routed: the proxy answers 404. Loki serves /api/prom/tail with the same TailHandler as /loki/api/v1/tail (pkg/loki/modules.go:718-719), so it needs the same behaviour and the same frames, and shares the missing items of loki_api_v1_tail (history replay for start and limit, limit and delay_for validation, multi-tenant answer).
+  Unsupported deprecated read alias; use /loki/api/v1/tail. Excluded from totals, gap lists and compatibility scores.
 owner_decision: |
-  Tail must mimic Loki (owner 2026-10-26).
-priority: first
+  Keep these five deprecated /api/prom read aliases unimplemented and exclude them from compatibility accounting (owner 2026-10-31).
+  The /api/prom/rules API and its namespace/group descendants remain in scope for vmalert.
+out_of_scope_methods: [GET, POST]
 waiver: null

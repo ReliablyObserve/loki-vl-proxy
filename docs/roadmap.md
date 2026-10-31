@@ -1,9 +1,51 @@
 ---
 sidebar_label: Roadmap
 description: Shipped milestones and committed, already-decided work for loki-vl-proxy.
+# CommonMark supports the generated HTML comment markers.
+mdx:
+  format: md
 ---
 
 # Roadmap
+
+## Current API scope and remaining route gaps
+
+<!-- api-status:start -->
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+
+| Read API signal | Registry evidence |
+|---|---|
+| Routed endpoints | 24/27 |
+| Endpoints with Loki differential tests | 18/27 |
+| Endpoints declared `proven` | 11/27 |
+
+Routing, linked tests and declared proof are different signals; none means
+every LogQL shape or every backend version is compatible. See the
+[coverage map](compatibility-coverage.md) and [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
+
+Read routes without an implementation:
+
+| Route | Current scope |
+|---|---|
+| `/loki/api/v1/cache/generation_numbers` | Not implemented |
+| `/loki/api/v1/label` | Not implemented |
+| `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
+
+`index/shards` is not required by the pinned Grafana/Drilldown request paths
+or by proxy peer-cache lookup.
+
+`cache/generation_numbers` is not implemented; manual cache flush and
+eviction do not provide a distributed deletion generation.
+
+Rules reads under `/loki/api/v1/rules` and `/api/prom/rules`, including namespace
+and group lookups, are already routed. Configure `-ruler-backend` for vmalert;
+routing these reads does not implement rule writes or prove full ruler parity.
+<!-- api-status:end -->
+
+The statuses above describe this tree's implementation and linked evidence.
+An open pull request does not count as shipped support. Detailed semantic and
+visual differences remain in [Known Issues](KNOWN_ISSUES.md) and the
+[ranked gap register](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
 
 ## Completed
 

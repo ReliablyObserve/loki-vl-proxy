@@ -67,7 +67,7 @@ def main():
 
     dump_json(os.path.join(ROOT, "generated/matrix-link.json"),
               {"tracks": rows, "versions": versions,
-               "registry": {"scores": summary.get("scores", {}),
+               "registry": {"scores": summary.get("read_api", summary).get("scores", {}),
                             "live_cases_hold": holds, "live_cases_gap": gaps,
                             "live_recorded": recorded}})
 
@@ -85,11 +85,11 @@ def main():
     for row in rows:
         test = f"`{row['score_test']}`" if row["score_test"] else "—"
         lines.append(f"| {row['track']} | `{row['workflow']}` | {test} | {row['edge_cases']} |")
-    scores = summary.get("scores", {})
+    scores = summary.get("read_api", summary).get("scores", {})
     lines += ["", "## Registry state behind the matrix", "",
-              f"- Endpoints with a test comparing the proxy against Loki: "
+              f"- Read endpoints with a test comparing the proxy against Loki: "
               f"**{scores.get('coverage', 0):.0%}**",
-              f"- Endpoints the proxy implements: **{scores.get('implementation', 0):.0%}**",
+              f"- Read endpoints the proxy routes: **{scores.get('implementation', 0):.0%}**",
               f"- Implemented endpoints answered natively by VictoriaLogs: "
               f"**{scores.get('native_share_of_implemented', 0):.0%}**",
               f"- Live case proof, last run {recorded}: **{holds} hold**, **{gaps} gaps**", ""]

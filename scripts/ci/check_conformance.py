@@ -22,7 +22,8 @@ Fails when:
     docs/real-window-compatibility-gaps.md (between its quality-summary markers),
   * the method-level scope is inconsistent: a write method of an endpoint is neither listed
     in its state's out_of_scope_methods (with the owner decision) nor allowed (delete), or
-    an endpoint with every method out of scope is not not-applicable,
+    an endpoint with every method out of scope is not not-applicable, or a deprecated-read
+    exclusion does not name one of the five designated aliases with its reason and owner decision,
   * a cluster of the last differential run (bench/parity) is accounted for by
     no registry case, or a case names a cluster the run does not hold,
   * a flag is missing from the places that list every flag,
@@ -58,6 +59,10 @@ REPORTS = (
     ("coverage_map.py", "conformance/reports/coverage-map.md", "--docs"),
     # The published copy of the same map (docs site); it went stale unchecked before.
     ("coverage_map.py", "docs/compatibility-coverage.md", "--docs"),
+    ("coverage_map.py", "docs/api-reference.md", "--api-status"),
+    ("coverage_map.py", "docs/compatibility-loki.md", "--api-status"),
+    ("coverage_map.py", "docs/KNOWN_ISSUES.md", "--api-status"),
+    ("coverage_map.py", "docs/roadmap.md", "--api-status"),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),
@@ -197,9 +202,9 @@ def main():
 
     scope = scope_problems()
     for problem in scope:
-        print(f"write-method scope: {problem}")
+        print(f"endpoint scope: {problem}")
     if scope:
-        failures.append("write-method scope")
+        failures.append("endpoint scope")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

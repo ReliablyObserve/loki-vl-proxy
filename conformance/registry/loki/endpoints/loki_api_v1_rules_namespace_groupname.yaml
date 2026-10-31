@@ -5,21 +5,21 @@ path: "/loki/api/v1/rules/{namespace}/{groupName}"
 methods: [DELETE, GET]
 generated:
   loki_version: v3.7.7
-  proxy_route: null
-  proxy_handler: null
+  proxy_route: "rules_nested"
+  proxy_handler: "handleRules"
   tests:
-    unit: 0
+    unit: 3
     unit_vs_loki: 0
-    e2e: 0
+    e2e: 1
     e2e_vs_loki: 0
     ui: 0
     ui_vs_loki: 0
   implementation:
-    implemented: false
-    where: null
-    execution: not_implemented
+    implemented: true
+    where: "internal/proxy/alerting.go:95 handleRules"
+    execution: proxy_side
     vl_endpoints: []
-    vl_pipes: []
+    vl_pipes: [len]
     proxy_side_work:
       []
 

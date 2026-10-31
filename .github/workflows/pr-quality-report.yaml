@@ -78,10 +78,10 @@ jobs:
       # instead of running every test again. (Timings are not cached: see below.)
       - name: Restore the base commit's test count and coverage
         id: base-tests
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] two numbers read back by the quality script; nothing from this job is published
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] JSON measurements read as data by the quality script; no cached code executes
         with:
           path: /tmp/pr-base-tests.json
-          key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh') }}-${{ github.event.pull_request.base.sha }}
+          key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py') }}-${{ github.event.pull_request.base.sha }}
 
       - name: Collect base and PR quality snapshots
         env:
@@ -115,6 +115,8 @@ jobs:
             jq -c '.tests' /tmp/pr-base-quality.json > /tmp/pr-base-tests.json
           fi
 
+          python3 scripts/ci/pr_evidence.py --provenance /tmp/quality-meta.json
+
           bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
             /tmp/pr-base-quality.json \
             /tmp/pr-head-quality.json \
@@ -138,6 +140,7 @@ jobs:
             /tmp/pr-base-quality.json
             /tmp/pr-head-quality.json
             /tmp/pr-quality-report.md
+            /tmp/quality-meta.json
 
       - name: Upload quality diagnostics
         if: always()

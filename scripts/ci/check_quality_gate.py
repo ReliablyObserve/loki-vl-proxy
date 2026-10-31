@@ -128,6 +128,9 @@ def main():
 
     failures = []
 
+    if head["tests"].get("execution_state") == "failed":
+        failures.append(f"PR unit tests failed (exit={head['tests'].get('test_exit_code', 'unknown')}); retained outcomes are incomplete")
+
     # Skip test-count and coverage checks when head metrics are zero — this
     # indicates the collection step timed out or failed, not a real regression.
     head_tests_available = int(head["tests"]["count"]) > 0 or float(head["tests"]["coverage_pct"]) > 0

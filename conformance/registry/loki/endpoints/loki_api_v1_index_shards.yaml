@@ -24,12 +24,14 @@ generated:
       []
 
 description: |
-  TODO: what this endpoint returns and the Loki behaviour a client depends on.
+  Loki query-planner sharding metadata. Unsupported optional planner compatibility;
+  retained as a declared read API gap in totals and compatibility scores.
 context:
   consumers:
     - api
   notes: |
-    TODO: how each consumer calls it, and how their parameter combinations differ.
+    Not a blocker for normal pinned Grafana Explore or Logs Drilldown, and not
+    required for peer cache lookup. Optional priority by owner decision 2026-10-31.
 examples:
   - consumer: api
     request: |

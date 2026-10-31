@@ -116,11 +116,18 @@ jobs:
             coverage.out
             coverage-cache.out
 
+      - name: Record unit evidence source
+        if: always()
+        run: python3 scripts/ci/pr_evidence.py --provenance quality-meta.json
+
       - name: Upload unit test results
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: unit-results
-          path: unit-results.json
+          path: |
+            unit-results.json
+            quality-meta.json
           retention-days: 1
           if-no-files-found: error
 
@@ -877,7 +884,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_dashboard_cache_tiers
+        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_dashboard_cache_tiers
 
       # bench/ is a separate Go module, so the root ./... of the test job does not
       # cover it. Its tests include the drift guard that keeps the benchmark Loki
@@ -1085,6 +1092,10 @@ jobs:
             docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
           done
 
+      - name: Record fleet evidence source
+        if: always()
+        run: python3 scripts/ci/pr_evidence.py --provenance "$RUNNER_TEMP/fleet-meta.json"
+
       - name: Upload fleet peer cache proof report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
@@ -1092,6 +1103,7 @@ jobs:
           name: fleet-peer-cache-proof
           path: |
             ${{ runner.temp }}/fleet-peer-cache-proof-rf*.json
+            ${{ runner.temp }}/fleet-meta.json
             ${{ runner.temp }}/fleet-capacity-proof.txt
             ${{ runner.temp }}/fleet-capacity-fuzz.txt
           if-no-files-found: ignore

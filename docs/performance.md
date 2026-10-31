@@ -236,24 +236,25 @@ This is the difference between “it speaks Loki” and “it feels like Loki at
 
 Grafana Logs Drilldown and the label browser make multiple metadata calls per page load. The proxy optimises these calls to eliminate the two main sources of latency: slow backend endpoints and cache key drift.
 
-### Endpoint Selection
+### Current metadata behavior
 
-VictoriaLogs exposes two field-name endpoints with very different cost profiles:
+Label inventories cover the requested time window. The proxy can reuse settled
+buckets, but recent edges, expired entries and buckets due for revalidation
+still read VictoriaLogs. Native stream metadata preserves stream-label semantics;
+field metadata and bounded scan fallbacks depend on the endpoint and query.
+There is no fixed-latency guarantee for a wide range or high-cardinality field.
+See [metadata configuration](configuration.md#metadata-vs-live-query-freshness) and the
+[API reference](api-reference.md) for freshness, browse limits and stale responses.
 
-| Endpoint | Index scanned | Typical latency (1h window) | Typical latency (24h window) |
-|---|---|---:|---:|
-| `stream_field_names` | Stream index (per-stream) | ~30ms | 5–10s |
-| `field_names` | All-fields index (per-doc) | ~30ms | ~30ms |
+Metadata keys bucket time bounds at 5 minutes, 1 hour or 6 hours according to
+the requested range. This reduces refresh drift; it does not prove all moved
+windows avoid backend reads. Current measurements belong to the linked A/B
+reports and retain their source revisions.
 
-`stream_field_names` scales linearly with data volume because it scans per-stream metadata. At 24h with a busy installation it regularly takes 5–10 seconds. `field_names` uses a separate all-fields index and is consistently ~30ms regardless of time range.
+### Historical metadata measurements
 
-**Service-name detection** (`/loki/api/v1/label/service_name/values`, drilldown entrypoint): previously called `stream_field_names` 4× in series (~5s cold). Now calls `field_names` once (~29ms) plus `stream_field_values` per candidate field.
-
-**Background label refresh** (`refreshLabelsCacheAsync`): previously sent the full user-requested range to `stream_field_names` — a 6h Grafana window produced a 5s background call, 24h produced a 10s call, causing CPU spikes visible as Grafana slowness. Now uses `field_names` for the full-range background path (consistently ~30ms), keeping `stream_field_names` (capped at 1h) for the synchronous labels endpoint where strict stream-only semantics matter.
-
-### Cache Key Stability
-
-Grafana's time picker uses a sliding end-timestamp that drifts a few seconds between requests. Before this fix, each click produced a unique cache key, defeating the 30s TTL and ensuring every click hit the backend. The fix floors the `end` timestamp to 30-second intervals so all requests within the same logical window share one cache entry.
+The following table is from the earlier #421 implementation and dataset. It is
+not a statement of current endpoint selection, cache-key granularity or latency.
 
 **Measured improvement** (e2e-compat, ~8M log entries, 1h window; recorded 2026-06-05 in #421, historical):
 
@@ -262,7 +263,7 @@ Grafana's time picker uses a sliding end-timestamp that drifts a few seconds bet
 | `service_name/values` | ~5,028ms (4 × stream_field_names) | **235ms** | **12ms** |
 | Speedup | — | **21×** | **~420×** |
 
-Wide-range background refresh: eliminated 5–10s `stream_field_names` calls for 6h/12h/24h windows. All background metadata calls now complete in &lt;100ms regardless of the Grafana time picker selection.
+That earlier experiment avoided its 5–10s background calls. It does not establish a current latency ceiling for other ranges, datasets or backend versions.
 
 ## VictoriaLogs Native Stats Offloading
 
