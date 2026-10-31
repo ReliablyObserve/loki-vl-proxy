@@ -59,6 +59,10 @@ REPORTS = (
     ("coverage_map.py", "conformance/reports/coverage-map.md", "--docs"),
     # The published copy of the same map (docs site); it went stale unchecked before.
     ("coverage_map.py", "docs/compatibility-coverage.md", "--docs"),
+    ("coverage_map.py", "docs/api-reference.md", "--api-status"),
+    ("coverage_map.py", "docs/compatibility-loki.md", "--api-status"),
+    ("coverage_map.py", "docs/KNOWN_ISSUES.md", "--api-status"),
+    ("coverage_map.py", "docs/roadmap.md", "--api-status"),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),

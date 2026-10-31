@@ -22,7 +22,7 @@ mdx:
 
 Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-10-31 at commit `716fff9b17` on the project's A/B stack: the same data, the same hardware, the latest valid daily run of each of 29 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
 
-Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too and is not shown here. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too and is not shown here. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 **Where the proxy is better than Loki**
 
@@ -58,12 +58,16 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 | | Now |
 |---|---|
-| Loki endpoints the proxy routes | **25 of 28** (89%) |
-| Endpoints with tests that compare the proxy against Loki | **18 of 28** (64%) |
-| Endpoints whose registry state is `proven` | **11 of 28** (39%) |
-| Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
+| Loki endpoints the proxy routes | **24 of 27** (89%) |
+| Endpoints with tests that compare the proxy against Loki | **18 of 27** (67%) |
+| Endpoints whose registry state is `proven` | **11 of 27** (41%) |
+| Routed endpoints answered natively by VictoriaLogs | 5 of 24 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
 | Known differences from Loki (ranked) | **87**: 67 open, 12 documented, 6 owner-kept, 2 upstream |
+
+Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/label`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
+
+These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
 The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected). Differences kept on purpose are listed as documented or owner-kept.
 

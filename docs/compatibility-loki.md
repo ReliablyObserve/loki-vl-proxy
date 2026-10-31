@@ -1,6 +1,9 @@
 ---
 sidebar_label: Loki API Compatibility
 description: Which Loki API endpoints, query types, and LogQL features are supported, partially supported, or intentionally unsupported.
+# CommonMark supports the generated HTML comment markers.
+mdx:
+  format: md
 ---
 
 # Loki Compatibility
@@ -8,6 +11,38 @@ description: Which Loki API endpoints, query types, and LogQL features are suppo
 This track measures how closely the proxy behaves like Loki on Loki-facing APIs and LogQL behavior.
 
 ## Scope
+
+<!-- api-status:start -->
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+
+| Read API signal | Registry evidence |
+|---|---|
+| Routed endpoints | 24/27 |
+| Endpoints with Loki differential tests | 18/27 |
+| Endpoints declared `proven` | 11/27 |
+
+Routing, linked tests and declared proof are different signals; none means
+every LogQL shape or every backend version is compatible. See the
+[coverage map](compatibility-coverage.md) and [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
+
+Read routes without an implementation:
+
+| Route | Current scope |
+|---|---|
+| `/loki/api/v1/cache/generation_numbers` | Not implemented |
+| `/loki/api/v1/label` | Not implemented |
+| `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
+
+`index/shards` is not required by the pinned Grafana/Drilldown request paths
+or by proxy peer-cache lookup.
+
+`cache/generation_numbers` is not implemented; manual cache flush and
+eviction do not provide a distributed deletion generation.
+
+Rules reads under `/loki/api/v1/rules` and `/api/prom/rules`, including namespace
+and group lookups, are already routed. Configure `-ruler-backend` for vmalert;
+routing these reads does not implement rule writes or prove full ruler parity.
+<!-- api-status:end -->
 
 - `/labels`, `/label/<name>/values`, `/series`, `/query`, `/query_range`
 - LogQL parser, filter, metric, and OTel label compatibility
@@ -195,15 +230,18 @@ Explicit invalid families:
 
 These are intentionally called out because they are easy to regress while changing translation, shaping, or query planning.
 
-## What Stays Outside Loki Parity
+## Other compatibility suites
 
-Some important compatibility behavior is still tested, but it is not part of the strict Loki parity matrix:
+These cases have dedicated core, Drilldown or proxy-contract tests rather than
+being part of the LogQL query-semantics matrix:
 
 - synthetic `service_name` recovery when the backend only has structured metadata
 - Drilldown helper endpoints like detected labels, detected fields, field values, volume, and patterns
 - stale-on-error helper behavior under VictoriaLogs failures
 
-Those cases live in the proxy contract suite because Loki itself is not the source of truth for them.
+Loki remains the API and response reference for the Drilldown endpoints.
+Proxy-specific recovery behavior and intentional differences are described in
+[Known Issues](KNOWN_ISSUES.md); they do not establish full endpoint parity.
 
 ## Parity Rule
 

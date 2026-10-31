@@ -5,9 +5,10 @@ Generated from the registry by `conformance/scripts/gaps.py`. Do not edit by han
 Priority = consumer weight (explore/drilldown 3, datasource 2, api 1), plus 3 when no test
 compares the endpoint against Loki, plus 2 when the proxy computes the result itself.
 An endpoint the owner named a priority for is placed by that first: `first` above all
-others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group. Optional gaps remain in the declared API inventory and compatibility scores.
+others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group.
+Optional gaps remain in the declared API inventory and compatibility scores.
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 | Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |
 |---:|---|---|---|---:|---:|---|
@@ -20,7 +21,6 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 | 5 | `/loki/api/v1/status/buildinfo` | datasource, api | proxy_side | 8 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 23 | 3 | no test wired to the registry |
 | 4 | `/loki/api/v1/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
-| 4 | `/loki/api/v1/delete` | api | native_vl | 4 | 0 | no test compares it against Loki |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/prometheus/api/v1/alerts` | api | proxy_side | 5 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
@@ -32,6 +32,11 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 | 3 | `/prometheus/api/v1/rules` | api | proxy_side | 5 | 1 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 3 | `/loki/api/v1/rules` | api | proxy_side | 10 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | optional | `/loki/api/v1/index/shards` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry; optional: Optional planner compatibility only: no proxy route or differential proof. This endpoint is not a blocker for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup. It remains a declared read API gap and stays in totals and compatibility scores. |
+
+## Optional deletion management
+
+Outside the read API score and ranking: the opt-in `/loki/api/v1/delete` handler
+does not implement VictoriaLogs deletion. It is not a proven working delete API.
 
 ## Error surface
 

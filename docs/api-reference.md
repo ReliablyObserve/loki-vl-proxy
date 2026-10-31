@@ -1,35 +1,74 @@
 ---
 sidebar_label: API Reference
-description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-proxy with request/response formats.
+description: Routed Loki read APIs, evidence coverage, unsupported routes and request/response formats.
+# CommonMark supports the generated HTML comment markers.
+mdx:
+  format: md
 ---
 
 # API Reference
 
-## Loki-Compatible Endpoints
+## API implementation and evidence
 
-| Loki Endpoint | Status | VL Backend | Cached | Tests |
-|---|---|---|---|---|
-| `GET/POST /loki/api/v1/query_range` (logs) | Implemented | `/select/logsql/query` | 5m (2) | 6+ (1) |
-| `GET/POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 5m (2) | 1+ (1) |
-| `GET/POST /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 5m (2) | 1+ (1) |
-| `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 5m (3) | 3 |
-| `GET /loki/api/v1/label/{name}/values` | Implemented | `field_names` (label alias resolution) → `stream_field_values` when the backend supports stream metadata endpoints, else `field_values` (also used when `stream_field_values` returns a 4xx) | 5m (3) | 3 |
-| `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
-| `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/query` (`stats count(), count_uniq_hash(_stream_id)`) | 10s | 2 |
-| `GET /loki/api/v1/index/volume` | Implemented (4) | `/select/logsql/stats_query` with `sum_len(_msg)` | 10s | 2 |
-| `GET /loki/api/v1/index/volume_range` | Implemented (4) | `/select/logsql/stats_query_range` with `sum_len(_msg)` | 10s | 2 |
-| `GET /loki/api/v1/detected_fields` | Implemented | `/select/logsql/field_names` | 90s (3) | 1 |
-| `GET /loki/api/v1/detected_field/{name}/values` | Implemented | `/select/logsql/field_values` | 90s (3) | 1 |
-| `GET /loki/api/v1/detected_labels` | Implemented | `stream_field_names` + `field_values` on VictoriaLogs v1.50+, otherwise `/select/logsql/streams`; bounded log scan fallback | 90s (3) | 1 |
-| `GET /loki/api/v1/patterns` | Implemented (toggleable; empty `data` when `-patterns-enabled=false`) | `/select/logsql/query` + Drain-like token clustering | `100y` (effectively persistent) | 4 |
-| `GET /loki/api/v1/format_query` | Implemented | - (passthrough) | - | 1 |
-| `WS /loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket->NDJSON) | - | 2 |
+<!-- api-status:start -->
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
-**(1)** Test counts shown are baseline per-endpoint counts. Additional coverage from `missing_ops_compat_test.go` adds cross-cutting e2e compatibility tests for `unpack`, `unwrap duration()/bytes()`, `offset`, `label_replace()`, and pattern match line filters across query and query_range endpoints.
+| Read API signal | Registry evidence |
+|---|---|
+| Routed endpoints | 24/27 |
+| Endpoints with Loki differential tests | 18/27 |
+| Endpoints declared `proven` | 11/27 |
+
+Routing, linked tests and declared proof are different signals; none means
+every LogQL shape or every backend version is compatible. See the
+[coverage map](compatibility-coverage.md) and [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md).
+
+Read routes without an implementation:
+
+| Route | Current scope |
+|---|---|
+| `/loki/api/v1/cache/generation_numbers` | Not implemented |
+| `/loki/api/v1/label` | Not implemented |
+| `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
+
+`index/shards` is not required by the pinned Grafana/Drilldown request paths
+or by proxy peer-cache lookup.
+
+`cache/generation_numbers` is not implemented; manual cache flush and
+eviction do not provide a distributed deletion generation.
+
+Rules reads under `/loki/api/v1/rules` and `/api/prom/rules`, including namespace
+and group lookups, are already routed. Configure `-ruler-backend` for vmalert;
+routing these reads does not implement rule writes or prove full ruler parity.
+<!-- api-status:end -->
+
+## Query and metadata routes
+
+The table describes routed handlers, not exhaustive Loki parity. Current test
+counts and registry states are in the generated [coverage map](compatibility-coverage.md).
+Conditional and unsupported APIs are listed separately below.
+
+| Loki Endpoint | Status | VL Backend | Cached |
+|---|---|---|---|
+| `GET/POST /loki/api/v1/query_range` (logs) | Routed | `/select/logsql/query` | 5m (2) |
+| `GET/POST /loki/api/v1/query_range` (metrics) | Routed | `/select/logsql/stats_query_range` | 5m (2) |
+| `GET/POST /loki/api/v1/query` | Routed | `/select/logsql/query` or `stats_query` | 5m (2) |
+| `GET/POST /loki/api/v1/labels` | Routed | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 5m (3) |
+| `GET/POST /loki/api/v1/label/{name}/values` | Routed | `field_names` (label alias resolution) → `stream_field_values` when the backend supports stream metadata endpoints, else `field_values` (also used when `stream_field_values` returns a 4xx) | 5m (3) |
+| `GET/POST /loki/api/v1/series` | Routed | `/select/logsql/streams` | 30s |
+| `GET/POST /loki/api/v1/index/stats` | Routed | `/select/logsql/query` (`stats count(), count_uniq_hash(_stream_id)`) | 10s |
+| `GET/POST /loki/api/v1/index/volume` | Routed (4) | `/select/logsql/stats_query` with `sum_len(_msg)` | 10s |
+| `GET/POST /loki/api/v1/index/volume_range` | Routed (4) | `/select/logsql/stats_query_range` with `sum_len(_msg)` | 10s |
+| `GET/POST /loki/api/v1/detected_fields` | Routed | `/select/logsql/field_names` | 90s (3) |
+| `GET/POST /loki/api/v1/detected_field/{name}/values` | Routed | `/select/logsql/field_values` | 90s (3) |
+| `GET/POST /loki/api/v1/detected_labels` | Routed | `stream_field_names` + `field_values` on VictoriaLogs v1.50+, otherwise `/select/logsql/streams`; bounded log scan fallback | 90s (3) |
+| `GET/POST /loki/api/v1/patterns` | Routed (toggleable; empty `data` when `-patterns-enabled=false`) | `/select/logsql/query` + Drain-like token clustering | `100y` (effectively persistent) |
+| `GET/POST /loki/api/v1/format_query` | Routed | - (passthrough) | - |
+| `WS /loki/api/v1/tail` | Routed | `/select/logsql/tail` (WebSocket->NDJSON) | - |
 
 **(2)** Final-response cache. Requests ending within `-recent-tail-refresh-window` (default `2m`) of now are refetched once the cached entry is older than `-recent-tail-refresh-max-staleness` (default `2s`).
 
-**(3)** Base TTL for request windows up to 1h (`-labels-cache-ttl` for labels and label values); longer windows scale it up, capped at 1h. Like Loki, `/labels` and `/label/{name}/values` return every label name or value with data anywhere in the requested `start`–`end` range on the first response: every backend call, including background refreshes, covers the full range. A window without data returns an empty list (no synthetic `service_name`); empty answers are cached for only 30 seconds (or the higher of `-disk-cache-min-ttl` and `-peer-write-through-min-ttl`), through the same memory, disk and peer write paths as other answers, so they replace an earlier non-empty answer for the same request. If VictoriaLogs fails, the last cached answer for the same request is served when one exists, marked with the `X-Proxy-Stale-Response: true` and `Cache-Control: no-store` headers and never stored in the compatibility-edge or multi-tenant merge caches (an expired empty list is never used as that answer); otherwise the error is returned, never a partial list. When a client omits both `start` and `end` on `/labels`, `/label/{name}/values` or `/series`, the proxy bounds the backend lookup to `-metadata-default-lookback` (default `12h`).
+**(3)** Base TTL for request windows up to 1h (`-labels-cache-ttl` for labels and label values); longer windows scale it up, capped at 1h. Like Loki, `/labels` and `/label/{name}/values` return every label name or value with data anywhere in the requested `start`–`end` range on the first response in the Loki-compatible browse mode. The inventory covers the full range, reusing settled cached buckets and reading recent or due buckets from VictoriaLogs; each backend request need not rescan the entire window. Optional indexed browse extensions can return a bounded page instead. A window without data returns an empty list (no synthetic `service_name`); empty answers are cached for only 30 seconds (or the higher of `-disk-cache-min-ttl` and `-peer-write-through-min-ttl`), through the same memory, disk and peer write paths as other answers, so they replace an earlier non-empty answer for the same request. If VictoriaLogs fails, the last cached answer for the same request is served when one exists, marked with the `X-Proxy-Stale-Response: true` and `Cache-Control: no-store` headers and never stored in the compatibility-edge or multi-tenant merge caches (an expired empty list is never used as that answer); otherwise the error is returned, never a partial list. When a client omits both `start` and `end` on `/labels`, `/label/{name}/values` or `/series`, the proxy bounds the backend lookup to `-metadata-default-lookback` (default `12h`).
 
 **(4)** Volume is reported in bytes, as in Loki. The proxy sums the length of the matching log lines (`sum_len(_msg)` in VictoriaLogs), so its values are exact line bytes; Loki adds structured-metadata bytes on top (see [Known Issues](KNOWN_ISSUES.md)). The rest follows Loki: `aggregateBy=series` (default) names a result by the `targetLabels`, or by the selector's label names when `targetLabels` is empty; `aggregateBy=labels` returns one `{label=""}` result per label name; every `targetLabels` entry must be present on a stream (a stream without a service label counts as `service_name="unknown_service"`); `limit` (default `100`) keeps the largest volumes of each bucket, ties broken by name. An instant volume is stamped at `end`. A `volume_range` bucket is stamped at its end minus 1ms, the last bucket at `end`, and only buckets with data are returned. `volume_range` answers a `vector` when every series has a single sample. Invalid `aggregateBy` or `limit` values return HTTP 400. VictoriaLogs reads the log lines to measure them, so a volume request costs more than a `count()` over the same window. See Known Issues for `detected_level` volumes and multi-tenant merging.
 

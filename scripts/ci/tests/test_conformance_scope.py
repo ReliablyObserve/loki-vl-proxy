@@ -141,6 +141,79 @@ class RepositoryTest(unittest.TestCase):
             os.chdir(cwd)
 
 
+class ReadDocumentationTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.registry = self.root / "conformance/registry"
+        self.coverage, self.implementation = [], []
+        self.endpoint("loki_api_v1_labels", "/loki/api/v1/labels", "proven", "native_vl", differential=True)
+        self.endpoint("loki_api_v1_label", "/loki/api/v1/label", "gap", "not_implemented")
+        self.endpoint("loki_api_v1_index_shards", "/loki/api/v1/index/shards", "gap", "not_implemented", optional=True)
+        self.endpoint("loki_api_v1_delete", "/loki/api/v1/delete", "partial", "native_vl")
+        self.endpoint("api_prom_query", "/api/prom/query", "not-applicable", "not_implemented", excluded=True)
+
+    def endpoint(self, identifier, path, state, execution, differential=False, optional=False, excluded=False):
+        for directory in ("loki/endpoints", "state/loki"):
+            (self.registry / directory).mkdir(parents=True, exist_ok=True)
+        (self.registry / "loki/endpoints" / (identifier + ".yaml")).write_text(
+            f"id: {identifier}\npath: {path}\nmethods: [GET, POST]\n")
+        (self.registry / "state/loki" / (identifier + ".yaml")).write_text(
+            f"id: {identifier}\nstate: {state}\n" + ("priority: optional\nreason: |\n  Planner only.\n" if optional else "")
+            + ("out_of_scope_methods: [GET, POST]\n" if excluded else ""))
+        tests = {"unit": [], "e2e": ["TestParity"] if differential else [], "ui": []}
+        self.coverage = [r for r in self.coverage if r["id"] != identifier] + [
+            {"id": identifier, "path": path, "methods": ["GET", "POST"], "tests": tests, "differential_tests": tests}]
+        self.implementation = [r for r in self.implementation if r["id"] != identifier] + [
+            {"id": identifier, "execution": execution, "where": [], "vl_endpoints": []}]
+
+    def run_generator(self, *args):
+        data = {"generated/proxy/coverage.json": {"loki_version": "test", "endpoints": self.coverage},
+                "generated/proxy/implementation.json": {"endpoints": self.implementation},
+                "generated/vl/usage.json": {"endpoints_used": [], "pipes_used": [], "stats_functions_used": [], "version_gated": {}}}
+        for relative, payload in data.items():
+            path = self.registry / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload))
+        result = subprocess.run([sys.executable, str(REPO / "conformance/scripts/coverage_map.py"), *args],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads((self.registry / "generated/summary.json").read_text())
+
+    def test_read_totals_exclude_management_and_legacy_but_keep_optional_shards(self):
+        summary = self.run_generator()
+        self.assertIn("read_api", summary)
+        read = summary["read_api"]
+        self.assertEqual((read["endpoints"], read["implemented"], read["proven"], read["with_differential_tests"]), (3, 1, 1, 1))
+        self.assertEqual(read["execution"]["native_vl"], 1)
+        self.assertEqual(read["unrouted"], [{"path": "/loki/api/v1/label", "optional": False},
+                                           {"path": "/loki/api/v1/index/shards", "optional": True}])
+        self.assertEqual(summary["endpoints"], 4)  # Full registry retains optional management.
+        self.assertEqual(summary["optional_management"]["endpoints"], 1)
+        report = (self.root / "conformance/reports/coverage-map.md").read_text()
+        self.assertIn("| Implementation | 1/3 |", report)
+        self.assertIn("Optional deletion management", report)
+        self.assertIn("gap (optional)", report)
+
+    def test_status_blocks_follow_routing_evidence_and_preserve_other_prose(self):
+        page = self.root / "status.md"
+        page.write_text("Before\n<!-- api-status:start -->\nstale\n<!-- api-status:end -->\nAfter\n")
+        self.run_generator("--api-status", str(page))
+        before = page.read_text()
+        self.assertTrue(before.startswith("Before\n"))
+        self.assertTrue(before.endswith("\nAfter\n"))
+        self.assertIn("`/loki/api/v1/label`", before)
+        self.endpoint("loki_api_v1_label", "/loki/api/v1/label", "proven", "native_vl", differential=True)
+        self.run_generator("--api-status", str(page))
+        after = page.read_text()
+        self.assertNotIn("`/loki/api/v1/label`", after)
+        self.assertIn("`/loki/api/v1/index/shards`", after)
+        self.assertIn("2/3", after)
+        self.assertTrue(after.startswith("Before\n"))
+        self.assertTrue(after.endswith("\nAfter\n"))
+
+
 LOCKED = {**registry_io.PERF_DEFAULTS, "locked": True, "locked_since": "2026-10-27"}
 
 

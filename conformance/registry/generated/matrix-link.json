@@ -4,9 +4,9 @@
     "live_cases_hold": 0,
     "live_recorded": "2026-09-22T09:56:52+00:00",
     "scores": {
-      "coverage": 0.6429,
-      "implementation": 0.8929,
-      "native_share_of_implemented": 0.24
+      "coverage": 0.6667,
+      "implementation": 0.8889,
+      "native_share_of_implemented": 0.2083
     }
   },
   "tracks": [

@@ -40,9 +40,9 @@ LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translat
 
 Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations, binary metric expressions, `PipeMath`/`PipeStats`/`PipeFilter` nodes).
 
-**Label metadata — complete on the first response:** like Loki, `/labels` and `/label/{name}/values` return every label name and value with data in the requested range (1h → 7d) on the first request, from VictoriaLogs metadata calls over that whole range (sub-ms proxy overhead); repeated requests are served from cache. An empty answer is cached for only 30 seconds (or the disk or peer write-through minimum TTL, if higher) and, like any other answer, replaces the earlier cached answer in memory, on disk and on the owner peer, so newly ingested labels show up within 30 seconds and a vanished label set is not served again. Disk-backed cache survives proxy restarts; a keep-warm loop refreshes standard label windows at 75% of the labels TTL (`-labels-cache-ttl`, 5 minutes by default: about every 3m45s, skipping entries with more than 40% of that TTL left) so labels stay hot even with no user queries. Time-bucketed cache keys (5-min / 1h / 6h buckets by range) collapse dashboard refresh drift to the same entry. Label values come from `stream_field_values` on VictoriaLogs versions that support stream metadata endpoints and from `field_values` otherwise (or when `stream_field_values` rejects the request), after `field_names` resolves label aliases.
+**Label metadata and cache reuse:** `/labels` and `/label/{name}/values` cover the requested range, using metadata inventories and cached time buckets rather than only a recent slice. Settled buckets can be reused from memory, disk and peers; recent edges and buckets due for revalidation still read VictoriaLogs. Near-now freshness, empty answers, stale-on-error responses and optional indexed browse limits follow the configured rules in [Metadata caching](docs/configuration.md#metadata-vs-live-query-freshness). A cache hit is not a guarantee of immediate visibility after retention or deletion; distributed deletion-generation metadata is not implemented.
 
-**Fleet restart safety:** rolling restarts of N proxy pods don't hammer VL. Startup jitter (`-warmup-max-jitter`) spreads instances across a configurable window; a two-phase peer discovery protocol (`/_cache/has` for batch presence check → `/_cache/get` from the freshest peer) means only the first instance per label window hits VL — the rest pull from peers. For a 30-pod fleet this reduces warmup VL queries from 120 to ≤8 on restart.
+**Fleet restart behavior:** disk restore, startup jitter and peer warmup can reduce repeated VictoriaLogs reads. Their effect depends on surviving cache state, owner/replica availability and freshness. The [fleet documentation](docs/fleet-cache.md) describes the supported recovery cases; it does not guarantee fleet-wide cold-miss coordination or that only one pod ever reads the backend.
 
 </details>
 
@@ -58,7 +58,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-10-31 at commit `716fff9b17` on the project's A/B stack: the same data, the same hardware, the latest valid daily run of each of 29 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
 
-Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too and is not shown here. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too and is not shown here. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 **Where the proxy is better than Loki**
 
@@ -94,12 +94,16 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 | | Now |
 |---|---|
-| Loki endpoints the proxy routes | **25 of 28** (89%) |
-| Endpoints with tests that compare the proxy against Loki | **18 of 28** (64%) |
-| Endpoints whose registry state is `proven` | **11 of 28** (39%) |
-| Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
+| Loki endpoints the proxy routes | **24 of 27** (89%) |
+| Endpoints with tests that compare the proxy against Loki | **18 of 27** (67%) |
+| Endpoints whose registry state is `proven` | **11 of 27** (41%) |
+| Routed endpoints answered natively by VictoriaLogs | 5 of 24 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
 | Known differences from Loki (ranked) | **87**: 67 open, 12 documented, 6 owner-kept, 2 upstream |
+
+Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/label`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
+
+These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
 The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected). Differences kept on purpose are listed as documented or owner-kept.
 
@@ -111,7 +115,7 @@ Details, the per-workload tables and the method: [performance summary](conforman
 
 ## One-glance comparison
 
-Latest saved daily A/B, measured 2026-10-29 at `9aa207755f` against Loki v3.7.9 on the same seeded stack. Of **475 comparable first requests**, the proxy was faster on **240**, on par on **190**, and slower on **45** (the threshold is 25% and 50 ms). **583 of 648** answers matched Loki; **65** differed. The slower rows and answer differences remain tracked as defects. These are measurements of the cited commit, not a claim about a later build.
+Historical snapshot, measured 2026-10-29 at `9aa207755f` against Loki v3.7.9 on the same seeded stack. Of **475 comparable first requests**, the proxy was faster on **240**, on par on **190**, and slower on **45** (the threshold is 25% and 50 ms). **583 of 648** answers matched Loki; **65** differed. These are measurements of the cited commit. The latest retained measurements and current gap inventory are generated in [Quality and performance vs Loki](#quality-and-performance-vs-loki-current) above.
 
 | Workload | Comparable first requests | Proxy median | Loki median |
 |---|---:|---:|---:|
@@ -125,7 +129,7 @@ Method, all workloads, current open gaps and the regression gate: [Quality and p
 
 ## Query Performance
 
-Medians over comparable pairs of the 2026-10-29 daily A/B against Loki v3.7.9 at `9aa207755f` (generated: [performance summary](conformance/reports/performance.md#summary-versus-loki)). Cold is the first request; warm is the recorded p50 of repeats, which may include cache hits on both sides and is not a controlled warm comparison.
+Historical medians over comparable pairs of the 2026-10-29 daily A/B against Loki v3.7.9 at `9aa207755f` (current generated tables: [performance summary](conformance/reports/performance.md#summary-versus-loki)). Cold is the first request; warm is the recorded p50 of repeats, which may include cache hits on both sides and is not a controlled warm comparison.
 
 ### Latency by workload
 

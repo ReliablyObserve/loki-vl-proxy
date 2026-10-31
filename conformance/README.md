@@ -63,6 +63,20 @@ conformance/
 Scores may rise, never fall. `python3 conformance/scripts/ratchet.py --accept`
 records an improvement as the new baseline.
 
+The full registry retains optional deletion management for visibility and its
+ratchet. Public read-API scores use the separate `read_api` population in
+`registry/generated/summary.json`: deletion management, write-only endpoints and
+the five explicitly excluded deprecated read aliases do not enter that
+denominator. The optional planner endpoint `index/shards` still does. Routed
+endpoints, endpoints with differential tests and declared `proven` endpoints
+are separate counts, not interchangeable claims of full parity.
+
+The API reference, Loki compatibility page, Known Issues and roadmap also have
+generated `api-status` blocks. Refresh a block with
+`python3 conformance/scripts/coverage_map.py --api-status docs/api-reference.md`
+(substitute the target page). The existing conformance gate checks these pages
+along with the README summary, so adding a route must update all affected views.
+
 ## Proving a case against the real stack
 
 `live_proof.py` sends each case to Loki and to the proxy on the same data and

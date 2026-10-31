@@ -9,25 +9,27 @@ Generated from the conformance registry by `conformance/scripts/coverage_map.py`
 
 Loki surface: **v3.7.7**, extracted from the Loki source.
 
-The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly); delete may be supported, and the alerting-rules API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
+The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
-## Scores
+## Read API scores
 
 | Score | Value | Meaning |
 |---|---|---|
-| Implementation | 25/28 | endpoints the proxy routes |
-| Differential evidence | 18/28 | endpoints with tests comparing the proxy against Loki |
-| Proven | 11/28 | endpoints whose registry state is `proven` |
-| VictoriaLogs native share | 6/25 | implemented endpoints answered natively |
+| Implementation | 24/27 | endpoints the proxy routes |
+| Differential evidence | 18/27 | endpoints with tests comparing the proxy against Loki |
+| Proven | 11/27 | endpoints whose registry state is `proven` |
+| VictoriaLogs native share | 5/24 | implemented endpoints answered natively |
 
-## Endpoints
+Counts exclude optional deletion management as well as out-of-scope writes and deprecated aliases.
+A route or a linked test is not a full compatibility claim.
+
+## Read endpoints
 
 | Endpoint | Methods | State | Served by | Consumers | Tests | vs Loki | Implemented in |
 |---|---|---|---|---|---:|---:|---|
 | `/api/prom/rules` | GET | partial | proxy-side | api | 2 | 0 | internal/proxy/alerting.go:95 |
 | `/api/prom/rules/{namespace}` | GET | partial | proxy-side | api | 1 | 0 | internal/proxy/alerting.go:95 |
 | `/api/prom/rules/{namespace}/{groupName}` | GET | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:95 |
-| `/loki/api/v1/delete` | DELETE, GET, POST, PUT | partial | VictoriaLogs native | api | 4 | 0 | internal/proxy/patterns.go:1430 |
 | `/loki/api/v1/detected_field/{name}/values` | GET, POST | partial | VictoriaLogs native | drilldown, api | 21 | 4 | internal/proxy/label_handlers.go:783 |
 | `/loki/api/v1/detected_fields` | GET, POST | proven | proxy-side | explore, drilldown, api | 40 | 13 | internal/proxy/label_handlers.go:711 |
 | `/loki/api/v1/detected_labels` | GET, POST | proven | proxy-side | drilldown, api | 21 | 7 | internal/proxy/patterns.go:1367 |
@@ -56,6 +58,13 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 Optional API gaps remain included in the totals and scores:
 
 - `/loki/api/v1/index/shards`: Optional planner compatibility only: no proxy route or differential proof. This endpoint is not a blocker for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup. It remains a declared read API gap and stays in totals and compatibility scores.
+
+## Optional deletion management
+
+Not included in the read API denominator. `/loki/api/v1/delete` is disabled
+by default. Its opt-in handler has request safeguards but forwards to an
+unsupported VictoriaLogs path; it does not implement VL's asynchronous deletion API.
+See [Known Issues](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/docs/KNOWN_ISSUES.md).
 
 ## Proxy-side work
 

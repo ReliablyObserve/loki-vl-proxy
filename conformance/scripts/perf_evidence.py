@@ -822,7 +822,7 @@ def render_quality_summary(q, target_is_docs=False):
                 for r in gaps[mode]) + ".")
     out.append(f"- Answers: **{results.get('differs', 0)} of {s['pairs']}** pairs return a different result from Loki, "
                f"and **{results.get('not compared', 0)}** could not be compared.")
-    stats = q["stats"]
+    stats = q["stats"].get("read_api", q["stats"])
     found = q["differences"]
     count = {k: sum(1 for c in found if c["status"] == k) for k in ("open", "documented", "owner-kept", "upstream")}
     states = q["states"]
@@ -839,6 +839,13 @@ def render_quality_summary(q, target_is_docs=False):
             f"{states.get('gap', 0)} gaps |",
             f"| Known differences from Loki (ranked) | **{sum(count.values())}**: {count['open']} open, "
             f"{count['documented']} documented, {count['owner-kept']} owner-kept, {count['upstream']} upstream |", ""]
+    if stats.get("unrouted"):
+        out += ["Read routes not implemented: " + ", ".join(
+            f"`{row['path']}`" + (" (optional planner gap, low priority)" if row["optional"] else "")
+            for row in stats["unrouted"]) + ".", ""]
+    out += ["These are registry evidence counts, not a full runtime compatibility percentage. "
+            "Optional deletion management is excluded from the read totals; deprecated aliases "
+            "and write-only APIs are outside this score.", ""]
     top = [c for c in found if c["status"] == "open"][:5]
     if top:
         impacts = {c["impact"] for c in top}
