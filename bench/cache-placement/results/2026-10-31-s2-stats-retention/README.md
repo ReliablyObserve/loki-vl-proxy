@@ -128,9 +128,10 @@ backend read. No owner-targeted loss or exhausted-budget pressure claim.
 
 Semantic layers remain separate. Exact repeats have Loki primary L1 hits and
 bypass VL lookups; compatibility Tier0 is disabled, not measured as missing.
-Shifted/refresh cells each have VL primary L1 bucket hits but still make two
-supporting VL calls per request. A bucket hit therefore does not mean the
-whole request avoids VL. The fleet harness does not capture the internal
+Shifted/refresh cells each have VL primary L1 bucket hits. Each missing minute
+is fetched with two VL calls: severity-source discovery and stats_query_range;
+both calls are limited to that missing minute. Already held buckets are reused.
+A bucket hit therefore does not mean the whole request avoids VL. The fleet harness does not capture the internal
 stats-extent outcome counter; the separate real e2e below asserts hit/partial
 outcomes. Layer/tier hits, lookups, evictions, encoded disk I/O, memory gauges,
 sampled-alive-process file lengths, Loki cache statistics and backend ranges
