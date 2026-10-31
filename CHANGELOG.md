@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Website dependencies patch two upstream vulnerabilities.** The lockfile
+  upgrades Joi to 17.13.9 (CVE-2026-118772, email-validation denial of service)
+  and follow-redirects to 1.16.2 (CVE-2026-116689, cross-origin credential-header
+  disclosure). Existing compatible dependency ranges are preserved.
+
 - **Peer TTLs reject values that overflow duration conversion.** Malformed disk
   records are bounded before decompression and cannot fall back to an older
   legacy copy. No dependencies are added.
