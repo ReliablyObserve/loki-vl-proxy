@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "scope": "Read-only inventory of nine retained bbolt databases from completed real-HTTP pressure probes; no new workload run. Each group consists of three RF2 proxy nodes with the same configured numeric disk cap. Counts are final retained snapshots, not transaction staging or claims about physical IOPS.",
+  "configuration": {
+    "l1_entries_per_node": 64,
+    "l1_bytes_per_node": 2097152,
+    "configured_disk_cap_bytes_per_node": 32768,
+    "replication_factor": 2,
+    "shards": 90,
+    "flush_unique_entry_threshold": 1000,
+    "flush_interval_seconds": 1,
+    "fixture_sha256": "6148f53755a517208a49d3a0c69026c1aeeb7fe3b9ef86bc56b3014097ac756b"
+  },
+  "provenance": [
+    {
+      "id": "main-20261030T214737.980976000Z",
+      "source_commit": "7c59fafa50fcfbb5379871e77eb4fe14b154339e",
+      "binary_sha256": "9438e294bf1567a20164711cf894dbc00ec32c68ef6b5986c577a0fc7dd90b8c",
+      "report": "tiny-main-v-candidate.json",
+      "report_sha256": "2d9965c65f93ac2e5dad5b8bb9ba906c3579ac79b916561426e7518cf10ac8d3",
+      "report_source_label": "baseline",
+      "archived_full_report_sha256": "6676a7cb33a853935895b1a3c849a18019c679c806ff92a29a4143a392315f98",
+      "run_id": "20261030T214737.980976000Z",
+      "fixture_sha256": "6148f53755a517208a49d3a0c69026c1aeeb7fe3b9ef86bc56b3014097ac756b"
+    },
+    {
+      "id": "foundation-20261030T215211.710831000Z",
+      "source_commit": "2a2e882b45a2c22b59bb42f118e4a3d16fb19825",
+      "binary_sha256": "299fd8b85223662f431011a724498fdb41488106f2ee8f76f79acacca30efb90",
+      "report": "tiny-foundation-v-placement.json",
+      "report_sha256": "30281973b1b3fc47dae60d5cdd8bcaedf08036f8d21548a5ddddbd93bfada25b",
+      "report_source_label": "baseline",
+      "archived_full_report_sha256": "7f384810e08a9be8a990a9f509b69ab7b99c37c2a84d7135218b4ab8e72e265d",
+      "run_id": "20261030T215211.710831000Z",
+      "fixture_sha256": "6148f53755a517208a49d3a0c69026c1aeeb7fe3b9ef86bc56b3014097ac756b"
+    },
+    {
+      "id": "placement-20261030T215211.710831000Z",
+      "source_commit": "55d3f7fb08a33125d9f4b0b3eb1950c334de3639",
+      "binary_sha256": "4a9819999a484b4a45e0a3b38548f9594e4f0b0edf0967f73145e9b631547222",
+      "report": "tiny-foundation-v-placement.json",
+      "report_sha256": "30281973b1b3fc47dae60d5cdd8bcaedf08036f8d21548a5ddddbd93bfada25b",
+      "report_source_label": "candidate",
+      "archived_full_report_sha256": "7f384810e08a9be8a990a9f509b69ab7b99c37c2a84d7135218b4ab8e72e265d",
+      "run_id": "20261030T215211.710831000Z",
+      "fixture_sha256": "6148f53755a517208a49d3a0c69026c1aeeb7fe3b9ef86bc56b3014097ac756b"
+    }
+  ],
+  "snapshots": [
+    {
+      "proof_id": "main-20261030T214737.980976000Z",
+      "node": 0,
+      "database_sha256": "e30b0060c19e346546a5d335edc7f4907e268798a73f0e19ad7c663946515897",
+      "database_file_bytes": 278528,
+      "stored_key_count": 218,
+      "stored_key_bytes": 46570,
+      "stored_encoded_record_bytes": 26013,
+      "stored_key_plus_record_bytes": 72583,
+      "bbolt_leaf_inuse_bytes": 76215,
+      "bbolt_leaf_page_count": 9,
+      "bbolt_inline_inuse_bytes": 0,
+      "same_payload_legacy_gzip_record_bytes": 26013,
+      "same_payload_native_s2_record_bytes": 25815,
+      "same_payload_native_key_plus_record_bytes": 72385
+    },
+    {
+      "proof_id": "main-20261030T214737.980976000Z",
+      "node": 1,
+      "database_sha256": "8483c55754eb6fbb0f4c8f0c4404d9377ed3d2fa53d32fc4e27bd1b6dc751c14",
+      "database_file_bytes": 278528,
+      "stored_key_count": 243,
+      "stored_key_bytes": 51901,
+      "stored_encoded_record_bytes": 29566,
+      "stored_key_plus_record_bytes": 81467,
+      "bbolt_leaf_inuse_bytes": 85515,
+      "bbolt_leaf_page_count": 10,
+      "bbolt_inline_inuse_bytes": 0,
+      "same_payload_legacy_gzip_record_bytes": 29566,
+      "same_payload_native_s2_record_bytes": 29434,
+      "same_payload_native_key_plus_record_bytes": 81335
+    },
+    {
+      "proof_id": "main-20261030T214737.980976000Z",
+      "node": 2,
+      "database_sha256": "6657b3d48d093dfc05db6759889a997aa5a0dc09a3de033cf7f010fd9a895497",
+      "database_file_bytes": 311296,
+      "stored_key_count": 274,
+      "stored_key_bytes": 59292,
+      "stored_encoded_record_bytes": 32712,
+      "stored_key_plus_record_bytes": 92004,
+      "bbolt_leaf_inuse_bytes": 96580,
+      "bbolt_leaf_page_count": 12,
+      "bbolt_inline_inuse_bytes": 0,
+      "same_payload_legacy_gzip_record_bytes": 32712,
+      "same_payload_native_s2_record_bytes": 32491,
+      "same_payload_native_key_plus_record_bytes": 91783
+    },
+    {
+      "proof_id": "foundation-20261030T215211.710831000Z",
+      "node": 0,
+      "database_sha256": "354b34671e695dcc83d08563a75a5bc32c8163c7e74b111d2bc78699944a440f",
+      "database_file_bytes": 278528,
+      "stored_key_count": 97,
+      "stored_key_bytes": 21201,
+      "stored_encoded_record_bytes": 11317,
+      "stored_key_plus_record_bytes": 32518,
+      "bbolt_leaf_inuse_bytes": 34118,
+      "bbolt_leaf_page_count": 3,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11404,
+      "same_payload_native_s2_record_bytes": 11317,
+      "same_payload_native_key_plus_record_bytes": 32518
+    },
+    {
+      "proof_id": "foundation-20261030T215211.710831000Z",
+      "node": 1,
+      "database_sha256": "e2e120f0655e81007c7a9c79079cce97c5f8b877cf62177dea9ee42520737c5c",
+      "database_file_bytes": 278528,
+      "stored_key_count": 98,
+      "stored_key_bytes": 21487,
+      "stored_encoded_record_bytes": 11185,
+      "stored_key_plus_record_bytes": 32672,
+      "bbolt_leaf_inuse_bytes": 34304,
+      "bbolt_leaf_page_count": 4,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11374,
+      "same_payload_native_s2_record_bytes": 11185,
+      "same_payload_native_key_plus_record_bytes": 32672
+    },
+    {
+      "proof_id": "foundation-20261030T215211.710831000Z",
+      "node": 2,
+      "database_sha256": "af036507f885718ca4a7235ebafb8d9432f5131e04aeafc526e0144bfc80a540",
+      "database_file_bytes": 278528,
+      "stored_key_count": 97,
+      "stored_key_bytes": 21242,
+      "stored_encoded_record_bytes": 11169,
+      "stored_key_plus_record_bytes": 32411,
+      "bbolt_leaf_inuse_bytes": 34011,
+      "bbolt_leaf_page_count": 3,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11303,
+      "same_payload_native_s2_record_bytes": 11169,
+      "same_payload_native_key_plus_record_bytes": 32411
+    },
+    {
+      "proof_id": "placement-20261030T215211.710831000Z",
+      "node": 0,
+      "database_sha256": "a17b1bf6518fef007b865c85ab45df0709743e0491eace5acdd9a47d637c79b6",
+      "database_file_bytes": 262144,
+      "stored_key_count": 97,
+      "stored_key_bytes": 21201,
+      "stored_encoded_record_bytes": 11317,
+      "stored_key_plus_record_bytes": 32518,
+      "bbolt_leaf_inuse_bytes": 34118,
+      "bbolt_leaf_page_count": 3,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11365,
+      "same_payload_native_s2_record_bytes": 11317,
+      "same_payload_native_key_plus_record_bytes": 32518
+    },
+    {
+      "proof_id": "placement-20261030T215211.710831000Z",
+      "node": 1,
+      "database_sha256": "84b603b11753b74426165940ce18d9fc481e1cb7bdcef3452a878cb2725bfae9",
+      "database_file_bytes": 262144,
+      "stored_key_count": 98,
+      "stored_key_bytes": 21497,
+      "stored_encoded_record_bytes": 11141,
+      "stored_key_plus_record_bytes": 32638,
+      "bbolt_leaf_inuse_bytes": 34254,
+      "bbolt_leaf_page_count": 3,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11220,
+      "same_payload_native_s2_record_bytes": 11141,
+      "same_payload_native_key_plus_record_bytes": 32638
+    },
+    {
+      "proof_id": "placement-20261030T215211.710831000Z",
+      "node": 2,
+      "database_sha256": "261ce3d2fb025907a6e3d701479ac9e9dbe8ee30de9fa92ad9d643eb0735f493",
+      "database_file_bytes": 262144,
+      "stored_key_count": 98,
+      "stored_key_bytes": 21497,
+      "stored_encoded_record_bytes": 11146,
+      "stored_key_plus_record_bytes": 32643,
+      "bbolt_leaf_inuse_bytes": 34259,
+      "bbolt_leaf_page_count": 3,
+      "bbolt_inline_inuse_bytes": 16,
+      "same_payload_legacy_gzip_record_bytes": 11225,
+      "same_payload_native_s2_record_bytes": 11146,
+      "same_payload_native_key_plus_record_bytes": 32643
+    }
+  ],
+  "accounting_contracts": {
+    "main_7c59fafa": {
+      "source_file": "internal/cache/disk.go",
+      "source_lines": "236-290",
+      "initial_transaction_charge": "b.Stats().LeafInuse, sampled once before pending map iteration, minus key+value bytes reclaimed by expiry sweep",
+      "incremental_new_entry_charge": "gzip(expiry[8]+value) bytes only; new key and leaf-entry header are not incrementally charged",
+      "overflow_behavior": "Reject candidate; retained records that already exceed the next transaction LeafInuse cap are not evicted.",
+      "inline_caveat": "bbolt reports inlined leaf bytes separately from LeafInuse."
+    },
+    "foundation_and_placement": {
+      "source_files": [
+        "internal/cache/disk_batch.go",
+        "internal/cache/disk_lru.go"
+      ],
+      "incremental_entry_charge": "len(key)+len(self-describing encoded record), updating planned count/index/bytes for every admission or replacement",
+      "overflow_behavior": "Evict LRU records until planned logical key+record bytes, entry count and index budgets fit."
+    },
+    "bbolt_leaf_inuse": "For these non-inline, sub-bucket-free snapshots: key bytes + record bytes + 16*key count + 16*leaf page count. Physical file length is a separate high-water measure."
+  },
+  "codec_counterfactual": {
+    "method": "Read the actual stored record and expiry without mutating the DB, decode payload, recompress the identical expiry[8]+payload with the legacy klauspost gzip writer and recompress payload with s2.Encode using native adaptive raw fallback and 24-byte header. Report encoded lengths only; no policy change or additional proxy workload.",
+    "legacy_roundtrip_verified": "For all three old-main DBs, recomputed legacy gzip byte totals exactly equal actual stored encoded-record byte totals.",
+    "limitations": [
+      "Retained inventories describe the end of each historical probe; they do not identify which final keys were responsible for a particular query-phase backend call.",
+      "Re-encoding measures record size on identical keys and values; it does not measure cache hit rate, latency, CPU, physical disk writes or compression working memory.",
+      "Old and new phases used the same numeric cap but did not retain the same effective key+record capacity. The inventory alone does not quantify how much of the backend-call gap this causes."
+    ]
+  },
+  "reproduction": {
+    "approach": [
+      "Verify report SHA-256, its source ref, and the SHA-256 of its source-label executable against the original manifest.",
+      "With proxy processes stopped, verify each database SHA-256; open bbolt read-only with a finite lock timeout.",
+      "Visit only cache and cache_records_v1 buckets, sum len(key), len(value), key count, and Bucket.Stats LeafInuse/LeafPageN/InlineBucketInuse.",
+      "Decode each value by its bucket format and re-encode identical payload/expiry under legacy gzip and native S2 to compare encoded lengths.",
+      "Rehash each database after inspection to verify no mutation."
+    ],
+    "raw_keys_published": false,
+    "inspector_implementation": "Local Go inspector uses existing go.etcd.io/bbolt, klauspost/compress/gzip and klauspost/compress/s2 dependencies; no added dependencies."
+  },
+  "snapshot_time_limit": "Snapshots were inspected after the historical workloads had completed. Their TTLs may be expired at inspection; retained record inventory does not prove that a record was live, hit, or used by any measured query phase."
+}

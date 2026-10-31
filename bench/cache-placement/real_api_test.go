@@ -5,9 +5,11 @@ package cacheplacement
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,6 +31,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -328,9 +331,60 @@ type wireTotals struct {
 	PeerPushBytes int64
 }
 type networkMeter struct {
+	mu      sync.Mutex
+	pending int
+	idle    chan struct{}
+	active  map[net.Conn]bool
 	read    atomic.Int64
 	written atomic.Int64
 }
+
+func (m *networkMeter) beginLocked() {
+	if m.pending == 0 {
+		m.idle = make(chan struct{})
+	}
+	m.pending++
+}
+func (m *networkMeter) endLocked() {
+	m.pending--
+	if m.pending == 0 {
+		close(m.idle)
+	}
+}
+func (m *networkMeter) connectionState(conn net.Conn, state http.ConnState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if state == http.StateActive {
+		if !m.active[conn] {
+			if m.active == nil {
+				m.active = map[net.Conn]bool{}
+			}
+			m.active[conn] = true
+			m.beginLocked()
+		}
+	} else if state == http.StateIdle || state == http.StateClosed || state == http.StateHijacked {
+		if m.active[conn] {
+			delete(m.active, conn)
+			m.endLocked()
+		}
+	}
+}
+func (m *networkMeter) wait(ctx context.Context) error {
+	for {
+		m.mu.Lock()
+		pending, idle := m.pending, m.idle
+		m.mu.Unlock()
+		if pending == 0 {
+			return nil
+		}
+		select {
+		case <-idle:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 type networkBytes struct {
 	RequestHTTPBytes  int64
 	ResponseHTTPBytes int64
@@ -346,8 +400,14 @@ func (c *measuredConn) Read(b []byte) (int, error) {
 	return n, err
 }
 func (c *measuredConn) Write(b []byte) (int, error) {
+	c.meter.mu.Lock()
+	c.meter.beginLocked()
+	c.meter.mu.Unlock()
 	n, err := c.Conn.Write(b)
+	c.meter.mu.Lock()
 	c.meter.written.Add(int64(n))
+	c.meter.endLocked()
+	c.meter.mu.Unlock()
 	return n, err
 }
 
@@ -409,14 +469,64 @@ func (r *recorder) add(e wireEvent) {
 		r.err = r.encoder.Encode(e)
 	}
 }
-func (r *recorder) network() map[string]networkBytes {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := map[string]networkBytes{}
-	for name, m := range r.meters {
-		out[name] = networkBytes{RequestHTTPBytes: m.read.Load(), ResponseHTTPBytes: m.written.Load()}
+
+// A completed handler is not a completed HTTP response: net/http flushes after
+// ServeHTTP returns. Pair ledger and wire snapshots only after response/Write
+// completion. Idle keep-alive reads do not participate in this barrier.
+func (r *recorder) snapshot(ctx context.Context) (int, map[string]networkBytes, error) {
+	for {
+		r.mu.Lock()
+		names := make([]string, 0, len(r.meters))
+		meters := make(map[string]*networkMeter, len(r.meters))
+		for name, m := range r.meters {
+			names = append(names, name)
+			meters[name] = m
+		}
+		r.mu.Unlock()
+		sort.Strings(names)
+		for _, name := range names {
+			if err := meters[name].wait(ctx); err != nil {
+				return 0, nil, fmt.Errorf("observer %s completion: %w", name, err)
+			}
+		}
+		r.mu.Lock()
+		busy := false
+		for _, name := range names {
+			meters[name].mu.Lock()
+			busy = busy || meters[name].pending != 0
+		}
+		out := map[string]networkBytes{}
+		if !busy {
+			for _, name := range names {
+				m := meters[name]
+				out[name] = networkBytes{RequestHTTPBytes: m.read.Load(), ResponseHTTPBytes: m.written.Load()}
+			}
+		}
+		count := len(r.prefix) - 1
+		for i := len(names) - 1; i >= 0; i-- {
+			meters[names[i]].mu.Unlock()
+		}
+		r.mu.Unlock()
+		if !busy {
+			return count, out, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return 0, nil, err
+		}
 	}
-	return out
+}
+func (r *recorder) capture(t *testing.T) (int, map[string]networkBytes) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	count, network, err := r.snapshot(ctx)
+	must(t, err)
+	return count, network
+}
+func (r *recorder) network(t *testing.T) map[string]networkBytes {
+	t.Helper()
+	_, network := r.capture(t)
+	return network
 }
 func networkDelta(before, after map[string]networkBytes) map[string]networkBytes {
 	out := map[string]networkBytes{}
@@ -484,8 +594,8 @@ func observer(t *testing.T, port int, target, kind string, node int, rec *record
 	})
 	ln, err := net.Listen("tcp", "127.0.0.1:"+number(port))
 	must(t, err)
-	srv := &http.Server{Addr: ln.Addr().String(), Handler: h, ReadHeaderTimeout: 5 * time.Second}
 	meter := &networkMeter{}
+	srv := &http.Server{Addr: ln.Addr().String(), Handler: h, ReadHeaderTimeout: 5 * time.Second, ConnState: meter.connectionState}
 	rec.mu.Lock()
 	if rec.meters == nil {
 		rec.meters = map[string]*networkMeter{}
@@ -1026,7 +1136,7 @@ type phase struct {
 
 func phaseRun(t *testing.T, ps []*process, source string, trial int, c config, fx fixture, mode string, rec *recorder, alive []int) phase {
 	t.Helper()
-	r := phase{Config: c, Source: source, Trial: trial, Profile: c.Profile, Mode: mode, Before: sample(ps), WireStart: rec.count()}
+	r := phase{Config: c, Source: source, Trial: trial, Profile: c.Profile, Mode: mode, Before: sample(ps)}
 	stop := make(chan struct{})
 	sampled := make(chan resources, 1)
 	go func() {
@@ -1053,7 +1163,8 @@ func phaseRun(t *testing.T, ps []*process, source string, trial int, c config, f
 			}
 		}
 	}()
-	networkBefore := rec.network()
+	wireStart, networkBefore := rec.capture(t)
+	r.WireStart = wireStart
 	start := time.Now()
 	for run := 0; run < c.Repeats; run++ {
 		for i, q := range paths(fx, c, mode, run) {
@@ -1080,9 +1191,10 @@ func phaseRun(t *testing.T, ps []*process, source string, trial int, c config, f
 		}
 		last = next
 	}
-	r.WireEnd = rec.count()
+	wireEnd, networkAfter := rec.capture(t)
+	r.WireEnd = wireEnd
 	r.WireDrainSeconds = time.Since(drainStart).Seconds()
-	r.NetworkHTTPBytes = networkDelta(networkBefore, rec.network())
+	r.NetworkHTTPBytes = networkDelta(networkBefore, networkAfter)
 	wire := rec.between(r.WireStart, r.WireEnd)
 	r.VLCalls, r.PeerCalls, r.VLResponseBytes, r.PeerResponseBytes = wire.VLCalls, wire.PeerCalls, wire.VLBytes, wire.PeerBytes
 	r.PeerFetches, r.PeerPushes, r.PeerPushBodyBytes = wire.PeerFetches, wire.PeerPushes, wire.PeerPushBytes
@@ -1107,7 +1219,7 @@ func runTrial(t *testing.T, source string, trial int, c config, fx fixture, rec 
 	trialDir := filepath.Join(home, "runs", runID, fmt.Sprintf("%s-%s-%d-rf%d", source, c.Profile, trial, c.RF))
 	must(t, os.RemoveAll(trialDir))
 	must(t, os.MkdirAll(trialDir, 0700))
-	startupIndex := rec.count()
+	startupIndex, _ := rec.capture(t)
 	ps := []*process{}
 	lifetimes := []*process{}
 	for i := 0; i < 3; i++ {
@@ -1126,7 +1238,8 @@ func runTrial(t *testing.T, source string, trial int, c config, fx fixture, rec 
 	// Explicit cold-fill phase records startup-independent work before warm runs.
 	warm := c
 	warm.Repeats = 1
-	startupTotals := rec.between(startupIndex, rec.count())
+	startupEnd, _ := rec.capture(t)
+	startupTotals := rec.between(startupIndex, startupEnd)
 	phases := []phase{phaseRun(t, ps, source, trial, warm, fx, "cold-fill", rec, []int{0})}
 	phases[0].StartupWireTotals = &startupTotals
 	phases = append(phases, phaseRun(t, ps, source, trial, c, fx, "exact", rec, []int{0, 1, 2}))
@@ -1495,8 +1608,7 @@ func coldReaderWave(t *testing.T, owners, readers []*process, source string, tri
 	t.Helper()
 	all := append(append([]*process{}, owners...), readers...)
 	wave := coldWave{Name: q.Name, Before: sample(all)}
-	networkBefore := rec.network()
-	index := rec.count()
+	index, networkBefore := rec.capture(t)
 	barrier := make(chan struct{})
 	out := make(chan result, len(readers))
 	for i, p := range readers {
@@ -1510,12 +1622,13 @@ func coldReaderWave(t *testing.T, owners, readers []*process, source string, tri
 		wave.Calls = append(wave.Calls, <-out)
 	}
 	time.Sleep(500 * time.Millisecond)
-	totals := rec.between(index, rec.count())
+	end, networkAfter := rec.capture(t)
+	totals := rec.between(index, end)
 	wave.VLCalls = totals.VLCalls
 	wave.PeerFetches = totals.PeerFetches
 	wave.PeerResponseBytes = totals.PeerBytes
 	wave.PeerPushBytes = totals.PeerPushBytes
-	wave.NetworkHTTPBytes = networkDelta(networkBefore, rec.network())
+	wave.NetworkHTTPBytes = networkDelta(networkBefore, networkAfter)
 	wave.After = sample(all)
 	return wave
 }
@@ -1525,8 +1638,7 @@ func boundedReaderPass(t *testing.T, owners, readers []*process, source string, 
 	t.Helper()
 	all := append(append([]*process{}, owners...), readers...)
 	wave := coldWave{Before: sample(all)}
-	index := rec.count()
-	networkBefore := rec.network()
+	index, networkBefore := rec.capture(t)
 	barrier := make(chan struct{})
 	out := make(chan []result, len(readers))
 	for i, p := range readers {
@@ -1546,12 +1658,13 @@ func boundedReaderPass(t *testing.T, owners, readers []*process, source string, 
 		wave.Calls = append(wave.Calls, (<-out)...)
 	}
 	time.Sleep(500 * time.Millisecond)
-	totals := rec.between(index, rec.count())
+	end, networkAfter := rec.capture(t)
+	totals := rec.between(index, end)
 	wave.VLCalls = totals.VLCalls
 	wave.PeerFetches = totals.PeerFetches
 	wave.PeerResponseBytes = totals.PeerBytes
 	wave.PeerPushBytes = totals.PeerPushBytes
-	wave.NetworkHTTPBytes = networkDelta(networkBefore, rec.network())
+	wave.NetworkHTTPBytes = networkDelta(networkBefore, networkAfter)
 	wave.After = sample(all)
 	return wave
 }
@@ -1635,8 +1748,7 @@ func warmReadLoad(t *testing.T, owners, readers []*process, queries []query, rec
 		}(i, p)
 	}
 	ready.Wait()
-	networkBefore := rec.network()
-	index := rec.count()
+	index, networkBefore := rec.capture(t)
 	start := time.Now()
 	deadline = start.Add(duration)
 	close(barrier)
@@ -1653,11 +1765,12 @@ func warmReadLoad(t *testing.T, owners, readers []*process, queries []query, rec
 	result.CorrectQPS = float64(result.SuccessfulCorrect) / result.Seconds
 	result.ValidThroughput = result.Responses > 0 && result.SuccessfulCorrect == result.Responses && result.HTTPErrors == 0
 	time.Sleep(500 * time.Millisecond)
-	totals := rec.between(index, rec.count())
+	end, networkAfter := rec.capture(t)
+	totals := rec.between(index, end)
 	result.VLCalls = totals.VLCalls
 	result.PeerFetches = totals.PeerFetches
 	result.PeerResponseBytes = totals.PeerBytes
-	result.NetworkHTTPBytes = networkDelta(networkBefore, rec.network())
+	result.NetworkHTTPBytes = networkDelta(networkBefore, networkAfter)
 	result.After = sample(all)
 	return result
 }
@@ -1743,7 +1856,7 @@ func TestReaderScaling(t *testing.T) {
 		for _, count := range counts {
 			t.Logf("%s RF%d: fixed3 cache owners +%d cold nonmember readers", source, c.RF, count)
 			cell := readerCell{Config: c, DisabledStartupWarmers: []string{"labels-cache-warm=false", "patterns-enabled=false", "label-values-indexed-cache=false", "peer-hot-read-ahead-enabled=false (default)"}, Source: source, Trial: trial, Readers: count, RF: c.RF, OwnerCount: 3}
-			startupIndex := rec.count()
+			startupIndex, _ := rec.capture(t)
 			readers := []*process{}
 			for n := 0; n < count; n++ {
 				i := n + 3
@@ -1751,7 +1864,8 @@ func TestReaderScaling(t *testing.T) {
 				verifyNonmember(t, p, 3)
 				readers = append(readers, p)
 			}
-			cell.StartupWireTotals = rec.between(startupIndex, rec.count())
+			startupEnd, _ := rec.capture(t)
+			cell.StartupWireTotals = rec.between(startupIndex, startupEnd)
 			cell.RingVerified = true
 			coldQueries := paths(fx, c, "exact", 0)
 			if c.Profile == "fixed3owners-pool-pressure" {
@@ -1838,15 +1952,12 @@ func TestObserverPreservesRequestsAndCountsTransfer(t *testing.T) {
 	if code != 200 || string(body) != "{\"ok\":true}" || !<-received {
 		t.Fatal("observer changed request or response")
 	}
-	deadline := time.Now().Add(time.Second)
-	for rec.count() < 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	totals := rec.between(0, rec.count())
+	end, network := rec.capture(t)
+	totals := rec.between(0, end)
 	if totals.VLCalls != 1 || totals.VLBytes != int64(len(body)) {
 		t.Fatalf("body counts=%+v", totals)
 	}
-	net := rec.network()["vl-node-1"]
+	net := network["vl-node-1"]
 	if net.RequestHTTPBytes <= int64(len("query=hello&start=123&end=456")) || net.ResponseHTTPBytes <= int64(len(body)) {
 		t.Fatalf("HTTP framing/header bytes not counted: %+v", net)
 	}
@@ -1946,4 +2057,138 @@ func TestPoolPressureReaderWorkloadExceedsShadowSlots(t *testing.T) {
 			t.Fatal("unexpected raw query path")
 		}
 	}
+}
+
+// The transport can deliver a complete response before its Write returns.
+type deliveredBeforeReturnConn struct {
+	net.Conn
+	delivered chan struct{}
+	release   chan struct{}
+}
+
+func (c *deliveredBeforeReturnConn) Write(body []byte) (int, error) {
+	n, err := c.Conn.Write(body)
+	close(c.delivered)
+	<-c.release
+	return n, err
+}
+func TestNetworkSnapshotWaitsForCompletedWriteAccounting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		server, client := net.Pipe()
+		defer server.Close()
+		defer client.Close()
+		release := make(chan struct{})
+		var once sync.Once
+		releaseWrite := func() { once.Do(func() { close(release) }) }
+		defer releaseWrite()
+		delivered := make(chan struct{})
+		meter := &networkMeter{}
+		conn := &measuredConn{Conn: &deliveredBeforeReturnConn{Conn: server, delivered: delivered, release: release}, meter: meter}
+		writeDone := make(chan struct{})
+		body := []byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+		go func() { defer close(writeDone); _, _ = conn.Write(body) }()
+		received := make([]byte, len(body))
+		_, err := io.ReadFull(client, received)
+		must(t, err)
+		<-delivered
+		rec := &recorder{meters: map[string]*networkMeter{"response": meter}, prefix: []wireTotals{{}}}
+		snapshot := make(chan map[string]networkBytes, 1)
+		go func() { snapshot <- rec.network(t) }()
+		synctest.Wait()
+		select {
+		case counts := <-snapshot:
+			t.Fatalf("snapshot preceded completed write accounting: %+v", counts)
+		default:
+		}
+		releaseWrite()
+		<-writeDone
+		counts := <-snapshot
+		if counts["response"].ResponseHTTPBytes != int64(len(body)) {
+			t.Fatalf("completed bytes=%+v", counts)
+		}
+	})
+}
+
+func TestObserverSnapshotWaitsForHTTPCompletionAndPairedLedger(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		server, client := net.Pipe()
+		defer server.Close()
+		defer client.Close()
+		meter := &networkMeter{}
+		meter.connectionState(server, http.StateActive)
+		rec := newRecorder(t, "pending-http")
+		rec.meters = map[string]*networkMeter{"http": meter}
+		snapshot := make(chan struct {
+			index   int
+			network map[string]networkBytes
+		}, 1)
+		go func() {
+			index, network := rec.capture(t)
+			snapshot <- struct {
+				index   int
+				network map[string]networkBytes
+			}{index, network}
+		}()
+		synctest.Wait()
+		select {
+		case <-snapshot:
+			t.Fatal("snapshot completed while HTTP handler active")
+		default:
+		}
+		rec.add(wireEvent{Kind: "vl", ResponseBytes: 2})
+		synctest.Wait()
+		select {
+		case <-snapshot:
+			t.Fatal("handler ledger entry was mistaken for response completion")
+		default:
+		}
+		meter.written.Add(40)
+		meter.connectionState(server, http.StateIdle)
+		completed := <-snapshot
+		if completed.index != 1 || completed.network["http"].ResponseHTTPBytes != 40 {
+			t.Fatalf("inconsistent ledger/wire snapshot: %+v", completed)
+		}
+		// Closed after Idle must not decrement the pending count again.
+		meter.connectionState(server, http.StateClosed)
+		_, _, err := rec.snapshot(context.Background())
+		must(t, err)
+	})
+}
+func TestObserverSnapshotCancellationAndIdleRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		server, client := net.Pipe()
+		defer server.Close()
+		defer client.Close()
+		meter := &networkMeter{}
+		conn := &measuredConn{Conn: server, meter: meter}
+		meter.connectionState(server, http.StateActive)
+		rec := &recorder{meters: map[string]*networkMeter{"http": meter}, prefix: []wireTotals{{}}}
+		ctx, cancel := context.WithCancel(context.Background())
+		result := make(chan error, 1)
+		go func() { _, _, err := rec.snapshot(ctx); result <- err }()
+		synctest.Wait()
+		cancel()
+		if err := <-result; !errors.Is(err, context.Canceled) {
+			t.Fatalf("pending snapshot cancellation: %v", err)
+		}
+		deadlineCtx, deadlineCancel := context.WithTimeout(context.Background(), time.Second)
+		defer deadlineCancel()
+		go func() { _, _, err := rec.snapshot(deadlineCtx); result <- err }()
+		if err := <-result; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("pending snapshot deadline: %v", err)
+		}
+		meter.connectionState(server, http.StateClosed)
+		readDone := make(chan struct{})
+		go func() { defer close(readDone); var b [1]byte; _, _ = conn.Read(b[:]) }()
+		synctest.Wait()
+		_, _, err := rec.snapshot(context.Background())
+		must(t, err)
+		select {
+		case <-readDone:
+			t.Fatal("idle read unexpectedly completed")
+		default:
+		}
+		_ = client.Close()
+		<-readDone
+	})
 }

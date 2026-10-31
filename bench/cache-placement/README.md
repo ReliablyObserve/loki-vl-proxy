@@ -148,8 +148,15 @@ request-body length and response-body bytes. Peer GET response bytes and
 replicated SET request bytes are separate. The connection observer additionally
 counts client-to-observer HTTP message bytes, including headers, framing and
 encoded bodies. It excludes TCP/IP headers, retransmissions and the additional
-observer-to-target hop. Earlier preparation results with payload-only counters
-cannot be treated as full wire byte counts. Instrumentation is present for
+observer-to-target hop. Current phase snapshots wait for active HTTP responses
+and in-flight writes to finish before pairing ledger and byte counters; a
+bounded timeout fails the measurement explicitly. Archived 2026-10-30 reports
+precede this completion barrier and may omit trailing HTTP writes. Their
+message-byte totals are observed counts, not exact transfer totals; old phase
+ledger boundaries could also omit or misattribute a late handler entry despite
+the quiet drain. Earlier
+preparation results with payload-only counters cannot be treated as full wire
+byte counts. Instrumentation is present for
 both sources and adds overhead; timings describe this instrumented loopback
 setup.
 

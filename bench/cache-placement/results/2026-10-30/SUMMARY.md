@@ -67,7 +67,7 @@ These are the ordered JSON/DLV paths after Tier0 churn. Candidate repeat also
 needed 326 owner GETs versus zero on main. Shifted and refresh raw JSON scans
 remain a large gap.
 
-Each phase includes per-backend-path counts, body bytes and sums of explicit
+Each phase includes observed per-backend-path counts, body bytes and sums of explicit
 requested start/end bounds. Range sums include overlaps/repeats and are not
 actual rows scanned. Peer contact statuses and both directions of measured
 HTTP message bytes are separate from encoded payload bytes.
@@ -112,9 +112,21 @@ increase:
 Main and foundation columns come from separately named pair runs on the same
 fixture; raw manifests identify them. Placement's isolated frontend-prime
 phase did fewer reads (4,314 to 4,178); the other listed phases matched.
-The change set is isolated, but a specific admission/LRU cause has not been
-proven. This budget-pressure regression is retained rather than hidden by the
-fit results. These probes do not support timing claims.
+The change set is isolated, but this is not an equal-retained-capacity
+comparison. Read-only inspection of the archived original-main databases
+found 218/243/274 retained keys and 76,215/85,515/96,580 occupied bbolt leaf
+bytes despite each configured 32,768-byte cap. Its batch accounting charged
+new encoded values without their keys or leaf-entry headers. Merged main
+charges keys plus encoded records and retains approximately 98 keys per node
+within that logical cap; bbolt overhead remains additional. Re-encoding the
+same old payloads as S2 changes record bytes by less than 1%, so codec size
+does not explain the capacity difference. See the
+[snapshot evidence](capacity-accounting.json).
+
+Keep the observed request counts, but do not attribute the full difference
+to LRU or compare hit rates as though both versions retained equal bytes.
+Snapshots alone cannot assign every earlier phase miss. These probes do not
+support timing claims.
 
 ## Reproduction and remaining limits
 
@@ -132,9 +144,32 @@ near-now and it proves no new-ingestion behavior.
 
 HTTP byte counters cover the client-to-observer message hop, including headers,
 framing and encoded bodies. They exclude TCP/IP overhead, retransmission and
-the observer-to-target second hop. Proxy CPU excludes observers and backends.
+the observer-to-target second hop. The archived reports precede a completion
+barrier for these counters: a client could consume a response before its final
+server-side write was counted. Their HTTP-message byte snapshots may therefore
+omit trailing writes; they are observed counts, not exact transfer totals.
+Per-event response-body ledger counts are separate, but an old phase boundary
+could also omit or misattribute a late handler entry. The existing quiet drain
+reduces that risk without establishing a numerical error bound. Phase request
+and byte totals above retain this limitation; archived reports are unchanged.
+Proxy CPU excludes observers and backends.
 Physical bbolt file high-water is not logical admitted cache occupancy.
 
 The fixed-owner reader matrix does not verify three-to-six-owner ring growth,
 handoff, historical-record migration or convergence after membership changes.
 Independent-host throughput scaling remains unverified.
+
+## Observer completion control — 2026-10-31
+
+After synchronizing HTTP completion, write accounting and paired phase
+snapshots, a fresh fit-profile same-executable probe returned **468/468 equal
+HTTP 200 responses**, with all 18 resource samples valid. Both source labels
+used the same foundation executable and counted 732 VictoriaLogs calls and
+1,830 peer GETs each. All 18 end snapshots included at least the corresponding
+recorded response-body bytes. See the [control report](observer-fit-control-2026-10-31.json)
+for phase counts, network observations and source/report/ledger hashes.
+
+This verifies the corrected measurement path; it does not recertify the older
+reports or establish a performance gain. The focused completion regressions
+pass 4,000 repeated race cases, and the full bench-module race suite passes
+85 tests across 12 packages.
