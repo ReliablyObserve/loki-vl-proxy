@@ -1,0 +1,46 @@
+File: s2-pr.test
+Type: inuse_space
+Time: 2026-10-31 20:19:19 CET
+Showing nodes accounting for 57.27MB, 100% of 57.27MB total
+      flat  flat%   sum%        cum   cum%
+   12.78MB 22.31% 22.31%    12.78MB 22.31%  github.com/klauspost/compress/flate.(*fastGen).Reset
+   12.67MB 22.12% 44.43%    12.67MB 22.12%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.encodeStatsExtentChunk
+   11.36MB 19.84% 64.27%    11.36MB 19.84%  bytes.growSlice
+    8.96MB 15.64% 79.91%    18.76MB 32.77%  github.com/klauspost/compress/flate.NewWriter (inline)
+    5.32MB  9.29% 89.20%     9.81MB 17.12%  github.com/klauspost/compress/flate.(*compressor).init
+    3.99MB  6.96% 96.16%     3.99MB  6.96%  github.com/klauspost/compress/flate.newFastEnc (inline)
+       1MB  1.75% 97.91%        1MB  1.75%  runtime.mallocgc
+    0.70MB  1.22% 99.13%     0.70MB  1.22%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.statsRetentionFixture
+    0.50MB  0.87%   100%     0.50MB  0.87%  github.com/klauspost/compress/flate.newHuffmanEncoder (inline)
+         0     0%   100%    11.36MB 19.84%  bytes.(*Buffer).Write
+         0     0%   100%    11.36MB 19.84%  bytes.(*Buffer).grow
+         0     0%   100%    11.36MB 19.84%  fmt.Fprintf
+         0     0%   100%    31.54MB 55.08%  github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.init
+         0     0%   100%    31.54MB 55.08%  github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.init.func2 (inline)
+         0     0%   100%    13.36MB 23.34%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.BenchmarkStatsExtentRetainedCache.func1
+         0     0%   100%    11.36MB 19.84%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.init
+         0     0%   100%    11.36MB 19.84%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.makeNDJSONLines
+         0     0%   100%    12.78MB 22.31%  github.com/klauspost/compress/flate.(*Writer).Reset
+         0     0%   100%    12.78MB 22.31%  github.com/klauspost/compress/flate.(*compressor).reset
+         0     0%   100%     0.50MB  0.87%  github.com/klauspost/compress/flate.newHuffmanBitWriter
+         0     0%   100%    18.76MB 32.77%  github.com/klauspost/compress/gzip.(*Writer).Flush
+         0     0%   100%    12.78MB 22.31%  github.com/klauspost/compress/gzip.(*Writer).Reset (inline)
+         0     0%   100%    18.76MB 32.77%  github.com/klauspost/compress/gzip.(*Writer).Write
+         0     0%   100%    12.78MB 22.31%  github.com/klauspost/compress/gzip.(*Writer).init
+         0     0%   100%     0.50MB  0.87%  runtime.(*scavengerState).init
+         0     0%   100%     0.50MB  0.87%  runtime.allocm
+         0     0%   100%     0.50MB  0.87%  runtime.bgscavenge
+         0     0%   100%    42.90MB 74.92%  runtime.doInit (inline)
+         0     0%   100%    42.90MB 74.92%  runtime.doInit1
+         0     0%   100%    42.90MB 74.92%  runtime.main
+         0     0%   100%     0.50MB  0.87%  runtime.mstart
+         0     0%   100%     0.50MB  0.87%  runtime.mstart0
+         0     0%   100%     0.50MB  0.87%  runtime.mstart1
+         0     0%   100%     0.50MB  0.87%  runtime.newm
+         0     0%   100%        1MB  1.75%  runtime.newobject
+         0     0%   100%     0.50MB  0.87%  runtime.resetspinning
+         0     0%   100%     0.50MB  0.87%  runtime.schedule
+         0     0%   100%     0.50MB  0.87%  runtime.startm
+         0     0%   100%     0.50MB  0.87%  runtime.wakep
+         0     0%   100%    13.36MB 23.34%  testing.(*B).run1.func1
+         0     0%   100%    13.36MB 23.34%  testing.(*B).runN

@@ -1,0 +1,16 @@
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/empty
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/small
+    stats_extent_retention_test.go:63: cache retains 246 backing bytes for 127 encoded bytes
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/compressible
+    stats_extent_retention_test.go:63: cache retains 180070 backing bytes for 50291 encoded bytes
+=== RUN   TestStatsExtentEncodingRetainsOnlyCompressedCapacity/varied-values
+    stats_extent_retention_test.go:63: cache retains 145696 backing bytes for 101314 encoded bytes
+--- FAIL: TestStatsExtentEncodingRetainsOnlyCompressedCapacity (0.02s)
+    --- PASS: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/empty (0.00s)
+    --- FAIL: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/small (0.00s)
+    --- FAIL: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/compressible (0.01s)
+    --- FAIL: TestStatsExtentEncodingRetainsOnlyCompressedCapacity/varied-values (0.01s)
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	0.950s
+FAIL

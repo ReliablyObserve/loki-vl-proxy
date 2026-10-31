@@ -1,0 +1,14 @@
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/raw
+    stats_extent_retention_test.go:55: queued extent not compact or changed: found=true len=50291 cap=180070
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/s2
+    stats_extent_retention_test.go:55: queued extent not compact or changed: found=true len=50291 cap=180070
+=== RUN   TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/zstd
+    stats_extent_retention_test.go:55: queued extent not compact or changed: found=true len=50291 cap=180070
+--- FAIL: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart (0.02s)
+    --- FAIL: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/raw (0.01s)
+    --- FAIL: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/s2 (0.01s)
+    --- FAIL: TestStatsExtentOwnedEncodingSurvivesDiskQueueAndRestart/zstd (0.01s)
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	0.680s
+FAIL

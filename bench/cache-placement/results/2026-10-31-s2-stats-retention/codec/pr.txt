@@ -1,0 +1,40 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsExtentDecodeOwned-4   	    1959	    182248 ns/op	 1651499 B/op	      24 allocs/op
+BenchmarkStatsExtentDecodeOwned-4   	    1941	    186559 ns/op	 1651496 B/op	      24 allocs/op
+BenchmarkStatsExtentDecodeOwned-4   	    1786	    179465 ns/op	 1651496 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8437342	        40.40 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8583536	        39.60 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8895962	        51.63 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	 1000000	       487.3 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	  902348	       390.7 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	 1000000	       371.3 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    2029	    165932 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146456 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    2187	    163626 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146450 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    2150	    169553 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146496 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1293	    238732 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941255 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1500	    226870 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941360 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1520	    248961 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941740 B/op	      24 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsExtentDecodeOwned-4   	    1569	    221923 ns/op	 1651496 B/op	      24 allocs/op
+BenchmarkStatsExtentDecodeOwned-4   	    1671	    224155 ns/op	 1651499 B/op	      24 allocs/op
+BenchmarkStatsExtentDecodeOwned-4   	    1593	    213086 ns/op	 1651496 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8207762	        41.30 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8431604	        39.85 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4         	 8128053	        44.31 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	  907743	       353.4 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	 1000000	       352.2 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4         	 1000000	       347.3 ns/op	       127.0 encoded-B/op	       127.0 retained-cap-B/op	     832 B/op	       5 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    2128	    158528 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146691 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    1970	    167325 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146649 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4  	    2215	    188188 ns/op	     50291 encoded-B/op	     50291 retained-cap-B/op	 1146380 B/op	      25 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1570	    228671 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941291 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1738	    204247 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941352 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4 	    1872	    202011 ns/op	    101314 encoded-B/op	    101314 retained-cap-B/op	  941169 B/op	      24 allocs/op
+PASS

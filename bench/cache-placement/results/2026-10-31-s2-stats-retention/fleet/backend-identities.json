@@ -1,0 +1,14 @@
+[
+  {
+    "name": "/s2retention1031-victorialogs-1",
+    "image_reference": "victoriametrics/victoria-logs:v1.52.0",
+    "image_identity": "sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e",
+    "running": true
+  },
+  {
+    "name": "/s2retention1031-loki-1",
+    "image_reference": "grafana/loki:3.7.9",
+    "image_identity": "sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+    "running": true
+  }
+]

@@ -1,0 +1,16 @@
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[1m]))
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/sum(rate({probe="nonsum1793474008900083000"}_[5m]))
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(pod)_(bytes_over_time({probe="nonsum1793474008900083000"}_[2m]))
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/max_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[5m]))
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/topk(2,_sum_by_(pod)_(rate({probe="nonsum1793474008900083000"}_[1m])))
+=== RUN   TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[90s]))
+--- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki (1.08s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[1m])) (0.15s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/sum(rate({probe="nonsum1793474008900083000"}_[5m])) (0.15s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(pod)_(bytes_over_time({probe="nonsum1793474008900083000"}_[2m])) (0.13s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/max_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[5m])) (0.13s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/topk(2,_sum_by_(pod)_(rate({probe="nonsum1793474008900083000"}_[1m]))) (0.12s)
+    --- PASS: TestCompat_MetricRangeExtentCacheMatchesLoki/sum_by_(zone)_(count_over_time({probe="nonsum1793474008900083000"}_[90s])) (0.13s)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	2.760s

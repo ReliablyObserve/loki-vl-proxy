@@ -1,0 +1,11 @@
+{
+  "issues": [],
+  "golang_errors": {},
+  "stats": {
+    "files": 149,
+    "lines": 90821,
+    "nosec": 3,
+    "found": 0
+  },
+  "exclusions": "G104,G108,G115,G118,G301,G302,G304,G306,G402,G404,G704,G705; generated/bench excluded, matching CI"
+}

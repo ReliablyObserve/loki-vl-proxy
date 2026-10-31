@@ -1,0 +1,35 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  49022988 ns/op	51860402 B/op	   15070 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  50373345 ns/op	50898033 B/op	   13180 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  52748066 ns/op	51852700 B/op	   15062 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       8	  47825198 ns/op	51356921 B/op	   14120 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       7	  47763173 ns/op	51874521 B/op	   15066 allocs/op
+BenchmarkStatsExtentWarmDrilldownBreakdown-4   	       6	  52993785 ns/op	51758158 B/op	   14857 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7857987	        46.21 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7786849	        46.33 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7836328	        45.93 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7968523	        45.90 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 8336492	        43.66 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/empty-4        	 7672510	        52.53 ns/op	        25.00 encoded-B/op	        25.00 retained-cap-B/op	      32 B/op	       1 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  726794	       493.7 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  742586	       443.3 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  916176	       360.1 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	 1000000	       369.9 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	  921894	       376.8 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/small-4        	 1000000	       372.8 ns/op	       127.0 encoded-B/op	       246.0 retained-cap-B/op	     704 B/op	       4 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    2361	    173312 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089594 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1959	    190682 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089745 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1867	    183395 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089821 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1821	    186511 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089502 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    1959	    183341 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089578 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/compressible-4 	    2025	    218037 ns/op	     50291 encoded-B/op	    180070 retained-cap-B/op	 1089695 B/op	      24 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1160	    279263 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  835099 B/op	      23 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1147	    277205 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  835051 B/op	      23 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1316	    262706 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  835048 B/op	      23 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1278	    253112 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  835277 B/op	      23 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1564	    228206 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  835089 B/op	      23 allocs/op
+BenchmarkStatsExtentEncodeOwned/varied-values-4         	    1640	    235465 ns/op	    101314 encoded-B/op	    145696 retained-cap-B/op	  834934 B/op	      23 allocs/op
+PASS

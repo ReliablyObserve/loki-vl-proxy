@@ -1,0 +1,118 @@
+{
+  "main": {
+    "ram": {
+      "trials": [
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180658.0,
+          "retained-cap-B/entry": 180070.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180638.0,
+          "retained-cap-B/entry": 180070.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180638.0,
+          "retained-cap-B/entry": 180070.0
+        }
+      ],
+      "median": {
+        "charged-B/entry": 50320.0,
+        "encoded-B/entry": 50291.0,
+        "heap-B/entry": 180638.0,
+        "retained-cap-B/entry": 180070.0
+      }
+    },
+    "ram-and-disk-queue": {
+      "trials": [
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180803.0,
+          "retained-cap-B/entry": 180070.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180782.0,
+          "retained-cap-B/entry": 180070.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 180803.0,
+          "retained-cap-B/entry": 180070.0
+        }
+      ],
+      "median": {
+        "charged-B/entry": 50320.0,
+        "encoded-B/entry": 50291.0,
+        "heap-B/entry": 180803.0,
+        "retained-cap-B/entry": 180070.0
+      }
+    }
+  },
+  "pr": {
+    "ram": {
+      "trials": [
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57759.0,
+          "retained-cap-B/entry": 50291.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57758.0,
+          "retained-cap-B/entry": 50291.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57779.0,
+          "retained-cap-B/entry": 50291.0
+        }
+      ],
+      "median": {
+        "charged-B/entry": 50320.0,
+        "encoded-B/entry": 50291.0,
+        "heap-B/entry": 57759.0,
+        "retained-cap-B/entry": 50291.0
+      }
+    },
+    "ram-and-disk-queue": {
+      "trials": [
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57902.0,
+          "retained-cap-B/entry": 50291.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57902.0,
+          "retained-cap-B/entry": 50291.0
+        },
+        {
+          "charged-B/entry": 50320.0,
+          "encoded-B/entry": 50291.0,
+          "heap-B/entry": 57902.0,
+          "retained-cap-B/entry": 50291.0
+        }
+      ],
+      "median": {
+        "charged-B/entry": 50320.0,
+        "encoded-B/entry": 50291.0,
+        "heap-B/entry": 57902.0,
+        "retained-cap-B/entry": 50291.0
+      }
+    }
+  }
+}

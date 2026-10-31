@@ -1,0 +1,87 @@
+{
+  "passing_test_subtest_events": 21355,
+  "passing_test_bearing_packages": 13,
+  "failures": [],
+  "packages": [
+    {
+      "Time": "2026-10-31T20:11:01.742226+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate",
+      "Elapsed": 1.01
+    },
+    {
+      "Time": "2026-10-31T20:11:02.079249+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy",
+      "Elapsed": 1.347
+    },
+    {
+      "Time": "2026-10-31T20:11:02.135611+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql",
+      "Elapsed": 1.403
+    },
+    {
+      "Time": "2026-10-31T20:11:02.557549+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql",
+      "Elapsed": 1.825
+    },
+    {
+      "Time": "2026-10-31T20:11:03.42703+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit",
+      "Elapsed": 2.694
+    },
+    {
+      "Time": "2026-10-31T20:11:03.956749+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/config",
+      "Elapsed": 3.224
+    },
+    {
+      "Time": "2026-10-31T20:11:04.251959+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability",
+      "Elapsed": 3.518
+    },
+    {
+      "Time": "2026-10-31T20:11:05.075906+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics",
+      "Elapsed": 4.343
+    },
+    {
+      "Time": "2026-10-31T20:11:06.058055+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware",
+      "Elapsed": 5.325
+    },
+    {
+      "Time": "2026-10-31T20:11:06.110529+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate",
+      "Elapsed": 5.242
+    },
+    {
+      "Time": "2026-10-31T20:11:20.256406+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator",
+      "Elapsed": 19.388
+    },
+    {
+      "Time": "2026-10-31T20:11:21.919599+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache",
+      "Elapsed": 21.187
+    },
+    {
+      "Time": "2026-10-31T20:16:13.19577+01:00",
+      "Action": "pass",
+      "Package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
+      "Elapsed": 312.325
+    }
+  ],
+  "raw_json_sha256": "9570195612c885b72a869d553cef24f05e4139183c83a31c1df59da11bbd94c4",
+  "scope": "Fresh root suite on pre-commit working source; production Go exactly matches signed74900fedce7ee537900895979096adbdbd3a77fc. Later commits add conformance wiring and decoder benchmark only. Test durations are not query latency."
+}

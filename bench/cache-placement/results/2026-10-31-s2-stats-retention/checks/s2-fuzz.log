@@ -1,0 +1,12 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/3 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 3/3 completed, now fuzzing with 4 workers
+fuzz: elapsed: 3s, execs: 6404 (2134/sec), new interesting: 16 (total: 19)
+fuzz: elapsed: 6s, execs: 21620 (5072/sec), new interesting: 19 (total: 22)
+fuzz: elapsed: 9s, execs: 30619 (3000/sec), new interesting: 20 (total: 23)
+fuzz: elapsed: 12s, execs: 33577 (986/sec), new interesting: 21 (total: 24)
+fuzz: elapsed: 15s, execs: 62202 (9542/sec), new interesting: 22 (total: 25)
+fuzz: elapsed: 18s, execs: 96365 (11386/sec), new interesting: 22 (total: 25)
+fuzz: elapsed: 21s, execs: 96365 (0/sec), new interesting: 22 (total: 25)
+fuzz: elapsed: 21s, execs: 96365 (0/sec), new interesting: 22 (total: 25)
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	22.144s

@@ -1,0 +1,17 @@
+{
+  "pattern": "^(BenchmarkStatsExtentEncodeOwned|BenchmarkStatsExtentDecodeOwned)$",
+  "GOMAXPROCS": 4,
+  "blocks": "main/main control, then main/PR/PR/main",
+  "source": "8e848caf743b6c96c0b9561b7c1d24c07a0fc05e",
+  "baseline": "fe43377f2ac78bdd4069d5ad5220f1a6ceeb6007",
+  "files_sha256": {
+    "/private/tmp/s2-main.test": "5467d4bba576aaa493d595147fa84c894a197dbcda41b0a5f0b7d34c11ad0acb",
+    "/private/tmp/s2-pr.test": "3e29ecfcc12261103c4991e302453014f2aae6ae13b37ddaf2f59de26b4b4f04",
+    "/private/tmp/s2-proxy-main": "b72493555bbf3cb5d8ef6fc03a06fff3e56207f61768efe1d03fd26c6d255cd9",
+    "/private/tmp/s2-proxy-pr": "e3e805090358e255c9bccad4827d7ba74347afd7e1089f283b22e5e140829834",
+    "/private/tmp/loki-peer-capacity-20261030/internal/proxy/stats_extent_retention_test.go": "88b2424fb2bce81054232eac1328e1d6c879e25ac2fd58e38b8ed78bb8308820",
+    "/private/tmp/loki-peer-capacity-20261030/internal/proxy/stats_extent_retention_bench_test.go": "9988699a557d09fc73b8668df2c06d61e6f272a92925f09a2cf0c0b9e81d166d",
+    "/private/tmp/loki-peer-capacity-20261030/internal/proxy/stats_extent_cache.go": "1e031397bea548fb5367d6ce7c469c2b8241f2521ff1d25e30dbd5a9009b254b",
+    "/private/tmp/loki-json-cache-main-20261031/internal/proxy/stats_extent_cache.go": "c9bade6e2b456e9b237ee1554394eed6ec1b1292c06a31cb90af974a2bfc1cea"
+  }
+}

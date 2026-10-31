@@ -1,0 +1,22 @@
+{
+  "empty": {
+    "bytes": 25,
+    "sha256": "07bcbb3654a3749fda51e27e7a15f7c54e2ea67006b02dbd9a943ad286e5c328",
+    "identical": true
+  },
+  "small": {
+    "bytes": 127,
+    "sha256": "4bc5500e859952639e47fe7c7ae1e61abf9bccdb0dcce7f0efd1707fd367eda9",
+    "identical": true
+  },
+  "compressible": {
+    "bytes": 50291,
+    "sha256": "447ac86acb1f6ad9738dd5dd36cb34c284efae54474fa09880389520ae60cf5f",
+    "identical": true
+  },
+  "varied-values": {
+    "bytes": 101314,
+    "sha256": "2ef75e0fed4d5faa82470bd2b0f691d55ff325fbd50e13af9fa2648d65aaa778",
+    "identical": true
+  }
+}
