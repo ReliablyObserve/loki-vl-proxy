@@ -7,6 +7,11 @@ and the observability implementation. The final proxy executable SHA-256 is
 source; the build disables VCS embedding, so the source-ref field in the report
 is an operator claim, not a VCS attestation from the executable.
 
+The measured harness is retained at
+[`6b5dcd1b`](https://github.com/ReliablyObserve/loki-vl-proxy/tree/6b5dcd1b34f9cad5ae9b32a6a0837000c8f1dacc/bench/cache-placement).
+Its optional pressure-replay caption was clarified afterward; that diagnostic
+was disabled in this proof, and production sources are unchanged.
+
 ## Correctness and attribution
 
 All **80 independent cells / 240 timed responses** returned nonempty HTTP 200

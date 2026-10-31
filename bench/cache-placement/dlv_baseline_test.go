@@ -879,7 +879,7 @@ func dlvRunCell(t *testing.T, binary string, c dlvCell, fx fixture, rec *recorde
 		}
 	}
 	if c.State == "exact" && c.Tier0 && *dlvEviction {
-		diag := dlvDiagnostic{State: "eviction_attempt", Reason: "No dedicated compatibility-cache miss metric; an eviction attempt cannot be labelled an observed Tier0 lookup miss."}
+		diag := dlvDiagnostic{State: "eviction_attempt", Reason: "Pressure replay remains conservative: an eviction attempt alone is not an observed Tier0 lookup miss; inspect dedicated replay counters when available."}
 		native := c
 		native.Shape = "native"
 		native.State = "shifted"
