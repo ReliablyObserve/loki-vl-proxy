@@ -93,7 +93,7 @@ func TestQueryRangeCache_StoresFullResponsesLocallyWhenPeerWriteThroughEnabled(t
 	}
 }
 
-func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(t *testing.T) {
+func TestLabelsCache_StoresResponsesOnReplicasWhenPeerWriteThroughEnabled(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
@@ -107,7 +107,7 @@ func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(
 
 	req := httptest.NewRequest("GET", "/loki/api/v1/labels?query=%7Bservice_name%3D%22api%22%7D", nil)
 	cacheKey := (&Proxy{}).canonicalReadCacheKey("labels", "", req)
-	c, dc, pc, remoteSetCalls := newLocalOnlyCacheFixture(t, cacheKey)
+	c, dc, pc, _ := newLocalOnlyCacheFixture(t, cacheKey)
 
 	p, err := New(Config{
 		BackendURL: backend.URL,
@@ -129,20 +129,14 @@ func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(
 	if _, _, _, ok := p.endpointReadCacheEntry("labels", cacheKey); !ok {
 		t.Fatalf("expected labels cache entry for %q", cacheKey)
 	}
-	if _, ok := dc.Get(cacheKey); !ok {
-		t.Fatalf("expected labels cache entry %q to persist in L2 disk cache", cacheKey)
-	}
-	if got := remoteSetCalls.Load(); got != 0 {
-		t.Fatalf("expected labels cache entry to skip remote /_cache/set, got %d", got)
-	}
-	if got := pc.WTPushes.Load(); got != 0 {
-		t.Fatalf("expected labels cache entry to skip write-through pushes, got %d", got)
+	if _, ok := dc.Get(cacheKey); ok != pc.IsReplica(cacheKey) {
+		t.Fatalf("labels disk placement differs from replica ownership for %q", cacheKey)
 	}
 }
 
-func TestSetJSONCacheWithTTL_StoresHelperResponsesInLocalDiskCache(t *testing.T) {
+func TestSetJSONCacheWithTTL_UsesReplicaPlacement(t *testing.T) {
 	cacheKey := "detected_labels:tenant-a:test"
-	c, dc, pc, remoteSetCalls := newLocalOnlyCacheFixture(t, cacheKey)
+	c, dc, pc, _ := newLocalOnlyCacheFixture(t, cacheKey)
 	p := &Proxy{cache: c}
 
 	p.setJSONCacheWithTTL(cacheKey, time.Minute, map[string]interface{}{
@@ -161,13 +155,7 @@ func TestSetJSONCacheWithTTL_StoresHelperResponsesInLocalDiskCache(t *testing.T)
 	if decoded["status"] != "success" {
 		t.Fatalf("unexpected cached JSON payload: %v", decoded)
 	}
-	if _, ok := dc.Get(cacheKey); !ok {
-		t.Fatalf("expected JSON cache entry %q to persist in L2 disk cache", cacheKey)
-	}
-	if got := remoteSetCalls.Load(); got != 0 {
-		t.Fatalf("expected JSON cache entry to skip remote /_cache/set, got %d", got)
-	}
-	if got := pc.WTPushes.Load(); got != 0 {
-		t.Fatalf("expected JSON cache entry to skip write-through pushes, got %d", got)
+	if _, ok := dc.Get(cacheKey); ok != pc.IsReplica(cacheKey) {
+		t.Fatalf("helper disk placement differs from replica ownership for %q", cacheKey)
 	}
 }

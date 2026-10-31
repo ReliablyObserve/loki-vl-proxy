@@ -1,0 +1,8 @@
+{
+  "id": "sha256:99ecbefbfea9bd7f19ababecf69ef185e5c850b2b81b575202f1e383450e3f4c",
+  "created": "2026-10-30T21:08:37.156480589Z",
+  "architecture": "arm64",
+  "tags": [
+    "loki-vl-proxy:peercap1030"
+  ]
+}

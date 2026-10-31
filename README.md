@@ -79,7 +79,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 - An unwrap metric moved forward by a refresh or a re-run reads from VictoriaLogs only the buckets it has not read before.
 - A zero divisor of `/` and `%` is NaN, like Loki.
 - Binary vector matching raises Loki's duplicate-series error text at the first step where Loki's join fails.
-- Every peer-cache key has a backup replica (`-peer-replication-factor`, default 2); a three-proxy fleet test covers a replica that lost its disk refilling from its peers, the owner being down and every cache being lost.
+- Eligible shared cache keys use owner plus one backup by default (`-peer-replication-factor=2`); RF=1 keeps only the owner. Nonowner RAM shadows are bounded to 30s and 10% of L1 capacity without extra disk copies. Three-node tests cover pooled capacity, disk refill and owner loss.
 
 **Where it is worse**
 

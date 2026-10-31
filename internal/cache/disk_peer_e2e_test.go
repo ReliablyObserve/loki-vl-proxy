@@ -63,8 +63,8 @@ func TestDiskPeerRestartCodecCompatibility(t *testing.T) {
 			if _, _, ok := requester.Get(strings.Replace(key, "auth=caller1", "auth=caller2", 1)); ok {
 				t.Fatal("credential-distinct key unexpectedly reused")
 			}
-			dc.Purge()
-			// The owner peer reads L2 directly, without promoting the fetched disk copy.
+			owner.PurgeAll()
+			// Peer disk hits promote into owner memory; purge both local tiers.
 			if _, _, ok := requester.Get(key); ok {
 				t.Fatal("purged disk value reappeared through peer")
 			}

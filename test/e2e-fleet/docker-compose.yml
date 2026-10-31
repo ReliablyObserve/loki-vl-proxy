@@ -267,6 +267,7 @@ services:
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
       - "-peer-auth-token=e2e-test-token"
+      - "${FLEET_PROXY_EXTRA_ARG:--log-level=debug}"
       - "-server.register-instrumentation=true"
       - "-labels-cache-warm=false"
       # The proof scrapes /metrics many times a second from one client.
@@ -302,6 +303,7 @@ services:
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
       - "-peer-auth-token=e2e-test-token"
+      - "${FLEET_PROXY_EXTRA_ARG:--log-level=debug}"
       - "-labels-cache-warm=false"
       # The proof scrapes /metrics many times a second from one client.
       - "-rate-limit-per-second=0"

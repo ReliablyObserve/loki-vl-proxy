@@ -1,0 +1,1290 @@
+{
+  "scope": "Completion-synchronized same-executable control; count correctness and capture completion only, no latency or placement comparison.",
+  "effective_executable": "same_source_control=true substitutes baseline executable for candidate source label; configured candidate manifest path is unused by this control.",
+  "manifest": {
+    "arch": "arm64",
+    "baseline_binary": "/private/tmp/cache-placement-perf-proof/proxy-foundation.bin",
+    "baseline_binary_sha256": "299fd8b85223662f431011a724498fdb41488106f2ee8f76f79acacca30efb90",
+    "baseline_ref": "2a2e882b45a2c22b59bb42f118e4a3d16fb19825",
+    "candidate_binary": "/private/tmp/cache-peer-capacity-visual/proxy-pr.bin",
+    "candidate_binary_sha256": "4a9819999a484b4a45e0a3b38548f9594e4f0b0edf0967f73145e9b631547222",
+    "candidate_ref": "55d3f7fb08a33125d9f4b0b3eb1950c334de3639",
+    "disabled_background_work": [
+      "labels-cache-warm=false",
+      "patterns-enabled=false",
+      "label-values-indexed-cache=false",
+      "peer-hot-read-ahead-enabled=false(default)"
+    ],
+    "go_version": "go1.27.3",
+    "harness_source_sha256": "54ea61ef146205528b4e717d7009314e44f940ff2d7f670b319843fc980b83ad",
+    "latency_classification": "faster/slower only beyond both 25% and 50ms; raw values always retained; no statistical-significance claim",
+    "limits": [
+      "instrumented loopback timings; source CPU excludes observer CPU",
+      "macOS memory metric is GoSys, not RSS",
+      "Loki cache state retained per request, no cold-Loki claim",
+      "one static fixture, no production workload distribution claim",
+      "owner0 loss affects only keys on owner0; backup-hit metrics verify actual fallback"
+    ],
+    "network_bytes_scope": "client-to-observer HTTP message bytes including headers/framing and encoded bodies; excludes TCP/IP, retransmissions, observer-to-target second hop",
+    "observers": "stdlib keep-alive HTTP proxies before VL and peer HTTP, same addresses in every trial",
+    "order": [
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline"
+    ],
+    "os": "darwin",
+    "recent_fixture_scope": "RecentEnd is immutable setup time, not necessarily near-now at execution; per-request end age and default 120s recent-tail/24h metadata freshness eligibility are recorded; no fresh-ingestion claim",
+    "run_id": "20261031T070042.082577000Z",
+    "same_ring_addresses": true,
+    "same_source_control": true,
+    "shared_backend_observer_url": true,
+    "startup_label_warm_disabled": true,
+    "startup_scope": "request-phase zero-VL statements exclude separately recorded startup health/version traffic; default startup warmers may read VL",
+    "vl_counts_scope": "fleet aggregate; per-node backend observer URLs would change backend-auth cache keys",
+    "window_scope": "historical base ends 30m before seeded history ends; forward refresh advances by 60s into previously unrequested windows; sequential phases share caches, not isolated cache-state trials"
+  },
+  "fixture": {
+    "Probe": "cacheperf-1793430036413146000",
+    "End": 1793336400,
+    "RecentEnd": 1793429940,
+    "Streams": 90,
+    "Lines": 54000,
+    "SHA256": "8db53d24ce5557f39a4371dd8f8e2249bf9c2c6bccae88dc34bf312405503427"
+  },
+  "provenance": {
+    "full_report_sha256": "e619762f7500aeb6a12570e9b77f5f9bc5fcbd9426a325d0c55351825050cb50",
+    "full_report_bytes": 1439669,
+    "wire_ledger_sha256": "83537553b564ad8a9ef80f2d963d091a71dbc2e4c4e3444308f494add5fc9d46"
+  },
+  "phases": [
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 1
+      },
+      "StartupWireTotals": {
+        "VLCalls": 12,
+        "PeerCalls": 0,
+        "VLBytes": 83112,
+        "PeerBytes": 0,
+        "PeerFetches": 0,
+        "PeerPushes": 0,
+        "PeerPushBytes": 0
+      },
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 197638,
+          "ResponseHTTPBytes": 134460
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 219617,
+          "ResponseHTTPBytes": 148779
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 88768,
+          "ResponseHTTPBytes": 1996525
+        }
+      },
+      "PeerFetches": 605,
+      "PeerPushes": 286,
+      "PeerPushBodyBytes": 30063,
+      "VLCalls": 232,
+      "PeerCalls": 891,
+      "VLResponseBytes": 1900777,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.608327625,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "cold-fill",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 606208,
+      "PeakAllocatedBytes": 688128,
+      "PeakMemoryMetric": 191658808,
+      "ProxyCPUSeconds": 0.193926,
+      "ValidResourceSamples": true,
+      "WireStart": 12,
+      "WireEnd": 1135,
+      "Seconds": 0.198790125,
+      "ResponseVerification": {
+        "responses": 13,
+        "successful_equal": 13
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 10219,
+          "ResponseHTTPBytes": 13503
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 5336,
+          "ResponseHTTPBytes": 7594
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 2853,
+          "ResponseHTTPBytes": 2476
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 6354,
+          "ResponseHTTPBytes": 3159151
+        }
+      },
+      "PeerFetches": 42,
+      "PeerPushes": 4,
+      "PeerPushBodyBytes": 180,
+      "VLCalls": 15,
+      "PeerCalls": 46,
+      "VLResponseBytes": 3151556,
+      "PeerResponseBytes": 7388,
+      "WireDrainSeconds": 0.506825209,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "exact",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 638976,
+      "PeakAllocatedBytes": 688128,
+      "PeakMemoryMetric": 242776888,
+      "ProxyCPUSeconds": 0.05530899999999994,
+      "ValidResourceSamples": true,
+      "WireStart": 1135,
+      "WireEnd": 1196,
+      "Seconds": 0.07922375,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 3
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 1552,
+          "ResponseHTTPBytes": 1776
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 433,
+          "ResponseHTTPBytes": 397
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 866,
+          "ResponseHTTPBytes": 799
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 2280,
+          "ResponseHTTPBytes": 446484
+        }
+      },
+      "PeerFetches": 7,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 4,
+      "PeerCalls": 7,
+      "VLResponseBytes": 444576,
+      "PeerResponseBytes": 457,
+      "WireDrainSeconds": 0.508228292,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "frontend-prime",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 737280,
+      "PeakAllocatedBytes": 819200,
+      "PeakMemoryMetric": 259951432,
+      "ProxyCPUSeconds": 0.01970700000000003,
+      "ValidResourceSamples": true,
+      "WireStart": 1196,
+      "WireEnd": 1207,
+      "Seconds": 0.074246042,
+      "ResponseVerification": {
+        "responses": 39,
+        "successful_equal": 39
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        }
+      },
+      "PeerFetches": 0,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 0,
+      "PeerCalls": 0,
+      "VLResponseBytes": 0,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.508592542,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "warm-repeat",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 737280,
+      "PeakAllocatedBytes": 819200,
+      "PeakMemoryMetric": 268602184,
+      "ProxyCPUSeconds": 0.008821000000000023,
+      "ValidResourceSamples": true,
+      "WireStart": 1207,
+      "WireEnd": 1207,
+      "Seconds": 0.04025625,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 57560,
+          "ResponseHTTPBytes": 43591
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 62478,
+          "ResponseHTTPBytes": 44723
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 64890,
+          "ResponseHTTPBytes": 47193
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 41344,
+          "ResponseHTTPBytes": 1914527
+        }
+      },
+      "PeerFetches": 296,
+      "PeerPushes": 111,
+      "PeerPushBodyBytes": 6429,
+      "VLCalls": 104,
+      "PeerCalls": 407,
+      "VLResponseBytes": 1871119,
+      "PeerResponseBytes": 4305,
+      "WireDrainSeconds": 0.610422375,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "shifted",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 884736,
+      "PeakAllocatedBytes": 1015808,
+      "PeakMemoryMetric": 307448648,
+      "ProxyCPUSeconds": 0.11440500000000003,
+      "ValidResourceSamples": true,
+      "WireStart": 1207,
+      "WireEnd": 1718,
+      "Seconds": 0.147358542,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 1020,
+          "ResponseHTTPBytes": 639
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 1094,
+          "ResponseHTTPBytes": 630
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 2040,
+          "ResponseHTTPBytes": 1278
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 8960,
+          "ResponseHTTPBytes": 3777151
+        }
+      },
+      "PeerFetches": 5,
+      "PeerPushes": 3,
+      "PeerPushBodyBytes": 447,
+      "VLCalls": 16,
+      "PeerCalls": 8,
+      "VLResponseBytes": 3768728,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.505729625,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "refresh",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 950272,
+      "PeakAllocatedBytes": 1081344,
+      "PeakMemoryMetric": 317164360,
+      "ProxyCPUSeconds": 0.05752900000000005,
+      "ValidResourceSamples": true,
+      "WireStart": 1718,
+      "WireEnd": 1742,
+      "Seconds": 0.108732209,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 157123,
+          "ResponseHTTPBytes": 106814
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 217292,
+          "ResponseHTTPBytes": 148335
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 178216,
+          "ResponseHTTPBytes": 124759
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 125872,
+          "ResponseHTTPBytes": 2059904
+        }
+      },
+      "PeerFetches": 805,
+      "PeerPushes": 372,
+      "PeerPushBodyBytes": 33248,
+      "VLCalls": 320,
+      "PeerCalls": 1177,
+      "VLResponseBytes": 1928054,
+      "PeerResponseBytes": 3819,
+      "WireDrainSeconds": 0.508284458,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "recent-refresh",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 1294336,
+      "PeakAllocatedBytes": 1343488,
+      "PeakMemoryMetric": 318016328,
+      "ProxyCPUSeconds": 0.25203299999999995,
+      "ValidResourceSamples": true,
+      "WireStart": 1742,
+      "WireEnd": 3239,
+      "Seconds": 0.373629416,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 4251,
+          "ResponseHTTPBytes": 4337
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 4419,
+          "ResponseHTTPBytes": 6925
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 4477,
+          "ResponseHTTPBytes": 4919
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 9804,
+          "ResponseHTTPBytes": 3699677
+        }
+      },
+      "PeerFetches": 36,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 22,
+      "PeerCalls": 36,
+      "VLResponseBytes": 3688817,
+      "PeerResponseBytes": 3617,
+      "WireDrainSeconds": 0.50667925,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "restart",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 1310720,
+      "PeakAllocatedBytes": 1409024,
+      "PeakMemoryMetric": 189152056,
+      "ProxyCPUSeconds": 0.06453199999999999,
+      "ValidResourceSamples": true,
+      "WireStart": 3248,
+      "WireEnd": 3306,
+      "Seconds": 0.101108791,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 3524,
+          "ResponseHTTPBytes": 840
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 5565,
+          "ResponseHTTPBytes": 8149
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 3522,
+          "ResponseHTTPBytes": 3607
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 8950,
+          "ResponseHTTPBytes": 3698431
+        }
+      },
+      "PeerFetches": 34,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 19,
+      "PeerCalls": 34,
+      "VLResponseBytes": 3688778,
+      "PeerResponseBytes": 3190,
+      "WireDrainSeconds": 0.510076042,
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "fit",
+      "Mode": "owner-loss",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 2,
+        "SampledNodes": 2
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 2,
+        "SampledNodes": 2
+      },
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 917504,
+      "PeakMemoryMetric": 145437232,
+      "ProxyCPUSeconds": 0.058957999999999997,
+      "ValidResourceSamples": true,
+      "WireStart": 3312,
+      "WireEnd": 3365,
+      "Seconds": 0.105774875,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 1
+      },
+      "StartupWireTotals": {
+        "VLCalls": 12,
+        "PeerCalls": 0,
+        "VLBytes": 129069,
+        "PeerBytes": 0,
+        "PeerFetches": 0,
+        "PeerPushes": 0,
+        "PeerPushBytes": 0
+      },
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 197638,
+          "ResponseHTTPBytes": 134460
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 219617,
+          "ResponseHTTPBytes": 148779
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 88768,
+          "ResponseHTTPBytes": 1996525
+        }
+      },
+      "PeerFetches": 605,
+      "PeerPushes": 286,
+      "PeerPushBodyBytes": 30063,
+      "VLCalls": 232,
+      "PeerCalls": 891,
+      "VLResponseBytes": 1900777,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.504959833,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "cold-fill",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 491520,
+      "PeakAllocatedBytes": 557056,
+      "PeakMemoryMetric": 196397896,
+      "ProxyCPUSeconds": 0.19829200000000002,
+      "ValidResourceSamples": true,
+      "WireStart": 3377,
+      "WireEnd": 4500,
+      "Seconds": 0.202731167,
+      "ResponseVerification": {
+        "responses": 13,
+        "successful_equal": 13
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 10219,
+          "ResponseHTTPBytes": 13503
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 5336,
+          "ResponseHTTPBytes": 7594
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 2853,
+          "ResponseHTTPBytes": 2476
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 6354,
+          "ResponseHTTPBytes": 3159198
+        }
+      },
+      "PeerFetches": 42,
+      "PeerPushes": 4,
+      "PeerPushBodyBytes": 180,
+      "VLCalls": 15,
+      "PeerCalls": 46,
+      "VLResponseBytes": 3151556,
+      "PeerResponseBytes": 7388,
+      "WireDrainSeconds": 0.508758166,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "exact",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 638976,
+      "PeakAllocatedBytes": 688128,
+      "PeakMemoryMetric": 247515976,
+      "ProxyCPUSeconds": 0.058447999999999944,
+      "ValidResourceSamples": true,
+      "WireStart": 4500,
+      "WireEnd": 4561,
+      "Seconds": 0.090041916,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 3
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 1552,
+          "ResponseHTTPBytes": 1776
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 433,
+          "ResponseHTTPBytes": 397
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 866,
+          "ResponseHTTPBytes": 799
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 2280,
+          "ResponseHTTPBytes": 446476
+        }
+      },
+      "PeerFetches": 7,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 4,
+      "PeerCalls": 7,
+      "VLResponseBytes": 444576,
+      "PeerResponseBytes": 457,
+      "WireDrainSeconds": 0.508177291,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "frontend-prime",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 720896,
+      "PeakAllocatedBytes": 819200,
+      "PeakMemoryMetric": 256035656,
+      "ProxyCPUSeconds": 0.018650000000000055,
+      "ValidResourceSamples": true,
+      "WireStart": 4561,
+      "WireEnd": 4572,
+      "Seconds": 0.073168833,
+      "ResponseVerification": {
+        "responses": 39,
+        "successful_equal": 39
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 0,
+          "ResponseHTTPBytes": 0
+        }
+      },
+      "PeerFetches": 0,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 0,
+      "PeerCalls": 0,
+      "VLResponseBytes": 0,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.508067417,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "warm-repeat",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 720896,
+      "PeakAllocatedBytes": 819200,
+      "PeakMemoryMetric": 264821592,
+      "ProxyCPUSeconds": 0.00856800000000002,
+      "ValidResourceSamples": true,
+      "WireStart": 4572,
+      "WireEnd": 4572,
+      "Seconds": 0.045234167,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 57560,
+          "ResponseHTTPBytes": 43591
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 62478,
+          "ResponseHTTPBytes": 44723
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 64890,
+          "ResponseHTTPBytes": 47193
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 41344,
+          "ResponseHTTPBytes": 1914474
+        }
+      },
+      "PeerFetches": 296,
+      "PeerPushes": 111,
+      "PeerPushBodyBytes": 6429,
+      "VLCalls": 104,
+      "PeerCalls": 407,
+      "VLResponseBytes": 1871119,
+      "PeerResponseBytes": 4305,
+      "WireDrainSeconds": 0.611299917,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "shifted",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 802816,
+      "PeakAllocatedBytes": 884736,
+      "PeakMemoryMetric": 299686744,
+      "ProxyCPUSeconds": 0.09643499999999999,
+      "ValidResourceSamples": true,
+      "WireStart": 4572,
+      "WireEnd": 5083,
+      "Seconds": 0.126658167,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 1020,
+          "ResponseHTTPBytes": 639
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 1094,
+          "ResponseHTTPBytes": 630
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 2040,
+          "ResponseHTTPBytes": 1278
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 8960,
+          "ResponseHTTPBytes": 3777207
+        }
+      },
+      "PeerFetches": 5,
+      "PeerPushes": 3,
+      "PeerPushBodyBytes": 447,
+      "VLCalls": 16,
+      "PeerCalls": 8,
+      "VLResponseBytes": 3768728,
+      "PeerResponseBytes": 0,
+      "WireDrainSeconds": 0.506188625,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "refresh",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 950272,
+      "PeakAllocatedBytes": 1081344,
+      "PeakMemoryMetric": 313092968,
+      "ProxyCPUSeconds": 0.05948300000000001,
+      "ValidResourceSamples": true,
+      "WireStart": 5083,
+      "WireEnd": 5107,
+      "Seconds": 0.097242583,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 157123,
+          "ResponseHTTPBytes": 106814
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 217292,
+          "ResponseHTTPBytes": 148335
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 178216,
+          "ResponseHTTPBytes": 124759
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 125872,
+          "ResponseHTTPBytes": 2059997
+        }
+      },
+      "PeerFetches": 805,
+      "PeerPushes": 372,
+      "PeerPushBodyBytes": 33248,
+      "VLCalls": 320,
+      "PeerCalls": 1177,
+      "VLResponseBytes": 1928054,
+      "PeerResponseBytes": 3819,
+      "WireDrainSeconds": 0.504669417,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "recent-refresh",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 1212416,
+      "PeakAllocatedBytes": 1277952,
+      "PeakMemoryMetric": 314207080,
+      "ProxyCPUSeconds": 0.25762700000000005,
+      "ValidResourceSamples": true,
+      "WireStart": 5107,
+      "WireEnd": 6604,
+      "Seconds": 0.368777916,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 4251,
+          "ResponseHTTPBytes": 4337
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 4419,
+          "ResponseHTTPBytes": 6925
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 4477,
+          "ResponseHTTPBytes": 4919
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 9804,
+          "ResponseHTTPBytes": 3699678
+        }
+      },
+      "PeerFetches": 36,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 22,
+      "PeerCalls": 36,
+      "VLResponseBytes": 3688817,
+      "PeerResponseBytes": 3617,
+      "WireDrainSeconds": 0.509600292,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "restart",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 3,
+        "SampledNodes": 3
+      },
+      "PeakFileBytes": 1294336,
+      "PeakAllocatedBytes": 1343488,
+      "PeakMemoryMetric": 189381432,
+      "ProxyCPUSeconds": 0.06024,
+      "ValidResourceSamples": true,
+      "WireStart": 6613,
+      "WireEnd": 6671,
+      "Seconds": 0.089853459,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    },
+    {
+      "Config": {
+        "Profile": "fit",
+        "Entries": 256,
+        "Bytes": 16777216,
+        "DiskBytes": 16777216,
+        "Shards": 8,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "StartupWireTotals": null,
+      "NetworkHTTPBytes": {
+        "peer-node0": {
+          "RequestHTTPBytes": 3524,
+          "ResponseHTTPBytes": 840
+        },
+        "peer-node1": {
+          "RequestHTTPBytes": 5565,
+          "ResponseHTTPBytes": 8149
+        },
+        "peer-node2": {
+          "RequestHTTPBytes": 3522,
+          "ResponseHTTPBytes": 3607
+        },
+        "vl-node-1": {
+          "RequestHTTPBytes": 8950,
+          "ResponseHTTPBytes": 3698433
+        }
+      },
+      "PeerFetches": 34,
+      "PeerPushes": 0,
+      "PeerPushBodyBytes": 0,
+      "VLCalls": 19,
+      "PeerCalls": 34,
+      "VLResponseBytes": 3688778,
+      "PeerResponseBytes": 3190,
+      "WireDrainSeconds": 0.510080833,
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "fit",
+      "Mode": "owner-loss",
+      "Before": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 2,
+        "SampledNodes": 2
+      },
+      "After": {
+        "Valid": true,
+        "Errors": {},
+        "ExpectedNodes": 2,
+        "SampledNodes": 2
+      },
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 917504,
+      "PeakMemoryMetric": 145175088,
+      "ProxyCPUSeconds": 0.05247900000000001,
+      "ValidResourceSamples": true,
+      "WireStart": 6677,
+      "WireEnd": 6730,
+      "Seconds": 0.089841208,
+      "ResponseVerification": {
+        "responses": 26,
+        "successful_equal": 26
+      }
+    }
+  ],
+  "limitations": [
+    "One instrumented loopback host, immutable synthetic fixture.",
+    "This control does not retroactively validate counters in archived reports.",
+    "No proxy production code changed in the completion repair.",
+    "Snapshot completion does not prevent future asynchronous requests from starting after capture; existing bounded quiet drain remains part of phase methodology."
+  ]
+}

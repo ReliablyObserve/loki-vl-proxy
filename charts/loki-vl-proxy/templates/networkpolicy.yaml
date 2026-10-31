@@ -61,8 +61,19 @@ spec:
       {{- fail "serviceMonitor.enabled=true with networkPolicy.enabled=true requires networkPolicy.monitoringNamespace, networkPolicy.monitoringFrom, or explicit networkPolicy.monitoringAllowAll=true for the metrics scrape ingress rule." }}
     {{- end }}
     {{- end }}
-  {{- with .Values.networkPolicy.egress }}
+  {{- if or .Values.networkPolicy.egress .Values.peerCache.enabled }}
   egress:
+    {{- with .Values.networkPolicy.egress }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.peerCache.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "loki-vl-proxy.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 3100
+          protocol: TCP
+    {{- end }}
   {{- end }}
 {{- end }}

@@ -1,0 +1,794 @@
+{
+  "production_commit": "55d3f7fb08a33125d9f4b0b3eb1950c334de3639",
+  "go": "1.27.3",
+  "platform": "darwin/arm64",
+  "command": "go test ./... -count=1 -race -timeout=50m -coverprofile=coverage.out",
+  "exit_code": 0,
+  "passing_test_events": 9124,
+  "packages_reported": 16,
+  "total": {
+    "covered_statements": 36277,
+    "statements": 40630,
+    "percent": 89.286
+  },
+  "packages": {
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/configdoc": {
+      "covered_statements": 0,
+      "statements": 26,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/healthcheck": {
+      "covered_statements": 0,
+      "statements": 9,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/validate_check": {
+      "covered_statements": 0,
+      "statements": 19,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql": {
+      "covered_statements": 1134,
+      "statements": 1415,
+      "percent": 80.141
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit": {
+      "covered_statements": 30,
+      "statements": 49,
+      "percent": 61.224
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy": {
+      "covered_statements": 887,
+      "statements": 993,
+      "percent": 89.325
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate": {
+      "covered_statements": 37,
+      "statements": 42,
+      "percent": 88.095
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql": {
+      "covered_statements": 1786,
+      "statements": 1951,
+      "percent": 91.543
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability": {
+      "covered_statements": 128,
+      "statements": 141,
+      "percent": 90.78
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config": {
+      "covered_statements": 206,
+      "statements": 232,
+      "percent": 88.793
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics": {
+      "covered_statements": 2024,
+      "statements": 2184,
+      "percent": 92.674
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware": {
+      "covered_statements": 402,
+      "statements": 452,
+      "percent": 88.938
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate": {
+      "covered_statements": 83,
+      "statements": 89,
+      "percent": 93.258
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache": {
+      "covered_statements": 2130,
+      "statements": 2400,
+      "percent": 88.75
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator": {
+      "covered_statements": 3052,
+      "statements": 3285,
+      "percent": 92.907
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy": {
+      "covered_statements": 24378,
+      "statements": 27343,
+      "percent": 89.156
+    }
+  },
+  "files": {
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/configdoc/main.go": {
+      "covered_statements": 0,
+      "statements": 26,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/healthcheck/main.go": {
+      "covered_statements": 0,
+      "statements": 9,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/validate_check/main.go": {
+      "covered_statements": 0,
+      "statements": 19,
+      "percent": 0.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/ast.go": {
+      "covered_statements": 273,
+      "statements": 276,
+      "percent": 98.913
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/builder.go": {
+      "covered_statements": 33,
+      "statements": 42,
+      "percent": 78.571
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/capabilities.go": {
+      "covered_statements": 26,
+      "statements": 27,
+      "percent": 96.296
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/label_matcher_anchor.go": {
+      "covered_statements": 1,
+      "statements": 1,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/parser.go": {
+      "covered_statements": 702,
+      "statements": 940,
+      "percent": 74.681
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql/scanner.go": {
+      "covered_statements": 99,
+      "statements": 129,
+      "percent": 76.744
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit/memlimit.go": {
+      "covered_statements": 30,
+      "statements": 49,
+      "percent": 61.224
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy/http_conn_rotation.go": {
+      "covered_statements": 58,
+      "statements": 62,
+      "percent": 93.548
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/proxy/main.go": {
+      "covered_statements": 829,
+      "statements": 931,
+      "percent": 89.044
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/cmd/rules-migrate/main.go": {
+      "covered_statements": 37,
+      "statements": 42,
+      "percent": 88.095
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/ast.go": {
+      "covered_statements": 138,
+      "statements": 144,
+      "percent": 95.833
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/canonical.go": {
+      "covered_statements": 61,
+      "statements": 65,
+      "percent": 93.846
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/dotted_names.go": {
+      "covered_statements": 208,
+      "statements": 210,
+      "percent": 99.048
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/ip_filter.go": {
+      "covered_statements": 58,
+      "statements": 60,
+      "percent": 96.667
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/parser.go": {
+      "covered_statements": 581,
+      "statements": 639,
+      "percent": 90.923
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/parser_captures.go": {
+      "covered_statements": 57,
+      "statements": 64,
+      "percent": 89.062
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/scanner.go": {
+      "covered_statements": 188,
+      "statements": 223,
+      "percent": 84.305
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/semantic.go": {
+      "covered_statements": 96,
+      "statements": 119,
+      "percent": 80.672
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/stage_validate.go": {
+      "covered_statements": 216,
+      "statements": 226,
+      "percent": 95.575
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/translate.go": {
+      "covered_statements": 98,
+      "statements": 113,
+      "percent": 86.726
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql/validate.go": {
+      "covered_statements": 85,
+      "statements": 88,
+      "percent": 96.591
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability/async_handler.go": {
+      "covered_statements": 27,
+      "statements": 33,
+      "percent": 81.818
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability/logger.go": {
+      "covered_statements": 33,
+      "statements": 36,
+      "percent": 91.667
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/observability/request_sampler.go": {
+      "covered_statements": 68,
+      "statements": 72,
+      "percent": 94.444
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config/defaults.go": {
+      "covered_statements": 51,
+      "statements": 59,
+      "percent": 86.441
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config/generate.go": {
+      "covered_statements": 9,
+      "statements": 13,
+      "percent": 69.231
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config/limits_json.go": {
+      "covered_statements": 14,
+      "statements": 16,
+      "percent": 87.5
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config/registry.go": {
+      "covered_statements": 43,
+      "statements": 54,
+      "percent": 79.63
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/config/render.go": {
+      "covered_statements": 89,
+      "statements": 90,
+      "percent": 98.889
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics/metrics.go": {
+      "covered_statements": 1234,
+      "statements": 1285,
+      "percent": 96.031
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics/otlp.go": {
+      "covered_statements": 358,
+      "statements": 440,
+      "percent": 81.364
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics/querytracker.go": {
+      "covered_statements": 63,
+      "statements": 64,
+      "percent": 98.438
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics/system.go": {
+      "covered_statements": 369,
+      "statements": 395,
+      "percent": 93.418
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware/circuitbreaker.go": {
+      "covered_statements": 53,
+      "statements": 57,
+      "percent": 92.982
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware/coalescer.go": {
+      "covered_statements": 61,
+      "statements": 78,
+      "percent": 78.205
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware/compress.go": {
+      "covered_statements": 221,
+      "statements": 249,
+      "percent": 88.755
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware/ratelimiter.go": {
+      "covered_statements": 67,
+      "statements": 68,
+      "percent": 98.529
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate/migrate.go": {
+      "covered_statements": 83,
+      "statements": 89,
+      "percent": 93.258
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/cache.go": {
+      "covered_statements": 355,
+      "statements": 391,
+      "percent": 90.793
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/clock.go": {
+      "covered_statements": 4,
+      "statements": 5,
+      "percent": 80.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/disk.go": {
+      "covered_statements": 213,
+      "statements": 246,
+      "percent": 86.585
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/disk_batch.go": {
+      "covered_statements": 187,
+      "statements": 210,
+      "percent": 89.048
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/disk_lru.go": {
+      "covered_statements": 126,
+      "statements": 135,
+      "percent": 93.333
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/disk_record.go": {
+      "covered_statements": 165,
+      "statements": 176,
+      "percent": 93.75
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/peer.go": {
+      "covered_statements": 945,
+      "statements": 1089,
+      "percent": 86.777
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/placement_cache.go": {
+      "covered_statements": 111,
+      "statements": 120,
+      "percent": 92.5
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache/warmer.go": {
+      "covered_statements": 24,
+      "statements": 28,
+      "percent": 85.714
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/detected_level_logsql.go": {
+      "covered_statements": 343,
+      "statements": 352,
+      "percent": 97.443
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/errors.go": {
+      "covered_statements": 2,
+      "statements": 2,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/label_matcher_regexp.go": {
+      "covered_statements": 142,
+      "statements": 162,
+      "percent": 87.654
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/nested_vector_chain.go": {
+      "covered_statements": 89,
+      "statements": 97,
+      "percent": 91.753
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/normalize.go": {
+      "covered_statements": 35,
+      "statements": 36,
+      "percent": 97.222
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/parsed_key_variants.go": {
+      "covered_statements": 253,
+      "statements": 258,
+      "percent": 98.062
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/pipeline_capture_labels.go": {
+      "covered_statements": 8,
+      "statements": 10,
+      "percent": 80.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/plain_stream_labels.go": {
+      "covered_statements": 44,
+      "statements": 44,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/series_identity.go": {
+      "covered_statements": 64,
+      "statements": 68,
+      "percent": 94.118
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/translator.go": {
+      "covered_statements": 1926,
+      "statements": 2095,
+      "percent": 91.933
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/unwrap_gate.go": {
+      "covered_statements": 41,
+      "statements": 48,
+      "percent": 85.417
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/translator/without_pushdown.go": {
+      "covered_statements": 105,
+      "statements": 113,
+      "percent": 92.92
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/absent_over_time.go": {
+      "covered_statements": 207,
+      "statements": 219,
+      "percent": 94.521
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/alerting.go": {
+      "covered_statements": 248,
+      "statements": 275,
+      "percent": 90.182
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/backend.go": {
+      "covered_statements": 406,
+      "statements": 452,
+      "percent": 89.823
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/backend_budget.go": {
+      "covered_statements": 35,
+      "statements": 40,
+      "percent": 87.5
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/backend_heavy.go": {
+      "covered_statements": 206,
+      "statements": 231,
+      "percent": 89.177
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/backend_response_guard.go": {
+      "covered_statements": 57,
+      "statements": 62,
+      "percent": 91.935
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_aggregation.go": {
+      "covered_statements": 80,
+      "statements": 88,
+      "percent": 90.909
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_aggregation_range.go": {
+      "covered_statements": 60,
+      "statements": 76,
+      "percent": 78.947
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_budget.go": {
+      "covered_statements": 38,
+      "statements": 44,
+      "percent": 86.364
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_encoding.go": {
+      "covered_statements": 105,
+      "statements": 121,
+      "percent": 86.777
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_logql.go": {
+      "covered_statements": 183,
+      "statements": 196,
+      "percent": 93.367
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_matching.go": {
+      "covered_statements": 189,
+      "statements": 211,
+      "percent": 89.573
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/binary_scalar.go": {
+      "covered_statements": 49,
+      "statements": 57,
+      "percent": 85.965
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/cache_keys.go": {
+      "covered_statements": 220,
+      "statements": 262,
+      "percent": 83.969
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/cold_dispatch.go": {
+      "covered_statements": 266,
+      "statements": 313,
+      "percent": 84.984
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/cold_routing.go": {
+      "covered_statements": 158,
+      "statements": 188,
+      "percent": 84.043
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/debuglog.go": {
+      "covered_statements": 4,
+      "statements": 4,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/detected_level.go": {
+      "covered_statements": 403,
+      "statements": 446,
+      "percent": 90.359
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/detected_level_presence.go": {
+      "covered_statements": 203,
+      "statements": 214,
+      "percent": 94.86
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/drilldown.go": {
+      "covered_statements": 1069,
+      "statements": 1250,
+      "percent": 85.52
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/drilldown_burst_coalescer.go": {
+      "covered_statements": 106,
+      "statements": 120,
+      "percent": 88.333
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/empty_without_metric.go": {
+      "covered_statements": 37,
+      "statements": 42,
+      "percent": 88.095
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/execution_limits.go": {
+      "covered_statements": 28,
+      "statements": 28,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/http_utils.go": {
+      "covered_statements": 430,
+      "statements": 465,
+      "percent": 92.473
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/label_handlers.go": {
+      "covered_statements": 500,
+      "statements": 540,
+      "percent": 92.593
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/label_index.go": {
+      "covered_statements": 330,
+      "statements": 390,
+      "percent": 84.615
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/label_metadata.go": {
+      "covered_statements": 518,
+      "statements": 646,
+      "percent": 80.186
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/labels.go": {
+      "covered_statements": 234,
+      "statements": 261,
+      "percent": 89.655
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/limits_enforcement.go": {
+      "covered_statements": 295,
+      "statements": 311,
+      "percent": 94.855
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/line_field_refill.go": {
+      "covered_statements": 79,
+      "statements": 92,
+      "percent": 85.87
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/log_line.go": {
+      "covered_statements": 104,
+      "statements": 107,
+      "percent": 97.196
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/logql_adapter.go": {
+      "covered_statements": 13,
+      "statements": 13,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/loki_profile.go": {
+      "covered_statements": 375,
+      "statements": 406,
+      "percent": 92.365
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/manual_metric_budget.go": {
+      "covered_statements": 200,
+      "statements": 225,
+      "percent": 88.889
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metadata_edge_refresh.go": {
+      "covered_statements": 79,
+      "statements": 93,
+      "percent": 84.946
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metadata_inventory.go": {
+      "covered_statements": 474,
+      "statements": 498,
+      "percent": 95.181
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metadata_scan_limiter.go": {
+      "covered_statements": 454,
+      "statements": 514,
+      "percent": 88.327
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metric_agg.go": {
+      "covered_statements": 590,
+      "statements": 639,
+      "percent": 92.332
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metric_binary.go": {
+      "covered_statements": 1021,
+      "statements": 1321,
+      "percent": 77.29
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/metric_eval_limits.go": {
+      "covered_statements": 34,
+      "statements": 37,
+      "percent": 91.892
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/middleware.go": {
+      "covered_statements": 328,
+      "statements": 343,
+      "percent": 95.627
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/middleware_security.go": {
+      "covered_statements": 15,
+      "statements": 15,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/multitenant.go": {
+      "covered_statements": 699,
+      "statements": 754,
+      "percent": 92.706
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/nested_vector_fold.go": {
+      "covered_statements": 81,
+      "statements": 99,
+      "percent": 81.818
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/ordered_json_metric.go": {
+      "covered_statements": 1362,
+      "statements": 1426,
+      "percent": 95.512
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/ordered_json_valid_split.go": {
+      "covered_statements": 147,
+      "statements": 157,
+      "percent": 93.631
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/patterns.go": {
+      "covered_statements": 756,
+      "statements": 876,
+      "percent": 86.301
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/patterns_persistence.go": {
+      "covered_statements": 423,
+      "statements": 515,
+      "percent": 82.136
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/plain_stream_labels.go": {
+      "covered_statements": 81,
+      "statements": 84,
+      "percent": 96.429
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/postprocess.go": {
+      "covered_statements": 685,
+      "statements": 787,
+      "percent": 87.039
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/proxy.go": {
+      "covered_statements": 933,
+      "statements": 1012,
+      "percent": 92.194
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/quantile_histogram.go": {
+      "covered_statements": 310,
+      "statements": 338,
+      "percent": 91.716
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/query_extract.go": {
+      "covered_statements": 6,
+      "statements": 6,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/query_range_steps.go": {
+      "covered_statements": 453,
+      "statements": 497,
+      "percent": 91.147
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/query_range_windowing.go": {
+      "covered_statements": 626,
+      "statements": 694,
+      "percent": 90.202
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/query_translation.go": {
+      "covered_statements": 1062,
+      "statements": 1166,
+      "percent": 91.081
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/range_metric_compat.go": {
+      "covered_statements": 1342,
+      "statements": 1482,
+      "percent": 90.553
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/rate_counter_singletons.go": {
+      "covered_statements": 133,
+      "statements": 136,
+      "percent": 97.794
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/redact.go": {
+      "covered_statements": 54,
+      "statements": 55,
+      "percent": 98.182
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/regexp_capture_fields.go": {
+      "covered_statements": 37,
+      "statements": 41,
+      "percent": 90.244
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/request_scope.go": {
+      "covered_statements": 129,
+      "statements": 132,
+      "percent": 97.727
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/safety.go": {
+      "covered_statements": 26,
+      "statements": 28,
+      "percent": 92.857
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/sliding_window_stats.go": {
+      "covered_statements": 311,
+      "statements": 348,
+      "percent": 89.368
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/stats_extent_cache.go": {
+      "covered_statements": 521,
+      "statements": 593,
+      "percent": 87.858
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/stream_processing.go": {
+      "covered_statements": 1081,
+      "statements": 1203,
+      "percent": 89.859
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/tail.go": {
+      "covered_statements": 276,
+      "statements": 321,
+      "percent": 85.981
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/telemetry.go": {
+      "covered_statements": 96,
+      "statements": 100,
+      "percent": 96.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/template_budget.go": {
+      "covered_statements": 76,
+      "statements": 113,
+      "percent": 67.257
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/time_utils.go": {
+      "covered_statements": 170,
+      "statements": 205,
+      "percent": 82.927
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/typed_fold.go": {
+      "covered_statements": 316,
+      "statements": 359,
+      "percent": 88.022
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/unwrap_conversion_error.go": {
+      "covered_statements": 698,
+      "statements": 805,
+      "percent": 86.708
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/unwrap_convert.go": {
+      "covered_statements": 33,
+      "statements": 33,
+      "percent": 100.0
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/unwrap_loki_parsers.go": {
+      "covered_statements": 83,
+      "statements": 114,
+      "percent": 72.807
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/unwrap_samples.go": {
+      "covered_statements": 114,
+      "statements": 127,
+      "percent": 89.764
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/vector_agg_fold.go": {
+      "covered_statements": 73,
+      "statements": 79,
+      "percent": 92.405
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/vector_matching.go": {
+      "covered_statements": 385,
+      "statements": 416,
+      "percent": 92.548
+    },
+    "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy/volume.go": {
+      "covered_statements": 370,
+      "statements": 387,
+      "percent": 95.607
+    }
+  },
+  "scope": "Root-module unit tests with race detection. Later reader regression tests passed separately under race; production Go statements are unchanged. Live Loki/VictoriaLogs binaries were not coverage-instrumented. Nested bench module and Helm render tests are verified separately."
+}

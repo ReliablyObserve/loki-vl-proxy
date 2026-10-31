@@ -1,0 +1,82 @@
+{
+  "commit": "55d3f7fb08a33125d9f4b0b3eb1950c334de3639",
+  "image": "loki-vl-proxy:peercap1030",
+  "project": "cacheplacementcompat",
+  "started_at": "2026-10-30T21:09:48.416530+00:00",
+  "groups": [
+    {
+      "name": "core",
+      "pattern": "^(TestSetup_IngestLogs|TestCompat_.*|TestExtended_.*|TestChaining_.*|TestAlertingCompat_.*|TestExplore_HTTPQueryRangeContracts|TestLokiFunctions_.*|TestGrafanaDatasourceCatalogAndHealth|TestProxyCompatibilitySurface|TestPinnedCompatibilityMatrixMatchesCompose)$",
+      "started_at": "2026-10-30T21:09:48.418088+00:00",
+      "down_exit": 0,
+      "up_exit": 0,
+      "ready": true,
+      "test_exit": 0,
+      "counts": {
+        "pass": 4447,
+        "skip": 87
+      },
+      "failures": [],
+      "finished_at": "2026-10-30T21:17:14.545446+00:00"
+    },
+    {
+      "name": "drilldown",
+      "pattern": "^(TestSetup_IngestLogs|TestDrilldown_.*|TestFeature_(IndexStats|IndexVolume|IndexVolumeRange|DrilldownClusterLevelOrFilters|MultitenantDrilldownClusterLevelOrFilters)|TestDrilldownTrackScore|TestLokiTrackScore|TestVLTrackScore)$",
+      "started_at": "2026-10-30T21:17:19.502502+00:00",
+      "down_exit": 0,
+      "up_exit": 0,
+      "ready": true,
+      "test_exit": 0,
+      "counts": {
+        "pass": 80
+      },
+      "failures": [],
+      "finished_at": "2026-10-30T21:20:12.106440+00:00"
+    },
+    {
+      "name": "otel-edge",
+      "pattern": "^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestStructuredMetadata_.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$",
+      "started_at": "2026-10-30T21:20:18.195397+00:00",
+      "down_exit": 0,
+      "up_exit": 0,
+      "ready": true,
+      "test_exit": 0,
+      "counts": {
+        "pass": 136
+      },
+      "failures": [],
+      "finished_at": "2026-10-30T21:22:03.305046+00:00"
+    },
+    {
+      "name": "tail-multitenancy",
+      "pattern": "^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestVLCapability_ExtraStreamFiltersTenantSemantics|TestHardeningLive_TenantLabel.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$",
+      "started_at": "2026-10-30T21:22:07.655047+00:00",
+      "down_exit": 0,
+      "up_exit": 0,
+      "ready": true,
+      "test_exit": 0,
+      "counts": {
+        "pass": 45
+      },
+      "failures": [],
+      "finished_at": "2026-10-30T21:25:23.682166+00:00"
+    },
+    {
+      "name": "semantics",
+      "pattern": "^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields)$",
+      "started_at": "2026-10-30T21:25:28.234808+00:00",
+      "down_exit": 0,
+      "up_exit": 0,
+      "ready": true,
+      "test_exit": 0,
+      "counts": {
+        "pass": 928,
+        "skip": 3
+      },
+      "failures": [],
+      "finished_at": "2026-10-30T21:28:42.195204+00:00"
+    }
+  ],
+  "live_proxy_coverage": "Not instrumented; separate unit coverage validates production statements.",
+  "finished_at": "2026-10-30T21:28:48.126041+00:00"
+}

@@ -594,10 +594,13 @@ CLAIMS = (
     {"cases": ["semantics/binary-division-by-zero-nan"], "text": "a zero divisor of `/` and `%` is NaN, like Loki"},
     {"tests": [("TestBinaryMatchingErrorTextAndStepOrder", "internal/proxy")],
      "text": "binary vector matching raises Loki's duplicate-series error text at the first step where Loki's join fails"},
-    {"behaviours": ["peer-cache-replication"], "tests": [("TestFleetPeerCacheProof", "test/e2e-fleet")],
-     "text": "every peer-cache key has a backup replica (`-peer-replication-factor`, default 2); a three-proxy fleet "
-             "test covers a replica that lost its disk refilling from its peers, the owner being down and every "
-             "cache being lost"},
+    {"behaviours": ["peer-cache-replication"],
+     "tests": [("TestFleetPeerCacheProof", "test/e2e-fleet"),
+               ("TestPeerCapacityDatasetExceedsSingleNode", "internal/cache"),
+               ("TestPeerReaderNonMembersReuseHotOwnerPool", "internal/cache")],
+     "text": "eligible shared cache keys use owner plus one backup by default (`-peer-replication-factor=2`); "
+             "RF=1 keeps only the owner. Nonowner RAM shadows are bounded to 30s and 10% of L1 capacity without "
+             "extra disk copies. Three-node tests cover pooled capacity, disk refill and owner loss"},
 )
 RANKED_TEST = ("RankedSignatureTest", "bench/ab/tests")
 

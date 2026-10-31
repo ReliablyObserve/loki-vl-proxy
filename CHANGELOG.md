@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Shared cache placement pools RAM and SSD capacity across peers.** Eligible
+  metadata and inventory writes persist only on configured replicas (default:
+  owner plus one backup; RF=1 is supported). Nonowner shadows are limited to
+  30 seconds and 10% of L1 bytes and entries without evicting owned entries.
+  Replica disk hits promote to memory without extra disk or peer writes.
+  Read-ahead preserves memory-only placement and source expiry. A local purge
+  fences disk results captured before it; distributed invalidation and ring
+  redistribution are not added. Cache sizing documentation and flag help now
+  clarify that the separate Tier0 budget is additional to primary L1.
+
+### Fixed
+
+- **Helm permits peer-cache traffic under the default NetworkPolicy.** When
+  peer caching is enabled, TCP 3100 egress is allowed only to same-release pods
+  in the release namespace. Existing backend, DNS and operator egress rules are
+  preserved. External peer pools still require explicit network rules.
+
+### Security
+
+- **Website dependencies patch two upstream vulnerabilities.** The lockfile
+  upgrades Joi to 17.13.9 (CVE-2026-118772, email-validation denial of service)
+  and follow-redirects to 1.16.2 (CVE-2026-116689, cross-origin credential-header
+  disclosure). Existing compatible dependency ranges are preserved.
+
 ## [2.49.0] - 2026-10-31
 
 ### Changed

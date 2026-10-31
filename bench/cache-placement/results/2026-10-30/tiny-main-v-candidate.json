@@ -1,0 +1,4983 @@
+{
+  "manifest": {
+    "arch": "arm64",
+    "baseline_binary": "/private/tmp/cache-opt-visual/proxy-main.bin",
+    "baseline_binary_sha256": "9438e294bf1567a20164711cf894dbc00ec32c68ef6b5986c577a0fc7dd90b8c",
+    "baseline_ref": "7c59fafa50fcfbb5379871e77eb4fe14b154339e",
+    "candidate_binary": "/private/tmp/cache-peer-capacity-visual/proxy-pr.bin",
+    "candidate_binary_sha256": "4a9819999a484b4a45e0a3b38548f9594e4f0b0edf0967f73145e9b631547222",
+    "candidate_ref": "55d3f7fb08a33125d9f4b0b3eb1950c334de3639",
+    "disabled_background_work": [
+      "labels-cache-warm=false",
+      "patterns-enabled=false",
+      "label-values-indexed-cache=false",
+      "peer-hot-read-ahead-enabled=false(default)"
+    ],
+    "go_version": "go1.27.3",
+    "latency_classification": "faster/slower only beyond both 25% and 50ms; raw values always retained; no statistical-significance claim",
+    "limits": [
+      "instrumented loopback timings; source CPU excludes observer CPU",
+      "macOS memory metric is GoSys, not RSS",
+      "Loki cache state retained per request, no cold-Loki claim",
+      "one static fixture, no production workload distribution claim",
+      "owner0 loss affects only keys on owner0; backup-hit metrics verify actual fallback"
+    ],
+    "network_bytes_scope": "client-to-observer HTTP message bytes including headers/framing and encoded bodies; excludes TCP/IP, retransmissions, observer-to-target second hop",
+    "observers": "stdlib keep-alive HTTP proxies before VL and peer HTTP, same addresses in every trial",
+    "order": [
+      "baseline",
+      "candidate",
+      "candidate",
+      "baseline"
+    ],
+    "os": "darwin",
+    "recent_fixture_scope": "RecentEnd is immutable setup time, not necessarily near-now at execution; per-request end age and default 120s recent-tail/24h metadata freshness eligibility are recorded; no fresh-ingestion claim",
+    "run_id": "20261030T214737.980976000Z",
+    "same_ring_addresses": true,
+    "same_source_control": false,
+    "shared_backend_observer_url": true,
+    "startup_label_warm_disabled": true,
+    "startup_scope": "request-phase zero-VL statements exclude separately recorded startup health/version traffic; default startup warmers may read VL",
+    "vl_counts_scope": "fleet aggregate; per-node backend observer URLs would change backend-auth cache keys",
+    "window_scope": "historical base ends 30m before seeded history ends; forward refresh advances by 60s into previously unrequested windows; sequential phases share caches, not isolated cache-state trials"
+  },
+  "fixture": {
+    "Probe": "cacheperf-1793395724504275000",
+    "End": 1793300400,
+    "RecentEnd": 1793395620,
+    "Streams": 90,
+    "Lines": 54000,
+    "SHA256": "6148f53755a517208a49d3a0c69026c1aeeb7fe3b9ef86bc56b3014097ac756b"
+  },
+  "phase_blocks": [
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "cold-fill",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 1
+      },
+      "VLCalls": 2364,
+      "PeerCalls": 9381,
+      "PeerFetches": 6374,
+      "PeerPushes": 3007,
+      "PeerPushBodyBytes": 311292,
+      "VLResponseBytes": 20526176,
+      "PeerResponseBytes": 0,
+      "Seconds": 1.969366667,
+      "ProxyCPUSeconds": 1.977964,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 95,
+      "equal_loki": 95,
+      "successful_200": 95,
+      "http_message_bytes": {
+        "peer": {
+          "request": 4458057,
+          "response": 2982078
+        },
+        "vl": {
+          "request": 912800,
+          "response": 21501177
+        }
+      },
+      "proxy_p50_ms": 17.512708,
+      "proxy_p95_ms": 25.559541899999996,
+      "request_end_age_seconds_min": 98258.7771,
+      "request_end_age_seconds_max": 98260.724091,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": {
+        "VLCalls": 12,
+        "PeerCalls": 0,
+        "VLBytes": 182580,
+        "PeerBytes": 0,
+        "PeerFetches": 0,
+        "PeerPushes": 0,
+        "PeerPushBytes": 0
+      },
+      "wire_event_start": 12,
+      "wire_event_end": 11757,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 7,
+          "response_bytes": 20182852,
+          "request_body_bytes": 4656,
+          "bounded_requests": 7,
+          "sum_requested_range_seconds": 39900.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 16,
+          "response_bytes": 1455,
+          "request_body_bytes": 0,
+          "bounded_requests": 16,
+          "sum_requested_range_seconds": 3600.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 1,
+          "response_bytes": 949,
+          "request_body_bytes": 688,
+          "bounded_requests": 1,
+          "sum_requested_range_seconds": 3660.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1170,
+          "response_bytes": 293850,
+          "request_body_bytes": 0,
+          "bounded_requests": 1170,
+          "sum_requested_range_seconds": 324000.08999347687
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1170,
+          "response_bytes": 47070,
+          "request_body_bytes": 0,
+          "bounded_requests": 1170,
+          "sum_requested_range_seconds": 324000.08999347687
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 6374,
+        "POST /_cache/set 204": 3007
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 294912,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.040566000000000005,
+          "loki_vl_proxy_process_resident_memory_bytes": 142928680
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 4625,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60739,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 5084,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 3171,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 4625,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 3007,
+          "loki_vl_proxy_process_cpu_seconds_total": 2.01853,
+          "loki_vl_proxy_process_resident_memory_bytes": 324930376
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "exact",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 2801,
+      "PeerCalls": 11104,
+      "PeerFetches": 7762,
+      "PeerPushes": 3342,
+      "PeerPushBodyBytes": 315380,
+      "VLResponseBytes": 40707509,
+      "PeerResponseBytes": 38379,
+      "Seconds": 3.050707417,
+      "ProxyCPUSeconds": 2.7437409999999995,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 5237126,
+          "response": 3585446
+        },
+        "vl": {
+          "request": 1090479,
+          "response": 41870683
+        }
+      },
+      "proxy_p50_ms": 13.644729,
+      "proxy_p95_ms": 27.93751465,
+      "request_end_age_seconds_min": 98261.259784,
+      "request_end_age_seconds_max": 98264.292419,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 11757,
+      "wire_event_end": 25662,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 6,
+          "response_bytes": 78,
+          "request_body_bytes": 0,
+          "bounded_requests": 6,
+          "sum_requested_range_seconds": 2760.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 2,
+          "response_bytes": 26,
+          "request_body_bytes": 0,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 120.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1658,
+          "response_bytes": 65774,
+          "request_body_bytes": 0,
+          "bounded_requests": 1658,
+          "sum_requested_range_seconds": 450000.1579885483
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1121,
+          "response_bytes": 275927,
+          "request_body_bytes": 0,
+          "bounded_requests": 1121,
+          "sum_requested_range_seconds": 303900.10799217224
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 7348,
+        "GET /_cache/get 200": 414,
+        "POST /_cache/set 204": 3342
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 4625,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60739,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 5084,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 3171,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 4625,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 3007,
+          "loki_vl_proxy_process_cpu_seconds_total": 2.021989,
+          "loki_vl_proxy_process_resident_memory_bytes": 329124680
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 10085,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60223,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 11836,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 8800,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 715,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 317,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 414,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 10816,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 10499,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 10085,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 11531,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 10816,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 10499,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 184,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 414,
+          "loki_vl_proxy_peer_cache_misses_total": 10085,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 6349,
+          "loki_vl_proxy_process_cpu_seconds_total": 4.76573,
+          "loki_vl_proxy_process_resident_memory_bytes": 415312744
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "frontend-prime",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 3
+      },
+      "VLCalls": 2356,
+      "PeerCalls": 9787,
+      "PeerFetches": 7022,
+      "PeerPushes": 2765,
+      "PeerPushBodyBytes": 212100,
+      "VLResponseBytes": 60742762,
+      "PeerResponseBytes": 46127,
+      "Seconds": 2.791897208,
+      "ProxyCPUSeconds": 2.492514000000001,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 285,
+      "equal_loki": 285,
+      "successful_200": 285,
+      "http_message_bytes": {
+        "peer": {
+          "request": 4583844,
+          "response": 3185789
+        },
+        "vl": {
+          "request": 931202,
+          "response": 61732532
+        }
+      },
+      "proxy_p50_ms": 6.539041,
+      "proxy_p95_ms": 21.907125,
+      "request_end_age_seconds_min": 98264.823737,
+      "request_end_age_seconds_max": 98267.606194,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 25662,
+      "wire_event_end": 37805,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 21,
+          "response_bytes": 60548556,
+          "request_body_bytes": 13968,
+          "bounded_requests": 21,
+          "sum_requested_range_seconds": 119700.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1836,
+          "response_bytes": 71619,
+          "request_body_bytes": 0,
+          "bounded_requests": 1836,
+          "sum_requested_range_seconds": 485400.2179841995
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 499,
+          "response_bytes": 122587,
+          "request_body_bytes": 0,
+          "bounded_requests": 499,
+          "sum_requested_range_seconds": 135000.04899644852
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 6329,
+        "GET /_cache/get 200": 693,
+        "POST /_cache/set 204": 2765
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 10085,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60223,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 11836,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 8800,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 715,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 317,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 414,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 10816,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 10499,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 10085,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 11531,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 10816,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 10499,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 184,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 414,
+          "loki_vl_proxy_peer_cache_misses_total": 10085,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 6349,
+          "loki_vl_proxy_process_cpu_seconds_total": 4.768878,
+          "loki_vl_proxy_process_resident_memory_bytes": 415312744
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 14712,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58768,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 18087,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 13371,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 1851,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 818,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1107,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 16637,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 15819,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 14712,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 18488,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 16637,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 15819,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 503,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1107,
+          "loki_vl_proxy_peer_cache_misses_total": 14712,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 9114,
+          "loki_vl_proxy_process_cpu_seconds_total": 7.261392000000001,
+          "loki_vl_proxy_process_resident_memory_bytes": 445856632
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "warm-repeat",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 1652,
+      "PeerCalls": 6646,
+      "PeerFetches": 4673,
+      "PeerPushes": 1973,
+      "PeerPushBodyBytes": 113390,
+      "VLResponseBytes": 40430682,
+      "PeerResponseBytes": 13601,
+      "Seconds": 2.021973583,
+      "ProxyCPUSeconds": 1.7727709999999988,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 3117426,
+          "response": 2135906
+        },
+        "vl": {
+          "request": 658837,
+          "response": 41123945
+        }
+      },
+      "proxy_p50_ms": 8.6959995,
+      "proxy_p95_ms": 13.389246049999999,
+      "request_end_age_seconds_min": 98268.23139,
+      "request_end_age_seconds_max": 98270.242794,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 37805,
+      "wire_event_end": 46103,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1638,
+          "response_bytes": 64978,
+          "request_body_bytes": 0,
+          "bounded_requests": 1638,
+          "sum_requested_range_seconds": 444600.15598869324
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 4432,
+        "GET /_cache/get 200": 241,
+        "POST /_cache/set 204": 1973
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 14712,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58768,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 18087,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 13371,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 1851,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 818,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1107,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 16637,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 15819,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 14712,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 18488,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 16637,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 15819,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 503,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1107,
+          "loki_vl_proxy_peer_cache_misses_total": 14712,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 9114,
+          "loki_vl_proxy_process_cpu_seconds_total": 7.264748000000001,
+          "loki_vl_proxy_process_resident_memory_bytes": 445856632
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 17992,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 54510,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 22120,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 16807,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 2241,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 995,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1348,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 20335,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 19340,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 17992,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 22576,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 20335,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 19340,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 613,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1348,
+          "loki_vl_proxy_peer_cache_misses_total": 17992,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 11087,
+          "loki_vl_proxy_process_cpu_seconds_total": 9.037519,
+          "loki_vl_proxy_process_resident_memory_bytes": 459373432
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "shifted",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 3400,
+      "PeerCalls": 13567,
+      "PeerFetches": 9406,
+      "PeerPushes": 4161,
+      "PeerPushBodyBytes": 330365,
+      "VLResponseBytes": 40667876,
+      "PeerResponseBytes": 36912,
+      "Seconds": 3.379805416,
+      "ProxyCPUSeconds": 3.2773939999999975,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 6360592,
+          "response": 4367141
+        },
+        "vl": {
+          "request": 1325183,
+          "response": 42074454
+        }
+      },
+      "proxy_p50_ms": 14.6442505,
+      "proxy_p95_ms": 28.892931399999984,
+      "request_end_age_seconds_min": 98270.766099,
+      "request_end_age_seconds_max": 98334.120348,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 46103,
+      "wire_event_end": 63070,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2116,
+          "response_bytes": 74310,
+          "request_body_bytes": 0,
+          "bounded_requests": 2116,
+          "sum_requested_range_seconds": 475800.1699876785
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 1,
+          "response_bytes": 63,
+          "request_body_bytes": 688,
+          "bounded_requests": 1,
+          "sum_requested_range_seconds": 60.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1269,
+          "response_bytes": 227799,
+          "request_body_bytes": 0,
+          "bounded_requests": 1269,
+          "sum_requested_range_seconds": 245700.08999347687
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 8992,
+        "GET /_cache/get 200": 414,
+        "POST /_cache/set 204": 4161
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793276940000000000",
+          "end": "1793298540000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 17992,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 54510,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 22120,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 16807,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 2241,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 995,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1348,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 20335,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 19340,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 17992,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 22576,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 20335,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 19340,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 613,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1348,
+          "loki_vl_proxy_peer_cache_misses_total": 17992,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 11087,
+          "loki_vl_proxy_process_cpu_seconds_total": 9.040742000000002,
+          "loki_vl_proxy_process_resident_memory_bytes": 459373432
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 24676,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 57795,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 30309,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 23462,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 2956,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 1310,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1762,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 27748,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 26438,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 24676,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 30704,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 27748,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 26438,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 801,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1762,
+          "loki_vl_proxy_peer_cache_misses_total": 24676,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 15248,
+          "loki_vl_proxy_process_cpu_seconds_total": 12.318135999999999,
+          "loki_vl_proxy_process_resident_memory_bytes": 459996024
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "refresh",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 5146,
+      "PeerCalls": 20535,
+      "PeerFetches": 14162,
+      "PeerPushes": 6373,
+      "PeerPushBodyBytes": 578898,
+      "VLResponseBytes": 41336476,
+      "PeerResponseBytes": 58654,
+      "Seconds": 4.976612333,
+      "ProxyCPUSeconds": 4.867728,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 9654758,
+          "response": 6610627
+        },
+        "vl": {
+          "request": 1990518,
+          "response": 43456920
+        }
+      },
+      "proxy_p50_ms": 22.423854,
+      "proxy_p95_ms": 36.9729731,
+      "request_end_age_seconds_min": 98157.284203,
+      "request_end_age_seconds_max": 98217.244514,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 63070,
+      "wire_event_end": 88751,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40742282,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 454,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 180.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 2550,
+          "response_bytes": 505290,
+          "request_body_bytes": 0,
+          "bounded_requests": 2550,
+          "sum_requested_range_seconds": 495000.17998695374
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2580,
+          "response_bytes": 88450,
+          "request_body_bytes": 0,
+          "bounded_requests": 2580,
+          "sum_requested_range_seconds": 504000.17998695374
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 13601,
+        "GET /_cache/get 200": 561,
+        "POST /_cache/set 204": 6373
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793277060000000000",
+          "end": "1793298660000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793277120000000000",
+          "end": "1793298720000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 24676,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 57795,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 30309,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 23462,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 2956,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 1310,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 1762,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 27748,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 26438,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 24676,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 30704,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 27748,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 26438,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 801,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 1762,
+          "loki_vl_proxy_peer_cache_misses_total": 24676,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 15248,
+          "loki_vl_proxy_process_cpu_seconds_total": 12.321392,
+          "loki_vl_proxy_process_resident_memory_bytes": 459996024
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 34760,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58714,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 42630,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 33111,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 3946,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 1743,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 2323,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 38826,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 37083,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 34760,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 42772,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 38826,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 37083,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 1044,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 2323,
+          "loki_vl_proxy_peer_cache_misses_total": 34760,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 21621,
+          "loki_vl_proxy_process_cpu_seconds_total": 17.18912,
+          "loki_vl_proxy_process_resident_memory_bytes": 464501624
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "recent-refresh",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 6136,
+      "PeerCalls": 23858,
+      "PeerFetches": 16151,
+      "PeerPushes": 7707,
+      "PeerPushBodyBytes": 688569,
+      "VLResponseBytes": 21015842,
+      "PeerResponseBytes": 0,
+      "Seconds": 5.0551165,
+      "ProxyCPUSeconds": 5.311266000000003,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 11251297,
+          "response": 7584633
+        },
+        "vl": {
+          "request": 2371008,
+          "response": 23530835
+        }
+      },
+      "proxy_p50_ms": 23.1677295,
+      "proxy_p95_ms": 35.3591959,
+      "request_end_age_seconds_min": 1262.792492,
+      "request_end_age_seconds_max": 1322.767655,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 190,
+      "startup": null,
+      "wire_event_start": 88751,
+      "wire_event_end": 118745,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 20313384,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 3060,
+          "response_bytes": 597060,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 3060,
+          "response_bytes": 103500,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 16151,
+        "POST /_cache/set 204": 7707
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793373960000000000",
+          "end": "1793395560000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793374020000000000",
+          "end": "1793395620000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 34760,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58714,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 42630,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 33111,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 3946,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 1743,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 2323,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 38826,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 37083,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 34760,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 42772,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 38826,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 37083,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 1044,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 2323,
+          "loki_vl_proxy_peer_cache_misses_total": 34760,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 21621,
+          "loki_vl_proxy_process_cpu_seconds_total": 17.192991999999997,
+          "loki_vl_proxy_process_resident_memory_bytes": 464501624
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 46828,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58035,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 56285,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 45084,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 3946,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 1743,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 2323,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 50894,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 49151,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 46828,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 54840,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 50894,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 49151,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 1044,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 2323,
+          "loki_vl_proxy_peer_cache_misses_total": 46828,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 29328,
+          "loki_vl_proxy_process_cpu_seconds_total": 22.504258,
+          "loki_vl_proxy_process_resident_memory_bytes": 481278840
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "restart",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 3321,
+      "PeerCalls": 13247,
+      "PeerFetches": 9247,
+      "PeerPushes": 4000,
+      "PeerPushBodyBytes": 413872,
+      "VLResponseBytes": 40835013,
+      "PeerResponseBytes": 50469,
+      "Seconds": 3.204801041,
+      "ProxyCPUSeconds": 3.069558,
+      "PeakFileBytes": 868352,
+      "PeakAllocatedBytes": 950272,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 6257391,
+          "response": 4282355
+        },
+        "vl": {
+          "request": 1285789,
+          "response": 42210838
+        }
+      },
+      "proxy_p50_ms": 15.2726045,
+      "proxy_p95_ms": 26.864970649999993,
+      "request_end_age_seconds_min": 98291.836037,
+      "request_end_age_seconds_max": 98295.0215,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 118754,
+      "wire_event_end": 135322,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 6,
+          "response_bytes": 78,
+          "request_body_bytes": 0,
+          "bounded_requests": 6,
+          "sum_requested_range_seconds": 4080.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 4,
+          "response_bytes": 52,
+          "request_body_bytes": 0,
+          "bounded_requests": 4,
+          "sum_requested_range_seconds": 240.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1639,
+          "response_bytes": 403405,
+          "request_body_bytes": 0,
+          "bounded_requests": 1639,
+          "sum_requested_range_seconds": 444300.1579885483
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1658,
+          "response_bytes": 65774,
+          "request_body_bytes": 0,
+          "bounded_requests": 1658,
+          "sum_requested_range_seconds": 450000.1579885483
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 8751,
+        "GET /_cache/get 200": 496,
+        "POST /_cache/set 204": 4000
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.044034000000000004,
+          "loki_vl_proxy_process_resident_memory_bytes": 134433608
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 6449,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60963,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 868352,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 735,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 7827,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 5949,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 866,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 376,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 496,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 7321,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 6945,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 6449,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 8187,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 7321,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 6945,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 218,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 496,
+          "loki_vl_proxy_peer_cache_misses_total": 6449,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 4000,
+          "loki_vl_proxy_process_cpu_seconds_total": 3.1135919999999997,
+          "loki_vl_proxy_process_resident_memory_bytes": 384596856
+        }
+      }
+    },
+    {
+      "Source": "baseline",
+      "Trial": 0,
+      "Profile": "pressure",
+      "Mode": "owner-loss",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 3854,
+      "PeerCalls": 7860,
+      "PeerFetches": 5481,
+      "PeerPushes": 2379,
+      "PeerPushBodyBytes": 245734,
+      "VLResponseBytes": 40913220,
+      "PeerResponseBytes": 37433,
+      "Seconds": 2.907702584,
+      "ProxyCPUSeconds": 2.195831,
+      "PeakFileBytes": 589824,
+      "PeakAllocatedBytes": 655360,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 3711341,
+          "response": 2549129
+        },
+        "vl": {
+          "request": 1490643,
+          "response": 42506602
+        }
+      },
+      "proxy_p50_ms": 12.9936665,
+      "proxy_p95_ms": 24.491843599999996,
+      "request_end_age_seconds_min": 98301.37184,
+      "request_end_age_seconds_max": 98304.257355,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 135328,
+      "wire_event_end": 147042,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 5,
+          "response_bytes": 65,
+          "request_body_bytes": 0,
+          "bounded_requests": 5,
+          "sum_requested_range_seconds": 2400.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 7,
+          "response_bytes": 563,
+          "request_body_bytes": 0,
+          "bounded_requests": 7,
+          "sum_requested_range_seconds": 1140.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1908,
+          "response_bytes": 470628,
+          "request_body_bytes": 0,
+          "bounded_requests": 1908,
+          "sum_requested_range_seconds": 518400.17998695374
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1920,
+          "response_bytes": 76260,
+          "request_body_bytes": 0,
+          "bounded_requests": 1920,
+          "sum_requested_range_seconds": 522000.17998695374
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 502": 10,
+        "GET /_cache/get 404": 5112,
+        "POST /_cache/set 204": 2379,
+        "GET /_cache/get 200": 359
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 589824,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 517,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.038229,
+          "loki_vl_proxy_process_resident_memory_bytes": 190542384
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 7497,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 40793,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 589824,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 128,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 517,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 6783,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 4593,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 887,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 512,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 359,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 8368,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 7856,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 7497,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 9255,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 8368,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 7856,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 178,
+          "loki_vl_proxy_peer_cache_errors_total": 4897,
+          "loki_vl_proxy_peer_cache_hits_total": 359,
+          "loki_vl_proxy_peer_cache_misses_total": 5114,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 2207,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 2379,
+          "loki_vl_proxy_process_cpu_seconds_total": 2.23406,
+          "loki_vl_proxy_process_resident_memory_bytes": 269271616
+        }
+      },
+      "process_lifetimes": [
+        {
+          "cpu_system_seconds": 3.8554180000000002,
+          "cpu_user_seconds": 3.593085,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/0",
+          "peak_rss_bytes": 144031744,
+          "pid": 52636,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 3.750778,
+          "cpu_user_seconds": 3.792974,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/1",
+          "peak_rss_bytes": 147652608,
+          "pid": 52638,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 3.740215,
+          "cpu_user_seconds": 3.796548,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/2",
+          "peak_rss_bytes": 151306240,
+          "pid": 52707,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.528735,
+          "cpu_user_seconds": 0.427379,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/0",
+          "peak_rss_bytes": 117047296,
+          "pid": 66904,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.548832,
+          "cpu_user_seconds": 0.548206,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/1",
+          "peak_rss_bytes": 123387904,
+          "pid": 67442,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.548618,
+          "cpu_user_seconds": 0.537331,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/2",
+          "peak_rss_bytes": 119504896,
+          "pid": 68761,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.548256,
+          "cpu_user_seconds": 0.577011,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/1",
+          "peak_rss_bytes": 126648320,
+          "pid": 71275,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.538172,
+          "cpu_user_seconds": 0.576361,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/baseline-pressure-0-rf2/2",
+          "peak_rss_bytes": 111886336,
+          "pid": 71318,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        }
+      ]
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "cold-fill",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 1
+      },
+      "VLCalls": 2364,
+      "PeerCalls": 9505,
+      "PeerFetches": 6376,
+      "PeerPushes": 3129,
+      "PeerPushBodyBytes": 316241,
+      "VLResponseBytes": 20526176,
+      "PeerResponseBytes": 0,
+      "Seconds": 2.299092541,
+      "ProxyCPUSeconds": 2.1725339999999997,
+      "PeakFileBytes": 770048,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 95,
+      "equal_loki": 95,
+      "successful_200": 95,
+      "http_message_bytes": {
+        "peer": {
+          "request": 4524925,
+          "response": 3022236
+        },
+        "vl": {
+          "request": 912800,
+          "response": 21501441
+        }
+      },
+      "proxy_p50_ms": 21.416291,
+      "proxy_p95_ms": 32.6172624,
+      "request_end_age_seconds_min": 98305.588241,
+      "request_end_age_seconds_max": 98307.870771,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": {
+        "VLCalls": 12,
+        "PeerCalls": 0,
+        "VLBytes": 182715,
+        "PeerBytes": 0,
+        "PeerFetches": 0,
+        "PeerPushes": 0,
+        "PeerPushBytes": 0
+      },
+      "wire_event_start": 147054,
+      "wire_event_end": 158923,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 7,
+          "response_bytes": 20182852,
+          "request_body_bytes": 4656,
+          "bounded_requests": 7,
+          "sum_requested_range_seconds": 39900.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 16,
+          "response_bytes": 1455,
+          "request_body_bytes": 0,
+          "bounded_requests": 16,
+          "sum_requested_range_seconds": 3600.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 1,
+          "response_bytes": 949,
+          "request_body_bytes": 688,
+          "bounded_requests": 1,
+          "sum_requested_range_seconds": 3660.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1170,
+          "response_bytes": 293850,
+          "request_body_bytes": 0,
+          "bounded_requests": 1170,
+          "sum_requested_range_seconds": 324000.08999347687
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 1170,
+          "response_bytes": 47070,
+          "request_body_bytes": 0,
+          "bounded_requests": 1170,
+          "sum_requested_range_seconds": 324000.08999347687
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 6376,
+        "POST /_cache/set 204": 3129
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 294912,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.039954,
+          "loki_vl_proxy_process_resident_memory_bytes": 137739064
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 4625,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 61084,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 293,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 4371,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 4188,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 4625,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 3129,
+          "loki_vl_proxy_process_cpu_seconds_total": 2.2124879999999996,
+          "loki_vl_proxy_process_resident_memory_bytes": 305929048
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "exact",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 3935,
+      "PeerCalls": 15349,
+      "PeerFetches": 10285,
+      "PeerPushes": 5064,
+      "PeerPushBodyBytes": 463943,
+      "VLResponseBytes": 40855036,
+      "PeerResponseBytes": 922,
+      "Seconds": 3.535157542,
+      "ProxyCPUSeconds": 3.451978,
+      "PeakFileBytes": 770048,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 7296493,
+          "response": 4881809
+        },
+        "vl": {
+          "request": 1528849,
+          "response": 42481194
+        }
+      },
+      "proxy_p50_ms": 16.072937500000002,
+      "proxy_p95_ms": 27.997697399999993,
+      "request_end_age_seconds_min": 98308.504579,
+      "request_end_age_seconds_max": 98312.011642,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 158923,
+      "wire_event_end": 178207,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 17,
+          "response_bytes": 1468,
+          "request_body_bytes": 0,
+          "bounded_requests": 17,
+          "sum_requested_range_seconds": 3660.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 2,
+          "response_bytes": 26,
+          "request_body_bytes": 0,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 1380.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1560,
+          "response_bytes": 391800,
+          "request_body_bytes": 0,
+          "bounded_requests": 1560,
+          "sum_requested_range_seconds": 432000.1199913025
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2340,
+          "response_bytes": 94140,
+          "request_body_bytes": 0,
+          "bounded_requests": 2340,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 10277,
+        "POST /_cache/set 204": 5064,
+        "GET /_cache/get 200": 8
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 4625,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 61084,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 293,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 4371,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 4188,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 4625,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 4625,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 4625,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 3129,
+          "loki_vl_proxy_process_cpu_seconds_total": 2.215969,
+          "loki_vl_proxy_process_resident_memory_bytes": 310123352
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 12347,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60136,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 297,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 11975,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 11710,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 22,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 8,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 12355,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 12355,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 12347,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 12377,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 12355,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 12355,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 8,
+          "loki_vl_proxy_peer_cache_misses_total": 12347,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 8193,
+          "loki_vl_proxy_process_cpu_seconds_total": 5.667947,
+          "loki_vl_proxy_process_resident_memory_bytes": 408349544
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "frontend-prime",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 3
+      },
+      "VLCalls": 4062,
+      "PeerCalls": 16052,
+      "PeerFetches": 10763,
+      "PeerPushes": 5289,
+      "PeerPushBodyBytes": 382039,
+      "VLResponseBytes": 60872802,
+      "PeerResponseBytes": 4272,
+      "Seconds": 3.870192542,
+      "ProxyCPUSeconds": 3.710364,
+      "PeakFileBytes": 770048,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 285,
+      "equal_loki": 285,
+      "successful_200": 285,
+      "http_message_bytes": {
+        "peer": {
+          "request": 7609930,
+          "response": 5111823
+        },
+        "vl": {
+          "request": 1600216,
+          "response": 62559603
+        }
+      },
+      "proxy_p50_ms": 9.40425,
+      "proxy_p95_ms": 21.5374506,
+      "request_end_age_seconds_min": 98312.558822,
+      "request_end_age_seconds_max": 98316.418574,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 178207,
+      "wire_event_end": 198321,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 21,
+          "response_bytes": 60548556,
+          "request_body_bytes": 13968,
+          "bounded_requests": 21,
+          "sum_requested_range_seconds": 119700.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 3,
+          "response_bytes": 2847,
+          "request_body_bytes": 2064,
+          "bounded_requests": 3,
+          "sum_requested_range_seconds": 10980.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 3284,
+          "response_bytes": 132029,
+          "request_body_bytes": 0,
+          "bounded_requests": 3284,
+          "sum_requested_range_seconds": 907800.2579813004
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 754,
+          "response_bytes": 189370,
+          "request_body_bytes": 0,
+          "bounded_requests": 754,
+          "sum_requested_range_seconds": 208800.0579957962
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 10685,
+        "POST /_cache/set 204": 5289,
+        "GET /_cache/get 200": 78
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 12347,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 60136,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 297,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 11975,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 11710,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 22,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 8,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 12355,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 12355,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 12347,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 12377,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 12355,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 12355,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 8,
+          "loki_vl_proxy_peer_cache_misses_total": 12347,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 8193,
+          "loki_vl_proxy_process_cpu_seconds_total": 5.671578,
+          "loki_vl_proxy_process_resident_memory_bytes": 408349544
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 20377,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 59001,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 296,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 20056,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 19489,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 65,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 31,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 86,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 20494,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 20463,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 20377,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 20559,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 20494,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 20463,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 52,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 86,
+          "loki_vl_proxy_peer_cache_misses_total": 20377,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 13482,
+          "loki_vl_proxy_process_cpu_seconds_total": 9.381942,
+          "loki_vl_proxy_process_resident_memory_bytes": 430259064
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "warm-repeat",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 2295,
+      "PeerCalls": 9144,
+      "PeerFetches": 6101,
+      "PeerPushes": 3043,
+      "PeerPushBodyBytes": 171479,
+      "VLResponseBytes": 40459305,
+      "PeerResponseBytes": 899,
+      "Seconds": 2.77822375,
+      "ProxyCPUSeconds": 2.5233310000000007,
+      "PeakFileBytes": 786432,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 4325628,
+          "response": 2909376
+        },
+        "vl": {
+          "request": 913154,
+          "response": 41414699
+        }
+      },
+      "proxy_p50_ms": 10.9290835,
+      "proxy_p95_ms": 20.639620949999994,
+      "request_end_age_seconds_min": 98317.042945,
+      "request_end_age_seconds_max": 98319.805893,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 198321,
+      "wire_event_end": 209760,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2279,
+          "response_bytes": 91703,
+          "request_body_bytes": 0,
+          "bounded_requests": 2279,
+          "sum_requested_range_seconds": 630900.1759872437
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 6085,
+        "POST /_cache/set 204": 3043,
+        "GET /_cache/get 200": 16
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 20377,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 59001,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 770048,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 296,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 20056,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 19489,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 65,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 31,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 86,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 20494,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 20463,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 20377,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 20559,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 20494,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 20463,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 52,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 86,
+          "loki_vl_proxy_peer_cache_misses_total": 20377,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 13482,
+          "loki_vl_proxy_process_cpu_seconds_total": 9.385284,
+          "loki_vl_proxy_process_resident_memory_bytes": 430259064
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 24943,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 54397,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 318,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 24644,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 24066,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 25077,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 25045,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 24943,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 25147,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 25077,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 25045,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 24943,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 16525,
+          "loki_vl_proxy_process_cpu_seconds_total": 11.908615000000001,
+          "loki_vl_proxy_process_resident_memory_bytes": 430308216
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "shifted",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 4246,
+      "PeerCalls": 16661,
+      "PeerFetches": 11146,
+      "PeerPushes": 5515,
+      "PeerPushBodyBytes": 435889,
+      "VLResponseBytes": 40764952,
+      "PeerResponseBytes": 0,
+      "Seconds": 5.744208833,
+      "ProxyCPUSeconds": 5.131015999999999,
+      "PeakFileBytes": 786432,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 7875112,
+          "response": 5297850
+        },
+        "vl": {
+          "request": 1654098,
+          "response": 42516786
+        }
+      },
+      "proxy_p50_ms": 25.0674375,
+      "proxy_p95_ms": 61.873954499999975,
+      "request_end_age_seconds_min": 98320.333646,
+      "request_end_age_seconds_max": 98386.050213,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 209760,
+      "wire_event_end": 230667,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2700,
+          "response_bytes": 98820,
+          "request_body_bytes": 0,
+          "bounded_requests": 2700,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 1530,
+          "response_bytes": 298530,
+          "request_body_bytes": 0,
+          "bounded_requests": 1530,
+          "sum_requested_range_seconds": 324000.08999347687
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 11146,
+        "POST /_cache/set 204": 5515
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793276940000000000",
+          "end": "1793298540000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793294940000000000",
+          "end": "1793298540000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 24943,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 54397,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 318,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 24644,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 24066,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 25077,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 25045,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 24943,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 25147,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 25077,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 25045,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 24943,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 16525,
+          "loki_vl_proxy_process_cpu_seconds_total": 11.911798000000001,
+          "loki_vl_proxy_process_resident_memory_bytes": 430308216
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 33321,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58628,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 304,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 32936,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 32491,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 33455,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 33423,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 33321,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 33525,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 33455,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 33423,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 33321,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 22040,
+          "loki_vl_proxy_process_cpu_seconds_total": 17.042814,
+          "loki_vl_proxy_process_resident_memory_bytes": 439745400
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "refresh",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 6136,
+      "PeerCalls": 24035,
+      "PeerFetches": 16106,
+      "PeerPushes": 7929,
+      "PeerPushBodyBytes": 726403,
+      "VLResponseBytes": 41496528,
+      "PeerResponseBytes": 0,
+      "Seconds": 6.325017875,
+      "ProxyCPUSeconds": 6.005342000000002,
+      "PeakFileBytes": 786432,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 11383051,
+          "response": 7642386
+        },
+        "vl": {
+          "request": 2371008,
+          "response": 44021611
+        }
+      },
+      "proxy_p50_ms": 27.743958,
+      "proxy_p95_ms": 47.8834125,
+      "request_end_age_seconds_min": 98214.590779,
+      "request_end_age_seconds_max": 98274.562732,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 230667,
+      "wire_event_end": 260838,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40742282,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1936,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 3060,
+          "response_bytes": 643500,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 3060,
+          "response_bytes": 108810,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 16106,
+        "POST /_cache/set 204": 7929
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793277060000000000",
+          "end": "1793298660000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793277120000000000",
+          "end": "1793298720000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295060000000000",
+          "end": "1793298660000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295120000000000",
+          "end": "1793298720000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 33321,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58628,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 304,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 32936,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 32491,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 33455,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 33423,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 33321,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 33525,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 33455,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 33423,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 33321,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 22040,
+          "loki_vl_proxy_process_cpu_seconds_total": 17.046497,
+          "loki_vl_proxy_process_resident_memory_bytes": 439745400
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 45389,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 59232,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 301,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 44828,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 44525,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 45523,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 45491,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 45389,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 45593,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 45523,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 45491,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 45389,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 29969,
+          "loki_vl_proxy_process_cpu_seconds_total": 23.051839,
+          "loki_vl_proxy_process_resident_memory_bytes": 439761784
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "recent-refresh",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 6136,
+      "PeerCalls": 24106,
+      "PeerFetches": 16151,
+      "PeerPushes": 7955,
+      "PeerPushBodyBytes": 698618,
+      "VLResponseBytes": 21015842,
+      "PeerResponseBytes": 0,
+      "Seconds": 6.102022416,
+      "ProxyCPUSeconds": 5.804292,
+      "PeakFileBytes": 786432,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 11386060,
+          "response": 7664985
+        },
+        "vl": {
+          "request": 2371008,
+          "response": 23530738
+        }
+      },
+      "proxy_p50_ms": 28.8335,
+      "proxy_p95_ms": 45.594132999999985,
+      "request_end_age_seconds_min": 1320.774848,
+      "request_end_age_seconds_max": 1380.741887,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 190,
+      "startup": null,
+      "wire_event_start": 260838,
+      "wire_event_end": 291080,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 20313384,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 3060,
+          "response_bytes": 597060,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 3060,
+          "response_bytes": 103500,
+          "request_body_bytes": 0,
+          "bounded_requests": 3060,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 16151,
+        "POST /_cache/set 204": 7955
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 188,
+      "time_cases": [
+        {
+          "start": "1793373960000000000",
+          "end": "1793395560000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793374020000000000",
+          "end": "1793395620000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793391960000000000",
+          "end": "1793395560000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793392020000000000",
+          "end": "1793395620000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 45389,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 59232,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 301,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 44828,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 44525,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 45523,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 45491,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 45389,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 45593,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 45523,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 45491,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 45389,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 29969,
+          "loki_vl_proxy_process_cpu_seconds_total": 23.055702,
+          "loki_vl_proxy_process_resident_memory_bytes": 439761784
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 57457,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 58544,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 304,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 56720,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 55990,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 70,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 32,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 102,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 57591,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 57559,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 57457,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 57661,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 57591,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 57559,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 58,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 102,
+          "loki_vl_proxy_peer_cache_misses_total": 57457,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 37924,
+          "loki_vl_proxy_process_cpu_seconds_total": 28.859994,
+          "loki_vl_proxy_process_resident_memory_bytes": 444496760
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "restart",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 4718,
+      "PeerCalls": 18410,
+      "PeerFetches": 12353,
+      "PeerPushes": 6057,
+      "PeerPushBodyBytes": 612331,
+      "VLResponseBytes": 41050821,
+      "PeerResponseBytes": 982,
+      "Seconds": 5.200242459,
+      "ProxyCPUSeconds": 4.707251,
+      "PeakFileBytes": 786432,
+      "PeakAllocatedBytes": 884736,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 8766058,
+          "response": 5855180
+        },
+        "vl": {
+          "request": 1822892,
+          "response": 42997448
+        }
+      },
+      "proxy_p50_ms": 22.366791499999998,
+      "proxy_p95_ms": 34.310172399999985,
+      "request_end_age_seconds_min": 98345.120587,
+      "request_end_age_seconds_max": 98350.292738,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 291089,
+      "wire_event_end": 314217,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 18,
+          "response_bytes": 1327,
+          "request_body_bytes": 0,
+          "bounded_requests": 18,
+          "sum_requested_range_seconds": 3720.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 4,
+          "response_bytes": 52,
+          "request_body_bytes": 0,
+          "bounded_requests": 4,
+          "sum_requested_range_seconds": 2880.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 2340,
+          "response_bytes": 587700,
+          "request_body_bytes": 0,
+          "bounded_requests": 2340,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2340,
+          "response_bytes": 94140,
+          "request_body_bytes": 0,
+          "bounded_requests": 2340,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 404": 12342,
+        "POST /_cache/set 204": 6057,
+        "GET /_cache/get 200": 11
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 303,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.051568,
+          "loki_vl_proxy_process_resident_memory_bytes": 141982520
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 9224,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 61084,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 786432,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 192,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 291,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 8897,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 8732,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 50,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 11,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 9235,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 9235,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 9224,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 9285,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 9235,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 9235,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 1,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 11,
+          "loki_vl_proxy_peer_cache_misses_total": 9224,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 6057,
+          "loki_vl_proxy_process_cpu_seconds_total": 4.758819,
+          "loki_vl_proxy_process_resident_memory_bytes": 381086568
+        }
+      }
+    },
+    {
+      "Source": "candidate",
+      "Trial": 1,
+      "Profile": "pressure",
+      "Mode": "owner-loss",
+      "Config": {
+        "Profile": "pressure",
+        "Entries": 64,
+        "Bytes": 2097152,
+        "DiskBytes": 32768,
+        "Shards": 90,
+        "RF": 2,
+        "Edge": true,
+        "Repeats": 2
+      },
+      "VLCalls": 4715,
+      "PeerCalls": 9501,
+      "PeerFetches": 6375,
+      "PeerPushes": 3126,
+      "PeerPushBodyBytes": 315753,
+      "VLResponseBytes": 41050782,
+      "PeerResponseBytes": 461,
+      "Seconds": 4.413884458,
+      "ProxyCPUSeconds": 3.030391,
+      "PeakFileBytes": 524288,
+      "PeakAllocatedBytes": 589824,
+      "ValidResourceSamples": true,
+      "responses": 190,
+      "equal_loki": 190,
+      "successful_200": 190,
+      "http_message_bytes": {
+        "peer": {
+          "request": 4522817,
+          "response": 3019288
+        },
+        "vl": {
+          "request": 1822038,
+          "response": 42995707
+        }
+      },
+      "proxy_p50_ms": 18.017812499999998,
+      "proxy_p95_ms": 32.85852269999998,
+      "request_end_age_seconds_min": 98351.365676,
+      "request_end_age_seconds_max": 98355.761432,
+      "recent_tail_eligible_responses": 0,
+      "metadata_freshness_eligible_responses": 0,
+      "startup": null,
+      "wire_event_start": 314223,
+      "wire_event_end": 328439,
+      "backend_paths": {
+        "POST /select/logsql/query": {
+          "requests": 14,
+          "response_bytes": 40365704,
+          "request_body_bytes": 9312,
+          "bounded_requests": 14,
+          "sum_requested_range_seconds": 79800.0
+        },
+        "GET /select/logsql/stream_field_names": {
+          "requests": 17,
+          "response_bytes": 1314,
+          "request_body_bytes": 0,
+          "bounded_requests": 17,
+          "sum_requested_range_seconds": 3660.0
+        },
+        "GET /select/logsql/query": {
+          "requests": 2,
+          "response_bytes": 26,
+          "request_body_bytes": 0,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 1440.0
+        },
+        "POST /select/logsql/stats_query_range": {
+          "requests": 2,
+          "response_bytes": 1898,
+          "request_body_bytes": 1376,
+          "bounded_requests": 2,
+          "sum_requested_range_seconds": 7320.0
+        },
+        "GET /select/logsql/field_names": {
+          "requests": 2340,
+          "response_bytes": 587700,
+          "request_body_bytes": 0,
+          "bounded_requests": 2340,
+          "sum_requested_range_seconds": 648000.1799869537
+        },
+        "GET /select/logsql/stream_field_values": {
+          "requests": 2340,
+          "response_bytes": 94140,
+          "request_body_bytes": 0,
+          "bounded_requests": 2340,
+          "sum_requested_range_seconds": 648000.1799869537
+        }
+      },
+      "peer_contact_statuses": {
+        "GET /_cache/get 502": 10,
+        "GET /_cache/get 404": 6361,
+        "POST /_cache/set 204": 3126,
+        "GET /_cache/get 200": 4
+      },
+      "range_scope": "Sum of explicit requested end-start bounds, with overlap/repetition; not actual rows/bytes scanned internally by VL.",
+      "distinct_request_paths": 94,
+      "time_cases": [
+        {
+          "start": "1793277000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "",
+          "direction": ""
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "",
+          "limit": "100",
+          "direction": "backward"
+        },
+        {
+          "start": "1793295000000000000",
+          "end": "1793298600000000000",
+          "step": "60",
+          "limit": "",
+          "direction": ""
+        }
+      ],
+      "metrics": {
+        "Before": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 524288,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 196,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 0,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 0,
+          "loki_vl_proxy_peer_cache_errors_total": 0,
+          "loki_vl_proxy_peer_cache_hits_total": 0,
+          "loki_vl_proxy_peer_cache_misses_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 0,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 0,
+          "loki_vl_proxy_process_cpu_seconds_total": 0.03196,
+          "loki_vl_proxy_process_resident_memory_bytes": 92762672
+        },
+        "After": {
+          "loki_vl_proxy_cache_backend_fallthrough_total": 9222,
+          "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}": 40449,
+          "loki_vl_proxy_cache_bytes{tier=\"l2_disk\"}": 524288,
+          "loki_vl_proxy_cache_objects{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}": 128,
+          "loki_vl_proxy_cache_objects{tier=\"l2_disk\"}": 196,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l1_memory\"}": 6156,
+          "loki_vl_proxy_cache_tier_evictions_total{tier=\"l2_disk\"}": 6240,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}": 26,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}": 0,
+          "loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}": 4,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l1_memory\"}": 9226,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l2_disk\"}": 9226,
+          "loki_vl_proxy_cache_tier_misses_total{tier=\"l3_peer\"}": 9222,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}": 0,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}": 9252,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}": 9226,
+          "loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}": 9226,
+          "loki_vl_proxy_coalesced_saved_total": 0,
+          "loki_vl_proxy_peer_cache_backup_hits_total": 3,
+          "loki_vl_proxy_peer_cache_errors_total": 5728,
+          "loki_vl_proxy_peer_cache_hits_total": 4,
+          "loki_vl_proxy_peer_cache_misses_total": 6365,
+          "loki_vl_proxy_peer_cache_write_through_errors_total": 2801,
+          "loki_vl_proxy_peer_cache_write_through_pushes_total": 3126,
+          "loki_vl_proxy_process_cpu_seconds_total": 3.062351,
+          "loki_vl_proxy_process_resident_memory_bytes": 256823888
+        }
+      },
+      "process_lifetimes": [
+        {
+          "cpu_system_seconds": 5.138242,
+          "cpu_user_seconds": 4.4583,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/0",
+          "peak_rss_bytes": 132939776,
+          "pid": 72639,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 5.075421,
+          "cpu_user_seconds": 4.535065,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/1",
+          "peak_rss_bytes": 139165696,
+          "pid": 72713,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 5.055457,
+          "cpu_user_seconds": 4.6051020000000005,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/2",
+          "peak_rss_bytes": 135446528,
+          "pid": 72778,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.815074,
+          "cpu_user_seconds": 0.682036,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/0",
+          "peak_rss_bytes": 104529920,
+          "pid": 88540,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.834006,
+          "cpu_user_seconds": 0.798833,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/1",
+          "peak_rss_bytes": 121896960,
+          "pid": 88548,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.835064,
+          "cpu_user_seconds": 0.803773,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/2",
+          "peak_rss_bytes": 108855296,
+          "pid": 88619,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.689107,
+          "cpu_user_seconds": 0.847035,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/1",
+          "peak_rss_bytes": 120406016,
+          "pid": 89512,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        },
+        {
+          "cpu_system_seconds": 0.682235,
+          "cpu_user_seconds": 0.850524,
+          "dir": "/private/tmp/cache-placement-perf-proof/runs/20261030T214737.980976000Z/candidate-pressure-1-rf2/2",
+          "peak_rss_bytes": 101203968,
+          "pid": 89558,
+          "rss_source": "kernel child rusage Maxrss at exit"
+        }
+      ]
+    }
+  ],
+  "workload_latency": [
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV1-json-volume",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 28.860667,
+      "proxy_p95_ms": 28.860667,
+      "loki_p50_ms": 1.7435,
+      "loki_p95_ms": 1.7435
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV2-json-error",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 113.786291,
+      "proxy_p95_ms": 113.786291,
+      "loki_p50_ms": 1.170459,
+      "loki_p95_ms": 1.170459
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV3-json-volume",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 23.800291,
+      "proxy_p95_ms": 23.800291,
+      "loki_p50_ms": 1.189416,
+      "loki_p95_ms": 1.189416
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "logs",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 8.433959,
+      "proxy_p95_ms": 8.433959,
+      "loki_p50_ms": 32.361875,
+      "loki_p95_ms": 32.361875
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "metadata-app-values",
+      "responses": 90,
+      "equal_loki": 90,
+      "proxy_p50_ms": 17.502312,
+      "proxy_p95_ms": 24.058981099999997,
+      "loki_p50_ms": 1.0768955,
+      "loki_p95_ms": 1.8496126499999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "metric-count",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 2.770041,
+      "proxy_p95_ms": 2.770041,
+      "loki_p50_ms": 1.165,
+      "loki_p95_ms": 1.165
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.436312,
+      "proxy_p95_ms": 28.0820431,
+      "loki_p50_ms": 2.6137705,
+      "loki_p95_ms": 3.63693955
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 127.6008545,
+      "proxy_p95_ms": 128.92852325,
+      "loki_p50_ms": 1.5401669999999998,
+      "loki_p95_ms": 1.7144295
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 28.3924375,
+      "proxy_p95_ms": 31.61531905,
+      "loki_p50_ms": 1.2505834999999998,
+      "loki_p95_ms": 1.3708086499999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 10.050437500000001,
+      "proxy_p95_ms": 11.87993095,
+      "loki_p50_ms": 33.750729,
+      "loki_p95_ms": 36.3704976
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 13.507875,
+      "proxy_p95_ms": 26.226436049999993,
+      "loki_p50_ms": 1.1532915,
+      "loki_p95_ms": 2.043654149999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 0.7575205,
+      "proxy_p95_ms": 0.99000175,
+      "loki_p50_ms": 1.2067705,
+      "loki_p95_ms": 1.57980205
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV1-json-volume",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 24.971708,
+      "proxy_p95_ms": 30.2906333,
+      "loki_p50_ms": 0.983875,
+      "loki_p95_ms": 2.1253747
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV2-json-error",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 115.218791,
+      "proxy_p95_ms": 123.2489285,
+      "loki_p50_ms": 2.636542,
+      "loki_p95_ms": 3.9072294999999997
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV3-json-volume",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 25.375125,
+      "proxy_p95_ms": 27.9659622,
+      "loki_p50_ms": 2.378,
+      "loki_p95_ms": 2.5998878
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "logs",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 8.750416,
+      "proxy_p95_ms": 9.107379400000001,
+      "loki_p50_ms": 28.398042,
+      "loki_p95_ms": 29.997379799999997
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "metadata-app-values",
+      "responses": 270,
+      "equal_loki": 270,
+      "proxy_p50_ms": 6.420646,
+      "proxy_p95_ms": 18.8884375,
+      "loki_p50_ms": 0.8995420000000001,
+      "loki_p95_ms": 1.4527126499999996
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "metric-count",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 0.863625,
+      "proxy_p95_ms": 0.8836499999999999,
+      "loki_p50_ms": 1.069916,
+      "loki_p95_ms": 2.4752669
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 34.4098125,
+      "proxy_p95_ms": 44.28410625,
+      "loki_p50_ms": 1.26775,
+      "loki_p95_ms": 1.2767499999999998
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 116.066562,
+      "proxy_p95_ms": 116.1877056,
+      "loki_p50_ms": 0.8361665,
+      "loki_p95_ms": 0.86950385
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 24.193979,
+      "proxy_p95_ms": 24.5854979,
+      "loki_p50_ms": 1.112937,
+      "loki_p95_ms": 1.1233058999999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 8.028646,
+      "proxy_p95_ms": 8.1653902,
+      "loki_p50_ms": 30.2516665,
+      "loki_p95_ms": 32.15674195
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 12.965208,
+      "proxy_p95_ms": 22.370163949999995,
+      "loki_p50_ms": 0.9506035,
+      "loki_p95_ms": 1.6133326999999997
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 0.644646,
+      "proxy_p95_ms": 0.8075649,
+      "loki_p50_ms": 0.8347705000000001,
+      "loki_p95_ms": 0.84195205
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 25.2271455,
+      "proxy_p95_ms": 25.612363950000002,
+      "loki_p50_ms": 1.2455835,
+      "loki_p95_ms": 1.46195835
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 44.034625,
+      "proxy_p95_ms": 44.4395125,
+      "loki_p50_ms": 1.9183545,
+      "loki_p95_ms": 2.38296105
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.6480835,
+      "proxy_p95_ms": 26.75803335,
+      "loki_p50_ms": 1.3781665,
+      "loki_p95_ms": 1.7895416499999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 12.055813,
+      "proxy_p95_ms": 13.8352066,
+      "loki_p50_ms": 31.857582999999998,
+      "loki_p95_ms": 32.735945199999996
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 23.12675,
+      "proxy_p95_ms": 35.280566,
+      "loki_p50_ms": 1.4260625,
+      "loki_p95_ms": 2.5064749999999996
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 3.6449375,
+      "proxy_p95_ms": 3.82878095,
+      "loki_p50_ms": 1.3605,
+      "loki_p95_ms": 1.3929
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 29.8822915,
+      "proxy_p95_ms": 31.78387945,
+      "loki_p50_ms": 2.4981255,
+      "loki_p95_ms": 2.87676315
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 131.938854,
+      "proxy_p95_ms": 135.1423851,
+      "loki_p50_ms": 1.485417,
+      "loki_p95_ms": 1.5036420000000001
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.665854500000002,
+      "proxy_p95_ms": 26.75444825,
+      "loki_p50_ms": 1.241896,
+      "loki_p95_ms": 1.4195145999999998
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 13.792354499999998,
+      "proxy_p95_ms": 14.186948249999999,
+      "loki_p50_ms": 34.690375,
+      "loki_p95_ms": 34.746813100000004
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 22.360562,
+      "proxy_p95_ms": 36.805471149999995,
+      "loki_p50_ms": 1.2923335,
+      "loki_p95_ms": 1.9230100999999995
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 2.2759165,
+      "proxy_p95_ms": 2.62324135,
+      "loki_p50_ms": 1.2803125,
+      "loki_p95_ms": 1.54883155
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.764313,
+      "proxy_p95_ms": 28.5189566,
+      "loki_p50_ms": 1.5444375,
+      "loki_p95_ms": 2.06870595
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 134.54954149999998,
+      "proxy_p95_ms": 148.17640415,
+      "loki_p50_ms": 1.935375,
+      "loki_p95_ms": 2.4735372
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 28.0236665,
+      "proxy_p95_ms": 30.88739135,
+      "loki_p50_ms": 1.23975,
+      "loki_p95_ms": 1.403325
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 11.223917,
+      "proxy_p95_ms": 12.799367,
+      "loki_p50_ms": 37.8414585,
+      "loki_p95_ms": 41.880583349999995
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 15.257375,
+      "proxy_p95_ms": 22.124664550000002,
+      "loki_p50_ms": 1.0803335,
+      "loki_p95_ms": 1.8098538499999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 0.9751665,
+      "proxy_p95_ms": 1.40637945,
+      "loki_p50_ms": 1.5798335,
+      "loki_p95_ms": 2.1903336499999995
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.2249585,
+      "proxy_p95_ms": 27.32513335,
+      "loki_p50_ms": 1.1635,
+      "loki_p95_ms": 1.3762375
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 125.844042,
+      "proxy_p95_ms": 126.863967,
+      "loki_p50_ms": 1.8080205,
+      "loki_p95_ms": 1.8874270499999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.318646,
+      "proxy_p95_ms": 27.3464146,
+      "loki_p50_ms": 1.5000625,
+      "loki_p95_ms": 1.60875685
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 14.626415999999999,
+      "proxy_p95_ms": 17.7009285,
+      "loki_p50_ms": 36.264041500000005,
+      "loki_p95_ms": 37.47349165
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 13.909521,
+      "proxy_p95_ms": 27.70422469999999,
+      "loki_p50_ms": 1.2119585000000002,
+      "loki_p95_ms": 1.7252336499999998
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 1.491604,
+      "proxy_p95_ms": 1.8477601,
+      "loki_p50_ms": 1.3363335,
+      "loki_p95_ms": 1.46338335
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.577728999999998,
+      "proxy_p95_ms": 30.5096851,
+      "loki_p50_ms": 1.5519375,
+      "loki_p95_ms": 2.01830625
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 121.1402085,
+      "proxy_p95_ms": 123.23593364999999,
+      "loki_p50_ms": 1.5971250000000001,
+      "loki_p95_ms": 1.6090130999999999
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.868520500000002,
+      "proxy_p95_ms": 28.01167675,
+      "loki_p50_ms": 2.104146,
+      "loki_p95_ms": 2.9631771000000002
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 10.590166499999999,
+      "proxy_p95_ms": 10.66201665,
+      "loki_p50_ms": 31.905979,
+      "loki_p95_ms": 33.967709799999994
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 8.662374499999999,
+      "proxy_p95_ms": 12.435968449999997,
+      "loki_p50_ms": 1.125375,
+      "loki_p95_ms": 1.71510975
+    },
+    {
+      "source": "baseline",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 1.4391880000000001,
+      "proxy_p95_ms": 2.1655816,
+      "loki_p50_ms": 1.362875,
+      "loki_p95_ms": 1.5609497
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV1-json-volume",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 31.121625,
+      "proxy_p95_ms": 31.121625,
+      "loki_p50_ms": 2.350625,
+      "loki_p95_ms": 2.350625
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV2-json-error",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 112.716917,
+      "proxy_p95_ms": 112.716917,
+      "loki_p50_ms": 1.817208,
+      "loki_p95_ms": 1.817208
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "DLV3-json-volume",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 29.053,
+      "proxy_p95_ms": 29.053,
+      "loki_p50_ms": 1.681167,
+      "loki_p95_ms": 1.681167
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "logs",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 8.928833,
+      "proxy_p95_ms": 8.928833,
+      "loki_p50_ms": 35.134041,
+      "loki_p95_ms": 35.134041
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "metadata-app-values",
+      "responses": 90,
+      "equal_loki": 90,
+      "proxy_p50_ms": 21.4121875,
+      "proxy_p95_ms": 32.15124375,
+      "loki_p50_ms": 1.4887920000000001,
+      "loki_p95_ms": 1.98519725
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "cold-fill",
+      "workload": "metric-count",
+      "responses": 1,
+      "equal_loki": 1,
+      "proxy_p50_ms": 3.863708,
+      "proxy_p95_ms": 3.863708,
+      "loki_p50_ms": 2.051917,
+      "loki_p95_ms": 2.051917
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.8302495,
+      "proxy_p95_ms": 28.189611850000002,
+      "loki_p50_ms": 2.200354,
+      "loki_p95_ms": 3.2519850999999997
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 127.594729,
+      "proxy_p95_ms": 137.7130726,
+      "loki_p50_ms": 2.8148954999999996,
+      "loki_p95_ms": 4.16633955
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 31.700249499999998,
+      "proxy_p95_ms": 37.56191215,
+      "loki_p50_ms": 2.218563,
+      "loki_p95_ms": 2.4363818999999998
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 10.1378545,
+      "proxy_p95_ms": 12.87552355,
+      "loki_p50_ms": 41.498521000000004,
+      "loki_p95_ms": 53.09728990000001
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 16.061374999999998,
+      "proxy_p95_ms": 25.95467645,
+      "loki_p50_ms": 1.0903745,
+      "loki_p95_ms": 1.9957940499999998
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "exact",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 3.438229,
+      "proxy_p95_ms": 3.9663976000000005,
+      "loki_p50_ms": 1.508375,
+      "loki_p95_ms": 1.691525
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV1-json-volume",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 23.221667,
+      "proxy_p95_ms": 27.4441295,
+      "loki_p50_ms": 0.845417,
+      "loki_p95_ms": 1.306892
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV2-json-error",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 112.555959,
+      "proxy_p95_ms": 115.8305703,
+      "loki_p50_ms": 1.898083,
+      "loki_p95_ms": 2.8735714
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "DLV3-json-volume",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 23.103166,
+      "proxy_p95_ms": 24.1784041,
+      "loki_p50_ms": 2.670625,
+      "loki_p95_ms": 2.7569502999999997
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "logs",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 8.468917,
+      "proxy_p95_ms": 8.868441399999998,
+      "loki_p50_ms": 28.329125,
+      "loki_p95_ms": 29.0674247
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "metadata-app-values",
+      "responses": 270,
+      "equal_loki": 270,
+      "proxy_p50_ms": 9.342375,
+      "proxy_p95_ms": 19.062006249999996,
+      "loki_p50_ms": 1.0674169999999998,
+      "loki_p95_ms": 1.6300456499999996
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "frontend-prime",
+      "workload": "metric-count",
+      "responses": 3,
+      "equal_loki": 3,
+      "proxy_p50_ms": 2.664959,
+      "proxy_p95_ms": 3.0651583999999996,
+      "loki_p50_ms": 1.091792,
+      "loki_p95_ms": 1.291367
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 31.3047915,
+      "proxy_p95_ms": 33.13887855,
+      "loki_p50_ms": 1.804229,
+      "loki_p95_ms": 1.8708101000000001
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 151.97062499999998,
+      "proxy_p95_ms": 152.6108625,
+      "loki_p50_ms": 1.4660419999999998,
+      "loki_p95_ms": 1.5254798
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 32.812625,
+      "proxy_p95_ms": 33.3038747,
+      "loki_p50_ms": 2.0031875,
+      "loki_p95_ms": 2.16430685
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 11.464833500000001,
+      "proxy_p95_ms": 12.11823395,
+      "loki_p50_ms": 45.4295415,
+      "loki_p95_ms": 47.41546665
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 17.9904165,
+      "proxy_p95_ms": 29.551781249999973,
+      "loki_p50_ms": 1.5334789999999998,
+      "loki_p95_ms": 3.11070145
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "owner-loss",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 4.136875,
+      "proxy_p95_ms": 4.4293372,
+      "loki_p50_ms": 1.6089795,
+      "loki_p95_ms": 1.66663575
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 31.595229500000002,
+      "proxy_p95_ms": 32.36178605,
+      "loki_p50_ms": 1.6863125,
+      "loki_p95_ms": 1.75829405
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 55.0027295,
+      "proxy_p95_ms": 58.06391075,
+      "loki_p50_ms": 5.477354500000001,
+      "loki_p95_ms": 8.90922325
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 32.840354,
+      "proxy_p95_ms": 33.2008976,
+      "loki_p50_ms": 1.311229,
+      "loki_p95_ms": 1.4795479
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 13.0901665,
+      "proxy_p95_ms": 15.353179149999999,
+      "loki_p50_ms": 40.3021875,
+      "loki_p95_ms": 40.87025625
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 28.7452705,
+      "proxy_p95_ms": 41.60981279999994,
+      "loki_p50_ms": 1.891375,
+      "loki_p95_ms": 2.7928166499999993
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "recent-refresh",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 3.6394374999999997,
+      "proxy_p95_ms": 3.65381905,
+      "loki_p50_ms": 1.610917,
+      "loki_p95_ms": 1.7208295
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.6733125,
+      "proxy_p95_ms": 28.687830650000002,
+      "loki_p50_ms": 1.359146,
+      "loki_p95_ms": 1.5352652
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 129.10816649999998,
+      "proxy_p95_ms": 133.79326634999998,
+      "loki_p50_ms": 1.6945204999999999,
+      "loki_p95_ms": 1.71737645
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 26.6583125,
+      "proxy_p95_ms": 26.69125655,
+      "loki_p50_ms": 1.182375,
+      "loki_p95_ms": 1.3021497
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 11.416375,
+      "proxy_p95_ms": 12.6022375,
+      "loki_p50_ms": 37.7666665,
+      "loki_p95_ms": 37.891279149999995
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 28.058479,
+      "proxy_p95_ms": 43.51252114999993,
+      "loki_p50_ms": 1.4449165,
+      "loki_p95_ms": 3.1947687499999997
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "refresh",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 3.6493745,
+      "proxy_p95_ms": 4.79353685,
+      "loki_p50_ms": 1.226979,
+      "loki_p95_ms": 1.5080228999999998
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 32.340416,
+      "proxy_p95_ms": 34.397591,
+      "loki_p50_ms": 2.2543545,
+      "loki_p95_ms": 2.62382295
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 149.5272915,
+      "proxy_p95_ms": 157.35035385,
+      "loki_p50_ms": 2.0862295,
+      "loki_p95_ms": 2.18052295
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 32.2931665,
+      "proxy_p95_ms": 34.94914165,
+      "loki_p50_ms": 1.6955835000000001,
+      "loki_p95_ms": 1.82747085
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 11.9035005,
+      "proxy_p95_ms": 11.96440035,
+      "loki_p50_ms": 47.572521,
+      "loki_p95_ms": 55.2734646
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 22.337666499999997,
+      "proxy_p95_ms": 31.94629194999999,
+      "loki_p50_ms": 1.5831045000000001,
+      "loki_p95_ms": 2.207839549999999
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "restart",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 3.9266665000000005,
+      "proxy_p95_ms": 4.0440413500000005,
+      "loki_p50_ms": 1.6207500000000001,
+      "loki_p95_ms": 1.8019875
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 70.850437,
+      "proxy_p95_ms": 104.9047684,
+      "loki_p50_ms": 2.6755625,
+      "loki_p95_ms": 2.82423125
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 221.468125,
+      "proxy_p95_ms": 314.04415,
+      "loki_p50_ms": 2.3985415,
+      "loki_p95_ms": 3.4155788499999997
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 41.454062,
+      "proxy_p95_ms": 56.8050434,
+      "loki_p50_ms": 2.0106040000000003,
+      "loki_p95_ms": 3.0869851
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 17.194417,
+      "proxy_p95_ms": 25.748692,
+      "loki_p50_ms": 51.761270999999994,
+      "loki_p95_ms": 68.4756399
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 24.611854,
+      "proxy_p95_ms": 56.463438149999945,
+      "loki_p50_ms": 1.600125,
+      "loki_p95_ms": 2.9388889499999977
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "shifted",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 4.1722705,
+      "proxy_p95_ms": 5.12152705,
+      "loki_p50_ms": 1.920896,
+      "loki_p95_ms": 2.5920899
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV1-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 27.980729500000002,
+      "proxy_p95_ms": 28.70254795,
+      "loki_p50_ms": 2.5771040000000003,
+      "loki_p95_ms": 3.6193976
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV2-json-error",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 129.641437,
+      "proxy_p95_ms": 137.7522559,
+      "loki_p50_ms": 1.6523539999999999,
+      "loki_p95_ms": 1.9474226
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "DLV3-json-volume",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 29.538021,
+      "proxy_p95_ms": 34.3054146,
+      "loki_p50_ms": 1.5284170000000001,
+      "loki_p95_ms": 1.8283798
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "logs",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 12.668437,
+      "proxy_p95_ms": 13.4486434,
+      "loki_p50_ms": 40.6776875,
+      "loki_p95_ms": 47.36249375
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "metadata-app-values",
+      "responses": 180,
+      "equal_loki": 180,
+      "proxy_p50_ms": 10.8817085,
+      "proxy_p95_ms": 17.767647599999993,
+      "loki_p50_ms": 1.249396,
+      "loki_p95_ms": 2.08127115
+    },
+    {
+      "source": "candidate",
+      "profile": "pressure",
+      "mode": "warm-repeat",
+      "workload": "metric-count",
+      "responses": 2,
+      "equal_loki": 2,
+      "proxy_p50_ms": 4.687958500000001,
+      "proxy_p95_ms": 5.04690865,
+      "loki_p50_ms": 2.3635005,
+      "loki_p95_ms": 3.20541315
+    }
+  ],
+  "limitations": [
+    "Sequential phases share cache state; forward historical windows are unseen but not isolated cold-state experiments.",
+    "Recent fixture age is recorded per response; it is not a current-ingestion proof.",
+    "Instrumented same-host loopback; HTTP counters cover client-observer message hop only, excluding IP/TCP/retransmissions and observer-target second hop.",
+    "All-response phase counters are authoritative; concurrent per-response counter intervals overlap.",
+    "L2 metric/file lengths are physical bbolt high-water, not logical admitted bytes.",
+    "No single-query distributed execution or production linear-scaling claim.",
+    "Practical latency threshold is both 25% and 50ms; no statistical significance claim."
+  ],
+  "wire_ledger_sha256": "95420669bc876f1c86bcc5eb6ab293229daae51b434ff0dc146a0260e48e4745",
+  "raw_report_sha256": "6676a7cb33a853935895b1a3c849a18019c679c806ff92a29a4143a392315f98",
+  "raw_report_basename": "20261030T214737.980976000Z-probe-rf2-pressure.json"
+}

@@ -292,7 +292,7 @@ func (p *Proxy) setEndpointReadCacheWithTTL(endpoint, cacheKey string, value []b
 		return
 	}
 	if p.endpointUsesSharedReadCache(endpoint) {
-		p.cache.SetLocalAndDiskWithTTL(cacheKey, value, ttl)
+		p.cache.SetWithTTL(cacheKey, value, ttl)
 		return
 	}
 	p.cache.SetLocalOnlyWithTTL(cacheKey, value, ttl)

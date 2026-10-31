@@ -400,10 +400,7 @@ func (pc *PeerCache) IsReplica(key string) bool {
 
 // pushAllowed reports whether a value may be pushed to peers.
 func (pc *PeerCache) pushAllowed(key string, value []byte) bool {
-	pc.mu.RLock()
-	allow := pc.pushFilter
-	pc.mu.RUnlock()
-	if allow != nil && !allow(key) {
+	if !pc.pushFilterAllows(key) {
 		return false
 	}
 	if int64(len(value)) > maxPeerSetBodyBytes {
@@ -413,6 +410,26 @@ func (pc *PeerCache) pushAllowed(key string, value []byte) bool {
 		return false
 	}
 	return true
+}
+
+// publicationEligible is the side-effect-free admission check used when
+// deciding whether local placement can rely on publication to other replicas.
+// Actual publications still use pushAllowed to count rejected oversized values.
+func (pc *PeerCache) publicationEligible(key string, value []byte, ttl time.Duration, force bool) bool {
+	if pc == nil || len(value) == 0 || int64(len(value)) > maxPeerSetBodyBytes {
+		return false
+	}
+	if !force && (!pc.writeThrough || (ttl > 0 && ttl < pc.wtMinTTL)) {
+		return false
+	}
+	return pc.pushFilterAllows(key)
+}
+
+func (pc *PeerCache) pushFilterAllows(key string) bool {
+	pc.mu.RLock()
+	allow := pc.pushFilter
+	pc.mu.RUnlock()
+	return allow == nil || allow(key)
 }
 
 // Get fetches a value from the key's replicas in ring order (owner first,
@@ -1303,12 +1320,18 @@ func (pc *PeerCache) prefetchHotKey(local *Cache, e hotIndexEntry) bool {
 	if _, ttl, ok := local.GetWithTTL(e.Key); ok && ttl >= pc.readAheadMinTTL {
 		return true
 	}
-	val, ttl, ok := pc.Get(e.Key)
-	if !ok {
+	started := clockNow()
+	val, ttl, memOnly, ok := pc.getReplica(e.Key)
+	if !ok || ttl <= 0 {
 		return false
 	}
-	if ttl <= 0 {
-		ttl = time.Duration(e.RemainingTTLMS) * time.Millisecond
+	// The owner reported this TTL before sending the body. Conservatively
+	// account for the fetch so read-ahead never extends the owner's expiry.
+	if elapsed := clockNow().Sub(started); elapsed > 0 {
+		ttl -= elapsed
+	}
+	if indexedTTL, valid := peerTTLDuration(e.RemainingTTLMS); valid && indexedTTL > 0 && indexedTTL < ttl {
+		ttl = indexedTTL
 	}
 	if ttl < pc.readAheadMinTTL {
 		return false
@@ -1317,7 +1340,7 @@ func (pc *PeerCache) prefetchHotKey(local *Cache, e hotIndexEntry) bool {
 		pc.RABudget.Add(1)
 		return false
 	}
-	local.SetShadowWithTTL(e.Key, val, ttl)
+	local.storePeerCopy(e.Key, val, ttl, memOnly)
 	pc.RAPrefetch.Add(1)
 	pc.RABytes.Add(int64(len(val)))
 	return true

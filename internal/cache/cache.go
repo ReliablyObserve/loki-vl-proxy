@@ -19,6 +19,10 @@ type entry struct {
 	// memOnly marks a value its writer keeps in memory only
 	// (SetLocalOnlyWithTTL): a peer that fetches it keeps it off its disk too.
 	memOnly bool
+	shadow  bool
+	// sourceExpiresAt is a source deadline, distinct from short shadow residency.
+	// Zero means residency TTL is also the source validity; unknown age stays -1.
+	sourceExpiresAt int64
 }
 
 type tierStats struct {
@@ -64,16 +68,21 @@ type StatsSnapshot struct {
 // Supports optional L2 disk cache and L3 peer cache for distributed fleet operation.
 // Lookup order: L1 (in-memory) → L2 (disk) → L3 (peer) → VL backend.
 type Cache struct {
-	mu         sync.RWMutex
-	entries    map[string]entry
-	defaultTTL time.Duration
-	maxEntries int
-	maxBytes   int
-	curBytes   int
-	disabled   bool
-	l2         *DiskCache    // optional L2 disk cache
-	l3         *PeerCache    // optional L3 peer fleet cache
-	done       chan struct{} // signals cleanup goroutine to stop
+	mu             sync.RWMutex
+	entries        map[string]entry
+	defaultTTL     time.Duration
+	maxEntries     int
+	maxBytes       int
+	shadowBytes    int
+	shadowEntries  int
+	shadowList     *list.List
+	diskGeneration uint64 // guarded by mu; fences L2 results crossing a local purge
+	diskPurges     uint64 // overlapping local purges keep promotion disabled until all finish
+	curBytes       int
+	disabled       bool
+	l2             *DiskCache    // optional L2 disk cache
+	l3             *PeerCache    // optional L3 peer fleet cache
+	done           chan struct{} // signals cleanup goroutine to stop
 
 	// LRU ordering: front = most recently used, back = least recently used
 	lruList  *list.List               // doubly-linked list of *lruEntry
@@ -115,7 +124,8 @@ func (c *Cache) MaxEntrySizeBytes() int {
 }
 
 type lruEntry struct {
-	key string
+	key        string
+	shadowElem *list.Element
 }
 
 type hotStat struct {
@@ -208,6 +218,9 @@ func (c *Cache) runPromoter() {
 		c.mu.Lock()
 		if elem, found := c.lruIndex[key]; found {
 			c.lruList.MoveToFront(elem)
+			if shadow := elem.Value.(*lruEntry).shadowElem; shadow != nil {
+				c.shadowList.MoveToFront(shadow)
+			}
 		}
 		if c.hotOn {
 			c.recordHotLocked(key)
@@ -315,8 +328,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 
 	if c.l2 != nil {
 		c.recordTierRequest("l2")
-		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
-			c.setLocalOnly(key, v, ttl, false, false)
+		if v, ttl, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
 			return v, ttl, -1, "l2_disk", true
@@ -417,8 +429,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	// written back to disk or pushed to peers.
 	if c.l2 != nil {
 		c.recordTierRequest("l2")
-		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
-			c.setLocalOnly(key, v, ttl, false, false)
+		if v, _, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
 			return v, true
@@ -484,31 +495,9 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	if size > c.maxBytes/10 {
 		return
 	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	if old, ok := c.entries[key]; ok {
-		c.curBytes -= old.sizeBytes
-		if elem, found := c.lruIndex[key]; found {
-			c.lruList.MoveToFront(elem)
-		}
-	}
-
-	c.evictIfNeeded(size)
-
-	now := clockNow()
-	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size, memOnly: memOnly}
-	if stamped {
-		e.storedAt = now
-	}
-	c.entries[key] = e
-	c.curBytes += size
-
-	if _, found := c.lruIndex[key]; !found {
-		elem := c.lruList.PushFront(&lruEntry{key: key})
-		c.lruIndex[key] = elem
-	}
+	c.storeEntryLocked(key, value, ttl, size, stamped, memOnly, false, 0)
 }
 
 // storePeerCopy stores a value fetched from a peer with the TTL it had left
@@ -516,36 +505,49 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 // is one of the key's replicas or write-through is off (where any local
 // write goes to disk), unless the peer keeps it in memory only.
 func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOnly bool) {
-	toDisk := !memOnly && c.l2 != nil && !skipL2WriteForKey(key) && (c.l3.IsReplica(key) || !c.l3.WriteThroughEnabled())
-	if !toDisk {
-		c.setLocalOnly(key, value, ttl, false, memOnly)
+	if c == nil || c.disabled {
 		return
 	}
-	if entrySize(key, value) > c.maxBytes/10 {
+	size := entrySize(key, value)
+	if size > c.maxBytes/10 {
 		return
+	}
+	replica := c.l3 == nil || c.l3.IsReplica(key)
+	distributed := c.l3 != nil && c.l3.WriteThroughEnabled()
+	shadow := distributed && !replica
+	sourceExpiry := int64(0)
+	storedTTL := ttl
+	if shadow {
+		sourceExpiry = clockNow().Add(ttl).UnixNano()
+		storedTTL = min(ttl, nonOwnerShadowMaxTTL)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.storeLocalLocked(key, value, ttl, entrySize(key, value), false)
-	c.l2.Set(key, value, ttl)
+	c.storeEntryLocked(key, value, storedTTL, size, false, memOnly, shadow, sourceExpiry)
+	if !memOnly && !shadow && c.l2 != nil && !skipL2WriteForKey(key) {
+		c.l2.Set(key, value, ttl)
+	}
 }
 
-// storeReplica stores a value a peer pushed to this replica: in memory and
-// on disk with the TTL it was sent with, never pushed again (a replica
-// pushing it on would bounce it between replicas).
+// storeReplica accepts a pushed copy without pushing it again. In distributed
+// mode a wrong-target push gets only a bounded frontend shadow; designated
+// replicas persist it. Explicit local mode keeps its existing local placement.
 func (c *Cache) storeReplica(key string, value []byte, ttl time.Duration) {
+	if c != nil && c.l3 != nil && c.l3.WriteThroughEnabled() && !c.l3.IsReplica(key) {
+		c.storePeerCopy(key, value, ttl, false)
+		return
+	}
 	c.SetLocalAndDiskWithTTL(key, value, ttl)
 }
 
-// SetReplicatedWithTTL stores a value in memory and on disk and pushes it to
-// the key's other replicas whatever the write-through setting, for values a
-// replica that lost its disk must find on its peers. Values a peer cannot
-// accept and keys the peer push filter rejects stay local.
+// SetReplicatedWithTTL stores a value on its designated replicas and pushes
+// copies regardless of write-through/minimum-TTL settings. A non-replica keeps
+// only a bounded memory shadow. Unpublishable values retain local placement.
 func (c *Cache) SetReplicatedWithTTL(key string, value []byte, ttl time.Duration) {
 	if c == nil || c.disabled {
 		return
 	}
-	c.SetLocalAndDiskWithTTL(key, value, ttl)
+	c.setPlacedWithTTL(key, value, ttl, false, true, true)
 	if c.l3 != nil {
 		c.l3.Replicate(key, value, ttl)
 	}
@@ -562,11 +564,15 @@ func (c *Cache) getForPeer(key string) ([]byte, time.Duration, bool, bool) {
 	c.mu.RUnlock()
 	if ok {
 		if remaining := e.expiresAt.Sub(clockNow()); remaining > 0 {
+			select {
+			case c.promoteBuf <- key:
+			default:
+			}
 			return e.value, remaining, e.memOnly, true
 		}
 	}
 	if c.l2 != nil {
-		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
+		if v, ttl, ok := c.getDiskWithTTL(key); ok {
 			return v, ttl, false, true
 		}
 	}
@@ -603,71 +609,10 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 }
 
 func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagateL3, stamped bool) {
-	size := entrySize(key, value)
-	// Don't cache entries larger than 10% of max bytes
-	if size > c.maxBytes/10 {
-		return
-	}
-
-	replicaLocal := true
-	writeThroughEnabled := false
-	pushTTL := ttl // the replicas keep the full TTL, whatever this copy keeps
-	if c.l3 != nil {
-		replicaLocal = c.l3.IsReplica(key)
-		writeThroughEnabled = c.l3.WriteThroughEnabled()
-		// When write-through is enabled and this instance is not one of the
-		// key's replicas, keep only a short-lived shadow copy locally. The
-		// replicas keep the full TTL.
-		if writeThroughEnabled && !replicaLocal && ttl > nonOwnerShadowMaxTTL {
-			ttl = nonOwnerShadowMaxTTL
-		}
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.storeLocalLocked(key, value, ttl, size, stamped)
-
-	// Write-through to L2 (disk), except keys that already have dedicated
-	// persistence paths and would otherwise double-write to disk.
-	shouldWriteL2 := c.l2 != nil && !skipL2WriteForKey(key)
-	// Avoid concentrating disk writes on non-replica pods when write-through is active.
-	if shouldWriteL2 && writeThroughEnabled && !replicaLocal {
-		shouldWriteL2 = false
-	}
-	if shouldWriteL2 {
-		c.l2.Set(key, value, ttl)
-	}
-
-	// L3 optional owner write-through for better cache distribution in skewed
-	// traffic scenarios (for example a single hot client pinned to one pod).
-	if propagateL3 && c.l3 != nil {
-		c.l3.SetWithTTL(key, value, pushTTL)
-	}
+	c.setPlacedWithTTL(key, value, ttl, propagateL3, stamped, false)
 }
-
 func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, size int, stamped bool) {
-	if old, ok := c.entries[key]; ok {
-		c.curBytes -= old.sizeBytes
-		if elem, found := c.lruIndex[key]; found {
-			c.lruList.MoveToFront(elem)
-		}
-	}
-
-	c.evictIfNeeded(size)
-
-	now := clockNow()
-	e := entry{value: value, expiresAt: now.Add(ttl), sizeBytes: size}
-	if stamped {
-		e.storedAt = now
-	}
-	c.entries[key] = e
-	c.curBytes += size
-
-	if _, found := c.lruIndex[key]; !found {
-		elem := c.lruList.PushFront(&lruEntry{key: key})
-		c.lruIndex[key] = elem
-	}
+	c.storeEntryLocked(key, value, ttl, size, stamped, false, false, 0)
 }
 
 // entrySize is what an entry holds in memory for the byte budget: its value
@@ -683,40 +628,37 @@ func skipL2WriteForKey(key string) bool {
 func (c *Cache) Invalidate(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e, ok := c.entries[key]; ok {
-		c.curBytes -= e.sizeBytes
-		delete(c.entries, key)
-		delete(c.hot, key)
-		if elem, found := c.lruIndex[key]; found {
-			c.lruList.Remove(elem)
-			delete(c.lruIndex, key)
-		}
-	}
+	c.removeEntryLocked(key)
 }
 
 // PurgeAll removes all entries from all cache tiers (L1 memory and L2 disk).
 // L3 peer entries on remote nodes are not purged — only the local shard is cleared.
 // Intended for admin/bench use only; do not call in normal request handling.
 func (c *Cache) PurgeAll() {
-	c.InvalidatePrefix("")
+	c.mu.Lock()
+	c.diskGeneration++
+	c.diskPurges++
+	for key := range c.entries {
+		c.removeEntryLocked(key)
+	}
+	c.mu.Unlock()
+	// Disk purge can wait for a flush. Never hold the L1 mutex while waiting.
 	if c.l2 != nil {
 		c.l2.Purge()
 	}
+	c.mu.Lock()
+	c.diskGeneration++
+	c.diskPurges--
+	c.mu.Unlock()
 }
 
 // InvalidatePrefix removes all keys with the given prefix.
 func (c *Cache) InvalidatePrefix(prefix string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for k, e := range c.entries {
-		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
-			c.curBytes -= e.sizeBytes
-			delete(c.entries, k)
-			delete(c.hot, k)
-			if elem, found := c.lruIndex[k]; found {
-				c.lruList.Remove(elem)
-				delete(c.lruIndex, k)
-			}
+	for key := range c.entries {
+		if strings.HasPrefix(key, prefix) {
+			c.removeEntryLocked(key)
 		}
 	}
 }
@@ -730,39 +672,26 @@ func (c *Cache) Size() (entries int, bytes int) {
 
 func (c *Cache) evictIfNeeded(incomingSize int) {
 	now := clockNow()
-	// First pass: remove expired entries
 	if len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
-		for k, v := range c.entries {
-			if now.After(v.expiresAt) {
-				c.curBytes -= v.sizeBytes
-				delete(c.entries, k)
-				delete(c.hot, k)
-				if elem, found := c.lruIndex[k]; found {
-					c.lruList.Remove(elem)
-					delete(c.lruIndex, k)
-				}
+		for key, e := range c.entries {
+			if now.After(e.expiresAt) {
+				c.removeEntryLocked(key)
 				c.Evictions.Add(1)
 			}
 		}
 	}
-	// Second pass: LRU eviction — remove from back (least recently used)
 	for len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
 		back := c.lruList.Back()
+		if c.shadowList != nil && c.shadowList.Back() != nil {
+			back = c.lruIndex[c.shadowList.Back().Value.(*lruEntry).key]
+		}
 		if back == nil {
-			break // empty list, nothing to evict
+			break
 		}
-		lruE := back.Value.(*lruEntry)
-		if e, ok := c.entries[lruE.key]; ok {
-			c.curBytes -= e.sizeBytes
-			delete(c.entries, lruE.key)
-			delete(c.hot, lruE.key)
-			c.Evictions.Add(1)
-		}
-		c.lruList.Remove(back)
-		delete(c.lruIndex, lruE.key)
+		c.removeEntryLocked(back.Value.(*lruEntry).key)
+		c.Evictions.Add(1)
 	}
 }
-
 func (c *Cache) cleanup() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -774,15 +703,9 @@ func (c *Cache) cleanup() {
 		}
 		c.mu.Lock()
 		now := clockNow()
-		for k, v := range c.entries {
-			if now.After(v.expiresAt) {
-				c.curBytes -= v.sizeBytes
-				delete(c.entries, k)
-				delete(c.hot, k)
-				if elem, found := c.lruIndex[k]; found {
-					c.lruList.Remove(elem)
-					delete(c.lruIndex, k)
-				}
+		for key, e := range c.entries {
+			if now.After(e.expiresAt) {
+				c.removeEntryLocked(key)
 			}
 		}
 		c.mu.Unlock()
@@ -902,6 +825,9 @@ func (c *Cache) getL1WithAge(key string) ([]byte, time.Duration, time.Duration, 
 	if ok {
 		now := clockNow()
 		remaining := e.expiresAt.Sub(now)
+		if remaining > 0 && e.sourceExpiresAt != 0 {
+			remaining = time.Unix(0, e.sourceExpiresAt).Sub(now)
+		}
 		if remaining > 0 {
 			v := e.value
 			age := time.Duration(-1)
