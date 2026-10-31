@@ -189,6 +189,19 @@ jobs:
           # The step summary carries the table for every run, forks included (no comment there).
           cat "$OUT/comment-summary.md" >> "$GITHUB_STEP_SUMMARY"
 
+      # Upload the existing verdict only; no new captures or comparisons.
+      - name: Upload compact quality evidence
+        if: always() && steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: visual-quality-evidence
+          path: |
+            ${{ env.OUT }}/meta.json
+            ${{ env.OUT }}/plan.json
+            ${{ env.OUT }}/compare.json
+            ${{ env.OUT }}/verdict.json
+          if-no-files-found: ignore
+
       - name: Fail on regression
         if: steps.plan.outputs.run == 'true'
         env:

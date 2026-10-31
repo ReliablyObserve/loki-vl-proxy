@@ -115,6 +115,8 @@ jobs:
             jq -c '.tests' /tmp/pr-base-quality.json > /tmp/pr-base-tests.json
           fi
 
+          python3 scripts/ci/pr_evidence.py --provenance /tmp/quality-meta.json
+
           bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
             /tmp/pr-base-quality.json \
             /tmp/pr-head-quality.json \
@@ -138,6 +140,7 @@ jobs:
             /tmp/pr-base-quality.json
             /tmp/pr-head-quality.json
             /tmp/pr-quality-report.md
+            /tmp/quality-meta.json
 
       - name: Upload quality diagnostics
         if: always()
