@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.53.0] - 2026-10-31
-
 ### Fixed
 
 - **Compressed stats cache entries release excess backing storage.**
@@ -17,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RAM entries and pending disk/peer writes without changing stored bytes,
   keys, deadlines or cache placement. Compaction adds an allocation and copy
   when output has excess capacity; logical cache budgets are unchanged.
+
+## [2.53.0] - 2026-10-31
+
+### Fixed
 
 - **Ordered JSON metric repeats reuse the existing exact-response cache.**
   When the compatibility cache is inactive, complete eligible query_range

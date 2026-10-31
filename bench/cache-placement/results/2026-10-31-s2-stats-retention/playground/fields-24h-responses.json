@@ -1,0 +1,10 @@
+{
+  "total": {
+    "frames": 500,
+    "warnings": 500
+  },
+  "trace_id": {
+    "frames": 500,
+    "warnings": 500
+  }
+}

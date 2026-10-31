@@ -13,6 +13,9 @@ A capacity-only reslice would keep the allocation alive and would not fix this.
   intervening commits only add conformance wiring and a decoder benchmark.
   Both fleet binaries report clean source trees. Full identities and SHA256s
   are retained in codec/provenance.json and fleet/*-index.json.
+- Subsequent main release metadata `28a5a2f` is integrated; it does not change
+  the measured production Go/module sources. Measurements keep their original
+  identities rather than being relabelled to the later metadata/evidence head.
 - Go 1.27.3, Darwin/arm64, Apple M5 Pro, codec benchmarks GOMAXPROCS=4.
   Same test harness for both binaries; the baseline benchmark overlays only
   stats_extent_cache.go from main. No other production Go file changes.
@@ -159,6 +162,22 @@ replica placement, concurrency or overall memory-budget guarantee changes.
 - No Grafana-visible result changes are intended: the same encoded bytes decode
   to the same answers. The exact API/parity and memory proof above cover this
   change; CI's nine general Visual smoke scenes still run for the product diff.
+
+## Rebuilt playground browser proof
+
+All twelve local proxy variants were rebuilt/recreated at source
+`378a08ba1648fcdf8bb2501f77cbb00a7601807f` (production-identical to the measured
+implementation). Readiness, image identity, the explicit patterns500-series
+limit and fresh generated logs through proxy and Loki were verified; backend
+volumes were retained. Image identity and versions are in playground/provenance.json.
+Both24h/48h browser tests pass9.6s on Grafana13.2.1/Drilldown2.5.2 with Loki3.7.7
+and VL1.52.0, requiring500 populated frames, rendered canvas, visible partial
+notices and no API/page errors. This is candidate-only rendering evidence,
+not a main/PR latency or three-way screenshot comparison. Test durations do
+not measure page-load or query latency.
+
+![Candidate 24h Fields](playground/fields-24h.png)
+![Candidate 48h Fields](playground/fields-48h.png)
 
 ## Reproduction
 
