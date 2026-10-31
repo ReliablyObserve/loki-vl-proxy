@@ -19,13 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redistribution are not added. Cache sizing documentation and flag help now
   clarify that the separate Tier0 budget is additional to primary L1.
 
-- **Disk cache writes use bounded asynchronous batches and LRU capacity eviction.**
-  The default batch trigger is 1000 entries or 4 MiB, with a 16 MiB pending/flushing
-  queue and a separately bounded recency index. Hits update recency without disk
-  writes. New versioned records use S2 by default, support zstd/gzip/raw, validate
-  decoded size and checksums, and keep legacy raw/gzip read compatibility. Peer
-  responses reuse bounded compression scratch and avoid unnecessary parsing work.
-
 ### Fixed
 
 - **Helm permits peer-cache traffic under the default NetworkPolicy.** When
@@ -39,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upgrades Joi to 17.13.9 (CVE-2026-118772, email-validation denial of service)
   and follow-redirects to 1.16.2 (CVE-2026-116689, cross-origin credential-header
   disclosure). Existing compatible dependency ranges are preserved.
+
+## [2.49.0] - 2026-10-31
+
+### Changed
+
+- **Disk cache writes use bounded asynchronous batches and LRU capacity eviction.**
+  The default batch trigger is 1000 entries or 4 MiB, with a 16 MiB pending/flushing
+  queue and a separately bounded recency index. Hits update recency without disk
+  writes. New versioned records use S2 by default, support zstd/gzip/raw, validate
+  decoded size and checksums, and keep legacy raw/gzip read compatibility. Peer
+  responses reuse bounded compression scratch and avoid unnecessary parsing work.
+
+### Security
 
 - **Peer TTLs reject values that overflow duration conversion.** Malformed disk
   records are bounded before decompression and cannot fall back to an older
