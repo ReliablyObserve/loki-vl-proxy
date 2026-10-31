@@ -60,7 +60,6 @@ routing these reads does not implement rule writes or prove full ruler parity.
 
 | Area | What to expect |
 |---|---|
-| POST metadata cache identity | The current helper keys metadata reads from URL parameters, omitting form-body selectors and bounds. Different POST forms at the same URL can reuse the previous selector's labels. Until [#949](https://github.com/ReliablyObserve/loki-vl-proxy/pull/949) lands, use GET with selector and range in the URL for affected metadata reads. Routing a POST does not prove its cache identity is correct. |
 | Label vs field surfaces | With `-label-style=underscores` and `-metadata-field-mode=hybrid`, label APIs remain Loki-safe (`service_name`) while field-oriented APIs can expose both `service.name` and `service_name`. This is expected compatibility behavior, not duplicate data corruption. |
 | Grafana dotted-field builder UX | Grafana builder paths can still tokenize dotted field names awkwardly even when the generated query executes correctly. For click-to-filter flows, underscore aliases are the safer UI path. |
 | Parsed-only field freshness | `detected_fields` and `detected_field/{name}/values` prefer native VictoriaLogs metadata when possible, but parsed-only or very new fields can still fall back to bounded sampling. That means freshness can differ from indexed metadata. |
@@ -146,6 +145,7 @@ caps the worst case.
 
 These are not current open issues in this codebase:
 
+- POST metadata form identities — selectors and bounds in the effective form are included in the cache key with body precedence, without mutating the request form. Upgraded binaries fence earlier ambiguous metadata entries across memory, disk, peers and the outer GET cache. Equivalent forms share metadata entries; the outer GET cache remains path-specific. The [retained main/PR/Loki proof](https://github.com/ReliablyObserve/loki-vl-proxy/pull/949) covers selector isolation and exact reuse, not distributed deletion invalidation.
 - read-path query and label fanout across multiple tenants
 - Grafana Logs Drilldown contract coverage as a tracked compatibility product
 - Loki-compatible `/loki/api/v1/patterns` support with persistence and peer warm
