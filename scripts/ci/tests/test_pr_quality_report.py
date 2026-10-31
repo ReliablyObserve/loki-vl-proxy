@@ -19,6 +19,17 @@ def snapshot(count=10, coverage=85):
 
 
 class ReportTests(unittest.TestCase):
+    def test_report_labels_read_only_endpoint_population(self):
+        inventory = {"state": "available", "endpoint_scope": "loki-read-api", "endpoints": {
+            "total": 32, "implemented": 22, "differential": 18, "declared_proven": 11},
+            "excluded_write_endpoints": 2, "deletion_management": {"total": 1, "implemented": 1}}
+        base, head = snapshot(), snapshot()
+        base["quality_inventory"] = head["quality_inventory"] = inventory
+        report = self.render(base=base, head=head)
+        self.assertIn("22/32 read endpoints implemented", report.split("<details>", 1)[0])
+        self.assertIn("Read endpoints: declared proven", report)
+        self.assertIn("deletion management", report)
+
     def test_report_exposes_real_inventory_and_exact_case_changes(self):
         base, head = snapshot(), snapshot()
         base["tests"]["outcomes"] = {"api\tTestQuery": "pass", "api\tTestQuery/edge": "pass", "api\tTestRemoved": "pass"}

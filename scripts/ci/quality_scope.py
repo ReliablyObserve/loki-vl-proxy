@@ -88,6 +88,7 @@ def registry_snapshot(root):
         state_files = files("state/loki")
         definitions = {str(p.relative_to(registry / "loki/endpoints"))[:-5] for p in files("loki/endpoints")}
         known = set()
+        excluded_write_endpoints = 0
         for path in state_files:
             identifier = str(path.relative_to(registry / "state/loki"))[:-5]
             state_text = text(path)
@@ -106,6 +107,8 @@ def registry_snapshot(root):
             remaining = [m for m in allowed if m not in removed]
             known.add(identifier)
             if state == "not-applicable" or (allowed and not remaining):
+                if allowed and "GET" not in allowed and "HEAD" not in allowed:
+                    excluded_write_endpoints += 1
                 continue
             items["endpoint:" + identifier] = {"id": identifier, "kind": "endpoint", "state": state,
                                               "path": scalar(definition, "path"), "methods": remaining}
@@ -114,6 +117,37 @@ def registry_snapshot(root):
         endpoint_items = [v for v in items.values() if v["kind"] == "endpoint"]
         if len(endpoint_items) != endpoints["total"] or sum(v["state"] == "proven" for v in endpoint_items) != endpoints["declared_proven"]:
             raise ValueError("endpoint summary differs from declared states")
+
+        # The registry also tracks optional deletion administration. Keep that
+        # visible separately instead of charging it to read API coverage. POST
+        # query transports are reads and remain in the read endpoint population.
+        deletion = {key: 0 for key in keys}
+        for item in endpoint_items:
+            if item["path"] != "/loki/api/v1/delete":
+                continue
+            identifier = item["id"]
+            def entry(relative):
+                document = json_file(relative)
+                entries = document.get("endpoints") if isinstance(document, dict) else None
+                if not isinstance(entries, list):
+                    raise ValueError("missing deletion inventory")
+                matches = [e for e in entries if isinstance(e, dict) and e.get("id") == identifier]
+                if len(matches) != 1:
+                    raise ValueError("missing or duplicate deletion entry")
+                return matches[0]
+            implemented = entry("generated/proxy/implementation.json").get("implemented")
+            differential = entry("generated/proxy/coverage.json").get("differential_tests")
+            if not isinstance(implemented, bool) or not isinstance(differential, dict) or set(differential) != {"unit", "e2e", "ui"} or any(
+                    not isinstance(v, list) or any(not isinstance(test, str) for test in v) for v in differential.values()):
+                raise ValueError("invalid deletion inventory")
+            counts = {"total": 1, "implemented": int(implemented),
+                      "differential": int(any(differential.values())), "declared_proven": int(item["state"] == "proven")}
+            for key, value in counts.items():
+                deletion[key] += value
+                endpoints[key] -= value
+            item["kind"] = "deletion-management"
+        if any(value < 0 or value > endpoints["total"] for value in endpoints.values()):
+            raise ValueError("read endpoint counts inconsistent")
 
         tracks = {}
         for track, kind in (("behaviours", "behaviour"), ("translations", "translation")):
@@ -163,6 +197,8 @@ def registry_snapshot(root):
         if not isinstance(errors.get("ceiling"), int) or isinstance(errors["ceiling"], bool) or errors["ceiling"] != links:
             raise ValueError("error-layer ceiling differs from case/cell links")
         return {"state": "available", "surface_version": version, "endpoints": endpoints, "tracks": tracks,
+                "endpoint_scope": "loki-read-api", "deletion_management": deletion,
+                "excluded_write_endpoints": excluded_write_endpoints,
                 "gaps": {state: gaps[state] for state in GAPS}, "error_layer": {"cells": len(leaks), "links": links},
                 "items": items}
     except (OSError, ValueError, TypeError, UnicodeError, RecursionError):

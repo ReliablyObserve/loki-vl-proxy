@@ -270,8 +270,9 @@ def render(base, head, evidence):
     inventory = mapping(head.get("quality_inventory"))
     if inventory.get("state") == "available":
         endpoints, gaps = mapping(inventory.get("endpoints")), mapping(inventory.get("gaps"))
+        population = "read endpoints" if inventory.get("endpoint_scope") == "loki-read-api" else "endpoints"
         focus.append("Declared API inventory: " + fmt(endpoints.get("implemented")) + "/" + fmt(endpoints.get("total")) +
-                     " endpoints implemented, " + fmt(endpoints.get("differential")) + " linked to Loki comparison tests, " +
+                     " " + population + " implemented, " + fmt(endpoints.get("differential")) + " linked to Loki comparison tests, " +
                      fmt(endpoints.get("declared_proven")) + " declared proven; " + fmt(gaps.get("open")) + " open compatibility gaps. These are registry counts, not a runtime pass percentage.")
     for key in ("base", "head"):
         sample = (base if key == "base" else head).get("tests", {})

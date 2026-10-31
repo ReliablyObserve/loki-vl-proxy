@@ -65,6 +65,58 @@ class SnapshotTests(unittest.TestCase):
         self.write("generated/summary.json", "{not json}")
         self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
 
+    def test_read_scope_separates_deletion_and_keeps_post_queries(self):
+        self.write("generated/summary.json", json.dumps({"loki_version": "v3.7.7", "endpoints": 2,
+                   "implemented": 2, "with_differential_tests": 1, "proven": 1}))
+        self.write("state/loki/delete.yaml", "id: delete\nstate: partial\n")
+        self.write("loki/endpoints/delete.yaml", "id: delete\npath: /loki/api/v1/delete\nmethods: [DELETE, GET, POST, PUT]\n")
+        self.write("generated/proxy/implementation.json", json.dumps({"endpoints": [
+            {"id": "delete", "implemented": True}]}))
+        self.write("generated/proxy/coverage.json", json.dumps({"endpoints": [
+            {"id": "delete", "differential_tests": {"unit": [], "e2e": [], "ui": []}}]}))
+        result = registry_snapshot(self.root)
+        self.assertEqual(result["state"], "available", result)
+        self.assertEqual(result["endpoint_scope"], "loki-read-api")
+        self.assertEqual(result["endpoints"], {"total": 1, "implemented": 1, "differential": 1, "declared_proven": 1})
+        self.assertEqual(result["deletion_management"], {"total": 1, "implemented": 1, "differential": 0, "declared_proven": 0})
+        self.assertEqual(result["items"]["endpoint:query"]["methods"], ["GET", "POST"])
+        self.assertEqual(result["items"]["endpoint:delete"]["kind"], "deletion-management")
+
+        # Proofs for the optional administration route cannot inflate read proof.
+        self.write("state/loki/delete.yaml", "id: delete\nstate: proven\n")
+        self.write("generated/summary.json", json.dumps({"loki_version": "v3.7.7", "endpoints": 2,
+                   "implemented": 2, "with_differential_tests": 2, "proven": 2}))
+        self.write("generated/proxy/coverage.json", json.dumps({"endpoints": [
+            {"id": "delete", "differential_tests": {"unit": ["test_delete"], "e2e": [], "ui": []}}]}))
+        result = registry_snapshot(self.root)
+        self.assertEqual(result["state"], "available", result)
+        self.assertEqual(result["endpoints"]["declared_proven"], 1)
+        self.assertEqual(result["endpoints"]["differential"], 1)
+        self.assertEqual(result["deletion_management"]["declared_proven"], 1)
+        self.assertEqual(result["deletion_management"]["differential"], 1)
+
+        for path in ("generated/proxy/implementation.json", "generated/proxy/coverage.json"):
+            original = (self.registry / path).read_text()
+            self.write(path, "[]")
+            self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
+            self.write(path, original)
+
+        self.write("generated/proxy/coverage.json", '{"endpoints": [{"id":"delete", "differential_tests":{}}]}')
+        self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
+        (self.registry / "generated/proxy/implementation.json").unlink()
+        self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
+
+    def test_read_scope_matches_real_registry_and_excludes_push(self):
+        result = registry_snapshot(ROOT)
+        self.assertEqual(result["state"], "available", result)
+        summary = json.loads((ROOT / "conformance/registry/generated/summary.json").read_text())
+        self.assertEqual(result["endpoints"]["total"], summary["endpoints"] - result["deletion_management"]["total"])
+        read_paths = {item["path"] for item in result["items"].values() if item["kind"] == "endpoint"}
+        self.assertNotIn("/loki/api/v1/delete", read_paths)
+        self.assertEqual(result["excluded_write_endpoints"], 2)
+        self.assertNotIn("endpoint:loki_api_v1_push", result["items"])
+        self.assertNotIn("endpoint:api_prom_push", result["items"])
+
     def test_malformed_states_counts_and_gap_status_fail_closed(self):
         for path, text in (("state/behaviours/identity.yaml", "id: identity\nstate: maybe\n"),
                            ("cases/alpha/same.yaml", "id: alpha/same\ngap:\n  status: imaginary\n"),

@@ -181,6 +181,13 @@ def compare_inventory(base, head, signals, details):
     scope_note = ("; Loki surface changed " + cell(versions[0]) + " → " + cell(versions[1]) + "; review inventory scope" if changed_surface else "")
     if changed_surface:
         details += ["The Loki surface changed: counts describe different declared inventories. Review added or removed surface definitions before interpreting count differences.", ""]
+    scopes = [mapping(sample).get("endpoint_scope", "legacy-registry") for sample in (before, after)]
+    same_scope = scopes[0] == scopes[1]
+    read_scope = scopes[1] == "loki-read-api"
+    if not same_scope:
+        details += ["Endpoint scopes differ: " + cell(scopes[0]) + " → " + cell(scopes[1]) + "; endpoint count deltas and trends are unavailable until both snapshots use the same scope.", ""]
+    if read_scope:
+        details += ["Read API scope: write endpoints are excluded and deletion management is reported separately. POST query transports remain reads. Mixed rule endpoints retain their read methods after registry exclusions.", ""]
     rows = []
     def metric(label, path):
         values = []
@@ -189,7 +196,8 @@ def compare_inventory(base, head, signals, details):
             for part in path:
                 value = mapping(value).get(part)
             values.append(value if count(value) else None)
-        rows.append([label, *(fmt(value) for value in values), f"{values[1] - values[0]:+g}" if all(value is not None for value in values) else "unavailable"])
+        comparable = (path[0] != "endpoints" or same_scope) and all(value is not None for value in values)
+        rows.append([label, *(fmt(value) for value in values), f"{values[1] - values[0]:+g}" if comparable else "unavailable"])
         return values
     def trend(label, values, positive=False):
         if not all(value is not None for value in values) or values[0] == values[1]:
@@ -200,12 +208,22 @@ def compare_inventory(base, head, signals, details):
             signals.append(label + " increased: " + fmt(values[0]) + " → " + fmt(values[1]) + "; declared inventory trend, not runtime proof" + scope_note + ".")
     for key, label in (("total", "Endpoints: declared total"), ("implemented", "Endpoints: declared implemented"),
                        ("differential", "Endpoints: linked differential tests"), ("declared_proven", "Endpoints: declared proven")):
+        if read_scope:
+            label = label.replace("Endpoints:", "Read endpoints:")
         values = metric(label, ("endpoints", key))
-        if key != "total":
+        if key != "total" and same_scope:
             noun = "proven" if key == "declared_proven" else key
             trend("Declared " + noun + " endpoints", values, positive=key == "declared_proven")
-    details += table(["Declared endpoint inventory", "Base", "PR", "Change"], rows) + [""]
+    labels = ["read API" if scope == "loki-read-api" else "legacy registry" for scope in scopes]
+    details += table(["Declared endpoint inventory", "Base (" + labels[0] + ")", "PR (" + labels[1] + ")", "Change"], rows) + [""]
     rows = []
+    if read_scope:
+        metric("Write-only endpoints excluded", ("excluded_write_endpoints",))
+        for key, label in (("total", "declared total"), ("implemented", "declared implemented"),
+                           ("differential", "linked differential tests"), ("declared_proven", "declared proven")):
+            metric("Deletion management: " + label, ("deletion_management", key))
+        details += table(["Outside the read endpoint score", "Base", "PR", "Change"], rows) + [""]
+        rows = []
     for track in ("behaviours", "translations"):
         states = set()
         for sample in (before, after):

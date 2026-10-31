@@ -16,6 +16,24 @@ def inventory(**changes):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_read_inventory_separates_write_exclusions_and_deletion(self):
+        inv = inventory(endpoint_scope="loki-read-api", excluded_write_endpoints=2,
+                        deletion_management={"total": 1, "implemented": 1, "differential": 0, "declared_proven": 0})
+        signals, details = self.text({"quality_inventory": inv}, {"quality_inventory": inv})
+        self.assertIn("Read endpoints: declared proven", details)
+        self.assertIn("Write-only endpoints excluded | 2 | 2", details)
+        self.assertIn("Deletion management: declared total | 1 | 1", details)
+        self.assertIn("POST query transports remain reads", details)
+
+    def test_different_endpoint_scopes_do_not_infer_coverage_loss(self):
+        base = inventory()
+        head = inventory(endpoint_scope="loki-read-api", endpoints={"total": 49, "implemented": 41,
+                         "differential": 29, "declared_proven": 24})
+        signals, details = self.text({"quality_inventory": base}, {"quality_inventory": head})
+        self.assertNotIn("endpoints decreased", signals)
+        self.assertIn("Endpoint scopes differ", details)
+        self.assertIn("| 25 | 24 | unavailable |", details)
+
     def text(self, base, head):
         result = analyze(base, head)
         self.assertEqual(set(result), {"signals", "details"})

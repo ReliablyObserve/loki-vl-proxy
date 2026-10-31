@@ -618,9 +618,13 @@ unmeasured evictions and unavailable layer statistics remain explicitly
 unmeasured. Synthetic handler `ns/op` is elapsed time; `B/op` and `allocs/op`
 describe allocation traffic, not retained RAM or process CPU.
 
-API quality uses the full declared registry inventory, with base/PR counts for
-implemented endpoints, linked Loki differential tests, declared proven endpoints,
+API quality uses the declared Loki read API inventory, with base/PR counts for
+implemented read endpoints, linked Loki differential tests, declared proven read endpoints,
 behavior/translation states, known gap states and error-layer exceptions.
+Write-only endpoints do not enter the read endpoint denominator. Optional
+deletion management is listed separately, including its GET administration
+method; POST query transports remain reads. Snapshots with different endpoint
+scopes have no endpoint count delta.
 These are checked-in contract declarations, not a runtime compatibility
 percentage. Registry surface versions remain visible separately from runtime
 stack versions. The small smoke scores contribute candidate-only component
