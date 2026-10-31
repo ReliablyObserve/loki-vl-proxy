@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cache observability separates Loki and VictoriaLogs semantic layers.**
+  Prometheus and OTLP expose bounded layer/component/tier statistics for
+  logical cache reads, admissions, rejections, evictions and resident charges,
+  including compatibility and auxiliary memory caches. Disk index/queue RAM
+  and encoded record traffic are reported separately; physical file size,
+  device I/O and process RSS are not attributed to a semantic layer. Unknown
+  key families remain visible rather than being assigned to either contract.
+
+### Fixed
+
+- **Coalescing counters count actual followers.** A guarded caller joining a
+  plain in-flight call now records the saved backend call and wait, including
+  shared failures. A shared result's leader is never counted as a saved call.
+
 ## [2.50.0] - 2026-10-31
 
 ### Changed

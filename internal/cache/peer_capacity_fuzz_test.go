@@ -13,6 +13,43 @@ type capacityModelRecord struct {
 	expires time.Time
 }
 
+// Snapshot each store's gauges and reference sizes under its own existing lock.
+// Separate public snapshot/Size calls could straddle an asynchronous peer write
+// or disk flush and report a false mismatch even after publication quiesces.
+func assertCapacityFleetLayerAccounting(t testing.TB, f *capacityFleet) {
+	t.Helper()
+	for i, node := range f.nodes {
+		if !f.alive[i] {
+			continue
+		}
+		var memoryEntries, memoryBytes int64
+		node.c.mu.RLock()
+		for layer := LayerUnknown; layer < LayerCount; layer++ {
+			memoryEntries += node.c.layerL1[layer].entries.Load()
+			memoryBytes += node.c.layerL1[layer].bytes.Load()
+		}
+		wantMemoryEntries, wantMemoryBytes := int64(len(node.c.entries)), int64(node.c.curBytes)
+		node.c.mu.RUnlock()
+		if memoryEntries != wantMemoryEntries || memoryBytes != wantMemoryBytes {
+			t.Fatalf("RF%d node%d layer RAM gauge drift: entries=%d/%d bytes=%d/%d", f.rf, i, memoryEntries, wantMemoryEntries, memoryBytes, wantMemoryBytes)
+		}
+		var diskEntries, diskBytes, indexBytes, queueBytes int64
+		node.dc.writeMu.Lock()
+		for layer := LayerUnknown; layer < LayerCount; layer++ {
+			diskEntries += node.dc.layerL2[layer].entries.Load()
+			diskBytes += node.dc.layerL2[layer].bytes.Load()
+			indexBytes += node.dc.layerIndexBytes[layer]
+			queueBytes += node.dc.layerQueueBytes[layer]
+		}
+		wantDiskEntries, wantDiskBytes := int64(len(node.dc.index)), node.dc.logicalBytes
+		wantIndexBytes, wantQueueBytes := node.dc.indexBytes, node.dc.bufferBytes
+		node.dc.writeMu.Unlock()
+		if diskEntries != wantDiskEntries || diskBytes != wantDiskBytes || indexBytes != wantIndexBytes || queueBytes != wantQueueBytes {
+			t.Fatalf("RF%d node%d layer SSD gauge drift: entries=%d/%d bytes=%d/%d index=%d/%d queue=%d/%d", f.rf, i, diskEntries, wantDiskEntries, diskBytes, wantDiskBytes, indexBytes, wantIndexBytes, queueBytes, wantQueueBytes)
+		}
+	}
+}
+
 // This is a cache safety model, not a linearizable key/value database model.
 // Every write has a fresh generation key. Misses after eviction or faults are
 // valid; any hit must have the exact key's payload and must not cross expiry.
@@ -31,7 +68,9 @@ func runPeerCapacitySequence(t testing.TB, rf int, sequence []byte) int64 {
 	}
 	write := func(frontend int) {
 		ensureUp()
-		key := fmt.Sprintf("seq-tenant%d-gen%03d", frontend, serial)
+		// Exercise both audited semantic layers and the bounded unknown bucket.
+		prefix := []string{"query:", "stats-extent:v1:", "seq-unknown:"}[serial%3]
+		key := fmt.Sprintf("%sseq-tenant%d-gen%03d", prefix, frontend, serial)
 		serial++
 		value := bytes.Repeat([]byte{byte(serial)}, 128)
 		value = append(value, []byte(key)...)
@@ -64,6 +103,7 @@ func runPeerCapacitySequence(t testing.TB, rf int, sequence []byte) int64 {
 		}
 	}
 	write(0)
+	assertCapacityFleetLayerAccounting(t, f)
 	if len(sequence) > 16 {
 		sequence = sequence[:16]
 	}
@@ -113,6 +153,7 @@ func runPeerCapacitySequence(t testing.TB, rf int, sequence []byte) int64 {
 				}
 			}
 		}
+		assertCapacityFleetLayerAccounting(t, f)
 	}
 	var diskEvictions int64
 	for _, node := range f.nodes {

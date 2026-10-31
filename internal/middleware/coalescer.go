@@ -118,7 +118,10 @@ func (c *Coalescer) do(key string, fn func() (*http.Response, error)) (int, http
 		return status, headers, body, false, err
 	}
 
+	started := time.Now()
+	executed := false
 	result, err, shared := c.group.Do(key, func() (interface{}, error) {
+		executed = true
 		resp, err := fn()
 		if err != nil {
 			return nil, err
@@ -137,6 +140,13 @@ func (c *Coalescer) do(key string, fn func() (*http.Response, error)) (int, http
 		}, nil
 	})
 
+	// singleflight's shared flag includes the leader. Only a caller whose
+	// closure did not execute avoided a backend call, even on shared failure.
+	if shared && !executed {
+		c.CoalescedSaved.Add(1)
+		c.WaitCount.Add(1)
+		c.WaitNanos.Add(time.Since(started).Nanoseconds())
+	}
 	if err != nil {
 		return 0, nil, nil, shared, err
 	}
@@ -194,13 +204,7 @@ func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.
 	c.inflight[key]++
 	c.inflightMu.Unlock()
 
-	started := time.Now()
-	status, headers, body, shared, err := c.do(key, fn)
-	if count > 0 && shared {
-		c.CoalescedSaved.Add(1)
-		c.WaitCount.Add(1)
-		c.WaitNanos.Add(time.Since(started).Nanoseconds())
-	}
+	status, headers, body, _, err := c.do(key, fn)
 
 	c.inflightMu.Lock()
 	c.inflight[key]--

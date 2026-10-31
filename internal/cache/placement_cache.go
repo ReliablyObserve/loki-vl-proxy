@@ -12,6 +12,9 @@ const nonOwnerShadowBudgetDivisor = 10
 func (c *Cache) removeEntryLocked(key string) {
 	if old, ok := c.entries[key]; ok {
 		c.curBytes -= old.sizeBytes
+		stats := &c.layerL1[c.layer(key)]
+		stats.entries.Add(-1)
+		stats.bytes.Add(-int64(old.sizeBytes))
 		if old.shadow {
 			c.shadowBytes -= old.sizeBytes
 			c.shadowEntries--
@@ -38,6 +41,7 @@ func (c *Cache) shadowRoomLocked(size int) bool {
 			return false
 		}
 		key := c.shadowList.Back().Value.(*lruEntry).key
+		c.layerL1[c.layer(key)].evictions.Add(1)
 		c.removeEntryLocked(key)
 		c.Evictions.Add(1)
 	}
@@ -92,6 +96,7 @@ func (c *Cache) promoteDiskWithDeadline(key string, value []byte, deadline time.
 	}
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
+		c.layerL1[c.layer(key)].rejections.Add(1)
 		return true
 	}
 	if old, ok := c.entries[key]; ok && old.expiresAt.After(clockNow()) {
@@ -105,6 +110,7 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	if sourceExpiry != 0 {
 		remaining := time.Unix(0, sourceExpiry).Sub(now)
 		if remaining <= 0 {
+			c.layerL1[c.layer(key)].rejections.Add(1)
 			return false
 		}
 		ttl = min(ttl, remaining)
@@ -119,6 +125,7 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	c.removeEntryLocked(key)
 	if shadow {
 		if !c.shadowRoomLocked(size) {
+			c.layerL1[c.layer(key)].rejections.Add(1)
 			return false
 		}
 		if c.shadowList == nil {
@@ -129,6 +136,11 @@ func (c *Cache) storeEntryLocked(key string, value []byte, ttl time.Duration, si
 	}
 	c.entries[key] = e
 	c.curBytes += size
+	stats := &c.layerL1[c.layer(key)]
+	stats.entries.Add(1)
+	stats.bytes.Add(int64(size))
+	stats.admissions.Add(1)
+	stats.writeBytes.Add(int64(len(value)))
 	data := &lruEntry{key: key}
 	c.lruIndex[key] = c.lruList.PushFront(data)
 	if shadow {
@@ -158,6 +170,10 @@ func (c *Cache) replaceEntryLocked(key string, next entry) bool {
 	}
 	c.entries[key] = next
 	c.curBytes += delta
+	stats := &c.layerL1[c.layer(key)]
+	stats.bytes.Add(int64(delta))
+	stats.admissions.Add(1)
+	stats.writeBytes.Add(int64(len(next.value)))
 	c.lruList.MoveToFront(elem)
 	if next.shadow {
 		c.shadowBytes += delta
@@ -168,6 +184,7 @@ func (c *Cache) replaceEntryLocked(key string, next entry) bool {
 func (c *Cache) setPlacedWithTTL(key string, value []byte, ttl time.Duration, propagate, stamped, force bool) {
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
+		c.layerL1[c.layer(key)].rejections.Add(1)
 		return
 	}
 	publishable := c.l3 != nil && c.l3.publicationEligible(key, value, ttl, force)

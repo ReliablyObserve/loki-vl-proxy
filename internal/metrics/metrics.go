@@ -141,12 +141,14 @@ type Metrics struct {
 	// Startup time
 	startTime time.Time
 
-	maxTenantLabels       int
-	maxClientLabels       int
-	exportSensitiveLabels bool
-	knownTenants          map[string]struct{}
-	knownClients          map[string]struct{}
-	cacheStatsProvider    func() cache.StatsSnapshot
+	maxTenantLabels                  int
+	maxClientLabels                  int
+	exportSensitiveLabels            bool
+	knownTenants                     map[string]struct{}
+	knownClients                     map[string]struct{}
+	cacheStatsProvider               func() cache.StatsSnapshot
+	cacheLayerStatsProvider          func() []CacheComponentStats
+	cacheLayerCoalescerStatsProvider func() [cache.LayerCount]CoalescerStats
 }
 
 // CoalescerStats is a process-wide snapshot of duplicate backend work avoided.
@@ -1674,6 +1676,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	if sCacheStatsFn != nil {
 		writeCacheTierMetrics(&sb, sCacheStatsFn())
 	}
+	m.writeCacheLayerMetrics(&sb)
 
 	sb.WriteString("# HELP loki_vl_proxy_translations_total LogQL to LogsQL translations.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_translations_total counter\n")

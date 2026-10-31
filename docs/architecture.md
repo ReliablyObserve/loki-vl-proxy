@@ -33,9 +33,12 @@ that every family is persisted or replicated.
 Resource reporting must distinguish each layer's occupancy, read/write bytes
 and rates, lookup outcomes, admission/rejection and eviction counts. Logical
 RAM and encoded SSD accounting are different from process RSS, bbolt file
-high-water and physical device throughput/IOPS. Current tier-level metrics do
-not provide complete semantic-layer accounting; mixed counters cannot establish
-a per-layer saving.
+high-water and physical device throughput/IOPS. Legacy tier-level metrics remain
+aggregate. The [semantic-layer metrics](observability.md#semantic-cache-layers)
+attribute supported resident/index/queue charges, lookup outcomes and logical
+record traffic to audited Loki/VL families, retaining an unknown category.
+They do not establish total cache-owned RAM or a physical file share per layer;
+mixed counters cannot establish a per-layer saving.
 
 Current limits apply to individual cache instances and working resources,
 not one semantic-layer budget broker. The compatibility cache is additional

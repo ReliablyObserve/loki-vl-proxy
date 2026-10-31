@@ -385,6 +385,7 @@ type dlvObservation struct {
 		Attribution               string
 		TierCounterDeltas         map[string]*float64
 		LogicalDiskOccupancyBytes *float64
+		UnknownCacheLayerMetrics  any
 	}
 	ProxyCPUSeconds *float64
 	Valid           bool
@@ -540,6 +541,9 @@ func dlvAttributeObservation(o *dlvObservation, c dlvCell) {
 	o.SharedStorage.Attribution = "unattributed aggregate physical tiers; no API/VL semantic-layer attribution"
 	o.SharedStorage.TierCounterDeltas = map[string]*float64{}
 	for key := range after.Metrics {
+		if _, layerMetric := dlvParseLayerMetric(key); layerMetric {
+			continue
+		}
 		if strings.Contains(key, "{tier=") && strings.HasSuffix(strings.SplitN(key, "{", 2)[0], "_total") {
 			if o.Valid {
 				o.SharedStorage.TierCounterDeltas[key] = dlvDelta(before.Metrics, after.Metrics, key)
@@ -551,6 +555,7 @@ func dlvAttributeObservation(o *dlvObservation, c dlvCell) {
 	if o.Valid {
 		o.ProxyCPUSeconds = dlvDelta(before.Metrics, after.Metrics, "loki_vl_proxy_process_cpu_seconds_total")
 	}
+	dlvAttributeLayerMetrics(o, c)
 }
 func dlvRequest(t *testing.T, p *process, node int, q query, c dlvCell, ordinal int) dlvResponse {
 	t.Helper()
@@ -874,7 +879,7 @@ func dlvRunCell(t *testing.T, binary string, c dlvCell, fx fixture, rec *recorde
 		}
 	}
 	if c.State == "exact" && c.Tier0 && *dlvEviction {
-		diag := dlvDiagnostic{State: "eviction_attempt", Reason: "No dedicated compatibility-cache miss metric; an eviction attempt cannot be labelled an observed Tier0 lookup miss."}
+		diag := dlvDiagnostic{State: "eviction_attempt", Reason: "Pressure replay remains conservative: an eviction attempt alone is not an observed Tier0 lookup miss; inspect dedicated replay counters when available."}
 		native := c
 		native.Shape = "native"
 		native.State = "shifted"
@@ -917,17 +922,18 @@ func dlvBinaryManifest(t *testing.T) map[string]any {
 		"compose_spec_sha256":          digest(t, filepath.Join(home, "compose.json")),
 		"loki_config_sha256":           digest(t, filepath.Join(home, "loki.yaml")),
 		"source_ref_claim":             *dlvSource, "binary": *dlvBinary, "binary_sha256": digest(t, *dlvBinary), "binary_go_version": info.GoVersion, "binary_build_settings": settings, "source_revision_available": settings["vcs.revision"] != "", "source_tree_modified": settings["vcs.modified"],
-		"focused_harness_sha256":     digest(t, filepath.Join(root, "bench/cache-placement/dlv_baseline_test.go")),
-		"shared_harness_sha256":      digest(t, filepath.Join(root, "bench/cache-placement/real_api_test.go")),
-		"measurement_host":           map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
-		"semantic_cache_dimensions":  []string{"proxy_loki_facing", "proxy_vl_backend", "reference_loki_server"},
-		"aggregate_tier_attribution": "unattributed; tier=l0 is a hot-key sidecar, not compatibility Tier0",
-		"unsupported_layer_metrics":  "null is unsupported/missing, never a measured zero",
-		"timing_scope":               "descriptive instrumented same-host latency; other user services may contend; no universal speedup or scaling claim",
-		"fixture_scope":              "independent disjoint per-cell shard groups; reference cache keys separate; backend chunk/OS caches may already be warm",
-		"observer_scope":             "paired ledger/wire active-response completion plus bounded500ms quiet period(up to3s) for asynchronous replica work",
-		"storage_limits":             map[string]any{"primary_ram_bytes": 64 << 20, "primary_entries": 1024, "additional_compat_percent": 10, "logical_disk_bytes": 64 << 20, "disk_entries": 100000, "estimated_index_bytes": 16 << 20, "write_queue_bytes": 16 << 20, "flush_trigger_bytes": 4 << 20, "disk_codec": "s2", "profiling_on_timed_runs": false},
-		"resource_scope":             "logical admission limits are not physical SSD caps; bbolt lengths/allocated blocks and GoSys/kernel Maxrss are separate; no per-semantic-layer allocator or occupancy inferred",
+		"focused_harness_sha256":           digest(t, filepath.Join(root, "bench/cache-placement/dlv_baseline_test.go")),
+		"shared_harness_sha256":            digest(t, filepath.Join(root, "bench/cache-placement/real_api_test.go")),
+		"layer_attribution_harness_sha256": digest(t, filepath.Join(root, "bench/cache-placement/dlv_layer_attribution_test.go")),
+		"measurement_host":                 map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH, "go": runtime.Version()},
+		"semantic_cache_dimensions":        []string{"proxy_loki_facing", "proxy_vl_backend", "reference_loki_server"},
+		"aggregate_tier_attribution":       "unattributed; tier=l0 is a hot-key sidecar, not compatibility Tier0",
+		"unsupported_layer_metrics":        "null is unsupported/missing, never a measured zero",
+		"timing_scope":                     "descriptive instrumented same-host latency; other user services may contend; no universal speedup or scaling claim",
+		"fixture_scope":                    "independent disjoint per-cell shard groups; reference cache keys separate; backend chunk/OS caches may already be warm",
+		"observer_scope":                   "paired ledger/wire active-response completion plus bounded500ms quiet period(up to3s) for asynchronous replica work",
+		"storage_limits":                   map[string]any{"primary_ram_bytes": 64 << 20, "primary_entries": 1024, "additional_compat_percent": 10, "logical_disk_bytes": 64 << 20, "disk_entries": 100000, "estimated_index_bytes": 16 << 20, "write_queue_bytes": 16 << 20, "flush_trigger_bytes": 4 << 20, "disk_codec": "s2", "profiling_on_timed_runs": false},
+		"resource_scope":                   "logical admission limits are not physical SSD caps; bbolt lengths/allocated blocks and GoSys/kernel Maxrss are separate; no per-semantic-layer allocator or occupancy inferred",
 	}
 }
 func TestDLVCacheBaseline(t *testing.T) {

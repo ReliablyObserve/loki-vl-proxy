@@ -293,11 +293,22 @@ boundaries. Those bytes are not device-level disk throughput or physical IOPS.
 Startup, priming and untimed Tier0-pressure diagnostics are separate phases.
 
 Keep the proxy's Loki-facing layer, its VL-facing layer and the reference
-Loki server's caches separate in the report. Current aggregate storage-tier
-metrics do not provide complete semantic-layer attribution; unsupported layer
-counters remain null. In particular, metric tier `l0` describes the hotness
+Loki server's caches separate in the report. Aggregate storage-tier metrics
+do not provide semantic-layer attribution. When the measured binary exports
+the dedicated `loki_vl_proxy_cache_layer_*` families, the runner attributes only
+their explicit `layer="loki"`, `layer="vl"` or `layer="unknown"` samples.
+Each layer retains counter deltas and separate before/after gauges, including
+component and tier labels; unknown samples stay separate from Loki and VL.
+Missing, non-finite, negative or reset counter intervals remain null. Per-node
+validation prevents aggregate increments from hiding a resetting peer.
+Older binaries without these families retain null semantic-layer fields.
+In particular, metric tier `l0` describes the hotness
 sidecar, not the compatibility Tier0 response cache. Tier0 disabled is a
-configuration state, not an observed lookup miss. Churning the compatibility
+configuration state, not an observed lookup miss. Dedicated Tier0 fields are
+populated only for an enabled compatibility cache from its `layer="loki"`,
+`component="compat"`, `tier="l1_memory"` samples. Cache admissions and
+coalescer counters describe their instrumented boundaries, not inferred backend
+work; backend HTTP reads remain measured separately. Churning the compatibility
 cache can show resulting backend traffic and response correctness, but without
 a dedicated exported miss counter cannot prove the exact eviction event.
 
