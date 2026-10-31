@@ -94,19 +94,19 @@ func (m *Metrics) cacheLayerMetricSnapshots() []cacheLayerMetric {
 		// including accidental duplicate registration of a component name.
 		var components [4]*CacheComponentStats
 		for _, stats := range statsFn() {
-			index := -1
+			var slot **CacheComponentStats
 			switch stats.Component {
 			case "primary":
-				index = 0
+				slot = &components[0]
 			case "compat":
-				index = 1
+				slot = &components[1]
 			case "translation":
-				index = 2
+				slot = &components[2]
 			case "field_names":
-				index = 3
+				slot = &components[3]
 			}
-			if index >= 0 && components[index] == nil {
-				components[index] = &stats
+			if slot != nil && *slot == nil {
+				*slot = &stats
 			}
 		}
 		for _, definition := range cacheLayerTierMetrics {

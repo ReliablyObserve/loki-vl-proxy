@@ -10,7 +10,11 @@ is an operator claim, not a VCS attestation from the executable.
 The measured harness is retained at
 [`6b5dcd1b`](https://github.com/ReliablyObserve/loki-vl-proxy/tree/6b5dcd1b34f9cad5ae9b32a6a0837000c8f1dacc/bench/cache-placement).
 Its optional pressure-replay caption was clarified afterward; that diagnostic
-was disabled in this proof, and production sources are unchanged.
+was disabled in this proof. A later exporter follow-up selects fixed component
+slots directly, removing a variable index already restricted by a switch. This
+resolves gosec G602 without changing emitted metrics or the cache hot paths;
+the published hashes and measurements identify the executable before that
+follow-up. Exporter regression tests and a fresh scanner run verify the guard.
 
 ## Correctness and attribution
 
