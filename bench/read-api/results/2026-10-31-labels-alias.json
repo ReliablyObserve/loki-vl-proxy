@@ -1,0 +1,185 @@
+{
+  "base": "28a5a2f6994240d85d254b5daa23dbc04ecfd891",
+  "candidate": "c320190c3b2cda0137b36518491e406bbc8835d3",
+  "generated_at": "2026-10-31T21:42:27.113601+00:00",
+  "scope": "dedicated compose, same seeded Loki/VL data; peers disabled; GET then POST; no redirect following",
+  "params": {
+    "start": "1793479346772386000",
+    "end": "1793482946772386000",
+    "query": "{app=\"e2e-test\"}"
+  },
+  "rows": [
+    {
+      "case": "singular_alias",
+      "source": "base",
+      "method": "GET",
+      "plural_status": 200,
+      "alias_status": 307,
+      "alias_equals_plural": false,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": 4.0,
+      "alias_upstream_selects": 0.0
+    },
+    {
+      "case": "singular_alias",
+      "source": "base",
+      "method": "POST",
+      "plural_status": 200,
+      "alias_status": 307,
+      "alias_equals_plural": false,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": 4.0,
+      "alias_upstream_selects": 0.0
+    },
+    {
+      "case": "post_selector_isolation",
+      "source": "base",
+      "query": "{app=\"read-api-proof-missing-fixture\"}",
+      "post_status": 200,
+      "get_status": 200,
+      "post_matches_get": false,
+      "post_labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "get_labels": [],
+      "post_upstream_selects": 0.0
+    },
+    {
+      "case": "singular_alias",
+      "source": "pr",
+      "method": "GET",
+      "plural_status": 200,
+      "alias_status": 200,
+      "alias_equals_plural": true,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": 4.0,
+      "alias_upstream_selects": 0.0
+    },
+    {
+      "case": "singular_alias",
+      "source": "pr",
+      "method": "POST",
+      "plural_status": 200,
+      "alias_status": 200,
+      "alias_equals_plural": true,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": 0.0,
+      "alias_upstream_selects": 0.0
+    },
+    {
+      "case": "post_selector_isolation",
+      "source": "pr",
+      "query": "{app=\"read-api-proof-missing-fixture\"}",
+      "post_status": 200,
+      "get_status": 200,
+      "post_matches_get": true,
+      "post_labels": [],
+      "get_labels": [],
+      "post_upstream_selects": 3.0
+    },
+    {
+      "case": "singular_alias",
+      "source": "loki",
+      "method": "GET",
+      "plural_status": 200,
+      "alias_status": 200,
+      "alias_equals_plural": true,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": null,
+      "alias_upstream_selects": null
+    },
+    {
+      "case": "singular_alias",
+      "source": "loki",
+      "method": "POST",
+      "plural_status": 200,
+      "alias_status": 200,
+      "alias_equals_plural": true,
+      "canonical_matches_get": true,
+      "labels": [
+        "app",
+        "env",
+        "level",
+        "service_name"
+      ],
+      "plural_upstream_selects": null,
+      "alias_upstream_selects": null
+    },
+    {
+      "case": "post_selector_isolation",
+      "source": "loki",
+      "query": "{app=\"read-api-proof-missing-fixture\"}",
+      "post_status": 200,
+      "get_status": 200,
+      "post_matches_get": true,
+      "post_labels": null,
+      "get_labels": null,
+      "post_upstream_selects": null
+    }
+  ],
+  "filtered_nonempty_response_matches_loki": true,
+  "limits": [
+    "Request counters are proxy upstream selects, not physical storage operations.",
+    "No CPU, RSS, SSD IOPS, throughput or fleet-scaling comparison measured.",
+    "The optional outer GET compatibility cache remains path-specific."
+  ],
+  "provenance": {
+    "images": {
+      "candidate": {
+        "tag": "loki-vl-proxy:read-api-local",
+        "image_id": "sha256:c332b56001ec1fafa7a09f59500bb4a3ab20d5e85f52bec972d79f9f5269ab5b"
+      },
+      "base": {
+        "tag": "loki-vl-proxy:read-api-base",
+        "image_id": "sha256:3b4b58e06e89fa585ebe6fef9ffff5f30c3c47bc5c0b24eb7fc0bd59d0ba821c"
+      },
+      "loki": {
+        "tag": "grafana/loki:3.7.9",
+        "image_id": "sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28"
+      },
+      "victorialogs": {
+        "tag": "victoriametrics/victoria-logs:v1.52.0",
+        "image_id": "sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e"
+      }
+    },
+    "candidate_revision_label": "c320190c3b2cda0137b36518491e406bbc8835d3",
+    "fixture": "TestSetup_IngestLogs, ingested once; retained dedicated volumes; no UI generator",
+    "compose": "bench/read-api/compose.json",
+    "compose_sha256": "841b2df3f8c8f1db6b8ca1a79f52d912d08f1a716106b68490ab546983edc470",
+    "prior_priming": "Earlier endpoint proof runs; not a controlled cold-cache capture",
+    "topology": "One base and one candidate proxy, separate cache volumes, same Loki/VL fixture, peers disabled"
+  }
+}

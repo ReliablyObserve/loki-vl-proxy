@@ -70,6 +70,32 @@ func TestCompat_LabelsSingularAlias(t *testing.T) {
 					}
 				}
 			}
+			// A second form selector must not reuse the nonempty response above.
+			empty := url.Values{"start": {params.Get("start")}, "end": {params.Get("end")}, "query": {`{app="read-api-proof-missing-fixture"}`}}
+			for _, path := range []string{"/loki/api/v1/labels", "/loki/api/v1/label"} {
+				req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(empty.Encode()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				var result map[string]any
+				if err := json.Unmarshal(body, &result); err != nil {
+					t.Fatal(err)
+				}
+				// Loki omits data for an empty labels response; the proxy uses [].
+				if resp.StatusCode != http.StatusOK || result["status"] != "success" || len(extractStrings(result, "data")) != 0 {
+					t.Fatalf("POST %s reused a different selector's labels: status=%d body=%s", path, resp.StatusCode, body)
+				}
+			}
 		})
 	}
 }
