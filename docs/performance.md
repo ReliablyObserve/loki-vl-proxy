@@ -152,8 +152,12 @@ The proxy now uses compression on multiple read-path hops:
 | Client -> proxy response | Frontend stays on `gzip`/identity; the chart pins `-response-compression=gzip` with `-response-compression-min-bytes=1024` for broad Loki/Grafana compatibility |
 | Proxy -> peer-cache owner | `/_cache/get` prefers `zstd`, then `gzip`, then identity for payloads `>=1KiB` |
 | Proxy -> VictoriaLogs | `-backend-compression=auto` advertises `zstd, gzip`; the proxy decodes either safely before translation or passthrough |
-| Disk cache | gzip-compressed value storage |
+| Disk cache | Versioned S2 (default), zstd, gzip or raw records; incompressible values stored raw; see [Disk cache](disk-cache.md) |
 | OTLP push | `none`, `gzip`, or `zstd` |
+
+The [cache storage verification](benchmarks/cache-storage-2026-10-30.md) measures
+L2 costs separately from API latency, with fixed committed work, allocation
+profiles, raw samples and restart/peer correctness evidence.
 
 Important: current VictoriaLogs docs clearly describe HTTP response compression, but not a guaranteed `zstd` query-response contract on the normal select path. The proxy can accept `zstd` from upstream when the backend provides it, but stock VictoriaLogs deployments may still return `gzip` or identity today.
 

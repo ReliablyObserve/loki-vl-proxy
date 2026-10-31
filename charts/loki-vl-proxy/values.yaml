@@ -250,9 +250,14 @@ extraArgs:
   # tenant-map: '{"team-alpha":{"account_id":"100","project_id":"1"}}'
   # disk-cache-path: "/cache/data.db"
   # disk-cache-compress: "true"
-  # disk-cache-flush-size: "100"
+  # disk-cache-codec: "s2" # s2, zstd, gzip or raw
+  # disk-cache-flush-size: "1000"
+  # disk-cache-flush-bytes: "4194304"
+  # disk-cache-max-buffer-bytes: "16777216"
+  # disk-cache-max-entries: "100000"
+  # disk-cache-max-index-bytes: "16777216"
   # disk-cache-flush-interval: "5s"
-  # disk-cache-max-bytes: "21474836480" # 20Gi safety cap (0 = unlimited)
+  # disk-cache-max-bytes: "21474836480" # 20Gi logical LRU cap; bbolt retains free pages
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"

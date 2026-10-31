@@ -69,7 +69,7 @@ flowchart TD
     subgraph CacheTiers["Cache Tiers (L0 / L1 / L2 / L3)"]
         L0["L0 hot-key index<br/>bounded hotness sidecar<br/>drives peer read-ahead (not a lookup tier)"]
         L1["L1 in-memory<br/>sync.Map + atomic counters"]
-        L2["L2 disk (bbolt)<br/>gzip, survives restarts"]
+        L2["L2 disk (bbolt)<br/>S2 / zstd, survives restarts"]
         L3["L3 peer cache<br/>consistent hash ring<br/>zstd, write-through"]
         WARM["Cache warmer<br/>keep-warm loop + top-N<br/>startup jitter + peer-first"]
     end
@@ -494,7 +494,7 @@ The `Proxy` struct is decomposed into three explicit types (migration in progres
 - **Circuit breaker**: 3-state (closed/open/half-open) with a sliding failure window (`-cb-fail-threshold`, `-cb-window-duration`, `-cb-open-duration`)
 
 ### Cache (`internal/cache/`)
-Three lookup tiers: L1 in-memory (sync.Map + atomic counters), optional L2 on-disk (bbolt with gzip compression), and optional L3 peer cache (consistent hash ring, `zstd`/`gzip` on larger peer transfers). L0 is a bounded hot-key index beside L1 that drives peer hot read-ahead; it is reported as `tier="l0"` in cache metrics but is not a lookup tier. `POST /admin/cache/flush` clears L0, L1 and L2 locally; with `?peers=1` it also fans out to every peer's `/_cache/purge`. Disk encryption is delegated to cloud provider (EBS, PD, etc.).
+Three lookup tiers: bounded L1 in-memory, optional L2 on-disk (bbolt with LRU capacity and S2/zstd/gzip/raw codecs), and optional L3 peer cache (consistent hash ring, `zstd`/`gzip` on larger peer transfers). L0 is a bounded hot-key index beside L1 that drives peer hot read-ahead; it is reported as `tier="l0"` in cache metrics but is not a lookup tier. `POST /admin/cache/flush` clears L0, L1 and L2 locally; with `?peers=1` it also fans out to every peer's `/_cache/purge`. Disk encryption is delegated to cloud provider (EBS, PD, etc.).
 
 ### Metrics (`internal/metrics/`)
 Prometheus text exposition at `/metrics` (served only with `-server.register-instrumentation=true`, optionally on a dedicated `-metrics-listen` address) plus OTLP push. Route-aware downstream and upstream request metrics, tenant/client breakdowns, cache and windowing metrics, peer-cache state, circuit-breaker state, and prefixed process/runtime health.

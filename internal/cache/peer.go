@@ -11,6 +11,7 @@ import (
 	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"log/slog"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -35,6 +36,9 @@ const (
 	maxPeerHotIndexBytes    int64 = 4 << 20
 	maxPeerSetBodyBytes     int64 = 8 << 20
 	peerCompressionMinBytes       = 1024
+	// Normal TTLs need at most 20 bytes. Bound noncanonical legacy syntax
+	// before integer scanning, which otherwise allocates for arbitrarily long tokens.
+	maxPeerTTLTextBytes = 128
 
 	// MaxReplicationFactor bounds PeerConfig.ReplicationFactor: the replicas
 	// a write is pushed to and a lookup may ask.
@@ -490,7 +494,7 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 // whether the replica keeps it in memory only, with status 200; 404 on a
 // miss; 0 on an error (recorded against the peer).
 func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, int) {
-	endpoint := fmt.Sprintf("http://%s/_cache/get?%s", owner, url.Values{"key": []string{key}}.Encode())
+	endpoint := "http://" + owner + "/_cache/get?key=" + url.QueryEscape(key)
 	ctx, cancel := context.WithTimeout(pc.peerContext(owner), pc.client.Timeout)
 	defer cancel()
 
@@ -529,6 +533,26 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 		pc.PeerErrors.Add(1)
 		return nil, 0, false, 0
 	}
+	// Validate owner metadata before buffering or decompressing its value.
+	var remainingTTL time.Duration
+	if ttlMs := resp.Header.Get("X-Cache-Ttl-Ms"); ttlMs != "" {
+		if len(ttlMs) > maxPeerTTLTextBytes {
+			pc.recordPeerFailure(owner)
+			pc.RecordPeerErrorReason("invalid_ttl")
+			pc.PeerErrors.Add(1)
+			return nil, 0, false, 0
+		}
+		if msVal, ok := parsePeerTTLMillis(ttlMs); ok {
+			var valid bool
+			remainingTTL, valid = peerTTLDuration(msVal)
+			if !valid {
+				pc.recordPeerFailure(owner)
+				pc.RecordPeerErrorReason("invalid_ttl")
+				pc.PeerErrors.Add(1)
+				return nil, 0, false, 0
+			}
+		}
+	}
 
 	body, err := readPeerBodyLimited(resp.Body, maxPeerResponseBytes)
 	if err != nil {
@@ -543,15 +567,6 @@ func (pc *PeerCache) fetchFrom(owner, key string) ([]byte, time.Duration, bool, 
 		pc.RecordPeerErrorReason("decode")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false, 0
-	}
-
-	// Parse remaining TTL from owner's response
-	var remainingTTL time.Duration
-	if ttlMs := resp.Header.Get("X-Cache-TTL-Ms"); ttlMs != "" {
-		var msVal int64
-		if _, err := fmt.Sscanf(ttlMs, "%d", &msVal); err == nil {
-			remainingTTL = time.Duration(msVal) * time.Millisecond
-		}
 	}
 
 	pc.recordPeerSuccess(owner)
@@ -780,7 +795,7 @@ const MinUsableTTL = 5 * time.Second
 // GET  /_cache/hot              — hot key index
 // POST /_cache/set?key=...      — store a value
 // GET  /_cache/peers            — current known peer list (diagnostic)
-// Header X-Cache-TTL-Ms: remaining TTL in milliseconds (for shadow copy)
+// Header X-Cache-Ttl-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
 	switch r.URL.Path {
 	case "/_cache/hot":
@@ -869,7 +884,7 @@ func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-Cache-TTL-Ms", fmt.Sprintf("%d", remaining.Milliseconds()))
+	w.Header().Set("X-Cache-Ttl-Ms", strconv.FormatInt(remaining.Milliseconds(), 10))
 	if memOnly {
 		w.Header().Set(peerMemoryOnlyHeader, "1")
 	}
@@ -883,12 +898,21 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 		http.Error(w, "missing key", http.StatusBadRequest)
 		return
 	}
-	ttlMsRaw := strings.TrimSpace(r.URL.Query().Get("ttl_ms"))
+	ttlMsRaw := r.URL.Query().Get("ttl_ms")
+	if len(ttlMsRaw) > maxPeerTTLTextBytes {
+		http.Error(w, "cache TTL exceeds text limit", http.StatusBadRequest)
+		return
+	}
+	ttlMsRaw = strings.TrimSpace(ttlMsRaw)
 	var ttl time.Duration
 	if ttlMsRaw != "" {
-		var ttlMs int64
-		if _, err := fmt.Sscanf(ttlMsRaw, "%d", &ttlMs); err == nil && ttlMs > 0 {
-			ttl = time.Duration(ttlMs) * time.Millisecond
+		if ttlMs, ok := parsePeerTTLMillis(ttlMsRaw); ok && ttlMs > 0 {
+			var valid bool
+			ttl, valid = peerTTLDuration(ttlMs)
+			if !valid {
+				http.Error(w, "cache TTL exceeds duration limit", http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	if ttl <= 0 {
@@ -947,10 +971,31 @@ func (pc *PeerCache) serveHotIndex(w http.ResponseWriter, r *http.Request, local
 	writePeerEncodedResponse(w, r, body)
 }
 
+const peerEncodedScratchMax = 256 << 10
+
+// peerEncodedScratch is process-wide: retain at most eight 256KiB buffers
+// (2MiB). Active responses own separate buffers until Write returns; the
+// retained bound does not limit active HTTP concurrency or codec memory.
+var peerEncodedScratch = make(chan []byte, 8)
+
 func writePeerEncodedResponse(w http.ResponseWriter, r *http.Request, body []byte) {
 	if len(body) >= peerCompressionMinBytes && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "zstd") {
 		w.Header().Set("Content-Encoding", "zstd")
-		_, _ = w.Write(peerZstdEncoder.EncodeAll(body, make([]byte, 0, len(body)/2)))
+		var scratch []byte
+		select {
+		case scratch = <-peerEncodedScratch:
+		default:
+			scratch = make([]byte, 0, peerCompressionMinBytes)
+		}
+		encoded := peerZstdEncoder.EncodeAll(body, scratch[:0])
+		// io.Writer must not retain its input: only return scratch after Write.
+		_, _ = w.Write(encoded)
+		if cap(encoded) <= peerEncodedScratchMax {
+			select {
+			case peerEncodedScratch <- encoded[:0]:
+			default:
+			}
+		}
 		return
 	}
 	if len(body) >= peerCompressionMinBytes && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -1403,6 +1448,24 @@ func (pc *PeerCache) PeerCount() int {
 		}
 	}
 	return count
+}
+
+// parsePeerTTLMillis avoids scanning state for normal integer TTLs while keeping
+// the existing scanner behavior for noncanonical peer inputs.
+func parsePeerTTLMillis(raw string) (int64, bool) {
+	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return n, true
+	}
+	var n int64
+	_, err := fmt.Sscanf(raw, "%d", &n)
+	return n, err == nil
+}
+
+func peerTTLDuration(milliseconds int64) (time.Duration, bool) {
+	if milliseconds > math.MaxInt64/int64(time.Millisecond) || milliseconds < math.MinInt64/int64(time.Millisecond) {
+		return 0, false
+	}
+	return time.Duration(milliseconds) * time.Millisecond, true
 }
 
 func readPeerBodyLimited(r io.Reader, limit int64) ([]byte, error) {

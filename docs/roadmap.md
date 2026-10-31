@@ -16,7 +16,7 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] Tiered cache (per-endpoint TTLs, L1 in-memory, L2 bbolt on-disk)
 - [x] Multitenancy (string->int tenant mapping, numeric passthrough, SIGHUP reload)
 - [x] WebSocket tail (`/loki/api/v1/tail` -> VL NDJSON streaming)
-- [x] L2 disk cache with gzip compression, write-back buffer (encryption via cloud provider)
+- [x] L2 disk cache with LRU capacity, S2/zstd/gzip/raw codecs and bounded write batching (encryption via cloud provider)
 - [x] OTLP telemetry push (gzip/zstd compression, TLS)
 - [x] HTTP hardening (timeouts, body limits, security headers)
 - [x] Index stats via VL `/select/logsql/hits`; volume and volume_range in bytes via VL `sum_len(_msg)` stats

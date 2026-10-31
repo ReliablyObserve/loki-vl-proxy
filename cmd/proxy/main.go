@@ -476,11 +476,16 @@ func run(
 
 	// Disk cache flags
 	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
-	diskCacheCompress := fs.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
-	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
+	diskCacheCompress := fs.Bool("disk-cache-compress", true, "Compress disk cache values using -disk-cache-codec; false writes raw records")
+	diskCacheCodec := fs.String("disk-cache-codec", "s2", "Disk cache codec: s2, zstd, gzip or raw; new records identify their own codec")
+	diskCacheFlushBytes := fs.Int64("disk-cache-flush-bytes", 4<<20, "Flush after this many queued bytes, including keys and queue overhead")
+	diskCacheMaxBufferBytes := fs.Int64("disk-cache-max-buffer-bytes", 16<<20, "Maximum pending and flushing bytes combined, including queue overhead")
+	diskCacheMaxEntries := fs.Int("disk-cache-max-entries", 100000, "Maximum persisted L2 entries; least recently used entries are evicted")
+	diskCacheMaxIndexBytes := fs.Int64("disk-cache-max-index-bytes", 16<<20, "Maximum estimated L2 recency-index bytes (128 plus key length per entry)")
+	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 1000, "Flush write buffer after N entries")
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only). Empty label and label-value answers are cached for max(30s, this, -peer-write-through-min-ttl) so they replace older non-empty copies")
-	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum on-disk L2 cache size in bytes (0 = unlimited)")
+	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum logical L2 record and key bytes; LRU eviction (0 = no byte cap); bbolt file may retain free pages")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
@@ -824,12 +829,17 @@ func run(
 		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
-			Path:          *diskCachePath,
-			Compression:   *diskCacheCompress,
-			FlushSize:     *diskCacheFlushSize,
-			FlushInterval: *diskCacheFlushInterval,
-			MinTTL:        *diskCacheMinTTL,
-			MaxBytes:      *diskCacheMaxBytes,
+			Path:           *diskCachePath,
+			Compression:    *diskCacheCompress,
+			Codec:          *diskCacheCodec,
+			FlushBytes:     *diskCacheFlushBytes,
+			MaxBufferBytes: *diskCacheMaxBufferBytes,
+			MaxEntries:     *diskCacheMaxEntries,
+			MaxIndexBytes:  *diskCacheMaxIndexBytes,
+			FlushSize:      *diskCacheFlushSize,
+			FlushInterval:  *diskCacheFlushInterval,
+			MinTTL:         *diskCacheMinTTL,
+			MaxBytes:       *diskCacheMaxBytes,
 		},
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:                          envCfg.backendURL,
@@ -1131,6 +1141,11 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 		return c, func() { c.Close() }, nil
 	}
 
+	// L2 cannot admit a value larger than the L1 single-entry budget.
+	// Bound decompression before allocating even when the stored header is damaged.
+	if limit := maxBytes / 10; diskCfg.MaxEntryBytes <= 0 || diskCfg.MaxEntryBytes > limit {
+		diskCfg.MaxEntryBytes = limit
+	}
 	dc, err := cache.NewDiskCache(diskCfg)
 	if err != nil {
 		c.Close()
@@ -1140,6 +1155,12 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool,
 	logger.Info("disk cache enabled",
 		"path", diskCfg.Path,
 		"compress", diskCfg.Compression,
+		"codec", diskCfg.Codec,
+		"max_bytes", diskCfg.MaxBytes,
+		"max_entries", diskCfg.MaxEntries,
+		"max_index_bytes", diskCfg.MaxIndexBytes,
+		"max_buffer_bytes", diskCfg.MaxBufferBytes,
+		"flush_bytes", diskCfg.FlushBytes,
 		"flush_size", diskCfg.FlushSize,
 		"flush_interval", diskCfg.FlushInterval.String(),
 		"min_ttl", diskCfg.MinTTL.String(),

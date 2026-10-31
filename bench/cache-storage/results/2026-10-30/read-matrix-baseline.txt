@@ -1,0 +1,55 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskPolicyHit/256B/compressible-18         	  305680	      1070 ns/op	 239.34 MB/s	         0 writecalls/op	    1147 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/compressible-18         	  326887	      1050 ns/op	 243.77 MB/s	         0 writecalls/op	    1146 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/compressible-18         	  312531	       972.9 ns/op	 263.13 MB/s	         0 writecalls/op	    1147 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/compressible-18         	  363012	       975.4 ns/op	 262.46 MB/s	         0 writecalls/op	    1145 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/compressible-18         	  347692	      1010 ns/op	 253.42 MB/s	         0 writecalls/op	    1146 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18               	  401150	      1086 ns/op	 235.79 MB/s	         0 writecalls/op	    1374 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18               	  455602	       809.3 ns/op	 316.31 MB/s	         0 writecalls/op	    1375 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18               	  395917	       767.4 ns/op	 333.62 MB/s	         0 writecalls/op	    1376 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18               	  445941	       996.5 ns/op	 256.89 MB/s	         0 writecalls/op	    1374 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/256B/random-18               	  400998	       852.9 ns/op	 300.15 MB/s	         0 writecalls/op	    1376 B/op	      11 allocs/op
+BenchmarkDiskPolicyHit/4096B/compressible-18        	   60247	      5478 ns/op	 747.68 MB/s	         0 writecalls/op	   11853 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/compressible-18        	   66753	      5472 ns/op	 748.56 MB/s	         0 writecalls/op	   11857 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/compressible-18        	   63920	      5628 ns/op	 727.76 MB/s	         0 writecalls/op	   11847 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/compressible-18        	   56700	      6731 ns/op	 608.51 MB/s	         0 writecalls/op	   11849 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/compressible-18        	   63805	      7273 ns/op	 563.19 MB/s	         0 writecalls/op	   11854 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/random-18              	   60686	      5277 ns/op	 776.22 MB/s	         0 writecalls/op	   16654 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/random-18              	   59346	      6015 ns/op	 680.92 MB/s	         0 writecalls/op	   16652 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/random-18              	   85530	      4286 ns/op	 955.77 MB/s	         0 writecalls/op	   16664 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/random-18              	   73894	      4516 ns/op	 907.04 MB/s	         0 writecalls/op	   16665 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/4096B/random-18              	   77551	      4424 ns/op	 925.85 MB/s	         0 writecalls/op	   16663 B/op	      19 allocs/op
+BenchmarkDiskPolicyHit/65536B/compressible-18       	    8842	     51611 ns/op	1269.80 MB/s	         0 writecalls/op	  147603 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/compressible-18       	   10711	     33322 ns/op	1966.73 MB/s	         0 writecalls/op	  147698 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/compressible-18       	   10000	     35990 ns/op	1820.96 MB/s	         0 writecalls/op	  147604 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/compressible-18       	    9573	     54496 ns/op	1202.58 MB/s	         0 writecalls/op	  147739 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/compressible-18       	   11871	     31747 ns/op	2064.33 MB/s	         0 writecalls/op	  147678 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/random-18             	   10000	     52888 ns/op	1239.15 MB/s	         0 writecalls/op	  221729 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/random-18             	    8050	     42991 ns/op	1524.40 MB/s	         0 writecalls/op	  221824 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/random-18             	    8563	     41572 ns/op	1576.44 MB/s	         0 writecalls/op	  221675 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/random-18             	    8592	     53690 ns/op	1220.63 MB/s	         0 writecalls/op	  221785 B/op	      26 allocs/op
+BenchmarkDiskPolicyHit/65536B/random-18             	    5551	     56689 ns/op	1156.07 MB/s	         0 writecalls/op	  221910 B/op	      26 allocs/op
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache	52.256s
+BenchmarkDiskPolicyBatch/batch1-18         	      34	   9419612 ns/op	   0.43 MB/s	         1.000 committedvalues/op	         1.029 flushes/op	         5.059 writecalls/op	40931900 B/op	    9319 allocs/op
+BenchmarkDiskPolicyBatch/batch1-18         	      42	   9052384 ns/op	   0.45 MB/s	         1.000 committedvalues/op	         1.024 flushes/op	         5.048 writecalls/op	39010205 B/op	    8877 allocs/op
+BenchmarkDiskPolicyBatch/batch1-18         	      52	   7164726 ns/op	   0.57 MB/s	         1.000 committedvalues/op	         1.019 flushes/op	         5.038 writecalls/op	21172514 B/op	    4774 allocs/op
+BenchmarkDiskPolicyBatch/batch1-18         	      46	   7326790 ns/op	   0.56 MB/s	         1.000 committedvalues/op	         1.022 flushes/op	         5.043 writecalls/op	24486066 B/op	    5509 allocs/op
+BenchmarkDiskPolicyBatch/batch1-18         	      40	   7651224 ns/op	   0.54 MB/s	         1.000 committedvalues/op	         1.025 flushes/op	         5.050 writecalls/op	23971706 B/op	    5399 allocs/op
+BenchmarkDiskPolicyBatch/batch100-18       	    4332	     79062 ns/op	  51.81 MB/s	         1.000 committedvalues/op	         0.01016 flushes/op	         0.06925 writecalls/op	  252799 B/op	      61 allocs/op
+BenchmarkDiskPolicyBatch/batch100-18       	    3706	     97420 ns/op	  42.04 MB/s	         1.000 committedvalues/op	         0.01025 flushes/op	         0.06962 writecalls/op	  190361 B/op	      47 allocs/op
+BenchmarkDiskPolicyBatch/batch100-18       	    4384	     81321 ns/op	  50.37 MB/s	         1.000 committedvalues/op	         0.01004 flushes/op	         0.06866 writecalls/op	  307179 B/op	      74 allocs/op
+BenchmarkDiskPolicyBatch/batch100-18       	    3867	     84309 ns/op	  48.58 MB/s	         1.000 committedvalues/op	         0.01009 flushes/op	         0.06879 writecalls/op	  327844 B/op	      78 allocs/op
+BenchmarkDiskPolicyBatch/batch100-18       	    4644	     88838 ns/op	  46.11 MB/s	         1.000 committedvalues/op	         0.01012 flushes/op	         0.06912 writecalls/op	  221203 B/op	      54 allocs/op
+BenchmarkDiskPolicyBatch/batch1000-18      	   20428	     17571 ns/op	 233.11 MB/s	         1.000 committedvalues/op	         0.001028 flushes/op	         0.02315 writecalls/op	   38545 B/op	      13 allocs/op
+BenchmarkDiskPolicyBatch/batch1000-18      	   21033	     16366 ns/op	 250.28 MB/s	         1.000 committedvalues/op	         0.001046 flushes/op	         0.02325 writecalls/op	   28432 B/op	      11 allocs/op
+BenchmarkDiskPolicyBatch/batch1000-18      	   20293	     17169 ns/op	 238.56 MB/s	         1.000 committedvalues/op	         0.001035 flushes/op	         0.02321 writecalls/op	   37365 B/op	      13 allocs/op
+BenchmarkDiskPolicyBatch/batch1000-18      	   20288	     16898 ns/op	 242.39 MB/s	         1.000 committedvalues/op	         0.001035 flushes/op	         0.02317 writecalls/op	   35510 B/op	      12 allocs/op
+BenchmarkDiskPolicyBatch/batch1000-18      	   19504	     16788 ns/op	 243.99 MB/s	         1.000 committedvalues/op	         0.001025 flushes/op	         0.02312 writecalls/op	   30039 B/op	      11 allocs/op
+BenchmarkDiskPolicyLegacyExpirySweep-18    	      46	   8228680 ns/op	      1024 fixturekeys	         2.000 writecalls/op	39809842 B/op	    9257 allocs/op
+BenchmarkDiskPolicyLegacyExpirySweep-18    	      42	   8248159 ns/op	      1024 fixturekeys	         2.000 writecalls/op	39809669 B/op	    9256 allocs/op
+BenchmarkDiskPolicyLegacyExpirySweep-18    	      43	   8042056 ns/op	      1024 fixturekeys	         2.000 writecalls/op	32216411 B/op	    7497 allocs/op
+BenchmarkDiskPolicyLegacyExpirySweep-18    	      61	   5838918 ns/op	      1024 fixturekeys	         2.000 writecalls/op	20897776 B/op	    4873 allocs/op
+BenchmarkDiskPolicyLegacyExpirySweep-18    	      63	   6748921 ns/op	      1024 fixturekeys	         2.000 writecalls/op	25169170 B/op	    5862 allocs/op
