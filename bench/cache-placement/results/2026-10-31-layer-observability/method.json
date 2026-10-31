@@ -1,0 +1,22 @@
+{
+  "baseline": "27ee67a14c1b56ec4bf7a3bd8dd869e42ba6ad25",
+  "rounds": 6,
+  "order": [
+    "control-a baseline",
+    "control-b baseline",
+    "candidate final",
+    "baseline"
+  ],
+  "GOMAXPROCS": 4,
+  "benchtime": "200ms",
+  "scope": "Cache microbenchmarks on shared host; live proof stacks and user services active. Controls report contention; no quiet-host or end-to-end speedup claim.",
+  "elapsed_seconds": 48.191429138183594,
+  "binary_sha256": {
+    "cache-baseline.test": "b2c514267a53383705f573d4b0c5ef5222596fb19b57b55678a5e1ffac8d9a21",
+    "cache-final.test": "e243289229a6e46a5d4a101a51d0d5ec6e511e478981cf072e42b8a5e601574c",
+    "proxy-baseline": "b023ed1153a1d6b296340be48c8806df627596b3a2b699055d23158b77db2d5c",
+    "proxy-candidate-final": "e3ed638f41d6920ede40c29549d0a418b2bad329a4917064adf9e17daa57eea1"
+  },
+  "benchmark_source_sha256": "9e6d6e4ae8f93e357333087ca58d6e558bfee7a76165139d0d60e2e008b979d3",
+  "benchstat_version": "golang.org/x/perf v0.0.0-20260929162123-406019bb8b68 (tool built with Go1.26.8; benchmark binaries Go1.27.3)"
+}

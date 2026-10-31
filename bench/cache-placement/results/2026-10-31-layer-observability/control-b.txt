@@ -1,0 +1,78 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  548550	       391.3 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  700261	       352.9 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	26227358	         9.219 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  738234	       356.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	23438358	        10.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  732367	       333.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	26078571	         9.311 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  744782	       333.4 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  590199	       447.1 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  635228	       364.0 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	25602274	         9.313 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  741895	       337.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	26039665	         9.249 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  725924	       333.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	24808231	         9.297 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  686834	       335.8 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  531933	       387.5 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  636084	       359.3 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	25547316	         9.393 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  734150	       322.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	25888688	         9.370 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  745755	       333.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	24767162	         9.394 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  697800	       322.0 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  574413	       394.1 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  574138	       356.6 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	26037547	         9.227 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  684328	       328.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	25989962	         9.544 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  812846	       333.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	24852116	         9.411 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  694662	       330.0 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  553111	       378.4 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  664688	       347.8 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	25586012	         9.250 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  729852	       336.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	26267666	         9.202 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  730611	       336.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	26087072	         9.202 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  762176	       337.3 ns/op	       0 B/op	       0 allocs/op
+PASS
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+BenchmarkDiskCache_Get_Hit_Compressed-4     	  522942	       384.0 ns/op	    1344 B/op	       9 allocs/op
+BenchmarkDiskCache_Get_Hit_Uncompressed-4   	  687063	       353.3 ns/op	    1408 B/op	       9 allocs/op
+BenchmarkSemanticCacheGet/loki/miss-4       	26161362	         9.211 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/loki/hit-4        	  732265	       335.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/miss-4         	26235721	         9.208 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/vl/hit-4          	  731958	       339.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/miss-4    	24551904	         9.432 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSemanticCacheGet/unknown/hit-4     	  705812	       333.6 ns/op	       0 B/op	       0 allocs/op
+PASS

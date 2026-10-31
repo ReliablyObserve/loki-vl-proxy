@@ -63,6 +63,10 @@ func (dc *DiskCache) removeIndex(key string) {
 	delete(dc.index, key)
 	dc.indexBytes -= diskIndexCharge(key)
 	dc.logicalBytes -= e.size
+	layer := LayerForKey(key)
+	dc.layerL2[layer].entries.Add(-1)
+	dc.layerL2[layer].bytes.Add(-e.size)
+	dc.layerIndexBytes[layer] -= diskIndexCharge(key)
 	e.prev, e.next = nil, nil
 }
 
@@ -76,6 +80,10 @@ func (dc *DiskCache) newIndexEntry(key string, size, expiry int64, access uint64
 	dc.index[key] = e
 	dc.indexBytes += diskIndexCharge(key)
 	dc.logicalBytes += size
+	layer := LayerForKey(key)
+	dc.layerL2[layer].entries.Add(1)
+	dc.layerL2[layer].bytes.Add(size)
+	dc.layerIndexBytes[layer] += diskIndexCharge(key)
 	if dc.nextExpiry == 0 || expiry < dc.nextExpiry {
 		dc.nextExpiry = expiry
 	}
@@ -167,6 +175,9 @@ func (dc *DiskCache) rebuildIndex() error {
 						return err
 					}
 					dc.Evictions.Add(1)
+					if err == nil {
+						dc.layerL2[LayerForKey(k)].evictions.Add(1)
+					}
 					continue
 				}
 				dc.addIndex(k, size, expiry)

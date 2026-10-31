@@ -57,6 +57,7 @@ func TestOTLPPusher_RejectsUnexpectedUnprefixedMetricFamilies(t *testing.T) {
 
 func seededMetricsForMetricNameGuard() *Metrics {
 	m := NewMetrics()
+	m.SetCacheLayerStatsProvider(layerFixture)
 	m.RecordRequestWithRoute("query_range", "/loki/api/v1/query_range", 200, 35*time.Millisecond)
 	m.RecordUpstreamRequest("vl", "query_range", "/select/logsql/query", 200, 20*time.Millisecond)
 	m.RecordTenantRequestWithRoute("tenant-a", "query_range", "/loki/api/v1/query_range", 200, 35*time.Millisecond)

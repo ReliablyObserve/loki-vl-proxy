@@ -275,6 +275,79 @@ Operational notes for these hot paths:
 - multi-tenant read fanout and merged response bodies are capped to keep a single request from exhausting proxy memory
 - synthetic tail keeps bounded dedup state so long-running websocket sessions do not grow without limit
 
+### Semantic cache layers
+
+Prometheus scrape and OTLP push expose the same `loki_vl_proxy_cache_layer_*`
+families. `layer` is `loki`, `vl` or `unknown`; `component` is `primary`,
+`compat`, `translation` or `field_names`. These are fixed labels, without
+tenant, credential, query or cache-key values. Layers describe payload
+semantics; tiers describe where a lookup runs.
+
+| Suffix after `loki_vl_proxy_cache_layer_` | Type | Meaning |
+|---|---|---|
+| `requests_total`, `hits_total`, `misses_total`, `stale_hits_total` | counter | Tier lookup outcomes; hits return a candidate which a caller may still reject during semantic validation |
+| `read_bytes_total` | counter | Decoded value bytes returned by tier lookups |
+| `write_bytes_total`, `admissions_total`, `rejections_total` | counter | L1 admission or L2 queue admission; replacements are new accepted writes |
+| `evictions_total` | counter | Actual L1 entries or committed L2 records removed by capacity/expiry; excludes explicit invalidation, replacements and rejected incoming values |
+| `objects`, `bytes` | gauge | L1 resident entries and key/value bytes; L2 committed records and key/encoded-record bytes |
+| `lookup_seconds_total` | counter | Elapsed logical L2/L3 lookup time, including misses; not isolated mutex wait time |
+| `disk_index_bytes`, `disk_queue_bytes` | gauge | Accounted RAM for the L2 index and pending-plus-flushing writes |
+| `disk_encoded_read_bytes_total`, `disk_encoded_write_bytes_total` | counter | Encoded records copied from bbolt or written in successful transactions, excluding key and filesystem overhead |
+| `coalesced_total`, `coalesced_saved_total`, `coalesced_wait_total`, `coalesced_wait_seconds_total` | counter | Successful shared requests, actual saved backend calls, follower waits and cumulative wait time; labels contain `layer` only |
+
+Tier-labelled series use `l1_memory`, `l2_disk` and `l3_peer`. L3 exports
+lookup outcomes, decoded reads and lookup duration. Peer occupancy and
+write/admission/eviction series are omitted because these snapshots do not
+measure them. L1 lookup time is also omitted. L2 can return a pending/flushing
+RAM value: an L2 hit or decoded read is not proof of an SSD read. Encoded
+record traffic is application traffic, not physical device throughput or IOPS.
+Value-byte counters refer to the bytes passed to/from the cache after any
+storage-codec decoding. A typed binary payload or an HTTP-compressed response
+still counts its own representation; these counters do not decode application
+payloads or estimate uncompressed log volume.
+Encoded write bytes count record `Put` operations in successful transactions,
+including records removed later in the same batch; they are not net retained
+growth. Deletes, page writes, journal/filesystem amplification and failed
+transactions are not estimated by that counter.
+
+The mixed primary store attributes audited namespaces explicitly: Loki
+responses, resolved log windows and `query-steps:v1:` are `loki`;
+`stats-extent:v1:`, `vlinv-v1:` and backend field-name results are `vl`.
+Unrecognized or ambiguous families remain `unknown`. Translation and
+field-name auxiliary caches have fixed instance attribution because their
+keys need not identify a semantic family. Compatibility responses are the
+`compat` component, separate from the legacy `l0` hotness index. Distinct
+cache instances are counted once even when profile/configuration pointers
+alias; an aliased L2 store is attributed to its first component only.
+
+RAM/index/queue bytes are application accounting charges. They exclude cache
+object/map overhead, bbolt engine state, codec scratch and general in-flight
+work; queue and L1 charges may reference shared payload backing memory.
+They cannot be summed into measured unique heap or RSS. L2 logical bytes do
+not divide the shared database file between layers; the legacy
+`cache_bytes{tier="l2_disk"}` remains whole-file length. LRU eviction does not
+necessarily shrink that file. Gauges include expired entries until removal,
+and counters may advance during a scrape.
+
+Backend coalescer observations belong to `vl`: its integrated call sites
+wrap VL HTTP calls. `coalesced_total` retains the existing successful-shared
+request definition, which includes a shared leader. `coalesced_saved_total`
+and waits count actual followers, including shared failures. Disabled or
+guard-rejected calls do not invent saved work. These are not peer transport
+coalescer or resident cache statistics.
+
+Examples:
+
+```promql
+# Accounted resident key/value bytes by semantic layer.
+sum by (layer) (loki_vl_proxy_cache_layer_bytes{tier="l1_memory"})
+# Decoded cache delivery bytes/second, not SSD/network bandwidth.
+sum by (layer, tier) (rate(loki_vl_proxy_cache_layer_read_bytes_total[5m]))
+# Committed encoded record traffic/second and actual expiry/capacity removals.
+sum by (layer) (rate(loki_vl_proxy_cache_layer_disk_encoded_write_bytes_total[5m]))
+sum by (layer, tier) (rate(loki_vl_proxy_cache_layer_evictions_total[5m]))
+```
+
 ### Query-Range Windowing Metrics
 
 These are the primary signals for long-range query performance and backend protection:

@@ -11,6 +11,9 @@ type diskMutation struct {
 	size, expiry int64
 	entry        diskEntry
 	remove       bool
+	// originalRemoved tracks deletion of a record present before this batch,
+	// including expiry/invalidation before a new value for the same key.
+	originalRemoved bool
 }
 type diskVictim struct {
 	key    string
@@ -53,6 +56,9 @@ type diskBatch struct {
 	plannedBytes, plannedIndex int64
 	plannedCount               int
 	writes, evictions          int64
+	layerEvictions             [LayerCount]int64
+	layerRejections            [LayerCount]int64
+	layerEncodedWrites         [LayerCount]int64
 }
 
 // flushLocked is called with flushMu held. No live index mutation precedes a
@@ -83,6 +89,7 @@ func (dc *DiskCache) takeDiskBatch() (*diskBatch, bool) {
 	pending := dc.writeBuf
 	dc.writeBuf = make(map[string]diskEntry)
 	dc.flushingBytes = 0
+	dc.layerQueueBytes = [LayerCount]int64{}
 	missing := 0
 	for _, entry := range pending {
 		if entry.state == nil {
@@ -101,6 +108,7 @@ func (dc *DiskCache) takeDiskBatch() (*diskBatch, bool) {
 			pending[key] = entry
 		}
 		dc.flushingBytes += diskQueueCharge(key, entry.Value)
+		dc.layerQueueBytes[LayerForKey(key)] += diskQueueCharge(key, entry.Value)
 	}
 	dc.bufferBytes = dc.flushingBytes
 	dc.flushing = pending
@@ -160,6 +168,9 @@ func (batch *diskBatch) deleteExpired(tx *bolt.Tx) error {
 	defer dc.writeMu.Unlock()
 	for _, e := range batch.expired {
 		if current := dc.index[e.key]; current == e && (current.invalid || current.expiresAt <= clockNow().UnixNano()) {
+			if e.expiresAt <= clockNow().UnixNano() {
+				batch.layerEvictions[LayerForKey(e.key)]++
+			}
 			if err := batch.remove(tx, e.key); err != nil {
 				return err
 			}
@@ -183,6 +194,7 @@ func (batch *diskBatch) existing(key string) (int64, uint64, bool) {
 	return 0, 0, false
 }
 func (batch *diskBatch) remove(tx *bolt.Tx, key string) error {
+	originalRemoved := batch.changes[key].originalRemoved || batch.cache.index[key] != nil
 	if size, _, ok := batch.existing(key); ok {
 		batch.plannedBytes -= size
 		batch.plannedIndex -= diskIndexCharge(key)
@@ -192,7 +204,7 @@ func (batch *diskBatch) remove(tx *bolt.Tx, key string) error {
 	if err := deleteDiskKey(tx, key); err != nil {
 		return err
 	}
-	batch.changes[key] = diskMutation{remove: true}
+	batch.changes[key] = diskMutation{remove: true, originalRemoved: originalRemoved}
 	return nil
 }
 func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
@@ -206,6 +218,7 @@ func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
 	size := int64(len(key)) + int64(len(raw))
 	if !dc.fitsEntry(key, size) {
 		dc.RejectedWrites.Add(1)
+		dc.layerL2[LayerForKey(key)].rejections.Add(1)
 		return batch.remove(tx, key)
 	}
 	if oldSize, _, ok := batch.existing(key); ok {
@@ -213,7 +226,8 @@ func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
 		batch.plannedIndex -= diskIndexCharge(key)
 		batch.plannedCount--
 	}
-	batch.changes[key] = diskMutation{size: size, expiry: entry.ExpiresAt, entry: entry}
+	originalRemoved := batch.changes[key].originalRemoved
+	batch.changes[key] = diskMutation{size: size, expiry: entry.ExpiresAt, entry: entry, originalRemoved: originalRemoved}
 	batch.order = append(batch.order, key)
 	batch.plannedBytes += size
 	batch.plannedIndex += diskIndexCharge(key)
@@ -234,6 +248,7 @@ func (batch *diskBatch) putRecord(tx *bolt.Tx, record diskEncodedEntry) error {
 		return err
 	}
 	batch.writes++
+	batch.layerEncodedWrites[LayerForKey(key)] += int64(len(raw))
 	return nil
 }
 func (batch *diskBatch) fits() bool {
@@ -278,6 +293,16 @@ func (batch *diskBatch) evictOverflow(tx *bolt.Tx) error {
 			heap.Push(batch.victims, victim)
 			continue
 		}
+		// A queued value can lose to entries touched after its admission.
+		// Reject its staged value and also count the original committed
+		// record if this removal deletes one not already removed by the batch.
+		change, staged := batch.changes[victim.key]
+		if staged {
+			batch.layerRejections[LayerForKey(victim.key)]++
+		}
+		if batch.cache.index[victim.key] != nil && !change.originalRemoved {
+			batch.layerEvictions[LayerForKey(victim.key)]++
+		}
 		if err := batch.remove(tx, victim.key); err != nil {
 			return err
 		}
@@ -321,14 +346,21 @@ func (batch *diskBatch) finish(err error) {
 	dc.writeMu.Lock()
 	if err == nil {
 		batch.apply()
+		for l := LayerUnknown; l < LayerCount; l++ {
+			dc.layerL2[l].evictions.Add(batch.layerEvictions[l])
+			dc.layerL2[l].rejections.Add(batch.layerRejections[l])
+			dc.layerEncodedWriteBytes[l].Add(batch.layerEncodedWrites[l])
+		}
 	} else {
 		batch.restore()
 	}
 	dc.flushing = nil
 	dc.flushingBytes = 0
 	dc.bufferBytes = 0
+	dc.layerQueueBytes = [LayerCount]int64{}
 	for key, entry := range dc.writeBuf {
 		dc.bufferBytes += diskQueueCharge(key, entry.Value)
+		dc.layerQueueBytes[LayerForKey(key)] += diskQueueCharge(key, entry.Value)
 	}
 	more := dc.dirty
 	dc.writeMu.Unlock()
@@ -347,6 +379,7 @@ func (batch *diskBatch) finish(err error) {
 func (dc *DiskCache) rejectFlushingLocked(key string, entry diskEntry) {
 	entry.state.cancelled.Store(true)
 	dc.RejectedWrites.Add(1)
+	dc.layerL2[LayerForKey(key)].rejections.Add(1)
 	if item := dc.index[key]; item != nil {
 		item.invalid = true
 		dc.dirty = true

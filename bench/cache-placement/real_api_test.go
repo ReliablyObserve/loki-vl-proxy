@@ -734,6 +734,9 @@ func launchRing(t *testing.T, binary string, c config, i int, dir string, ringNo
 	return p
 }
 func usefulMetric(name string) bool {
+	if _, ok := dlvParseLayerMetric(name); ok {
+		return true
+	}
 	base := strings.SplitN(name, "{", 2)[0]
 	switch base {
 	case "loki_vl_proxy_process_cpu_seconds_total", "loki_vl_proxy_process_resident_memory_bytes",

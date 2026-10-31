@@ -1321,7 +1321,7 @@ func (pc *PeerCache) prefetchHotKey(local *Cache, e hotIndexEntry) bool {
 		return true
 	}
 	started := clockNow()
-	val, ttl, memOnly, ok := pc.getReplica(e.Key)
+	val, ttl, memOnly, ok := local.getPeerReplicaFrom(pc, e.Key)
 	if !ok || ttl <= 0 {
 		return false
 	}
