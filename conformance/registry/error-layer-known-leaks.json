@@ -1,5 +1,5 @@
 {
-  "ceiling": 95,
+  "ceiling": 74,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -135,46 +135,7 @@
     "query_range_stats malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "query_range_stats_drilldown conn_refused": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_stats_drilldown conn_reset": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success",
-      "semantics/error-layer-transport-text"
-    ],
     "query_range_stats_drilldown malformed": [
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown timeout": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success",
-      "semantics/error-layer-transport-text"
-    ],
-    "query_range_stats_drilldown vl400_limit": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl422": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl429": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl500": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl502_front": [
-      "semantics/error-layer-backend-text",
-      "semantics/error-layer-silent-success"
-    ],
-    "query_range_stats_drilldown vl503_front": [
-      "semantics/error-layer-backend-text",
       "semantics/error-layer-silent-success"
     ],
     "query_range_unwrap_rate_counter malformed": [

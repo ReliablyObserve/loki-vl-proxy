@@ -1,0 +1,51 @@
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  grpc_server_max_recv_msg_size: 67108864
+  grpc_server_max_send_msg_size: 67108864
+  http_server_write_timeout: 180s
+  http_server_read_timeout: 180s
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+limits_config:
+  ingestion_rate_mb: 50000
+  ingestion_burst_size_mb: 50000
+  max_global_streams_per_user: 0
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  creation_grace_period: 48h
+  per_stream_rate_limit: 512MB
+  per_stream_rate_limit_burst: 1024MB
+  max_query_series: 1000000
+  max_entries_limit_per_query: 0
+  allow_structured_metadata: true
+  query_timeout: 5m
+  max_query_parallelism: 64
+  tsdb_max_query_parallelism: 128
+  split_queries_by_interval: 1h
+query_range:
+  cache_results: false
+  align_queries_with_step: false
+  parallelise_shardable_queries: true
+querier:
+  max_concurrent: 4
+  query_ingesters_within: 72h

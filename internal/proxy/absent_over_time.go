@@ -219,7 +219,7 @@ func (s absentOverTimeCompatSpec) series() (labels map[string]string, value stri
 // absentPresenceDegraded reports a presence answer that is a stand-in for a
 // failed or suppressed one: the partial-result reply (headers), the split
 // residual suppression, and the series-limit partial whose warning is in the
-// body (the body is authoritative, http_utils.go writeDrilldownPartialFromUpstream).
+// body (the body is authoritative, including without warning headers).
 // Inverting it would claim data is absent.
 func absentPresenceDegraded(h http.Header, body []byte) bool {
 	return h.Get("Warning") != "" || h.Get("X-Proxy-Drilldown-Path") != "" || h.Get("X-Proxy-Upstream-Status") != "" || hasTopLevelWarnings(body)

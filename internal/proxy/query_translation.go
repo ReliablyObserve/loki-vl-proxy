@@ -2054,7 +2054,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	start := time.Now()
 
 	parser := statsTranslateFJPool.Get()
-	defer statsTranslateFJPool.Put(parser)
+	defer releaseFJParser(&statsTranslateFJPool, parser, len(body))
 
 	v, err := parser.ParseBytes(body)
 	if err != nil {
@@ -2208,11 +2208,11 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	// and returns the buffer zero-alloc instead of splicing a new []byte.
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer jsonBufPool.Put(buf)
+	defer releaseJSONBuffer(buf)
 	buf.Grow(len(body) + len(`{"status":"success",`))
 
 	scratch := fjMarshalPool.Get().(*[]byte)
-	defer fjMarshalPool.Put(scratch)
+	defer releaseFJMarshalScratch(scratch)
 
 	buf.WriteString(`{"status":"success"`)
 	needsComma := true

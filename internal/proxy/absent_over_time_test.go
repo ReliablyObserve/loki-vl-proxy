@@ -279,28 +279,36 @@ func TestAbsentOverTimeParserStageEdgeTable(t *testing.T) {
 }
 
 // An answer that is not the presence of samples must not be read as their
-// absence: a failed VictoriaLogs call is its error, and the partial-result
-// reply Grafana-sourced traffic gets for one is passed on, not inverted into a
-// series of ones that would fire every absence alert.
+// absence: a failed VictoriaLogs call stays a sanitized error for API and
+// Grafana traffic alike, never a series of ones firing every absence alert.
 //
 // conformance: semantics/absent-over-time-semantics
 func TestAbsentOverTimeDoesNotInvertFailedPresence(t *testing.T) {
 	q := `absent_over_time({app="a"} | json [1m])`
-	t.Run("backend error", func(t *testing.T) {
-		res, got := absentRangeRequest(t, &vlRecorder{status: http.StatusBadGateway}, q, nil)
-		if res.Code < 400 || len(got) != 0 {
-			t.Fatalf("%d %s", res.Code, res.Body)
-		}
-	})
-	t.Run("grafana partial result", func(t *testing.T) {
-		res, got := absentRangeRequest(t, &vlRecorder{status: http.StatusBadGateway}, q, map[string]string{"User-Agent": "Grafana/11.0"})
-		if res.Header().Get("Warning") == "" {
-			t.Fatalf("the partial-result warning was dropped: %d %v %s", res.Code, res.Header(), res.Body)
-		}
-		if len(got) != 0 {
-			t.Fatalf("a degraded answer was inverted into %v", got)
-		}
-	})
+	for _, client := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"api", nil},
+		{"grafana", map[string]string{"User-Agent": "Grafana/11.0"}},
+	} {
+		t.Run(client.name, func(t *testing.T) {
+			res, got := absentRangeRequest(t, &vlRecorder{status: http.StatusBadGateway}, q, client.headers)
+			if res.Code != http.StatusInternalServerError || len(got) != 0 {
+				t.Fatalf("backend failure was inverted or misclassified: %d %s samples=%v", res.Code, res.Body, got)
+			}
+			var body struct {
+				Status, Error string
+				Warnings      []string
+			}
+			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil || body.Status != "error" || body.Error != lokiErrInternal || len(body.Warnings) != 0 {
+				t.Fatalf("expected sanitized Loki error, got %s", res.Body)
+			}
+			if res.Header().Get("Warning") != "" || res.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {
+				t.Fatalf("backend failure was labelled a bounds partial: %v", res.Header())
+			}
+		})
+	}
 }
 
 // The instant form: a vector with the series when the window (time-range, time]
@@ -425,7 +433,7 @@ func TestAbsentOverTimeGroupingIsLokisParseError(t *testing.T) {
 }
 
 // The Drilldown series-limit partial is a 200 whose body, not its headers,
-// carries the warning (writeDrilldownPartialFromUpstream, addSeriesLimitWarning);
+// carries the warning (legacy partial-failure envelopes, addSeriesLimitWarning);
 // the presence of samples read from it is incomplete, so it is passed on.
 //
 // conformance: semantics/absent-over-time-semantics

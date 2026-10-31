@@ -155,9 +155,9 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	return true
 }
 
-// drilldownPartialUpstreamStatusHeader is set by writeDrilldownPartialFromUpstream
-// on the 200 partial-results reply that replaces a failed stats call for
-// Grafana-sourced traffic.
+// drilldownPartialUpstreamStatusHeader identifies legacy partial-failure
+// responses. Keep rejecting them during merges rather than treating their
+// empty data as a complete successful tenant response.
 const drilldownPartialUpstreamStatusHeader = "X-Proxy-Upstream-Status"
 
 // multiTenantSubRequestFailure returns the failure status of a tenant

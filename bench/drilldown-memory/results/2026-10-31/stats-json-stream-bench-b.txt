@@ -1,0 +1,30 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy
+cpu: Apple M5 Pro
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      19	  12148316 ns/op	 107.55 MB/s	94088240 B/op	  135062 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      16	  13004065 ns/op	 100.47 MB/s	94088537 B/op	  135064 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      20	  12897827 ns/op	 101.30 MB/s	94089190 B/op	  135062 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      18	  13719387 ns/op	  95.23 MB/s	94089248 B/op	  135062 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      18	  14219836 ns/op	  91.88 MB/s	94090111 B/op	  135063 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/full_tree-4         	      20	  16268965 ns/op	  80.31 MB/s	94087946 B/op	  135062 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      12	  19285760 ns/op	  67.75 MB/s	 2680690 B/op	    3038 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      12	  19704500 ns/op	  66.31 MB/s	 2675637 B/op	    3025 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      12	  19289878 ns/op	  67.73 MB/s	 2680666 B/op	    3038 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      12	  19092472 ns/op	  68.43 MB/s	 2680648 B/op	    3038 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      12	  17704552 ns/op	  73.80 MB/s	 2680648 B/op	    3038 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_points/per_series-4        	      13	  16276949 ns/op	  80.27 MB/s	 2680243 B/op	    3037 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      18	  11603688 ns/op	 101.58 MB/s	66283824 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      19	  10684351 ns/op	 110.32 MB/s	66283126 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      20	  12091885 ns/op	  97.48 MB/s	66282946 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      19	  13288059 ns/op	  88.71 MB/s	66282667 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      15	  13766986 ns/op	  85.62 MB/s	66283835 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/full_tree-4   	      16	  13701000 ns/op	  86.03 MB/s	66283021 B/op	  168067 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      13	  17125218 ns/op	  68.83 MB/s	 2937633 B/op	   36024 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      13	  16914385 ns/op	  69.69 MB/s	 2938531 B/op	   36026 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      13	  16063000 ns/op	  73.38 MB/s	 2938531 B/op	   36026 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      14	  15432652 ns/op	  76.38 MB/s	 2938584 B/op	   36026 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      14	  15611726 ns/op	  75.50 MB/s	 2937880 B/op	   36025 allocs/op
+BenchmarkStatsJSONSeriesCompare/many_short_series/per_series-4  	      15	  21133764 ns/op	  55.78 MB/s	 2939564 B/op	   36028 allocs/op
+PASS
+ok  	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy	7.513s

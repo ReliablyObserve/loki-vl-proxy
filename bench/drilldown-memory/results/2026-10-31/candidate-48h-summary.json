@@ -1,0 +1,153 @@
+{
+  "source": "candidate",
+  "hours": 48,
+  "concurrency": 6,
+  "fixture": {
+    "rows": 360000,
+    "start": 1793283960,
+    "end": 1793456760,
+    "sha256": "2848870d354d6ba4eb719082f80cd97b961a5ed5721b8c6654647c4f3e9477f3",
+    "metadata": "trace_id/span_id",
+    "kinds": [
+      "json",
+      "logfmt"
+    ],
+    "recent_heavy": true
+  },
+  "binary_sha256": "3026221d5e402e5e428c9fb69e79c4ab5f8bc623cdf87a503ff16e49a6d3f228",
+  "requests": [
+    {
+      "field": "trace_id",
+      "query": {
+        "query": "sum by (trace_id) (count_over_time({app=\"range-memory\",env=\"production\"} | trace_id!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 1.6584475829731673,
+      "status": 200,
+      "bytes": 31320062,
+      "sha256": "1c2302063e6195e2fc43e02d2e7ae6091b415f5c16b0f0d939589a4242943e86",
+      "series": 360000,
+      "points": 360000
+    },
+    {
+      "field": "span_id",
+      "query": {
+        "query": "sum by (span_id) (count_over_time({app=\"range-memory\",env=\"production\"} | span_id!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 1.889094167156145,
+      "status": 200,
+      "bytes": 25200062,
+      "sha256": "3952a99365102ec29be27db84ef9cc674fb0b79ab63a288ff335a49c13b310ca",
+      "series": 360000,
+      "points": 360000
+    },
+    {
+      "field": "request_id",
+      "query": {
+        "query": "sum by (request_id) (count_over_time({app=\"range-memory\",env=\"production\"} | json request_id=\"[\\\"request_id\\\"]\" | drop __error__, __error_details__ | request_id!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 0.7449957909993827,
+      "status": 200,
+      "bytes": 12420062,
+      "sha256": "5c0c1968193fbd3fa2904082d89e99d8ef1623f170f50063b6cb676bbe5a00e0",
+      "series": 180000,
+      "points": 180000
+    },
+    {
+      "field": "user_id",
+      "query": {
+        "query": "sum by (user_id) (count_over_time({app=\"range-memory\",env=\"production\"} | json user_id=\"[\\\"user_id\\\"]\" | drop __error__, __error_details__ | user_id!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 0.4076550828758627,
+      "status": 200,
+      "bytes": 246862,
+      "sha256": "82529794a1e12509ac1a65d04136aaa3885a738ec4e7d52e66660dac5fe940eb",
+      "series": 5,
+      "points": 14400
+    },
+    {
+      "field": "version",
+      "query": {
+        "query": "sum by (version) (count_over_time({app=\"range-memory\",env=\"production\"} | version!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 0.833831625059247,
+      "status": 200,
+      "bytes": 104178,
+      "sha256": "2569a75cf4dde58047fee990dec71a220a0d7e7c671b7adc497c735265a5538a",
+      "series": 2,
+      "points": 5760
+    },
+    {
+      "field": "total",
+      "query": {
+        "query": "sum by (total) (count_over_time({app=\"range-memory\",env=\"production\"} | json total=\"[\\\"total\\\"]\" | drop __error__, __error_details__ | total!=\"\" [1m]))",
+        "start": "1793283960000000000",
+        "end": "1793456760554000000",
+        "step": "60000ms"
+      },
+      "matches_loki": true,
+      "elapsed": 1.505012041889131,
+      "status": 200,
+      "bytes": 10384507,
+      "sha256": "7e7106f9b0da4f8aacc748975756a14a38538f86ac362afd7a9a79dde53db746",
+      "series": 180000,
+      "points": 180000
+    }
+  ],
+  "state": {
+    "Status": "running",
+    "Running": true,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 30152,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-31T14:55:05.680181596Z",
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "Health": {
+      "Status": "healthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-10-31T14:55:10.796706001Z",
+          "End": "2026-10-31T14:55:10.817704334Z",
+          "ExitCode": 0,
+          "Output": ""
+        }
+      ]
+    }
+  },
+  "samples": 8,
+  "passed": true,
+  "expected_baseline_oom": false,
+  "ready_error": null,
+  "has_memory_samples": true,
+  "peaks": {
+    "go_memstats_alloc_bytes": 717387504.0,
+    "go_memstats_heap_inuse_bytes": 722132992.0,
+    "go_memstats_sys_bytes": 933665256.0,
+    "process_resident_memory_bytes": 885338112.0,
+    "loki_vl_proxy_uptime_seconds": 9.196777254
+  }
+}

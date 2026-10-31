@@ -2353,11 +2353,7 @@ func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 func writeLokiStreamQueryResponse(w http.ResponseWriter, streams []map[string]interface{}, categorizedLabels bool) {
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer func() {
-		if buf.Cap() <= maxPooledBufSize {
-			jsonBufPool.Put(buf)
-		}
-	}()
+	defer releaseJSONBuffer(buf)
 
 	w.Header().Set("Content-Type", "application/json")
 	if categorizedLabels {

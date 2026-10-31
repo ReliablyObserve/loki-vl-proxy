@@ -1326,7 +1326,7 @@ func (p *Proxy) DownstreamConnectionPressure() bool {
 func marshalWindowedStreamsResult(streams []map[string]interface{}, categorizedLabels bool) []byte {
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer jsonBufPool.Put(buf)
+	defer releaseJSONBuffer(buf)
 	buf.Grow(256 + len(streams)*256)
 
 	// encodingFlags must appear BEFORE result so streaming parsers that read the

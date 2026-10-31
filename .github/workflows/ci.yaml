@@ -202,6 +202,9 @@ jobs:
       - name: Fuzz smoke (json error filter split predicate)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzJSONValidSplitPredicate$' -fuzztime=12s
 
+      - name: Fuzz smoke (stats series JSON compatibility)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzStatsJSONSeriesTransformDifferential$' -fuzztime=12s
+
       - name: Fuzz smoke (Loki client error mapping)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzLokiClientError$' -fuzztime=12s
 
@@ -886,6 +889,9 @@ jobs:
       # tests run here so that a pull request that skips the Go jobs still runs them.
       - name: A/B harness unit tests (selection, PR comment, history)
         run: python3 -m unittest discover -s bench/ab/tests
+
+      - name: Drilldown memory proof harness unit tests
+        run: python3 -m unittest discover -s bench/drilldown-memory -p 'test_*.py'
 
       - name: Verify generated configuration and limits reference
         run: go run ./cmd/configdoc -check

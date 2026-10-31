@@ -193,7 +193,7 @@ func TestResidualBlankedThroughHandleQueryRange(t *testing.T) {
 // TestRedactBackendError covers finding 1 (round 2): VictoriaLogs error bodies
 // can echo the LogQL/LogsQL query (selectors, filter values), which would leak
 // into error logs/responses when handlers pass the raw body to writeError /
-// writeDrilldownPartialFromUpstream.
+// a response warning.
 func TestRedactBackendError(t *testing.T) {
 	p := &Proxy{}
 	body := []byte(`{"error":"cannot parse query {namespace=\"prod\",app=\"billing\"} |= \"password=hunter2sekret\": unexpected token at offset deadbeefcafe1234"}`)
