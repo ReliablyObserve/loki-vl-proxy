@@ -25,6 +25,18 @@ class ComparisonTests(unittest.TestCase):
         self.assertIn("Deletion management: declared total | 1 | 1", details)
         self.assertIn("POST query transports remain reads", details)
 
+    def test_deprecated_read_exclusions_are_visible_and_not_a_compatibility_gain(self):
+        base = inventory(endpoint_scope="loki-read-api", excluded_deprecated_read_endpoints=0,
+                         excluded_write_endpoints=2)
+        head = inventory(endpoint_scope="loki-read-api", excluded_deprecated_read_endpoints=5,
+                         excluded_write_endpoints=2, endpoints={"total": 45, "implemented": 42,
+                         "differential": 30, "declared_proven": 25})
+        signals, details = self.text({"quality_inventory": base}, {"quality_inventory": head})
+        self.assertIn("Deprecated read aliases excluded | 0 | 5", details)
+        self.assertIn("scope decision", details)
+        self.assertIn("| 50 | 45 | unavailable |", details)
+        self.assertNotIn("endpoints decreased", signals)
+
     def test_different_endpoint_scopes_do_not_infer_coverage_loss(self):
         base = inventory()
         head = inventory(endpoint_scope="loki-read-api", endpoints={"total": 49, "implemented": 41,

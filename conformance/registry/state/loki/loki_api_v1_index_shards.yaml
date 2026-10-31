@@ -1,6 +1,8 @@
 id: loki_api_v1_index_shards
 state: gap
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
-owner_decision: null
+  Optional planner compatibility only: no proxy route or differential proof. This endpoint is not a blocker for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup. It remains a declared read API gap and stays in totals and compatibility scores.
+owner_decision: |
+  Treat index/shards as optional planner compatibility, not an implementation priority (owner 2026-10-31).
+priority: optional
 waiver: null

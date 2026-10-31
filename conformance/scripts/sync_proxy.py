@@ -40,6 +40,11 @@ def proxy_routes(root):
     source = read_text(os.path.join(root, "internal/proxy/proxy.go"))
     for pattern, metric, template, handler in ROUTE_RE.findall(source):
         routes[template] = {"pattern": pattern, "route": metric, "handler": handler}
+        # handleRules parses exactly a namespace and an optional group segment.
+        # Other mux subtrees (labels, detected fields) have different contracts;
+        # a trailing slash alone is no proof that an arbitrary descendant exists.
+        if handler == "handleRules" and pattern in ("/api/prom/rules/", "/loki/api/v1/rules/") and template == pattern + "{namespace}":
+            routes[template + "/{groupName}"] = dict(routes[template])
     for pattern, handler in HANDLEFUNC_RE.findall(source):
         if handler in REFUSING_HANDLERS:
             continue

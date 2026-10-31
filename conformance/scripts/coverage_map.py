@@ -46,11 +46,15 @@ def collect():
         identifier = endpoint["id"]
         if identifier in skipped:
             continue
-        state = read_yaml_field(os.path.join(ROOT, "state/loki", identifier + ".yaml"), "state") or "unknown"
+        state_path = os.path.join(ROOT, "state/loki", identifier + ".yaml")
+        state = read_yaml_field(state_path, "state") or "unknown"
+        optional = read_yaml_field(state_path, "priority") == "optional"
+        reason = re.search(r'^reason: \|\n((?:[ \t]+.*\n)+)', read_text(state_path), re.M) if optional else None
         impl = implementation.get(identifier, {})
         rows.append({
             "id": identifier, "path": endpoint["path"], "methods": read_methods(identifier) or endpoint["methods"],
             "state": state, "execution": impl.get("execution", "not_implemented"),
+            "optional": optional, "scope_note": " ".join(reason[1].split()) if reason else "",
             "where": (impl.get("where") or [None])[0],
             "consumers": consumers(identifier),
             "tests": sum(len(v) for v in endpoint["tests"].values()),
@@ -115,10 +119,14 @@ def main():
     for row in sorted(rows, key=lambda r: (r["execution"] == "not_implemented", r["id"])):
         where = row["where"].split(" ")[0] if row["where"] else "—"
         lines.append(
-            f"| `{row['path']}` | {', '.join(row['methods'])} | {STATE_LABEL.get(row['state'], row['state'])} | "
+            f"| `{row['path']}` | {', '.join(row['methods'])} | {STATE_LABEL.get(row['state'], row['state'])}{' (optional)' if row['optional'] else ''} | "
             f"{EXECUTION_LABEL.get(row['execution'], row['execution'])} | "
             f"{', '.join(row['consumers']) or '—'} | {row['tests']} | {row['tests_vs_loki']} | "
             f"{where} |")
+    optional_rows = [row for row in rows if row["optional"]]
+    if optional_rows:
+        lines += ["", "Optional API gaps remain included in the totals and scores:", ""]
+        lines += [f"- `{row['path']}`: {row['scope_note']}" for row in optional_rows]
     lines += ["", "## Proxy-side work", "",
               ("Where the proxy computes a result instead of passing a VictoriaLogs answer "
                + "through."), "",

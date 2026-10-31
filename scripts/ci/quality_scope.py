@@ -8,6 +8,10 @@ from pathlib import Path
 
 STATES = ("proven", "partial", "gap", "waived", "not-applicable", "unknown")
 GAPS = ("open", "fixed", "documented", "owner-kept", "upstream")
+DEPRECATED_READ_ALIASES = {
+    "api_prom_label": "/api/prom/label", "api_prom_label_name_values": "/api/prom/label/{name}/values",
+    "api_prom_query": "/api/prom/query", "api_prom_series": "/api/prom/series", "api_prom_tail": "/api/prom/tail",
+}
 
 
 def scalar(text, name, indent="", optional=False):
@@ -89,6 +93,7 @@ def registry_snapshot(root):
         definitions = {str(p.relative_to(registry / "loki/endpoints"))[:-5] for p in files("loki/endpoints")}
         known = set()
         excluded_write_endpoints = 0
+        excluded_deprecated_read_endpoints = 0
         for path in state_files:
             identifier = str(path.relative_to(registry / "state/loki"))[:-5]
             state_text = text(path)
@@ -105,13 +110,26 @@ def registry_snapshot(root):
             if not set(removed) <= set(allowed):
                 raise ValueError("unknown excluded endpoint method")
             remaining = [m for m in allowed if m not in removed]
+            endpoint_path = scalar(definition, "path")
+            policy = scalar(state_text, "scope_policy", optional=True)
+            if policy:
+                if policy != "deprecated-read-alias" or DEPRECATED_READ_ALIASES.get(identifier) != endpoint_path:
+                    raise ValueError("invalid deprecated read scope")
+                if set(allowed) != {"GET", "POST"} or remaining or state != "not-applicable":
+                    raise ValueError("invalid deprecated read methods or state")
+                reason = re.search(r"^reason: \|\n((?:[ \t]+.*\n)+)", state_text, re.M)
+                decision = re.search(r"^owner_decision: \|\n((?:[ \t]+.*\n)+)", state_text, re.M)
+                if not reason or not reason[1].strip() or not decision or "owner 2026-10-31" not in decision[1]:
+                    raise ValueError("missing deprecated read scope rationale")
             known.add(identifier)
             if state == "not-applicable" or (allowed and not remaining):
-                if allowed and "GET" not in allowed and "HEAD" not in allowed:
+                if policy == "deprecated-read-alias":
+                    excluded_deprecated_read_endpoints += 1
+                elif allowed and "GET" not in allowed and "HEAD" not in allowed:
                     excluded_write_endpoints += 1
                 continue
             items["endpoint:" + identifier] = {"id": identifier, "kind": "endpoint", "state": state,
-                                              "path": scalar(definition, "path"), "methods": remaining}
+                                              "path": endpoint_path, "methods": remaining}
         if known != definitions:
             raise ValueError("endpoint definitions and states differ")
         endpoint_items = [v for v in items.values() if v["kind"] == "endpoint"]
@@ -199,6 +217,7 @@ def registry_snapshot(root):
         return {"state": "available", "surface_version": version, "endpoints": endpoints, "tracks": tracks,
                 "endpoint_scope": "loki-read-api", "deletion_management": deletion,
                 "excluded_write_endpoints": excluded_write_endpoints,
+                "excluded_deprecated_read_endpoints": excluded_deprecated_read_endpoints,
                 "gaps": {state: gaps[state] for state in GAPS}, "error_layer": {"cells": len(leaks), "links": links},
                 "items": items}
     except (OSError, ValueError, TypeError, UnicodeError, RecursionError):

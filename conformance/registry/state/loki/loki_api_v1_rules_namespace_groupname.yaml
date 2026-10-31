@@ -1,7 +1,7 @@
 id: loki_api_v1_rules_namespace_groupname
-state: gap
+state: partial
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
+  Routed by the rules subtree to handleRules, which parses namespace/group paths and filters vmalert rules. Static route evidence alone does not establish proven runtime compatibility.
 owner_decision: |
   Alerting and recording rules are scheduled last (owner 2026-10-26).
   "do not list write APIs as gap; we will only support delete maybe, not any other." (owner 2026-10-27)

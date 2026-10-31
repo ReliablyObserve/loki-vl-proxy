@@ -38,9 +38,39 @@ owner_decision: |
 out_of_scope_methods: [DELETE, POST]
 ```
 
-An endpoint whose every method is listed is `not-applicable` (the push routes) and is left out
+An endpoint whose every method is listed is `not-applicable` and is left out
 of every total, ratio, gap list and ranking. `POST` on a query, label or series endpoint is a
-form-encoded read and is never listed. The delete endpoint stays in scope.
+form-encoded read. The delete endpoint stays in scope.
+
+## Deprecated read aliases
+
+The owner excluded five unsupported deprecated read aliases on 2026-10-31:
+`/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`,
+`/api/prom/series` and `/api/prom/tail`. Use the corresponding `/loki/api/v1`
+routes. These aliases remain in the upstream inventory but contribute to no endpoint total,
+gap list or compatibility score. This is a scope decision, not new compatibility evidence.
+`/api/prom/rules` and its namespace/group descendants remain in scope for vmalert.
+
+Each excluded alias has `state: not-applicable`, `scope_policy: deprecated-read-alias`,
+`out_of_scope_methods: [GET, POST]`, a non-empty `reason` and the dated `owner_decision`.
+The gate accepts this policy only for those five exact paths and their GET/POST methods;
+it does not relax the write-method rules. The report reader counts these exclusions separately
+from the two unsupported push endpoints and optional deletion management. Generators preserve
+the curated state files.
+
+The extracted inventory has 35 endpoints: the five deprecated aliases and two push routes
+are excluded, leaving 28 in the canonical registry, including deletion management. The PR
+quality reader reports the 27 read endpoints separately from that administration route.
+Static route coverage includes the namespace/group views of both rules prefixes: their
+existing mux subtrees dispatch to `handleRules`, which accepts those two path segments.
+Correcting that extraction increases routed endpoints from 23 to 25 without adding runtime
+routes or raising any endpoint to `proven`. The native share changes from 6/23 to 6/25 for
+the same reason; the accepted baseline reflects this corrected inventory.
+
+An in-scope gap may carry `priority: optional`. It remains in totals and scores, appears
+as optional in the coverage map, and ranks after normal and `last` gaps. In particular,
+`/loki/api/v1/index/shards` is optional planner compatibility; its absence is not a blocker
+for normal pinned Grafana Explore, Logs Drilldown or peer cache lookup.
 
 ## Refreshing the generated data
 

@@ -182,12 +182,15 @@ def compare_inventory(base, head, signals, details):
     if changed_surface:
         details += ["The Loki surface changed: counts describe different declared inventories. Review added or removed surface definitions before interpreting count differences.", ""]
     scopes = [mapping(sample).get("endpoint_scope", "legacy-registry") for sample in (before, after)]
-    same_scope = scopes[0] == scopes[1]
+    exclusions = [mapping(sample).get("excluded_deprecated_read_endpoints") for sample in (before, after)]
+    same_scope = scopes[0] == scopes[1] and exclusions[0] == exclusions[1]
     read_scope = scopes[1] == "loki-read-api"
     if not same_scope:
-        details += ["Endpoint scopes differ: " + cell(scopes[0]) + " → " + cell(scopes[1]) + "; endpoint count deltas and trends are unavailable until both snapshots use the same scope.", ""]
+        details += ["Endpoint scopes differ: " + cell(scopes[0]) + " → " + cell(scopes[1])
+                    + "; deprecated read aliases excluded: " + fmt(exclusions[0]) + " → " + fmt(exclusions[1])
+                    + "; endpoint count deltas and trends are unavailable until both snapshots use the same scope.", ""]
     if read_scope:
-        details += ["Read API scope: write endpoints are excluded and deletion management is reported separately. POST query transports remain reads. Mixed rule endpoints retain their read methods after registry exclusions.", ""]
+        details += ["Read API scope: write endpoints are excluded and deletion management is reported separately. POST query transports remain reads. Mixed rule endpoints retain their read methods after registry exclusions. Deprecated read aliases are excluded by owner scope decision; this changes the denominator without proving a compatibility gain.", ""]
     rows = []
     def metric(label, path):
         values = []
@@ -219,6 +222,7 @@ def compare_inventory(base, head, signals, details):
     rows = []
     if read_scope:
         metric("Write-only endpoints excluded", ("excluded_write_endpoints",))
+        metric("Deprecated read aliases excluded", ("excluded_deprecated_read_endpoints",))
         for key, label in (("total", "declared total"), ("implemented", "declared implemented"),
                            ("differential", "linked differential tests"), ("declared_proven", "declared proven")):
             metric("Deletion management: " + label, ("deletion_management", key))

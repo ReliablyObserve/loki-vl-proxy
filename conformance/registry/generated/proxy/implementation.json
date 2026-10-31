@@ -18,7 +18,7 @@
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 48,
+      "functions_reached": 54,
       "handler": "handleRules",
       "id": "api_prom_rules",
       "implemented": true,
@@ -29,12 +29,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:94 handleRules"
+        "internal/proxy/alerting.go:95 handleRules"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 48,
+      "functions_reached": 54,
       "handler": "handleRules",
       "id": "api_prom_rules_namespace",
       "implemented": true,
@@ -45,12 +45,24 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:94 handleRules"
+        "internal/proxy/alerting.go:95 handleRules"
       ]
     },
     {
+      "execution": "proxy_side",
+      "functions_reached": 54,
+      "handler": "handleRules",
       "id": "api_prom_rules_namespace_groupname",
-      "implemented": false
+      "implemented": true,
+      "proxy_side_work": {},
+      "route": "rules_prom_nested",
+      "vl_endpoints": [],
+      "vl_pipes": [
+        "len"
+      ],
+      "where": [
+        "internal/proxy/alerting.go:95 handleRules"
+      ]
     },
     {
       "id": "api_prom_series",
@@ -66,7 +78,7 @@
     },
     {
       "execution": "native_vl",
-      "functions_reached": 48,
+      "functions_reached": 52,
       "handler": "handleDelete",
       "id": "loki_api_v1_delete",
       "implemented": true,
@@ -77,12 +89,12 @@
       ],
       "vl_pipes": [],
       "where": [
-        "internal/proxy/patterns.go:1431 handleDelete"
+        "internal/proxy/patterns.go:1430 handleDelete"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 112,
+      "functions_reached": 114,
       "handler": "handleDetectedFieldValues",
       "id": "loki_api_v1_detected_field_name_values",
       "implemented": true,
@@ -98,12 +110,12 @@
         "sort"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:764 handleDetectedFieldValues"
+        "internal/proxy/label_handlers.go:783 handleDetectedFieldValues"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 98,
+      "functions_reached": 100,
       "handler": "handleDetectedFields",
       "id": "loki_api_v1_detected_fields",
       "implemented": true,
@@ -114,12 +126,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:691 handleDetectedFields"
+        "internal/proxy/label_handlers.go:711 handleDetectedFields"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 87,
+      "functions_reached": 88,
       "handler": "handleDetectedLabels",
       "id": "loki_api_v1_detected_labels",
       "implemented": true,
@@ -167,7 +179,7 @@
     },
     {
       "execution": "native_vl",
-      "functions_reached": 84,
+      "functions_reached": 85,
       "handler": "handleIndexStats",
       "id": "loki_api_v1_index_stats",
       "implemented": true,
@@ -181,12 +193,12 @@
         "stats"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:525 handleIndexStats"
+        "internal/proxy/label_handlers.go:546 handleIndexStats"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 38,
+      "functions_reached": 40,
       "handler": "handleVolume",
       "id": "loki_api_v1_index_volume",
       "implemented": true,
@@ -202,7 +214,7 @@
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 38,
+      "functions_reached": 40,
       "handler": "handleVolumeRange",
       "id": "loki_api_v1_index_volume_range",
       "implemented": true,
@@ -222,7 +234,7 @@
     },
     {
       "execution": "native_vl",
-      "functions_reached": 123,
+      "functions_reached": 151,
       "handler": "handleLabelValues",
       "id": "loki_api_v1_label_name_values",
       "implemented": true,
@@ -234,17 +246,18 @@
         "/select/logsql/streams"
       ],
       "vl_pipes": [
+        "drop",
         "len",
         "limit",
         "sort"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:102 handleLabelValues"
+        "internal/proxy/label_handlers.go:124 handleLabelValues"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 111,
+      "functions_reached": 121,
       "handler": "handleLabels",
       "id": "loki_api_v1_labels",
       "implemented": true,
@@ -262,7 +275,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 180,
+      "functions_reached": 192,
       "handler": "handlePatterns",
       "id": "loki_api_v1_patterns",
       "implemented": true,
@@ -294,7 +307,7 @@
     },
     {
       "execution": "hybrid",
-      "functions_reached": 202,
+      "functions_reached": 238,
       "handler": "handleQuery",
       "id": "loki_api_v1_query",
       "implemented": true,
@@ -302,6 +315,7 @@
         "binaryEvaluationContext": "binary expression evaluated in the proxy",
         "buildBoundedBareParserMetric": "bare-parser evaluator in the proxy",
         "collectRangeMetricSamples": "evaluates raw rows in the proxy",
+        "ensureDetectedLevel": "label derived in the proxy",
         "ensureSyntheticServiceName": "label derived in the proxy",
         "orderedJSONMetric": "ordered JSON evaluator over raw rows"
       },
@@ -314,16 +328,18 @@
         "drop",
         "len",
         "limit",
+        "math",
         "stats",
-        "stats by"
+        "stats by",
+        "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2532 handleQuery"
+        "internal/proxy/proxy.go:2720 handleQuery"
       ]
     },
     {
       "execution": "hybrid",
-      "functions_reached": 276,
+      "functions_reached": 345,
       "handler": "handleQueryRange",
       "id": "loki_api_v1_query_range",
       "implemented": true,
@@ -331,6 +347,7 @@
         "binaryEvaluationContext": "binary expression evaluated in the proxy",
         "buildBoundedBareParserMetric": "bare-parser evaluator in the proxy",
         "collectRangeMetricSamples": "evaluates raw rows in the proxy",
+        "ensureDetectedLevel": "label derived in the proxy",
         "ensureSyntheticServiceName": "label derived in the proxy",
         "orderedJSONMetric": "ordered JSON evaluator over raw rows"
       },
@@ -340,22 +357,22 @@
       ],
       "vl_pipes": [
         "drop",
-        "filter",
         "keep",
         "len",
         "limit",
         "math",
         "sort",
         "stats",
-        "stats by"
+        "stats by",
+        "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2172 handleQueryRange"
+        "internal/proxy/proxy.go:2300 handleQueryRange"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 48,
+      "functions_reached": 54,
       "handler": "handleRules",
       "id": "loki_api_v1_rules",
       "implemented": true,
@@ -366,12 +383,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:94 handleRules"
+        "internal/proxy/alerting.go:95 handleRules"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 48,
+      "functions_reached": 54,
       "handler": "handleRules",
       "id": "loki_api_v1_rules_namespace",
       "implemented": true,
@@ -382,12 +399,24 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:94 handleRules"
+        "internal/proxy/alerting.go:95 handleRules"
       ]
     },
     {
+      "execution": "proxy_side",
+      "functions_reached": 54,
+      "handler": "handleRules",
       "id": "loki_api_v1_rules_namespace_groupname",
-      "implemented": false
+      "implemented": true,
+      "proxy_side_work": {},
+      "route": "rules_nested",
+      "vl_endpoints": [],
+      "vl_pipes": [
+        "len"
+      ],
+      "where": [
+        "internal/proxy/alerting.go:95 handleRules"
+      ]
     },
     {
       "execution": "hybrid",
@@ -406,7 +435,7 @@
         "len"
       ],
       "where": [
-        "internal/proxy/label_handlers.go:404 handleSeries"
+        "internal/proxy/label_handlers.go:426 handleSeries"
       ]
     },
     {
@@ -420,12 +449,12 @@
       "vl_endpoints": [],
       "vl_pipes": [],
       "where": [
-        "internal/proxy/alerting.go:127 handleBuildInfo"
+        "internal/proxy/alerting.go:128 handleBuildInfo"
       ]
     },
     {
       "execution": "native_vl",
-      "functions_reached": 70,
+      "functions_reached": 68,
       "handler": "handleTail",
       "id": "loki_api_v1_tail",
       "implemented": true,
@@ -443,7 +472,7 @@
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 40,
+      "functions_reached": 34,
       "handler": "handleAlerts",
       "id": "prometheus_api_v1_alerts",
       "implemented": true,
@@ -454,12 +483,12 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:110 handleAlerts"
+        "internal/proxy/alerting.go:111 handleAlerts"
       ]
     },
     {
       "execution": "proxy_side",
-      "functions_reached": 48,
+      "functions_reached": 54,
       "handler": "handleRules",
       "id": "prometheus_api_v1_rules",
       "implemented": true,
@@ -470,7 +499,7 @@
         "len"
       ],
       "where": [
-        "internal/proxy/alerting.go:94 handleRules"
+        "internal/proxy/alerting.go:95 handleRules"
       ]
     }
   ]

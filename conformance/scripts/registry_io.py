@@ -40,8 +40,19 @@ def state_field(identifier, field, track="loki"):
 # The one explanation of what the proxy serves, reused by every generated report.
 SCOPE_SENTENCE = ("The proxy serves Loki's read API; write endpoints such as push are not supported "
                   "(ingest goes to VictoriaLogs directly); delete may be supported, and the "
-                  "alerting-rules API may come last; no other write endpoint is planned.")
+                  "alerting-rules API remains in scope, including /api/prom/rules* for vmalert. "
+                  "The deprecated read aliases /api/prom/label, /api/prom/label/{name}/values, "
+                  "/api/prom/query, /api/prom/series and /api/prom/tail are unsupported and excluded "
+                  "from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding "
+                  "/loki/api/v1 routes. No other write endpoint is planned.")
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+DEPRECATED_READ_ALIASES = {
+    "api_prom_label": "/api/prom/label",
+    "api_prom_label_name_values": "/api/prom/label/{name}/values",
+    "api_prom_query": "/api/prom/query",
+    "api_prom_series": "/api/prom/series",
+    "api_prom_tail": "/api/prom/tail",
+}
 # The one endpoint whose write methods stay in scope (the owner may support delete).
 WRITE_IN_SCOPE = {"loki_api_v1_delete"}
 STATE_DIR = "conformance/registry/state/loki"
@@ -62,12 +73,12 @@ def endpoint_methods(identifier):
 
 
 def out_of_scope_methods(identifier):
-    """Write methods the owner left out of scope for an endpoint (state file)."""
+    """Methods excluded by the write policy or the explicit deprecated-read policy."""
     return list_field(f"{STATE_DIR}/{identifier}.yaml", "out_of_scope_methods")
 
 
 def read_methods(identifier):
-    """The methods an endpoint is judged on: its methods minus the out-of-scope write methods."""
+    """The methods an endpoint is judged on, after the owner's scope exclusions."""
     left = set(out_of_scope_methods(identifier))
     return [m for m in endpoint_methods(identifier) if m not in left]
 
@@ -84,7 +95,7 @@ def out_of_scope():
 
 def scope_problems():
     """Strict consistency of the method-level scope; returns a list of messages."""
-    import os
+    import os, re
     problems = []
     names = sorted(os.listdir(ENDPOINT_DIR)) if os.path.isdir(ENDPOINT_DIR) else []
     for name in names:
@@ -94,16 +105,36 @@ def scope_problems():
         methods = set(endpoint_methods(identifier))
         listed = set(out_of_scope_methods(identifier))
         state = state_field(identifier, "state")
+        path = f"{STATE_DIR}/{identifier}.yaml"
+        text = read_text(path) if os.path.exists(path) else ""
+        policy = state_field(identifier, "scope_policy")
+        deprecated = policy == "deprecated-read-alias"
+        def block(field):
+            match = re.search(rf"^{field}: \|\n((?:[ \t]+.*\n)+)", text, re.M)
+            return match.group(1).strip() if match else ""
+        if policy and not deprecated:
+            problems.append(f"{identifier}: unknown scope_policy {policy}")
+        if deprecated:
+            expected = DEPRECATED_READ_ALIASES.get(identifier)
+            definition = read_text(f"{ENDPOINT_DIR}/{identifier}.yaml")
+            match = re.search(r'^path:\s*(.+)$', definition, re.M)
+            endpoint_path = match.group(1).strip().strip('\"\'') if match else None
+            if not expected or endpoint_path != expected or methods != {"GET", "POST"}:
+                problems.append(f"{identifier}: deprecated-read-alias requires a designated GET/POST alias path")
+            if listed != methods or state != "not-applicable":
+                problems.append(f"{identifier}: deprecated-read-alias must exclude every method and be not-applicable")
+            if not block("reason"):
+                problems.append(f"{identifier}: deprecated-read-alias requires a non-empty reason")
+            if "owner 2026-10-31" not in block("owner_decision"):
+                problems.append(f"{identifier}: deprecated-read-alias needs the owner decision (owner 2026-10-31) in owner_decision")
         for method in sorted(listed - methods):
             problems.append(f"{identifier}: out_of_scope_methods lists {method}, which the endpoint does not have")
-        for method in sorted(listed - WRITE_METHODS):
+        for method in sorted(listed - WRITE_METHODS - ({"GET"} if deprecated else set())):
             problems.append(f"{identifier}: out_of_scope_methods lists {method}, which is not a write method")
         if listed and identifier in WRITE_IN_SCOPE:
             problems.append(f"{identifier}: delete stays in scope, it cannot list out_of_scope_methods")
-        if listed:
-            path = f"{STATE_DIR}/{identifier}.yaml"
-            text = read_text(path) if os.path.exists(path) else ""
-            if "owner 2026-10-27" not in text:
+        if listed and not deprecated:
+            if "owner 2026-10-27" not in block("owner_decision"):
                 problems.append(f"{identifier}: out_of_scope_methods needs the owner decision (owner 2026-10-27) in owner_decision")
         unlisted = sorted((methods & WRITE_METHODS) - listed) if identifier not in WRITE_IN_SCOPE else []
         # POST on a read endpoint is a form-encoded read; only an endpoint with PUT, PATCH or

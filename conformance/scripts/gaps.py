@@ -92,11 +92,13 @@ def main():
             missing.append("no test wired to the registry")
         if execution == "proxy_side":
             missing.append("proxy-side: justify in the registry or push down to VictoriaLogs")
-        # Owner ordering: `priority: first` ranks above everything and is always listed;
-        # `priority: last` ranks below everything. Within a tier the score decides.
-        tier = {"first": 1, "last": -1}.get(state_field(identifier, "priority"), 0)
+        # Owner ordering: first, normal, last, then optional. First and optional
+        # remain visible; within a tier the consumer/evidence score decides.
+        tier = {"first": 1, "last": -1, "optional": -2}.get(state_field(identifier, "priority"), 0)
         if tier == 1:
             missing.append("owner priority: " + state_reason(identifier))
+        if tier == -2:
+            missing.append("optional: " + state_reason(identifier))
         score = (sum(WEIGHT.get(p, 1) for p in people) + (3 if not differential else 0)
                  + (2 if execution == "proxy_side" else 0))
         rows.append((tier, score, endpoint["path"], people, execution, tests, differential, missing))
@@ -106,14 +108,16 @@ def main():
              "Priority = consumer weight (explore/drilldown 3, datasource 2, api 1), plus 3 when no test",
              "compares the endpoint against Loki, plus 2 when the proxy computes the result itself.",
              "An endpoint the owner named a priority for is placed by that first: `first` above all",
-             "others (and always listed), `last` below all others; the score orders within each group.", "",
+             "others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group. "
+             "Optional gaps remain in the declared API inventory and compatibility scores.", "",
              SCOPE_SENTENCE, "",
              "| Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |",
              "|---:|---|---|---|---:|---:|---|"]
     for tier, score, path, people, execution, tests, differential, missing in rows:
         if not missing:
             continue
-        lines.append(f"| {score} | `{path}` | {', '.join(people) or '—'} | {execution} | {tests} | "
+        priority = "optional" if tier == -2 else score
+        lines.append(f"| {priority} | `{path}` | {', '.join(people) or '—'} | {execution} | {tests} | "
                      f"{differential} | {'; '.join(missing)} |")
     lines += ["", "## Error surface", "",
               "Every dynamic message is a risk: it can carry VictoriaLogs or proxy-internal text that Loki",

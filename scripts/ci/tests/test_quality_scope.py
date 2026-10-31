@@ -65,6 +65,21 @@ class SnapshotTests(unittest.TestCase):
         self.write("generated/summary.json", "{not json}")
         self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
 
+    def test_deprecated_reads_are_excluded_separately_from_writes(self):
+        self.write("state/loki/api_prom_query.yaml", "id: api_prom_query\nstate: not-applicable\n"
+                   "scope_policy: deprecated-read-alias\nout_of_scope_methods: [GET, POST]\n"
+                   "reason: |\n  Deprecated read alias, use /loki/api/v1/query.\n"
+                   "owner_decision: |\n  Exclude deprecated reads (owner 2026-10-31).\n")
+        self.write("loki/endpoints/api_prom_query.yaml", "id: api_prom_query\npath: /api/prom/query\nmethods: [GET, POST]\n")
+        result = registry_snapshot(self.root)
+        self.assertEqual(result["state"], "available", result)
+        self.assertEqual(result["endpoints"]["total"], 1)
+        self.assertEqual(result["excluded_write_endpoints"], 0)
+        self.assertEqual(result["excluded_deprecated_read_endpoints"], 1)
+        self.assertNotIn("endpoint:api_prom_query", result["items"])
+        self.write("loki/endpoints/api_prom_query.yaml", "id: api_prom_query\npath: /api/prom/rules\nmethods: [GET, POST]\n")
+        self.assertEqual(registry_snapshot(self.root)["state"], "unavailable")
+
     def test_read_scope_separates_deletion_and_keeps_post_queries(self):
         self.write("generated/summary.json", json.dumps({"loki_version": "v3.7.7", "endpoints": 2,
                    "implemented": 2, "with_differential_tests": 1, "proven": 1}))
@@ -114,6 +129,7 @@ class SnapshotTests(unittest.TestCase):
         read_paths = {item["path"] for item in result["items"].values() if item["kind"] == "endpoint"}
         self.assertNotIn("/loki/api/v1/delete", read_paths)
         self.assertEqual(result["excluded_write_endpoints"], 2)
+        self.assertEqual(result["excluded_deprecated_read_endpoints"], 5)
         self.assertNotIn("endpoint:loki_api_v1_push", result["items"])
         self.assertNotIn("endpoint:api_prom_push", result["items"])
 

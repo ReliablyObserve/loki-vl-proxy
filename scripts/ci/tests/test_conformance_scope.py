@@ -6,7 +6,9 @@ delete endpoint, which stays in scope. These tests build a tiny registry in a te
 and assert the strict checks and the helpers every generator uses.
 """
 
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +17,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "conformance" / "scripts"))
 import registry_io  # noqa: E402
+from sync_proxy import proxy_routes  # noqa: E402
 
 DECISION = '"do not list write APIs as gap" (owner 2026-10-27)'
 
@@ -86,6 +89,40 @@ class ScopeTest(unittest.TestCase):
         self.add("push", ["POST"], "not-applicable")
         self.assertTrue(any("requires out_of_scope_methods" in p for p in registry_io.scope_problems()))
 
+    def deprecated(self, identifier="api_prom_query", path="/api/prom/query", reason=True, decision=True):
+        self.add(identifier, ["GET", "POST"], "not-applicable", out=["GET", "POST"], decision=False)
+        definition = Path(registry_io.ENDPOINT_DIR, identifier + ".yaml")
+        definition.write_text(definition.read_text() + f'path: "{path}"\n')
+        state = Path(registry_io.STATE_DIR, identifier + ".yaml")
+        state.write_text(state.read_text() + "scope_policy: deprecated-read-alias\n"
+                         + ("reason: |\n  Deprecated alias; use /loki/api/v1/query.\n" if reason else "")
+                         + ("owner_decision: |\n  Exclude deprecated read aliases (owner 2026-10-31).\n" if decision else ""))
+
+    def test_deprecated_read_alias_is_excluded_with_explicit_policy(self):
+        self.deprecated()
+        self.assertEqual(registry_io.scope_problems(), [])
+        self.assertEqual(registry_io.read_methods("api_prom_query"), [])
+        self.assertEqual(registry_io.out_of_scope(), {"api_prom_query"})
+
+    def test_deprecated_read_policy_requires_the_decision_and_reason(self):
+        self.deprecated(reason=False, decision=False)
+        problems = "\n".join(registry_io.scope_problems())
+        self.assertIn("reason", problems)
+        self.assertIn("owner 2026-10-31", problems)
+
+    def test_deprecated_read_policy_cannot_exclude_rules_or_other_routes(self):
+        self.deprecated("api_prom_rules", "/api/prom/rules")
+        self.deprecated("api_prom_query", "/loki/api/v1/query")
+        problems = "\n".join(registry_io.scope_problems())
+        self.assertIn("api_prom_rules", problems)
+        self.assertIn("api_prom_query", problems)
+
+    def test_deprecated_policy_does_not_bypass_write_restrictions(self):
+        self.deprecated()
+        definition = Path(registry_io.ENDPOINT_DIR, "api_prom_query.yaml")
+        definition.write_text(definition.read_text().replace("[GET, POST]", "[GET, POST, DELETE]"))
+        self.assertTrue(registry_io.scope_problems())
+
 
 class RepositoryTest(unittest.TestCase):
     def test_repository_registry_is_consistent(self):
@@ -98,7 +135,8 @@ class RepositoryTest(unittest.TestCase):
             self.assertEqual(registry_io.read_methods("api_prom_rules_namespace"), ["GET"])
             self.assertEqual(registry_io.read_methods("api_prom_rules_namespace_groupname"), ["GET"])
             self.assertIn("DELETE", registry_io.read_methods("loki_api_v1_delete"))
-            self.assertEqual(registry_io.out_of_scope(), {"loki_api_v1_push", "api_prom_push"})
+            self.assertEqual(registry_io.out_of_scope(), {"loki_api_v1_push", "api_prom_push", "api_prom_label",
+                             "api_prom_label_name_values", "api_prom_query", "api_prom_series", "api_prom_tail"})
         finally:
             os.chdir(cwd)
 
@@ -201,6 +239,82 @@ class PerfRepositoryTest(unittest.TestCase):
             self.assertEqual(check_conformance.perf_acceptance_problems(), [])
         finally:
             os.chdir(cwd)
+
+
+class RouteTests(unittest.TestCase):
+    def test_rules_subtree_expands_only_namespace_and_group_templates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory, "internal/proxy/proxy.go")
+            source.parent.mkdir(parents=True)
+            source.write_text('''
+mux.Handle("/api/prom/rules/", alertRead("rules_prom_nested", "/api/prom/rules/{namespace}", p.handleRules))
+mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))
+mux.Handle("/loki/api/v1/label/", p.routeHandler("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
+''')
+            routes = proxy_routes(directory)
+            self.assertEqual(set(routes), {
+                "/api/prom/rules/{namespace}", "/api/prom/rules/{namespace}/{groupName}",
+                "/loki/api/v1/rules/{namespace}", "/loki/api/v1/rules/{namespace}/{groupName}",
+                "/loki/api/v1/label/{name}/values"})
+            self.assertEqual(routes["/api/prom/rules/{namespace}/{groupName}"]["handler"], "handleRules")
+
+    def test_expansion_requires_the_real_subtree_and_rules_handler(self):
+        for pattern, template, handler in (
+                ("/other/", "/other/{namespace}", "handleRules"),
+                ("/api/prom/rules/", "/api/prom/rules/{namespace}", "handleOther"),
+                ("/api/prom/rules", "/api/prom/rules/{namespace}", "handleRules")):
+            with self.subTest(pattern=pattern, handler=handler), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory, "internal/proxy/proxy.go")
+                source.parent.mkdir(parents=True)
+                source.write_text(f'mux.Handle("{pattern}", alertRead("rules", "{template}", p.{handler}))')
+                self.assertEqual(set(proxy_routes(directory)), {template})
+
+    def test_repository_rule_groups_are_implemented_but_deprecated_reads_are_not(self):
+        routes = proxy_routes(REPO)
+        self.assertIn("/api/prom/rules/{namespace}/{groupName}", routes)
+        self.assertIn("/loki/api/v1/rules/{namespace}/{groupName}", routes)
+        for path in ("/api/prom/label", "/api/prom/label/{name}/values", "/api/prom/query", "/api/prom/series", "/api/prom/tail"):
+            self.assertNotIn(path, routes)
+
+class PriorityTests(unittest.TestCase):
+    def test_optional_gap_follows_last_priority_and_stays_in_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tree = Path(directory)
+            registry = tree / "conformance/registry"
+
+            def write(path, text):
+                target = registry / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text)
+
+            endpoints = []
+            for identifier, path, priority in (("query", "/query", "normal"),
+                    ("rules", "/rules", "last"), ("shards", "/loki/api/v1/index/shards", "optional")):
+                endpoints.append({"id": identifier, "path": path, "methods": ["GET"],
+                                  "tests": {"unit": []}, "differential_tests": {"unit": []}})
+                write("loki/endpoints/" + identifier + ".yaml", f"id: {identifier}\nmethods: [GET]\n")
+                write("state/loki/" + identifier + ".yaml", f"id: {identifier}\nstate: gap\npriority: {priority}\n"
+                      "reason: |\n  Optional planner compatibility only; no pinned UI or peer lookup dependency.\n")
+            write("generated/proxy/coverage.json", json.dumps({"loki_version": "v3.7.7", "endpoints": endpoints}))
+            write("generated/proxy/implementation.json", '{"endpoints": []}')
+            write("generated/proxy/errors.json", '{"summary": {"by_status": {}}}')
+            write("generated/wiring.json", '{"unwired_items": [], "item_to_tests": {}}')
+            (registry / "behaviours").mkdir()
+            write("generated/vl/usage.json", '{"endpoints_used": [], "pipes_used": [], "stats_functions_used": [], "version_gated": {}}')
+            for script in ("gaps.py", "coverage_map.py"):
+                subprocess.run([sys.executable, str(REPO / "conformance/scripts" / script)], cwd=tree,
+                               capture_output=True, text=True, check=True)
+            gaps = (tree / "conformance/reports/gaps.md").read_text()
+            self.assertLess(gaps.index("`/query`"), gaps.index("`/rules`"))
+            self.assertLess(gaps.index("`/rules`"), gaps.index("`/loki/api/v1/index/shards`"))
+            self.assertIn("| optional | `/loki/api/v1/index/shards`", gaps)
+            self.assertIn("Optional planner compatibility only", gaps)
+            coverage = (tree / "conformance/reports/coverage-map.md").read_text()
+            self.assertIn("`/loki/api/v1/index/shards` | GET | gap (optional)", coverage)
+            self.assertIn("Optional planner compatibility only", coverage)
+            summary = json.loads((registry / "generated/summary.json").read_text())
+            self.assertEqual(summary["endpoints"], 3)
+            self.assertEqual(summary["state"]["gap"], 3)
 
 
 if __name__ == "__main__":
