@@ -1,0 +1,49 @@
+{
+  "scope": "untimed diagnostic; 2 concurrent request loops; Tier0 off; one proxy; profiles excluded from baseline timings/resources",
+  "source_ref": "9956043537323d3bc30742fff509f7cb6edce5be",
+  "binary_sha256": "b023ed1153a1d6b296340be48c8806df627596b3a2b699055d23158b77db2d5c",
+  "collector_sha256": "17e0fcb980755f91aa9da22b50d5b7bc5be1f2d7d7679d8ae10a929ed548bcf6",
+  "fixture": {
+    "Probe": "cacheperf-1793446565969116000",
+    "End": 1793350800,
+    "RecentEnd": 1793446500,
+    "Streams": 1280,
+    "Lines": 768000,
+    "SHA256": "a744d1fed46a2fd7140d18f4f0d3cf978e71156a55cc93f73c90c419004733fd"
+  },
+  "profiles": {
+    "DLV1-allocs-after.pprof": "d21b813a0c8b92fdca582139f1e160f22ea7f5565ede7eb929793c89710143ec",
+    "DLV1-allocs-before.pprof": "7dc7b5c80e244db85a5160d37283d856756499541bb73eadacc82b053491ecb2",
+    "DLV1-cpu.pprof": "a25470b9d71ad3a4f4ece133bb871b9d72e32a35d5b118aca77259e08c900ce3",
+    "DLV1-live-heap.pprof": "0eec549565f2769583e4a9a20463e5ee803b4023f48be1121db31cd8a35c12af",
+    "DLV2-allocs-after.pprof": "30c247d3e18e8d3a40245e9995cd38d5c9751b6203c9ee00ed091ca7cb5ba50d",
+    "DLV2-allocs-before.pprof": "2b6f25c29de521a1bd67959fda34620a37822c0ed1ad52cfa9193a947f20c781",
+    "DLV2-cpu.pprof": "25bfe20c2404636d3ba2db0e2b96297e35907d11dbb0eff51791411e99352bea",
+    "DLV2-live-heap.pprof": "e061f11e753b6d3b3267e98c2a178ef169707ae5b3d2c26b0096ec4e2c8551e9",
+    "native-allocs-after.pprof": "848cbdee80501ed4b9f16fd01856ba6e6e3061208d8087837eaa6b557b282dc8",
+    "native-allocs-before.pprof": "580a0c7713a36194db800f79fc7c039203742de8455f2685a1ede42fe652a979",
+    "native-cpu.pprof": "8d7a87760d122fdf25eab558d68fdae48db43599ce16d4b765fc70044f62c7ca",
+    "native-live-heap.pprof": "942bbf78c03bcf9d5fae16b32ad2f9931d8b18a7796f3b353a1c8b1b94ec5912"
+  },
+  "workloads": [
+    {
+      "shape": "DLV1",
+      "requests": 3065,
+      "failed": 0,
+      "reference_class": "success_nonempty"
+    },
+    {
+      "shape": "DLV2",
+      "requests": 1445,
+      "failed": 0,
+      "reference_class": "success_nonempty"
+    },
+    {
+      "shape": "native",
+      "requests": 166634,
+      "failed": 0,
+      "reference_class": "success_nonempty"
+    }
+  ],
+  "interpretation": "Cumulative sampled allocation churn is not retained memory; two-concurrent-request diagnostic profiles are excluded from timed baseline. Request counts are diagnostics, not a comparative throughput benchmark."
+}
