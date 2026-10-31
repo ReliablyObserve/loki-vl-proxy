@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keys, deadlines or cache placement. Compaction adds an allocation and copy
   when output has excess capacity; logical cache budgets are unchanged.
 
+### Security
+
+- Restrict a Gitleaks false-positive exception to one historical browser-proof
+  metadata line (commit `0f60186536e2e11147670f9ed9e7999a48e573c3`). The match is
+  benchmark prose, not a credential. Full-history scanning and checks of future
+  changes remain enabled; no rule or path is excluded.
+- Document the reviewed evidence publisher's `workflow_run` trigger: it runs
+  trusted default-branch code with PR-comment permissions, parses bounded
+  artifacts as data and never checks out or executes PR code or extracted
+  artifacts. Other workflow security audits remain enabled.
+
 ## [2.53.0] - 2026-10-31
 
 ### Fixed

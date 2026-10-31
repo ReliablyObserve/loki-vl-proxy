@@ -1,7 +1,7 @@
 name: PR evidence summary
 
 # Read existing artifacts only; never execute PR code or downloaded scripts.
-on:
+on:  # zizmor: ignore[dangerous-triggers] trusted default-branch publisher only; bounded artifacts are data, never extracted or executed
   workflow_run:
     workflows: [CI, PR Quality Report, Perf A/B, Visual smoke, Loki Compatibility, Logs Drilldown Compatibility, VictoriaLogs Compatibility, Security PR]
     types: [completed]
