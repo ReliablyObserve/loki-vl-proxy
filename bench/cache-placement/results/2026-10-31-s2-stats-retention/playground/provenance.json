@@ -7,6 +7,16 @@
   "loki": "3.7.7",
   "victorialogs": "1.52.0",
   "deployment": "all12 proxy variants rebuilt/recreated/healthy, backend volumes preserved, fresh generated logs verified through proxy and Loki, patterns limit500 verified",
-  "browser": "24h/48h Fields tests, unique dual-written510-value fixtures, rebuilt vmauth datasource,500frames/visible partial notices/no API or pageerrors;2passed9.6s",
+  "browser": {
+    "ranges_hours": [24, 48],
+    "tests_passed": 2,
+    "test_duration_seconds": 9.6,
+    "fixture_values_per_test": 510,
+    "frames_per_field": 500,
+    "datasource_name": "Loki (via VL proxy vmauth)",
+    "partial_notice_visible": true,
+    "api_errors": 0,
+    "page_errors": 0
+  },
   "scope": "candidate-only no-UI-regression proof; not main/PR/Loki screenshot comparison or query-latency timing"
 }

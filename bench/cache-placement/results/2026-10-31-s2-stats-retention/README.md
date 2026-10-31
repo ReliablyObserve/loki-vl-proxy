@@ -160,6 +160,9 @@ replica placement, concurrency or overall memory-budget guarantee changes.
 - Lint0, configured gosec0 without type errors, actionlint, 40 CI wiring tests,
   changelog and full-results conformance pass. Independent review covers source,
   memory measurement, format compatibility and proof limitations.
+- CI-pinned Gitleaks8.28 scans the history successfully. A single historical
+  browser-prose false positive is fingerprinted by exact commit/file/rule/line;
+  current browser metadata is structured and future text remains scanned.
 - No Grafana-visible result changes are intended: the same encoded bytes decode
   to the same answers. The exact API/parity and memory proof above cover this
   change; CI's nine general Visual smoke scenes still run for the product diff.
