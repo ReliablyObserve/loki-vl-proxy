@@ -1,0 +1,12 @@
+registry items: 365; tests declaring coverage: 246; items wired to a test: 198; unwired: 88
+performance evidence: 264 shapes, 78 registry items covered, 775 measured shape×range
+bench/ab selection: ok (0 problem(s))
+bench/visual plan: ok (0 problem(s))
+conformance/reports/parity-gaps.md: 144 registered differences, 605 discovered clusters, 0 problem(s)
+perf acceptance: every covered registry item has a valid perf: block
+flag documentation: 236 flags, 236 in every exhaustive place (chart values, configuration docs)
+  176 flags appear in no curated example (chart README, env example, k8s example) — fine for internal knobs, worth adding for anything an operator tunes
+ratchet: coverage 55% (baseline 55%), 11 proven (baseline 11)
+error layer: 57 known leaking cell(s), the list may only shrink
+evidence: 790 tests declare 198 items; 184 have a passing run, 0 a failing one
+conformance gate ok

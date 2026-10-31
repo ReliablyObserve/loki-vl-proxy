@@ -326,6 +326,7 @@
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
+      "test/e2e-compat/ordered_json_result_cache_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -433,6 +434,7 @@
       "internal/proxy/unwrap_conversion_error_test.go",
       "test/e2e-compat/extracted_metric_pushdown_test.go",
       "test/e2e-compat/json_filter_pushdown_test.go",
+      "test/e2e-compat/ordered_json_result_cache_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_sample_validity_test.go"
     ],
@@ -2250,6 +2252,10 @@
     "test/e2e-compat/operators_not_in_loki_test.go": [
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
+    "test/e2e-compat/ordered_json_result_cache_test.go": [
+      "loki_api_v1_query_range",
+      "parser-error-and-label-collision"
+    ],
     "test/e2e-compat/parenthesized_range_or_filters_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2458,7 +2464,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 245,
+  "tests_with_markers": 246,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

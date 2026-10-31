@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,14 +37,24 @@ func BenchmarkOrderedJSONResultCache(b *testing.B) {
 				params := url.Values{"query": {query}, "start": {strconv.FormatInt(base.Add(time.Minute).Unix(), 10)}, "end": {strconv.FormatInt(base.Add(3*time.Minute).Unix(), 10)}, "step": {"60"}}
 				target := "/loki/api/v1/query_range?" + params.Encode()
 				key := p.queryRangeCacheKey(httptest.NewRequest(http.MethodGet, target, nil), query)
-				request := func() {
+				request := func() []byte {
 					w := httptest.NewRecorder()
 					p.handleQueryRange(w, httptest.NewRequest(http.MethodGet, target, nil))
 					if w.Code != http.StatusOK || w.Body.Len() == 0 {
 						b.Fatalf("status=%d body=%s", w.Code, w.Body)
 					}
+					return w.Body.Bytes()
 				}
-				request()
+				var initial struct {
+					Data struct {
+						ResultType string
+						Result     []json.RawMessage
+					}
+				}
+				body := request()
+				if json.Unmarshal(body, &initial) != nil || initial.Data.ResultType != "matrix" || len(initial.Data.Result) == 0 {
+					b.Fatalf("benchmark must answer a nonempty matrix: %s", body)
+				}
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {

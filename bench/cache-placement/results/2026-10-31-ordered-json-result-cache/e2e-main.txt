@@ -1,0 +1,10 @@
+--- FAIL: TestDrilldown_OrderedJSONExactResponseCache (0.08s)
+    --- FAIL: TestDrilldown_OrderedJSONExactResponseCache/DLV1 (0.01s)
+        ordered_json_result_cache_test.go:87: exact repeat read VictoriaLogs again: [/select/logsql/query app:="json-cache-valid-1793464680086816000" | filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1 /select/logsql/query app:="json-cache-valid-1793464680086816000" | limit 1000001]
+    --- FAIL: TestDrilldown_OrderedJSONExactResponseCache/DLV2 (0.01s)
+        ordered_json_result_cache_test.go:87: exact repeat read VictoriaLogs again: [/select/logsql/query app:="json-cache-valid-1793464680086816000-errors" | limit 1000001]
+    --- FAIL: TestDrilldown_OrderedJSONExactResponseCache/DLV3 (0.01s)
+        ordered_json_result_cache_test.go:87: exact repeat read VictoriaLogs again: [/select/logsql/query app:="json-cache-valid-1793464680086816000" | filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1 /select/logsql/query app:="json-cache-valid-1793464680086816000" | limit 1000001]
+FAIL
+FAIL	github.com/ReliablyObserve/Loki-VL-proxy/test/e2e-compat	0.779s
+FAIL
