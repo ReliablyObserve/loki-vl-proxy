@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.50.0] - 2026-10-31
+
 ### Changed
 
 - **Shared cache placement pools RAM and SSD capacity across peers.** Eligible
