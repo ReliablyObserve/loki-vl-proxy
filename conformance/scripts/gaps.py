@@ -108,7 +108,7 @@ def main():
              "Priority = consumer weight (explore/drilldown 3, datasource 2, api 1), plus 3 when no test",
              "compares the endpoint against Loki, plus 2 when the proxy computes the result itself.",
              "An endpoint the owner named a priority for is placed by that first: `first` above all",
-             "others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group. "
+             "others (and always listed), `last` after normal gaps, `optional` after those; the score orders within each group. ",
              "Optional gaps remain in the declared API inventory and compatibility scores.", "",
              SCOPE_SENTENCE, "",
              "| Priority | Endpoint | Consumers | Served by | Tests | vs Loki | Missing |",
