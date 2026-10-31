@@ -11,6 +11,21 @@
 
 - list checks/tests you ran locally or in CI
 
+## Cache efficiency evidence (Cache behavior changes)
+
+- [ ] Add a **main versus PR** matrix with measured commit SHAs, workload/config,
+  node/RF/Tier0 settings and links to reproducible results.
+- [ ] Show parity/errors, p50/p95, scoped proxy CPU, allocation/retained RAM/RSS,
+  disk occupancy/encoded traffic/evictions, VL requests/ranges/bytes and peers.
+- [ ] Separate Loki-layer, VL-layer and reference Loki cache observations;
+  give hits/lookups and bypasses rather than an unexplained hit percentage.
+- [ ] Cover relevant cold/repeat/shift/refresh/restart/peer-loss/pressure states;
+  name untested states, costs, regressions and unchanged cases explicitly.
+- [ ] Distinguish logical bytes/file size from physical IOPS, and measured
+  request work from background/priming. Mark unavailable measurements explicitly.
+- [ ] Explain freshness/isolation/invalidation and resource-bound implications,
+  or state why this section is not applicable. See AGENTS.md for the full rule.
+
 ## Visual evidence (Product changes)
 
 Release, CI, documentation, test-only, chart-only and harness-only PRs skip Visual
