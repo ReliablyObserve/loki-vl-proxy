@@ -101,6 +101,10 @@ type Cache struct {
 	// so drainPromotions can guarantee all dequeued items are committed.
 	promoteFlush chan chan struct{}
 
+	semanticLayer Layer
+	layerL1       [LayerCount]layerTierStats
+	layerL3       [LayerCount]layerTierStats
+
 	// Stats
 	Hits      atomic.Int64
 	Misses    atomic.Int64
@@ -193,7 +197,13 @@ func New(ttl time.Duration, maxEntries int) *Cache {
 }
 
 func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
+	return newWithMaxBytesForLayer(ttl, maxEntries, maxBytes, LayerUnknown)
+}
+
+func newWithMaxBytesForLayer(ttl time.Duration, maxEntries, maxBytes int, layer Layer) *Cache {
 	c := &Cache{
+		semanticLayer: layer,
+
 		entries:      make(map[string]entry),
 		defaultTTL:   ttl,
 		maxEntries:   maxEntries,
@@ -276,10 +286,12 @@ func (c *Cache) Close() {
 // GetWithTTL returns the value and remaining TTL for a key.
 // Returns (nil, 0, false) on miss.
 // Uses RLock for the hot read path; LRU promotion is deferred to the promoter goroutine.
-func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
+func (c *Cache) GetWithTTL(key string) (value []byte, ttl time.Duration, found bool) {
 	if c == nil || c.disabled {
 		return nil, 0, false
 	}
+	defer func() { c.layerL1[c.layer(key)].lookup(value, found, false) }()
+
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
@@ -338,7 +350,7 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 
 	if c.l3 != nil {
 		c.recordTierRequest("l3")
-		if v, remainingTTL, memOnly, ok := c.l3.getReplica(key); ok {
+		if v, remainingTTL, memOnly, ok := c.getPeerReplica(key); ok {
 			shadowTTL := remainingTTL
 			if shadowTTL <= 0 {
 				shadowTTL = 30 * time.Second
@@ -363,13 +375,14 @@ func (c *Cache) GetSharedWithAge(key string) ([]byte, time.Duration, time.Durati
 // The returned TTL may be negative when the entry is stale. This never falls
 // back to L2/L3 because stale-on-error is only intended to reuse the serving
 // replica's last known-good payload.
-func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
+func (c *Cache) GetStaleWithTTL(key string) (value []byte, ttl time.Duration, found bool) {
 	if c == nil || c.disabled {
 		return nil, 0, false
 	}
+	defer func() { c.layerL1[c.layer(key)].lookup(value, found, ttl <= 0) }()
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
 	e, ok := c.entries[key]
 	if !ok {
 		return nil, 0, false
@@ -414,6 +427,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if ok && !clockNow().After(e.expiresAt) {
 		v := e.value
 		c.mu.RUnlock()
+		c.layerL1[c.layer(key)].lookup(v, true, false)
 		c.recordTierHit("l1")
 		c.Hits.Add(1)
 		select {
@@ -423,6 +437,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 		return v, true
 	}
 	c.mu.RUnlock()
+	c.layerL1[c.layer(key)].lookup(nil, false, false)
 	c.recordTierMiss("l1")
 
 	// L2 fallback (disk): promoted to memory with the TTL it has left, never
@@ -440,7 +455,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	// L3 fallback (peer fleet — sharded)
 	if c.l3 != nil {
 		c.recordTierRequest("l3")
-		if v, remainingTTL, memOnly, ok := c.l3.getReplica(key); ok {
+		if v, remainingTTL, memOnly, ok := c.getPeerReplica(key); ok {
 			// Use the owner's remaining TTL for the shadow copy — never extend.
 			// If TTL is unknown (0), use a short default.
 			shadowTTL := remainingTTL
@@ -493,6 +508,7 @@ func (c *Cache) setLocalOnly(key string, value []byte, ttl time.Duration, stampe
 	}
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
+		c.layerL1[c.layer(key)].rejections.Add(1)
 		return
 	}
 	c.mu.Lock()
@@ -510,6 +526,7 @@ func (c *Cache) storePeerCopy(key string, value []byte, ttl time.Duration, memOn
 	}
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
+		c.layerL1[c.layer(key)].rejections.Add(1)
 		return
 	}
 	replica := c.l3 == nil || c.l3.IsReplica(key)
@@ -568,9 +585,11 @@ func (c *Cache) getForPeer(key string) ([]byte, time.Duration, bool, bool) {
 			case c.promoteBuf <- key:
 			default:
 			}
+			c.layerL1[c.layer(key)].lookup(e.value, true, false)
 			return e.value, remaining, e.memOnly, true
 		}
 	}
+	c.layerL1[c.layer(key)].lookup(nil, false, false)
 	if c.l2 != nil {
 		if v, ttl, ok := c.getDiskWithTTL(key); ok {
 			return v, ttl, false, true
@@ -588,6 +607,7 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 	}
 	size := entrySize(key, value)
 	if size > c.maxBytes/10 {
+		c.layerL1[c.layer(key)].rejections.Add(1)
 		return
 	}
 
@@ -675,6 +695,7 @@ func (c *Cache) evictIfNeeded(incomingSize int) {
 	if len(c.entries) >= c.maxEntries || c.curBytes+incomingSize > c.maxBytes {
 		for key, e := range c.entries {
 			if now.After(e.expiresAt) {
+				c.layerL1[c.layer(key)].evictions.Add(1)
 				c.removeEntryLocked(key)
 				c.Evictions.Add(1)
 			}
@@ -688,6 +709,7 @@ func (c *Cache) evictIfNeeded(incomingSize int) {
 		if back == nil {
 			break
 		}
+		c.layerL1[c.layer(back.Value.(*lruEntry).key)].evictions.Add(1)
 		c.removeEntryLocked(back.Value.(*lruEntry).key)
 		c.Evictions.Add(1)
 	}
@@ -705,6 +727,7 @@ func (c *Cache) cleanup() {
 		now := clockNow()
 		for key, e := range c.entries {
 			if now.After(e.expiresAt) {
+				c.layerL1[c.layer(key)].evictions.Add(1)
 				c.removeEntryLocked(key)
 			}
 		}
@@ -819,7 +842,8 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 	return out
 }
 
-func (c *Cache) getL1WithAge(key string) ([]byte, time.Duration, time.Duration, bool) {
+func (c *Cache) getL1WithAge(key string) (value []byte, ttl time.Duration, age time.Duration, found bool) {
+	defer func() { c.layerL1[c.layer(key)].lookup(value, found, false) }()
 	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {

@@ -275,6 +275,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 		p.gaugeMetric("loki_vl_proxy_active_requests", "Current in-flight requests.", "{request}", p.gaugeDP("loki_vl_proxy_active_requests", float64(p.metrics.activeRequests.Load()), now)),
 	)
 	metrics = append(metrics, p.cacheTierMetrics(now)...)
+	metrics = append(metrics, p.cacheLayerMetrics(now)...)
 
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)

@@ -1,0 +1,43 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/ReliablyObserve/Loki-VL-proxy/internal/cache
+cpu: Apple M5 Pro
+                                 │ control-a.txt │ control-b.txt │
+                                 │                                  sec/op                                  │                       sec/op                        vs base              │
+DiskCache_Get_Hit_Compressed-4                                                                 396.4n ± 30%                                         389.4n ± 15%       ~ (p=0.699 n=6)
+DiskCache_Get_Hit_Uncompressed-4                                                               388.1n ± 34%                                         354.9n ±  3%       ~ (p=0.937 n=6)
+SemanticCacheGet/loki/miss-4                                                                   9.318n ± 27%                                         9.239n ±  2%       ~ (p=0.132 n=6)
+SemanticCacheGet/loki/hit-4                                                                    336.6n ± 10%                                         336.2n ±  6%       ~ (p=1.000 n=6)
+SemanticCacheGet/vl/miss-4                                                                     9.637n ±  9%                                         9.310n ±  8%       ~ (p=0.240 n=6)
+SemanticCacheGet/vl/hit-4                                                                      333.1n ± 10%                                         333.6n ±  2%       ~ (p=0.561 n=6)
+SemanticCacheGet/unknown/miss-4                                                                9.263n ± 19%                                         9.352n ±  2%       ~ (p=0.485 n=6)
+SemanticCacheGet/unknown/hit-4                                                                 331.3n ± 14%                                         333.5n ±  3%       ~ (p=0.937 n=6)
+geomean                                                                                        91.13n                                               89.62n        -1.66%
+
+                                 │ control-a.txt │ control-b.txt │
+                                 │                                   B/op                                   │                       B/op                        vs base                │
+DiskCache_Get_Hit_Compressed-4                                                               1.312Ki ± 0%                                         1.312Ki ± 0%       ~ (p=1.000 n=6) ¹
+DiskCache_Get_Hit_Uncompressed-4                                                             1.375Ki ± 0%                                         1.375Ki ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/loki/miss-4                                                                   0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/loki/hit-4                                                                    0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/vl/miss-4                                                                     0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/vl/hit-4                                                                      0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/unknown/miss-4                                                                0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/unknown/hit-4                                                                 0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                                   ²                                                     +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                                 │ control-a.txt │ control-b.txt │
+                                 │                                allocs/op                                 │                    allocs/op                      vs base                │
+DiskCache_Get_Hit_Compressed-4                                                                 9.000 ± 0%                                           9.000 ± 0%       ~ (p=1.000 n=6) ¹
+DiskCache_Get_Hit_Uncompressed-4                                                               9.000 ± 0%                                           9.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/loki/miss-4                                                                   0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/loki/hit-4                                                                    0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/vl/miss-4                                                                     0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/vl/hit-4                                                                      0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/unknown/miss-4                                                                0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+SemanticCacheGet/unknown/hit-4                                                                 0.000 ± 0%                                           0.000 ± 0%       ~ (p=1.000 n=6) ¹
+geomean                                                                                                   ²                                                     +0.00%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean

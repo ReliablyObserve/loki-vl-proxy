@@ -28,6 +28,12 @@ var gzipReaderPool sync.Pool
 // Index and write queue have separate budgets (MaxIndexBytes + MaxBufferBytes).
 // Codec output, bbolt pages and temporary transaction state are additional memory.
 type DiskCache struct {
+	layerL2                [LayerCount]layerTierStats
+	layerIndexBytes        [LayerCount]int64
+	layerQueueBytes        [LayerCount]int64
+	layerEncodedReadBytes  [LayerCount]atomic.Int64
+	layerEncodedWriteBytes [LayerCount]atomic.Int64
+
 	db              *bolt.DB
 	compression     bool // legacy bucket decoding only
 	codec           diskCodec
@@ -157,7 +163,21 @@ func (dc *DiskCache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 func (dc *DiskCache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
 	return dc.getWithTTL(key, true)
 }
-func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
+func (dc *DiskCache) getWithTTL(key string, allowStale bool) (value []byte, ttl time.Duration, found bool) {
+	if dc == nil {
+		return nil, 0, false
+	}
+	start := time.Now()
+	defer func() {
+		s := &dc.layerL2[LayerForKey(key)]
+		s.lookup(value, found, found && ttl <= 0)
+		s.lookupNanoseconds.Add(time.Since(start).Nanoseconds())
+	}()
+	return dc.lookupWithTTL(key, allowStale)
+}
+
+// lookupWithTTL implements storage lookup without the observation wrapper.
+func (dc *DiskCache) lookupWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
 	dc.writeMu.Lock()
 	if dc.closed || dc.closing {
 		dc.writeMu.Unlock()
@@ -202,6 +222,7 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 					return err
 				}
 				raw = bytes.Clone(value)
+				dc.layerEncodedReadBytes[LayerForKey(key)].Add(int64(len(value)))
 				native = true
 				return nil
 			}
@@ -212,6 +233,7 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 					return err
 				}
 				raw = bytes.Clone(value)
+				dc.layerEncodedReadBytes[LayerForKey(key)].Add(int64(len(value)))
 			}
 		}
 		return nil
@@ -257,8 +279,10 @@ func (dc *DiskCache) MinTTL() time.Duration {
 // Set only admits to the bounded raw queue. A single worker performs threshold
 // flushes, so calls under the L1 mutex never commit disk transactions.
 func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
+	layer := LayerForKey(key)
 	dc.writeMu.Lock()
 	if dc.closed || dc.closing {
+		dc.layerL2[layer].rejections.Add(1)
 		dc.writeMu.Unlock()
 		return
 	}
@@ -277,6 +301,12 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 		dc.requestFlush()
 		return
 	}
+	if old, ok := dc.writeBuf[key]; ok {
+		dc.layerQueueBytes[layer] -= diskQueueCharge(key, old.Value)
+	}
+	dc.layerQueueBytes[layer] += charge
+	dc.layerL2[layer].admissions.Add(1)
+	dc.layerL2[layer].writeBytes.Add(int64(len(value)))
 	dc.sequence++
 	dc.writeBuf[key] = diskEntry{Value: value, ExpiresAt: clockNow().Add(ttl).UnixNano(), state: &diskEntryState{lastAccess: dc.sequence}}
 	dc.bufferBytes = used + charge
@@ -296,8 +326,10 @@ func diskQueueCharge(key string, value []byte) int64 {
 func (dc *DiskCache) pendingChargeLocked() int64 { return dc.bufferBytes - dc.flushingBytes }
 func (dc *DiskCache) rejectLocked(key string) {
 	dc.RejectedWrites.Add(1)
+	dc.layerL2[LayerForKey(key)].rejections.Add(1)
 	if old, ok := dc.writeBuf[key]; ok {
 		dc.bufferBytes -= diskQueueCharge(key, old.Value)
+		dc.layerQueueBytes[LayerForKey(key)] -= diskQueueCharge(key, old.Value)
 		delete(dc.writeBuf, key)
 	}
 	if entry, ok := dc.flushing[key]; ok && entry.state != nil {
@@ -343,6 +375,12 @@ func (dc *DiskCache) Purge() {
 	dc.newest, dc.oldest = nil, nil
 	dc.indexBytes, dc.logicalBytes, dc.nextExpiry = 0, 0, 0
 	dc.dirty = false
+	for l := LayerUnknown; l < LayerCount; l++ {
+		dc.layerL2[l].entries.Store(0)
+		dc.layerL2[l].bytes.Store(0)
+		dc.layerIndexBytes[l] = 0
+		dc.layerQueueBytes[l] = 0
+	}
 	dc.writeMu.Unlock()
 	if err := dc.db.Update(func(tx *bolt.Tx) error {
 		for _, name := range [][]byte{dataBucket, legacyDataBucket} {

@@ -1296,8 +1296,8 @@ func New(cfg Config) (*Proxy, error) {
 		tenantLimits:                          tenantLimits,
 		defaultMaxQueryLength:                 cfg.DefaultMaxQueryLength,
 		maxEntriesLimitCap:                    cfg.MaxEntriesLimitCap,
-		translationCache:                      cache.New(5*time.Minute, 5000),
-		streamFieldNamesCache:                 cache.New(30*time.Second, 500),
+		translationCache:                      cache.NewForLayer(5*time.Minute, 5000, cache.LayerLoki),
+		streamFieldNamesCache:                 cache.NewForLayer(30*time.Second, 500, cache.LayerVL),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
 		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
 		queryRangeMaxParallel:                 queryRangeMaxParallel,
@@ -1362,13 +1362,22 @@ func New(cfg Config) (*Proxy, error) {
 		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
-	p.metrics.SetCoalescerStatsProvider(func() metrics.CoalescerStats {
+	p.metrics.SetCacheLayerStatsProvider(p.cacheLayerStats)
+	coalescerStats := func() metrics.CoalescerStats {
 		return metrics.CoalescerStats{
 			Total:     p.coalescer.CoalescedTotal.Load(),
 			Saved:     p.coalescer.CoalescedSaved.Load(),
 			WaitCount: p.coalescer.WaitCount.Load(),
 			WaitNanos: p.coalescer.WaitNanos.Load(),
 		}
+	}
+	p.metrics.SetCoalescerStatsProvider(coalescerStats)
+	p.metrics.SetCacheLayerCoalescerStatsProvider(func() [cache.LayerCount]metrics.CoalescerStats {
+		// This coalescer's integrated call sites wrap raw VL HTTP operations;
+		// it does not represent resident Loki response-cache entries.
+		var layers [cache.LayerCount]metrics.CoalescerStats
+		layers[cache.LayerVL] = coalescerStats()
+		return layers
 	})
 	p.metadataScanLimiter = newMetadataScanLimiter(cfg.BackendMaxConcurrentMetadataScans, resolveMetadataScanFloor(cfg.BackendMinConcurrentMetadataScans),
 		cfg.BackendHeavyQueryQueueWait, resolveMetadataScanHeadroom(cfg.BackendMetadataScanMemoryHeadroom),

@@ -1,0 +1,601 @@
+{
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "cmd/configdoc/main.go",
+      "digest": "870dab576656fd3e4259195e9984c7d97675d35eebdff4762f262b3b1df12a80"
+    },
+    {
+      "path": "cmd/healthcheck/main.go",
+      "digest": "52f9db34c60e6e3c35c9b41f4c705e847b1df2b536796a56c9665d3ad35349a7"
+    },
+    {
+      "path": "cmd/proxy/http_conn_rotation.go",
+      "digest": "e12f7e75cf19c02412826dd6a5355b2c06593ab57b918524b4058f082d43a997"
+    },
+    {
+      "path": "cmd/proxy/main.go",
+      "digest": "031236e3f6e56a0723b1b13a51b1dbe705ab08153a67320a2bf5cc4f1f4db274"
+    },
+    {
+      "path": "cmd/rules-migrate/main.go",
+      "digest": "5a5fb86f01cf082b63dcec83ec3a9afdabb0d57b709ad9b4a16da8618251e75f"
+    },
+    {
+      "path": "cmd/validate_check/main.go",
+      "digest": "ece73ce3704a16479fe44043de1b1f4ebf835c4ad8e3beb8f376a2ba1fac7a48"
+    },
+    {
+      "path": "go.mod",
+      "digest": "2780ebc2af611d9310b1faf3c3538f352b3c0f2a92b8fd97fb57c4c81eb2aa4d"
+    },
+    {
+      "path": "go.sum",
+      "digest": "5d5e577f2ed81f8b486d2e3cdbbb4e02b6d419e0d7a3454c74ac093e094dc54b"
+    },
+    {
+      "path": "internal/cache/cache.go",
+      "digest": "befe59cdeb9dde9021ed506223e04024883b648332786b7cc36109c24c5ed7c8"
+    },
+    {
+      "path": "internal/cache/clock.go",
+      "digest": "516d59789eab6bb6ce388249e9f3b521b2542575e4cde68b8f65ae0c334771cc"
+    },
+    {
+      "path": "internal/cache/disk.go",
+      "digest": "9fd4ac93d79f5c6c35db9019e78e031cd16e88837f020751b501e20538101421"
+    },
+    {
+      "path": "internal/cache/disk_batch.go",
+      "digest": "939202637e97872f698cddaf9874c8588c7ce13bd91d9fb7cdc3be3272258e13"
+    },
+    {
+      "path": "internal/cache/disk_lru.go",
+      "digest": "7c9d106b3a26df54aa5245b8a6d8ff9072ed2eebf5e2f9dc84e4eeab6355d692"
+    },
+    {
+      "path": "internal/cache/disk_record.go",
+      "digest": "c74b42cfeaa73dd8398631cc004cc37ef7ff781bb9b37a7b2a54bd8b758da81e"
+    },
+    {
+      "path": "internal/cache/layer_stats.go",
+      "digest": "6417e03fdbd737400c960f8c5a350cd206f81bc72d2770e2e99a3962fe8a69bd"
+    },
+    {
+      "path": "internal/cache/peer.go",
+      "digest": "6805eca1c4f8b364c36048f7ca3455ff5b27fe7e3fd258a0fde82823ae05badf"
+    },
+    {
+      "path": "internal/cache/placement_cache.go",
+      "digest": "572538a2565865cc126b3ddc1e7c2304157e780ae2ba7757dc86463b6386064c"
+    },
+    {
+      "path": "internal/cache/warmer.go",
+      "digest": "28f94ed0330038c762128b8f6fe6a36d49309aa7eae361e3a34eadad4f14c000"
+    },
+    {
+      "path": "internal/config/defaults.go",
+      "digest": "ffca577ca5e2d7c717190611b605daa9d19d50f7282d3d37bf82a890a6d6a185"
+    },
+    {
+      "path": "internal/config/generate.go",
+      "digest": "642c849fde54efb67e3cce1f1d435c2f3e8753ce1e5d6abba93a9f47cdd11634"
+    },
+    {
+      "path": "internal/config/limits.go",
+      "digest": "31595c0627eb3a378f3aa98e3e43c9666aab7718c6012cf7a219d1ebe38ff02f"
+    },
+    {
+      "path": "internal/config/limits_json.go",
+      "digest": "728c414e913728ccd02f4802a35c97384b63d0db0da44af5a298adf21c1edd76"
+    },
+    {
+      "path": "internal/config/registry.go",
+      "digest": "f9a939817c12e961578ed5bdc1fec6643c5ca47ba8ccf7f5c51ba42bee33dcc6"
+    },
+    {
+      "path": "internal/config/render.go",
+      "digest": "932358cd9a13e519ef65719c332ffc5a9b70a379f2a576041c680bd517cbbb48"
+    },
+    {
+      "path": "internal/logql/ast.go",
+      "digest": "b4c91c151b71356a5b308923dd0845cddcbb5f48795270141da7f67503bc22be"
+    },
+    {
+      "path": "internal/logql/canonical.go",
+      "digest": "fd9af526388b83c64c2bea9cb2ed79a3601b84546fb3d4191d9c5f72b16c05bf"
+    },
+    {
+      "path": "internal/logql/dotted_names.go",
+      "digest": "d6b5638057d4461029935d237e76d756953f881c9ba752219396ea5aa8fd58c4"
+    },
+    {
+      "path": "internal/logql/ip_filter.go",
+      "digest": "5b655a40c112c0a6b4d911dd909a37341c2d4b8388f3f3fb20c7bc8078d4f4cc"
+    },
+    {
+      "path": "internal/logql/parser.go",
+      "digest": "0991de6c431fffa69a9ae3a769123feb9609b3134c01c5b225a572113939b32c"
+    },
+    {
+      "path": "internal/logql/parser_captures.go",
+      "digest": "3e86331f5ff4b787096840fd8c67a7761e32dda703af7e17a887f30c3a13b323"
+    },
+    {
+      "path": "internal/logql/scanner.go",
+      "digest": "11a9912b324ab0ecbb6183d6fea3762c88436977ec803d8e76fb9eca539f1539"
+    },
+    {
+      "path": "internal/logql/semantic.go",
+      "digest": "25b0f4e8fcd83a6d5cfdb6a35af8b78e639e3cc86966898c48927f6d9c062288"
+    },
+    {
+      "path": "internal/logql/stage_validate.go",
+      "digest": "618ec4a57f7262733755136f0cef87037e327f123c68c569c08ed38403ad0fe8"
+    },
+    {
+      "path": "internal/logql/translate.go",
+      "digest": "5f86285c16ddb24cb1a9dc558abcad881ac6610541763fcd7e269edcc9e74516"
+    },
+    {
+      "path": "internal/logql/validate.go",
+      "digest": "c8ca4636c01988030ab85915ff550bbc565b0f2202fe59eead66db0721b9cde1"
+    },
+    {
+      "path": "internal/logsql/ast.go",
+      "digest": "cfb505d39c63651cb3546bf23194211f826f2e5823a7f62a837525ba826f31f0"
+    },
+    {
+      "path": "internal/logsql/builder.go",
+      "digest": "bf46690146368e7b05540ede017cf6f861c199f2079d36f7dd8a0f9de8c34289"
+    },
+    {
+      "path": "internal/logsql/capabilities.go",
+      "digest": "2fbae59c856411bb8ecca42d80527dd2a444d1df6cb89d3b45fee2151bfeccc4"
+    },
+    {
+      "path": "internal/logsql/label_matcher_anchor.go",
+      "digest": "19afcaa790ff6498daa0a27c63c8689365d75065a4c5b0d75db14dfa1078e603"
+    },
+    {
+      "path": "internal/logsql/parser.go",
+      "digest": "f347ccbc731c219b52e0efe1a0c85b497c31020af4fb4ffe4571d6e3fca80b14"
+    },
+    {
+      "path": "internal/logsql/scanner.go",
+      "digest": "8413698eb4743d6d8bf61753dff45f896e09ebb2eb5529f722d4433efa2fc079"
+    },
+    {
+      "path": "internal/memlimit/memlimit.go",
+      "digest": "7031dd5bc69e9427da005215307322d45cf924e26941dec7b9e8dd2265d411da"
+    },
+    {
+      "path": "internal/metrics/cache_layer_metrics.go",
+      "digest": "85cd53894213e0be66fe78ac955589cfa7378c51a3fbf1c12634909acf59ff92"
+    },
+    {
+      "path": "internal/metrics/metrics.go",
+      "digest": "f9ec75e33c2cb627a5736336d094f7c505c602c9b97566813e52d001095d3f7b"
+    },
+    {
+      "path": "internal/metrics/otlp.go",
+      "digest": "8f73e677a67da590fc0465ea1cd2b36b66bb5f1074fd4f391f41d370c6393dbb"
+    },
+    {
+      "path": "internal/metrics/querytracker.go",
+      "digest": "3eabed5119e8cf251f4168c76a1bc9edf3402e1b7f2bf2b7be2cc94e7569f83e"
+    },
+    {
+      "path": "internal/metrics/system.go",
+      "digest": "e5c172a21ee5c7d84f78a0cc71f90d452e5affdc4325add6179493fd02fb25b2"
+    },
+    {
+      "path": "internal/middleware/circuitbreaker.go",
+      "digest": "82a8bf54e653c05757a55e650e257061a79a69c9002db2f382258af51d4e24ba"
+    },
+    {
+      "path": "internal/middleware/coalescer.go",
+      "digest": "4ddea8b16d7b5e29f9bf188b9dd69049c91649575101074ef4274e9ba162fb8d"
+    },
+    {
+      "path": "internal/middleware/compress.go",
+      "digest": "9dba3f7de5b0e63911574063e37d9b22115c70550598012b6a9ed69019dc90bb"
+    },
+    {
+      "path": "internal/middleware/ratelimiter.go",
+      "digest": "6b95a89035bf7fe88e04af180e0c689b68942534cd7f07928c62bf9782bab632"
+    },
+    {
+      "path": "internal/observability/async_handler.go",
+      "digest": "c1256c1c07f79d4ba73f24fa039d4700bc2409d28bf6b01db9bd1e8e2b54b245"
+    },
+    {
+      "path": "internal/observability/logger.go",
+      "digest": "175071148bbc3f1633c753bb135d6504f95c914fd456d9e65bef42a5ca3b5a51"
+    },
+    {
+      "path": "internal/observability/request_sampler.go",
+      "digest": "00aa53ae1b434ec3faaf6f0f5debd58b8084ead24e14b21db01f72271fef2b09"
+    },
+    {
+      "path": "internal/proxy/absent_over_time.go",
+      "digest": "f7ae01b6b5ab86be6513c5a3f73d71dbb5697379e802879a80c278a5c3c1a03d"
+    },
+    {
+      "path": "internal/proxy/alerting.go",
+      "digest": "f02525ecfbe660e806f45e6579c3b720f9c1873c7b100b89662504319ea7c81f"
+    },
+    {
+      "path": "internal/proxy/backend.go",
+      "digest": "2a9f582f8fbe55b352768ee52db93a5cfc5a301d8a29d3bea36108036568e089"
+    },
+    {
+      "path": "internal/proxy/backend_budget.go",
+      "digest": "8a00b04034919edd2d63744dd7b2324fb155228007a1eb9d5a1bb2064ded2beb"
+    },
+    {
+      "path": "internal/proxy/backend_heavy.go",
+      "digest": "d51d1ea716613d4dfd9714dc783b19ef2a5596ae994ff9391f3d175afe11d5a9"
+    },
+    {
+      "path": "internal/proxy/backend_response_guard.go",
+      "digest": "52857ef5a3aa19c01a7c5f26dbbd1f208342d0159aa026bb2280867a659e7fe8"
+    },
+    {
+      "path": "internal/proxy/binary_aggregation.go",
+      "digest": "8e6f2a0785ce366590e39eede02506370552bc22e76818624ef24d88caf433ed"
+    },
+    {
+      "path": "internal/proxy/binary_aggregation_range.go",
+      "digest": "6af2b8ba69b3b8ec1bc50d517b7f6e4438f8366c7e4d5df18fd7c968e0d8b405"
+    },
+    {
+      "path": "internal/proxy/binary_budget.go",
+      "digest": "a57f59aa9bfbb72a88776e8041c9e9ff5835208d28f11ca3b7ea77fbee5801a6"
+    },
+    {
+      "path": "internal/proxy/binary_encoding.go",
+      "digest": "20bbc2fad39b8830180e19d883cc488584316cf62b32fd47a49453118098b549"
+    },
+    {
+      "path": "internal/proxy/binary_logql.go",
+      "digest": "8f1538805d9fbca713775722e479401beb0bc53b65ca37f88f2991b793533dc5"
+    },
+    {
+      "path": "internal/proxy/binary_matching.go",
+      "digest": "42ffb961a76afef4d1701ea70eba49ecd4bd18f34cbfb9d2987bbda3918f4645"
+    },
+    {
+      "path": "internal/proxy/binary_scalar.go",
+      "digest": "1699d2548d0aef25cc4a28f67dd985a189817040d445f426ee7a9c3b1a240689"
+    },
+    {
+      "path": "internal/proxy/cache_keys.go",
+      "digest": "c0a7dc73c6f7663bf5c8ba475ef0288e673c88976c1e14376e5ba158797c2ba3"
+    },
+    {
+      "path": "internal/proxy/cache_layer_metrics.go",
+      "digest": "3eaa0347512283a4d47b5673e764227f0d43decf0098250508cd52f0cd71fc85"
+    },
+    {
+      "path": "internal/proxy/cold_dispatch.go",
+      "digest": "abc505e8bf2cde45a0d810c87fce0f81fba7f2e59f0b0ea0c0399369203853e3"
+    },
+    {
+      "path": "internal/proxy/cold_routing.go",
+      "digest": "a93a6a1cd445b01c904a5ec2bac39d7fe25fda1150b8d1e84b8853aed977852c"
+    },
+    {
+      "path": "internal/proxy/config.go",
+      "digest": "c76c797d7228c824907a90f93520aa5b3ce52b905053d3eb1295b38dc4176d6c"
+    },
+    {
+      "path": "internal/proxy/debuglog.go",
+      "digest": "9abd3a8da8bf998caad5a5f1e6629f7f761afe50161f423da908bb6ebbe91b61"
+    },
+    {
+      "path": "internal/proxy/deps.go",
+      "digest": "690ea5611e66e23da4c2334f72fb5a03ffa7a32cc5514c86c73db5954b1510bb"
+    },
+    {
+      "path": "internal/proxy/detected_level.go",
+      "digest": "226a8585733d5830519961a2d5a01576a051941d6128644035606a24e578cca6"
+    },
+    {
+      "path": "internal/proxy/detected_level_presence.go",
+      "digest": "747e20b7f5665551430bc39c946790548ce2c9e5bae70c143ff195ec22050e9e"
+    },
+    {
+      "path": "internal/proxy/drilldown.go",
+      "digest": "bc1f42db53c5bcbb0007f49efc79521909a3c780d03088adf8dd05594caee178"
+    },
+    {
+      "path": "internal/proxy/drilldown_burst_coalescer.go",
+      "digest": "e4793aa250cc833525b104b0a385c59aee6e468e7c7adf407da4bd5358fc34b3"
+    },
+    {
+      "path": "internal/proxy/empty_without_metric.go",
+      "digest": "7a17dcd635db7118c8287ad1653a411b5de6d870a2324f642ae734652cb9267d"
+    },
+    {
+      "path": "internal/proxy/execution_limits.go",
+      "digest": "9867254a8860a07b296b4a07ff012f0425da04b94b8b9e22193c158387a54b6f"
+    },
+    {
+      "path": "internal/proxy/handler.go",
+      "digest": "f98c34727a742d18d5262319743c947b32fe1639a0d1b8c56246e35c1af39971"
+    },
+    {
+      "path": "internal/proxy/http_utils.go",
+      "digest": "7ab5562eed7814631beda0b11d197e00bf2b64ca7601d5183fc5e0a8686b2217"
+    },
+    {
+      "path": "internal/proxy/label_handlers.go",
+      "digest": "dcc94ddb10dc32c9a1a5ec9e79afede352ab5c7f72604e75291c32dcf42ecc31"
+    },
+    {
+      "path": "internal/proxy/label_index.go",
+      "digest": "fd9f79c78f845c76d46941503194c90486b41fc33677969002238ff7c0aaeba0"
+    },
+    {
+      "path": "internal/proxy/label_metadata.go",
+      "digest": "dbcdff6c4c521e8ae2de18f51da84fe2653be62d0c68a0a305c8ed1a6e1c74e6"
+    },
+    {
+      "path": "internal/proxy/labels.go",
+      "digest": "41c8825ac186a7d01fdc735e5f13c8e9e522bfc728d91d75b281fe572c7f78c0"
+    },
+    {
+      "path": "internal/proxy/limits_enforcement.go",
+      "digest": "27aa9d8dacd484f2cd9f873d820fcd9fdd35afb35a674ba532cb3569d415856d"
+    },
+    {
+      "path": "internal/proxy/line_field_refill.go",
+      "digest": "f76c8b00ab89778757cb98b772ab14f513cb1a608e60d4267ec38d51565e8185"
+    },
+    {
+      "path": "internal/proxy/log_line.go",
+      "digest": "414994c8f0c5110c46e7df245b09d1e784633566368b13ddc377c2d31a44d4ca"
+    },
+    {
+      "path": "internal/proxy/logql_adapter.go",
+      "digest": "0a3c8c5fe444b2d73e7203dc112258584a4608af18d99ab0e674624b25af2c57"
+    },
+    {
+      "path": "internal/proxy/loki_profile.go",
+      "digest": "1e36dd42d5628315a9c6db9c9f45dec59d4a4ecd530afe6e8162bad21673a1cf"
+    },
+    {
+      "path": "internal/proxy/manual_metric_budget.go",
+      "digest": "1327963d1a3522dc4939fef7c94dac35e65141fe793d4bd1d15c1240b879a478"
+    },
+    {
+      "path": "internal/proxy/metadata_edge_refresh.go",
+      "digest": "d313e1da592509410e5c12c4a3f8a565cc8048bed4a65550fb1b43bd71e9c58f"
+    },
+    {
+      "path": "internal/proxy/metadata_inventory.go",
+      "digest": "e4d1f2d85ccc9111911e24d9186162f37dc8d2ae79e821854b45e5bf957cba9c"
+    },
+    {
+      "path": "internal/proxy/metadata_scan_limiter.go",
+      "digest": "9b65e759ebaf556bfbd013cbbdf9c15bf8f58970c252effc37db3f42a352d13e"
+    },
+    {
+      "path": "internal/proxy/metric_agg.go",
+      "digest": "58f540c4f0e6728fb484700b496b89c69beb872f4f92fc578aa3a7d862ecd471"
+    },
+    {
+      "path": "internal/proxy/metric_binary.go",
+      "digest": "5cf7d009c4a886ac5123c53f4fbfa99959ef27c1299b414423a5b00e300d9ea3"
+    },
+    {
+      "path": "internal/proxy/metric_eval_limits.go",
+      "digest": "cd5e0c3466f0d04110d7cb40ec7dfe6d121e3140c5fa18d7d4458093dd292cb1"
+    },
+    {
+      "path": "internal/proxy/middleware.go",
+      "digest": "a6669c02d86cdfa10258195d7f7e37e3ac44c3a2cb880769406e2a087a44e2f1"
+    },
+    {
+      "path": "internal/proxy/middleware_security.go",
+      "digest": "0d0c850d57c9f2b0edd89d812e5fe0f2a9ada91dfe2e5445cd2fe07547635791"
+    },
+    {
+      "path": "internal/proxy/multitenant.go",
+      "digest": "4d712d8276f9202a8d88c7bfbe9dc1bc98f29839c47839c4ff9b9c2d92cd62cf"
+    },
+    {
+      "path": "internal/proxy/nested_vector_fold.go",
+      "digest": "bacbe1171fb65bfb35f670e76322ca3340e461b813ea6745410518e68cc0d75d"
+    },
+    {
+      "path": "internal/proxy/ordered_json_metric.go",
+      "digest": "3228f5cce300e604d2971c30df088d1cedc7f20f4935657bdbc31e44b9485da1"
+    },
+    {
+      "path": "internal/proxy/ordered_json_valid_split.go",
+      "digest": "f47329dfcf24436da249516dbbea8b77aa2ac7d4886f5f9104ed164e3a0c703f"
+    },
+    {
+      "path": "internal/proxy/patterns.go",
+      "digest": "eb352e747e887052bb5eda33c033271e48fdf9d650b74513d11c067074026ea7"
+    },
+    {
+      "path": "internal/proxy/patterns_persistence.go",
+      "digest": "ebc4caf9356e589b17729e45d9f17b37c095b51f0e589697f709b3215ee97cec"
+    },
+    {
+      "path": "internal/proxy/plain_stream_labels.go",
+      "digest": "3a5de7dbfd99cf1c04af597e1c67a3df90936ebb04caca98afff34ab4a827be9"
+    },
+    {
+      "path": "internal/proxy/postprocess.go",
+      "digest": "0ee0cde560e6d01d8887232af04d1f85ca0ca7579b872f68893b93a9c268386f"
+    },
+    {
+      "path": "internal/proxy/proxy.go",
+      "digest": "3729bc2e953c3a204d9b14a69018e2387b86e81314652c55b73c5f62275977f3"
+    },
+    {
+      "path": "internal/proxy/quantile_histogram.go",
+      "digest": "5d9659c044805a84688735b4dedd7422706bac8ac16947f5f8b01cfe8c1c65c6"
+    },
+    {
+      "path": "internal/proxy/query_extract.go",
+      "digest": "f28d71a577760d962e1f864a375f1265821005b87f115ddcaf9024ae3df36e7d"
+    },
+    {
+      "path": "internal/proxy/query_range_steps.go",
+      "digest": "2e26676343de272f420d85ed7c0449d85a54add0d1f03880f0abe4eae6db7a73"
+    },
+    {
+      "path": "internal/proxy/query_range_windowing.go",
+      "digest": "52a919d4ad1ff85a4f39b215ba614a577eb4d15f7e1267489bfe63680b59beee"
+    },
+    {
+      "path": "internal/proxy/query_translation.go",
+      "digest": "b97bb47859ab23549c140bcfa0b941fb1e29f61a616f0dcd7d8813eef6c16d36"
+    },
+    {
+      "path": "internal/proxy/range_metric_compat.go",
+      "digest": "b5daa04067e6a6bb5163fa9950d3c0b672c2823329481c471f854b94bb811740"
+    },
+    {
+      "path": "internal/proxy/rate_counter_singletons.go",
+      "digest": "3a6b2b7f3c13f7867a3ddf5095c39e3a1a3f96ed550fcaa296b844d9c686bda2"
+    },
+    {
+      "path": "internal/proxy/redact.go",
+      "digest": "7e9866606dc142943efb923c41630189425ad52c4a3058dbb081be18413e2504"
+    },
+    {
+      "path": "internal/proxy/regexp_capture_fields.go",
+      "digest": "f41a4f4da9f880f15ca0ae731c63d01cebc3b3899688e84e2e7ad5ce5fb4e420"
+    },
+    {
+      "path": "internal/proxy/request_scope.go",
+      "digest": "3e8e68ae9cf18c48c1dec96e07dacee210bddb85325321c30155d1c6ef1d8644"
+    },
+    {
+      "path": "internal/proxy/safety.go",
+      "digest": "222c066c1b520c004ff7a23a631de1986ffdf09870631e0082637947ae5f450b"
+    },
+    {
+      "path": "internal/proxy/sliding_window_stats.go",
+      "digest": "99b75ce825167e8d710b8ec3e64d65c449d02c58ceab54a34910977ab55d42d2"
+    },
+    {
+      "path": "internal/proxy/state.go",
+      "digest": "c117d643599bb5d3e64c83e7194bb372893ab8af64384fc3f638c8bff3ac4bfd"
+    },
+    {
+      "path": "internal/proxy/stats_extent_cache.go",
+      "digest": "c9bade6e2b456e9b237ee1554394eed6ec1b1292c06a31cb90af974a2bfc1cea"
+    },
+    {
+      "path": "internal/proxy/stream_processing.go",
+      "digest": "134b1d5811bdbb07a648750b691222b985d3897c4aa31c79c33e3267187ffb7c"
+    },
+    {
+      "path": "internal/proxy/tail.go",
+      "digest": "4433523fa050b274c47f069e0c70a2e862165fd3d13a0d85bbd5ebd0dd831891"
+    },
+    {
+      "path": "internal/proxy/telemetry.go",
+      "digest": "c7396c7794cc687c0fa8fc2e23fa9d14e936accd5b88166bba6961259d45cdd8"
+    },
+    {
+      "path": "internal/proxy/template_budget.go",
+      "digest": "898a1568cae362c8daa81a04b040925c08d5f0ef4c9137546d695e4af20f5324"
+    },
+    {
+      "path": "internal/proxy/time_utils.go",
+      "digest": "9921e40f400a719fdcd7d0f0519f73c1958e47d30356f777d7ea7b6c1ef934f9"
+    },
+    {
+      "path": "internal/proxy/typed_fold.go",
+      "digest": "d2f124a9986e72092825521ac27719235e4a7b52f08ce1fa16c40201e201aa1f"
+    },
+    {
+      "path": "internal/proxy/unwrap_conversion_error.go",
+      "digest": "7d4c2fabbb1182ad6dad4435705fe2af1b3c66eb8abe74c5bd23dcab59767b8c"
+    },
+    {
+      "path": "internal/proxy/unwrap_convert.go",
+      "digest": "5b2b4884daed4cd7ca86233817903a3bc62bf4fd1934f99dce55586583432b58"
+    },
+    {
+      "path": "internal/proxy/unwrap_loki_parsers.go",
+      "digest": "af2d8fef4ee40baa08cc9d949f7e25a45ae44a1f19c33478d202aae68eda568d"
+    },
+    {
+      "path": "internal/proxy/unwrap_samples.go",
+      "digest": "4e695347a8c70503e1b8a0dcddeca831598df30782316446614ba414736c9a2a"
+    },
+    {
+      "path": "internal/proxy/vector_agg_fold.go",
+      "digest": "01dbabf1d2d43883f22fe17ff7a0c20467d7c02eb941fbfaee60bed28d096898"
+    },
+    {
+      "path": "internal/proxy/vector_matching.go",
+      "digest": "70ddbd1c73447faadffb4a337667c65337ddbdff818ba8c0f8221bdd36a4e5d0"
+    },
+    {
+      "path": "internal/proxy/volume.go",
+      "digest": "da4f3b4aaa9f055aaba1d9f35bb749fa8530318cea796951ffdad7fa5e5e47b4"
+    },
+    {
+      "path": "internal/rulesmigrate/migrate.go",
+      "digest": "b4f62eacb2dd6040e79cdaf0b503db7af2f7b06a4c9fb4da9e2855ae570d0133"
+    },
+    {
+      "path": "internal/translator/detected_level_logsql.go",
+      "digest": "fad7787431cd9a70275b9080c400016356e03f62cb5d066e6bdec39ba2236e49"
+    },
+    {
+      "path": "internal/translator/errors.go",
+      "digest": "176fb76c62d51d66e4b9b698909e6897c19f2e6bcf82852d8496b51b35ea4e2f"
+    },
+    {
+      "path": "internal/translator/label_matcher_regexp.go",
+      "digest": "92eea36f0556b3ee10163cd8a126fcb3702476af9737ffbd22f7205e27a04d4c"
+    },
+    {
+      "path": "internal/translator/nested_vector_chain.go",
+      "digest": "0388f3a40ed72aece8ea10f9eb16d189e8c63cbf8c68304e756b79df5d4d5009"
+    },
+    {
+      "path": "internal/translator/normalize.go",
+      "digest": "a142711063b16b59271422120e6ba1558ee34955e907baa6d8a8ce103d44ed0c"
+    },
+    {
+      "path": "internal/translator/parsed_key_variants.go",
+      "digest": "af0b6c7d7a08e952888347c9fabded656ef30485561b88b74dbb5b22cc830280"
+    },
+    {
+      "path": "internal/translator/pipeline_capture_labels.go",
+      "digest": "ac35a56c61453631c03308c4043c0c080ad8470cc9092c020b45647bbde5496c"
+    },
+    {
+      "path": "internal/translator/plain_stream_labels.go",
+      "digest": "d8fadf681ed9b4393eb565e78ee1408f42f9be4cb5809ee20a49498a633658ed"
+    },
+    {
+      "path": "internal/translator/series_identity.go",
+      "digest": "f09e1cb10d1982625e8de79c1e61cc8725188526ac79ba8c2fae62f5a5bcb205"
+    },
+    {
+      "path": "internal/translator/translator.go",
+      "digest": "f81034e38814a5d9df0078ac48a47ea842b9372aaed24b5555c7094a731a1214"
+    },
+    {
+      "path": "internal/translator/unwrap_gate.go",
+      "digest": "9c410daf1e0f4e23bbd5e11130d2a314b32a1f941ee35090bac57a9952bf9e80"
+    },
+    {
+      "path": "internal/translator/without_pushdown.go",
+      "digest": "b16d88c0efaa37566e0e0869bd6c4fd332f2833ede64abe586d8a77e1e641a02"
+    }
+  ]
+}

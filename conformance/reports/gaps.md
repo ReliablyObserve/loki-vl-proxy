@@ -45,17 +45,15 @@ would never emit. Each needs a registry entry stating Loki's own text.
 
 | Status | errorType | proxy call sites | literal messages | dynamic |
 |---|---|---:|---:|---:|
-| 400 | bad_data | 86 | 25 | 65 |
+| 400 | bad_data | 87 | 25 | 67 |
 | 401 | bad_data | 3 | 2 | 0 |
 | 403 | bad_data | 2 | 2 | 0 |
 | 404 | not_found | 1 | 1 | 0 |
 | 408 | bad_data | 2 | 0 | 2 |
 | 413 | bad_data | 1 | 1 | 0 |
-| 429 | bad_data | 1 | 0 | 1 |
-| 500 | internal | 6 | 2 | 6 |
-| 502 | unavailable | 13 | 8 | 10 |
-| 503 | timeout | 1 | 1 | 0 |
-| set at run time | — | 69 | 4 | 67 |
+| 500 | internal | 8 | 3 | 8 |
+| 502 | unavailable | 1 | 1 | 1 |
+| set at run time | — | 19 | 1 | 17 |
 
 ## Behaviour tracks
 
