@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Compressed stats cache entries release excess backing storage.**
+  Stats extents retain an owned buffer sized to their S2-encoded length instead
+  of the codec's worst-case output allocation. This reduces memory retained by
+  RAM entries and pending disk/peer writes without changing stored bytes,
+  keys, deadlines or cache placement. Compaction adds an allocation and copy
+  when output has excess capacity; logical cache budgets are unchanged.
+
 - **Ordered JSON metric repeats reuse the existing exact-response cache.**
   When the compatibility cache is inactive, complete eligible query_range
   replies now reach the bounded local response cache instead of returning
