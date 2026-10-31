@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ordered JSON metric repeats reuse the existing exact-response cache.**
+  When the compatibility cache is inactive, complete eligible query_range
+  replies now reach the bounded local response cache instead of returning
+  before admission. Tenant/auth/profile identity, streaming/offset exclusions,
+  series warnings and the five-minute response TTL remain intact. Near-now
+  response freshness uses the stored age and that TTL, rather than deriving an
+  incorrect age from the endpoint's shorter backend TTL.
 - **Large Drilldown metric replies avoid a whole-response point tree.**
   Supported stats JSON bodies over 1 MiB are transformed one series at a time,
   reusing the existing label, timestamp and point writers. This reduces peak

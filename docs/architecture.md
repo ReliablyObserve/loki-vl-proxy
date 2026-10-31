@@ -24,6 +24,15 @@ hit can supply an explicit evaluation/conversion step; it is not a cached Loki
 answer. Loki-shaped results must never be interpreted as VL results either.
 Existing cache families retain their own eligibility and placement rules.
 
+Complete eligible ordered JSON metric `query_range` replies use the existing
+Loki-facing local response cache when the compatibility cache is inactive and
+response streaming is disabled (`-stream-response=false`).
+Capture is bounded by the cache's entry limit; errors, cancelled evaluations
+and oversized captures are not admitted. The five-minute response TTL and
+near-now maximum-staleness check apply independently. Full responses keep
+their local-only placement; this does not add VL raw-row caching, SSD/peer
+replication or reuse across different time windows.
+
 These semantic layers may reuse the same bounded RAM pool, SSD engine/files,
 codecs, allocation pools and peer transport. RAM, SSD and peers describe storage
 tiers, not result semantics. Shared storage must preserve namespace and payload
