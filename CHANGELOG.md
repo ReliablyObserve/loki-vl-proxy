@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.53.0] - 2026-10-31
+
 ### Fixed
 
 - **Compressed stats cache entries release excess backing storage.**
