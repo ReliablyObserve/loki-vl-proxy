@@ -1,0 +1,136 @@
+untimed diagnostic; 2 concurrent request loops; Tier0 off; one proxy; profiles excluded from baseline timings/resources
+Cumulative sampled allocation churn is not retained memory; two-concurrent-request diagnostic profiles are excluded from timed baseline. Request counts are diagnostics, not a comparative throughput benchmark.
+
+=== DLV1: cpu ===
+File: proxy-current
+Type: cpu
+Time: 2026-10-31 12:59:58 CET
+Duration: 10.12s, Total samples = 4.25s (42.00%)
+Showing nodes accounting for 3.28s, 77.18% of 4.25s total
+Dropped 153 nodes (cum <= 0.02s)
+Showing top 12 nodes out of 173
+      flat  flat%   sum%        cum   cum%
+     1.69s 39.76% 39.76%      1.69s 39.76%  syscall.rawsyscalln
+     0.62s 14.59% 54.35%      0.62s 14.59%  runtime.pthread_cond_signal
+     0.31s  7.29% 61.65%      0.31s  7.29%  runtime.kevent
+     0.20s  4.71% 66.35%      0.20s  4.71%  runtime.pthread_cond_wait
+     0.08s  1.88% 68.24%      0.08s  1.88%  runtime.memclrNoHeapPointers
+     0.07s  1.65% 69.88%      0.07s  1.65%  internal/runtime/maps.memHashAES
+     0.07s  1.65% 71.53%      0.07s  1.65%  runtime.memequal
+     0.06s  1.41% 72.94%      0.06s  1.41%  runtime.madvise
+     0.06s  1.41% 74.35%      0.06s  1.41%  runtime.usleep
+     0.04s  0.94% 75.29%      0.04s  0.94%  context.(*valueCtx).Err
+     0.04s  0.94% 76.24%      0.17s  4.00%  runtime.mapaccess2_faststr
+     0.04s  0.94% 77.18%      0.04s  0.94%  runtime.memmove
+
+
+=== DLV1: alloc_space ===
+File: proxy-current
+Type: alloc_space
+Time: 2026-10-31 12:59:58 CET
+Showing nodes accounting for 2320.78MB, 89.71% of 2587.06MB total
+Dropped 271 nodes (cum <= 12.94MB)
+Showing top 12 nodes out of 71
+      flat  flat%   sum%        cum   cum%
+  632.28MB 24.44% 24.44%   632.28MB 24.44%  reflect.mapassign_faststr0
+  465.11MB 17.98% 42.42%   465.11MB 17.98%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.cloneStringMap (inline)
+  230.05MB  8.89% 51.31%   230.05MB  8.89%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*orderedJSONMetricPlan).groupLabels
+  227.46MB  8.79% 60.10%  2253.48MB 87.11%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).readOrderedJSONMetricRows
+  182.81MB  7.07% 67.17%   210.32MB  8.13%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).unparsedLinePipelineError
+  165.02MB  6.38% 73.55%   165.02MB  6.38%  slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+  102.51MB  3.96% 77.51%   153.02MB  5.91%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).logQueryStreamDescriptor
+  102.01MB  3.94% 81.45%   102.01MB  3.94%  encoding/json/v2.makeString
+   67.01MB  2.59% 84.04%    67.01MB  2.59%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*logRowLevels).stringRow
+   58.51MB  2.26% 86.31%    58.51MB  2.26%  strings.(*Builder).WriteString (inline)
+   57.01MB  2.20% 88.51%    86.51MB  3.34%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*orderedJSONMetricPlan).parseJSON
+      31MB  1.20% 89.71%       31MB  1.20%  reflect.makemap
+
+
+=== DLV2: cpu ===
+File: proxy-current
+Type: cpu
+Time: 2026-10-31 13:00:09 CET
+Duration: 10.18s, Total samples = 16200ms (159.09%)
+Showing nodes accounting for 10210ms, 63.02% of 16200ms total
+Dropped 309 nodes (cum <= 81ms)
+Showing top 12 nodes out of 185
+      flat  flat%   sum%        cum   cum%
+    6400ms 39.51% 39.51%     6400ms 39.51%  syscall.rawsyscalln
+     650ms  4.01% 43.52%      650ms  4.01%  runtime.kevent
+     470ms  2.90% 46.42%      470ms  2.90%  context.(*valueCtx).Err
+     450ms  2.78% 49.20%      450ms  2.78%  internal/runtime/maps.memHashAES
+     410ms  2.53% 51.73%      540ms  3.33%  internal/runtime/maps.(*Iter).Next
+     360ms  2.22% 53.95%      360ms  2.22%  encoding/json/internal/jsonwire.ConsumeSimpleString
+     330ms  2.04% 55.99%      570ms  3.52%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+     270ms  1.67% 57.65%      500ms  3.09%  encoding/json/internal/jsonwire.AppendUnquote
+     250ms  1.54% 59.20%      420ms  2.59%  encoding/json/internal/jsonwire.ConsumeStringResumable
+     240ms  1.48% 60.68%      240ms  1.48%  runtime.memmove
+     190ms  1.17% 61.85%      190ms  1.17%  runtime.memclrNoHeapPointers
+     190ms  1.17% 63.02%      190ms  1.17%  runtime.memequal
+
+
+=== DLV2: alloc_space ===
+File: proxy-current
+Type: alloc_space
+Time: 2026-10-31 13:00:09 CET
+Showing nodes accounting for 9412.63MB, 97.86% of 9618.45MB total
+Dropped 197 nodes (cum <= 48.09MB)
+Showing top 12 nodes out of 51
+      flat  flat%   sum%        cum   cum%
+ 3536.56MB 36.77% 36.77%  3536.56MB 36.77%  reflect.mapassign_faststr0
+ 2641.64MB 27.46% 64.23%  2641.64MB 27.46%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.cloneStringMap (inline)
+  933.11MB  9.70% 73.93%   933.11MB  9.70%  slices.Grow[go.shape.[]uint8,go.shape.uint8] (inline)
+  503.04MB  5.23% 79.16%   503.04MB  5.23%  encoding/json/v2.makeString
+  467.55MB  4.86% 84.02%   513.07MB  5.33%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).logQueryStreamDescriptor
+  358.03MB  3.72% 87.75%   564.06MB  5.86%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*orderedJSONMetricPlan).parseJSON
+  357.03MB  3.71% 91.46%   357.03MB  3.71%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*logRowLevels).stringRow
+  186.01MB  1.93% 93.39%   186.01MB  1.93%  reflect.makemap
+  164.50MB  1.71% 95.10%   164.50MB  1.71%  unicode/utf8.AppendRune (inline)
+  136.50MB  1.42% 96.52%   136.50MB  1.42%  reflect.unsafe_New
+  124.14MB  1.29% 97.81%  9542.18MB 99.21%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).readOrderedJSONMetricRows
+    4.52MB 0.047% 97.86%  1440.67MB 14.98%  encoding/json/v2.makeStringArshaler.func2
+
+
+=== native: cpu ===
+File: proxy-current
+Type: cpu
+Time: 2026-10-31 13:00:19 CET
+Duration: 10.10s, Total samples = 6.64s (65.71%)
+Showing nodes accounting for 6.34s, 95.48% of 6.64s total
+Dropped 166 nodes (cum <= 0.03s)
+Showing top 12 nodes out of 78
+      flat  flat%   sum%        cum   cum%
+     2.69s 40.51% 40.51%      2.69s 40.51%  syscall.rawsyscalln
+     1.81s 27.26% 67.77%      1.81s 27.26%  runtime.kevent
+     0.84s 12.65% 80.42%      0.84s 12.65%  runtime.pthread_cond_signal
+     0.70s 10.54% 90.96%      0.70s 10.54%  runtime.pthread_cond_wait
+     0.20s  3.01% 93.98%      0.20s  3.01%  runtime.usleep
+     0.05s  0.75% 94.73%      0.05s  0.75%  runtime.(*pallocBits).summarize
+     0.01s  0.15% 94.88%      0.08s  1.20%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).tenantLimitsMiddleware.func1
+     0.01s  0.15% 95.03%      0.16s  2.41%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).tenantMiddleware.func1
+     0.01s  0.15% 95.18%      0.04s   0.6%  internal/poll.setDeadlineImpl
+     0.01s  0.15% 95.33%      0.06s   0.9%  runtime.(*mheap).freeSpanLocked
+     0.01s  0.15% 95.48%      0.71s 10.69%  runtime.semasleep
+         0     0% 95.48%      0.55s  8.28%  bufio.(*Reader).Peek
+
+
+=== native: alloc_space ===
+File: proxy-current
+Type: alloc_space
+Time: 2026-10-31 13:00:19 CET
+Showing nodes accounting for 888.22MB, 76.19% of 1165.75MB total
+Dropped 89 nodes (cum <= 5.83MB)
+Showing top 12 nodes out of 89
+      flat  flat%   sum%        cum   cum%
+  175.55MB 15.06% 15.06%   175.55MB 15.06%  net/http.(*Request).WithContext
+  121.03MB 10.38% 25.44%   121.03MB 10.38%  internal/bytealg.MakeNoZero
+  115.03MB  9.87% 35.31%   164.04MB 14.07%  net/url.parseQuery
+   79.02MB  6.78% 42.09%    79.02MB  6.78%  net/textproto.MIMEHeader.Set (inline)
+   73.02MB  6.26% 48.35%    73.02MB  6.26%  net/http.Header.Clone (inline)
+   67.52MB  5.79% 54.14%    67.52MB  5.79%  net/textproto.readMIMEHeader
+   52.50MB  4.50% 58.65%    52.50MB  4.50%  context.WithValue
+      48MB  4.12% 62.76%    72.50MB  6.22%  time.newParseError (inline)
+   45.51MB  3.90% 66.67%   176.55MB 15.14%  net/http.readRequestLimit
+   44.01MB  3.78% 70.44%    44.01MB  3.78%  net/textproto.(*Reader).ReadLine (inline)
+   41.51MB  3.56% 74.01%   233.06MB 19.99%  net/http.(*conn).readRequest
+   25.50MB  2.19% 76.19%   645.65MB 55.38%  github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).requestLogger.func1

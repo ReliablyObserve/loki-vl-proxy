@@ -6,6 +6,10 @@ traffic and retained bbolt files. Normal tests skip the process/Compose matrix;
 the small parser, response bound, topology and observer regression tests run in
 the existing nested `bench` module test job.
 
+For a single-revision DLV reuse baseline, use
+[Focused DLV baseline](#focused-dlv-baseline). It does not require two binaries
+or treat the historical comparison below as a current performance result.
+
 The measured comparison uses baseline
 `7c59fafa50fcfbb5379871e77eb4fe14b154339e` and candidate production code
 `55d3f7fb08a33125d9f4b0b3eb1950c334de3639`. The report records executable
@@ -197,3 +201,108 @@ primes three owners, probes two identities on cold readers, and performs three
 fixed passes over all 90 identities per reader. Aggregate wire and backend
 counts describe this finite pass; it makes no throughput claim. This profile
 also differs from the fit workload mix, so their timings are not comparable.
+
+## Focused DLV baseline
+
+Captured results: [2026-10-31 baseline](results/2026-10-31/README.md), with
+per-cell measurements, all timed samples and separate profiling diagnostics.
+
+`TestDLVCacheBaseline` runs one proxy revision against the pinned Loki and
+VictoriaLogs fixture. It separates DLV1 (tagged JSON volume), DLV2 (JSON-error
+filter), DLV3 (untagged JSON volume) and a native count control. Its full matrix
+has 80 cells: four shapes, five reuse states, RF=1/2 and compatibility Tier0
+enabled/disabled. Each cell uses separate selector shards, proxy processes and
+cache files. DLV1 and DLV3 have different shard groups even though their LogQL
+pipeline is the same: a header alone does not isolate Loki's query cache.
+
+| State | Measured request |
+|---|---|
+| Exact | Repeat the primed request across frontends |
+| Shifted | Move the historical window backward by another minute per sample |
+| Refresh | Advance into another previously unrequested minute per sample |
+| Disk restart | Restore the closed primed cache files; every measured first wave starts with fresh proxy RAM |
+| Owner loss | Restore the same files with node 0 absent; every measured first wave starts with fresh RAM on the surviving nodes |
+
+Owner loss means one specified node is unavailable, not proof that every key's
+owner is unavailable. Inspect key placement and observed peer requests before
+calling a response a backup hit. RF=1 has no backup. Reference Loki remains
+running during proxy restarts/loss; its independent cache statistics are
+retained with each response.
+
+Build the current revision and reserve its own ports/project. Probe uses a
+separate fixture/project, then measurement seeds eight shards per cell and two
+reserved repetitions (1,280 shards). Filters select cells without changing
+their identities. Each fixture/cell namespace can be used once: an exclusive
+provenance claim prevents accidental reuse of Loki's query cache, including
+after an interrupted run. Setup rejects existing fixture manifests. Use a fresh
+artifact directory/project for another fixture; cleanup retains reports.
+
+Timed requests use historical windows, a 60-second step and one-minute
+`count_over_time` lookbacks. The request spans one hour, or six hours for DLV2.
+Here “refresh” advances a historical window; it does not measure new ingestion
+or the near-now tail path. The fixture also contains recent data, but that does
+not make a historical query a live-refresh test. Per node, primary L1 and
+logical L2 are each limited to 64 MiB; enabled Tier0 adds 10% of primary L1.
+Those are measurement settings, not recommended aggregate production budgets.
+
+```sh
+REPO="$(pwd)"
+TASK_DIR="$(mktemp -d /tmp/dlv-baseline.XXXXXX)"
+BIN="$TASK_DIR/proxy-current"
+SOURCE_REF="$(rtk git rev-parse HEAD)"
+rtk go build -trimpath -buildvcs=false -o "$BIN" ./cmd/proxy
+dlv() {
+  rtk go test -C "$REPO/bench" ./cache-placement \
+    -run '^TestDLVCacheBaseline$' -count=1 -timeout=60m -args \
+    -dlv-root="$REPO" -dlv-output="$OUT" -dlv-binary="$BIN" \
+    -dlv-source-ref="$SOURCE_REF" -dlv-project="$PROJECT" \
+    -dlv-loki-port=60101 -dlv-vl-port=60428 \
+    -dlv-proxy-port-base=61200 -dlv-shards-per-cell="$SHARDS" \
+    -dlv-control-repeats="$REPEATS" "$@"
+}
+OUT="$TASK_DIR/probe"
+PROJECT=dlvbaselineprobe
+SHARDS=2
+REPEATS=1
+dlv -dlv-baseline=setup
+dlv -dlv-baseline=probe -dlv-repeat-index=0 -dlv-samples=3 \
+  -dlv-shapes=DLV2,native -dlv-states=exact,restart,owner-loss -dlv-rfs=1,2
+dlv -dlv-baseline=cleanup
+OUT="$TASK_DIR/full"
+PROJECT=dlvbaseline
+SHARDS=8
+REPEATS=2
+dlv -dlv-baseline=setup
+dlv -dlv-baseline=measure -dlv-repeat-index=0
+dlv -dlv-baseline=measure -dlv-repeat-index=1 \
+  -dlv-shapes=DLV1,native -dlv-rfs=2 -dlv-tier0=off
+dlv -dlv-baseline=cleanup
+```
+
+The final measurement is a same-source control with independent selector
+groups, not another software version. Report its variation and host contention;
+do not describe this loopback experiment as a quiet production benchmark.
+Normal samples and restart first waves are different populations. State the
+successful sample count alongside p50/p95, especially for small probes.
+
+The runner classifies reference responses before summarizing successful
+latency: nonempty success, empty success, client error and upstream failure are
+distinct. A fast error is not a successful speedup. Backend and peer ledgers
+record HTTP calls, parameters/ranges and bytes between synchronized phase
+boundaries. Those bytes are not device-level disk throughput or physical IOPS.
+Startup, priming and untimed Tier0-pressure diagnostics are separate phases.
+
+Keep the proxy's Loki-facing layer, its VL-facing layer and the reference
+Loki server's caches separate in the report. Current aggregate storage-tier
+metrics do not provide complete semantic-layer attribution; unsupported layer
+counters remain null. In particular, metric tier `l0` describes the hotness
+sidecar, not the compatibility Tier0 response cache. Tier0 disabled is a
+configuration state, not an observed lookup miss. Churning the compatibility
+cache can show resulting backend traffic and response correctness, but without
+a dedicated exported miss counter cannot prove the exact eviction event.
+
+Primary L1, Tier0, auxiliary caches, indexes, pending/flushing writes and active
+work have different current bounds. Never infer total process RAM from the
+primary cache limit, or a physical bbolt file limit from logical admitted bytes.
+This harness measures current behavior; it does not implement a per-layer
+resource broker or an adaptive cache-allocation policy.

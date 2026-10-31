@@ -9,6 +9,55 @@ description: How loki-vl-proxy works — runtime paths, protection layers, cache
 
 Loki-VL-proxy is a read-only Loki compatibility proxy that sits between Grafana (or any Loki API client) and VictoriaLogs. It exposes Loki-compatible HTTP and WebSocket routes on the frontend, translates LogQL into LogsQL where needed, shapes VictoriaLogs responses back into Loki-compatible structures, and optionally exposes rules and alerts reads from a separate backend such as `vmalert`.
 
+## Cache semantic layers and storage tiers
+
+The proxy keeps two logical cache layers separate:
+
+| Semantic layer | Cached meaning | Validity contract |
+|---|---|---|
+| Loki-facing | Loki API answers and LogQL-derived results or fragments | Loki route/profile/parser semantics, tenant/auth, bounds, step phase, ordering, limits and completeness |
+| VictoriaLogs-facing | VL API results or backend-result fragments | Backend identity, tenant/auth, endpoint/query parameters, response schema, coverage and completeness |
+
+Each layer has its own key namespace, payload interpretation, admission,
+freshness, expiry, coalescing identity and invalidation rules. A backend cache
+hit can supply an explicit evaluation/conversion step; it is not a cached Loki
+answer. Loki-shaped results must never be interpreted as VL results either.
+Existing cache families retain their own eligibility and placement rules.
+
+These semantic layers may reuse the same bounded RAM pool, SSD engine/files,
+codecs, allocation pools and peer transport. RAM, SSD and peers describe storage
+tiers, not result semantics. Shared storage must preserve namespace and payload
+isolation, separate accounting and aggregate resource bounds; it does not imply
+that every family is persisted or replicated.
+
+Resource reporting must distinguish each layer's occupancy, read/write bytes
+and rates, lookup outcomes, admission/rejection and eviction counts. Logical
+RAM and encoded SSD accounting are different from process RSS, bbolt file
+high-water and physical device throughput/IOPS. Current tier-level metrics do
+not provide complete semantic-layer accounting; mixed counters cannot establish
+a per-layer saving.
+
+Current limits apply to individual cache instances and working resources,
+not one semantic-layer budget broker. The compatibility cache is additional
+to primary L1, and translation/stream-field-name caches have their own limits.
+The primary limit therefore does not establish a total cache-memory or process
+RSS bound. L2's byte cap counts logical records and keys; deleting records can
+leave free pages in the bbolt file. It does not cap physical file size.
+
+The current persistence path names one shared database. Runtime configuration
+and Helm do not yet expose separate Loki/VL directories, complete per-layer RAM
+and physical-disk caps, or automatic sharing within those caps. Do not infer
+these controls from existing primary-cache or persistence-volume settings.
+
+A purge of one semantic layer does not establish invalidation of the other.
+Backend deletion or security revocation must explicitly cover all affected
+layers, replicas, pending writes and in-flight refills. This contract does not
+claim that durable distributed invalidation is already implemented.
+
+Tests and measurements distinguish the proxy's Loki-facing and VL-facing
+caches from the reference Loki server's own caches. They must not attribute a
+hit, miss, byte saving or invalidation across these boundaries without evidence.
+
 ## Runtime Paths
 
 ```mermaid

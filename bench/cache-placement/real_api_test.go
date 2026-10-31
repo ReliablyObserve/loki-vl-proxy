@@ -643,6 +643,7 @@ func (p *process) stop() {
 }
 
 type config struct {
+	Pprof     bool
 	Profile   string
 	Entries   int
 	Bytes     int
@@ -675,6 +676,9 @@ func flagsForRing(c config, i int, dir string, ringNodes int, reader bool) []str
 		"-server.register-instrumentation=true", "-server.admin-auth-token=" + token,
 		"-rate-limit-per-second=0", "-rate-limit-burst=0",
 	}
+	if c.Pprof {
+		args = append(args, "-server.enable-pprof=true")
+	}
 	if reader {
 		filtered := args[:0]
 		for _, arg := range args {
@@ -690,7 +694,7 @@ func flagsForRing(c config, i int, dir string, ringNodes int, reader bool) []str
 func launch(t *testing.T, binary string, c config, i int, dir string) *process {
 	return launchRing(t, binary, c, i, dir, 3, false)
 }
-func launchRing(t *testing.T, binary string, c config, i int, dir string, ringNodes int, reader bool) *process {
+func launchRing(t *testing.T, binary string, c config, i int, dir string, ringNodes int, reader bool, extraArgs ...string) *process {
 	t.Helper()
 	listen, _, _ := ports(i)
 	for _, port := range []int{listen, listen + 1} {
@@ -703,7 +707,7 @@ func launchRing(t *testing.T, binary string, c config, i int, dir string, ringNo
 	must(t, os.MkdirAll(dir, 0700))
 	f, err := os.OpenFile(filepath.Join(dir, "proxy.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	must(t, err)
-	args := flagsForRing(c, i, dir, ringNodes, reader)
+	args := append(flagsForRing(c, i, dir, ringNodes, reader), extraArgs...)
 	cmd := exec.Command(binary, args...)
 	cmd.Stdout = f
 	cmd.Stderr = f
@@ -857,8 +861,25 @@ func seed(t *testing.T, streams int) fixture {
 	ready(t, vlBase()+"/health")
 	ready(t, lokiBase()+"/ready")
 	fx := fixture{Probe: "cacheperf-" + strconv.FormatInt(time.Now().UnixNano(), 10), End: time.Now().UTC().Truncate(time.Hour).Add(-26 * time.Hour).Unix(), RecentEnd: time.Now().UTC().Truncate(time.Minute).Add(-time.Minute).Unix(), Streams: streams}
+	post := func(target, content string, b []byte) {
+		s, out, _, err := fetch("POST", target, b, map[string]string{"Content-Type": content})
+		must(t, err)
+		if s < 200 || s >= 300 {
+			t.Fatalf("seed %s: %d %.400s", target, s, out)
+		}
+	}
+	// Emit bounded Loki requests while generating streams. The callback consumes
+	// each body synchronously, so no list of encoded batches is retained.
+	lokiRequests, lokiMaxBytes := 0, 0
+	push := lokiPushBatcher{maxBytes: 4 << 20, emit: func(body []byte) error {
+		lokiRequests++
+		if len(body) > lokiMaxBytes {
+			lokiMaxBytes = len(body)
+		}
+		post(lokiBase()+"/loki/api/v1/push", "application/json", body)
+		return nil
+	}}
 	var vl bytes.Buffer
-	payload := []any{}
 	for shard := 0; shard < streams; shard++ {
 		for _, recent := range []bool{false, true} {
 			end, hours := fx.End, 8
@@ -886,23 +907,15 @@ func seed(t *testing.T, streams int) fixture {
 					vl.WriteByte('\n')
 					fx.Lines++
 				}
-				payload = append(payload, map[string]any{"stream": labels, "values": values})
+				must(t, push.add(map[string]any{"stream": labels, "values": values}))
 			}
 		}
 	}
 	hash := sha256.Sum256(vl.Bytes())
 	fx.SHA256 = hex.EncodeToString(hash[:])
-	post := func(target, content string, b []byte) {
-		s, out, _, err := fetch("POST", target, b, map[string]string{"Content-Type": content})
-		must(t, err)
-		if s < 200 || s >= 300 {
-			t.Fatalf("seed %s: %d %.400s", target, s, out)
-		}
-	}
+	must(t, push.flush())
+	t.Logf("Loki fixture ingestion: %d bounded requests, largest encoded body %d bytes (limit %d)", lokiRequests, lokiMaxBytes, push.maxBytes)
 	post(vlBase()+"/insert/jsonline?_stream_fields=perf_probe,shard,app,env,detected_level", "application/stream+json", vl.Bytes())
-	b, err := json.Marshal(map[string]any{"streams": payload})
-	must(t, err)
-	post(lokiBase()+"/loki/api/v1/push", "application/json", b)
 	post(vlBase()+"/internal/force_flush", "text/plain", nil)
 	post(lokiBase()+"/flush", "text/plain", nil)
 	save(t, filepath.Join(home, "fixture.json"), fx)
@@ -2191,4 +2204,130 @@ func TestObserverSnapshotCancellationAndIdleRead(t *testing.T) {
 		_ = client.Close()
 		<-readDone
 	})
+}
+
+type lokiPushBatcher struct {
+	maxBytes int
+	emit     func([]byte) error
+	body     []byte
+	count    int
+	err      error
+}
+
+const lokiPushPrefix = "{\"streams\":["
+const lokiPushSuffix = "]}"
+
+// add preserves each complete stream and its entry order. maxBytes bounds
+// encoded request bodies, including wrappers and escaping, not source strings.
+func (b *lokiPushBatcher) add(stream any) error {
+	if b.err != nil {
+		return b.err
+	}
+	raw, err := json.Marshal(stream)
+	if err != nil {
+		return err
+	}
+	if b.maxBytes < len(lokiPushPrefix)+len(lokiPushSuffix) || len(raw) > b.maxBytes-len(lokiPushPrefix)-len(lokiPushSuffix) {
+		return fmt.Errorf("single Loki stream needs %d encoded bytes, request limit is %d", len(lokiPushPrefix)+len(raw)+len(lokiPushSuffix), b.maxBytes)
+	}
+	if b.count > 0 && len(b.body)+1+len(raw)+len(lokiPushSuffix) > b.maxBytes {
+		if err := b.flush(); err != nil {
+			return err
+		}
+	}
+	if b.count == 0 {
+		b.body = append(b.body, lokiPushPrefix...)
+	} else {
+		b.body = append(b.body, ',')
+	}
+	b.body = append(b.body, raw...)
+	b.count++
+	return nil
+}
+func (b *lokiPushBatcher) flush() error {
+	if b.err != nil {
+		return b.err
+	}
+	if b.count == 0 {
+		return nil
+	}
+	b.body = append(b.body, lokiPushSuffix...)
+	// emit must consume the body before returning: the next batch reuses it.
+	if b.err = b.emit(b.body); b.err != nil {
+		return b.err
+	}
+	b.body = b.body[:0]
+	b.count = 0
+	return nil
+}
+func TestLokiPushBatcherBoundsEncodedRequestsAndPreservesStreams(t *testing.T) {
+	streams := []map[string]any{}
+	for i := 0; i < 10; i++ {
+		streams = append(streams, map[string]any{"stream": map[string]string{"shard": number(i), "same": "identity"}, "values": [][]string{{"1", "escaped \"line\" \\ and newline\n"}}})
+	}
+	one, err := json.Marshal(streams[0])
+	must(t, err)
+	limit := len(lokiPushPrefix) + 2*len(one) + 1 + len(lokiPushSuffix)
+	var received []json.RawMessage
+	requests := 0
+	batch := lokiPushBatcher{maxBytes: limit, emit: func(body []byte) error {
+		requests++
+		if len(body) > limit {
+			return fmt.Errorf("encoded request bytes%d exceed limit%d", len(body), limit)
+		}
+		var push struct{ Streams []json.RawMessage }
+		if err := json.Unmarshal(body, &push); err != nil {
+			return err
+		}
+		received = append(received, push.Streams...)
+		return nil
+	}}
+	for _, stream := range streams {
+		must(t, batch.add(stream))
+	}
+	must(t, batch.flush())
+	if requests != 5 || len(received) != len(streams) {
+		t.Fatalf("requests%d streams%d", requests, len(received))
+	}
+	for i, got := range received {
+		want, err := json.Marshal(streams[i])
+		must(t, err)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("stream%d identity/content/order changed", i)
+		}
+	}
+	must(t, batch.flush())
+	if requests != 5 {
+		t.Fatal("flush emitted empty payload")
+	}
+}
+func TestLokiPushBatcherRejectsSingleOversizeStream(t *testing.T) {
+	stream := map[string]any{"stream": map[string]string{"a": "b"}, "values": [][]string{{"1", "content"}}}
+	raw, err := json.Marshal(stream)
+	must(t, err)
+	calls := 0
+	batch := lokiPushBatcher{maxBytes: len(lokiPushPrefix) + len(raw) + len(lokiPushSuffix) - 1, emit: func([]byte) error { calls++; return nil }}
+	if err := batch.add(stream); err == nil {
+		t.Fatal("accepted indivisible oversized stream")
+	}
+	must(t, batch.flush())
+	if calls != 0 {
+		t.Fatal("oversized stream reached callback")
+	}
+}
+
+func TestLokiPushBatcherStopsAfterCallbackFailure(t *testing.T) {
+	failure := errors.New("ingest failed")
+	calls := 0
+	batch := lokiPushBatcher{maxBytes: 1024, emit: func([]byte) error { calls++; return failure }}
+	must(t, batch.add(map[string]string{"stream": "identity"}))
+	if err := batch.flush(); !errors.Is(err, failure) {
+		t.Fatalf("callback failure lost: %v", err)
+	}
+	if err := batch.add(map[string]string{"another": "stream"}); !errors.Is(err, failure) {
+		t.Fatal("appended after failed push", err)
+	}
+	if err := batch.flush(); !errors.Is(err, failure) || calls != 1 {
+		t.Fatalf("retried failed payload: calls%d error%v", calls, err)
+	}
 }
