@@ -594,6 +594,7 @@
       "internal/proxy/manual_metric_encoding_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/stats_extent_retention_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go"
@@ -1753,6 +1754,9 @@
       "semantics/json-extracted-metric-pushdown",
       "tenant-numeric-routing"
     ],
+    "internal/proxy/stats_extent_retention_test.go": [
+      "quality/query-range-extent-cache"
+    ],
     "internal/proxy/stddev_grouped_differential_test.go": [
       "metric-series-identity",
       "semantics/stddev-stdvar-grouped-values",
@@ -2480,7 +2484,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 248,
+  "tests_with_markers": 249,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
