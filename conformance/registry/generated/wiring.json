@@ -2534,7 +2534,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 254,
+  "tests_with_markers": 256,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -80,4 +80,7 @@ def verify(directory):
 
 
 if __name__ == "__main__":
-    verify(Path(__file__).parent / "2026-11-01")
+    for directory in sorted(Path(__file__).parent.iterdir()):
+        if (directory / "manifest.json").is_file():
+            print(directory.name)
+            verify(directory)

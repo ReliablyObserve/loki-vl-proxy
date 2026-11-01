@@ -7,6 +7,13 @@ and complete metric result or error text. Loki's timing-dependent execution stat
 are omitted. The manifest identifies runtime/harness commits, backend image IDs,
 fixtures, successful assertions, failing cases and compressed-file checksums.
 
+`2026-11-01-integrated-953` is the fresh capture after integration with the
+settled-window cache changes: measured main `3de2a9b`, candidate `06b13d2`.
+The table below describes this capture. `2026-11-01` preserves the earlier
+pre-integration capture with its actual original runtime and harness identities;
+it is historical evidence and is not relabeled as a newer source. Both captures
+produce the same targeted pass/fail counts.
+
 | Targeted contract | Main | Candidate |
 |---|---:|---:|
 | Loki reference meets independently specified expectations | 132/132 | 132/132 |
