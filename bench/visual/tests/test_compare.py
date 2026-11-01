@@ -65,6 +65,21 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(row["main_pr_diffs"], [])
         self.assertEqual(row["loki_diffs"], [])
 
+    def test_unreadable_success_body_is_capture_gap_not_empty_result(self):
+        base = capture([1, 2])
+        base["records"][0]["response"] = None  # response headers arrived, but Playwright could not read the body
+        code, row = self.run_compare(base, capture([1, 2]), capture([1, 2]))
+        self.assertEqual(code, 0)
+        self.assertEqual(row["main_pr_diffs"], [])
+        self.assertTrue(any("capture body unreadable" in d for d in row["main_pr_nondet"]))
+        self.assertFalse(row["settled"])
+        self.assertTrue(row["settled_pr"])
+
+        pr = capture([1, 2])
+        pr["records"][0]["response"] = None
+        _, row = self.run_compare(capture([1, 2]), pr, capture([1, 2]))
+        self.assertFalse(row["settled_pr"])  # the verdict must still reject missing PR evidence
+
     def test_value_difference_is_reported_and_exits_one(self):
         code, row = self.run_compare(capture([1, 2]), capture([1, 3]), capture([1, 2]))
         self.assertEqual(code, 1)
