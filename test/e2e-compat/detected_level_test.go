@@ -447,6 +447,35 @@ func TestCompat_DetectedLevelKeepDrop(t *testing.T) {
 	}
 }
 
+// conformance: severity/detected-level-stage-side-effects
+func TestCompat_DetectedLevelKeepMetricGrouping(t *testing.T) {
+	f := ensureDetectedLevelFixture(t)
+	route, _ := newJSONVolumeRouteProxy(t)
+	for _, caseName := range []string{"sm-level", "label-level", "streamfields-level"} {
+		for _, keep := range []string{"detected_level", "detected_level, level"} {
+			query := fmt.Sprintf(`sum by (level, detected_level) (count_over_time({app=%q,case=%q} | keep %s | drop __error__ [1m]))`, f.app, caseName, keep)
+			// One settled step isolates label semantics from the independently
+			// tracked range-window boundary difference.
+			at := f.start.Add(2 * time.Second).Truncate(time.Second)
+			start := strconv.FormatInt(at.UnixNano(), 10)
+			end := start
+			loki := queryRangeResult(t, lokiURL, query, start, end, "1")
+			proxy := queryRangeResult(t, route, query, start, end, "1")
+			if loki.StatusCode != http.StatusOK || proxy.StatusCode != http.StatusOK {
+				t.Fatalf("%s: Loki=%d %s proxy=%d %s", query, loki.StatusCode, loki.Body, proxy.StatusCode, proxy.Body)
+			}
+			lokiData, proxyData := extractMap(loki.JSON, "data"), extractMap(proxy.JSON, "data")
+			if lokiData["resultType"] != "matrix" || proxyData["resultType"] != "matrix" {
+				t.Fatalf("%s: expected matrix, Loki=%v proxy=%v", query, lokiData, proxyData)
+			}
+			want, got := flattenMatrixResult(t, lokiData["result"]), flattenMatrixResult(t, proxyData["result"])
+			if len(want) == 0 || !reflect.DeepEqual(got, want) {
+				t.Errorf("%s: Loki=%v proxy=%v", query, want, got)
+			}
+		}
+	}
+}
+
 // dlLevel returns an entry's derived level: detected_level, or
 // detected_level_extracted when the stream carries a detected_level label.
 func dlLevel(e dlEntry, categorized bool) string {
