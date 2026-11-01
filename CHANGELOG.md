@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.55.0] - 2026-11-01
+
 ### Fixed
 
 - Include form-body selectors and time bounds in POST read-cache identities.
@@ -31,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusted default-branch code with PR-comment permissions, parses bounded
   artifacts as data and never checks out or executes PR code or extracted
   artifacts. Other workflow security audits remain enabled.
-
 
 ## [2.54.0] - 2026-10-31
 
