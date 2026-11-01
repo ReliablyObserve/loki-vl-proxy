@@ -740,6 +740,7 @@ func usefulMetric(name string) bool {
 	base := strings.SplitN(name, "{", 2)[0]
 	switch base {
 	case "loki_vl_proxy_process_cpu_seconds_total", "loki_vl_proxy_process_resident_memory_bytes",
+		"loki_vl_proxy_backend_read_bytes_total",
 		"loki_vl_proxy_cache_tier_requests_total", "loki_vl_proxy_cache_tier_hits_total",
 		"loki_vl_proxy_cache_tier_misses_total", "loki_vl_proxy_cache_tier_evictions_total",
 		"loki_vl_proxy_cache_backend_fallthrough_total", "loki_vl_proxy_cache_objects", "loki_vl_proxy_cache_bytes",

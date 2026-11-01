@@ -18,7 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-// conformance: loki_api_v1_query_range, window-bounds-and-step-alignment
+// conformance: loki_api_v1_query_range, window-bounds-and-step-alignment, quality/query-range-settled-steps
 func TestOrderedJSONSettledStepsReuse(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	for _, shape := range dlvBaselineShapes {

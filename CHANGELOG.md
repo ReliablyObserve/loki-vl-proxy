@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metrics, plus structured debug logs showing missing ranges/steps without
   query text or credentials. The cache troubleshooting guide connects these
   signals to per-layer resource and backend observations.
+- Decoded upstream body completion observations for GET/POST reads, including
+  consumed bytes, requested time span and full read/consumer duration. Fixed
+  outcomes distinguish EOF, early close, failures and cancellation; structured
+  logs omit queries and raw error text. Existing response limits are preserved.
 
 ## [2.55.0] - 2026-11-01
 

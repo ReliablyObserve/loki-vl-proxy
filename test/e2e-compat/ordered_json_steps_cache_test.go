@@ -15,7 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
 
-// conformance: loki_api_v1_query_range, window-bounds-and-step-alignment
+// conformance: loki_api_v1_query_range, window-bounds-and-step-alignment, quality/query-range-settled-steps
 // The ordinary Drilldown CI shard selects this test. Its fixed, historical
 // windows exercise actual parser fallback without hiding it behind Tier0.
 func TestDrilldown_OrderedJSONSettledWindows(t *testing.T) {

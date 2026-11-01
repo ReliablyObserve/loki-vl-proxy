@@ -65,6 +65,29 @@ The structured `query_steps_cache` event contains `outcome`, `total_steps`,
 series ordering, limits, envelope or evaluator contract. It is not permission
 to raise limits without measuring the cost.
 
+`backend_body_read` records each actual decoded upstream body at caller
+close, before response transformations or coalesced replay. Its existing
+internal-operation counter/histogram use fixed outcomes `eof`, `closed`,
+`error`, `canceled` and `timeout`. The structured event adds `backend.route`,
+`decoded_bytes`, `read_span_seconds` when both requested bounds are known,
+`elapsed_seconds` and `eof_observed`. Normal completions are debug events;
+read/close failures and deadlines are warnings without raw error or query text.
+`loki_vl_proxy_backend_read_bytes_total{kind}` exposes consumed decoded bytes
+at body close in both Prometheus and OTLP. The fixed kinds are `raw`, `stats`,
+`metadata` and `other`; these describe VL HTTP reads, not cache occupancy.
+Use `sum by (kind) (rate(loki_vl_proxy_backend_read_bytes_total[5m]))` to
+verify reduced transfer without enabling debug logs. In-flight bodies have
+not yet contributed their closing snapshot.
+
+The span describes requested backend bounds, including any lookback, rather
+than rows actually scanned. Decoded bytes are consumed application bytes,
+not compressed network traffic. Duration runs from HTTP start until caller
+close and includes consumer processing/backpressure. `closed` only means
+the consumer did not observe EOF; it does not imply a bad API answer. On a
+concurrent abort, bytes are a snapshot at close: an interrupted read can
+finish afterward. Existing HTTP/header observations and request-level error
+metrics remain separate.
+
 These events contain no query, selector, cache key, tenant or forwarded
 credentials. Use normal request/trace correlation and the existing
 `upstream_request` events to inspect backend latency/status. Expected cache

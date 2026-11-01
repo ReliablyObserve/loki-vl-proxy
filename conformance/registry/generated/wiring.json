@@ -610,11 +610,13 @@
       "test/e2e-compat/metric_range_extent_cache_test.go"
     ],
     "quality/query-range-settled-steps": [
+      "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/quantile_histogram_test.go",
       "internal/proxy/quantile_slider_harden_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/query_range_steps_middleware_test.go",
       "internal/proxy/query_range_steps_test.go",
+      "test/e2e-compat/ordered_json_steps_cache_test.go",
       "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go",
       "test/e2e-fleet/settled_steps_test.go"
@@ -1646,6 +1648,7 @@
     ],
     "internal/proxy/ordered_json_steps_cache_test.go": [
       "loki_api_v1_query_range",
+      "quality/query-range-settled-steps",
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/ordered_json_valid_split_test.go": [
@@ -2306,6 +2309,7 @@
     ],
     "test/e2e-compat/ordered_json_steps_cache_test.go": [
       "loki_api_v1_query_range",
+      "quality/query-range-settled-steps",
       "window-bounds-and-step-alignment"
     ],
     "test/e2e-compat/parenthesized_range_or_filters_test.go": [

@@ -705,6 +705,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	resp.Body = p.guardBackendBody(ctx, resp.Body, path, params, start)
+	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, start)
 	return resp, nil
 }
 
@@ -797,6 +798,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, start)
 	if stripUnwrapCounter != nil {
 		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
 			return nil, err
