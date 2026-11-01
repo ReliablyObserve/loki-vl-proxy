@@ -185,6 +185,10 @@ or base side that did not settle, a missing Loki capture for a range Loki holds,
 with no data on either side. A first pass that missed only a delayed request warns when
 the patient recapture matches. Differences from Loki that the base has too are counted
 and never fail; explained (by-design) and history-dependent ones are listed, not counted.
+A 200 response whose body Playwright could not read is incomplete capture evidence,
+not an empty answer. It warns on the base side; the PR side must settle with readable
+responses or the gate fails. Rerun uploads replace the previous attempt's artifacts
+before the screenshot publisher and sticky comment read them.
 
 **Capture details.** Matching of requests is by the whole request body without its
 volatile fields (datasource uid, request id) so a changed query option is a different

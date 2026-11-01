@@ -91,13 +91,18 @@ def records(path, raw=None):
     """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order."""
     d = load_json(path)
     recs = defaultdict(list)
+    unreadable = False
     for r in d["records"]:
+        missing_body = r["status"] == 200 and r["response"] is None
+        unreadable |= missing_body
         if "/api/ds/query" in r["url"]:
             for q in (r["request"] or {}).get("queries", []):
                 sq = {**q, "refId": stable_ref(q.get("refId"))}
                 key = ("query", sq.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
                        digest(strip(sq)))
-                recs[key].append(frames_of(r["response"]) if r["status"] == 200 else {("status", str(r["status"])): ("error", r["status"])})
+                recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
+                                 frames_of(r["response"]) if r["status"] == 200 else
+                                 {("status", str(r["status"])): ("error", r["status"])})
                 if raw is not None:
                     raw[key].append(((r["response"] or {}).get("results") or {}).get(q.get("refId")) if r["status"] == 200 else None)
         else:
@@ -110,8 +115,10 @@ def records(path, raw=None):
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
             lists = [body.get(k) for k in ("data", "fields", "detectedLabels")] if isinstance(body, dict) else [body]
             rows = next((len(x) for x in lists if isinstance(x, list)), 0)
-            recs[key].append({"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)} if r["status"] == 200 else {("status", ""): ("error", r["status"])})
-    return d.get("settled", False), recs
+            recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
+                             {"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)}
+                             if r["status"] == 200 else {("status", ""): ("error", r["status"])})
+    return d.get("settled", False) and not unreadable, recs
 
 
 def errors(recs, allowed=()):
@@ -147,6 +154,8 @@ def ui_of(d, name):
 
 def same(a, b):
     """None when equal, else a short reason."""
+    if ("capture", "") in a or ("capture", "") in b:
+        return "capture body unreadable"
     if set(a) != set(b):
         only_a, only_b = sorted(map(str, set(a) - set(b))), sorted(map(str, set(b) - set(a)))
         return f"series sets differ: {len(set(a) - set(b))} only left {only_a[:2]}, {len(set(b) - set(a))} only right {only_b[:2]}"
@@ -250,7 +259,7 @@ def pairs(a, b):
 # the queries that proxy has already served: two processes running the same code
 # answer differently depending on their request history, so a patterns difference
 # between base and PR is reported, never gated.
-NONDETERMINISTIC = ("/resources/patterns",)
+NONDETERMINISTIC = ("/resources/patterns", "capture body unreadable")
 # Resources whose answer is the proxy's deployment configuration (its
 # -tenant-default-limits / -tenant-limits flags), not data: a base-vs-PR
 # difference there comes from the stack's flags, so it is reported, never gated.
@@ -311,7 +320,7 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False):
                 ok += 1
                 continue
             text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
-            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain else None
+            reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain and why != "capture body unreadable" else None
             if reason:
                 explained.append(tagged(f"{text} -- explained: {reason}", k))
             else:
