@@ -136,3 +136,25 @@ func TestDifference(t *testing.T) {
 		}
 	})
 }
+
+func TestRankedValuesDifference(t *testing.T) {
+	type samples = map[string]map[string]string
+	for _, tc := range []struct {
+		name                string
+		loki, proxy         samples
+		nonempty, wantError bool
+	}{
+		{"tie_at_cutoff", samples{"{\"app\":\"a\"}": {"1": "2"}, "{\"app\":\"b\"}": {"1": "2"}}, samples{"{\"app\":\"a\"}": {"1": "2"}, "{\"app\":\"c\"}": {"1": "2"}}, true, false},
+		{"different_ranked_value", samples{"a": {"1": "2"}}, samples{"b": {"1": "3"}}, true, true},
+		{"missing_ranked_sample", samples{"a": {"1": "2"}, "b": {"1": "2"}}, samples{"c": {"1": "2"}}, true, true},
+		{"different_step", samples{"a": {"1": "2"}}, samples{"b": {"2": "2"}}, true, true},
+		{"empty_forbidden", samples{}, samples{}, true, true},
+		{"invalid_number", samples{"a": {"1": "bad"}}, samples{"b": {"1": "bad"}}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := RankedValuesDifference(tc.loki, tc.proxy, tc.nonempty); (err != nil) != tc.wantError {
+				t.Fatalf("difference=%v, want error=%v", err, tc.wantError)
+			}
+		})
+	}
+}

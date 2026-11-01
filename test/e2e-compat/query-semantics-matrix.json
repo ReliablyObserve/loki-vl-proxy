@@ -1052,6 +1052,149 @@
       "expect_result_type": "streams",
       "compare": "log_entries",
       "require_non_empty": true
+    },
+    {
+      "id": "perf_count_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_rate",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_bytes_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "bytes_over_time({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_rate_with_json_filter",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_count_with_logfmt",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_sum_rate_by",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (rate({env=\"production\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_avg_by",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "avg by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_topk",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "ranked_values",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_bottomk",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "ranked_values",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_sort_metric",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "sort(sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_quantile_over_time_unwrap",
+      "family": "unwrap",
+      "endpoint": "query_range",
+      "query": "quantile_over_time(0.99, {app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_metric_bool_gt",
+      "family": "binary",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m])) > bool 0",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_absent_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "absent_over_time({app=\"nonexistent_service_xyz\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
     }
   ],
   "performance_cases": [
@@ -1193,17 +1336,17 @@
     {
       "id": "count_over_time",
       "category": "metric_range",
-      "query": "count_over_time({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_count_over_time"
     },
     {
       "id": "rate",
       "category": "metric_range",
-      "query": "rate({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_rate"
     },
     {
       "id": "bytes_over_time",
       "category": "metric_range",
-      "query": "bytes_over_time({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_bytes_over_time"
     },
     {
       "id": "rate_with_line_filter",
@@ -1213,12 +1356,12 @@
     {
       "id": "rate_with_json_filter",
       "category": "metric_range",
-      "query": "rate({app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"[5m])"
+      "case_id": "perf_rate_with_json_filter"
     },
     {
       "id": "count_with_logfmt",
       "category": "metric_range",
-      "query": "count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"[5m])"
+      "case_id": "perf_count_with_logfmt"
     },
     {
       "id": "sum_by",
@@ -1228,27 +1371,27 @@
     {
       "id": "sum_rate_by",
       "category": "metric_agg",
-      "query": "sum by (app) (rate({env=\"production\"}[5m]))"
+      "case_id": "perf_sum_rate_by"
     },
     {
       "id": "avg_by",
       "category": "metric_agg",
-      "query": "avg by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m]))"
+      "case_id": "perf_avg_by"
     },
     {
       "id": "topk",
       "category": "metric_agg",
-      "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_topk"
     },
     {
       "id": "bottomk",
       "category": "metric_agg",
-      "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_bottomk"
     },
     {
       "id": "sort_metric",
       "category": "metric_agg",
-      "query": "sort(sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_sort_metric"
     },
     {
       "id": "sum_over_time_unwrap",
@@ -1268,7 +1411,7 @@
     {
       "id": "quantile_over_time_unwrap",
       "category": "unwrap",
-      "query": "quantile_over_time(0.99, {app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])"
+      "case_id": "perf_quantile_over_time_unwrap"
     },
     {
       "id": "metric_gt_zero",
@@ -1278,7 +1421,7 @@
     {
       "id": "metric_bool_gt",
       "category": "metric_compare",
-      "query": "sum by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m])) > bool 0"
+      "case_id": "perf_metric_bool_gt"
     },
     {
       "id": "metric_scalar_mul",
@@ -1303,7 +1446,7 @@
     {
       "id": "absent_over_time",
       "category": "absent",
-      "query": "absent_over_time({app=\"nonexistent_service_xyz\"}[5m])"
+      "case_id": "perf_absent_over_time"
     }
   ]
 }

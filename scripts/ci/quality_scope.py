@@ -54,6 +54,7 @@ def query_semantics_snapshot(root):
                 "performance_shared": shared, "performance_unshared": len(performance) - shared,
                 "depth_paths": len(paths), "depths": {str(i): depth[i] for i in (1, 2, 3)},
                 "exact_metric_points": comparison["metric_points"], "exact_log_entries": comparison["log_entries"],
+                "ranked_step_values": comparison["ranked_values"],
                 "client_errors": outcome["client_error"], "server_errors": outcome["server_error"]}
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         return {"state": "unavailable", "note": "Matrix or inventory missing, malformed or inconsistent."}

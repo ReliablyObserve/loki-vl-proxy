@@ -59,12 +59,12 @@
     {
       "name": "metric_count_rate",
       "category": "metric_function",
-      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum"]
+      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum", "perf_count_over_time", "perf_rate"]
     },
     {
       "name": "metric_bytes",
       "category": "metric_function",
-      "cases": ["parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter"]
+      "cases": ["parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter", "perf_bytes_over_time"]
     },
     {
       "name": "metric_parser_cardinality",
@@ -74,7 +74,9 @@
         "logfmt_parser_metric_range_filter",
         "regexp_parser_metric_range_filter",
         "pattern_parser_metric_range_filter",
-        "unwrap_quantile_over_time"
+        "unwrap_quantile_over_time",
+        "perf_rate_with_json_filter",
+        "perf_count_with_logfmt"
       ]
     },
     {
@@ -89,13 +91,14 @@
         "last_over_time_unwrap",
         "stddev_over_time_unwrap",
         "stdvar_over_time_unwrap",
-        "unwrap_quantile_over_time"
+        "unwrap_quantile_over_time",
+        "perf_quantile_over_time_unwrap"
       ]
     },
     {
       "name": "metric_absent",
       "category": "metric_function",
-      "cases": ["absent_over_time_missing"]
+      "cases": ["absent_over_time_missing", "perf_absent_over_time"]
     },
     {
       "name": "metric_grouping",
@@ -106,18 +109,20 @@
         "json_parser_metric_range_outer_sum",
         "logfmt_parser_metric_range_outer_sum",
         "regexp_parser_metric_range_outer_sum",
-        "pattern_parser_metric_range_outer_sum"
+        "pattern_parser_metric_range_outer_sum",
+        "perf_sum_rate_by",
+        "perf_avg_by"
       ]
     },
     {
       "name": "instant_post_aggregation",
       "category": "aggregation",
-      "cases": ["topk_metric", "bottomk_metric", "sort_metric", "sort_desc_metric"]
+      "cases": ["topk_metric", "bottomk_metric", "sort_metric", "sort_desc_metric", "perf_topk", "perf_bottomk", "perf_sort_metric"]
     },
     {
       "name": "binary_scalar",
       "category": "binary",
-      "cases": ["comparison_scalar_metric_gt_zero", "comparison_scalar_metric_bool_gt_zero", "scalar_binary_metric"]
+      "cases": ["comparison_scalar_metric_gt_zero", "comparison_scalar_metric_bool_gt_zero", "scalar_binary_metric", "perf_metric_bool_gt"]
     },
     {
       "name": "binary_vector",

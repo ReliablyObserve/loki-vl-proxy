@@ -185,12 +185,76 @@ func Difference(loki, proxy map[string]map[string]string, requireNonEmpty bool) 
 			if we != nil || ge != nil {
 				return fmt.Errorf("series %s t=%s: invalid numeric sample: Loki %q, proxy %q", key, ts, wv, gv)
 			}
-			equal := w == g || (math.IsNaN(w) && math.IsNaN(g))
-			if !equal && !math.IsNaN(w) && !math.IsNaN(g) && !math.IsInf(w, 0) && !math.IsInf(g, 0) {
-				equal = math.Abs(w-g) <= math.Max(1e-9, 1e-6*math.Max(math.Abs(w), math.Abs(g)))
-			}
-			if !equal {
+			if !sameMetricSample(w, g) {
 				return fmt.Errorf("series %s t=%s: proxy %q, Loki %q", key, ts, gv, wv)
+			}
+		}
+	}
+	return nil
+}
+
+func sameMetricSample(want, got float64) bool {
+	if want == got || (math.IsNaN(want) && math.IsNaN(got)) {
+		return true
+	}
+	if math.IsNaN(want) || math.IsNaN(got) || math.IsInf(want, 0) || math.IsInf(got, 0) {
+		return false
+	}
+	return math.Abs(want-got) <= math.Max(1e-9, 1e-6*math.Max(math.Abs(want), math.Abs(got)))
+}
+
+// RankedValuesDifference checks every step's ranked sample multiset. Loki's
+// topk/bottomk can pick different label identities at a tied cutoff because
+// its input is a Go map; this comparison keeps the sample count, timestamps,
+// and values strict while the dedicated range-ranking test checks labels at
+// steps without a cutoff tie.
+func RankedValuesDifference(loki, proxy map[string]map[string]string, requireNonEmpty bool) error {
+	collect := func(name string, series map[string]map[string]string) (map[string][]float64, error) {
+		steps := make(map[string][]float64)
+		for _, points := range series {
+			for ts, raw := range points {
+				value, err := strconv.ParseFloat(raw, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s t=%s: invalid numeric sample %q: %w", name, ts, raw, err)
+				}
+				steps[ts] = append(steps[ts], value)
+			}
+		}
+		for _, values := range steps {
+			sort.Float64s(values)
+		}
+		return steps, nil
+	}
+	want, err := collect("Loki", loki)
+	if err != nil {
+		return err
+	}
+	got, err := collect("proxy", proxy)
+	if err != nil {
+		return err
+	}
+	if requireNonEmpty && len(want) == 0 {
+		return fmt.Errorf("loki returned no samples; parity would be empty-vs-empty")
+	}
+	times := make([]string, 0, len(want)+len(got))
+	for ts := range want {
+		times = append(times, ts)
+	}
+	for ts := range got {
+		if _, ok := want[ts]; !ok {
+			times = append(times, ts)
+		}
+	}
+	sort.Strings(times)
+	for _, ts := range times {
+		left, leftPresent := want[ts]
+		right, rightPresent := got[ts]
+		if !leftPresent || !rightPresent || len(left) != len(right) {
+			return fmt.Errorf("t=%s: Loki has %d ranked samples (present=%v), proxy has %d (present=%v)", ts, len(left), leftPresent, len(right), rightPresent)
+		}
+		for i := range left {
+			if !sameMetricSample(left[i], right[i]) {
+				return fmt.Errorf("t=%s rank=%d: proxy %v, Loki %v", ts, i, right[i], left[i])
 			}
 		}
 	}

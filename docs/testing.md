@@ -458,18 +458,15 @@ parser paths. The deeper parser suite adds live cases for `rate` and
 `count_over_time`, error-filter states, grouped and nested aggregations, and
 both instant and range APIs; its retained evidence is described in the
 [parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
-The 104-case semantics manifest and 132-case parser capture cover different
+The 117-case semantics manifest and 132-case parser capture cover different
 contracts; their counts should not be summed as a full Cartesian compatibility
 space.
 
-The manifest also holds 50 existing latency scenarios. Thirty-seven refer directly
-to quality case IDs and use the same LogQL; the remaining 13 metric queries live
-only in this manifest. `TestParityLatency` and the focused `BenchmarkParity_*`
+The manifest also holds 50 existing latency scenarios. All 50 refer directly
+to quality case IDs and use the same LogQL. `TestParityLatency` and the focused `BenchmarkParity_*`
 helpers resolve queries from this catalog. This moves the former standalone
 performance query list into one place without adding a performance gate to the
-quality matrix. The remaining metric performance-only scenarios can gain strict Loki answer
-contracts in the matrix as their fixtures are expanded; visual proof stays in
-its separate workflow.
+quality matrix. Visual proof stays in its separate workflow.
 The PR Quality Report compares catalog counts between base and PR without
 starting tests. Its live matrix row comes from the source-verified pinned Loki
 CI job log and reports observed passes, failures, and skips separately; a
@@ -490,6 +487,13 @@ Each manifest entry declares:
   sample timestamp and numeric value. `log_entries` compares each stream's labels,
   nanosecond timestamp, line and optional structured metadata as a multiset,
   retaining duplicate entries while ignoring response order
+
+The two range-ranking latency cases (`topk` and `bottomk`) use `ranked_values`:
+every step must return the same count and multiset of numeric samples. Loki's
+map iteration can select different label identities among equal values at the
+rank cutoff, so exact series-label comparison would be flaky. The dedicated
+`TestCompat_TopkRangePerStep` also checks label identity where the cutoff has
+no tie, and is linked to `semantics/topk-bottomk-range-series` in the registry.
 
 All 45 log-result cases use `log_entries`, including all 24 log latency scenarios
 promoted to quality cases without duplicating their query strings. The comparison
