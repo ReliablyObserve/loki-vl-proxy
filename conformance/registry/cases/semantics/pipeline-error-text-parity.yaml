@@ -42,7 +42,7 @@ why: |
   writes the text as `text/plain`. Which failing line Loki names first is
   not deterministic across its shards, so the series is compared by shape.
 
-  Vector functions around an ordered JSON sum preserve that inner evaluator's
+  Supported vector functions around an ordered JSON sum preserve that inner evaluator's
   parser hints, runtime errors, filter order and rate units. The nested
   instant/range regression matrix includes sum by(cluster), outer min/max/avg/
   count/topk/bottomk, without grouping and three vector levels over rate and
