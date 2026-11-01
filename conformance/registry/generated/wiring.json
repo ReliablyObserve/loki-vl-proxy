@@ -297,6 +297,7 @@
       "internal/proxy/line_fields_without_parser_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
+      "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/plain_stream_labels_test.go",
       "internal/proxy/query_range_steps_middleware_test.go",
@@ -340,6 +341,7 @@
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/ordered_json_result_cache_test.go",
+      "test/e2e-compat/ordered_json_steps_cache_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
@@ -1177,6 +1179,7 @@
     ],
     "window-bounds-and-step-alignment": [
       "internal/proxy/absent_over_time_differential_test.go",
+      "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/range_lower_bound_test.go",
       "internal/proxy/sliding_window_stats_test.go",
@@ -1188,6 +1191,7 @@
       "internal/proxy/vector_agg_series_differential_test.go",
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/absent_over_time_test.go",
+      "test/e2e-compat/ordered_json_steps_cache_test.go",
       "test/e2e-compat/query_range_window_budget_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
@@ -1639,6 +1643,10 @@
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
       "tenant-numeric-routing"
+    ],
+    "internal/proxy/ordered_json_steps_cache_test.go": [
+      "loki_api_v1_query_range",
+      "window-bounds-and-step-alignment"
     ],
     "internal/proxy/ordered_json_valid_split_test.go": [
       "semantics/json-error-filter-metric-split-pushdown",
@@ -2296,6 +2304,10 @@
       "loki_api_v1_query_range",
       "parser-error-and-label-collision"
     ],
+    "test/e2e-compat/ordered_json_steps_cache_test.go": [
+      "loki_api_v1_query_range",
+      "window-bounds-and-step-alignment"
+    ],
     "test/e2e-compat/parenthesized_range_or_filters_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2504,7 +2516,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 252,
+  "tests_with_markers": 254,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

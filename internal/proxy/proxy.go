@@ -2474,7 +2474,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Keep their complete replies under the same bounded, local-only policy.
 	orderedWriter := w
 	var orderedCapture *compatCacheCaptureWriter
-	if cacheable && stepsRun == nil {
+	if cacheable && (stepsRun == nil || !stepsRun.inner) {
 		orderedCapture = newCompatCacheCaptureWriter(w, p.cache.MaxEntrySizeBytes())
 		orderedWriter = orderedCapture
 	}

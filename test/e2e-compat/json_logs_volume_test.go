@@ -40,8 +40,9 @@ type jsonVolumeStreamLine struct {
 // vlQueryRecorder forwards to VictoriaLogs and records each request path with
 // its LogsQL query.
 type vlQueryRecorder struct {
-	mu    sync.Mutex
-	calls []string
+	mu      sync.Mutex
+	calls   []string
+	windows [][2]time.Time
 }
 
 func (rec *vlQueryRecorder) reset() []string {
@@ -49,6 +50,7 @@ func (rec *vlQueryRecorder) reset() []string {
 	defer rec.mu.Unlock()
 	calls := rec.calls
 	rec.calls = nil
+	rec.windows = nil
 	return calls
 }
 
@@ -97,6 +99,20 @@ func newJSONVolumeRouteProxyWithConfig(t *testing.T, set func(*proxy.Config)) (s
 		}
 		rec.mu.Lock()
 		rec.calls = append(rec.calls, r.URL.Path+" "+query)
+		if r.URL.Path == "/select/logsql/query" {
+			start, end := form.Get("start"), form.Get("end")
+			if start == "" {
+				start = r.URL.Query().Get("start")
+			}
+			if end == "" {
+				end = r.URL.Query().Get("end")
+			}
+			from, e1 := time.Parse(time.RFC3339Nano, start)
+			to, e2 := time.Parse(time.RFC3339Nano, end)
+			if e1 == nil && e2 == nil {
+				rec.windows = append(rec.windows, [2]time.Time{from, to})
+			}
+		}
 		rec.mu.Unlock()
 		forward.ServeHTTP(w, r)
 	}))

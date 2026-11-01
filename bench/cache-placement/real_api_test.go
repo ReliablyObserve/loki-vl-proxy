@@ -864,6 +864,11 @@ func seed(t *testing.T, streams int) fixture {
 	ready(t, vlBase()+"/health")
 	ready(t, lokiBase()+"/ready")
 	fx := fixture{Probe: "cacheperf-" + strconv.FormatInt(time.Now().UnixNano(), 10), End: time.Now().UTC().Truncate(time.Hour).Add(-26 * time.Hour).Unix(), RecentEnd: time.Now().UTC().Truncate(time.Minute).Add(-time.Minute).Unix(), Streams: streams}
+	historyHours := 8
+	if *dlvRangeHours > 0 {
+		historyHours = *dlvRangeHours + 2
+		fx.End = time.Now().UTC().Truncate(time.Hour).Add(-3 * time.Hour).Unix()
+	}
 	post := func(target, content string, b []byte) {
 		s, out, _, err := fetch("POST", target, b, map[string]string{"Content-Type": content})
 		must(t, err)
@@ -885,7 +890,7 @@ func seed(t *testing.T, streams int) fixture {
 	var vl bytes.Buffer
 	for shard := 0; shard < streams; shard++ {
 		for _, recent := range []bool{false, true} {
-			end, hours := fx.End, 8
+			end, hours := fx.End, historyHours
 			if recent {
 				end, hours = fx.RecentEnd, 2
 			}
@@ -895,7 +900,7 @@ func seed(t *testing.T, streams int) fixture {
 				values := [][]string{}
 				for at, j := end-int64(hours*3600)+int64(7+li*17), 0; at < end; at, j = at+180, j+1 {
 					line := fmt.Sprintf("{\"level\":%q,\"method\":%q,\"status\":%d,\"value\":%d,\"message\":\"request served\"}", level, []string{"GET", "POST", "PUT"}[j%3], []int{200, 404, 500}[li], 1+j%7)
-					if j%61 == 60 {
+					if j%61 == 60 && (*dlvRangeHours == 0 || shard%2 == 1) {
 						line = "malformed JSON fixture line"
 					} // exercise DL V2's error path too
 					stamp := at*1e9 + int64(shard)
@@ -926,14 +931,14 @@ func seed(t *testing.T, streams int) fixture {
 	// so a cached empty answer cannot satisfy or indefinitely block readiness.
 	deadline := time.Now().Add(4 * time.Minute)
 	for time.Now().Before(deadline) {
-		q := fmt.Sprintf("sum(count_over_time({perf_probe=%q} != %q [8h]))", fx.Probe, "seed-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+		q := fmt.Sprintf("sum(count_over_time({perf_probe=%q} != %q [%dh]))", fx.Probe, "seed-"+strconv.FormatInt(time.Now().UnixNano(), 10), historyHours)
 		path := "/loki/api/v1/query?" + url.Values{"query": {q}, "time": {strconv.FormatInt(fx.End*1e9, 10)}}.Encode()
 		_, body := get(t, lokiBase()+path)
 		var v struct {
 			Data struct{ Result []struct{ Value []any } }
 		}
 		if json.Unmarshal(body, &v) == nil && len(v.Data.Result) == 1 && len(v.Data.Result[0].Value) == 2 {
-			if count, err := strconv.Atoi(fmt.Sprint(v.Data.Result[0].Value[1])); err == nil && count == fx.Lines*4/5 {
+			if count, err := strconv.Atoi(fmt.Sprint(v.Data.Result[0].Value[1])); err == nil && count == fx.Lines*historyHours/(historyHours+2) {
 				return fx
 			}
 		}

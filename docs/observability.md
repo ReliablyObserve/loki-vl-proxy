@@ -277,6 +277,10 @@ Operational notes for these hot paths:
 
 ### Semantic cache layers
 
+For production Drilldown investigations, see the
+[cache troubleshooting guide](cache-troubleshooting.md), including settled-step
+eligibility/admission reasons and structured debug decision logs.
+
 Prometheus scrape and OTLP push expose the same `loki_vl_proxy_cache_layer_*`
 families. `layer` is `loki`, `vl` or `unknown`; `component` is `primary`,
 `compat`, `translation` or `field_names`. These are fixed labels, without

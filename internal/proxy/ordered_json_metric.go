@@ -207,11 +207,24 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	if err == nil && !served {
+		readAt := time.Now().UnixNano()
 		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorRawRows, reason)
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
 			body, err = buildOrderedJSONMetric(r.Context(), plan, series, start, end, step, isRange, p.orderedJSONMetricMaxBytes())
+		}
+		if err == nil && isRange {
+			// Complete raw answers are independent per evaluation time. Never
+			// keep a Drilldown result ranked/truncated over the whole window.
+			scope, _ := r.Context().Value(seriesLimitScopeKey{}).(*seriesLimitScope)
+			_, reusable := queryStepsOrderedJSON(query)
+			if run := queryStepsRunFor(r); reusable && run != nil && (scope == nil || scope.truncated.Load() == 0) {
+				run.arm()
+				markQueryStepsEvaluated(r.Context())
+				markQueryStepsRoute(r.Context(), "ordered-json-raw")
+				noteQueryStepsRead(r.Context(), readAt)
+			}
 		}
 	}
 	status := http.StatusOK
@@ -222,6 +235,9 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 		_, _ = w.Write(body)
 	}
 	status = unwrapRecordedStatus(r.Context(), status)
+	if run := queryStepsRunFor(r); run != nil && run.inner {
+		return true // the outer settled-steps request records client metrics
+	}
 	p.metrics.RecordRequest(endpoint, status, time.Since(requestStart))
 	p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
 	return true
