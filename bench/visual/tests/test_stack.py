@@ -39,6 +39,35 @@ class StackFixtureTest(unittest.TestCase):
                             for _, line in stream["values"]))
         self.assertLess(int(stream["values"][-1][0]), 7200 * 1_000_000_000)
 
+    def test_keep_metadata_fixture_uses_equivalent_loki_and_vl_fields(self):
+        sent = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        def send(req, timeout):
+            sent.append((req.full_url, req.data, req.headers))
+            return Response()
+
+        backend = type("Backend", (), {"loki": "http://loki", "vl": "http://vl"})()
+        with patch.object(stack.urllib.request, "urlopen", side_effect=send):
+            stack.seed_keep_metadata_fixture(backend, 7200)
+
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0][0], "http://loki/loki/api/v1/push")
+        self.assertEqual(sent[1][0], "http://vl/insert/jsonline?_stream_fields=app")
+        entry = json.loads(sent[0][1])["streams"][0]
+        row = json.loads(sent[1][1])
+        self.assertEqual(entry["stream"]["app"], row["app"])
+        self.assertEqual(entry["values"][0][1], row["_msg"])
+        self.assertEqual(entry["values"][0][2]["deployment_environment"],
+                         row["deployment.environment"])
+        self.assertEqual(entry["values"][0][0], str(6900 * 1_000_000_000 + 500_000_000))
+
 
 if __name__ == "__main__":
     unittest.main()
