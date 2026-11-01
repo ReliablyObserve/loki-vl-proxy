@@ -13,12 +13,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/klauspost/compress/zstd"
 )
 
 const tailIdleWindow = 2 * time.Second
@@ -48,6 +48,7 @@ func readTailFrame(t *testing.T, conn *websocket.Conn, wantSubstring string, tim
 
 func TestFeature_IndexStats_ReturnsRealData(t *testing.T) {
 	score := &CompatScore{}
+	defer requireFeatureScore(t, score)
 	now := time.Now()
 
 	params := url.Values{}
@@ -89,6 +90,7 @@ func TestFeature_IndexStats_ReturnsRealData(t *testing.T) {
 
 func TestFeature_IndexVolume_ReturnsPrometheusFormat(t *testing.T) {
 	score := &CompatScore{}
+	defer requireFeatureScore(t, score)
 	now := time.Now()
 
 	params := url.Values{}
@@ -132,6 +134,7 @@ func TestFeature_IndexVolume_ReturnsPrometheusFormat(t *testing.T) {
 
 func TestFeature_IndexVolumeRange_ReturnsMatrix(t *testing.T) {
 	score := &CompatScore{}
+	defer requireFeatureScore(t, score)
 	now := time.Now()
 
 	params := url.Values{}
@@ -1274,110 +1277,95 @@ func TestFeature_NoGzipWithoutAccept(t *testing.T) {
 	score.report(t)
 }
 
-func TestFeature_ZstdCompression(t *testing.T) {
-	score := &CompatScore{}
-
+// Frontend codecs deliberately support gzip/identity. Zstd remains supported
+// for backend/peer transport, not for Grafana-facing HTTP responses.
+func TestFeature_UnsupportedZstdUsesGzip(t *testing.T) {
+	endpoint := compressionFixtureURL(t)
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
-	req, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/labels", nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Accept-Encoding", "zstd, gzip")
 	resp, err := client.Do(req)
 	if err != nil {
-		score.fail("zstd", "request failed: "+err.Error())
-		score.report(t)
-		return
+		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-
-	if resp.Header.Get("Content-Encoding") == "zstd" {
-		score.pass("zstd", "response is zstd-compressed")
-	} else {
-		score.fail("zstd", fmt.Sprintf("expected zstd, got Content-Encoding: %q", resp.Header.Get("Content-Encoding")))
-		score.report(t)
-		return
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("expected successful gzip fallback, status=%d encoding=%q", resp.StatusCode, resp.Header.Get("Content-Encoding"))
 	}
-
-	zr, err := zstd.NewReader(resp.Body)
+	reader, err := gzip.NewReader(resp.Body)
 	if err != nil {
-		score.fail("zstd", "failed to create zstd reader: "+err.Error())
-		score.report(t)
-		return
+		t.Fatal(err)
 	}
-	defer zr.Close()
-	body, err := io.ReadAll(zr)
+	defer reader.Close()
+	body, err := io.ReadAll(reader)
 	if err != nil {
-		score.fail("zstd", "failed to decode zstd body: "+err.Error())
-		score.report(t)
-		return
+		t.Fatal(err)
 	}
-	if strings.Contains(string(body), `"status":"success"`) {
-		score.pass("zstd", "decoded zstd body matches Loki response shape")
-	} else {
-		score.fail("zstd", "decoded zstd body missing expected Loki payload")
+	if !json.Valid(body) || !strings.Contains(string(body), `"status":"success"`) {
+		t.Fatalf("invalid decoded gzip response: %s", body)
 	}
-	if resp.Header.Get("Vary") == "Accept-Encoding" {
-		score.pass("zstd", "Vary: Accept-Encoding header present")
+	if resp.Header.Get("Vary") != "Accept-Encoding" {
+		t.Fatal("missing Vary: Accept-Encoding")
 	}
-
-	score.report(t)
 }
 
-func TestFeature_GzipAndZstdBodiesMatch(t *testing.T) {
-	score := &CompatScore{}
+func TestFeature_GzipAndIdentityBodiesMatch(t *testing.T) {
+	endpoint := compressionFixtureURL(t)
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	read := func(accept, wantEncoding string) []byte {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Accept-Encoding", accept)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != wantEncoding {
+			t.Fatalf("accept=%q: status=%d encoding=%q, want=%q", accept, resp.StatusCode, resp.Header.Get("Content-Encoding"), wantEncoding)
+		}
+		var reader io.Reader = resp.Body
+		if wantEncoding == "gzip" {
+			zr, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer zr.Close()
+			reader = zr
+		}
+		body, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !json.Valid(body) {
+			t.Fatalf("invalid JSON: %s", body)
+		}
+		return body
+	}
+	compressed := read("gzip", "gzip")
+	identity := read("zstd", "")
+	if !bytes.Equal(compressed, identity) {
+		t.Fatal("gzip and unsupported-zstd identity fallback returned different payloads")
+	}
+}
 
-	gzipReq, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/labels", nil)
-	gzipReq.Header.Set("Accept-Encoding", "gzip")
-	gzipResp, err := client.Do(gzipReq)
-	if err != nil {
-		score.fail("compression_parity", "gzip request failed: "+err.Error())
-		score.report(t)
-		return
+func compressionFixtureURL(t *testing.T) string {
+	t.Helper()
+	ensureDataIngested(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	params := url.Values{
+		"query": {`{app="api-gateway",env="production"}`},
+		"start": {strconv.FormatInt(now.Add(-10*time.Minute).UnixNano(), 10)},
+		"end":   {strconv.FormatInt(now.UnixNano(), 10)},
+		"limit": {"1000"},
 	}
-	defer gzipResp.Body.Close()
-	gzr, err := gzip.NewReader(gzipResp.Body)
-	if err != nil {
-		score.fail("compression_parity", "gzip decoder failed: "+err.Error())
-		score.report(t)
-		return
-	}
-	gzipBody, err := io.ReadAll(gzr)
-	gzr.Close()
-	if err != nil {
-		score.fail("compression_parity", "gzip body read failed: "+err.Error())
-		score.report(t)
-		return
-	}
-
-	zstdReq, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/labels", nil)
-	zstdReq.Header.Set("Accept-Encoding", "zstd")
-	zstdResp, err := client.Do(zstdReq)
-	if err != nil {
-		score.fail("compression_parity", "zstd request failed: "+err.Error())
-		score.report(t)
-		return
-	}
-	defer zstdResp.Body.Close()
-	zr, err := zstd.NewReader(zstdResp.Body)
-	if err != nil {
-		score.fail("compression_parity", "zstd decoder failed: "+err.Error())
-		score.report(t)
-		return
-	}
-	zstdBody, err := io.ReadAll(zr)
-	zr.Close()
-	if err != nil {
-		score.fail("compression_parity", "zstd body read failed: "+err.Error())
-		score.report(t)
-		return
-	}
-
-	if bytes.Equal(gzipBody, zstdBody) {
-		score.pass("compression_parity", "gzip and zstd responses decode to the same payload")
-	} else {
-		score.fail("compression_parity", "gzip and zstd decoded payloads differ")
-	}
-
-	score.report(t)
+	return proxyURL + "/loki/api/v1/query_range?" + params.Encode()
 }
 
 // =============================================================================
@@ -1541,4 +1529,13 @@ func TestFeature_InstantVectorExpression_Compatibility(t *testing.T) {
 	}
 
 	score.report(t)
+}
+
+// requireFeatureScore makes these routed contract assertions merge-blocking;
+// logging a partial score alone does not fail a Go test.
+func requireFeatureScore(t *testing.T, score *CompatScore) {
+	t.Helper()
+	if score.total == 0 || score.failed != 0 {
+		t.Errorf("feature contract failed: %d/%d passing (%d failures)", score.passed, score.total, score.failed)
+	}
 }

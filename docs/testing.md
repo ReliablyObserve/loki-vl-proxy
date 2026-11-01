@@ -397,12 +397,28 @@ The Docker-backed `test/e2e-compat` suite now runs as five functional PR shards 
 | Shard | Primary scope |
 |---|---|
 | `e2e-compat (core)` | `TestCompat_*`, `TestExtended_*`, `TestChaining_*`, `TestAlertingCompat_*`, Explore HTTP contracts, `TestLokiFunctions_*`, datasource catalog/health, proxy compatibility surface, pinned matrix vs compose check |
-| `e2e-compat (drilldown)` | `TestDrilldown_*` contracts including runtime-family checks, Drilldown cluster/level filter features, Loki/Drilldown/VL track scores |
+| `e2e-compat (drilldown)` | `TestDrilldown_*` contracts including runtime-family checks, index statistics/volume, Drilldown limits, bounded 24h–7d chunked-merge replay, cluster/level filter features, Loki/Drilldown/VL track scores |
 | `e2e-compat (otel-edge)` | OTel label translation, structured metadata, underscore-proxy surfaces, label dedup/translation, `TestEdge_*`, `TestComplex_*` |
-| `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, admin/analytics endpoints, security headers, metrics, gzip, response-shape and edge checks |
-| `e2e-compat (semantics)` | query semantics matrix and operations inventory, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout parity, `TestMissingOps_*` |
+| `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, admin/analytics endpoints, security headers, metrics, gzip and unsupported-codec fallback parity, response-shape and edge checks |
+| `e2e-compat (semantics)` | query semantics matrix and operations inventory, `TestOperationsMatrix_*`, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout parity, `TestMissingOps_*` |
 
-The group patterns are anchored regexes in `.github/workflows/ci.yaml`. Tests outside every pattern do not run in these jobs: `TestHardeningLive_*` runs in `Security / runtime` (through `scripts/ci/run_security_regressions.sh`), `TestLabelCache_*` runs in `loki-pinned`, while `TestOperationsMatrix_*`, `TestPerf_*`, `TestParityLatency`, `TestPatternsDenseRepro_*`, `TestDense*`, `TestE2ELock_*`, `TestProxy_DrilldownLimits_*`, `TestRangeMetric_UnwrapResponseSizeGuard`, `TestFeature_IndexStats_ReturnsRealData`, `TestFeature_IndexVolume_ReturnsPrometheusFormat`, `TestFeature_IndexVolumeRange_ReturnsMatrix`, `TestFeature_ZstdCompression` and `TestFeature_GzipAndZstdBodiesMatch` are not matched by any CI pattern and run only when invoked locally.
+The group patterns are anchored regexes in `.github/workflows/ci.yaml`.
+`TestHardeningLive_*` runs in `Security / runtime` through
+`scripts/ci/run_security_regressions.sh`, and `TestLabelCache_*` runs in
+`loki-pinned`. The workflow-aware guard
+[`test_e2e_selection.py`](../scripts/ci/tests/test_e2e_selection.py) follows
+these selectors and the Grafana runtime manifest. Every top-level compatibility
+test must match an executable selector or have an exact-name exemption with a
+reason. A new test cannot silently inherit a manual-only family prefix.
+The exemptions distinguish local fixture/transport helpers from manual latency,
+dense-pattern and high-cardinality memory harnesses; selector reachability does
+not prove that a test passed or that a runtime fixture was nonempty.
+
+The chunked-merge replay seeds 721 records over 60h in a private stream, within
+the stack's 72h retention. Its 24h, 25h, 48h and 7d requested windows exercise
+Grafana's newest-first splitting and frame merging without a UI generator. A
+missing fixture fails the check rather than skipping the test. The 7d request
+exercises empty older chunks; it does not claim seven days of retained data.
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 
