@@ -1,16 +1,19 @@
 id: semantics/logfmt-existence-filter-ungrouped-sum
-title: An ungrouped sum over `| logfmt | key!=""` returns no series (open)
+title: An ungrouped sum over `| logfmt | key!=""` retains parsed fields (fixed)
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
 consumer: explore
 why: |
   `sum(count_over_time({service_name="cache-redis"} | logfmt | op!="" [5m]))`
-  is 94170 lines on Loki and an empty matrix on the proxy; the same with `|
-  drop __error__`, and for every logfmt service and key tried (payment-service
-  amount). The grouped form (`sum by (op) (...)`), the equality filter
-  (`op="hget"`) and the `| json` form match Loki, so the ungrouped logfmt
-  stats pushdown with an existence filter loses every row.
+  returned Loki counts but an empty proxy matrix, also with `| drop
+  __error__`. The generic range-metric path sent these ungrouped presence
+  queries to the burst coalescer. Its fused VL query removed `unpack_logfmt`
+  and counted only stored `op` columns, although `op` existed solely in the
+  log body. The regular stats route keeps `unpack_logfmt` and the label filter.
+  It now answers both forms with Loki's series and sample values. Exact
+  response and settled-step cache keys are versioned for this query shape,
+  preventing reuse of a pre-fix empty answer after an upgrade.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -23,17 +26,18 @@ request:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
-  mode: observed
-  fields: [series, values]
+  mode: numeric
+  fields: [data.result]
   expect: |
     One series with Loki's counts.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#968'
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/ordered_json_metric.go setStatsPushdown / pushdownLabelFilters (logfmt, ungrouped)'
+  area: 'internal/proxy/range_metric_compat.go writeCoalescedManualMetric; internal/proxy/proxy.go queryRangeCacheKey; internal/proxy/middleware.go compatCacheKey'
   loki: 'pkg/logql/log/parser.go:398-409 logfmt label extraction; label filter on the parsed label'
-  proxy: 'empty matrix'
-  planned_test: 'TestCompat_LogfmtExistenceFilterUngroupedSum (test/e2e-compat, group semantics), cases semantics/json-filter-pushdown-ungrouped-sum sibling'
+  proxy: 'the logfmt stats read retains the parser and returns one empty-label series with Loki counts'
+  planned_test: 'TestCompat_LogfmtExistenceFilterUngroupedSum (test/e2e-compat, core CI group); TestLogfmtPresenceResponseVersionScope (internal/proxy)'
   clusters:
     - 0a9f54e0

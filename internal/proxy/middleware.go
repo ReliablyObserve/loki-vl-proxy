@@ -401,6 +401,9 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	prefix := "compat:v2:" + endpoint + ":"
 	if endpoint == "query" || endpoint == "query_range" {
 		prefix += orderedJSONVectorResponseKeyVersion(r, r.FormValue("query"))
+		if endpoint == "query_range" {
+			prefix += logfmtPresenceResponseKeyVersion(r, r.FormValue("query"))
+		}
 	}
 	if version := readCacheKeyVersion(endpoint); version != "" {
 		prefix += version + ":"

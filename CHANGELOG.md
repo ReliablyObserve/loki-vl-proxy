@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep logfmt-parsed fields in ungrouped field-presence metrics. The burst
+  coalescer no longer replaces `| logfmt | field!=""` with a stored-column
+  check that can return an empty series when the field exists only in the log
+  line. The regular VictoriaLogs stats route retains the parser; a dual-ingest
+  regression compares the exact range series and points with Loki, with and
+  without `drop __error__`. Version only this query shape's response-cache
+  keys so an empty answer saved by an older binary cannot survive the fix.
+
 ## [2.56.1] - 2026-11-01
 
 ### Fixed
