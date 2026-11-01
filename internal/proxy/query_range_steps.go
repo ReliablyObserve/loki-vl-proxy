@@ -235,6 +235,11 @@ func queryStepsShape(query string, step time.Duration) bool {
 	if _, ok := queryStepsOrderedJSON(query); ok {
 		return true // raw JSON evaluation also handles tumbling windows locally
 	}
+	if affectedOrderedJSONVectorQuery(query) {
+		// Outer vector folds depend on the complete inner answer. Keep their
+		// results out of generic fragments produced before ordered evaluation.
+		return false
+	}
 	expr, err := logqlpkg.Parse(query)
 	if err != nil {
 		return false

@@ -163,13 +163,17 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	}
 	plan, ok := compileOrderedJSONMetric(query)
 	if !ok {
-		return false
+		return p.handleOrderedJSONVectorMetric(w, r, requestStart, query, isRange)
 	}
+	return p.serveOrderedJSONMetric(w, r, requestStart, query, isRange, plan, true)
+}
+
+func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, requestStart time.Time, query string, isRange bool, plan *orderedJSONMetricPlan, recordRequest bool) bool {
 	if plan.parser != "json" {
 		// Drilldown keeps its per-field coalescing and residual-chunk routes.
 		return isRange && !isGrafanaDrilldownRequest(r) && p.serveLevelVolumeStatsBuckets(w, r, requestStart, query, plan)
 	}
-	if isRange && plan.isNativeDrilldownHistogram(r) && p.orderedJSONNativeGroupingIsExact(plan) {
+	if isRange && !outerSeriesFolded(r.Context()) && plan.isNativeDrilldownHistogram(r) && p.orderedJSONNativeGroupingIsExact(plan) {
 		return false
 	}
 	if plan.withoutJSON != "" && p.orderedJSONNativeGroupingIsExact(plan) {
@@ -238,8 +242,10 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	if run := queryStepsRunFor(r); run != nil && run.inner {
 		return true // the outer settled-steps request records client metrics
 	}
-	p.metrics.RecordRequest(endpoint, status, time.Since(requestStart))
-	p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
+	if recordRequest {
+		p.metrics.RecordRequest(endpoint, status, time.Since(requestStart))
+		p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= 400)
+	}
 	return true
 }
 
@@ -335,6 +341,10 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 	if err != nil {
 		return nil, false
 	}
+	return compileOrderedJSONMetricExpr(expr)
+}
+
+func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, bool) {
 	plan := &orderedJSONMetricPlan{}
 	if outer, ok := expr.(*logqlpkg.VectorAggregation); ok {
 		if outer.Op != logqlpkg.VectorSum {

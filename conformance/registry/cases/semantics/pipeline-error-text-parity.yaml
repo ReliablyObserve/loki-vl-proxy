@@ -41,6 +41,17 @@ why: |
   envelope (`{"status":"error","errorType":"bad_data","error":...}`); Loki
   writes the text as `text/plain`. Which failing line Loki names first is
   not deterministic across its shards, so the series is compared by shape.
+
+  Supported vector functions around an ordered JSON sum preserve that inner evaluator's
+  parser hints, runtime errors, filter order and rate units. The nested
+  instant/range regression matrix includes sum by(cluster), outer min/max/avg/
+  count/topk/bottomk, without grouping and three vector levels over rate and
+  count_over_time. Valid, truncated-object and plain-text fixtures have pinned
+  numeric or HTTP 400 expectations on both Loki and the proxy; explicit
+  __error__="" filtering counts only valid inputs. Ungrouped sum parser hints
+  can skip parsing altogether, so those unfiltered aggregate-all cases remain
+  successful. Zero and negative ranking parameters fail parsing before any
+  input pipeline error is considered.
 request:
   method: GET
   path: /loki/api/v1/query_range

@@ -2677,6 +2677,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	var key strings.Builder
 	key.Grow(len(logqlQuery) + 256)
 	key.WriteString("query_range:v3:" + logLineCacheKeyVersion + ":")
+	key.WriteString(orderedJSONVectorResponseKeyVersion(r, logqlQuery))
 	writePart := func(value string) {
 		var digits [20]byte
 		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))
