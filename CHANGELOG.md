@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inner-row collection. The regression matrix compares instant and range
   answers with Loki for valid, truncated and plain-text inputs, grouping,
   nested functions and explicit parser-error filtering.
+  Nested ordered JSON answers bypass generic settled-step fragments so older
+  fragments cannot supply pre-fix results; direct JSON point reuse is retained.
 
 ## [2.55.0] - 2026-11-01
 

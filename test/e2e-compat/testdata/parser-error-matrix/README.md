@@ -54,6 +54,11 @@ ordered evaluator's row, body and sample bounds; their outer result receives the
 tenant's series limit. Inner native-handler rewrites are skipped on the new nested
 route to retain correct parser behavior and final request accounting. Aggregate-all
 nests can consequently read raw rows where the previous native path counted them;
-that cost needs separate workload measurements. Logfmt, unwrap functions, binary
+that cost needs separate workload measurements. These nested expressions bypass
+generic settled-step fragments, including entries produced before the parser fix;
+the direct JSON point-cache compiler remains unchanged. Exact local response
+caching keeps its existing policy. Moving-window, disk-restart and peer-loss cache
+costs for the nested route are not measured by this parity matrix.
+Logfmt, unwrap functions, binary
 joins, offsets, unsupported vector operators and broader high-cardinality workloads
 are outside this bounded matrix.

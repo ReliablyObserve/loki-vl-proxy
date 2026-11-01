@@ -71,6 +71,9 @@ func (p *Proxy) handleOrderedJSONVectorMetric(w http.ResponseWriter, r *http.Req
 		status = http.StatusOK
 	}
 	defer func() {
+		if run := queryStepsRunFor(r); run != nil && run.inner {
+			return // the outer settled-steps request owns client observations
+		}
 		p.metrics.RecordRequest(endpoint, status, time.Since(requestStart))
 		p.queryTracker.Record(endpoint, query, time.Since(requestStart), status >= http.StatusBadRequest)
 	}()

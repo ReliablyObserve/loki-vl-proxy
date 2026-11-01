@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOrderedJSONVectorKeepsDirectCompilerContract(t *testing.T) {
@@ -17,6 +18,9 @@ func TestOrderedJSONVectorKeepsDirectCompilerContract(t *testing.T) {
 	} {
 		if _, ok := compileOrderedJSONMetric(query); ok {
 			t.Fatalf("nested query admitted by direct point-cache compiler: %s", query)
+		}
+		if queryStepsShape(query, time.Minute) {
+			t.Fatalf("nested query admitted by generic settled-point cache: %s", query)
 		}
 		plan, outer, ok := orderedJSONVectorPlan(query)
 		if !ok || len(outer) == 0 || plan.grouping == nil || plan.grouping.Labels[0] != "cluster" || plan.noLabels {
