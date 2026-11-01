@@ -136,6 +136,74 @@ type querySemanticsCase struct {
 	KnownDeviation   string `json:"known_deviation,omitempty"`
 }
 
+// querySemanticsLogEntries compares the full stream identity and every log
+// value, including optional structured metadata. It treats stream and entry
+// ordering as immaterial but retains duplicate entries as distinct counts.
+func querySemanticsLogEntries(body string) (map[string]int, error) {
+	var response struct {
+		Data struct {
+			Result *[]struct {
+				Stream map[string]string   `json:"stream"`
+				Values [][]json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		return nil, err
+	}
+	if response.Data.Result == nil {
+		return nil, fmt.Errorf("missing log result")
+	}
+	entries := make(map[string]int)
+	for _, series := range *response.Data.Result {
+		if series.Stream == nil || series.Values == nil {
+			return nil, fmt.Errorf("log series lacks stream or values")
+		}
+		for _, value := range series.Values {
+			if len(value) < 2 || len(value) > 3 {
+				return nil, fmt.Errorf("log value must contain timestamp, line and optional metadata")
+			}
+			var entry struct {
+				Stream    map[string]string  `json:"stream"`
+				Timestamp string             `json:"timestamp"`
+				Line      string             `json:"line"`
+				Metadata  *map[string]string `json:"metadata,omitempty"`
+			}
+			entry.Stream = series.Stream
+			if err := json.Unmarshal(value[0], &entry.Timestamp); err != nil {
+				return nil, fmt.Errorf("log timestamp: %w", err)
+			}
+			if err := json.Unmarshal(value[1], &entry.Line); err != nil {
+				return nil, fmt.Errorf("log line: %w", err)
+			}
+			if len(value) == 3 {
+				entry.Metadata = new(map[string]string)
+				if err := json.Unmarshal(value[2], entry.Metadata); err != nil || *entry.Metadata == nil {
+					return nil, fmt.Errorf("invalid log metadata: %v", err)
+				}
+			}
+			key, err := json.Marshal(entry)
+			if err != nil {
+				return nil, err
+			}
+			entries[string(key)]++
+		}
+	}
+	return entries, nil
+}
+
+func querySemanticsSameLogEntries(left, right map[string]int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for entry, count := range left {
+		if right[entry] != count {
+			return false
+		}
+	}
+	return true
+}
+
 func loadQuerySemanticsMatrix(t testing.TB) querySemanticsMatrix {
 	t.Helper()
 
@@ -199,7 +267,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
-		case "line_count":
+		case "line_count", "log_entries":
 			if tc.ExpectResultType != "streams" {
 				return fmt.Errorf("line-count case %q must expect streams", tc.ID)
 			}
@@ -452,6 +520,7 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 		{"missing_comparison", func(c *querySemanticsCase) { c.Compare = "" }},
 		{"metric_comparison_on_logs", func(c *querySemanticsCase) { c.ExpectResultType = "streams" }},
 		{"line_comparison_on_metrics", func(c *querySemanticsCase) { c.Compare = "line_count" }},
+		{"log_entry_comparison_on_metrics", func(c *querySemanticsCase) { c.Compare = "log_entries" }},
 		{"missing_metric_step", func(c *querySemanticsCase) { c.Step = "" }},
 		{"comparison_on_error", func(c *querySemanticsCase) { c.Expectation = "client_error" }},
 		{"availability_without_owner", func(c *querySemanticsCase) { c.Compare = "any_non_empty" }},
@@ -470,6 +539,46 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	}
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid metric contract rejected: %v", err)
+	}
+	logs := querySemanticsCase{ID: "logs", Family: "selector", Endpoint: "query_range", Query: `{app="test"}`, Expectation: "success", ExpectResultType: "streams", Compare: "log_entries"}
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{logs}}); err != nil {
+		t.Errorf("valid exact log-entry contract rejected: %v", err)
+	}
+}
+
+func TestQuerySemanticsLogEntries(t *testing.T) {
+	response := func(entries ...string) string {
+		return `{"data":{"result":[` + strings.Join(entries, ",") + `]}}`
+	}
+	first := `{"stream":{"app":"api","level":"info"},"values":[["1700000000000000001","same",{"trace_id":"one"}],["1700000000000000001","same",{"trace_id":"one"}]]}`
+	reordered := `{"stream":{"level":"info","app":"api"},"values":[["1700000000000000001","same",{"trace_id":"one"}],["1700000000000000001","same",{"trace_id":"one"}]]}`
+	want, err := querySemanticsLogEntries(response(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := querySemanticsLogEntries(response(reordered))
+	if err != nil || !querySemanticsSameLogEntries(want, got) {
+		t.Fatalf("reordered equivalent streams differ: %v, %v", got, err)
+	}
+	for _, changed := range []string{
+		strings.Replace(first, `"level":"info"`, `"level":"error"`, 1),
+		strings.Replace(first, `1700000000000000001`, `1700000000000000002`, 1),
+		strings.Replace(first, `"same"`, `"changed"`, 1),
+		strings.Replace(first, `"one"`, `"two"`, 1),
+		strings.Replace(first, `,["1700000000000000001","same",{"trace_id":"one"}]`, ``, 1),
+	} {
+		other, err := querySemanticsLogEntries(response(changed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if querySemanticsSameLogEntries(want, other) {
+			t.Fatalf("different log entry accepted: %s", changed)
+		}
+	}
+	for _, malformed := range []string{`{"data":{"result":[{"stream":{},"values":[[123,"line"]]}]}}`, `{"data":{"result":[{"stream":{},"values":[["123"]]}]}}`} {
+		if _, err := querySemanticsLogEntries(malformed); err == nil {
+			t.Fatalf("malformed log entry accepted: %s", malformed)
+		}
 	}
 }
 
@@ -535,6 +644,25 @@ func TestQuerySemanticsPerformanceCatalog(t *testing.T) {
 	for _, id := range []string{"exact_match", "sum_by", "avg_over_time_unwrap", "vector_div", "json_two_field_filters"} {
 		if !seen[id] {
 			t.Errorf("focused benchmark case %q is missing", id)
+		}
+	}
+}
+
+func TestQuerySemanticsPerformanceLogCasesHaveStrictQualityContracts(t *testing.T) {
+	matrix := loadQuerySemanticsMatrix(t)
+	quality := make(map[string]querySemanticsCase, len(matrix.Cases))
+	for _, tc := range matrix.Cases {
+		quality[tc.ID] = tc
+	}
+	performance := make(map[string]querySemanticsPerformanceCase, len(matrix.PerformanceCases))
+	for _, tc := range matrix.PerformanceCases {
+		performance[tc.ID] = tc
+	}
+	for _, id := range []string{"exact_match", "regex_match", "not_equal", "regex_not_match", "line_contains", "line_not_contains", "line_regex", "line_not_regex"} {
+		perf := performance[id]
+		contract, ok := quality[perf.CaseID]
+		if !ok || perf.Query != "" || contract.Query == "" || contract.Compare != "log_entries" {
+			t.Errorf("performance scenario %q lacks a shared strict log-entry contract", id)
 		}
 	}
 }
@@ -779,6 +907,21 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 					}
 					if proxyCount != lokiCount {
 						t.Fatalf("line-count mismatch for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
+					}
+				case "log_entries":
+					proxyEntries, err := querySemanticsLogEntries(proxyBody)
+					if err != nil {
+						t.Fatalf("proxy log entries for %s: %v", tc.ID, err)
+					}
+					lokiEntries, err := querySemanticsLogEntries(lokiBody)
+					if err != nil {
+						t.Fatalf("Loki log entries for %s: %v", tc.ID, err)
+					}
+					if tc.RequireNonEmpty && (len(proxyEntries) == 0 || len(lokiEntries) == 0) {
+						t.Fatalf("expected non-empty logs for %s", tc.ID)
+					}
+					if !querySemanticsSameLogEntries(proxyEntries, lokiEntries) {
+						t.Fatalf("log-entry mismatch for %s: proxy distinct=%d Loki distinct=%d", tc.ID, len(proxyEntries), len(lokiEntries))
 					}
 				case "series_count":
 					proxyCount := querySemanticsResultCount(proxyResp)

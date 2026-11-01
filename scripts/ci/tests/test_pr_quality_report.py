@@ -22,17 +22,25 @@ class ReportTests(unittest.TestCase):
     def test_query_semantics_catalog_and_live_matrix_are_separate(self):
         base, head = snapshot(), snapshot()
         base["quality_inventory"] = {"query_semantics": {"state": "available", "cases": 67,
-            "operations": 24, "depth_paths": 12, "exact_metric_points": 33, "client_errors": 8, "server_errors": 0}}
+            "operations": 24, "depth_paths": 12, "exact_metric_points": 33, "exact_log_entries": 0,
+            "performance_cases": 50, "performance_shared": 13, "performance_unshared": 37,
+            "client_errors": 8, "server_errors": 0}}
         head["quality_inventory"] = {"query_semantics": {"state": "available", "cases": 80,
-            "operations": 25, "depth_paths": 12, "exact_metric_points": 41, "client_errors": 9, "server_errors": 0}}
+            "operations": 25, "depth_paths": 12, "exact_metric_points": 41, "exact_log_entries": 29,
+            "performance_cases": 50, "performance_shared": 21, "performance_unshared": 29,
+            "client_errors": 9, "server_errors": 0}}
         evidence = {"sources": {"loki": {"state": "completed", "conclusion": "failure",
             "test_scopes": [{"state": "available", "query_semantics_matrix":
                              {"passed": 79, "failed": 1, "skipped": 0, "failed_cases": ["parser"]}}]}}}
         report = self.render(base=base, head=head, evidence=evidence)
         focus = report.split("<details>", 1)[0]
         self.assertIn("Query semantics catalog: 80 cases", focus)
+        self.assertIn("29 exact log-entry contracts", focus)
+        self.assertIn("29 performance-only scenarios", focus)
         self.assertIn("Pinned Loki query matrix: 79 passed, 1 failed, 0 skipped", focus)
         self.assertIn("| Registered cases | 67 | 80 | +13 |", report)
+        self.assertIn("| Exact log-entry contracts | 0 | 29 | +29 |", report)
+        self.assertIn("| Performance-only scenarios | 37 | 29 | -8 |", report)
         self.assertIn("| Matrix cases | 79 | 1 | 0 |", report)
         self.assertIn("Failing case IDs: parser", report)
 

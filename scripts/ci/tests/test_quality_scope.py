@@ -17,7 +17,7 @@ class SnapshotTests(unittest.TestCase):
             root = Path(directory)
             corpus = root / "test/e2e-compat"
             corpus.mkdir(parents=True)
-            matrix = {"cases": [{"id": "json", "query": "{app=\"a\"}"},
+            matrix = {"cases": [{"id": "json", "query": "{app=\"a\"}", "expectation": "success", "compare": "log_entries"},
                                 {"id": "rate", "query": "rate({app=\"a\"}[5m])"}],
                       "performance_cases": [{"id": "same", "case_id": "rate"},
                                             {"id": "other", "query": "sum(rate({app=\"a\"}[5m]))"}]}
@@ -29,6 +29,8 @@ class SnapshotTests(unittest.TestCase):
             result = query_semantics_snapshot(root)
             self.assertEqual(result["cases"], 2)
             self.assertEqual((result["performance_cases"], result["performance_shared"]), (2, 1))
+            self.assertEqual(result["performance_unshared"], 1)
+            self.assertEqual(result["exact_log_entries"], 1)
             self.assertEqual(result["depths"], {"1": 4, "2": 4, "3": 4})
             inventory["depth_paths"] = inventory["depth_paths"][:3]
             (corpus / "query-semantics-operations.json").write_text(json.dumps(inventory))

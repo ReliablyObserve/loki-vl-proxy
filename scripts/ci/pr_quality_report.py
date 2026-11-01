@@ -149,9 +149,11 @@ def query_semantics_details(base, head):
     keys = (("cases", "Registered cases"), ("operations", "Tracked operations"),
             ("depth_paths", "Parser × depth paths"),
             ("exact_metric_points", "Exact metric-point contracts"),
+            ("exact_log_entries", "Exact log-entry contracts"),
             ("client_errors", "Expected client errors"), ("server_errors", "Expected server errors"),
             ("performance_cases", "Performance scenario definitions"),
-            ("performance_shared", "Performance scenarios reusing quality cases"))
+            ("performance_shared", "Performance scenarios reusing quality cases"),
+            ("performance_unshared", "Performance-only scenarios"))
     rows = []
     for key, label in keys:
         old, new = before.get(key), after.get(key)
@@ -401,9 +403,11 @@ def render(base, head, evidence):
     semantics = mapping(inventory.get("query_semantics"))
     semantics_run = query_semantics_runtime(sources)
     if semantics.get("state") == "available":
+        strict_logs = (", " + fmt(semantics["exact_log_entries"]) + " exact log-entry contracts") if numeric(semantics.get("exact_log_entries")) else ""
+        perf_only = (", " + fmt(semantics["performance_unshared"]) + " performance-only scenarios") if numeric(semantics.get("performance_unshared")) else ""
         focus.append("Query semantics catalog: " + fmt(semantics.get("cases")) + " cases, " +
                      fmt(semantics.get("depth_paths")) + " parser × depth paths, " +
-                     fmt(semantics.get("exact_metric_points")) + " exact metric-point contracts; " +
+                     fmt(semantics.get("exact_metric_points")) + " exact metric-point contracts" + strict_logs + perf_only + "; " +
                      "declared coverage, not a live pass count. " + link(sources.get("loki", {})))
     if semantics_run:
         (urgent if semantics_run.get("failed") else focus).append(

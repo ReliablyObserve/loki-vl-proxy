@@ -4,22 +4,22 @@
     {
       "name": "selector_exact",
       "category": "selector",
-      "cases": ["selector_exact_instant", "selector_exact_range"]
+      "cases": ["selector_exact_instant", "selector_exact_range", "selector_app_exact", "selector_app_not_equal"]
     },
     {
       "name": "selector_regex",
       "category": "selector",
-      "cases": ["multi_label_regex_range", "multi_label_negative_regex", "selector_regex_prefix_is_not_substring"]
+      "cases": ["multi_label_regex_range", "multi_label_negative_regex", "selector_regex_prefix_is_not_substring", "selector_app_regex", "selector_app_not_regex"]
     },
     {
       "name": "line_filter_substring",
       "category": "line_filter",
-      "cases": ["line_filters_chained", "line_filters_chain_mixed"]
+      "cases": ["line_filters_chained", "line_filters_chain_mixed", "line_filter_contains_get", "line_filter_excludes_health", "line_filter_regex_method"]
     },
     {
       "name": "line_filter_negative_regex",
       "category": "line_filter",
-      "cases": ["line_filters_negative_regex"]
+      "cases": ["line_filters_negative_regex", "line_filter_regex_excludes_health"]
     },
     {
       "name": "parser_json",

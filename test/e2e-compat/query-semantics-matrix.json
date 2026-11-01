@@ -16,7 +16,7 @@
       "query": "{app=\"api-gateway\",namespace=\"prod\",level=\"error\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -26,7 +26,7 @@
       "query": "{app=~\"api-gateway\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -36,7 +36,7 @@
       "query": "{app=~\"api-gateway|payment-service\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -46,7 +46,7 @@
       "query": "{app=~\"api\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": false
     },
     {
@@ -56,7 +56,7 @@
       "query": "{app=\"api-gateway\",level=\"error\",env=\"production\"} |= \"error\" != \"not found\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -66,7 +66,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} |= \"api\" |~ \"GET|POST\" != \"health\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -76,7 +76,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} !~ \"sqlmap\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -86,7 +86,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -96,7 +96,7 @@
       "query": "{app=\"api-gateway\",level=\"info\",env=\"production\"} | json | duration_ms>100",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -106,7 +106,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/v1/.*\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -116,7 +116,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -126,7 +126,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status >= 500",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -136,7 +136,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -146,7 +146,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | method=\"POST\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -156,7 +156,7 @@
       "query": "{app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -166,7 +166,7 @@
       "query": "{app=\"payment-service\",env=\"production\"} | logfmt | max_conns >= 50",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -176,7 +176,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -711,7 +711,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_alias=\"{{.method}}\", status_code=\"{{.status}}\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -721,7 +721,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | keep method, path, status",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -731,7 +731,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id, upstream",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -741,7 +741,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} |= \"IMPOSSIBLE_STRING_THAT_NEVER_EXISTS_12345\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count"
+      "compare": "log_entries"
     },
     {
       "id": "invalid_metric_aggregation_on_log_query",
@@ -812,48 +812,128 @@
       "endpoint": "query",
       "query": "{app=\"api-gateway\",env=\"production\"} / 2",
       "expectation": "client_error"
+    },
+    {
+      "id": "selector_app_exact",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_regex",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=~\"api-.*\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_not_equal",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app!=\"payment-service\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_not_regex",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app!~\"nginx.*\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_contains_get",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_excludes_health",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} != \"health\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_regex_method",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} |~ \"GET|POST\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_regex_excludes_health",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} !~ \"health|ready\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
     }
   ],
   "performance_cases": [
     {
       "id": "exact_match",
       "category": "selector",
-      "query": "{app=\"api-gateway\",env=\"production\"}"
+      "case_id": "selector_app_exact"
     },
     {
       "id": "regex_match",
       "category": "selector",
-      "query": "{app=~\"api-.*\",env=\"production\"}"
+      "case_id": "selector_app_regex"
     },
     {
       "id": "not_equal",
       "category": "selector",
-      "query": "{app!=\"payment-service\",env=\"production\"}"
+      "case_id": "selector_app_not_equal"
     },
     {
       "id": "regex_not_match",
       "category": "selector",
-      "query": "{app!~\"nginx.*\",env=\"production\"}"
+      "case_id": "selector_app_not_regex"
     },
     {
       "id": "line_contains",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\""
+      "case_id": "line_filter_contains_get"
     },
     {
       "id": "line_not_contains",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} != \"health\""
+      "case_id": "line_filter_excludes_health"
     },
     {
       "id": "line_regex",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} |~ \"GET|POST\""
+      "case_id": "line_filter_regex_method"
     },
     {
       "id": "line_not_regex",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} !~ \"health|ready\""
+      "case_id": "line_filter_regex_excludes_health"
     },
     {
       "id": "json_parser",

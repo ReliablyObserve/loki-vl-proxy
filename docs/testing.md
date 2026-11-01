@@ -458,16 +458,16 @@ parser paths. The deeper parser suite adds live cases for `rate` and
 `count_over_time`, error-filter states, grouped and nested aggregations, and
 both instant and range APIs; its retained evidence is described in the
 [parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
-The 80-case semantics manifest and 132-case parser capture cover different
+The 88-case semantics manifest and 132-case parser capture cover different
 contracts; their counts should not be summed as a full Cartesian compatibility
 space.
 
-The manifest also holds 50 existing latency scenarios. Thirteen refer directly
-to quality case IDs and use the same LogQL; the remaining scenario queries live
+The manifest also holds 50 existing latency scenarios. Twenty-one refer directly
+to quality case IDs and use the same LogQL; the remaining 29 queries live
 only in this manifest. `TestParityLatency` and the focused `BenchmarkParity_*`
 helpers resolve queries from this catalog. This moves the former standalone
-performance query list into one place without adding a performance gate to this
-PR. The remaining performance-only scenarios can gain strict Loki answer
+performance query list into one place without adding a performance gate to the
+quality matrix. The remaining performance-only scenarios can gain strict Loki answer
 contracts in the matrix as their fixtures are expanded; visual proof stays in
 its separate workflow.
 The PR Quality Report compares catalog counts between base and PR without
@@ -482,7 +482,14 @@ Each manifest entry declares:
 - expected outcome: `success`, `client_error`, or `server_error`
 - expected `resultType` for valid queries
 - an explicit comparison contract; `metric_points` checks every series label set,
-  sample timestamp and numeric value, while log cases retain line-count checks
+  sample timestamp and numeric value. `log_entries` compares each stream's labels,
+  nanosecond timestamp, line and optional structured metadata as a multiset,
+  retaining duplicate entries while ignoring response order
+
+All 29 log-result cases use `log_entries`, including eight latency scenarios
+promoted to quality cases without duplicating their query strings. The comparison
+rejects malformed values, missing or extra entries, changed labels, timestamps,
+lines or metadata. It does not claim response ordering parity.
 
 The 42 `metric_points` cases reuse the sliding-range tests' decoder and point
 comparison. Label identities use canonical JSON; duplicate series or timestamps,

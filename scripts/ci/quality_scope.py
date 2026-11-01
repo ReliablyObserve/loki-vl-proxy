@@ -48,11 +48,12 @@ def query_semantics_snapshot(root):
                 raise ValueError("unknown parser depth case")
         comparison = Counter(row.get("compare", "") for row in cases if row.get("expectation") == "success")
         outcome = Counter(row.get("expectation") for row in cases)
+        shared = sum(bool(row.get("case_id")) for row in performance)
         return {"state": "available", "cases": len(cases), "operations": len(operations),
                 "performance_cases": len(performance),
-                "performance_shared": sum(bool(row.get("case_id")) for row in performance),
+                "performance_shared": shared, "performance_unshared": len(performance) - shared,
                 "depth_paths": len(paths), "depths": {str(i): depth[i] for i in (1, 2, 3)},
-                "exact_metric_points": comparison["metric_points"],
+                "exact_metric_points": comparison["metric_points"], "exact_log_entries": comparison["log_entries"],
                 "client_errors": outcome["client_error"], "server_errors": outcome["server_error"]}
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         return {"state": "unavailable", "note": "Matrix or inventory missing, malformed or inconsistent."}
