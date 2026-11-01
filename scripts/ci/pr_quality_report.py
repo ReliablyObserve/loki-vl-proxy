@@ -109,10 +109,10 @@ def test_details(base, head, ci):
     return lines
 
 
-def bench_details(base, head):
-    if head.get("performance", {}).get("mode") == "skipped":
-        return ["Skipped: no performance-sensitive paths changed."]
-    b, h = (s.get("performance", {}).get("benchmarks", {}) for s in (base, head))
+def paired_benchmarks(base, head):
+    if mapping(head.get("performance")).get("mode") == "skipped":
+        return []
+    b, h = (mapping(mapping(s.get("performance")).get("benchmarks")) for s in (base, head))
     rows = []
     for prefix, label in (("query_range_cache_hit", "QueryRange cache-hit"), ("query_range_cache_bypass", "QueryRange cache-bypass"), ("labels_cache_hit", "Labels cache-hit"), ("labels_cache_bypass", "Labels cache-bypass")):
         for axis, unit, noun, pct, absolute, minimum in (("ns_per_op", " ns/op", "elapsed", 25, 750, 500), ("bytes_per_op", " B/op", "allocated bytes", 15, 32, 64), ("allocs_per_op", " allocs/op", "allocations", 15, 1, 1)):
@@ -123,8 +123,68 @@ def bench_details(base, head):
                 absolute = {"ns_per_op": 1500, "bytes_per_op": 600, "allocs_per_op": 18}[axis]
             elif prefix == "labels_cache_bypass" and axis == "allocs_per_op":
                 absolute = 12
-            rows.append([f"{label} {noun}", fmt(b.get(key), unit), fmt(h.get(key), unit), delta(b.get(key), h.get(key), pct=pct, absolute=absolute, minimum=minimum)])
-    return ["Synthetic handler elapsed time and allocations; not process CPU, RSS or physical disk I/O. Repeated-sample medians.", "", *table(["Signal", "Base", "PR", "Delta"], rows), "", "Labels follow the existing gate percentage, absolute and low-baseline guards, including pooled-path allowances."]
+            before, after = b.get(key), h.get(key)
+            comparable = numeric(before) and numeric(after) and before > 0 and after >= 0
+            change = delta(before, after, pct=pct, absolute=absolute, minimum=minimum) if comparable else "n/a"
+            state = "regressed" if "regressed" in change else "improved" if "improved" in change else "stable" if comparable else "unavailable"
+            rows.append({"case": prefix, "label": f"{label} {noun}", "base": before, "head": after, "unit": unit, "delta": change, "state": state})
+    return rows
+
+
+def candidate_benchmarks(ci):
+    sample = mapping(ci.get("ci-handler-benchmarks.json"))
+    if sample.get("state") != "available":
+        return []
+    return [row for row in records(sample.get("cases"))[:128]
+            if isinstance(row.get("name"), str) and numeric(row.get("samples")) and 0 < row["samples"] <= 32
+            and all(numeric(row.get(axis)) and row[axis] >= 0 for axis in ("ns_per_op", "bytes_per_op", "allocs_per_op"))]
+
+
+def bench_summary(base, head, ci):
+    rows = paired_benchmarks(base, head)
+    comparable = [row for row in rows if row["state"] != "unavailable"]
+    signals = []
+    if comparable:
+        counts = {state: sum(row["state"] == state for row in comparable) for state in ("regressed", "improved", "stable")}
+        cases = len({row['case'] for row in comparable})
+        text = f"Synthetic handlers: {cases} paired {'case' if cases == 1 else 'cases'}; " + ", ".join(f"{count} {state}" for state, count in counts.items()) + " metric axes."
+        examples = sorted((row for row in comparable if row["state"] != "stable"), key=lambda row: (row["state"] != "regressed", row["label"]))[:3]
+        if examples:
+            text += " " + "; ".join(cell(row["label"]) + " " + row["delta"] for row in examples) + "."
+        signals.append((bool(counts["regressed"]), text, "quality"))
+    else:
+        note = "skipped (no performance-sensitive paths changed)" if mapping(head.get("performance")).get("mode") == "skipped" else "no comparable paired metrics"
+        signals.append((False, "Synthetic handlers: " + note + "; no improvement inferred.", "quality"))
+    extra = candidate_benchmarks(ci)
+    if extra:
+        signals.append((False, f"{len(extra)} cases from the broader CI handler run (candidate only; no paired base or regression delta). See the synthetic microbenchmark details.", "ci"))
+    return signals
+
+
+def bench_details(base, head, ci):
+    rows = paired_benchmarks(base, head)
+    order = {"regressed": 0, "improved": 1, "unavailable": 2, "stable": 3}
+    rows.sort(key=lambda row: (order[row["state"]], row["label"]))
+    lines = ["Synthetic handler elapsed time and allocations; not process CPU, RSS or physical disk I/O. Repeated-sample medians.", "",
+             *table(["Signal", "Base", "PR", "Delta"], [[cell(row["label"]), fmt(row["base"], row["unit"]), fmt(row["head"], row["unit"]), row["delta"]] for row in rows]), "",
+             "Labels follow the existing gate percentage, absolute and low-baseline guards, including pooled-path allowances."]
+    if not rows:
+        lines += ["Skipped: no performance-sensitive paths changed." if mapping(head.get("performance")).get("mode") == "skipped" else "Paired base/PR measurements unavailable."]
+    extra = candidate_benchmarks(ci)
+    if extra:
+        def elapsed(ns):
+            return fmt(ns / 1e6, " ms") if ns >= 1e6 else fmt(ns / 1000, " µs") if ns >= 1000 else fmt(ns, " ns")
+        # Preserve all observed cases in a bounded table; never rank unrelated
+        # fixtures as though one being slower means a regression.
+        lines += ["", "Additional existing CI handler benchmarks (candidate only). No paired base in this artifact; no speedup or regression is inferred. Separate runner/CPU settings from the paired quality samples above. Samples are observed repeats, not statistical confidence.", "",
+                  *table(["Handler / fixture", "CPU setting", "Samples", "Elapsed/op", "Allocated B/op", "Allocs/op"],
+                         [[cell(row["name"].removeprefix("BenchmarkProxy_")), fmt(row.get("cpu")), fmt(row["samples"]), elapsed(row["ns_per_op"]), fmt(row["bytes_per_op"]), fmt(row["allocs_per_op"])] for row in extra[:40]]), "",
+                  f"Showing {min(40, len(extra))}/{len(extra)} candidate cases; all raw samples remain in the linked CI benchmarks artifact."]
+        if mapping(ci.get("ci-handler-benchmarks.json")).get("job_conclusion") != "success":
+            lines += ["The producing benchmark job did not succeed; these are partial observed samples, not a completed performance check."]
+    elif ci.get("ci-handler-benchmarks.json"):
+        lines += ["", "Additional CI handler samples unavailable: source/format verification did not produce current usable evidence."]
+    return lines
 
 
 def perf_rows(artifacts):
@@ -296,6 +356,8 @@ def render(base, head, evidence):
             elif numeric(btrack.get("pct")) and numeric(htrack.get("pct")) and htrack["pct"] < btrack["pct"]:
                 focus.append(f"{label} selected smoke score decreased: {fmt(btrack['pct'], '%')} → {fmt(htrack['pct'], '%')}. " + link(sources.get("quality", {})))
     perf, visual, ci = (data(sources, name) for name in ("perf", "visual", "ci"))
+    for regressed, signal, source in bench_summary(base, head, ci):
+        (urgent if regressed else focus).append(signal + " " + link(sources.get(source, {})))
     verdict = mapping(perf.get("verdict.json"))
     if verdict:
         if verdict.get("state") in ("invalid", "error", "failed"):
@@ -375,7 +437,7 @@ def render(base, head, evidence):
     fleet = fleet_details(ci)
     if fleet:
         lines += fold("Distributed cache: candidate only", fleet)
-    lines += fold("Synthetic handler microbenchmarks", bench_details(base, head))
+    lines += fold("Synthetic handler microbenchmarks", bench_details(base, head, ci))
     if jobs:
         lines += fold("CI regression checks", table(["Source / check", "State", "Result"], [[cell(name) + " / " + cell(j.get("name")), cell(j.get("status")), cell(j.get("conclusion") or "unavailable")] for name, j in jobs[:60]]) + ["", f"Showing {min(60, len(jobs))}/{len(jobs)} checks; failed and pending checks first. Full job lists remain in the linked runs."])
     lines += ["Required checks decide merge safety. This report summarizes selected evidence; rendering starts no tests or heavy workloads.", ""]

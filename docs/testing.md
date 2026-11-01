@@ -609,6 +609,21 @@ commit and workflow attempt identify each source. Missing, expired or stale
 artifacts contribute no measurements; the publisher rechecks revisions before
 updating the comment.
 
+Synthetic handler microbenchmarks reuse two existing sources. The quality
+snapshots pair QueryRange and Labels cache-hit/bypass samples on one runner;
+the summary counts comparable cases and regressed/improved/stable metric axes
+using the existing percentage, absolute and low-baseline guards. Significant
+examples appear above the collapsed details; the quality gate is unchanged.
+The CI `benchmarks` artifact adds observed handler cases for series, detected
+fields/values, multi-tenant requests, label cardinality and patterns. Those
+samples have no paired base in that artifact and never receive regression or
+speedup deltas. Their medians, repeat counts and CPU settings remain separate
+from the paired quality run. The producing job's checkout must match the PR
+head or tested merge; missing or stale identity contributes no measurements.
+Both sources measure synthetic elapsed time and allocations, not whole-process
+CPU, RSS, physical I/O or production request latency. The report starts no
+additional benchmark runs. Raw samples remain in the linked existing CI run.
+
 The collapsed sections include test/subtest outcomes and coverage, selected
 smoke contracts, real-query base/PR/Loki latency and answer comparisons, visual
 proofs, and candidate-only RF1/RF2 fleet evidence. Fleet process CPU, sampled RSS,

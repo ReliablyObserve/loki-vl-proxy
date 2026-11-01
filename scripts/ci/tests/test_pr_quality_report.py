@@ -19,6 +19,36 @@ def snapshot(count=10, coverage=85):
 
 
 class ReportTests(unittest.TestCase):
+    def test_handler_summary_highlights_guarded_regressions(self):
+        base, head = snapshot(), snapshot()
+        head["performance"]["benchmarks"].update(query_range_cache_hit_ns_per_op=3000, query_range_cache_hit_bytes_per_op=1000)
+        report = self.render(base=base, head=head)
+        focus = report.split("<details>", 1)[0]
+        self.assertIn("Synthetic handlers: 1 paired case; 2 regressed, 0 improved, 1 stable metric axes", focus)
+        self.assertIn("QueryRange cache-hit elapsed", focus)
+        self.assertIn("allocated bytes", focus)
+
+    def test_additional_handler_cases_are_candidate_only(self):
+        evidence = {"sources": {"ci": {"state": "completed", "conclusion": "success", "artifacts": {
+            "ci-handler-benchmarks.json": {"state": "available", "source": "h", "cases": [
+                {"name": "BenchmarkProxy_Series_CompatCacheHit", "cpu": 8, "samples": 3, "ns_per_op": 2000, "bytes_per_op": 30, "allocs_per_op": 3},
+                {"name": "BenchmarkProxy_DetectedFields_CompatCacheHit_DelayedBackend", "cpu": 8, "samples": 3, "ns_per_op": 3000, "bytes_per_op": 40, "allocs_per_op": 4}]}}}}}
+        report = self.render(evidence=evidence)
+        self.assertIn("2 cases from the broader CI handler run (candidate only", report.split("<details>", 1)[0])
+        self.assertIn("Series", report)
+        self.assertIn("DetectedFields", report)
+        self.assertIn("No paired base in this artifact", report)
+        self.assertIn("2 µs", report)
+
+    def test_handler_summary_does_not_infer_delta_from_missing_or_zero_base(self):
+        base, head = snapshot(), snapshot()
+        base["performance"]["benchmarks"] = {"query_range_cache_hit_ns_per_op": 0}
+        report = self.render(base=base, head=head)
+        focus = report.split("<details>", 1)[0]
+        self.assertNotIn("1 paired cases", focus)
+        self.assertNotIn("regressed metric", focus)
+        self.assertIn("no comparable paired metrics", focus)
+
     def test_report_labels_read_only_endpoint_population(self):
         inventory = {"state": "available", "endpoint_scope": "loki-read-api", "endpoints": {
             "total": 32, "implemented": 22, "differential": 18, "declared_proven": 11},

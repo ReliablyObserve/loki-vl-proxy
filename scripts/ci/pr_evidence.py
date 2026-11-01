@@ -3,9 +3,11 @@
 import argparse
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import statistics
 import subprocess
 import urllib.error
 import urllib.parse
@@ -21,6 +23,7 @@ ARTIFACTS = {
     "perf": {"perf-ab-smoke": {"meta.json", "verdict.json", "summary-*.json"}},
     "visual": {"visual-quality-evidence": {"meta.json", "plan.json", "compare.json", "verdict.json"}},
     "ci": {"unit-results": {"unit-results.json", "quality-meta.json"}, "coverage": {"coverage.out", "coverage-cache.out"},
+           "benchmarks": {"bench-results.txt"},
            "fleet-peer-cache-proof": {"fleet-peer-cache-proof-rf1.json", "fleet-peer-cache-proof-rf2.json", "fleet-meta.json"}},
 }
 
@@ -51,7 +54,7 @@ def read_artifact(raw, allowed):
             if item.file_size > limit or name in result:
                 raise ValueError("oversized or duplicate artifact member")
             value = archive.read(item).decode("utf-8")
-            if name in {"unit-results.json", "coverage.out", "coverage-cache.out"}:
+            if name in {"unit-results.json", "coverage.out", "coverage-cache.out", "bench-results.txt"}:
                 result[name] = value
             else:
                 value = strict_json(value)
@@ -172,6 +175,60 @@ def api_test_job(kind, name):
             or kind == "drilldown" and (name == "drilldown-pinned-runtime" or name.startswith("drilldown-grafana-pr-matrix (")))
 
 
+def handler_benchmarks(text):
+    """Read existing Go benchmark output, keeping CPU variants separate."""
+    families = ("QueryRange", "Labels", "Series", "DetectedFields", "DetectedFieldValues",
+                "MultiTenantQueryRange", "MultiTenantLabels", "LabelKeys", "LabelValues", "Patterns")
+    groups = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts or not any(parts[0].startswith("BenchmarkProxy_" + family + "_") for family in families):
+            continue
+        if len(line) > 2048 or len(parts) < 8 or len(parts) % 2 or not parts[1].isdigit() or int(parts[1]) <= 0:
+            raise ValueError("malformed handler benchmark")
+        match = re.fullmatch(r"(.+)-([1-9][0-9]*)", parts[0])
+        name, cpu = (match[1], int(match[2])) if match else (parts[0], None)
+        if len(name) > 256:
+            raise ValueError("benchmark name exceeds limit")
+        axes = {}
+        for value, unit in zip(parts[2::2], parts[3::2]):
+            if unit not in {"ns/op", "B/op", "allocs/op"}:
+                continue
+            number = float(value)
+            if unit in axes or not math.isfinite(number) or number < 0:
+                raise ValueError("invalid benchmark sample")
+            axes[unit] = number
+        if len(axes) != 3:
+            raise ValueError("incomplete benchmark sample")
+        samples = groups.setdefault((name, cpu), [])
+        if len(groups) > 128 or len(samples) >= 32:
+            raise ValueError("benchmark population exceeds limit")
+        samples.append(axes)
+    return [{"name": name, "cpu": cpu, "samples": len(samples),
+             **{axis: statistics.median(sample[unit] for sample in samples)
+                for axis, unit in (("ns_per_op", "ns/op"), ("bytes_per_op", "B/op"), ("allocs_per_op", "allocs/op"))}}
+            for (name, cpu), samples in sorted(groups.items(), key=lambda item: (item[0][0], item[0][1] or 0))]
+
+
+def collect_handler_benchmarks(api, jobs, files, context):
+    # Benchmarks have no embedded metadata. Verify the producing job's actual
+    # checkout from its existing log, rather than borrowing another job's meta.
+    job = next((j for j in jobs if j["name"] == "bench" and j.get("status") == "completed" and j.get("conclusion") != "skipped"), None)
+    try:
+        if not job:
+            raise ValueError("benchmark job unavailable")
+        log = api.request(f"actions/jobs/{int(job['id'])}/logs", binary=True).decode("utf-8", errors="replace")
+        source = log_scope(log, context).get("source")
+        if source is None or source not in {context.get("head"), context.get("merge")}:
+            raise ValueError("benchmark checkout unavailable or stale")
+        cases = handler_benchmarks(files.get("bench-results.txt", ""))
+        if not cases:
+            raise ValueError("no handler samples")
+        return {"state": "available", "source": source, "job_conclusion": job.get("conclusion"), "cases": cases}
+    except (ValueError, TypeError, OSError, AttributeError, OverflowError):
+        return {"state": "unavailable", "note": "Handler benchmark artifact or current checkout could not be verified; no comparison inferred."}
+
+
 class GitHub:
     def __init__(self, repository, token):
         if not re.fullmatch(r"[\w.-]+/[\w.-]+", repository):
@@ -255,6 +312,9 @@ def collect(api, pr):
                 if artifact.get("size_in_bytes", 0) > MAX_ARCHIVE:
                     raise ValueError("artifact exceeds download limit")
                 files = read_artifact(api.request(f"actions/artifacts/{int(artifact['id'])}/zip", binary=True), allowed)
+                if name == "benchmarks":
+                    source["artifacts"]["ci-handler-benchmarks.json"] = collect_handler_benchmarks(api, jobs, files, context)
+                    continue
                 meta_name = "fleet-meta.json" if name == "fleet-peer-cache-proof" else "quality-meta.json" if kind in {"ci", "quality"} else "meta.json"
                 if name != "coverage" and not current_meta(files.get(meta_name, {}), context, kind):
                     source["note"] = "Some artifacts have missing or stale source identity; measurements omitted."
