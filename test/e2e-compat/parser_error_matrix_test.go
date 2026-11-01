@@ -143,15 +143,18 @@ func TestChaining_ParserErrorNestedAggregations(t *testing.T) {
 // their category and text, including whether parsing or evaluation failed.
 func recordParserMatrixResponse(t *testing.T, params url.Values, status int, body []byte) {
 	t.Helper()
+	var responseBody any = string(body)
 	if status == http.StatusOK {
 		var response parserErrorMetricResponse
 		if json.Unmarshal(body, &response) == nil {
-			if normalized, err := json.Marshal(response); err == nil {
-				body = normalized
-			}
+			responseBody = response
 		}
 	}
-	t.Logf("matrix_response request=%s status=%d response=%s", params.Encode(), status, body)
+	record, err := json.Marshal(map[string]any{"params": params, "status": status, "response": responseBody})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("matrix_response %s", record)
 }
 
 func assertParserMatrixResult(t *testing.T, status int, body []byte, wantStatus int, mode, key string, want map[string]float64, evaluation time.Time, wantError string) {
