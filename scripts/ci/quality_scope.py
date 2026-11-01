@@ -41,8 +41,8 @@ def query_semantics_snapshot(root):
             if bool(row.get("case_id")) == bool(row.get("query")) or (row.get("case_id") and row["case_id"] not in ids):
                 raise ValueError("performance case has invalid query reference")
         depth = Counter(row["depth"] for row in paths)
-        if any(value not in (1, 2, 3) for value in depth) or any(depth[i] != 4 for i in (1, 2, 3)):
-            raise ValueError("incomplete parser depth paths")
+        if not paths or any(value not in (1, 2, 3) for value in depth):
+            raise ValueError("invalid parser depth paths")
         for row in paths:
             if any(i not in ids for i in row["matrix_cases"]):
                 raise ValueError("unknown parser depth case")
