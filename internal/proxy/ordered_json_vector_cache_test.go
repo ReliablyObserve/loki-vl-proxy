@@ -18,16 +18,24 @@ func TestOrderedJSONVectorResponseVersionScope(t *testing.T) {
 		`max(sum by(cluster)(rate({app="a"}|json[1m])))`,
 		`topk(1,sum by(cluster)(count_over_time({app="a"}|json[1m])))`,
 		`avg(sum by(cluster)(rate({app="a"}|json[$__auto])))`,
+		`max(sum by(cluster)(rate({app="a"}|json[1m] offset 1h)))`,
+		`max(sum by(cluster)(rate({app="a"}|json[1m]))) + 1`,
+		`sum(max(sum by(cluster)(rate({app="a"}|json[1m]))) + 1)`,
+		`sort_desc(max(sum by(cluster)(rate({app="a"}|json[1m]))))`,
+		`stddev(max(sum by(cluster)(rate({app="a"}|json[1m]))))`,
+		`max(sum by(cluster)(rate({app="a"}|json[1m] offset 0s)))`,
 	} {
 		if got := orderedJSONVectorResponseKeyVersion(r, query); got != orderedJSONVectorResponseVersion {
 			t.Fatalf("unfenced nested expression: %s version=%q", query, got)
+		}
+		if queryStepsShape(query, 2*time.Minute) {
+			t.Fatalf("affected expression admitted to old generic fragments: %s", query)
 		}
 	}
 	for _, query := range []string{
 		`{app="a"}`, `sum by(cluster)(rate({app="a"}|json[1m]))`,
 		`max(sum by(cluster)(rate({app="a"}|logfmt[1m])))`,
 		`max(sum by(cluster)(rate({app="a"}[1m])))`,
-		`max(sum by(cluster)(rate({app="a"}|json[1m] offset 1h)))`,
 	} {
 		if got := orderedJSONVectorResponseKeyVersion(r, query); got != "" {
 			t.Fatalf("unrelated key would change: %s version=%q", query, got)
@@ -43,16 +51,24 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC()
 	shape := dlvBaselineShape{name: "nested-valid", pipeline: `| json | __error__=""`}
 	for _, setup := range []struct {
-		mode  string
-		tier0 bool
-	}{{"query_range", false}, {"query_range", true}, {"query", true}} {
-		t.Run(setup.mode+"/tier0="+strconv.FormatBool(setup.tier0), func(t *testing.T) {
+		mode     string
+		tier0    bool
+		offset   time.Duration
+		addition bool
+	}{{"query_range", false, 0, false}, {"query_range", true, 0, false}, {"query", true, 0, false}, {"query_range", false, time.Minute, false}, {"query_range", true, time.Minute, false}, {"query", true, time.Minute, false}, {"query_range", true, 0, true}, {"query", true, 0, true}} {
+		t.Run(setup.mode+"/tier0="+strconv.FormatBool(setup.tier0)+"/offset="+setup.offset.String()+"/addition="+strconv.FormatBool(setup.addition), func(t *testing.T) {
 			backend, fixture := newDLVBaselineBackend(t, shape, base)
 			p := newDLVBaselineProxy(t, backend.URL, setup.tier0)
 			seen := map[string]bool{}
 			for _, identity := range []struct{ tenant, account, credential string }{{"team-a", "10", "alpha"}, {"team-b", "20", "alpha"}, {"team-a", "10", "beta"}} {
 				from, to := base.Add(time.Minute), base.Add(3*time.Minute)
 				query := `max(sum by(detected_level)(count_over_time({app="api"}|json|__error__=""[1m])))`
+				if setup.offset != 0 {
+					query = strings.Replace(query, "[1m]", "[1m] offset "+strconv.FormatInt(int64(setup.offset/time.Second), 10)+"s", 1)
+				}
+				if setup.addition {
+					query += " + 1"
+				}
 				params := url.Values{"query": {query}, "start": {strconv.FormatInt(from.UnixNano(), 10)}, "end": {strconv.FormatInt(to.UnixNano(), 10)}, "step": {"60"}}
 				if setup.mode == "query" {
 					from = to
@@ -107,13 +123,19 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 					t.Fatalf("unexpected result: %s", first.Body)
 				}
 				want := map[int64]int{}
-				for _, points := range dlvBaselineWant(fixture.rows, shape, from, to, identity.account, identity.credential) {
+				for _, points := range dlvBaselineWant(fixture.rows, shape, from.Add(-setup.offset), to.Add(-setup.offset), identity.account, identity.credential) {
 					for stamp, raw := range points {
+						stamp += int64(setup.offset / time.Second)
 						n, err := strconv.Atoi(raw)
 						if err != nil {
 							t.Fatal(err)
 						}
 						want[stamp] = max(want[stamp], n)
+					}
+				}
+				if setup.addition {
+					for stamp, n := range want {
+						want[stamp] = n + 1
 					}
 				}
 				points := response.Data.Result[0].Values
@@ -133,6 +155,11 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 					if err != nil || n != want[stamp] {
 						t.Fatalf("wrong aggregate point %s want=%v", point, want)
 					}
+				}
+				if setup.offset != 0 && !setup.tier0 {
+					// The range handler disables primary exact-cache writes after
+					// shifting the axis; its earlier lookup must still be fenced.
+					continue
 				}
 				if stored, _, ok := store.GetWithTTL(key); !ok || !bytes.Equal(stored, first.Body.Bytes()) {
 					t.Fatal("correct new reply not retained under new identity")

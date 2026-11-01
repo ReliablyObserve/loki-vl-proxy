@@ -21,10 +21,25 @@ func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
 		return ""
 	}
 	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if _, _, ok := orderedJSONVectorPlan(query); ok {
+	if affectedOrderedJSONVectorQuery(query) {
 		return orderedJSONVectorResponseVersion
 	}
 	return ""
+}
+
+func affectedOrderedJSONVectorQuery(query string) bool {
+	if !orderedJSONVectorCandidate(query) {
+		return false
+	}
+	if strings.Contains(query, "offset") {
+		_, stripped, err := extractLogQLOffset(query)
+		if err != nil {
+			return false
+		}
+		query = stripped
+	}
+	expr, err := logqlpkg.Parse(query)
+	return err == nil && containsOrderedJSONVectorExpr(expr)
 }
 
 // orderedJSONVectorPlan keeps the innermost sum's parser hints and ordered
@@ -32,13 +47,37 @@ func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
 // turn parser failures into successful samples or discard its error filters.
 // Read the AST directly: its display rendering need not preserve pipeline text.
 func orderedJSONVectorPlan(query string) (*orderedJSONMetricPlan, []*logqlpkg.VectorAggregation, bool) {
-	if !strings.Contains(query, "json") || (!translator.HasNestedVectorKeywords(query) && !strings.Contains(query, "topk") && !strings.Contains(query, "bottomk")) {
+	if !orderedJSONVectorCandidate(query) {
 		return nil, nil, false
 	}
 	expr, err := logqlpkg.Parse(query)
 	if err != nil {
 		return nil, nil, false
 	}
+	return orderedJSONVectorExpr(expr)
+}
+
+func orderedJSONVectorCandidate(query string) bool {
+	return strings.Contains(query, "json") && (translator.HasNestedVectorKeywords(query) || strings.Contains(query, "topk") || strings.Contains(query, "bottomk"))
+}
+
+// A parent expression can cache an answer evaluated through a nested operand.
+// Walk the AST rather than rendering it, which can lose ordered pipeline text.
+func containsOrderedJSONVectorExpr(expr logqlpkg.Expr) bool {
+	if _, _, ok := orderedJSONVectorExpr(expr); ok {
+		return true
+	}
+	switch e := expr.(type) {
+	case *logqlpkg.VectorAggregation:
+		return containsOrderedJSONVectorExpr(e.Inner)
+	case *logqlpkg.BinOpExpr:
+		return containsOrderedJSONVectorExpr(e.Left) || containsOrderedJSONVectorExpr(e.Right)
+	default:
+		return false
+	}
+}
+
+func orderedJSONVectorExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, []*logqlpkg.VectorAggregation, bool) {
 	var outer []*logqlpkg.VectorAggregation
 	for {
 		agg, ok := expr.(*logqlpkg.VectorAggregation)
