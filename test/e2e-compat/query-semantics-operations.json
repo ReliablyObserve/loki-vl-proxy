@@ -24,37 +24,37 @@
     {
       "name": "parser_json",
       "category": "parser",
-      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum"]
+      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum", "perf_json_parser", "perf_json_field_ne", "perf_json_field_regex", "perf_json_field_gt", "perf_json_two_field_filters", "perf_line_filter_then_json"]
     },
     {
       "name": "parser_logfmt",
       "category": "parser",
-      "cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum"]
+      "cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum", "perf_logfmt_parser"]
     },
     {
       "name": "parser_regexp",
       "category": "parser",
-      "cases": ["regexp_pipeline_field_filter", "regexp_numeric_filter", "regexp_rate_numeric_filter", "regexp_rate_numeric_outer_sum"]
+      "cases": ["regexp_pipeline_field_filter", "regexp_numeric_filter", "regexp_rate_numeric_filter", "regexp_rate_numeric_outer_sum", "perf_regexp_parser"]
     },
     {
       "name": "parser_pattern",
       "category": "parser",
-      "cases": ["pattern_pipeline_field_filter", "pattern_method_filter", "pattern_rate_method_filter", "pattern_rate_method_outer_sum"]
+      "cases": ["pattern_pipeline_field_filter", "pattern_method_filter", "pattern_rate_method_filter", "pattern_rate_method_outer_sum", "perf_pattern_parser"]
     },
     {
       "name": "format_line",
       "category": "formatting",
-      "cases": ["json_then_line_format"]
+      "cases": ["json_then_line_format", "perf_line_format", "perf_json_filter_format"]
     },
     {
       "name": "format_label",
       "category": "formatting",
-      "cases": ["label_format_pipeline"]
+      "cases": ["label_format_pipeline", "perf_label_format", "perf_label_format_multiple"]
     },
     {
       "name": "format_keep_drop",
       "category": "formatting",
-      "cases": ["keep_pipeline", "drop_pipeline"]
+      "cases": ["keep_pipeline", "drop_pipeline", "perf_drop_single", "perf_keep_multiple", "perf_drop_error"]
     },
     {
       "name": "metric_count_rate",

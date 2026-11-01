@@ -458,16 +458,16 @@ parser paths. The deeper parser suite adds live cases for `rate` and
 `count_over_time`, error-filter states, grouped and nested aggregations, and
 both instant and range APIs; its retained evidence is described in the
 [parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
-The 88-case semantics manifest and 132-case parser capture cover different
+The 104-case semantics manifest and 132-case parser capture cover different
 contracts; their counts should not be summed as a full Cartesian compatibility
 space.
 
-The manifest also holds 50 existing latency scenarios. Twenty-one refer directly
-to quality case IDs and use the same LogQL; the remaining 29 queries live
+The manifest also holds 50 existing latency scenarios. Thirty-seven refer directly
+to quality case IDs and use the same LogQL; the remaining 13 metric queries live
 only in this manifest. `TestParityLatency` and the focused `BenchmarkParity_*`
 helpers resolve queries from this catalog. This moves the former standalone
 performance query list into one place without adding a performance gate to the
-quality matrix. The remaining performance-only scenarios can gain strict Loki answer
+quality matrix. The remaining metric performance-only scenarios can gain strict Loki answer
 contracts in the matrix as their fixtures are expanded; visual proof stays in
 its separate workflow.
 The PR Quality Report compares catalog counts between base and PR without
@@ -491,7 +491,7 @@ Each manifest entry declares:
   nanosecond timestamp, line and optional structured metadata as a multiset,
   retaining duplicate entries while ignoring response order
 
-All 29 log-result cases use `log_entries`, including eight latency scenarios
+All 45 log-result cases use `log_entries`, including all 24 log latency scenarios
 promoted to quality cases without duplicating their query strings. The comparison
 rejects malformed values, missing or extra entries, changed labels, timestamps,
 lines or metadata. The manifest validator rejects the former line-count-only
