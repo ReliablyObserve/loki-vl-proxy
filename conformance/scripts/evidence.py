@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from registry_io import dump_json, load_json, read_text  # noqa: E402
+from wire import TEST_DIRS  # noqa: E402
 
 ROOT = "conformance/registry"
 GO_MARKER = re.compile(r'//\s*conformance:\s*(.+)')
@@ -32,9 +33,11 @@ TS_MARKER = re.compile(r'@cov:([A-Za-z0-9_/\-]+)')
 
 
 def declared_items():
-    """test name -> [registry ids], read from the markers in the tree."""
+    """(runner, package, test) -> registry ids from the existing markers."""
     claims = {}
-    for directory in ("internal", "test"):
+    module = re.search(r'^module\s+"?([^"\s]+)',
+                       read_text("go.mod") if os.path.exists("go.mod") else "", re.M)
+    for directory in TEST_DIRS:
         for current, _, files in os.walk(directory):
             for name in files:
                 path = os.path.join(current, name)
@@ -48,7 +51,9 @@ def declared_items():
                             continue
                         func = re.match(r'func (Test\w+|Fuzz\w+)\(', line)
                         if func and pending:
-                            claims.setdefault(func.group(1), []).extend(pending)
+                            package = "/".join(filter(None, (module.group(1) if module else "",
+                                                             current.replace(os.sep, "/"))))
+                            claims.setdefault(("go", package, func.group(1)), []).extend(pending)
                             pending = []
                         elif func:
                             pending = []
@@ -58,12 +63,12 @@ def declared_items():
                         found = TS_MARKER.findall(line)
                         title = re.search(r"test\(\s*['\"]([^'\"]+)['\"]", line)
                         if found and title:
-                            claims.setdefault(title.group(1), []).extend(found)
+                            claims.setdefault(("playwright", "", title.group(1)), []).extend(found)
     return claims
 
 
 def go_results(path):
-    """test name -> (outcome, seconds, package) from `go test -json`."""
+    """Retain package and full subtest identity from `go test -json`."""
     results = {}
     for line in read_text(path, errors="ignore").split("\n"):
         line = line.strip()
@@ -74,14 +79,45 @@ def go_results(path):
         except json.JSONDecodeError:
             continue
         if event.get("Action") in ("pass", "fail", "skip") and event.get("Test"):
-            name = event["Test"].split("/")[0]
-            outcome = event["Action"]
-            previous = results.get(name)
-            # a failing subtest fails the whole test
-            if previous and previous[0] == "fail":
-                continue
-            results[name] = (outcome, event.get("Elapsed", 0.0), event.get("Package", ""))
+            package = event.get("Package", "")
+            key = ("go", package, event["Test"])
+            merge_results(results, {key: (event["Action"], event.get("Elapsed", 0.0), package)})
     return results
+
+
+def merge_results(results, incoming):
+    """A rerun cannot hide a failure, nor can a skip erase a passing run."""
+    priority = {"skip": 0, "pass": 1, "fail": 2}
+    for key, value in incoming.items():
+        previous = results.get(key)
+        if previous is None or priority[value[0]] >= priority[previous[0]]:
+            results[key] = value
+
+
+def subtest_results(results):
+    """Index children once rather than scanning the full CI log for each claim."""
+    children = {}
+    for (runner, package, name), (action, seconds, _) in sorted(results.items()):
+        if runner == "go" and "/" in name:
+            key = (runner, package, name.split("/", 1)[0])
+            children.setdefault(key, []).append({
+                "test": name, "outcome": action, "seconds": round(seconds, 3)})
+    return children
+
+
+def test_result(key, results, children):
+    """Keep the parent summary while retaining every observed child outcome."""
+    runner, package, test = key
+    outcome, seconds, observed_package = results.get(key, ("not-run", 0.0, package))
+    if runner == "go":
+        if children and key not in results:
+            outcome = "incomplete"
+        if any(child["outcome"] == "fail" for child in children):
+            outcome = "fail"
+    row = {"test": test, "package": observed_package, "outcome": outcome, "seconds": round(seconds, 3)}
+    if children:
+        row["subtests"] = children
+    return row
 
 
 def playwright_results(path):
@@ -126,17 +162,18 @@ def main():
     claims = declared_items()
     results = {}
     for path in args.go:
-        results.update(go_results(path))
+        merge_results(results, go_results(path))
     for path in args.playwright:
-        results.update(playwright_results(path))
+        merge_results(results, {("playwright", "", test): result
+                                for test, result in playwright_results(path).items()})
 
     evidence = {}
-    for test, items in claims.items():
-        outcome, seconds, package = results.get(test, ("not-run", 0.0, ""))
-        for identifier in items:
+    children = subtest_results(results)
+    for key, items in claims.items():
+        row = test_result(key, results, children.get(key, []))
+        for identifier in sorted(set(items)):
             evidence.setdefault(identifier, []).append({
-                "test": test, "package": package, "outcome": outcome,
-                "seconds": round(seconds, 3), "commit": commit, "recorded": recorded,
+                **row, "commit": commit, "recorded": recorded,
             })
 
     os.makedirs(os.path.join(ROOT, "generated"), exist_ok=True)

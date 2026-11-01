@@ -1,10 +1,12 @@
 import importlib.util
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -30,6 +32,156 @@ class EvidenceTests(unittest.TestCase):
     def test_archive_reads_selected_data_without_extracting_paths(self):
         payload = archive({"meta.json": {"head": "a"}, "../verdict.json": {"exit": 0}, "x.png": "ignored"})
         self.assertEqual(self.m.read_artifact(payload, {"meta.json", "verdict.json"}), {"meta.json": {"head": "a"}})
+
+    def test_conformance_summary_deduplicates_registry_links_and_keeps_paths(self):
+        commit = "a" * 40
+        def row(outcome="pass", package="p", children=None):
+            return {"test": "TestPipeline", "package": package, "outcome": outcome, "seconds": .1,
+                    "commit": commit, "recorded": "2026-11-01T00:00:00Z", **({"subtests": children} if children else {})}
+        children = [{"test": "TestPipeline/json/sum", "outcome": "pass", "seconds": .01},
+                    {"test": "TestPipeline/json/max", "outcome": "skip", "seconds": 0}]
+        doc = {"commit": commit, "recorded": "2026-11-01T00:00:00Z", "items": {
+            "endpoint/query": [row(children=children)], "semantics/parser": [row(children=children)],
+            "semantics/other": [row(package="other", outcome="incomplete", children=children[:1])]}}
+        result = self.m.conformance_summary(doc, commit)
+        self.assertEqual(result["parents"], {"pass": 1, "fail": 0, "skip": 0, "incomplete": 1, "not-run": 0})
+        self.assertEqual(result["subtests"], {"pass": 2, "fail": 0, "skip": 1})
+        child = next(r for r in result["cases"] if r["test"] == "TestPipeline/json/sum" and r["package"] == "p")
+        self.assertEqual(child["items"], ["endpoint/query", "semantics/parser"])
+        self.assertEqual(len(result["cases"]), 5)
+
+    def test_conformance_rejects_item_id_amplification_before_aggregation(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 1,
+               "commit": commit, "recorded": "now", "subtests": [
+                   {"test": f"TestA/child-{i}", "outcome": "pass", "seconds": .1} for i in range(1000)]}
+        for item in ("x" * 8192, "a" * 257, "bad/<script>", "bad/../id", "bad//id", "unicode/é"):
+            with self.subTest(item=item[:40]), self.assertRaisesRegex(ValueError, "registry item"):
+                self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {item: [row]}}, commit)
+
+    def test_conformance_aggregation_limits_identities_and_item_links(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 1,
+               "commit": commit, "recorded": "now", "subtests": [{"test": "TestA/child", "outcome": "pass", "seconds": .1}]}
+        document = {"commit": commit, "recorded": "now", "items": {"a": [row], "b": [row]}}
+        with mock.patch.object(self.m, "MAX_CONFORMANCE_IDENTITIES", 1), self.assertRaisesRegex(ValueError, "identities"):
+            self.m.conformance_summary(document, commit)
+        with mock.patch.object(self.m, "MAX_CONFORMANCE_LINKS", 2), self.assertRaisesRegex(ValueError, "links"):
+            self.m.conformance_summary(document, commit)
+        # Repeated identical links do not consume the distinct-link budget.
+        with mock.patch.object(self.m, "MAX_CONFORMANCE_LINKS", 2):
+            result = self.m.conformance_summary({**document, "items": {"a": [row, row]}}, commit)
+        self.assertEqual(len(result["cases"]), 2)
+
+    def test_conformance_byte_budget_accounts_for_json_escaping(self):
+        commit = "a" * 40
+        row = {"test": "Test" + "\u0000" * 300, "package": "p", "outcome": "pass", "seconds": 1,
+               "commit": commit, "recorded": "now"}
+        document = {"commit": commit, "recorded": "now", "items": {"a": [row]}}
+        with mock.patch.object(self.m, "MAX_CONFORMANCE_SUMMARY", 2048), self.assertRaisesRegex(ValueError, "byte budget"):
+            self.m.conformance_summary(document, commit)
+
+    def test_conformance_aggregate_byte_budget_stops_before_final_serialization(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 1,
+               "commit": commit, "recorded": "now", "subtests": [
+                   {"test": f"TestA/child-{i}", "outcome": "pass", "seconds": .1} for i in range(100)]}
+        encode = json.dumps
+        with mock.patch.object(self.m, "MAX_CONFORMANCE_SUMMARY", 4096), mock.patch.object(self.m.json, "dumps", wraps=encode) as serialized:
+            with self.assertRaisesRegex(ValueError, "byte budget"):
+                self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {"a": [row]}}, commit)
+        self.assertFalse(any(isinstance(call.args[0], dict) and "cases" in call.args[0] for call in serialized.call_args_list))
+
+    def test_conformance_accepts_bounded_existing_id_syntax(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 1, "commit": commit, "recorded": "now"}
+        result = self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {
+            "versions/stats-bucket-label-v1.45": [row], "x" * 256: [row]}}, commit)
+        self.assertEqual(result["parents"]["pass"], 1)
+        self.assertEqual(len(result["cases"][0]["items"]), 2)
+
+    def test_conformance_metadata_cannot_bypass_output_budget(self):
+        commit = "a" * 40
+        for recorded in ("x" * 129, {"x": "truthy"}):
+            with self.subTest(recorded=recorded), self.assertRaises(ValueError):
+                self.m.conformance_summary({"commit": commit, "recorded": recorded, "items": {}}, commit)
+
+    def test_conformance_failed_child_overrides_pass_and_rerun(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 1,
+               "commit": commit, "recorded": "now", "subtests": [{"test": "TestA/json/sum", "outcome": "fail", "seconds": .1}]}
+        rerun = {**row, "subtests": [{"test": "TestA/json/sum", "outcome": "pass", "seconds": .1}]}
+        result = self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {"a": [row], "b": [rerun]}}, commit)
+        self.assertEqual(result["parents"]["fail"], 1)
+        self.assertEqual(result["subtests"]["fail"], 1)
+
+    def test_conformance_missing_parent_and_not_run_are_distinct(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "not-run", "seconds": 0,
+               "commit": commit, "recorded": "now"}
+        result = self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {
+            "a": [row], "b": [{**row, "test": "TestB", "subtests": [{"test": "TestB/child", "outcome": "pass", "seconds": .1}]}]}}, commit)
+        self.assertEqual((result["parents"]["incomplete"], result["parents"]["not-run"]), (1, 1))
+
+    def test_conformance_rejects_stale_rows_and_unrelated_child_identity(self):
+        commit = "a" * 40
+        row = {"test": "TestA", "package": "p", "outcome": "pass", "seconds": 0,
+               "commit": commit, "recorded": "now"}
+        for changed in ({**row, "commit": "b" * 40}, {**row, "subtests": [{"test": "TestOther/child", "outcome": "pass", "seconds": 0}]},
+                        {**row, "seconds": float("inf")}, {**row, "outcome": "success"}):
+            with self.subTest(row=changed), self.assertRaises(ValueError):
+                self.m.conformance_summary({"commit": commit, "recorded": "now", "items": {"a": [changed]}}, commit)
+
+    def test_conformance_ci_discards_checked_in_evidence_before_generation(self):
+        workflow = (PATH.parents[2] / ".github/workflows/ci.yaml").read_text()
+        job = re.split(r"\n  [A-Za-z0-9_-]+:", workflow.split("  conformance:", 1)[1], maxsplit=1)[0]
+        self.assertLess(job.index("rm -f conformance/registry/generated/evidence.json"), job.index("python3 scripts/ci/check_conformance.py"))
+        self.assertIn('if [ -f conformance/registry/generated/evidence.json ]; then', job)
+        self.assertIn('name: conformance-evidence', job)
+        self.assertIn("steps.conformance_gate.outcome == 'success' || steps.conformance_gate.outcome == 'failure'", job)
+
+    def test_conformance_large_json_has_a_specific_bounded_allowance(self):
+        payload = archive({"conformance-evidence.json": {"padding": "x" * (2 * 1024 * 1024)}})
+        self.assertIn("conformance-evidence.json", self.m.read_artifact(payload, {"conformance-evidence.json"}))
+        with self.assertRaises(ValueError):
+            self.m.read_artifact(archive({"conformance-evidence.json": "x" * (12 * 1024 * 1024 + 1)}), {"conformance-evidence.json"})
+
+    def test_conformance_artifact_requires_current_meta_and_collector_commit(self):
+        head, merge, base = "a" * 40, "b" * 40, "c" * 40
+        pr = {"number": 4, "base": {"sha": base}, "head": {"sha": head}, "merge_commit_sha": merge}
+
+        class API:
+            repository = "owner/repo"
+            artifact_head = merge
+            evidence_commit = merge
+
+            def pages(self, path, field=None, max_pages=10):
+                if "workflows/" in path:
+                    return [{"id": 10, "head_sha": head, "status": "completed", "conclusion": "failure", "run_started_at": "2026-01-01"}] if "/ci.yaml/" in path else []
+                if "/jobs" in path:
+                    return [{"id": 1, "name": "conformance", "status": "completed", "conclusion": "failure"}]
+                return [{"id": 11, "name": "conformance-evidence", "created_at": "2026-01-02"}]
+
+            def request(self, path, **kwargs):
+                return archive({"conformance-meta.json": {"base": base, "head": self.artifact_head},
+                    "conformance-evidence.json": {"commit": self.evidence_commit, "recorded": "now", "items": {"endpoint/query": [
+                        {"package": "p", "test": "TestA", "outcome": "fail", "seconds": 1, "commit": self.evidence_commit, "recorded": "now",
+                         "subtests": [{"test": "TestA/json/sum", "outcome": "fail", "seconds": .1}]}]}}})
+
+        api = API()
+        source = self.m.collect(api, pr)["sources"]["ci"]
+        summary = source["artifacts"]["ci-conformance-summary.json"]
+        self.assertEqual((summary["parents"]["fail"], summary["subtests"]["fail"]), (1, 1))
+        self.assertEqual(source["conclusion"], "failure")
+        api.artifact_head = "d" * 40
+        source = self.m.collect(api, pr)["sources"]["ci"]
+        self.assertNotIn("ci-conformance-summary.json", source["artifacts"])
+        self.assertIn("stale source identity", source["note"])
+        api.artifact_head = merge
+        api.evidence_commit = "d" * 40
+        source = self.m.collect(api, pr)["sources"]["ci"]
+        self.assertEqual(source["state"], "error")
+        self.assertFalse(source["artifacts"])
 
     def test_duplicate_names_and_oversized_json_are_rejected(self):
         for files in ({"a/meta.json": {}, "b/meta.json": {}}, {"meta.json": "x" * (2 * 1024 * 1024 + 1)}):
