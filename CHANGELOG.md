@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep and drop `detected_level` independently of the stored `level` field
+  in Loki log responses. The backend retains `level` long enough to derive
+  the entry value, while response projection hides it unless requested.
+  A dual-ingest Loki comparison covers stream and structured-metadata levels,
+  existing `detected_level` stream labels and both response encodings. Scoped
+  response-cache versions prevent older local or peer entries from restoring
+  pre-fix labels.
+
 - Keep logfmt-parsed fields in ungrouped field-presence metrics. The burst
   coalescer no longer replaces `| logfmt | field!=""` with a stored-column
   check that can return an empty series when the field exists only in the log

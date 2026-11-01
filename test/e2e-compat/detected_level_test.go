@@ -337,6 +337,7 @@ type dlEntry struct {
 	stream   map[string]string
 	metadata map[string]string // structuredMetadata
 	parsed   map[string]string
+	line     string
 	stamp    string
 }
 
@@ -389,6 +390,7 @@ func dlEntries(t *testing.T, resp dlStreamsResponse) map[string]dlEntry {
 			var stamp string
 			_ = json.Unmarshal(v[0], &stamp)
 			e := dlEntry{stream: s.Stream, stamp: strconv.Itoa(si)}
+			_ = json.Unmarshal(v[1], &e.line)
 			if len(v) > 2 {
 				var meta struct {
 					StructuredMetadata map[string]string `json:"structuredMetadata"`
@@ -406,6 +408,43 @@ func dlEntries(t *testing.T, resp dlStreamsResponse) map[string]dlEntry {
 		}
 	}
 	return out
+}
+
+// conformance: severity/detected-level-stage-side-effects, loki_api_v1_query_range
+// Keep/drop must treat the derived detected_level independently of a stored
+// level field. Compare both response encodings on stream and entry fields.
+func TestCompat_DetectedLevelKeepDrop(t *testing.T) {
+	f := ensureDetectedLevelFixture(t)
+	route, _ := newJSONVolumeRouteProxy(t)
+	for _, categorized := range []bool{false, true} {
+		var headers map[string]string
+		if categorized {
+			headers = map[string]string{"X-Loki-Response-Encoding-Flags": "categorize-labels"}
+		}
+		for _, caseName := range []string{"label-level", "sm-level", "streamfields-level", "label-detected-level", "streamfields-detected"} {
+			selector := fmt.Sprintf(`{app=%q,case=%q}`, f.app, caseName)
+			stages := []string{" | keep detected_level", " | keep detected_level, level", " | drop detected_level"}
+			if caseName != "label-detected-level" && caseName != "streamfields-detected" {
+				stages = append(stages, ` | detected_level!=""`)
+			}
+			for _, stage := range stages {
+				query := selector + stage
+				t.Run(fmt.Sprintf("categorized=%t/%s/%s", categorized, caseName, stage), func(t *testing.T) {
+					loki := dlEntries(t, dlQueryRange(t, lokiURL, query, f, headers))
+					proxy := dlEntries(t, dlQueryRange(t, route, query, f, headers))
+					if len(loki) != 1 || len(proxy) != 1 {
+						t.Fatalf("%s: entries Loki=%d proxy=%d", query, len(loki), len(proxy))
+					}
+					for ts, want := range loki {
+						got, ok := proxy[ts]
+						if !ok || !reflect.DeepEqual(got.stream, want.stream) || !reflect.DeepEqual(got.metadata, want.metadata) || !reflect.DeepEqual(got.parsed, want.parsed) || got.line != want.line {
+							t.Errorf("%s at %s: Loki=%+v proxy=%+v (present=%t)", query, ts, want, got, ok)
+						}
+					}
+				})
+			}
+		}
+	}
 }
 
 // dlLevel returns an entry's derived level: detected_level, or

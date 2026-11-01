@@ -240,6 +240,74 @@ func TestDetectedLevelDropAndKeepStages(t *testing.T) {
 	}
 }
 
+func TestBareDetectedLevelMutationPreservesStoredLevel(t *testing.T) {
+	for _, style := range []LabelStyle{LabelStylePassthrough, LabelStyleUnderscores} {
+		lt := NewLabelTranslator(style, nil)
+		raw := map[string]string{"app": "api", "level": "Debug", "detected_level": "debug"}
+		for _, tc := range []struct {
+			name, field string
+			want        map[string]string
+		}{
+			{name: "drop", field: "detected_level", want: map[string]string{"app": "api", "level": "Debug"}},
+			{name: "keep", field: "detected_level", want: map[string]string{"detected_level": "debug"}},
+		} {
+			t.Run(string(style)+"/"+tc.name, func(t *testing.T) {
+				var drop, keep []string
+				if tc.name == "drop" {
+					drop = []string{tc.field}
+				} else {
+					keep = []string{tc.field}
+				}
+				_, got, changed := applyBareFieldMutationToStreamLabels(drop, keep, raw, raw, lt)
+				if !changed || !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("%s %s: labels=%v changed=%t, want %v", style, tc.name, got, changed, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestKeepDetectedLevelHidesStoredLevelSource(t *testing.T) {
+	sm := map[string]string{"level": "Warning", "detected_level": "warn"}
+	pf := map[string]string{"level": "Warning"}
+	keepEntryFields([]string{"detected_level"}, sm, pf)
+	if _, ok := sm["level"]; ok {
+		t.Fatalf("keep detected_level exposed the structured level source: %v", sm)
+	}
+	if _, ok := pf["level"]; ok {
+		t.Fatalf("keep detected_level exposed the parsed level source: %v", pf)
+	}
+	if sm["detected_level"] != "warn" {
+		t.Fatalf("keep detected_level lost the derived value: %v", sm)
+	}
+}
+
+// conformance: severity/detected-level-stage-side-effects
+func TestDetectedLevelMutationResponseCacheVersion(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	for _, query := range []string{
+		`{app="api"} | keep detected_level`,
+		`{app="api"} | drop detected_level`,
+		`sum(count_over_time({app="api"} | keep detected_level [1m]))`,
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(query), nil)
+		if key := p.queryRangeCacheKey(r, query); !strings.Contains(key, detectedLevelMutationResponseVersion) {
+			t.Fatalf("query %q exact response cache key lacks version: %q", query, key)
+		}
+		if key, ok := p.compatCacheKey("query_range", r); !ok || !strings.Contains(key, detectedLevelMutationResponseVersion) {
+			t.Fatalf("query %q compat cache key lacks version: %q", query, key)
+		}
+	}
+	for _, query := range []string{
+		`{app="api"} | keep level`,
+		`{app="api"} | detected_level!=""`,
+	} {
+		if version := detectedLevelMutationResponseKeyVersion(query); version != "" {
+			t.Fatalf("unrelated query %q was versioned: %q", query, version)
+		}
+	}
+}
+
 func TestDetectedLevelBodyScanDisabled(t *testing.T) {
 	p := newDetectedLevelTestProxy(t, LabelStyleUnderscores, true)
 	streams, _, err := p.vlReaderToLokiStreams(strings.NewReader(detectedLevelRows), `{app="api"}`, "", false, false, false)
