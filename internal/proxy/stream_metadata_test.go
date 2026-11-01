@@ -612,6 +612,26 @@ func TestApplyBareFieldMutationToStreamLabels_Aliases(t *testing.T) {
 	}
 }
 
+// conformance: profiles/keep-structured-metadata-key
+func TestKeepMetadataResponseCacheVersion(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	for _, query := range []string{
+		`{app="api"} | keep deployment_environment`,
+		`sum(count_over_time({app="api"} | keep deployment_environment [1m]))`,
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(query), nil)
+		if key := p.queryRangeCacheKey(r, query); !strings.Contains(key, keepMetadataProjectionResponseVersion) {
+			t.Fatalf("exact cache key lacks keep projection version: %s", key)
+		}
+		if key, ok := p.compatCacheKey("query_range", r); !ok || !strings.Contains(key, keepMetadataProjectionResponseVersion) {
+			t.Fatalf("compat cache key lacks keep projection version: %s", key)
+		}
+	}
+	if got := keepMetadataProjectionResponseKeyVersion(`{app="api"} | drop deployment_environment`); got != "" {
+		t.Fatalf("unrelated drop query versioned: %q", got)
+	}
+}
+
 // conformance: profiles/keep-removes-derived-service-name, loki_api_v1_query_range
 func TestLogQuery_KeepRemovesDerivedServiceName(t *testing.T) {
 	var backendQueries atomic.Int32
