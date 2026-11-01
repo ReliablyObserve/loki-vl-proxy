@@ -36,6 +36,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,12 +68,10 @@ const (
 // If a future PR regresses leftover-chunk suppression or routes a
 // chunk through a different code path than the rest, this test fails.
 func TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike(t *testing.T) {
-	// Use the proxy directly — log-generator's continuous ingest is enough.
-	// Avoid ensureDataIngested which also waits on Loki (different startup race
-	// from this test's contract).
 	waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
-
-	const query = `sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`
+	// A fresh CI stack has no continuous generator or long history. Seed a
+	// bounded, private stream rather than passing through an empty-data skip.
+	query, evaluation := seedChunkMergeHistory(t)
 
 	for _, source := range []string{"drilldown", "grafana-ua"} {
 		for _, rc := range []struct {
@@ -86,7 +85,7 @@ func TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike(t *testing.T) {
 			{"7d", 168, 14},
 		} {
 			t.Run(fmt.Sprintf("%s_%s", source, rc.name), func(t *testing.T) {
-				now := time.Now().UTC()
+				now := evaluation
 				chunks := splitMetricTimeRange(now.Add(-time.Duration(rc.hours)*time.Hour), now,
 					chunkLockStep, chunkLockOneDay)
 				if len(chunks) == 0 {
@@ -108,7 +107,7 @@ func TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike(t *testing.T) {
 					}
 				}
 				if merged == nil || len(merged.series) == 0 {
-					t.Skipf("no merged data — log generator likely hasn't ingested enough %dh history yet", rc.hours)
+					t.Fatalf("missing seeded chunk-merge history for %dh", rc.hours)
 				}
 
 				rep := rightEdgeFraction(merged, rc.bins)
@@ -119,6 +118,37 @@ func TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Sixty hours fit the stack's 72h retention and give the 7d merge replay real
+// points in multiple chunks without inflating the fixture to a full week.
+func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
+	t.Helper()
+	evaluation := time.Now().UTC().Truncate(time.Minute).Add(-5 * time.Minute)
+	app := fmt.Sprintf("chunk-merge-%d", time.Now().UnixNano())
+	var body strings.Builder
+	for at := evaluation.Add(-60 * time.Hour); !at.After(evaluation); at = at.Add(5 * time.Minute) {
+		line, err := json.Marshal(map[string]string{
+			"_time": at.Format(time.RFC3339Nano), "_msg": "bounded chunk merge fixture",
+			"app": app, "namespace": "prod", "pod": "chunk-merge-pod", "level": "info",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body.Write(line)
+		body.WriteByte('\n')
+	}
+	resp, err := http.Post(vlURL+"/insert/jsonline?_stream_fields=app,namespace,pod,level", "application/stream+json", strings.NewReader(body.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("seed chunk history: %d %s", resp.StatusCode, data)
+	}
+	forceVLFlush(t)
+	return fmt.Sprintf(`sum by (pod) (count_over_time({app="%s",namespace="prod",pod!=""}[2m]))`, app), evaluation
 }
 
 // TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed verifies that
