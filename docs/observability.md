@@ -254,8 +254,9 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_backend_fallthrough_total` | counter | none | `Low` | requests that missed every cache tier and fell through to the backend |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
-| `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | proxy-only work such as translation, parser preference, and response-label rewrites |
-| `loki_vl_proxy_internal_operation_duration_seconds` | histogram | `operation`, `outcome` | `Medium` | latency spent in proxy-only work not covered by backend timings |
+| `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | named internal operations including translation, parser preference, rewrites and upstream body completion |
+| `loki_vl_proxy_internal_operation_duration_seconds` | histogram | `operation`, `outcome` | `Medium` | named-operation duration; backend_body_read includes HTTP and consumer time |
+| `loki_vl_proxy_backend_read_bytes_total` | counter | `kind` | `Low` | consumed decoded VL HTTP body bytes recorded at close; fixed `raw`, `stats`, `metadata`, `other` kinds; not encoded network traffic or cache bytes; both Prometheus and OTLP |
 | `loki_vl_proxy_coalesced_total` | counter | none | `Low` | requests served from coalesced results |
 | `loki_vl_proxy_coalesced_saved_total` | counter | none | `Low` | backend requests saved by coalescing |
 | `loki_vl_proxy_response_tuple_mode_total` | counter | `mode` | `Low` | emitted log tuple contract mode by client behavior (Prometheus scrape only today) |
@@ -276,6 +277,10 @@ Operational notes for these hot paths:
 - synthetic tail keeps bounded dedup state so long-running websocket sessions do not grow without limit
 
 ### Semantic cache layers
+
+For production Drilldown investigations, see the
+[cache troubleshooting guide](cache-troubleshooting.md), including settled-step
+eligibility/admission reasons and structured debug decision logs.
 
 Prometheus scrape and OTLP push expose the same `loki_vl_proxy_cache_layer_*`
 families. `layer` is `loki`, `vl` or `unknown`; `component` is `primary`,

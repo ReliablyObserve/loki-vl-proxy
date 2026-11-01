@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Reuse settled evaluation points for complete raw JSON count/rate metrics,
+  including moving Drilldown volume windows. Shifted windows evaluate missing
+  edges through the existing bounded Loki-facing RAM/SSD/peer cache instead of
+  rescanning settled history. Original expiry and freshness limits remain;
+  truncated results, native field histograms and incompatible routes fall back
+  to full evaluation. Exact local response hits are preserved.
+
+### Added
+
+- Cache eligibility and admission reasons in existing internal-operation
+  metrics, plus structured debug logs showing missing ranges/steps without
+  query text or credentials. The cache troubleshooting guide connects these
+  signals to per-layer resource and backend observations.
+- Decoded upstream body completion observations for GET/POST reads, including
+  consumed bytes, requested time span and full read/consumer duration. Fixed
+  outcomes distinguish EOF, early close, failures and cancellation; structured
+  logs omit queries and raw error text. Existing response limits are preserved.
+
 ## [2.55.0] - 2026-11-01
 
 ### Fixed

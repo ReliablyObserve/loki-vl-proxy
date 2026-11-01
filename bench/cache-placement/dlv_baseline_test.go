@@ -80,10 +80,41 @@ func dlvWindow(fx fixture, c dlvCell, sample int) (int64, error) {
 	if c.Shape == "DLV2" {
 		width = 6 * 3600
 	}
-	if end > fx.End || end-width-60 < fx.End-8*3600 {
+	if *dlvRangeHours > 0 {
+		width = int64(*dlvRangeHours) * 3600
+	}
+	history := max(8, *dlvRangeHours+2)
+	if end > fx.End || end-width-60 < fx.End-int64(history)*3600 {
 		return 0, fmt.Errorf("window outside seeded history")
 	}
 	return end, nil
+}
+
+func TestDLVLongWindowBounds(t *testing.T) {
+	previous := *dlvRangeHours
+	t.Cleanup(func() { *dlvRangeHours = previous })
+	for _, hours := range []int{24, 48} {
+		*dlvRangeHours = hours
+		fx := fixture{End: 1700000000, Probe: "long-window"}
+		for _, shape := range dlvShapes {
+			for _, state := range []string{"exact", "shifted", "refresh"} {
+				cell := dlvCell{Shape: shape, State: state, Shards: []int{0, 1}}
+				end, err := dlvWindow(fx, cell, 19)
+				if err != nil {
+					t.Fatal(err)
+				}
+				u, err := url.Parse(dlvQuery(fx, cell, end).Path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				from, _ := strconv.ParseInt(u.Query().Get("start"), 10, 64)
+				to, _ := strconv.ParseInt(u.Query().Get("end"), 10, 64)
+				if to-from != int64(hours)*int64(time.Hour) {
+					t.Fatalf("%s/%s: wrong width%d", shape, state, to-from)
+				}
+			}
+		}
+	}
 }
 func dlvWaves(c dlvCell) []dlvWave {
 	if c.State != "restart" && c.State != "owner-loss" {
@@ -311,6 +342,7 @@ func TestDLVAbsentCountersStayUnsupported(t *testing.T) {
 
 var dlvRepeatIndex = flag.Int("dlv-repeat-index", -1, "reserved namespace repeat index; -1 selects all")
 var dlvOperation = flag.String("dlv-baseline", "", "opt-in: setup, probe, measure, cleanup")
+var dlvRangeHours = flag.Int("dlv-range-hours", 0, "0 keeps historical 1h/6h cases; 24 or48 seeds and measures that range")
 var dlvBinary = flag.String("dlv-binary", "", "one current proxy executable")
 var dlvSource = flag.String("dlv-source-ref", "9956043537323d3bc30742fff509f7cb6edce5be", "expected binary source revision")
 var dlvOutput = flag.String("dlv-output", filepath.Join(os.TempDir(), "dlv-cache-baseline"), "private artifact directory")
@@ -424,6 +456,7 @@ type dlvCellReport struct {
 	Errors           []string
 }
 type dlvFixturePlan struct {
+	RangeHours     int
 	Version        int
 	ShardsPerCell  int
 	Repeats        int
@@ -474,6 +507,9 @@ func dlvQuery(fx fixture, c dlvCell, end int64) query {
 		width = 6 * 3600
 	case "native":
 		expression = "sum by (detected_level) (count_over_time(" + selector + "[1m]))"
+	}
+	if *dlvRangeHours > 0 {
+		width = int64(*dlvRangeHours) * 3600
 	}
 	params := url.Values{"query": {expression}, "start": {strconv.FormatInt((end-width)*1e9, 10)}, "end": {strconv.FormatInt(end*1e9, 10)}, "step": {"60"}}
 	return query{Name: c.Shape, Path: "/loki/api/v1/query_range?" + params.Encode(), Headers: headers}
@@ -917,6 +953,7 @@ func dlvBinaryManifest(t *testing.T) map[string]any {
 		t.Fatalf("binary source%s differs from requested%s", revision, *dlvSource)
 	}
 	return map[string]any{
+		"evaluation_range_hours":       *dlvRangeHours,
 		"requested_backend_images":     map[string]string{"loki": lokiImage, "victorialogs": vlImage},
 		"backend_image_identity_scope": "requested image references only; actual container image IDs must be captured separately",
 		"compose_spec_sha256":          digest(t, filepath.Join(home, "compose.json")),
@@ -940,6 +977,9 @@ func TestDLVCacheBaseline(t *testing.T) {
 	op := *dlvOperation
 	if op == "" {
 		t.Skip("opt-in -dlv-baseline=setup|probe|measure|cleanup")
+	}
+	if *dlvRangeHours != 0 && *dlvRangeHours != 24 && *dlvRangeHours != 48 {
+		t.Fatal("dlv-range-hours must be0,24 or48")
 	}
 	if op != "setup" && op != "probe" && op != "measure" && op != "cleanup" {
 		t.Fatal("unknown DLV operation")
@@ -988,7 +1028,7 @@ func TestDLVCacheBaseline(t *testing.T) {
 	if op == "setup" {
 		compose(t, "up", "-d", "--no-build")
 		fx := seed(t, len(plans)*shards)
-		save(t, filepath.Join(home, "dlv-fixture-plan.json"), dlvFixturePlan{Version: 1, ShardsPerCell: shards, Repeats: *dlvRepeats, NamespaceCells: len(plans), FixtureSHA256: fx.SHA256})
+		save(t, filepath.Join(home, "dlv-fixture-plan.json"), dlvFixturePlan{Version: 1, RangeHours: *dlvRangeHours, ShardsPerCell: shards, Repeats: *dlvRepeats, NamespaceCells: len(plans), FixtureSHA256: fx.SHA256})
 		t.Logf("seeded%drows for%d independent DLV namespaces", fx.Lines, len(plans))
 		return
 	}
@@ -1004,7 +1044,7 @@ func TestDLVCacheBaseline(t *testing.T) {
 	raw, err = os.ReadFile(filepath.Join(home, "dlv-fixture-plan.json"))
 	must(t, err)
 	must(t, json.Unmarshal(raw, &fixturePlan))
-	if fixturePlan.Version != 1 || fixturePlan.ShardsPerCell != shards || fixturePlan.Repeats != *dlvRepeats || fixturePlan.NamespaceCells != len(plans) || fixturePlan.FixtureSHA256 != fx.SHA256 || fx.Streams != len(plans)*shards {
+	if fixturePlan.Version != 1 || fixturePlan.RangeHours != *dlvRangeHours || fixturePlan.ShardsPerCell != shards || fixturePlan.Repeats != *dlvRepeats || fixturePlan.NamespaceCells != len(plans) || fixturePlan.FixtureSHA256 != fx.SHA256 || fx.Streams != len(plans)*shards {
 		t.Fatal("fixture namespaces differ; use a fresh setup with matching shards and control repeats")
 	}
 	stateFilter := *dlvStateFilter

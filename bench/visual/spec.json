@@ -37,6 +37,34 @@
  },
  "pages": [
   {
+   "id": "lvl-explore-volume-json-by-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range",
+    "quality/query-range-settled-steps"
+   ]
+  },
+  {
+   "id": "lvl-explore-volume-json-error-by-dl",
+   "kind": "explore",
+   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | __error__!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/json-metric-detected-level-derivation",
+    "severity-detected-level-derivation",
+    "loki_api_v1_query_range",
+    "quality/query-range-settled-steps"
+   ]
+  },
+  {
    "id": "explore-sum-over-topk",
    "kind": "explore",
    "query": "sum by (service_name) (topk(3, sum by (service_name, level) (count_over_time({env=\"production\", service_name=~\"api-gateway|frontend-ssr|cache-redis\"}[$__auto]))))",
@@ -245,32 +273,6 @@
     "semantics/detected-level-filter-before-parser-pushdown",
     "semantics/json-metric-detected-level-derivation",
     "explore-logs-volume-json",
-    "loki_api_v1_query_range"
-   ]
-  },
-  {
-   "id": "lvl-explore-volume-json-by-dl",
-   "kind": "explore",
-   "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [$__auto]))",
-   "ranges": [
-    "1h"
-   ],
-   "covers": [
-    "semantics/json-metric-detected-level-derivation",
-    "severity-detected-level-derivation",
-    "loki_api_v1_query_range"
-   ]
-  },
-  {
-   "id": "lvl-explore-volume-json-error-by-dl",
-   "kind": "explore",
-   "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | __error__!=\"\" [$__auto]))",
-   "ranges": [
-    "1h"
-   ],
-   "covers": [
-    "semantics/json-metric-detected-level-derivation",
-    "severity-detected-level-derivation",
     "loki_api_v1_query_range"
    ]
   },
@@ -1271,7 +1273,10 @@
    "id": "explore-rate-detected-level-unknown",
    "kind": "explore",
    "query": "sum without (pod) (rate({service_name=\"visual-detected-level\"}[$__auto]))",
-   "ranges": ["15m", "1h"],
+   "ranges": [
+    "15m",
+    "1h"
+   ],
    "covers": [
     "semantics/detected-level-missing-from-stats-answers",
     "severity-detected-level-derivation",
@@ -1285,7 +1290,10 @@
    "id": "explore-rate-drop-detected-level",
    "kind": "explore",
    "query": "sum without (pod, level) (rate({service_name=\"api-gateway\"} | drop detected_level [$__auto]))",
-   "ranges": ["15m", "1h"],
+   "ranges": [
+    "15m",
+    "1h"
+   ],
    "covers": [
     "semantics/detected-level-missing-from-stats-answers",
     "loki_api_v1_query_range"
@@ -1601,65 +1609,131 @@
    "id": "explore-748-reject-group",
    "kind": "explore",
    "query": "group(count_over_time({app=\"api-gateway\"}[$__auto]))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "range_function-count-over-time", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "range_function-count-over-time",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-reject-label-join",
    "kind": "explore",
    "query": "label_join(rate({app=\"api-gateway\"}[$__auto]), \"d\", \"-\", \"app\", \"level\")",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "range_function-rate", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "range_function-rate",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-sum",
    "kind": "explore",
    "query": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "operator-sum", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "operator-sum",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-topk-rate",
    "kind": "explore",
    "query": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[$__auto])))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "operator-topk", "range_function-rate", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "operator-topk",
+    "range_function-rate",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-json-unwrap",
    "kind": "explore",
    "query": "SUM BY (app) (SUM_OVER_TIME({env=\"production\"} | JSON | UNWRAP duration_ms [$__auto]))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "parser-json", "operator-sum", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "parser-json",
+    "operator-sum",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-on",
    "kind": "explore",
    "query": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) / ON (app) SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto]))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "operator-sum", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "operator-sum",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-bool",
    "kind": "explore",
    "query": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto])) > BOOL 0",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "operator-sum", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "operator-sum",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   },
   {
    "id": "explore-748-uppercase-offset",
    "kind": "explore",
    "query": "SUM BY (app) (COUNT_OVER_TIME({env=\"production\"}[$__auto] OFFSET 1m))",
-   "ranges": ["1h"],
-   "covers": ["semantics/proxy-accepts-operators-not-in-loki", "operator-sum", "loki_api_v1_query_range"],
-   "fixes": ["semantics/proxy-accepts-operators-not-in-loki"]
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/proxy-accepts-operators-not-in-loki",
+    "operator-sum",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/proxy-accepts-operators-not-in-loki"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

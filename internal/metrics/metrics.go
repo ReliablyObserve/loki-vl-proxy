@@ -75,6 +75,7 @@ type Metrics struct {
 	patternsPersistedDiskBytes        atomic.Int64
 	patternsPersistWritesTotal        atomic.Int64
 	patternsPersistWriteBytesTotal    atomic.Int64
+	backendReadBytes                  [4]atomic.Int64
 	patternsRestoredDiskBytesTotal    atomic.Int64
 	patternsRestoredPeerBytesTotal    atomic.Int64
 	patternsSourceLinesRequestedTotal atomic.Int64
@@ -1752,6 +1753,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_patterns_persist_writes_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persist_writes_total %d\n", m.patternsPersistWritesTotal.Load())
 
+	m.writeBackendReadMetrics(&sb)
 	sb.WriteString("# HELP loki_vl_proxy_patterns_persist_write_bytes_total Pattern snapshot bytes written to disk.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_patterns_persist_write_bytes_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persist_write_bytes_total %d\n", m.patternsPersistWriteBytesTotal.Load())

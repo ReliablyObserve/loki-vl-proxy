@@ -1,0 +1,130 @@
+[
+  {
+    "trial": "final-control-0-main",
+    "file": "control-0-main.json.gz",
+    "sha256": "8cb919d3011d40fa427eaa0b229e977c872265f5f7f7960035c7a0c984b4ed69",
+    "summary": {
+      "equal_reference": 20,
+      "latency_by_success_class": {
+        "success_nonempty": {
+          "loki_p50_ms": 1.4816045,
+          "loki_p95_ms": 2.3327534999999995,
+          "proxy_p50_ms": 21.1851875,
+          "proxy_p95_ms": 23.38639615,
+          "samples": 20
+        }
+      },
+      "reference_classes": {
+        "success_nonempty": 20
+      },
+      "responses": 20,
+      "successful_valid_200": 20
+    },
+    "backend": {
+      "VLCalls": 20,
+      "PeerCalls": 0,
+      "VLBytes": 53673364,
+      "PeerBytes": 0,
+      "PeerFetches": 0,
+      "PeerPushes": 0,
+      "PeerPushBytes": 0
+    },
+    "phase_cpu_seconds": 0.43682100000000007
+  },
+  {
+    "trial": "final-control-1-pr",
+    "file": "control-1-pr.json.gz",
+    "sha256": "5dedf5f22f83103d5de16e64c49dcfc05aa5f52ff4795c75741468ae8f412c55",
+    "summary": {
+      "equal_reference": 20,
+      "latency_by_success_class": {
+        "success_nonempty": {
+          "loki_p50_ms": 1.2038959999999999,
+          "loki_p95_ms": 1.6390451999999998,
+          "proxy_p50_ms": 1.323458,
+          "proxy_p95_ms": 1.8811502999999994,
+          "samples": 20
+        }
+      },
+      "reference_classes": {
+        "success_nonempty": 20
+      },
+      "responses": 20,
+      "successful_valid_200": 20
+    },
+    "backend": {
+      "VLCalls": 20,
+      "PeerCalls": 27,
+      "VLBytes": 36372,
+      "PeerBytes": 0,
+      "PeerFetches": 0,
+      "PeerPushes": 27,
+      "PeerPushBytes": 3024
+    },
+    "phase_cpu_seconds": 0.020149000000000014
+  },
+  {
+    "trial": "final-control-2-pr",
+    "file": "control-2-pr.json.gz",
+    "sha256": "4e94b1c51ba6180122c0855ca232cf3fd82f337b5fe25734b4b44698cd6f828c",
+    "summary": {
+      "equal_reference": 20,
+      "latency_by_success_class": {
+        "success_nonempty": {
+          "loki_p50_ms": 1.0831045000000001,
+          "loki_p95_ms": 1.668638099999999,
+          "proxy_p50_ms": 1.5726045,
+          "proxy_p95_ms": 2.2169497,
+          "samples": 20
+        }
+      },
+      "reference_classes": {
+        "success_nonempty": 20
+      },
+      "responses": 20,
+      "successful_valid_200": 20
+    },
+    "backend": {
+      "VLCalls": 20,
+      "PeerCalls": 27,
+      "VLBytes": 36372,
+      "PeerBytes": 0,
+      "PeerFetches": 0,
+      "PeerPushes": 27,
+      "PeerPushBytes": 3024
+    },
+    "phase_cpu_seconds": 0.022881999999999972
+  },
+  {
+    "trial": "final-control-3-main",
+    "file": "control-3-main.json.gz",
+    "sha256": "51c3666caccf31188710afa465cc86037a5d3f89004523e06583a378cc60c12a",
+    "summary": {
+      "equal_reference": 20,
+      "latency_by_success_class": {
+        "success_nonempty": {
+          "loki_p50_ms": 1.4412500000000001,
+          "loki_p95_ms": 1.9651541499999987,
+          "proxy_p50_ms": 20.8706045,
+          "proxy_p95_ms": 21.7438354,
+          "samples": 20
+        }
+      },
+      "reference_classes": {
+        "success_nonempty": 20
+      },
+      "responses": 20,
+      "successful_valid_200": 20
+    },
+    "backend": {
+      "VLCalls": 20,
+      "PeerCalls": 0,
+      "VLBytes": 53673364,
+      "PeerBytes": 0,
+      "PeerFetches": 0,
+      "PeerPushes": 0,
+      "PeerPushBytes": 0
+    },
+    "phase_cpu_seconds": 0.43035
+  }
+]

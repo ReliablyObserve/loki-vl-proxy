@@ -42,6 +42,8 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 **Label metadata and cache reuse:** `/labels` and `/label/{name}/values` cover the requested range, using metadata inventories and cached time buckets rather than only a recent slice. Settled buckets can be reused from memory, disk and peers; recent edges and buckets due for revalidation still read VictoriaLogs. Near-now freshness, empty answers, stale-on-error responses and optional indexed browse limits follow the configured rules in [Metadata caching](docs/configuration.md#metadata-vs-live-query-freshness). A cache hit is not a guarantee of immediate visibility after retention or deletion; distributed deletion-generation metadata is not implemented.
 
+**Moving JSON metric windows:** complete raw JSON `count_over_time` and `rate` answers can reuse settled evaluation points from the Loki-facing RAM/SSD/peer cache, preserving their original age and step phase. Missing edges are evaluated again; native field histograms and truncated answers retain their existing rules. See the [production troubleshooting signals](docs/cache-troubleshooting.md) and [48h three-node comparison](bench/cache-placement/results/2026-11-01-ordered-json-window-reuse/README.md) for the measured benefit and costs.
+
 **Fleet restart behavior:** disk restore, startup jitter and peer warmup can reduce repeated VictoriaLogs reads. Their effect depends on surviving cache state, owner/replica availability and freshness. The [fleet documentation](docs/fleet-cache.md) describes the supported recovery cases; it does not guarantee fleet-wide cold-miss coordination or that only one pod ever reads the backend.
 
 </details>

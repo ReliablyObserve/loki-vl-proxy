@@ -10,6 +10,14 @@ For a single-revision DLV reuse baseline, use
 [Focused DLV baseline](#focused-dlv-baseline). It does not require two binaries
 or treat the historical comparison below as a current performance result.
 
+Add `-dlv-range-hours=24` or `48` to both its setup and measurement commands
+to exercise long windows. Use a fresh output directory and Compose project:
+the seeded history and fixture plan are bound to that width. The longer fixture
+keeps `api-gateway` rows valid JSON for DLV1/DLV3 and places malformed rows in
+the other app for DLV2. The default `0` preserves the historical 1h/6h corpus.
+The harness verifies the complete historical fixture count in Loki before
+measurement, rather than accepting empty range answers as readiness.
+
 The measured comparison uses baseline
 `7c59fafa50fcfbb5379871e77eb4fe14b154339e` and candidate production code
 `55d3f7fb08a33125d9f4b0b3eb1950c334de3639`. The report records executable

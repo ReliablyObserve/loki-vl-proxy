@@ -47,13 +47,20 @@ why: |
   before. A missing range that fails (Loki's 400 for a rejected value) is the
   request's answer.
 
+  Raw JSON count_over_time/rate plans now also retain complete per-step
+  answers, including a range equal to the step and untruncated Drilldown
+  volume responses. Missing edges use the exact raw evaluator. Native field
+  histograms and truncated responses are not admitted. New versioned JSON
+  step keys prevent older binaries from merging these fragments without the
+  raw evaluator's output byte/sample limits.
+
   Not covered: a window whose start moves by less than a step off the grid
   of the earlier windows reuses nothing (the steps differ; with
   -align-queries-with-step, on another branch, the start is on the grid);
-  queries the window evaluator does not answer (tumbling windows, native
+  queries the window evaluator does not answer (other tumbling windows, native
   stats, sum, avg, max and min over time with unwrap and a range up to the
   step, binary expressions as a whole: each operand is a request of its own,
-  sort and sort_desc, Logs Drilldown requests, a query with both parsers);
+  sort and sort_desc, other Logs Drilldown routes, a query with both parsers);
   late data in a kept step shows once it expires, as for the buckets; a
   proxy read budget only the whole window would exceed (the raw-row budget
   of a `without` fold, -manual-range-metric-row-limit) is not met by the

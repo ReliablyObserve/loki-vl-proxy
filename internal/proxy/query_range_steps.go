@@ -178,25 +178,32 @@ func (g queryStepsGrid) at(k int64) int64 { return g.phase + k*g.step }
 // queryStepsFor returns the grid and the key of a request whose settled steps
 // can be kept, or false.
 func (p *Proxy) queryStepsFor(r *http.Request, logqlQuery string) (queryStepsGrid, string, bool) {
-	if !p.queryRangeExtentCache || p.cache == nil || p.queryRangeExtentCacheTTL <= 0 || p.cache.MaxEntrySizeBytes() <= 0 {
+	skip := func(reason string) (queryStepsGrid, string, bool) {
+		p.observeInternalOperation(r.Context(), "query_steps_eligibility", reason, 0)
 		return queryStepsGrid{}, "", false
 	}
-	if isGrafanaDrilldownRequest(r) {
-		return queryStepsGrid{}, "", false
+	if !p.queryRangeExtentCache || p.cache == nil || p.queryRangeExtentCacheTTL <= 0 || p.cache.MaxEntrySizeBytes() <= 0 {
+		return skip("disabled")
+	}
+	// Native field histograms rank/cap over the whole request. Only the exact
+	// ordered JSON evaluator can prove a complete per-step answer below.
+	ordered, orderedOK := queryStepsOrderedJSON(logqlQuery)
+	if isGrafanaDrilldownRequest(r) && (!orderedOK || ordered.isNativeDrilldownHistogram(r)) {
+		return skip("drilldown_profile")
 	}
 	// A query holding both parsers is translated after a probe of its window's
 	// lines (preferWorkingParser): its steps depend on the window.
 	if hasParserStage(logqlQuery, "json") && hasParserStage(logqlQuery, "logfmt") {
-		return queryStepsGrid{}, "", false
+		return skip("mixed_parsers")
 	}
 	step, ok := parsePositiveStepDuration(r.FormValue("step"))
 	if !ok || !queryStepsShape(logqlQuery, step) {
-		return queryStepsGrid{}, "", false
+		return skip("shape")
 	}
 	startNs, okS := parseLokiTimeToUnixNano(r.FormValue("start"))
 	endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end"))
 	if !okS || !okE || endNs < startNs {
-		return queryStepsGrid{}, "", false
+		return skip("bounds")
 	}
 	g := queryStepsGrid{step: step.Nanoseconds()}
 	g.phase = ((startNs % g.step) + g.step) % g.step
@@ -204,12 +211,18 @@ func (p *Proxy) queryStepsFor(r *http.Request, logqlQuery string) (queryStepsGri
 	// a step of four seconds or more, or a grid of whole seconds, names its
 	// step unambiguously.
 	if g.step < 4*int64(time.Second) && (g.step%int64(time.Second) != 0 || g.phase%int64(time.Second) != 0) {
-		return queryStepsGrid{}, "", false
+		return skip("phase")
 	}
 	g.first = (startNs - g.phase) / g.step
 	g.last = g.first + (endNs-startNs)/g.step
 	sum := sha256.Sum256([]byte(p.queryStepsBaseKey(r, logqlQuery)))
-	return g, queryStepsKeyPrefix + hex.EncodeToString(sum[:]) + ":" + strconv.FormatInt(g.phase, 10), true
+	prefix := queryStepsKeyPrefix
+	if orderedOK {
+		// Older binaries do not enforce raw JSON's merged byte/sample bounds.
+		// Keep these fragments out of their otherwise identical step keys.
+		prefix += "ordered-json:v1:"
+	}
+	return g, prefix + hex.EncodeToString(sum[:]) + ":" + strconv.FormatInt(g.phase, 10), true
 }
 
 // queryStepsShape reports whether the window evaluator can answer query at
@@ -219,6 +232,9 @@ func (p *Proxy) queryStepsFor(r *http.Request, logqlQuery string) (queryStepsGri
 // rate_counter, which the proxy evaluates at every range. Other queries skip
 // the steps cache before any lookup.
 func queryStepsShape(query string, step time.Duration) bool {
+	if _, ok := queryStepsOrderedJSON(query); ok {
+		return true // raw JSON evaluation also handles tumbling windows locally
+	}
 	expr, err := logqlpkg.Parse(query)
 	if err != nil {
 		return false
@@ -250,6 +266,14 @@ func queryStepsShape(query string, step time.Duration) bool {
 		}
 	}
 	return window > 0 && window != step
+}
+
+// Keep the first extension to direct count/rate plans. Transforms, native
+// reroutes and other evaluators retain their existing admission rules.
+func queryStepsOrderedJSON(query string) (*orderedJSONMetricPlan, bool) {
+	plan, ok := compileOrderedJSONMetric(query)
+	return plan, ok && plan.parser == "json" && plan.withoutJSON == "" &&
+		(plan.function == "count_over_time" || plan.function == "rate")
 }
 
 // queryStepsBaseKey is the response cache key of a request with its window
@@ -306,6 +330,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 		return false, w, r, after
 	}
 	if len(gaps) == 1 && gaps[0] == [2]int64{grid.first, grid.last} {
+		p.logQueryStepsDecision(r.Context(), "miss", grid, gaps, 0)
 		return whole("miss")
 	}
 	fragments, failed, complete := p.evaluateQueryStepsGaps(r, grid, gaps, w.Header())
@@ -320,6 +345,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 		return true, w, r, nil
 	}
 	if !complete {
+		p.logQueryStepsDecision(r.Context(), "gap_not_mergeable", grid, gaps, 0)
 		return whole("fallback")
 	}
 	pieces := make([]*statsExtentFragment, 0, len(chunks)+len(fragments))
@@ -331,6 +357,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 	pieces = append(pieces, fragments...)
 	body, ok := p.renderQuerySteps(r.Context(), key, pieces, fragments)
 	if !ok {
+		p.logQueryStepsDecision(r.Context(), "merge_rejected", grid, gaps, 0)
 		return whole("fallback")
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -346,6 +373,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 	if len(fragments) == 0 {
 		outcome = "hit"
 	}
+	p.logQueryStepsDecision(r.Context(), outcome, grid, gaps, len(body))
 	p.recordQueryStepsRequest(r, logqlQuery, http.StatusOK, began, outcome)
 	return true, w, r, nil
 }
@@ -362,7 +390,21 @@ func (p *Proxy) queryStepsWhole(w http.ResponseWriter, r *http.Request, outcome 
 		if code == 0 {
 			code = http.StatusOK
 		}
-		if code != http.StatusOK || tee.over || !run.evaluatedPerStep() || !tee.onlyJSONHeader() {
+		if r.Context().Err() != nil || code != http.StatusOK || tee.over || !run.evaluatedPerStep() || !tee.onlyJSONHeader() {
+			reason := "evaluator"
+			switch {
+			case r.Context().Err() != nil:
+				reason = "canceled"
+			case code != http.StatusOK:
+				reason = "error"
+			case !run.evaluatedPerStep():
+				reason = "evaluator"
+			case tee.over:
+				reason = "oversize"
+			case !tee.onlyJSONHeader():
+				reason = "headers"
+			}
+			p.observeInternalOperation(r.Context(), "query_steps_admission", reason, 0)
 			p.observeInternalOperation(r.Context(), "query_steps_cache", outcome, time.Since(began))
 			return
 		}
@@ -378,6 +420,16 @@ func (p *Proxy) queryStepsWhole(w http.ResponseWriter, r *http.Request, outcome 
 		})
 		p.observeInternalOperation(r.Context(), "query_steps_cache", outcome, time.Since(began))
 	}
+}
+
+// Numeric work bounds and fixed outcomes are sufficient to correlate a debug
+// request with backend reads. Never log query text, labels, auth or cache keys.
+func (p *Proxy) logQueryStepsDecision(ctx context.Context, outcome string, grid queryStepsGrid, gaps [][2]int64, bytes int) {
+	missing := int64(0)
+	for _, gap := range gaps {
+		missing += gap[1] - gap[0] + 1
+	}
+	p.log.DebugContext(ctx, "query_steps_cache", "outcome", outcome, "total_steps", grid.last-grid.first+1, "missing_steps", missing, "missing_ranges", len(gaps), "response_bytes", bytes)
 }
 
 // evaluateQueryStepsGaps evaluates the missing ranges (each is a request of
@@ -605,6 +657,9 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	if limit <= 0 {
 		limit = int(^uint(0) >> 1)
 	}
+	if names[2] == "ordered-json-raw" && p.orderedJSONMetricMaxBytes() < int64(limit) {
+		limit = int(p.orderedJSONMetricMaxBytes())
+	}
 	size, ok := queryStepsAddSize(0, len(names[0]), limit)
 	if !ok {
 		return nil, false
@@ -613,7 +668,14 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	if !ok {
 		return nil, false
 	}
+	points := 0
 	for _, s := range order {
+		if names[2] == "ordered-json-raw" {
+			points += len(s.points)
+			if points > maxMetricEvalSamples {
+				return nil, false
+			}
+		}
 		sort.Slice(s.points, func(i, j int) bool { return s.points[i].k < s.points[j].k })
 		size, ok = queryStepsAddSize(size, len(s.metric), limit)
 		if !ok {
