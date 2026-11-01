@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve JSON parser errors, error-filter order and rate units when vector
+  aggregations such as `max`, `avg`, `count`, `topk` and `bottomk` wrap a
+  JSON-parsed `sum`. Outer functions now consume the ordered evaluator's
+  samples instead of bypassing parser semantics through a native translation.
+  Apply the series limit after the outer aggregation while retaining bounded
+  inner-row collection. The regression matrix compares instant and range
+  answers with Loki for valid, truncated and plain-text inputs, grouping,
+  nested functions and explicit parser-error filtering.
+  Nested ordered JSON answers bypass generic settled-step fragments so older
+  fragments cannot supply pre-fix results; direct JSON point reuse is retained.
+  Version exact response keys only for these nested expressions so replies
+  prefetched from an earlier peer cannot bypass the corrected evaluator.
+
 ## [2.56.0] - 2026-11-01
 
 ### Performance
@@ -28,21 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumed bytes, requested time span and full read/consumer duration. Fixed
   outcomes distinguish EOF, early close, failures and cancellation; structured
   logs omit queries and raw error text. Existing response limits are preserved.
-
-### Fixed
-
-- Preserve JSON parser errors, error-filter order and rate units when vector
-  aggregations such as `max`, `avg`, `count`, `topk` and `bottomk` wrap a
-  JSON-parsed `sum`. Outer functions now consume the ordered evaluator's
-  samples instead of bypassing parser semantics through a native translation.
-  Apply the series limit after the outer aggregation while retaining bounded
-  inner-row collection. The regression matrix compares instant and range
-  answers with Loki for valid, truncated and plain-text inputs, grouping,
-  nested functions and explicit parser-error filtering.
-  Nested ordered JSON answers bypass generic settled-step fragments so older
-  fragments cannot supply pre-fix results; direct JSON point reuse is retained.
-  Version exact response keys only for these nested expressions so replies
-  prefetched from an earlier peer cannot bypass the corrected evaluator.
 
 ## [2.55.0] - 2026-11-01
 
