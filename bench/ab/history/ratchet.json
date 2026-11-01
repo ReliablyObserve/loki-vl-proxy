@@ -1799,6 +1799,13 @@
   "shape": "A5 drilldown exclude, volume by detected_level"
  },
  {
+  "added": "2026-11-01",
+  "commit": "4c5b769f96f1630dd69854449dd0e0f1872b1859",
+  "range": "1h",
+  "set": "pattern-line-filter-anchoring",
+  "shape": "A7 nginx exclude ends on a literal, log query"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
