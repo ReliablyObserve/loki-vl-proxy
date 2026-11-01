@@ -48,6 +48,7 @@ routing these reads does not implement rule writes or prove full ruler parity.
 - Synthetic compatibility labels the proxy must expose to Loki clients, such as `service_name`
 - Manifest-driven query semantics parity against real Loki in [query-semantics-matrix.json](../test/e2e-compat/query-semantics-matrix.json)
 - Tracked operation inventory in [query-semantics-operations.json](../test/e2e-compat/query-semantics-operations.json)
+- Cumulative parser/filter/function/aggregation depth paths in that inventory, linked to live tests, retained Loki evidence and registry cases
 
 ## CI And Score
 

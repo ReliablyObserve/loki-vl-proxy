@@ -440,6 +440,20 @@ Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by see
 - every tracked Loki-facing operation references one or more live matrix cases
 - every live matrix case is tracked by the operation inventory
 
+Its `depth_paths` section is an index into those same fixtures, not another
+query corpus. It connects three cumulative stages—selector/parser/field filter,
+then range function, then outer aggregation—to the existing live Loki-versus-
+proxy test, the precise registry cases, and the retained parser-matrix capture.
+`TestQuerySemanticsMatrixDepthPaths` checks the stage order, matrix case IDs, registry
+IDs and evidence path, so stale links or an uncovered depth fail the manifest
+test. The deeper parser suite adds live cases for `rate` and
+`count_over_time`, error-filter states, grouped and nested aggregations, and
+both instant and range APIs; its retained evidence is described in the
+[parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
+The 60-case semantics manifest and 132-case parser capture cover different
+contracts; their counts should not be summed as a full Cartesian compatibility
+space.
+
 Each manifest entry declares:
 
 - query family

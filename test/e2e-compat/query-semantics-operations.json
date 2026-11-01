@@ -137,5 +137,34 @@
       "category": "invalid",
       "cases": ["invalid_malformed_selector", "invalid_parser_tail"]
     }
+  ],
+  "depth_paths": [
+    {
+      "id": "parser_filter",
+      "depth": 1,
+      "stages": ["selector", "parser", "parsed_field_filter"],
+      "matrix_cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "regexp_pipeline_field_filter"],
+      "registry_cases": ["semantics/json-filter-pushdown-without-error-drop"],
+      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
+    },
+    {
+      "id": "parser_filter_range_function",
+      "depth": 2,
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function"],
+      "matrix_cases": ["parser_metric_range_filter", "parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter"],
+      "registry_cases": ["semantics/json-filter-pushdown-without-error-drop", "semantics/json-error-filter-metric-split-pushdown"],
+      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
+    },
+    {
+      "id": "parser_filter_range_function_aggregation",
+      "depth": 3,
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
+      "matrix_cases": ["parser_metric_range_filter"],
+      "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown"],
+      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
+    }
   ]
 }
