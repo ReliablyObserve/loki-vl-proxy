@@ -101,13 +101,13 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
-| Known differences from Loki (ranked) | **87**: 67 open, 12 documented, 6 owner-kept, 2 upstream |
+| Known differences from Loki (ranked) | **86**: 66 open, 12 documented, 6 owner-kept, 2 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `semantics/logfmt-existence-filter-ungrouped-sum` (an ungrouped sum over `| logfmt | key!=""` returns no series), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected), `profiles/json-extraction-list-exposes-only-listed` (extraction lists (`| json msg="msg"`, `| logfmt op`) expose level from the line). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki) · [ranked differences](conformance/reports/parity-gaps.md) · [coverage map](conformance/reports/coverage-map.md) · [Known Issues](docs/KNOWN_ISSUES.md).
 

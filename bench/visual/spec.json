@@ -835,6 +835,22 @@
    ]
   },
   {
+   "id": "explore-logfmt-presence-ungrouped",
+   "kind": "explore",
+   "query": "sum(count_over_time({service_name=\"cache-redis\"} | logfmt | op!=\"\" [5m]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/logfmt-existence-filter-ungrouped-sum",
+    "parser-logfmt",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/logfmt-existence-filter-ungrouped-sum"
+   ]
+  },
+  {
    "id": "explore-logs-json-extraction",
    "kind": "explore",
    "query": "{env=\"production\"} | json pipeline, level",

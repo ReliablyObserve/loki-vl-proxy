@@ -43,6 +43,34 @@ func TestOrderedJSONVectorResponseVersionScope(t *testing.T) {
 	}
 }
 
+// Old empty answers from the parser-stripping burst path must not be reused
+// through the exact-response caches or the settled-step cache after upgrade.
+// conformance: semantics/logfmt-existence-filter-ungrouped-sum
+func TestLogfmtPresenceResponseVersionScope(t *testing.T) {
+	query := `sum(count_over_time({app="a"} | logfmt | op!="" [5m]))`
+	params := url.Values{"query": {query}, "start": {"1767225600"}, "end": {"1767225900"}, "step": {"60"}}
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	if got := logfmtPresenceResponseKeyVersion(r, query); got != logfmtPresenceResponseVersion {
+		t.Fatalf("affected query has version %q", got)
+	}
+	p := newCompatTestProxy(t, "http://unused")
+	if key := p.queryRangeCacheKey(r, query); !strings.Contains(key, logfmtPresenceResponseVersion) {
+		t.Fatalf("exact and settled-step cache key is not fenced: %s", key)
+	}
+	if key, ok := p.compatCacheKey("query_range", r); !ok || !strings.Contains(key, logfmtPresenceResponseVersion) {
+		t.Fatalf("compat cache key is not fenced: %s", key)
+	}
+	for _, other := range []string{
+		`sum by(op)(count_over_time({app="a"} | logfmt | op!="" [5m]))`,
+		`sum(count_over_time({app="a"} | json | op!="" [5m]))`,
+		`sum(count_over_time({app="a"} | logfmt [5m]))`,
+	} {
+		if got := logfmtPresenceResponseKeyVersion(r, other); got != "" {
+			t.Fatalf("unrelated query %q has version %q", other, got)
+		}
+	}
+}
+
 // An old exact reply can already be in L1 after peer hot read-ahead, even
 // though the response handler itself only looks in L1. The namespace, rather
 // than TTL or placement, must stop that reply from bypassing the fixed parser.

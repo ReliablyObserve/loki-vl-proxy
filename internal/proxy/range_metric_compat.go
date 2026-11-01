@@ -50,11 +50,12 @@ type rangeMetricSample struct {
 }
 
 var (
-	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
-	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
-	withoutClauseRE     = regexp.MustCompile(`\bwithout\s*\(`)
-	outerByAfterRE      = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
-	outerByBeforeRE     = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
+	rangeMetricUnwrapRE    = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
+	logfmtPresenceFilterRE = regexp.MustCompile(`!=\s*""`)
+	outerAggregationRE     = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	withoutClauseRE        = regexp.MustCompile(`\bwithout\s*\(`)
+	outerByAfterRE         = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
+	outerByBeforeRE        = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -821,6 +822,13 @@ func (p *Proxy) writeCoalescedManualMetric(w http.ResponseWriter, r *http.Reques
 	if p.drilldownCoalescer == nil || sampleShift != 0 || window < step || statsAggFunc != "count() as c" || !spec.ByExplicit || len(spec.GroupBy) != 0 {
 		return false
 	}
+	// A logfmt field may exist only in _msg. The fused query strips the parser
+	// and checks stored columns, which would turn a non-empty field into zero.
+	// Keep the parser in the regular stats query until fused parsed-field counts
+	// can be proved equivalent to Loki for every selected row.
+	if strings.Contains(spec.BaseQuery, "| unpack_logfmt") {
+		return false
+	}
 	base, field, ok := extractCommonBase(spec.BaseQuery)
 	if !ok {
 		return false
@@ -976,6 +984,32 @@ func isSumAllLogRange(query string) bool {
 		return !unwrapped
 	}
 	return false
+}
+
+const logfmtPresenceResponseVersion = "@logfmt-presence-v1:"
+
+// logfmtPresenceResponseKeyVersion fences empty responses and settled steps
+// produced by older binaries whose burst coalescer checked only stored fields.
+// Scope the one-time cache miss to ungrouped logfmt presence counts.
+func logfmtPresenceResponseKeyVersion(r *http.Request, query string) string {
+	if !strings.Contains(query, "logfmt") || !logfmtPresenceFilterRE.MatchString(query) {
+		return ""
+	}
+	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	ra, ok := ungroupedSumRange(query)
+	if !ok || ra.Op != logqlpkg.RangeCountOverTime {
+		return ""
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return ""
+	}
+	for _, stage := range lq.Pipeline {
+		if parser, ok := stage.(*logqlpkg.ParserStage); ok && parser.Type == logqlpkg.ParserLogfmt {
+			return logfmtPresenceResponseVersion
+		}
+	}
+	return ""
 }
 
 func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {

@@ -338,6 +338,7 @@
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
@@ -465,6 +466,7 @@
     "parser-logfmt": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go",
+      "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go"
     ],
     "parser-pattern": [
@@ -851,6 +853,10 @@
     ],
     "semantics/live-request-not-cancelled-by-sibling": [
       "internal/proxy/backend_stale_cancel_test.go"
+    ],
+    "semantics/logfmt-existence-filter-ungrouped-sum": [
+      "internal/proxy/ordered_json_vector_cache_test.go",
+      "test/e2e-compat/logfmt_existence_filter_test.go"
     ],
     "semantics/lower-bound-exclusive": [
       "internal/proxy/range_lower_bound_test.go",
@@ -1692,6 +1698,7 @@
       "semantics/pipeline-error-text-parity"
     ],
     "internal/proxy/ordered_json_vector_cache_test.go": [
+      "semantics/logfmt-existence-filter-ungrouped-sum",
       "semantics/pipeline-error-text-parity"
     ],
     "internal/proxy/ordered_json_vector_test.go": [
@@ -2311,6 +2318,11 @@
     "test/e2e-compat/line_format_error_test.go": [
       "semantics/line-format-template-error-keeps-entry"
     ],
+    "test/e2e-compat/logfmt_existence_filter_test.go": [
+      "loki_api_v1_query_range",
+      "parser-logfmt",
+      "semantics/logfmt-existence-filter-ungrouped-sum"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -2578,7 +2590,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 259,
+  "tests_with_markers": 260,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2641,7 +2653,6 @@
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/log-entries-differ-same-count",
-    "semantics/logfmt-existence-filter-ungrouped-sum",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/pattern-line-filter-invalid-captures",
     "semantics/proxy-accepts-invalid-logql",
@@ -2668,5 +2679,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 204
+  "wired_items": 205
 }
