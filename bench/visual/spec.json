@@ -37,6 +37,44 @@
  },
  "pages": [
   {
+   "id": "explore-nested-json-filtered-rate",
+   "kind": "explore",
+   "query": "max(sum by (cluster) (rate({env=\"production\"} | json | __error__=\"\" [$__auto])))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "semantics/non-sum-vector-aggregation-unreduced",
+    "semantics/pipeline-error-text-parity",
+    "semantics/json-error-filter-metric-split-pushdown"
+   ],
+   "fixes": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "semantics/non-sum-vector-aggregation-unreduced",
+    "semantics/json-error-filter-metric-split-pushdown"
+   ]
+  },
+  {
+   "id": "explore-nested-json-filtered-count",
+   "kind": "explore",
+   "query": "topk(3, sum by (cluster, app) (count_over_time({env=\"production\"} | json | __error__=\"\" [$__auto])))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "semantics/non-sum-vector-aggregation-unreduced",
+    "semantics/pipeline-error-text-parity",
+    "semantics/json-error-filter-metric-split-pushdown"
+   ],
+   "fixes": [
+    "semantics/nested-aggregation-outer-by-native-routes",
+    "semantics/non-sum-vector-aggregation-unreduced",
+    "semantics/json-error-filter-metric-split-pushdown"
+   ]
+  },
+  {
    "id": "lvl-explore-volume-json-by-dl",
    "kind": "explore",
    "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [$__auto]))",
