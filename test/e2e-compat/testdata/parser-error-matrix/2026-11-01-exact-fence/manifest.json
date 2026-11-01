@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-01",
+  "base_source": "3de2a9be63829f816d8f17e8098ac96bf653fa99",
+  "candidate_runtime_source": "4ba614682cf28205d2a8a4adc6c5f4ad27818d3f",
+  "harness_source": "4ba614682cf28205d2a8a4adc6c5f4ad27818d3f",
+  "backends": [
+    {
+      "ID": "sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28",
+      "ContainerName": "parsermatrix1101-loki-1",
+      "Repository": "grafana/loki",
+      "Tag": "3.7.9",
+      "Platform": "linux/arm64",
+      "Size": 42821497,
+      "Created": "2026-10-20T21:45:42.003100377Z",
+      "LastTagTime": "2026-10-27T15:17:00.758044377Z"
+    },
+    {
+      "ID": "sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e",
+      "ContainerName": "parsermatrix1101-victorialogs-1",
+      "Repository": "victoriametrics/victoria-logs",
+      "Tag": "v1.52.0",
+      "Platform": "linux/arm64",
+      "Size": 12167327,
+      "Created": "2026-07-16T02:22:38.019885156Z",
+      "LastTagTime": "2026-10-01T11:15:30.853911Z"
+    }
+  ],
+  "case_count_per_source": 132,
+  "comparison_contract": "Both backends independently meet pinned status/type/labels/timestamps/numeric expectations in the test. Pipeline errors compare JSONParserErr category, syntax errors compare parse error category; first failing line/error envelope is not compared byte-for-byte.",
+  "fixture": {
+    "rows": [
+      {
+        "cluster": "east",
+        "kind": "valid",
+        "line": "{\"message\":\"east-one\"}"
+      },
+      {
+        "cluster": "east",
+        "kind": "valid",
+        "line": "{\"message\":\"east-two\"}"
+      },
+      {
+        "cluster": "west",
+        "kind": "valid",
+        "line": "{\"message\":\"west\"}"
+      },
+      {
+        "cluster": "east",
+        "kind": "truncated",
+        "line": "{\"message\":\"truncated\""
+      },
+      {
+        "cluster": "west",
+        "kind": "plain",
+        "line": "plain parser-matrix-canary"
+      }
+    ],
+    "stream_labels": [
+      "service_name",
+      "cluster",
+      "kind"
+    ],
+    "timestamp": "evaluation -30s + row_index*1ms",
+    "evaluation": "UTC minute four minutes before ingestion; actual query axis retained per record",
+    "isolation": "Fresh unique service_name per run, identical five-row fixture dual-written once into both backends; no shared playground modified",
+    "range_window": "5m",
+    "range_step": "60s",
+    "range_points": 2
+  },
+  "summary": {
+    "main": {
+      "loki_passed": 132,
+      "proxy_passed": 68,
+      "proxy_failed": 64,
+      "loki_failed": 0,
+      "records": 264,
+      "failed_cases": [
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/max_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/max_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/avg_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/avg_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/topk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/topk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/min_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/min_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/count_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/count_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/bottomk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/bottomk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/without_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/without_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/three_levels/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/unfiltered/three_levels/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/max_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/max_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/avg_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/avg_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/topk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/topk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/min_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/min_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/bottomk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/bottomk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/without_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/without_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/three_levels/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/three_levels/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/max_of_sum_all/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/rate/filter_errors/max_of_sum_all/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/max_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/max_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/avg_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/avg_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/topk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/topk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/min_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/min_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/count_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/count_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/bottomk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/bottomk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/without_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/without_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/three_levels/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/unfiltered/three_levels/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/max_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/max_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/avg_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/avg_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/topk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/topk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/min_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/min_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/bottomk_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/bottomk_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/without_of_sum/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/without_of_sum/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/three_levels/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/three_levels/query_range/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/max_of_sum_all/query/proxy",
+        "TestChaining_ParserErrorNestedAggregations/count_over_time/filter_errors/max_of_sum_all/query_range/proxy"
+      ]
+    },
+    "pr": {
+      "loki_passed": 132,
+      "proxy_passed": 132,
+      "proxy_failed": 0,
+      "loki_failed": 0,
+      "records": 264,
+      "failed_cases": []
+    }
+  },
+  "sha256": {
+    "main.json.gz": "633f236b2aa55e1edc581fa555cb1a2557f0905cd19f498e11305724515a39e0",
+    "pr.json.gz": "7d0c384ce22740357e78beca8dc6c37a31788b459f3de98bd8455b348ea553c1"
+  },
+  "measurement_scope": "Fresh reference/proxy runs after the nested-response exact-key fence, including uniform offsets and parent-expression detection; offset/parent cache admission is covered separately by unit regressions, not added to the 132-case live matrix."
+}

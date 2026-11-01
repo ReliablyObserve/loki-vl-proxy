@@ -716,11 +716,22 @@ class GateTest(unittest.TestCase):
 
     def test_pr_removing_a_base_difference_and_adding_none_is_an_improvement(self):
         # Base differs from Loki on the query and index/stats; the PR fixes the query, index/stats stays as on base.
-        same = "resource index/stats: body differs"
-        d = row(main_pr_diffs=["q: base wrong"], loki_main_n=2, loki_diffs=[same], loki_new=[], points_loki=5)
+        same = INDEX_STATS
+        query = 'avg(sum by(cluster, app)(count_over_time({env="production"}|json|__error__=""[$__auto])))|range'
+        d = row(page="explore-nested-json-filtered-count", main_pr_diffs=["q: base wrong"], main_pr_qids=[query],
+                loki_main_n=2, loki_diffs=[same], loki_qids=[None], loki_new=[], points_loki=5)
         text, v = self.verdict([d])
         self.assertEqual(v["exit"], 0)
         self.assertEqual(v["improved"], 1)
+        self.assertIn("improved (closer to Loki)", text)
+        # A changed query does not excuse a new or worsened auxiliary response,
+        # even when the total number of differences is lower than on the base.
+        for resource in (same.replace("rows 0 vs 0", "rows 0 vs 1"),
+                         same.replace("index/stats", "index/volume")):
+            with self.subTest(resource=resource):
+                changed = row(main_pr_diffs=["q: base wrong"], main_pr_qids=[query], loki_main_n=3,
+                              loki_diffs=[resource], loki_qids=[None], loki_new=[resource], points_loki=5)
+                self.assertEqual(self.verdict([changed])[1]["exit"], 1)
         # a new difference from Loki keeps it failing, even with fewer in total
         d = row(main_pr_diffs=["q: changed"], loki_main_n=3, loki_diffs=["q: new"], loki_new=["q: new"], points_loki=5)
         _, v = self.verdict([d])
