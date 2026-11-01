@@ -118,6 +118,26 @@ func TestVolume_RangeWithOneSamplePerSeriesIsVector(t *testing.T) {
 test('landing volume renders services @cov:loki_api_v1_index_volume', async ({ page }) => {
 ```
 
+The existing evidence collector reads terminal Go JSON events and Playwright results:
+
+```bash
+python3 conformance/scripts/evidence.py --go unit-results.json --check
+```
+
+`registry/generated/evidence.json` keeps each declaring test's parent summary and an
+optional `subtests` array containing full child paths, outcomes and durations. Match Go
+tests by package and test name; a same-named test in another package cannot supply proof.
+Child durations do not replace the parent's duration. Nested grouping subtests and leaf
+cases both remain visible, so the number of child paths is not a count of independent
+contracts or a compatibility percentage.
+
+Across multiple inputs, failures remain failures and a skip cannot erase a passing run.
+A failed child fails its parent evidence even if a later input reports the parent passing.
+Children without a terminal parent result are `incomplete`, which cannot prove an item.
+Skipped combinations remain visible; a passing parent does not establish that every child
+ran. These records extend the existing registry evidence and do not replace differential
+Loki comparisons, retained fixtures or response proofs.
+
 ## Refresh
 
 ```bash

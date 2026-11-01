@@ -16,6 +16,11 @@ import zipfile
 
 MAX_ARCHIVE = 32 * 1024 * 1024
 MAX_JSON = 2 * 1024 * 1024
+# A retained unit run has ~13k distinct identities and ~32k registry links.
+# Bound expansion as well as input: registry links repeat item IDs per result.
+MAX_CONFORMANCE_IDENTITIES = 50_000
+MAX_CONFORMANCE_LINKS = 100_000
+MAX_CONFORMANCE_SUMMARY = 12 * 1024 * 1024
 WORKFLOWS = {"quality": "pr-quality-report.yaml", "perf": "perf-ab.yaml", "visual": "visual-smoke.yaml", "ci": "ci.yaml"}
 WORKFLOWS.update(loki="compat-loki.yaml", drilldown="compat-drilldown.yaml", vl="compat-vl.yaml", security="security-pr.yaml")
 ARTIFACTS = {
@@ -25,6 +30,7 @@ ARTIFACTS = {
     # unused comparison payloads outside the strict object-only reader.
     "visual": {"visual-quality-evidence": {"meta.json", "plan.json", "verdict.json"}},
     "ci": {"unit-results": {"unit-results.json", "quality-meta.json"}, "coverage": {"coverage.out", "coverage-cache.out"},
+           "conformance-evidence": {"conformance-evidence.json", "conformance-meta.json"},
            "benchmarks": {"bench-results.txt"},
            "fleet-peer-cache-proof": {"fleet-peer-cache-proof-rf1.json", "fleet-peer-cache-proof-rf2.json", "fleet-meta.json"}},
 }
@@ -52,7 +58,9 @@ def read_artifact(raw, allowed):
             expanded += item.file_size
             if expanded > 48 * 1024 * 1024:
                 raise ValueError("expanded artifact exceeds limit")
-            limit = MAX_JSON if name.endswith(".json") and name not in {"unit-results.json", "pr-base-quality.json", "pr-head-quality.json"} else 12 * 1024 * 1024
+            # Conformance repeats nested outcomes under each linked registry
+            # item; use the existing large-result ceiling for this file only.
+            limit = MAX_JSON if name.endswith(".json") and name not in {"unit-results.json", "pr-base-quality.json", "pr-head-quality.json", "conformance-evidence.json"} else 12 * 1024 * 1024
             if item.file_size > limit or name in result:
                 raise ValueError("oversized or duplicate artifact member")
             value = archive.read(item).decode("utf-8")
@@ -124,6 +132,88 @@ def unit_summary(text):
             "packages": len({pkg for pkg, _ in events}),
             "failed_names": [f"{pkg}:{name}" for (pkg, name), action in events.items() if action == "fail"][:30],
             "outcomes": {f"{pkg}\t{name}": action for (pkg, name), action in events.items()}}
+
+
+def conformance_summary(document, commit):
+    """Summarize recorded declaring tests, without multiplying registry links.
+
+    Parent outcomes and full child paths stay separate populations. This is
+    execution evidence for linked tests, not an API-compatibility percentage.
+    """
+    if (not isinstance(commit, str) or not commit or len(commit) > 128 or document.get("commit") != commit
+            or not isinstance(document.get("recorded"), str) or not 0 < len(document["recorded"]) <= 128
+            or not isinstance(document.get("items"), dict)):
+        raise ValueError("invalid conformance source identity or items")
+    priority = {"not-run": 0, "skip": 1, "pass": 2, "incomplete": 3, "fail": 4}
+    parents, children = {}, {}
+    links = 0
+    estimated_bytes = 1024 + len(json.dumps(commit)) + len(json.dumps(document["recorded"]))
+
+    def retain(target, row, item, child=False):
+        nonlocal links, estimated_bytes
+        name, package, outcome, seconds = (row.get(key) for key in ("test", "package", "outcome", "seconds"))
+        if (not isinstance(name, str) or not name or len(name) > 4096 or not isinstance(package, str)
+                or len(package) > 1024 or not isinstance(outcome, str) or outcome not in (set(priority) if not child else {"pass", "fail", "skip"})
+                or not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not math.isfinite(seconds) or seconds < 0):
+            raise ValueError("invalid conformance test result")
+        key = (package, name)
+        old = target.get(key)
+        new_identity = old is None
+        new_link = new_identity or item not in old["items"]
+        if new_identity and len(parents) + len(children) >= MAX_CONFORMANCE_IDENTITIES:
+            raise ValueError("conformance identities exceed limit")
+        if new_link and links >= MAX_CONFORMANCE_LINKS:
+            raise ValueError("conformance item links exceed limit")
+        # Charge escaped strings, separators and conservative fixed row overhead
+        # BEFORE retaining anything. Small input must not expand into huge sets
+        # or a huge later json.dumps(evidence) allocation.
+        added = (256 + len(json.dumps(package)) + len(json.dumps(name))) if new_identity else 0
+        if new_link:
+            added += len(json.dumps(item)) + 2
+        if estimated_bytes + added > MAX_CONFORMANCE_SUMMARY:
+            raise ValueError("conformance summary exceeds byte budget")
+        estimated_bytes += added
+        if new_identity:
+            old = {"package": package, "test": name, "outcome": outcome, "items": set(), "kind": "subtest" if child else "parent"}
+            target[key] = old
+        if new_link:
+            links += 1
+            old["items"].add(item)
+        if priority[outcome] > priority[old["outcome"]]:
+            old["outcome"] = outcome
+        return old
+
+    for item, rows in document["items"].items():
+        if (not isinstance(item, str) or len(item) > 256 or
+                not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*", item)):
+            raise ValueError("invalid conformance registry item ID")
+        if not isinstance(rows, list):
+            raise ValueError("invalid conformance declaring tests")
+        for row in rows:
+            if (not isinstance(row, dict) or row.get("commit") != commit or not isinstance(row.get("recorded"), str)
+                    or not 0 < len(row["recorded"]) <= 128):
+                raise ValueError("stale conformance test result")
+            parent = retain(parents, row, item)
+            subtests = row.get("subtests", [])
+            if not isinstance(subtests, list):
+                raise ValueError("invalid conformance subtests")
+            if subtests and parent["outcome"] == "not-run":
+                parent["outcome"] = "incomplete"
+            for child in subtests:
+                if not isinstance(child, dict) or not isinstance(child.get("test"), str) or not child["test"].startswith(row["test"] + "/"):
+                    raise ValueError("unrelated conformance subtest")
+                observed = retain(children, {**child, "package": row["package"]}, item, child=True)
+                if observed["outcome"] == "fail":
+                    parent["outcome"] = "fail"
+    cases = [{**row, "items": sorted(row["items"])} for population in (parents, children) for row in population.values()]
+    cases.sort(key=lambda row: (-priority[row["outcome"]], row["package"], row["test"]))
+    summary = {"source": commit, "recorded": document["recorded"],
+            "parents": {outcome: sum(row["outcome"] == outcome for row in parents.values()) for outcome in priority},
+            "subtests": {outcome: sum(row["outcome"] == outcome for row in children.values()) for outcome in ("pass", "fail", "skip")},
+            "cases": cases}
+    if len(json.dumps(summary)) > MAX_CONFORMANCE_SUMMARY:
+        raise ValueError("conformance summary exceeds serialized byte budget")
+    return summary
 
 
 def log_scope(text, context):
@@ -317,9 +407,17 @@ def collect(api, pr):
                 if name == "benchmarks":
                     source["artifacts"]["ci-handler-benchmarks.json"] = collect_handler_benchmarks(api, jobs, files, context)
                     continue
-                meta_name = "fleet-meta.json" if name == "fleet-peer-cache-proof" else "quality-meta.json" if kind in {"ci", "quality"} else "meta.json"
+                meta_name = "conformance-meta.json" if name == "conformance-evidence" else "fleet-meta.json" if name == "fleet-peer-cache-proof" else "quality-meta.json" if kind in {"ci", "quality"} else "meta.json"
                 if name != "coverage" and not current_meta(files.get(meta_name, {}), context, kind):
                     source["note"] = "Some artifacts have missing or stale source identity; measurements omitted."
+                    continue
+                if name == "conformance-evidence":
+                    data = files.get("conformance-evidence.json")
+                    if not isinstance(data, dict):
+                        raise ValueError("missing conformance evidence")
+                    source["artifacts"]["ci-conformance-summary.json"] = {
+                        **conformance_summary(data, files[meta_name]["head"]),
+                        "artifact_url": f"https://github.com/{api.repository}/actions/runs/{run_id}/artifacts/{int(artifact['id'])}"}
                     continue
                 source["artifacts"].update(files)
             data = source["artifacts"]

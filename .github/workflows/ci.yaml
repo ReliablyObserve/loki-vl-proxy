@@ -825,8 +825,8 @@ jobs:
 
       # A few tests skip or assert less under the race detector (the metadata scan
       # simulations, the buffered-read allocation bounds): they run once more here,
-      # plain, and their outcome replaces the -race one in the gate, as when this job
-      # ran every unit test without -race.
+      # plain, and their outcomes are merged with the -race results: a plain pass
+      # can supply proof for a race-skipped case; an earlier failure stays failed.
       - name: Tests that behave differently under the race detector
         # The gate decides; this step only names the failing tests.
         run: |
@@ -834,7 +834,29 @@ jobs:
             echo "::warning::tests run without the race detector failed; the conformance gate decides whether that matters"
 
       - name: Conformance gate
-        run: python3 scripts/ci/check_conformance.py --go-results unit-results/unit-results.json --go-results unit-results/race-sensitive.json
+        id: conformance_gate
+        run: |
+          # A failed/partial collector must never publish the checked-in snapshot.
+          rm -f conformance/registry/generated/evidence.json
+          python3 scripts/ci/check_conformance.py --go-results unit-results/unit-results.json --go-results unit-results/race-sensitive.json
+
+      - name: Retain current conformance evidence
+        if: ${{ always() && (steps.conformance_gate.outcome == 'success' || steps.conformance_gate.outcome == 'failure') }}
+        run: |
+          if [ -f conformance/registry/generated/evidence.json ]; then
+            mkdir -p "$RUNNER_TEMP/conformance-evidence"
+            cp conformance/registry/generated/evidence.json "$RUNNER_TEMP/conformance-evidence/conformance-evidence.json"
+            python3 scripts/ci/pr_evidence.py --provenance "$RUNNER_TEMP/conformance-evidence/conformance-meta.json"
+          fi
+
+      - name: Upload conformance execution evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: conformance-evidence
+          path: ${{ runner.temp }}/conformance-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Visual-proof harness unit tests (plan, gate and comment, publish)
         run: python3 -m unittest discover -s bench/visual/tests

@@ -109,6 +109,40 @@ def test_details(base, head, ci):
     return lines
 
 
+def conformance_details(summary):
+    parents, subtests = mapping(summary.get("parents")), mapping(summary.get("subtests"))
+    rows = [[label, fmt(parents.get(outcome)), fmt(subtests.get(outcome)) if outcome != "incomplete" else "parent completion only"]
+            for outcome, label in (("pass", "Passed"), ("fail", "Failed"), ("skip", "Skipped"), ("incomplete", "Incomplete"))]
+    lines = ["Existing conformance collector output: declaring unit tests plus the already-running non-race exceptions. " +
+             "This artifact does not add live Loki, VictoriaLogs or Grafana runs. Candidate only; not full Loki compatibility.", "",
+             *table(["Observed outcome", "Declaring parent tests", "Subtests"], rows), "",
+             "Declared but not run: " + fmt(parents.get("not-run")) + " parent tests; these are not observed passes or skips.",
+             "Counts deduplicate package + full test path across registry links. Parents and children are separate populations; do not add them as independent scenarios.",
+             "Recorded revision: " + cell(summary.get("source", "unavailable")) + ".", ""]
+    cases = [row for row in records(summary.get("cases")) if row.get("outcome") != "not-run"]
+    priority = {"fail": 0, "incomplete": 1, "skip": 2, "pass": 3}
+    cases.sort(key=lambda row: (priority.get(row.get("outcome"), 4), str(row.get("package")), str(row.get("test"))))
+    lines += table(["Package", "Full test path", "Kind", "Outcome", "Linked registry items"], [])
+    url = summary.get("artifact_url", "")
+    artifact = (f"[conformance-evidence artifact]({url})" if isinstance(url, str) and len(url) <= 400 and
+                re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+/artifacts/[0-9]+", url)
+                else "conformance-evidence artifact of the CI source above")
+    # HTML and Markdown escaping can expand even bounded input cells. Reserve
+    # space for the footer and cap the rendered section, not just row count.
+    used, shown = len("\n".join(lines)), 0
+    for row in cases[:40]:
+        rendered = "| " + " | ".join([
+            cell(row.get("package")), cell(row.get("test")), cell(row.get("kind")), cell(row.get("outcome")),
+            ", ".join(cell(item) for item in row.get("items", [])[:4]) if isinstance(row.get("items"), list) else "unavailable"]) + " |"
+        if used + len(rendered) + 1 > 11000:
+            break
+        lines.append(rendered)
+        used += len(rendered) + 1
+        shown += 1
+    lines += ["", f"Showing {shown}/{len(cases)} observed identities; table cells are bounded, while exact full paths and all registry links remain in the {artifact}. Failures, incomplete parents and skips appear first."]
+    return lines
+
+
 def paired_benchmarks(base, head):
     if mapping(head.get("performance")).get("mode") == "skipped":
         return []
@@ -356,6 +390,15 @@ def render(base, head, evidence):
             elif numeric(btrack.get("pct")) and numeric(htrack.get("pct")) and htrack["pct"] < btrack["pct"]:
                 focus.append(f"{label} selected smoke score decreased: {fmt(btrack['pct'], '%')} → {fmt(htrack['pct'], '%')}. " + link(sources.get("quality", {})))
     perf, visual, ci = (data(sources, name) for name in ("perf", "visual", "ci"))
+    conformance = mapping(ci.get("ci-conformance-summary.json"))
+    if conformance:
+        parents, children = mapping(conformance.get("parents")), mapping(conformance.get("subtests"))
+        target = urgent if any(numeric(parents.get(outcome)) and parents[outcome] > 0 for outcome in ("fail", "incomplete")) else focus
+        target.append("Recorded conformance: " + ", ".join(fmt(parents.get(outcome)) + " " + label for outcome, label in
+                      (("pass", "passed"), ("fail", "failed"), ("skip", "skipped"), ("incomplete", "incomplete"))) +
+                      " parent tests; " + ", ".join(fmt(children.get(outcome)) + " " + label for outcome, label in
+                      (("pass", "passed"), ("fail", "failed"), ("skip", "skipped"))) +
+                      " subtests. Linked execution only, not full Loki compatibility. " + link(sources.get("ci", {})))
     for regressed, signal, source in bench_summary(base, head, ci):
         (urgent if regressed else focus).append(signal + " " + link(sources.get(source, {})))
     verdict = mapping(perf.get("verdict.json"))
@@ -416,6 +459,8 @@ def render(base, head, evidence):
         names += sorted(set(sources) - set(names))
         lines += fold("Evidence sources and revision status", table(["Source", "State", "Result", "Link", "Notes"], [[cell(key), cell(sources[key].get("state", "unavailable")), cell(sources[key].get("conclusion") or "pending / unavailable"), link(sources[key]), cell(sources[key].get("note", ""))] for key in names]) + ["", "Pending, stale, unavailable and skipped sources contribute no measurements."])
     lines += fold("Coverage and tests", test_details(base, head, ci))
+    if conformance:
+        lines += fold("Recorded conformance contracts and subtests", conformance_details(conformance))
     lines += fold("API contract coverage and regression changes", comparison["details"])
     if scopes:
         scope_rows = []

@@ -8,8 +8,9 @@
 # requireBoundedAlloc; both, and the peer zstd bounds test, read the
 # raceDetectorEnabled constant), so under -race they either do not run or assert
 # less. This runs every test of the files that use those names once more, plain,
-# and writes `go test -json` events to <out.json>; the gate reads that file after
-# the -race results, so these tests keep the outcome the plain run gave them.
+# and writes `go test -json` events to <out.json>. The gate merges those events
+# with the -race results: a plain pass supplies proof for a race skip, while
+# any observed failure remains a failure.
 #
 # The files are found by name, so a new test in such a file, or a new file that
 # uses one of the names, is picked up without changing this script.

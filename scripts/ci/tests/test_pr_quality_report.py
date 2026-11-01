@@ -19,6 +19,44 @@ def snapshot(count=10, coverage=85):
 
 
 class ReportTests(unittest.TestCase):
+    def test_recorded_conformance_subtests_are_scoped_and_collapsed(self):
+        report = self.render(evidence={"sources": {"ci": {"state": "completed", "conclusion": "success", "artifacts": {
+            "ci-conformance-summary.json": {"source": "a" * 40, "parents": {"pass": 3, "fail": 0, "skip": 2, "incomplete": 1, "not-run": 8},
+                "subtests": {"pass": 15, "fail": 0, "skip": 4}, "cases": [
+                    {"package": "p", "test": "TestCombined/json/sum/level", "outcome": "skip", "kind": "subtest", "items": ["semantics/query"]}]}}}}})
+        focus = report.split("<details>", 1)[0]
+        self.assertIn("Recorded conformance: 3 passed, 0 failed, 2 skipped, 1 incomplete parent tests", focus)
+        self.assertIn("15 passed, 0 failed, 4 skipped subtests", focus)
+        self.assertIn("<details><summary>Recorded conformance contracts and subtests", report)
+        self.assertIn("TestCombined/json/sum/level", report)
+        self.assertIn("package + full test path", report)
+        self.assertIn("not full Loki compatibility", report)
+        self.assertIn("Declared but not run", report)
+
+    def test_recorded_conformance_failure_is_above_other_signals(self):
+        sources = {f"absent-{i}": {"state": "unavailable"} for i in range(20)}
+        sources["ci"] = {"state": "completed", "conclusion": "failure", "artifacts": {
+            "ci-conformance-summary.json": {"parents": {"pass": 0, "fail": 1, "skip": 0, "incomplete": 0},
+                "subtests": {"pass": 4, "fail": 1, "skip": 0}, "cases": []}}}
+        report = self.render(evidence={"sources": sources})
+        self.assertIn("0 passed, 1 failed", report.split("<details>", 1)[0])
+
+    def test_recorded_conformance_detail_size_is_bounded_after_escaping(self):
+        cases = [{"package": '<>&|*' * 100, "test": f"TestCombined/{index}/" + '<>&|*' * 100,
+                  "outcome": "fail" if index == 0 else "pass", "kind": "subtest", "items": ['<>&|*' * 100] * 4}
+                 for index in range(80)]
+        report = self.render(evidence={"sources": {"ci": {"state": "completed", "conclusion": "failure", "artifacts": {
+            "ci-conformance-summary.json": {"source": "a" * 40, "parents": {"pass": 0, "fail": 1, "skip": 0, "incomplete": 0},
+                "subtests": {"pass": 79, "fail": 1, "skip": 0}, "cases": cases,
+                "artifact_url": "https://github.com/owner/repo/actions/runs/12/artifacts/34"}}}}})
+        section = report.split('<details><summary>Recorded conformance contracts and subtests</summary>', 1)[1].split("</details>", 1)[0]
+        self.assertLessEqual(len(section), 12000)
+        self.assertIn("0 passed, 1 failed", report.split("<details>", 1)[0])
+        self.assertIn("TestCombined/0/", section)
+        self.assertRegex(section, r"Showing [1-9][0-9]?/80 observed identities")
+        self.assertNotIn("Showing 40/80", section)
+        self.assertIn("[conformance-evidence artifact](https://github.com/owner/repo/actions/runs/12/artifacts/34)", section)
+
     def test_handler_summary_highlights_guarded_regressions(self):
         base, head = snapshot(), snapshot()
         head["performance"]["benchmarks"].update(query_range_cache_hit_ns_per_op=3000, query_range_cache_hit_bytes_per_op=1000)
