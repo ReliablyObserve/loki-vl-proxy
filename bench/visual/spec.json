@@ -544,6 +544,23 @@
    ]
   },
   {
+   "id": "explore-keep-structured-metadata",
+   "kind": "explore",
+   "query": "{app=\"visual-keep-metadata\"} | keep deployment_environment",
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "profiles/keep-structured-metadata-key",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/keep-structured-metadata-key"
+   ]
+  },
+  {
    "id": "explore-keep-derived-service-name",
    "kind": "explore",
    "query": "{app=\"otel-collector\"} | keep level,detected_level",
@@ -572,6 +589,9 @@
     "severity-exposure-surfaces",
     "operator-keep",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-stage-side-effects"
    ]
   },
   {
@@ -586,6 +606,9 @@
     "severity-exposure-surfaces",
     "operator-drop",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-stage-side-effects"
    ]
   },
   {

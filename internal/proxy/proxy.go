@@ -70,6 +70,19 @@ var compatCaptureBufPool = sync.Pool{
 
 var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
 var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
+var keepMetadataProjectionStageRE = regexp.MustCompile(`\|\s*keep\s+`)
+
+const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v1:"
+
+// keepMetadataProjectionResponseKeyVersion fences pre-fix keep replies in
+// local and peer-fed response caches. The projection can affect any mapped
+// field name, so the namespace covers all keep stages.
+func keepMetadataProjectionResponseKeyVersion(query string) string {
+	if keepMetadataProjectionStageRE.MatchString(query) {
+		return keepMetadataProjectionResponseVersion
+	}
+	return ""
+}
 
 // marshalJSON encodes v to JSON using a pooled buffer, then writes to w.
 // Reduces allocations vs json.NewEncoder(w).Encode() by reusing buffers.
@@ -2679,6 +2692,8 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	key.WriteString("query_range:v3:" + logLineCacheKeyVersion + ":")
 	key.WriteString(orderedJSONVectorResponseKeyVersion(r, logqlQuery))
 	key.WriteString(logfmtPresenceResponseKeyVersion(r, logqlQuery))
+	key.WriteString(detectedLevelMutationResponseKeyVersion(logqlQuery))
+	key.WriteString(keepMetadataProjectionResponseKeyVersion(logqlQuery))
 	writePart := func(value string) {
 		var digits [20]byte
 		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))

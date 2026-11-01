@@ -2,6 +2,7 @@ package translator
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -106,6 +107,66 @@ func TestParseDropKeepConditions_Table(t *testing.T) {
 				t.Errorf("ParseBareKeepFields = %v, want %v", got, tc.wantBareK)
 			}
 		})
+	}
+}
+
+func TestKeepDetectedLevelProjectsStoredLevelSource(t *testing.T) {
+	got := translateKeepStage("detected_level", nil)
+	want := "| fields _time, _msg, _stream, detected_level, level"
+	if got != want {
+		t.Fatalf("keep detected_level translated to %q, want %q", got, want)
+	}
+}
+
+func TestKeepDetectedLevelMetricDropsSourceBeforeStats(t *testing.T) {
+	for _, tc := range []struct {
+		stage      string
+		wantDelete bool
+	}{
+		{"keep detected_level", true},
+		{"keep detected_level, level", false},
+		{"keep level", false},
+		{"keep detected_level=\"warn\"", true},
+	} {
+		t.Run(tc.stage, func(t *testing.T) {
+			query := `sum by (level, detected_level) (count_over_time({app="api"} | ` + tc.stage + ` | drop __error__ [1m]))`
+			got, err := TranslateLogQL(query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := strings.Index(got, "| fields _time, _msg, _stream")
+			deleteLevel := strings.Index(got, "| delete level")
+			stats := strings.Index(got, "| stats by (")
+			if fields < 0 || stats < fields || (deleteLevel >= 0) != tc.wantDelete {
+				t.Fatalf("unexpected level projection/deletion: %s", got)
+			}
+			if tc.wantDelete && (deleteLevel < fields || stats < deleteLevel) {
+				t.Fatalf("the stored level must be deleted after keep and before stats: %s", got)
+			}
+			if tc.wantDelete {
+				if chain := strings.Index(got, detectedLevelChainMarker); chain < 0 || chain > fields {
+					t.Fatalf("derive detected_level before the keep stage: %s", got)
+				}
+			}
+		})
+	}
+}
+
+// conformance: profiles/keep-structured-metadata-key
+func TestKeepProjectsRawAndLokiMetadataNames(t *testing.T) {
+	mapper := func(label string) string {
+		if label == "deployment_environment" {
+			return "deployment.environment"
+		}
+		return label
+	}
+	got := translateKeepStage("deployment_environment, app", mapper)
+	want := `| fields _time, _msg, _stream, deployment_environment, app, deployment.environment`
+	if got != want {
+		t.Fatalf("keep projection = %q, want %q", got, want)
+	}
+	if got := translateKeepStage("detected_level, service_name", func(string) string { return "level" }); got != "| fields _time, _msg, _stream, detected_level, service_name, level" {
+		t.Fatalf("detected_level must retain its source without projecting a service_name source twice: %q", got)
 	}
 }
 
