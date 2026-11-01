@@ -25,12 +25,23 @@ type querySemanticsMatrix struct {
 type querySemanticsOperations struct {
 	Description string                    `json:"description"`
 	Operations  []querySemanticsOperation `json:"operations"`
+	DepthPaths  []querySemanticsDepthPath `json:"depth_paths"`
 }
 
 type querySemanticsOperation struct {
 	Name     string   `json:"name"`
 	Category string   `json:"category"`
 	Cases    []string `json:"cases"`
+}
+
+type querySemanticsDepthPath struct {
+	ID               string   `json:"id"`
+	Depth            int      `json:"depth"`
+	Stages           []string `json:"stages"`
+	MatrixCases      []string `json:"matrix_cases"`
+	RegistryCases    []string `json:"registry_cases"`
+	LiveTest         string   `json:"live_test"`
+	RecordedEvidence string   `json:"recorded_evidence"`
 }
 
 type querySemanticsCase struct {
@@ -288,6 +299,65 @@ func TestQuerySemanticsOperationsInventory(t *testing.T) {
 	for _, tc := range matrix.Cases {
 		if _, ok := seenCaseRefs[tc.ID]; !ok {
 			t.Fatalf("query semantics case %q is not tracked by the operations inventory", tc.ID)
+		}
+	}
+}
+
+func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
+	inventory := loadQuerySemanticsOperations(t)
+	matrix := loadQuerySemanticsMatrix(t)
+	caseIDs := make(map[string]struct{}, len(matrix.Cases))
+	for _, tc := range matrix.Cases {
+		caseIDs[tc.ID] = struct{}{}
+	}
+	liveTests, err := os.ReadFile("parser_error_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read live depth test source: %v", err)
+	}
+	seenDepths := make(map[int]bool, 3)
+	seenPaths := make(map[string]bool, len(inventory.DepthPaths))
+	wantStages := map[int]string{
+		1: "selector,parser,parsed_field_filter",
+		2: "selector,parser,parsed_field_filter,range_function",
+		3: "selector,parser,parsed_field_filter,range_function,aggregation",
+	}
+	for _, path := range inventory.DepthPaths {
+		if path.ID == "" || seenPaths[path.ID] {
+			t.Fatalf("missing or duplicate depth path id %q", path.ID)
+		}
+		seenPaths[path.ID] = true
+		if path.Depth < 1 || path.Depth > 3 || seenDepths[path.Depth] {
+			t.Fatalf("depth path %q has missing, duplicate, or unsupported depth %d", path.ID, path.Depth)
+		}
+		seenDepths[path.Depth] = true
+		if strings.Join(path.Stages, ",") != wantStages[path.Depth] || len(path.MatrixCases) == 0 || len(path.RegistryCases) == 0 {
+			t.Fatalf("depth path %q must declare its stages, matrix cases, and registry proof", path.ID)
+		}
+		for _, id := range path.MatrixCases {
+			if _, ok := caseIDs[id]; !ok {
+				t.Fatalf("depth path %q references unknown query semantics case %q", path.ID, id)
+			}
+		}
+		for _, id := range path.RegistryCases {
+			registryFile := "../../conformance/registry/cases/" + id + ".yaml"
+			contents, err := os.ReadFile(registryFile)
+			if err != nil {
+				t.Fatalf("depth path %q references missing registry case %q: %v", path.ID, id, err)
+			}
+			if !strings.Contains(string(contents), "id: "+id) {
+				t.Fatalf("depth path %q registry file %q declares another id", path.ID, id)
+			}
+		}
+		if path.LiveTest == "" || !strings.Contains(string(liveTests), "func "+path.LiveTest+"(") {
+			t.Fatalf("depth path %q references missing live Loki/proxy test %q", path.ID, path.LiveTest)
+		}
+		if _, err := os.Stat(path.RecordedEvidence); err != nil {
+			t.Fatalf("depth path %q references missing retained evidence %q: %v", path.ID, path.RecordedEvidence, err)
+		}
+	}
+	for depth := 1; depth <= 3; depth++ {
+		if !seenDepths[depth] {
+			t.Errorf("depth inventory does not cover depth %d", depth)
 		}
 	}
 }
