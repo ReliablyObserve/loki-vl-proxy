@@ -510,6 +510,19 @@ func TestQuerySemanticsMatrixManifest(t *testing.T) {
 	}
 }
 
+func TestQuerySemanticsMatrixLogPerformanceCasesHaveQualityContracts(t *testing.T) {
+	matrix := loadQuerySemanticsMatrix(t)
+	logCategories := map[string]bool{
+		"parser": true, "field_filter": true, "format": true,
+		"drop_keep": true, "multi_stage": true,
+	}
+	for _, perf := range matrix.PerformanceCases {
+		if logCategories[perf.Category] && perf.CaseID == "" {
+			t.Errorf("log performance case %q lacks a quality case", perf.ID)
+		}
+	}
+}
+
 func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	metric := querySemanticsCase{ID: "metric", Family: "aggregation", Endpoint: "query_range", Query: `count_over_time({app="test"}[1m])`, Step: "60", Expectation: "success", ExpectResultType: "matrix", Compare: "metric_points", RequireNonEmpty: true}
 	for _, tc := range []struct {
