@@ -108,6 +108,15 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(out["entries"]["fix-page"]["fixes"], ["semantics/case-a"])
         self.assertEqual(out["fix_cases"]["semantics/case-a"]["entries"], ["fix-page", "fix-page-2"])
 
+    def test_partial_open_case_proof_survives_capture_budget(self):
+        gaps = {"semantics/case-a": {"status": "open", "impact": "explore-visible"}}
+        out = run(["internal/proxy/case_only.go", "conformance/registry/cases/semantics/case-a.yaml"],
+                  cases=["semantics/case-a"], case_gaps=gaps, max_captures=1)
+        self.assertEqual(out["fix_cases"]["semantics/case-a"]["status"], "open")
+        self.assertIn("fix-page", out["entries"])
+        self.assertNotIn("fix-page", out["dropped"])
+        self.assertEqual(out["entries"]["fix-page"]["why"][-1], "fix proof: semantics/case-a")
+
     def test_untouched_cases_are_not_selected(self):
         out = run(["internal/cache/cache.go", "conformance/registry/cases/semantics/case-b.yaml"], cases=["semantics/case-b"], case_gaps=GAPS)
         self.assertEqual(list(out["entries"]), ["fix-page-2", "core-logs"])  # fix proof first, then the core set
@@ -295,6 +304,13 @@ class ChangedCasesTest(unittest.TestCase):
         self.write("a/open-one", "fixed")
         self.commit("pr")
         self.assertEqual(self.changed(), ["a/new-one", "a/open-one"])
+
+    def test_modified_open_case_with_explicit_visual_proof_triggers(self):
+        self.write("a/open-one", "open", extra="  proxy: 'partially fixed'\n")
+        self.commit("partial fix")
+        self.assertEqual(self.changed(), [])
+        self.assertEqual(plan.changed_cases("main", "HEAD", root=self.repo,
+                                            proof_cases={"a/open-one"}), ["a/open-one"])
 
     def test_edit_of_a_fixed_case_in_another_field_and_a_delete_trigger_nothing(self):
         self.write("a/fixed-one", "fixed", extra="  area: 'changed'\n")

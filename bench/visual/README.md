@@ -124,9 +124,10 @@ index/stats is an estimate from chunk metadata that moves while it writes). 24h 
 
 **Fix proof.** The regression tiers prove nothing broke elsewhere; a fix proof shows the exact
 case a PR fixes. A spec entry lists in `fixes` the registry case ids (`conformance/registry/cases/**`,
-the ones with a `gap:` block) whose behaviour its query reproduces. When a PR adds a case file or turns a
-case's `gap.status` to `fixed` (read from git against the merge base of the base and the head, renames
-followed), `plan.py` selects every entry that lists the case at the `ci_ranges` Loki holds, puts it first, marks it
+the ones with a `gap:` block) whose behaviour its query reproduces. When a PR adds a case file, turns a
+case's `gap.status` to `fixed`, or edits an open case with an explicit `fixes` entry (read from git against
+the merge base of the base and the head, renames followed), `plan.py` selects every entry that lists the
+case at the `ci_ranges` Loki holds, puts it first, marks it
 `why: ["fix proof: <case>"]` and never trims or drops it for the capture budget (a registry-only PR also
 runs the core set). A fix-only entry is captured at the ci_ranges Loki holds (15m and 1h with the 1.5h Loki seed), since a fix is proven against Loki. At most 18 fix captures run at those ranges; further fix entries narrow to `core_range`
 (listed in the comment, never dropped). `visual_comment.py` opens the comment with a "Fix proof" section
@@ -136,7 +137,8 @@ on base** (the base already matched Loki, so the capture proves nothing), **base
 Loki data window: the base answered with an error or a panel error where Loki and the PR both answered
 with data and no error; the PR's values there are not compared, so the case should also have a
 Loki-compared capture) or **undecided** (no Loki data at that range). The case verdict is the worst problem, else the best proof; a case whose captures are only
-not-reproduced is **unproven**. **Gate:** a case with entries fails the run unless at least one
+not-reproduced is **unproven**. An open case can prove a partial fix while its remaining behaviour stays
+open in the registry. **Gate:** a case with entries fails the run unless at least one
 Loki-compared capture is fixed or improved, or one capture is base failed (a fix for a failure that only
 appears at long ranges, such as a row limit, cannot be compared with Loki's shorter data window in CI).
 Any required fix capture that **still differs** or **regresses** fails the case, even if another
