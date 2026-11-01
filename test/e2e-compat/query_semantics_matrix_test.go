@@ -267,9 +267,9 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 		}
 		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
 		switch tc.Compare {
-		case "line_count", "log_entries":
+		case "log_entries":
 			if tc.ExpectResultType != "streams" {
-				return fmt.Errorf("line-count case %q must expect streams", tc.ID)
+				return fmt.Errorf("log-entry case %q must expect streams", tc.ID)
 			}
 		case "series_count", "metric_keys", "metric_points", "any_non_empty":
 			if !metric {
@@ -543,6 +543,10 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	logs := querySemanticsCase{ID: "logs", Family: "selector", Endpoint: "query_range", Query: `{app="test"}`, Expectation: "success", ExpectResultType: "streams", Compare: "log_entries"}
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{logs}}); err != nil {
 		t.Errorf("valid exact log-entry contract rejected: %v", err)
+	}
+	logs.Compare = "line_count"
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{logs}}); err == nil {
+		t.Error("weak line-count comparison accepted for a log case")
 	}
 }
 
@@ -898,15 +902,6 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 					}
 					if err := metricparity.Difference(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
 						t.Fatalf("%s: %v", tc.ID, err)
-					}
-				case "line_count":
-					proxyCount := countLogLines(proxyResp)
-					lokiCount := countLogLines(lokiResp)
-					if tc.RequireNonEmpty && (proxyCount == 0 || lokiCount == 0) {
-						t.Fatalf("expected non-empty log results for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
-					}
-					if proxyCount != lokiCount {
-						t.Fatalf("line-count mismatch for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
 					}
 				case "log_entries":
 					proxyEntries, err := querySemanticsLogEntries(proxyBody)

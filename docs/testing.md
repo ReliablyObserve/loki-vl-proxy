@@ -489,7 +489,9 @@ Each manifest entry declares:
 All 29 log-result cases use `log_entries`, including eight latency scenarios
 promoted to quality cases without duplicating their query strings. The comparison
 rejects malformed values, missing or extra entries, changed labels, timestamps,
-lines or metadata. It does not claim response ordering parity.
+lines or metadata. The manifest validator rejects the former line-count-only
+mode, so later cases cannot silently weaken this contract. It does not claim
+response ordering parity.
 
 The 42 `metric_points` cases reuse the sliding-range tests' decoder and point
 comparison. Label identities use canonical JSON; duplicate series or timestamps,
