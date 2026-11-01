@@ -1590,7 +1590,7 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 //     ParseKeepConditions / applyKeepConditions to strip non-matching fields.
 //
 // Always includes _time, _msg, _stream so the proxy can reconstruct the Loki response.
-func translateKeepStage(spec string, _ LabelTranslateFunc) string {
+func translateKeepStage(spec string, labelFn LabelTranslateFunc) string {
 	items := splitCSV(spec)
 	var fields []string
 	for _, item := range items {
@@ -1626,6 +1626,20 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 	// the client also named level in the keep stage.
 	if slices.Contains(fields, detectedLevelLabelName) && !slices.Contains(fields, "level") {
 		fields = append(fields, "level")
+	}
+	// A Loki-compatible metadata label can name a different stored VL field
+	// (for example deployment_environment -> deployment.environment). Retain
+	// both spellings: some ingesters already store the Loki spelling.
+	if labelFn != nil {
+		for _, field := range slices.Clone(fields) {
+			if field == detectedLevelLabelName || field == "service_name" {
+				continue // derived labels have their own read-path projection
+			}
+			mapped := labelFn(field)
+			if mapped != "" && mapped != field && !slices.Contains(fields, mapped) {
+				fields = append(fields, mapped)
+			}
+		}
 	}
 	return logsql.PipeFields{Labels: append(base, fields...)}.String()
 }

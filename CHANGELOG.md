@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing `detected_level` stream labels and both response encodings. Scoped
   response-cache versions prevent older local or peer entries from restoring
   pre-fix labels.
+- Preserve Loki-facing structured metadata keys through `| keep` when their
+  VictoriaLogs storage names differ, such as `deployment_environment` stored
+  as `deployment.environment`. The backend projection now retains both the
+  requested and mapped field names, so already-normalized ingesters still
+  work. A dual-ingest regression compares complete Loki responses in ordinary
+  and categorized encodings; versioned keep-response cache keys fence older
+  replies from local and peer caches.
 
 - Keep logfmt-parsed fields in ungrouped field-presence metrics. The burst
   coalescer no longer replaces `| logfmt | field!=""` with a stored-column

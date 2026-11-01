@@ -152,6 +152,24 @@ func TestKeepDetectedLevelMetricDropsSourceBeforeStats(t *testing.T) {
 	}
 }
 
+// conformance: profiles/keep-structured-metadata-key
+func TestKeepProjectsRawAndLokiMetadataNames(t *testing.T) {
+	mapper := func(label string) string {
+		if label == "deployment_environment" {
+			return "deployment.environment"
+		}
+		return label
+	}
+	got := translateKeepStage("deployment_environment, app", mapper)
+	want := `| fields _time, _msg, _stream, deployment_environment, app, deployment.environment`
+	if got != want {
+		t.Fatalf("keep projection = %q, want %q", got, want)
+	}
+	if got := translateKeepStage("detected_level, service_name", func(string) string { return "level" }); got != "| fields _time, _msg, _stream, detected_level, service_name, level" {
+		t.Fatalf("derived labels unexpectedly projected stored fields: %q", got)
+	}
+}
+
 // TestDropConditionMatches verifies the matcher predicate semantics used when the
 // proxy post-processes drop/keep stages, across all four operators.
 func TestDropConditionMatches(t *testing.T) {

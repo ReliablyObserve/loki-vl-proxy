@@ -336,6 +336,7 @@
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/keep_service_name_test.go",
+      "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
@@ -531,6 +532,11 @@
     "profiles/keep-removes-derived-service-name": [
       "internal/proxy/stream_metadata_test.go",
       "test/e2e-compat/keep_service_name_test.go"
+    ],
+    "profiles/keep-structured-metadata-key": [
+      "internal/proxy/stream_metadata_test.go",
+      "internal/translator/drop_keep_parse_test.go",
+      "test/e2e-compat/keep_structured_metadata_test.go"
     ],
     "profiles/label-browse-params-ignored": [
       "internal/proxy/loki_profile_test.go",
@@ -1852,7 +1858,8 @@
     ],
     "internal/proxy/stream_metadata_test.go": [
       "loki_api_v1_query_range",
-      "profiles/keep-removes-derived-service-name"
+      "profiles/keep-removes-derived-service-name",
+      "profiles/keep-structured-metadata-key"
     ],
     "internal/proxy/sum_without_differential_test.go": [
       "limits/drilldown-partial-with-warning",
@@ -2065,6 +2072,9 @@
       "semantics/detected-level-missing-from-stats-answers",
       "severity-detected-level-derivation",
       "severity-exposure-surfaces"
+    ],
+    "internal/translator/drop_keep_parse_test.go": [
+      "profiles/keep-structured-metadata-key"
     ],
     "internal/translator/extracted_suffix_test.go": [
       "loki_api_v1_query_range",
@@ -2285,6 +2295,10 @@
     "test/e2e-compat/keep_service_name_test.go": [
       "loki_api_v1_query_range",
       "profiles/keep-removes-derived-service-name"
+    ],
+    "test/e2e-compat/keep_structured_metadata_test.go": [
+      "loki_api_v1_query_range",
+      "profiles/keep-structured-metadata-key"
     ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
@@ -2598,7 +2612,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 260,
+  "tests_with_markers": 262,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2634,7 +2648,6 @@
     "profiles/json-extraction-list-missing-key",
     "profiles/json-line-stored-without-line",
     "profiles/json-number-label-text",
-    "profiles/keep-structured-metadata-key",
     "profiles/label-endpoints-window-and-data",
     "profiles/metadata-default-lookback",
     "profiles/multi-tenant-volume-merge",
