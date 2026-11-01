@@ -200,6 +200,10 @@ func waitForLokiMetricData(t *testing.T) {
 }
 
 func waitForLokiMetricDataSelector(t *testing.T, selector string) {
+	waitForLokiMetricDataSelectorForTenant(t, selector, "")
+}
+
+func waitForLokiMetricDataSelectorForTenant(t *testing.T, selector, tenant string) {
 	t.Helper()
 	deadline := time.Now().Add(90 * time.Second)
 	probe := url.Values{}
@@ -208,7 +212,7 @@ func waitForLokiMetricDataSelector(t *testing.T, selector string) {
 	probe.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
 	probe.Set("step", "60")
 	for time.Now().Before(deadline) {
-		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), nil)
+		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), tenantRequestHeaders(tenant))
 		if status == http.StatusOK {
 			data := extractMap(resp, "data")
 			if len(extractArray(data, "result")) > 0 {
@@ -1054,7 +1058,7 @@ func TestExtended_OnGrouping(t *testing.T) {
 	now := time.Now()
 
 	params := url.Values{}
-	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) / on(app) sum by (app) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("query", querySemanticsCaseQuery(t, "on_grouping_metric"))
 	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("step", "60")
@@ -1096,7 +1100,7 @@ func TestExtended_GroupLeftJoin(t *testing.T) {
 	now := time.Now()
 
 	params := url.Values{}
-	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) * on(app) group_left(level) sum by (app, level) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("query", querySemanticsCaseQuery(t, "group_left_join_metric"))
 	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("step", "60")

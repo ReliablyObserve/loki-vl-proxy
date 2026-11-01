@@ -441,18 +441,39 @@ Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by see
 - every live matrix case is tracked by the operation inventory
 
 Its `depth_paths` section is an index into those same fixtures, not another
-query corpus. It connects three cumulative stages—selector/parser/field filter,
-then range function, then outer aggregation—to the existing live Loki-versus-
-proxy test, the precise registry cases, and the retained parser-matrix capture.
-`TestQuerySemanticsMatrixDepthPaths` checks the stage order, matrix case IDs, registry
-IDs and evidence path, so stale links or an uncovered depth fail the manifest
-test. The deeper parser suite adds live cases for `rate` and
+query corpus. It tracks selector/parser/field-filter, range-function, and outer-
+aggregation paths separately for JSON, logfmt, regexp, and pattern parsing.
+The optional `related_tests` entries link existing specialized tests to those
+same paths. Those tests retain distinct assertions (such as exact parser-error
+text, series limits, or bounded VL reads) without copying their queries into
+the depth-path inventory. The matrix is the canonical query catalog; the
+operations inventory indexes its IDs and registry links.
+`TestQuerySemanticsMatrixDepthPaths` checks the stage order, matrix case IDs,
+parser registry items, related registry cases, and any retained evidence path;
+`TestQuerySemanticsMatrixCoversParserMetricDepths` fails when any parser is
+missing at one of the three depths. Every path runs through the live Loki-versus-
+proxy matrix test. The retained parser-error capture is supplemental JSON
+error/nesting evidence; it is not presented as a saved response for the other
+parser paths. The deeper parser suite adds live cases for `rate` and
 `count_over_time`, error-filter states, grouped and nested aggregations, and
 both instant and range APIs; its retained evidence is described in the
 [parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
-The 60-case semantics manifest and 132-case parser capture cover different
+The 80-case semantics manifest and 132-case parser capture cover different
 contracts; their counts should not be summed as a full Cartesian compatibility
 space.
+
+The manifest also holds 50 existing latency scenarios. Thirteen refer directly
+to quality case IDs and use the same LogQL; the remaining scenario queries live
+only in this manifest. `TestParityLatency` and the focused `BenchmarkParity_*`
+helpers resolve queries from this catalog. This moves the former standalone
+performance query list into one place without adding a performance gate to this
+PR. The remaining performance-only scenarios can gain strict Loki answer
+contracts in the matrix as their fixtures are expanded; visual proof stays in
+its separate workflow.
+The PR Quality Report compares catalog counts between base and PR without
+starting tests. Its live matrix row comes from the source-verified pinned Loki
+CI job log and reports observed passes, failures, and skips separately; a
+missing or stale job is not counted as a pass.
 
 Each manifest entry declares:
 
@@ -463,7 +484,7 @@ Each manifest entry declares:
 - an explicit comparison contract; `metric_points` checks every series label set,
   sample timestamp and numeric value, while log cases retain line-count checks
 
-The 28 `metric_points` cases reuse the sliding-range tests' decoder and point
+The 42 `metric_points` cases reuse the sliding-range tests' decoder and point
 comparison. Label identities use canonical JSON; duplicate series or timestamps,
 malformed samples and missing/extra points fail. Timestamp coordinates retain
 their decimal precision. Values use relative tolerance `1e-6` and absolute

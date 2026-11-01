@@ -13,13 +13,18 @@ generated:
     - internal/translator/translator.go
 
 semantics: |
-  TODO: Loki's exact semantics, including how it treats missing labels,
-  parse errors, ordering and empty input.
+  The live query-semantics matrix checks a pattern-extracted numeric status
+  filter, `count_over_time` over the filtered stream, and an outer
+  `sum by (app)` against Loki. The cases assert exact metric labels,
+  timestamps, and values, using the generated nginx fixture. Missing captures,
+  nonmatching lines, and parser ordering remain outside this bounded coverage.
 victorialogs: |
-  TODO: the native LogsQL construct used, or the proxy-side
-  transformation and the VictoriaLogs limitation that forces it.
-consumers: []   # explore, drilldown, datasource, api
-cases: []       # case ids proving the semantics match
+  The matrix sends the same pattern parser query to the proxy backed by
+  VictoriaLogs and to Loki, then checks the filtered metric and outer
+  aggregation. It proves only the declared generated-fixture cases, not full
+  pattern-parser parity.
+consumers: [api]
+cases: []
 victorialogs_candidates:
   - id: pipe-extract
     since: v1.40.0

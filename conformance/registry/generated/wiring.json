@@ -459,11 +459,19 @@
     "parser-json": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go",
-      "test/e2e-compat/drilldown_field_breakdown_test.go"
+      "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/query_semantics_matrix_test.go"
     ],
     "parser-logfmt": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
-      "internal/proxy/ordered_json_conditional_unpack_test.go"
+      "internal/proxy/ordered_json_conditional_unpack_test.go",
+      "test/e2e-compat/query_semantics_matrix_test.go"
+    ],
+    "parser-pattern": [
+      "test/e2e-compat/query_semantics_matrix_test.go"
+    ],
+    "parser-regexp": [
+      "test/e2e-compat/query_semantics_matrix_test.go"
     ],
     "peer-cache-fleet-recovery": [
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -2388,6 +2396,10 @@
     "test/e2e-compat/query_semantics_matrix_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
+      "parser-json",
+      "parser-logfmt",
+      "parser-pattern",
+      "parser-regexp",
       "range_function-count-over-time",
       "range_function-rate"
     ],
@@ -2656,5 +2668,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 202
+  "wired_items": 204
 }

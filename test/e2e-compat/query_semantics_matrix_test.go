@@ -3,12 +3,17 @@
 package e2e_compat
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +21,81 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 )
 
+func TestQuerySemanticsMatrixTenantScopedRequestCarriesOrgID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Scope-OrgID"); got != "4200000000" {
+			t.Errorf("X-Scope-OrgID = %q, want %q", got, "4200000000")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range tenantRequestHeaders("4200000000") {
+		req.Header.Set(key, value)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestQuerySemanticsMatrixTenantScopedVLRequestUsesAccountAndProjectHeaders(t *testing.T) {
+	headers := victoriaLogsTenantHeaders("4200000000")
+	if got := headers["AccountID"]; got != "4200000000" {
+		t.Errorf("AccountID = %q, want %q", got, "4200000000")
+	}
+	if got := headers["ProjectID"]; got != "0" {
+		t.Errorf("ProjectID = %q, want %q", got, "0")
+	}
+	if _, ok := headers["X-Scope-OrgID"]; ok {
+		t.Error("VictoriaLogs request must not use Loki's X-Scope-OrgID header")
+	}
+}
+
+func TestQuerySemanticsMatrixScopeQueryAddsFixtureMarker(t *testing.T) {
+	for _, tc := range []struct {
+		name, query, want string
+	}{
+		{"existing_matchers", `{app="api-gateway"} | json`, `{app="api-gateway",query_semantics_run_id="run-123"} | json`},
+		{"empty_selector", `{} |= "timeout"`, `{query_semantics_run_id="run-123"} |= "timeout"`},
+		{"brace_in_matcher_value", `{message="literal } brace"}`, `{message="literal } brace",query_semantics_run_id="run-123"}`},
+		{"all_selectors", `{app="api-gateway"} / on(app) {level="error"}`, `{app="api-gateway",query_semantics_run_id="run-123"} / on(app) {level="error",query_semantics_run_id="run-123"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := scopeQuerySemanticsQuery(tc.query, "run-123")
+			if err != nil {
+				t.Fatalf("scope query: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("scoped query = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if _, err := scopeQuerySemanticsQuery(`rate(foo[5m])`, "run-123"); err == nil {
+		t.Fatal("query without a stream selector was accepted")
+	}
+}
+
 type querySemanticsMatrix struct {
-	Description string               `json:"description"`
-	Oracle      string               `json:"oracle"`
-	Cases       []querySemanticsCase `json:"cases"`
+	Description      string                          `json:"description"`
+	Oracle           string                          `json:"oracle"`
+	Cases            []querySemanticsCase            `json:"cases"`
+	PerformanceCases []querySemanticsPerformanceCase `json:"performance_cases"`
+}
+
+type querySemanticsPerformanceCase struct {
+	ID       string `json:"id"`
+	Category string `json:"category"`
+	CaseID   string `json:"case_id,omitempty"`
+	Query    string `json:"query,omitempty"`
 }
 
 type querySemanticsOperations struct {
@@ -37,11 +113,14 @@ type querySemanticsOperation struct {
 type querySemanticsDepthPath struct {
 	ID               string   `json:"id"`
 	Depth            int      `json:"depth"`
+	Parser           string   `json:"parser"`
 	Stages           []string `json:"stages"`
 	MatrixCases      []string `json:"matrix_cases"`
+	RegistryItems    []string `json:"registry_items"`
 	RegistryCases    []string `json:"registry_cases"`
 	LiveTest         string   `json:"live_test"`
 	RecordedEvidence string   `json:"recorded_evidence"`
+	RelatedTests     []string `json:"related_tests,omitempty"`
 }
 
 type querySemanticsCase struct {
@@ -57,7 +136,7 @@ type querySemanticsCase struct {
 	KnownDeviation   string `json:"known_deviation,omitempty"`
 }
 
-func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
+func loadQuerySemanticsMatrix(t testing.TB) querySemanticsMatrix {
 	t.Helper()
 
 	data, err := os.ReadFile("query-semantics-matrix.json")
@@ -74,16 +153,31 @@ func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
 	return matrix
 }
 
+func querySemanticsCaseQuery(t testing.TB, id string) string {
+	t.Helper()
+	for _, tc := range loadQuerySemanticsMatrix(t).Cases {
+		if tc.ID == id {
+			return tc.Query
+		}
+	}
+	t.Fatalf("unknown query semantics case %q", id)
+	return ""
+}
+
 func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 	if len(matrix.Cases) == 0 {
 		return fmt.Errorf("query semantics matrix must not be empty")
 	}
 	seen := make(map[string]bool, len(matrix.Cases))
+	qualityQueries := make(map[string]string, len(matrix.Cases))
+	qualitySuccess := make(map[string]bool, len(matrix.Cases))
 	for _, tc := range matrix.Cases {
 		if seen[tc.ID] {
 			return fmt.Errorf("duplicate query semantics case %q", tc.ID)
 		}
 		seen[tc.ID] = true
+		qualityQueries[tc.Query] = tc.ID
+		qualitySuccess[tc.ID] = tc.Expectation == "success"
 		if tc.ID == "" || tc.Endpoint == "" || tc.Query == "" || tc.Expectation == "" {
 			return fmt.Errorf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
 		}
@@ -127,6 +221,19 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			return fmt.Errorf("case %q cannot waive a strict comparison with a deviation", tc.ID)
 		}
 	}
+	performanceIDs := make(map[string]bool, len(matrix.PerformanceCases))
+	for _, perf := range matrix.PerformanceCases {
+		if perf.ID == "" || performanceIDs[perf.ID] || perf.Category == "" || (perf.CaseID == "") == (perf.Query == "") {
+			return fmt.Errorf("invalid or duplicate performance case %q", perf.ID)
+		}
+		performanceIDs[perf.ID] = true
+		if perf.CaseID != "" && !qualitySuccess[perf.CaseID] {
+			return fmt.Errorf("performance case %q references unknown or unsuccessful quality case %q", perf.ID, perf.CaseID)
+		}
+		if sharedID, ok := qualityQueries[perf.Query]; perf.Query != "" && ok {
+			return fmt.Errorf("performance case %q duplicates quality query %q instead of referencing it", perf.ID, sharedID)
+		}
+	}
 	return nil
 }
 
@@ -168,9 +275,118 @@ func querySemanticsParams(tc querySemanticsCase, evaluation time.Time) url.Value
 	return params
 }
 
-func querySemanticsGET(t *testing.T, baseURL, endpoint string, params url.Values) (int, string, map[string]interface{}) {
+func querySemanticsGET(t *testing.T, baseURL, endpoint string, params url.Values, tenant string) (int, string, map[string]interface{}) {
 	t.Helper()
-	return doJSONGET(t, baseURL+"/loki/api/v1/"+endpoint+"?"+params.Encode(), nil)
+	return doJSONGET(t, baseURL+"/loki/api/v1/"+endpoint+"?"+params.Encode(), tenantRequestHeaders(tenant))
+}
+
+func scopeQuerySemanticsQuery(query, runID string) (string, error) {
+	if strings.TrimSpace(runID) == "" {
+		return "", fmt.Errorf("query semantics fixture marker must not be empty")
+	}
+	marker := fmt.Sprintf(`query_semantics_run_id=%q`, runID)
+	var scoped strings.Builder
+	quote := byte(0)
+	escaped := false
+	selectors := 0
+	for i := 0; i < len(query); i++ {
+		ch := query[i]
+		if quote != 0 {
+			scoped.WriteByte(ch)
+			if quote == '"' && escaped {
+				escaped = false
+				continue
+			}
+			if quote == '"' && ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '`' {
+			quote = ch
+			scoped.WriteByte(ch)
+			continue
+		}
+		if ch == '{' {
+			selectorEnd := i + 1
+			selectorQuote := byte(0)
+			selectorEscaped := false
+			for selectorEnd < len(query) {
+				selectorChar := query[selectorEnd]
+				if selectorQuote != 0 {
+					if selectorQuote == '"' && selectorEscaped {
+						selectorEscaped = false
+						selectorEnd++
+						continue
+					}
+					if selectorQuote == '"' && selectorChar == '\\' {
+						selectorEscaped = true
+						selectorEnd++
+						continue
+					}
+					if selectorChar == selectorQuote {
+						selectorQuote = 0
+					}
+				} else if selectorChar == '"' || selectorChar == '`' {
+					selectorQuote = selectorChar
+				} else if selectorChar == '}' {
+					break
+				}
+				selectorEnd++
+			}
+			if selectorEnd == len(query) {
+				return "", fmt.Errorf("query semantics query has an unterminated stream selector")
+			}
+			selector := query[i+1 : selectorEnd]
+			scoped.WriteByte('{')
+			if strings.TrimSpace(selector) != "" {
+				scoped.WriteString(selector)
+				scoped.WriteByte(',')
+			}
+			scoped.WriteString(marker)
+			scoped.WriteByte('}')
+			i = selectorEnd
+			selectors++
+			continue
+		}
+		scoped.WriteByte(ch)
+	}
+	if selectors == 0 {
+		return "", fmt.Errorf("query semantics query has no stream selector")
+	}
+	return scoped.String(), nil
+}
+
+func isolatedNumericTenantID(t *testing.T) string {
+	t.Helper()
+	var raw [4]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		t.Fatalf("generate isolated numeric tenant ID: %v", err)
+	}
+	id := binary.BigEndian.Uint32(raw[:])
+	if id == 0 {
+		id = 1
+	}
+	return strconv.FormatUint(uint64(id), 10)
+}
+
+func TestQuerySemanticsMatrixIsolatedNumericTenantIDIsCanonicalAndUnique(t *testing.T) {
+	seen := make(map[string]struct{}, 64)
+	for range 64 {
+		id := isolatedNumericTenantID(t)
+		parsed, err := strconv.ParseUint(id, 10, 32)
+		if err != nil || strconv.FormatUint(parsed, 10) != id {
+			t.Fatalf("tenant ID %q is not a canonical uint32: parse error %v", id, err)
+		}
+		if _, ok := seen[id]; ok {
+			t.Fatalf("generated duplicate tenant ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
 }
 
 func querySemanticsResultCount(resp map[string]interface{}) int {
@@ -303,6 +519,26 @@ func TestQuerySemanticsOperationsInventory(t *testing.T) {
 	}
 }
 
+func TestQuerySemanticsPerformanceCatalog(t *testing.T) {
+	matrix := loadQuerySemanticsMatrix(t)
+	cases := validParityCases(t)
+	if len(cases) != len(matrix.PerformanceCases) {
+		t.Fatalf("resolved %d performance cases, want %d", len(cases), len(matrix.PerformanceCases))
+	}
+	seen := make(map[string]bool, len(cases))
+	for _, tc := range cases {
+		if tc.name == "" || tc.category == "" || tc.query == "" || seen[tc.name] {
+			t.Fatalf("invalid resolved performance case %+v", tc)
+		}
+		seen[tc.name] = true
+	}
+	for _, id := range []string{"exact_match", "sum_by", "avg_over_time_unwrap", "vector_div", "json_two_field_filters"} {
+		if !seen[id] {
+			t.Errorf("focused benchmark case %q is missing", id)
+		}
+	}
+}
+
 func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 	inventory := loadQuerySemanticsOperations(t)
 	matrix := loadQuerySemanticsMatrix(t)
@@ -310,12 +546,18 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 	for _, tc := range matrix.Cases {
 		caseIDs[tc.ID] = struct{}{}
 	}
-	liveTests, err := os.ReadFile("parser_error_matrix_test.go")
+	matrixTests, err := os.ReadFile("query_semantics_matrix_test.go")
 	if err != nil {
-		t.Fatalf("read live depth test source: %v", err)
+		t.Fatalf("read live query semantics test source: %v", err)
 	}
+	parserErrorTests, err := os.ReadFile("parser_error_matrix_test.go")
+	if err != nil {
+		t.Fatalf("read nested parser test source: %v", err)
+	}
+	liveTests := string(matrixTests) + string(parserErrorTests)
 	seenDepths := make(map[int]bool, 3)
 	seenPaths := make(map[string]bool, len(inventory.DepthPaths))
+	seenParserDepths := make(map[string]bool, len(inventory.DepthPaths))
 	wantStages := map[int]string{
 		1: "selector,parser,parsed_field_filter",
 		2: "selector,parser,parsed_field_filter,range_function",
@@ -326,16 +568,32 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 			t.Fatalf("missing or duplicate depth path id %q", path.ID)
 		}
 		seenPaths[path.ID] = true
-		if path.Depth < 1 || path.Depth > 3 || seenDepths[path.Depth] {
-			t.Fatalf("depth path %q has missing, duplicate, or unsupported depth %d", path.ID, path.Depth)
+		if path.Depth < 1 || path.Depth > 3 {
+			t.Fatalf("depth path %q has unsupported depth %d", path.ID, path.Depth)
 		}
 		seenDepths[path.Depth] = true
-		if strings.Join(path.Stages, ",") != wantStages[path.Depth] || len(path.MatrixCases) == 0 || len(path.RegistryCases) == 0 {
+		parserDepth := fmt.Sprintf("%s:%d", path.Parser, path.Depth)
+		if seenParserDepths[parserDepth] {
+			t.Fatalf("duplicate parser/depth path %q", parserDepth)
+		}
+		seenParserDepths[parserDepth] = true
+		if strings.Join(path.Stages, ",") != wantStages[path.Depth] || len(path.MatrixCases) == 0 || (len(path.RegistryItems) == 0 && len(path.RegistryCases) == 0) {
 			t.Fatalf("depth path %q must declare its stages, matrix cases, and registry proof", path.ID)
 		}
 		for _, id := range path.MatrixCases {
 			if _, ok := caseIDs[id]; !ok {
 				t.Fatalf("depth path %q references unknown query semantics case %q", path.ID, id)
+			}
+		}
+		for _, id := range path.RegistryItems {
+			registryFile := "../../conformance/registry/" + id + ".yaml"
+			contents, err := os.ReadFile(registryFile)
+			if err != nil {
+				t.Fatalf("depth path %q references missing registry item %q: %v", path.ID, id, err)
+			}
+			registryID := id[strings.LastIndex(id, "/")+1:]
+			if !strings.Contains(string(contents), "id: "+registryID) {
+				t.Fatalf("depth path %q registry file %q declares another id", path.ID, registryFile)
 			}
 		}
 		for _, id := range path.RegistryCases {
@@ -348,11 +606,36 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 				t.Fatalf("depth path %q registry file %q declares another id", path.ID, id)
 			}
 		}
-		if path.LiveTest == "" || !strings.Contains(string(liveTests), "func "+path.LiveTest+"(") {
+		if path.LiveTest == "" || !strings.Contains(liveTests, "func "+path.LiveTest+"(") {
 			t.Fatalf("depth path %q references missing live Loki/proxy test %q", path.ID, path.LiveTest)
 		}
-		if _, err := os.Stat(path.RecordedEvidence); err != nil {
-			t.Fatalf("depth path %q references missing retained evidence %q: %v", path.ID, path.RecordedEvidence, err)
+		if path.RecordedEvidence != "" {
+			if _, err := os.Stat(path.RecordedEvidence); err != nil {
+				t.Fatalf("depth path %q references missing retained evidence %q: %v", path.ID, path.RecordedEvidence, err)
+			}
+		}
+		for _, name := range path.RelatedTests {
+			if name == path.LiveTest || !strings.HasPrefix(name, "Test") {
+				t.Fatalf("depth path %q has redundant or invalid related test %q", path.ID, name)
+			}
+			matches, err := filepath.Glob("*_test.go")
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, file := range matches {
+				contents, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(contents), "func "+name+"(") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("depth path %q references missing related test %q", path.ID, name)
+			}
 		}
 	}
 	for depth := 1; depth <= 3; depth++ {
@@ -362,9 +645,65 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 	}
 }
 
-// conformance: loki_api_v1_query, loki_api_v1_query_range, range_function-count-over-time, range_function-rate
+func TestQuerySemanticsMatrixCoversParserMetricDepths(t *testing.T) {
+	inventory := loadQuerySemanticsOperations(t)
+	matrix := loadQuerySemanticsMatrix(t)
+	cases := make(map[string]querySemanticsCase, len(matrix.Cases))
+	for _, tc := range matrix.Cases {
+		cases[tc.ID] = tc
+	}
+
+	wantParsers := []string{"json", "logfmt", "pattern", "regexp"}
+	covered := make(map[string]bool, len(wantParsers)*3)
+	for _, path := range inventory.DepthPaths {
+		if path.Parser == "" {
+			t.Errorf("depth path %q does not identify its parser", path.ID)
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", path.Parser, path.Depth)
+		if covered[key] {
+			t.Errorf("duplicate parser/depth path %q", key)
+		}
+		covered[key] = true
+		for _, caseID := range path.MatrixCases {
+			tc, ok := cases[caseID]
+			if !ok {
+				t.Errorf("depth path %q references unknown matrix case %q", path.ID, caseID)
+				continue
+			}
+			if !strings.Contains(tc.Query, "| "+path.Parser) {
+				t.Errorf("depth path %q case %q does not exercise the declared %s parser", path.ID, caseID, path.Parser)
+			}
+			if path.Depth >= 2 && (tc.ExpectResultType != "matrix" || !strings.Contains(tc.Query, "[5m]")) {
+				t.Errorf("depth %d path %q case %q must exercise a range metric", path.Depth, path.ID, caseID)
+			}
+			if path.Depth == 3 && !strings.Contains(tc.Query, "sum by (") {
+				t.Errorf("depth 3 path %q case %q must exercise an outer aggregation", path.ID, caseID)
+			}
+		}
+	}
+	for _, parser := range wantParsers {
+		for depth := 1; depth <= 3; depth++ {
+			if !covered[fmt.Sprintf("%s:%d", parser, depth)] {
+				t.Errorf("query semantics inventory does not cover parser %q at depth %d", parser, depth)
+			}
+		}
+	}
+}
+
+// conformance: loki_api_v1_query, loki_api_v1_query_range, range_function-count-over-time, range_function-rate, parser-json, parser-logfmt, parser-pattern, parser-regexp
 func TestQuerySemanticsMatrix(t *testing.T) {
-	ensureDataIngested(t)
+	waitForReady(t, proxyURL+"/ready", 30*time.Second)
+	waitForReady(t, lokiURL+"/ready", 30*time.Second)
+	// Use a unique canonical numeric tenant. The local stack enables numeric
+	// passthrough (AccountID=<OrgID>, ProjectID=0), so this isolates the matrix
+	// without changing its tenant-map configuration or shared A/B data.
+	tenant := isolatedNumericTenantID(t)
+	t.Logf("using isolated numeric tenant %s for query semantics fixtures", tenant)
+	ingestionAnchor = time.Now().Add(-3 * time.Minute)
+	ingestRichTestDataForTenant(t, tenant, ingestionAnchor)
+	forceVLFlush(t)
+	waitForLokiMetricDataSelectorForTenant(t, `{app="api-gateway"}`, tenant)
 	matrix := loadQuerySemanticsMatrix(t)
 	// Keep fixtures inside their five-minute metric windows even if setup or
 	// preceding shard tests took a long time. Minute alignment also matches
@@ -375,9 +714,16 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 		tc := tc
 		t.Run(tc.ID, func(t *testing.T) {
 			params := querySemanticsParams(tc, evaluation)
+			query, err := scopeQuerySemanticsQuery(params.Get("query"), tenant)
+			if err != nil && tc.Expectation == "success" {
+				t.Fatalf("scope query to matrix fixtures: %v", err)
+			}
+			if err == nil {
+				params.Set("query", query)
+			}
 			t.Logf("matrix_case id=%s comparison=%s known_deviation=%s", tc.ID, tc.Compare, tc.KnownDeviation)
-			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc.Endpoint, params)
-			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc.Endpoint, params)
+			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc.Endpoint, params, tenant)
+			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc.Endpoint, params, tenant)
 			if tc.ExpectResultType != "streams" {
 				t.Log("matrix_backend proxy")
 				recordParserMatrixResponse(t, params, proxyStatus, []byte(proxyBody))
