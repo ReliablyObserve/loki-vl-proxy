@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-01",
+  "sources": {
+    "main": {
+      "binary_sha256": "a0cc9b193491de302cc6b2b51e681cf7f011632a9a3b5ef709cf4f1699615f13",
+      "binary_go_version": "go1.27.3",
+      "binary_build_settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "CGO_CFLAGS": "",
+        "CGO_CPPFLAGS": "",
+        "CGO_CXXFLAGS": "",
+        "CGO_ENABLED": "1",
+        "CGO_LDFLAGS": "",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "darwin",
+        "vcs": "git",
+        "vcs.modified": "false",
+        "vcs.revision": "3daa8a543841de9d0a2608ddda6bf439ed194525",
+        "vcs.time": "2026-11-01T08:58:01Z"
+      },
+      "source_ref": "3daa8a543841de9d0a2608ddda6bf439ed194525"
+    },
+    "pr": {
+      "binary_sha256": "d178dececa64f030bc001426fc5cc243e3117273158d4d2c245674d72dd8feba",
+      "binary_go_version": "go1.27.3",
+      "binary_build_settings": {
+        "-buildmode": "exe",
+        "-compiler": "gc",
+        "-trimpath": "true",
+        "CGO_ENABLED": "1",
+        "GOARCH": "arm64",
+        "GOARM64": "v8.0",
+        "GOOS": "darwin",
+        "vcs": "git",
+        "vcs.modified": "true",
+        "vcs.revision": "0e2963a2d8abc02628057b2ed9994abbd37f73c3",
+        "vcs.time": "2026-11-01T09:33:53Z"
+      },
+      "source_ref": "0e2963a2d8abc02628057b2ed9994abbd37f73c3"
+    }
+  },
+  "fixture": {
+    "Probe": "cacheperf-1793524130276291000",
+    "End": 1793512800,
+    "RecentEnd": 1793524020,
+    "Streams": 160,
+    "Lines": 499200,
+    "SHA256": "5fdd563f22f028cd512a9a6c8f28a81790eeefaf5f2e482866e5fd53d4243586"
+  },
+  "fixture_plan": {
+    "RangeHours": 48,
+    "Version": 1,
+    "ShardsPerCell": 2,
+    "Repeats": 1,
+    "NamespaceCells": 80,
+    "FixtureSHA256": "5fdd563f22f028cd512a9a6c8f28a81790eeefaf5f2e482866e5fd53d4243586"
+  },
+  "backend_images": {
+    "loki": {
+      "reference": "grafana/loki:3.7.9",
+      "actual_image_id": "sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28"
+    },
+    "victorialogs": {
+      "reference": "victoriametrics/victoria-logs:v1.52.0",
+      "actual_image_id": "sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e"
+    }
+  },
+  "host": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.27.3"
+  },
+  "candidate_build_note": "vcs.modified=true reflects README and untracked evidence; cmd/, internal/, go.mod and go.sum match measured candidate commit; no runtime source edits after that commit."
+}

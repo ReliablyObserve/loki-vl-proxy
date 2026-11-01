@@ -113,6 +113,11 @@ and delayed writes separate; use filesystem/device telemetry for actual I/O.
 Increasing a cache hit ratio without reducing backend ranges/bytes or latency
 does not prove an improvement.
 
+On Linux, process memory uses `/proc` RSS. When `/proc` is unavailable (including
+macOS), the legacy `loki_vl_proxy_process_resident_memory_bytes` gauge falls
+back to Go `MemStats.Sys`, despite its name. Use container/kernel memory
+telemetry for RSS in that environment; do not relabel the fallback as RSS.
+
 ## Safety boundaries
 
 Raw JSON `count_over_time` and `rate` can retain complete settled answers on
