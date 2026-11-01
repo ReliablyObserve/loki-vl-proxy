@@ -449,7 +449,7 @@ IDs and evidence path, so stale links or an uncovered depth fail the manifest
 test. The deeper parser suite adds live cases for `rate` and
 `count_over_time`, error-filter states, grouped and nested aggregations, and
 both instant and range APIs; its retained evidence is described in the
-[parser-matrix README](../test/e2e-compat/testdata/parser-error-matrix/README.md).
+[parser-matrix README](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md).
 The 60-case semantics manifest and 132-case parser capture cover different
 contracts; their counts should not be summed as a full Cartesian compatibility
 space.
