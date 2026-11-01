@@ -113,7 +113,7 @@ def conformance_details(summary):
     parents, subtests = mapping(summary.get("parents")), mapping(summary.get("subtests"))
     rows = [[label, fmt(parents.get(outcome)), fmt(subtests.get(outcome)) if outcome != "incomplete" else "parent completion only"]
             for outcome, label in (("pass", "Passed"), ("fail", "Failed"), ("skip", "Skipped"), ("incomplete", "Incomplete"))]
-    lines = ["Existing conformance collector output: declaring unit tests plus the already-running non-race exceptions. "
+    lines = ["Existing conformance collector output: declaring unit tests plus the already-running non-race exceptions. " +
              "This artifact does not add live Loki, VictoriaLogs or Grafana runs. Candidate only; not full Loki compatibility.", "",
              *table(["Observed outcome", "Declaring parent tests", "Subtests"], rows), "",
              "Declared but not run: " + fmt(parents.get("not-run")) + " parent tests; these are not observed passes or skips.",
