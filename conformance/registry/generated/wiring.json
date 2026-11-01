@@ -890,7 +890,9 @@
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/ordered_json_metric_test.go",
-      "internal/proxy/ordered_json_valid_split_test.go"
+      "internal/proxy/ordered_json_valid_split_test.go",
+      "internal/proxy/ordered_json_vector_test.go",
+      "test/e2e-compat/parser_error_matrix_test.go"
     ],
     "semantics/plain-name-after-parser-reads-stream-label": [
       "internal/proxy/plain_stream_labels_test.go",
@@ -1655,6 +1657,9 @@
       "semantics/json-error-filter-metric-split-pushdown",
       "semantics/pipeline-error-text-parity"
     ],
+    "internal/proxy/ordered_json_vector_test.go": [
+      "semantics/pipeline-error-text-parity"
+    ],
     "internal/proxy/parenthesized_range_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2321,6 +2326,9 @@
     "test/e2e-compat/parser_capture_identity_test.go": [
       "loki_api_v1_query",
       "parsed-label-series-identity"
+    ],
+    "test/e2e-compat/parser_error_matrix_test.go": [
+      "semantics/pipeline-error-text-parity"
     ],
     "test/e2e-compat/pattern_line_filter_test.go": [
       "loki_api_v1_query",

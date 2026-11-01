@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outcomes distinguish EOF, early close, failures and cancellation; structured
   logs omit queries and raw error text. Existing response limits are preserved.
 
+### Fixed
+
+- Preserve JSON parser errors, error-filter order and rate units when vector
+  aggregations such as `max`, `avg`, `count`, `topk` and `bottomk` wrap a
+  JSON-parsed `sum`. Outer functions now consume the ordered evaluator's
+  samples instead of bypassing parser semantics through a native translation.
+  Apply the series limit after the outer aggregation while retaining bounded
+  inner-row collection. The regression matrix compares instant and range
+  answers with Loki for valid, truncated and plain-text inputs, grouping,
+  nested functions and explicit parser-error filtering.
+
 ## [2.55.0] - 2026-11-01
 
 ### Fixed
