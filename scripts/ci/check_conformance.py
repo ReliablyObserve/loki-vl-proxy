@@ -88,6 +88,24 @@ ERROR_LAYER_LEAKS = "conformance/registry/error-layer-known-leaks.json"
 ERROR_LAYER_TEST = "TestErrorLayer_NoVictoriaLogsLeak"
 
 
+def semantic_comparison_problems(matrix_path="test/e2e-compat/query-semantics-matrix.json",
+                                 registry_root="conformance/registry"):
+    """Availability-only cases must name an accepted difference in the existing registry."""
+    from parity_gaps import cases
+    registered, _ = cases(registry_root)
+    accepted = {case["id"] for case in registered
+                if case["status"] in ("owner-kept", "documented", "upstream")}
+    problems = []
+    for case in load_json(matrix_path)["cases"]:
+        reference = case.get("known_deviation")
+        if case.get("compare") == "any_non_empty":
+            if not isinstance(reference, str) or reference not in accepted:
+                problems.append(f"{case['id']}: availability-only comparison needs an existing accepted registry deviation")
+        elif reference:
+            problems.append(f"{case['id']}: a strict comparison cannot apply known_deviation")
+    return problems
+
+
 def error_layer_problems(go_results=(), leaks_path=ERROR_LAYER_LEAKS, base_text=None):
     """The ratchet of the single Loki-shaped error layer. Every route x failure-mode cell that still leaks
     VictoriaLogs text or a non-Loki status is listed with the registry cases it fails; the Go gate skips
@@ -205,6 +223,12 @@ def main():
         print(f"endpoint scope: {problem}")
     if scope:
         failures.append("endpoint scope")
+
+    semantics = semantic_comparison_problems()
+    for problem in semantics:
+        print(f"semantic comparison: {problem}")
+    if semantics:
+        failures.append("semantic comparison ownership")
 
     flags = run("flag_docs.py", "--check")
     print(flags.stdout.strip())

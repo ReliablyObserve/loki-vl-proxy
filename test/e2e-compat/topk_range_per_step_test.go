@@ -3,6 +3,7 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -12,15 +13,57 @@ import (
 	"time"
 )
 
-// topKLabel reads one label out of the "k=v,k=v" series key slidingRangeSeries
-// builds.
-func topKLabel(key, name string) string {
-	for _, pair := range strings.Split(key, ",") {
-		if k, v, ok := strings.Cut(pair, "="); ok && k == name {
-			return v
+// metricKeyLabels reads canonical identities from the shared metric decoder,
+// as well as the legacy keys still emitted by some instant-query test helpers.
+func metricKeyLabels(key string) map[string]string {
+	labels := map[string]string{}
+	if json.Unmarshal([]byte(key), &labels) == nil && labels != nil {
+		return labels
+	}
+	labels = map[string]string{}
+	for _, pair := range strings.Split(strings.Trim(key, "{}"), ",") {
+		if name, value, ok := strings.Cut(pair, "="); ok {
+			labels[name] = value
 		}
 	}
-	return ""
+	return labels
+}
+
+func metricJSONKey(labels map[string]string) string {
+	if len(labels) == 0 {
+		return "{}"
+	}
+	key, _ := json.Marshal(labels) // String maps contain no unsupported JSON values.
+	return string(key)
+}
+
+func topKLabel(key, name string) string {
+	return metricKeyLabels(key)[name]
+}
+
+func TestCompat_TopKSeriesKeyProjection(t *testing.T) {
+	for _, tc := range []struct {
+		key, want string
+	}{
+		{`{"app":"shop","pod":"a,b=c"}`, "a,b=c"},
+		{"app=shop,pod=plain", "plain"},
+	} {
+		if got := topKLabel(tc.key, "pod"); got != tc.want {
+			t.Errorf("pod in %q = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+	projected := onlyTopKLabels(map[string]map[string]string{
+		`{"app":"shop","pod":"a,b=c"}`:           {"1": "2"},
+		`{"app":"shop","pod":"a","other":"b=c"}`: {"1": "3"},
+	}, "pod")
+	if len(projected) != 2 {
+		t.Fatalf("projection merged distinct pod identities: %v", projected)
+	}
+	for key, points := range projected {
+		if got := topKLabel(key, "pod"); (got != "a,b=c" || points["1"] != "2") && (got != "a" || points["1"] != "3") {
+			t.Errorf("projection lost a pod/value pair: %s %v", key, points)
+		}
+	}
 }
 
 // onlyTopKLabels keeps the named labels of each series key, so series that
@@ -28,13 +71,13 @@ func topKLabel(key, name string) string {
 func onlyTopKLabels(series map[string]map[string]string, names ...string) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	for key, points := range series {
-		parts := make([]string, 0, len(names))
+		labels := make(map[string]string, len(names))
 		for _, name := range names {
 			if v := topKLabel(key, name); v != "" {
-				parts = append(parts, name+"="+v)
+				labels[name] = v
 			}
 		}
-		kept := strings.Join(parts, ",")
+		kept := metricJSONKey(labels)
 		if out[kept] == nil {
 			out[kept] = map[string]string{}
 		}

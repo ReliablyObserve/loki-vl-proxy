@@ -58,7 +58,7 @@ func TestRangeMetricCompatibilityDrilldownFieldBreakdown(t *testing.T) {
 			// body, escaped, meta, stored and spaced, plus the three numeric values.
 			prefix := strings.Split(tc.field, "_")[0][:1]
 			for _, value := range []string{"body", "escaped", "meta", "stored", "spaced"} {
-				if _, ok := loki[tc.field+"="+prefix+"-"+value]; !ok {
+				if _, ok := loki[metricJSONKey(map[string]string{tc.field: prefix + "-" + value})]; !ok {
 					t.Fatalf("Loki sanity: expected the %s-%s series, got %v", prefix, value, loki)
 				}
 			}

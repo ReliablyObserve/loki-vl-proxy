@@ -35,6 +35,41 @@ class QualitySummaryReportTest(unittest.TestCase):
         self.assertGreater(order.index("README.md"), order.index("conformance/reports/parity-gaps.md"))
 
 
+class SemanticComparisonOwnershipTest(unittest.TestCase):
+    def check_case(self, comparison="any_non_empty", reference="parsed-identity/dynamic-key-parsers", state="owner-kept"):
+        gate = load_gate()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            matrix = root / "matrix.json"
+            case = {"id": "fixture", "compare": comparison}
+            if reference is not None:
+                case["known_deviation"] = reference
+            matrix.write_text(json.dumps({"cases": [case]}))
+            registry = root / "registry"
+            definition = registry / "cases/parsed-identity/dynamic-key-parsers.yaml"
+            definition.parent.mkdir(parents=True)
+            definition.write_text(f"id: parsed-identity/dynamic-key-parsers\ntitle: Existing deviation\ngap:\n  status: {state}\n")
+            return gate.semantic_comparison_problems(str(matrix), str(registry))
+
+    def test_availability_contract_requires_existing_accepted_ownership(self):
+        for state in ("owner-kept", "documented", "upstream"):
+            with self.subTest(state=state):
+                self.assertEqual([], self.check_case(state=state))
+
+    def test_unknown_and_open_cases_cannot_hide_a_value_gap(self):
+        self.assertTrue(self.check_case(reference="parsed-identity/missing"))
+        self.assertTrue(self.check_case(reference="../../other"))
+        self.assertTrue(self.check_case(state="open"))
+        self.assertTrue(self.check_case(state="fixed"))
+
+    def test_availability_without_a_reference_is_rejected(self):
+        self.assertTrue(self.check_case(reference=None))
+
+    def test_strict_comparison_cannot_silently_apply_a_deviation(self):
+        self.assertTrue(self.check_case(comparison="metric_points"))
+        self.assertEqual([], self.check_case(comparison="metric_points", reference=None))
+
+
 class ErrorLayerRatchetTest(unittest.TestCase):
     """The known-leak list of the error-layer gate may only shrink, and the gate must have run."""
 

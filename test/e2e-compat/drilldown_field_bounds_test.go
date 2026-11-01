@@ -140,7 +140,7 @@ func fieldBoundsWaitLokiRange(t *testing.T, query string, start, end time.Time, 
 				last = reply.err.Error()
 			}
 		} else if reflect.DeepEqual(expected, reply.series) {
-			return reply.series
+			return fieldBoundsCanonicalSeries(t, reply.series)
 		} else {
 			last = longrangeFieldsDifference(expected, reply.series)
 		}
@@ -151,6 +151,21 @@ func fieldBoundsWaitLokiRange(t *testing.T, query string, start, end time.Time, 
 		case <-ticker.C:
 		}
 	}
+}
+
+func fieldBoundsCanonicalSeries(t *testing.T, legacy map[string]map[string]string) map[string]map[string]string {
+	t.Helper()
+	out := make(map[string]map[string]string, len(legacy))
+	for key, points := range legacy {
+		// This reference has exactly one grouping label. Its entire value may
+		// contain commas or equals signs, so do not split it into label pairs.
+		value, ok := strings.CutPrefix(key, "val=")
+		if !ok {
+			t.Fatalf("expected the val grouping label: %s", key)
+		}
+		out[metricJSONKey(map[string]string{"val": value})] = points
+	}
+	return out
 }
 
 func fieldBoundsBusiest(t *testing.T, all map[string]map[string]string, limit int) map[string]map[string]string {
@@ -184,37 +199,47 @@ func fieldBoundsBusiest(t *testing.T, all map[string]map[string]string, limit in
 
 func fieldBoundsSeries(t *testing.T, envelope map[string]interface{}) map[string]map[string]string {
 	t.Helper()
-	out := map[string]map[string]string{}
 	data := extractMap(envelope, "data")
 	if data["resultType"] != "matrix" {
 		t.Fatalf("expected a matrix: %v", envelope)
 	}
-	for _, item := range extractArray(data, "result") {
-		series, ok := item.(map[string]interface{})
-		if !ok {
-			t.Fatalf("invalid series: %v", item)
-		}
-		metric := extractMap(series, "metric")
-		if len(metric) != 1 {
+	out, err := decodeMetricSamples(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range out {
+		metric := metricKeyLabels(key)
+		_, hasValue := metric["val"]
+		if len(metric) != 1 || !hasValue {
 			t.Fatalf("expected only the val grouping label: %v", metric)
 		}
-		key := "val=" + fmt.Sprint(metric["val"])
-		if _, exists := out[key]; exists {
-			t.Fatalf("duplicate series: %s", key)
-		}
-		points := map[string]string{}
-		for _, raw := range extractArray(series, "values") {
-			pair, ok := raw.([]interface{})
-			if !ok || len(pair) != 2 {
-				t.Fatalf("invalid point: %v", raw)
-			}
-			ts, ok := pair[0].(float64)
-			if !ok {
-				t.Fatalf("invalid timestamp: %v", pair[0])
-			}
-			points[strconv.FormatFloat(ts, 'f', -1, 64)] = fmt.Sprint(pair[1])
-		}
-		out[key] = points
 	}
 	return out
+}
+
+func TestDrilldown_FieldBoundsCanonicalKeys(t *testing.T) {
+	values := []string{"quoted\"comma,other=label\\\n", "second", "third"}
+	legacy := map[string]map[string]string{}
+	var result []interface{}
+	for i, value := range values {
+		count := strconv.Itoa(9 - i*2)
+		legacy["val="+value] = map[string]string{"1.25": count}
+		result = append(result, map[string]interface{}{
+			"metric": map[string]interface{}{"val": value},
+			"values": []interface{}{[]interface{}{json.Number("1.25"), count}},
+		})
+	}
+	envelope := map[string]interface{}{
+		"status": "success", "warnings": []interface{}{"partial result"},
+		"data": map[string]interface{}{"resultType": "matrix", "result": result},
+	}
+	reference := fieldBoundsCanonicalSeries(t, legacy)
+	got := fieldBoundsSeries(t, envelope)
+	if !reflect.DeepEqual(got, reference) {
+		t.Fatalf("partial-response labels or decimal samples differ: got %v want %v", got, reference)
+	}
+	top := fieldBoundsBusiest(t, reference, 2)
+	if len(top) != 2 || top[metricJSONKey(map[string]string{"val": values[0]})]["1.25"] != "9" || top[metricJSONKey(map[string]string{"val": values[1]})]["1.25"] != "7" {
+		t.Fatalf("canonicalization changed the unambiguous ranking: %v", top)
+	}
 }

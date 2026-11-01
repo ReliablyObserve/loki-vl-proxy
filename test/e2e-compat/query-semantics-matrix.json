@@ -157,7 +157,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -168,7 +168,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -179,7 +179,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -190,7 +190,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -201,7 +201,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -212,7 +212,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -224,7 +224,8 @@
       "expectation": "success",
       "expect_result_type": "matrix",
       "compare": "any_non_empty",
-      "require_non_empty": true
+      "require_non_empty": true,
+      "known_deviation": "parsed-identity/dynamic-key-parsers"
     },
     {
       "id": "avg_over_time_unwrap",
@@ -234,7 +235,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -246,7 +247,8 @@
       "expectation": "success",
       "expect_result_type": "matrix",
       "compare": "any_non_empty",
-      "require_non_empty": true
+      "require_non_empty": true,
+      "known_deviation": "parsed-identity/dynamic-key-parsers"
     },
     {
       "id": "min_over_time_unwrap",
@@ -257,7 +259,8 @@
       "expectation": "success",
       "expect_result_type": "matrix",
       "compare": "any_non_empty",
-      "require_non_empty": true
+      "require_non_empty": true,
+      "known_deviation": "parsed-identity/dynamic-key-parsers"
     },
     {
       "id": "first_over_time_unwrap",
@@ -267,7 +270,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -278,7 +281,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -289,7 +292,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -300,7 +303,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -311,7 +314,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -321,7 +324,7 @@
       "query": "absent_over_time({app=\"definitely-missing-app\"}[5m])",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -332,7 +335,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -343,7 +346,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -354,7 +357,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -365,7 +368,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -376,7 +379,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -387,7 +390,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -398,7 +401,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -409,7 +412,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -420,7 +423,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -431,7 +434,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -442,7 +445,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -452,7 +455,7 @@
       "query": "topk(2, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -462,7 +465,7 @@
       "query": "sort_desc(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -472,7 +475,7 @@
       "query": "bottomk(1, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {
@@ -482,7 +485,7 @@
       "query": "sort(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
       "expectation": "success",
       "expect_result_type": "vector",
-      "compare": "series_count",
+      "compare": "metric_points",
       "require_non_empty": true
     },
     {

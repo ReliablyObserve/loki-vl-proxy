@@ -5,6 +5,7 @@ package e2e_compat
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,12 +30,7 @@ func projectOnApp(t *testing.T, query, side string, series map[string]map[string
 	t.Helper()
 	out := map[string]map[string]float64{}
 	for key, points := range series {
-		app := ""
-		for _, pair := range strings.Split(key, ",") {
-			if name, value, ok := strings.Cut(pair, "="); ok && name == "app" {
-				app = value
-			}
-		}
+		app := metricKeyLabels(key)["app"]
 		if app == "" {
 			t.Fatalf("%s: %s series {%s} has no app label", query, side, key)
 		}
@@ -60,6 +56,38 @@ func projectOnApp(t *testing.T, query, side string, series map[string]map[string
 		}
 	}
 	return out
+}
+
+func TestCompat_UnwrapSumWithoutCanonicalLabels(t *testing.T) {
+	app := "api,a=b"
+	first := metricJSONKey(map[string]string{"app": app, "route": "/v1,a=b", "detected_level": "unknown"})
+	second := metricJSONKey(map[string]string{"app": app, "route": "/v2"})
+	series := map[string]map[string]string{first: {"1.5": "2"}, second: {"1.5": "3"}}
+	for op, want := range map[string]float64{"sum": 5, "max": 3, "min": 2} {
+		got := projectOnApp(t, "projection fixture", "reference", series, op)
+		if len(got) != 1 || got[app]["1.5"] != want {
+			t.Fatalf("%s projection lost label bytes or samples: %v", op, got)
+		}
+	}
+	got := withoutUnknownDetectedLevel(series)
+	want := map[string]map[string]string{
+		metricJSONKey(map[string]string{"app": app, "route": "/v1,a=b"}): {"1.5": "2"},
+		second: {"1.5": "3"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata projection changed another label or point: got %v want %v", got, want)
+	}
+	for _, level := range []string{"info", "unknown,app=other"} {
+		key := metricJSONKey(map[string]string{"app": app, "detected_level": level})
+		input := map[string]map[string]string{key: {"1.5": "7"}}
+		if got := withoutUnknownDetectedLevel(input); !reflect.DeepEqual(got, input) {
+			t.Fatalf("projected a level other than exactly unknown: %v", got)
+		}
+	}
+	legacy := map[string]map[string]string{"app=plain,detected_level=unknown": {"1.5": "4"}}
+	if got := withoutUnknownDetectedLevel(legacy)[metricJSONKey(map[string]string{"app": "plain"})]["1.5"]; got != "4" {
+		t.Fatalf("legacy instant projection lost the sample: %q", got)
+	}
 }
 
 // TestCompat_UnwrapSumWithoutKeepsSeries: `sum without (...)`, and max and min,
@@ -101,7 +129,7 @@ func TestCompat_UnwrapSumWithoutKeepsSeries(t *testing.T) {
 							t.Fatalf("%s: Loki sanity: %d series, want one per stream and parsed label set at least", query, len(loki))
 						}
 						for key := range proxy {
-							if strings.Contains(","+key, ","+excluded+"=") {
+							if _, kept := metricKeyLabels(key)[excluded]; kept {
 								t.Fatalf("%s: proxy series {%s} keeps the excluded label", query, key)
 							}
 						}
@@ -179,14 +207,11 @@ func TestCompat_UnwrapSumWithoutExtractionList(t *testing.T) {
 func withoutUnknownDetectedLevel(series map[string]map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string, len(series))
 	for key, points := range series {
-		parts := strings.Split(key, ",")
-		kept := parts[:0]
-		for _, part := range parts {
-			if part != "detected_level=unknown" {
-				kept = append(kept, part)
-			}
+		labels := metricKeyLabels(key)
+		if labels["detected_level"] == "unknown" {
+			delete(labels, "detected_level")
 		}
-		out[strings.Join(kept, ",")] = points
+		out[metricJSONKey(labels)] = points
 	}
 	return out
 }

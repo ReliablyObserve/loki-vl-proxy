@@ -5,8 +5,11 @@ package e2e_compat
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +17,319 @@ import (
 	"testing"
 	"time"
 )
+
+func decodeMetricSamples(resp map[string]interface{}) (map[string]map[string]string, error) {
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("metric response data is not an object")
+	}
+	kind, ok := data["resultType"].(string)
+	if !ok || (kind != "matrix" && kind != "vector") {
+		return nil, fmt.Errorf("unsupported metric resultType %v", data["resultType"])
+	}
+	result, ok := data["result"].([]interface{})
+	if !ok || result == nil {
+		return nil, fmt.Errorf("metric result is not an array")
+	}
+	out := make(map[string]map[string]string, len(result))
+	for i, raw := range result {
+		series, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("series %d is not an object", i)
+		}
+		metric, ok := series["metric"].(map[string]interface{})
+		if !ok || metric == nil {
+			return nil, fmt.Errorf("series %d metric is not an object", i)
+		}
+		for name, value := range metric {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("series %d label %q is not a string", i, name)
+			}
+		}
+		encoded, err := json.Marshal(metric)
+		if err != nil {
+			return nil, fmt.Errorf("series %d labels: %w", i, err)
+		}
+		key := string(encoded)
+		if _, duplicate := out[key]; duplicate {
+			return nil, fmt.Errorf("duplicate metric series %s", key)
+		}
+		var values []interface{}
+		if kind == "matrix" {
+			values, ok = series["values"].([]interface{})
+			if !ok || values == nil {
+				return nil, fmt.Errorf("series %s values is not an array", key)
+			}
+		} else {
+			values = []interface{}{series["value"]}
+		}
+		points := make(map[string]string, len(values))
+		for j, raw := range values {
+			pair, ok := raw.([]interface{})
+			if !ok || len(pair) != 2 {
+				return nil, fmt.Errorf("series %s sample %d is not a timestamp/value pair", key, j)
+			}
+			ts, err := metricSampleTimestamp(pair[0])
+			if err != nil {
+				return nil, fmt.Errorf("series %s sample %d: %w", key, j, err)
+			}
+			value, ok := pair[1].(string)
+			if !ok {
+				return nil, fmt.Errorf("series %s t=%s value is not a string", key, ts)
+			}
+			if _, err := strconv.ParseFloat(value, 64); err != nil {
+				return nil, fmt.Errorf("series %s t=%s invalid value %q", key, ts, value)
+			}
+			if _, duplicate := points[ts]; duplicate {
+				return nil, fmt.Errorf("series %s duplicate timestamp %s", key, ts)
+			}
+			points[ts] = value
+		}
+		out[key] = points
+	}
+	return out, nil
+}
+
+// Preserve decimal coordinates from UseNumber without rounding them through a
+// float64. Default JSON decoding has already rounded its float64 coordinates;
+// retain all of that available precision too. Decimal keys keep older helpers
+// that parse sample times numerically compatible.
+func metricSampleTimestamp(raw interface{}) (string, error) {
+	var text string
+	switch v := raw.(type) {
+	case float64:
+		text = strconv.FormatFloat(v, 'f', -1, 64)
+	case json.Number:
+		text = v.String()
+	default:
+		return "", fmt.Errorf("timestamp is not a number: %v", raw)
+	}
+	// Bound decimal expansion even for a malformed backend timestamp such as
+	// 1e-1000000000. Real Loki coordinates have at most nanosecond precision.
+	if len(text) > 1024 {
+		return "", fmt.Errorf("timestamp exceeds precision bound")
+	}
+	f, err := strconv.ParseFloat(text, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || !json.Valid([]byte(text)) {
+		return "", fmt.Errorf("invalid timestamp %q", text)
+	}
+	mantissa, exponent, _ := strings.Cut(strings.ToLower(text), "e")
+	decimalPlaces := 0
+	if _, fractional, ok := strings.Cut(mantissa, "."); ok {
+		decimalPlaces = len(fractional)
+	}
+	if exponent != "" {
+		e, err := strconv.Atoi(exponent)
+		if err != nil || e < -1024 || e > 1024 {
+			return "", fmt.Errorf("invalid timestamp exponent %q", exponent)
+		}
+		decimalPlaces -= e
+	}
+	if decimalPlaces < 0 {
+		decimalPlaces = 0
+	}
+	r, ok := new(big.Rat).SetString(text)
+	if !ok {
+		return "", fmt.Errorf("invalid timestamp %q", text)
+	}
+	if r.Sign() == 0 {
+		return "0", nil
+	}
+	text = r.FloatString(decimalPlaces)
+	if strings.Contains(text, ".") {
+		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	}
+	return text, nil
+}
+
+func metricSamplesDifference(loki, proxy map[string]map[string]string, requireNonEmpty bool) error {
+	points := 0
+	for _, series := range loki {
+		points += len(series)
+	}
+	if requireNonEmpty && points == 0 {
+		return fmt.Errorf("Loki returned no samples; parity would be empty-vs-empty")
+	}
+	keys := make([]string, 0, len(loki)+len(proxy))
+	for key := range loki {
+		keys = append(keys, key)
+	}
+	for key := range proxy {
+		if _, exists := loki[key]; !exists {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		want, inLoki := loki[key]
+		got, inProxy := proxy[key]
+		if !inLoki {
+			return fmt.Errorf("proxy series %s absent in Loki", key)
+		}
+		if !inProxy {
+			return fmt.Errorf("Loki series %s missing in proxy", key)
+		}
+		times := make([]string, 0, len(want)+len(got))
+		for ts := range want {
+			times = append(times, ts)
+		}
+		for ts := range got {
+			if _, exists := want[ts]; !exists {
+				times = append(times, ts)
+			}
+		}
+		sort.Strings(times)
+		for _, ts := range times {
+			wv, inLoki := want[ts]
+			gv, inProxy := got[ts]
+			if !inLoki || !inProxy {
+				return fmt.Errorf("series %s t=%s: Loki %q (present=%v), proxy %q (present=%v)", key, ts, wv, inLoki, gv, inProxy)
+			}
+			w, we := strconv.ParseFloat(wv, 64)
+			g, ge := strconv.ParseFloat(gv, 64)
+			if we != nil || ge != nil {
+				return fmt.Errorf("series %s t=%s: invalid numeric sample: Loki %q, proxy %q", key, ts, wv, gv)
+			}
+			equal := w == g || (math.IsNaN(w) && math.IsNaN(g))
+			if !equal && !math.IsNaN(w) && !math.IsNaN(g) && !math.IsInf(w, 0) && !math.IsInf(g, 0) {
+				equal = math.Abs(w-g) <= math.Max(1e-9, 1e-6*math.Max(math.Abs(w), math.Abs(g)))
+			}
+			if !equal {
+				return fmt.Errorf("series %s t=%s: proxy %q, Loki %q", key, ts, gv, wv)
+			}
+		}
+	}
+	return nil
+}
+
+func TestRangeMetricCompatibilityDecodeSamples(t *testing.T) {
+	decode := func(body string) (map[string]map[string]string, error) {
+		var response map[string]interface{}
+		decoder := json.NewDecoder(strings.NewReader(body))
+		decoder.UseNumber()
+		if err := decoder.Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		return decodeMetricSamples(response)
+	}
+	t.Run("matrix_and_vector", func(t *testing.T) {
+		got, err := decode(`{"data":{"resultType":"matrix","result":[{"metric":{"a":"b,c=d"},"values":[[1.125,"0"],[1.25,"-2"]]},{"metric":{"c":"d","a":"b"},"values":[[1.125,"+Inf"]]}]}}`)
+		if err != nil || len(got) != 2 || !reflect.DeepEqual(got[`{"a":"b,c=d"}`], map[string]string{"1.125": "0", "1.25": "-2"}) {
+			t.Fatalf("identities/axis: %v, %v", got, err)
+		}
+		got, err = decode(`{"data":{"resultType":"vector","result":[{"metric":{},"value":[1700000000.000000001,"NaN"]}]}}`)
+		if err != nil || got["{}"]["1700000000.000000001"] != "NaN" {
+			t.Fatalf("precise vector: %v, %v", got, err)
+		}
+		got, err = decode(`{"data":{"resultType":"matrix","result":[]}}`)
+		if err != nil || got == nil || len(got) != 0 {
+			t.Fatalf("empty result: %v, %v", got, err)
+		}
+	})
+	for name, fragment := range map[string]string{
+		"missing_result": `"resultType":"matrix"`, "null_result": `"resultType":"matrix","result":null`,
+		"object_result": `"resultType":"matrix","result":{}`, "unsupported_type": `"resultType":"streams","result":[]`,
+		"null_series":          `"resultType":"matrix","result":[null]`,
+		"missing_metric":       `"resultType":"matrix","result":[{"values":[]}]`,
+		"null_metric":          `"resultType":"matrix","result":[{"metric":null,"values":[]}]`,
+		"number_label":         `"resultType":"matrix","result":[{"metric":{"a":1},"values":[]}]`,
+		"bool_label":           `"resultType":"matrix","result":[{"metric":{"a":true},"values":[]}]`,
+		"missing_values":       `"resultType":"matrix","result":[{"metric":{}}]`,
+		"null_values":          `"resultType":"matrix","result":[{"metric":{},"values":null}]`,
+		"object_values":        `"resultType":"matrix","result":[{"metric":{},"values":{}}]`,
+		"missing_vector_value": `"resultType":"vector","result":[{"metric":{}}]`,
+		"not_tuple":            `"resultType":"matrix","result":[{"metric":{},"values":[1]}]`,
+		"short_tuple":          `"resultType":"matrix","result":[{"metric":{},"values":[[1]]}]`,
+		"long_tuple":           `"resultType":"vector","result":[{"metric":{},"value":[1,"1",2]}]`,
+		"string_time":          `"resultType":"vector","result":[{"metric":{},"value":["1","1"]}]`,
+		"null_time":            `"resultType":"vector","result":[{"metric":{},"value":[null,"1"]}]`,
+		"number_value":         `"resultType":"vector","result":[{"metric":{},"value":[1,1]}]`,
+		"bool_value":           `"resultType":"vector","result":[{"metric":{},"value":[1,true]}]`,
+		"invalid_value":        `"resultType":"vector","result":[{"metric":{},"value":[1,"no"]}]`,
+		"duplicate_time":       `"resultType":"matrix","result":[{"metric":{},"values":[[1.25,"1"],[1.250,"2"]]}]`,
+		"duplicate_zero":       `"resultType":"matrix","result":[{"metric":{},"values":[[-0,"1"],[0,"2"]]}]`,
+		"duplicate_exponent":   `"resultType":"matrix","result":[{"metric":{},"values":[[1.25e2,"1"],[125,"2"]]}]`,
+		"duplicate_series":     `"resultType":"matrix","result":[{"metric":{"a":"b","c":"d"},"values":[]},{"metric":{"c":"d","a":"b"},"values":[]}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, err := decode(`{"data":{` + fragment + `}}`); err == nil {
+				t.Fatalf("malformed result accepted: %v", got)
+			}
+		})
+	}
+	for name, response := range map[string]map[string]interface{}{"nil_response": nil, "missing_data": {}, "null_data": {"data": nil}, "array_data": {"data": []interface{}{}}} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeMetricSamples(response); err == nil {
+				t.Fatal("malformed data accepted")
+			}
+		})
+	}
+	for name, timestamp := range map[string]interface{}{"nan": math.NaN(), "inf": math.Inf(1), "negative_inf": math.Inf(-1), "invalid_number": json.Number("oops"), "bool": true, "unbounded_precision": json.Number("1e-1000000000")} {
+		t.Run(name, func(t *testing.T) {
+			response := map[string]interface{}{"data": map[string]interface{}{"resultType": "vector", "result": []interface{}{map[string]interface{}{"metric": map[string]interface{}{}, "value": []interface{}{timestamp, "1"}}}}}
+			if _, err := decodeMetricSamples(response); err == nil {
+				t.Fatal("invalid timestamp accepted")
+			}
+		})
+	}
+	t.Run("float_and_negative_zero", func(t *testing.T) {
+		response := map[string]interface{}{"data": map[string]interface{}{"resultType": "vector", "result": []interface{}{map[string]interface{}{"metric": map[string]interface{}{"a": ""}, "value": []interface{}{math.Copysign(0, -1), "-Inf"}}}}}
+		got, err := decodeMetricSamples(response)
+		if err != nil || got[`{"a":""}`]["0"] != "-Inf" {
+			t.Fatalf("negative zero/empty label: %v, %v", got, err)
+		}
+	})
+}
+
+func TestRangeMetricCompatibilitySampleDifference(t *testing.T) {
+	type samples = map[string]map[string]string
+	for _, tc := range []struct {
+		name                string
+		loki, proxy         samples
+		nonempty, wantError bool
+	}{
+		{"formats", samples{"{}": {"1": "1.000", "2": "-2", "3": "0"}}, samples{"{}": {"1": "1e0", "2": "-2.0", "3": "-0"}}, true, false},
+		{"relative_tolerance", samples{"{}": {"1": "1000000"}}, samples{"{}": {"1": "1000000.5"}}, true, false},
+		{"absolute_tolerance", samples{"{}": {"1": "0"}}, samples{"{}": {"1": "5e-10"}}, true, false},
+		{"beyond_tolerance", samples{"{}": {"1": "1"}}, samples{"{}": {"1": "1.00001"}}, true, true},
+		{"swapped_equal_total", samples{"{}": {"1": "2", "2": "4"}}, samples{"{}": {"1": "4", "2": "2"}}, true, true},
+		{"zero_to_nine", samples{"{}": {"1": "0"}}, samples{"{}": {"1": "9"}}, true, true},
+		{"subsecond_shift", samples{"{}": {"1.125": "1"}}, samples{"{}": {"1.25": "1"}}, true, true},
+		{"missing_point", samples{"{}": {"1": "1", "2": "2"}}, samples{"{}": {"1": "1"}}, true, true},
+		{"extra_point", samples{"{}": {"1": "1"}}, samples{"{}": {"1": "1", "2": "2"}}, true, true},
+		{"missing_series", samples{"a": {"1": "1"}, "b": {"1": "2"}}, samples{"a": {"1": "1"}}, true, true},
+		{"extra_series", samples{"a": {"1": "1"}}, samples{"a": {"1": "1"}, "b": {"1": "2"}}, true, true},
+		{"special_values", samples{"{}": {"1": "NaN", "2": "+Inf", "3": "-Inf"}}, samples{"{}": {"1": "NaN", "2": "Inf", "3": "-Inf"}}, true, false},
+		{"infinity_sign", samples{"{}": {"1": "+Inf"}}, samples{"{}": {"1": "-Inf"}}, true, true},
+		{"nan_finite", samples{"{}": {"1": "NaN"}}, samples{"{}": {"1": "1"}}, true, true},
+		{"inf_finite", samples{"{}": {"1": "+Inf"}}, samples{"{}": {"1": "1e300"}}, true, true},
+		{"invalid_number", samples{"{}": {"1": "bad"}}, samples{"{}": {"1": "bad"}}, true, true},
+		{"empty_allowed", samples{}, samples{}, false, false},
+		{"empty_forbidden", samples{}, samples{}, true, true},
+		{"empty_series_forbidden", samples{"{}": {}}, samples{"{}": {}}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := metricSamplesDifference(tc.loki, tc.proxy, tc.nonempty); (err != nil) != tc.wantError {
+				t.Fatalf("difference=%v, want error=%v", err, tc.wantError)
+			}
+		})
+	}
+	t.Run("deterministic_diagnostic", func(t *testing.T) {
+		loki, proxy := samples{"z": {"2": "4"}, "a": {"1": "2"}}, samples{"z": {"2": "9"}, "a": {"1": "8"}}
+		var first string
+		for i := 0; i < 20; i++ {
+			err := metricSamplesDifference(loki, proxy, true)
+			if err == nil {
+				t.Fatal("wrong values accepted")
+			}
+			if i == 0 {
+				first = err.Error()
+			} else if first != err.Error() {
+				t.Fatalf("unstable diagnostics: %s / %s", first, err)
+			}
+		}
+	})
+}
 
 type slidingLiveLine struct {
 	ts  time.Time
@@ -213,64 +529,22 @@ func slidingRangeSeries(t *testing.T, baseURL, query string, start, end time.Tim
 	if data["resultType"] != "matrix" {
 		t.Fatalf("%s %s: expected matrix, got %s", baseURL, query, body)
 	}
-	out := map[string]map[string]string{}
-	for _, item := range extractArray(data, "result") {
-		series, _ := item.(map[string]interface{})
-		metric, _ := series["metric"].(map[string]interface{})
-		keys := make([]string, 0, len(metric))
-		for k, v := range metric {
-			keys = append(keys, fmt.Sprintf("%s=%v", k, v))
-		}
-		sort.Strings(keys)
-		key := strings.Join(keys, ",")
-		if out[key] == nil {
-			out[key] = map[string]string{}
-		}
-		values, _ := series["values"].([]interface{})
-		for _, raw := range values {
-			pair, _ := raw.([]interface{})
-			if len(pair) != 2 {
-				t.Fatalf("%s %s: malformed sample %v", baseURL, query, raw)
-			}
-			ts, ok := pair[0].(float64)
-			if !ok {
-				t.Fatalf("%s %s: non-numeric timestamp %v", baseURL, query, pair[0])
-			}
-			out[key][strconv.FormatFloat(ts, 'f', -1, 64)] = fmt.Sprint(pair[1])
-		}
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&resp); err != nil {
+		t.Fatalf("%s %s: invalid metric JSON: %v", baseURL, query, err)
+	}
+	out, err := decodeMetricSamples(resp)
+	if err != nil {
+		t.Fatalf("%s %s: invalid metric response: %v", baseURL, query, err)
 	}
 	return out
 }
 
 func assertSlidingParity(t *testing.T, query string, loki, proxy map[string]map[string]string) {
 	t.Helper()
-	lokiPoints := 0
-	for _, points := range loki {
-		lokiPoints += len(points)
-	}
-	if lokiPoints == 0 {
-		t.Fatalf("%s: Loki returned no samples; parity would be empty-vs-empty", query)
-	}
-	for key, want := range loki {
-		got := proxy[key]
-		if len(got) != len(want) {
-			t.Errorf("%s {%s}: proxy has %d samples, Loki %d", query, key, len(got), len(want))
-		}
-		for ts, wv := range want {
-			if gv, ok := got[ts]; !ok || gv != wv {
-				t.Errorf("%s {%s} t=%s: proxy %q (present=%v), Loki %q", query, key, ts, gv, ok, wv)
-			}
-		}
-		for ts, gv := range got {
-			if _, ok := want[ts]; !ok {
-				t.Errorf("%s {%s} t=%s: proxy emitted %q where Loki has no sample", query, key, ts, gv)
-			}
-		}
-	}
-	for key := range proxy {
-		if _, ok := loki[key]; !ok {
-			t.Errorf("%s: proxy series {%s} absent in Loki", query, key)
-		}
+	if err := metricSamplesDifference(loki, proxy, true); err != nil {
+		t.Fatalf("%s: %v", query, err)
 	}
 }
 

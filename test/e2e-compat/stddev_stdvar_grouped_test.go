@@ -199,14 +199,15 @@ func TestCompat_StddevStdvarGrouped(t *testing.T) {
 						// The pod of service b is alone: its group is 0, not its count.
 						seenSingle, seenUnequal := false, false
 						for key, points := range loki {
-							if !strings.Contains(key, "service_name=stdgrp-") {
+							service := metricKeyLabels(key)["service_name"]
+							if !strings.HasPrefix(service, "stdgrp-") {
 								continue
 							}
 							for ts, v := range points {
-								if strings.HasSuffix(key, "-b") && v != "0" {
+								if strings.HasSuffix(service, "-b") && v != "0" {
 									t.Fatalf("%s {%s} t=%s: Loki sanity: a group of one series has stddev %s, want 0", query, key, ts, v)
 								}
-								if strings.HasSuffix(key, "-b") {
+								if strings.HasSuffix(service, "-b") {
 									seenSingle = true
 								} else if value, err := strconv.ParseFloat(v, 64); err == nil && value > 0 {
 									seenUnequal = true
@@ -248,7 +249,7 @@ func TestCompat_StddevStdvarGroupedParsedFieldKept(t *testing.T) {
 					t.Fatalf("%s: want GET and POST parsed groups, Loki returned %d: %v", query, len(loki), loki)
 				}
 				for _, method := range []string{"GET", "POST"} {
-					points, ok := loki["method="+method]
+					points, ok := loki[metricJSONKey(map[string]string{"method": method})]
 					if !ok {
 						t.Fatalf("%s: Loki has no parsed method=%s group: %v", query, method, loki)
 					}

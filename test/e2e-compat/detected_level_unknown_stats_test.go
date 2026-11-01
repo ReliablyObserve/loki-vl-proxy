@@ -142,14 +142,14 @@ func TestCompat_DetectedLevelUnknownInStatsAnswers(t *testing.T) {
 				proxy := shape.run(t, fx, proxyURL, query)
 				if strings.Contains(query, "without (detected_level)") || strings.Contains(query, "drop detected_level") {
 					for key := range loki {
-						if strings.Contains(key, "detected_level=") {
+						if _, kept := metricKeyLabels(key)["detected_level"]; kept {
 							t.Fatalf("%s: Loki sanity: the series keeps detected_level: %s", query, key)
 						}
 					}
 				} else {
 					unknown := false
 					for key := range loki {
-						unknown = unknown || strings.Contains(key, "detected_level=unknown")
+						unknown = unknown || metricKeyLabels(key)["detected_level"] == "unknown"
 					}
 					if !unknown {
 						t.Fatalf("%s: Loki sanity: no detected_level=unknown series in %v", query, loki)

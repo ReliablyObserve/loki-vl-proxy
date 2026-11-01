@@ -446,7 +446,29 @@ Each manifest entry declares:
 - endpoint shape: `query` or `query_range`
 - expected outcome: `success`, `client_error`, or `server_error`
 - expected `resultType` for valid queries
-- exact comparison mode such as line-count parity, series-count parity, or exact metric-label-set parity
+- an explicit comparison contract; `metric_points` checks every series label set,
+  sample timestamp and numeric value, while log cases retain line-count checks
+
+The 28 `metric_points` cases reuse the sliding-range tests' decoder and point
+comparison. Label identities use canonical JSON; duplicate series or timestamps,
+malformed samples and missing/extra points fail. Timestamp coordinates retain
+their decimal precision. Values use relative tolerance `1e-6` and absolute
+tolerance `1e-9`, with explicit NaN and signed-infinity handling. Series order
+is outside this sample-map comparison, including the sort cases.
+
+Both backends receive the same request parameters, anchored to the ingested
+fixture rather than advancing wall clocks. Metric answers and expected HTTP
+error bodies are retained in the existing `matrix_response` CI logs. Expected
+error cases check status and available structured categories; they do not claim
+complete error-message equivalence.
+
+Three dynamic-parser unwrap cases remain `any_non_empty`: they check availability
+under the default parser profile and name the existing accepted
+[`parsed-identity/dynamic-key-parsers`](../conformance/registry/cases/parsed-identity/dynamic-key-parsers.yaml)
+deviation. They are not counted as strict metric parity. The conformance gate
+rejects missing, unknown or unaccepted deviation references and forbids applying
+one to a strict comparison. This keeps the default behavior separate from the
+`-exact-parser-series-identity` opt-in.
 
 This is where the repo makes tricky edge cases explicit instead of relying on scattered ad hoc tests. Representative cases include:
 
