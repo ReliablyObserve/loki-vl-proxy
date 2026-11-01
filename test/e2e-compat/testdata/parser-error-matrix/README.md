@@ -42,6 +42,13 @@ also check final series-limit behavior, request counters/durations, query tracki
 and the nested Drilldown histogram route. CI logs emit structured `matrix_response`
 records for refreshing this evidence after validating against the pinned reference.
 
+The matrix declares the existing `semantics/pipeline-error-text-parity`,
+`semantics/nested-aggregation-outer-by-native-routes`,
+`semantics/non-sum-vector-aggregation-unreduced` and
+`semantics/json-error-filter-metric-split-pushdown` contracts. It adds no duplicate
+registry gap. Positive parsed-field filters without an error-label filter belong
+to separate coverage and are not claimed by these 132 cases.
+
 No performance or fleet-cache gain is claimed here. Nested expressions retain the
 ordered evaluator's row, body and sample bounds; their outer result receives the
 tenant's series limit. Inner native-handler rewrites are skipped on the new nested

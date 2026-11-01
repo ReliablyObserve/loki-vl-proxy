@@ -17,7 +17,7 @@ import (
 // contract under grouped and nested vector functions in the core CI shard.
 // Loki's aggregation hints can skip parsing entirely for aggregate-all queries;
 // therefore an unfiltered parser is not universally expected to fail.
-// conformance: semantics/pipeline-error-text-parity
+// conformance: semantics/pipeline-error-text-parity, semantics/nested-aggregation-outer-by-native-routes, semantics/non-sum-vector-aggregation-unreduced, semantics/json-error-filter-metric-split-pushdown
 func TestChaining_ParserErrorNestedAggregations(t *testing.T) {
 	service := fmt.Sprintf("parser-matrix-%d", time.Now().UnixNano())
 	evaluation := time.Now().Add(-4 * time.Minute).Truncate(time.Minute)
