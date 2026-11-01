@@ -27,7 +27,7 @@ EXEMPTIONS = {
     "TestRecorderReadTransportDoesNotRetryBackendError": "local recorder transport helper",
     "TestRecorderReadTransportDoesNotRetryTruncatedBackendError": "local recorder transport helper",
     "TestE2ELock_ProxyHeapBoundedUnderDrilldownLoad": "manual high-cardinality process-memory load lock",
-    "TestPatternsDenseRepro_FullRangeAndRefreshStability": "explicit E2E_PATTERNS_DENSE_REPRO opt-in",
+    "TestPatternsDenseRepro_FullRangeAndRefreshStability": "explicit LVP_DENSE_PATTERNS_REPRO opt-in",
     "TestPerf_Labels": "manual latency harness; performance is measured by perf-smoke/A-B",
     "TestPerf_LabelValues": "manual latency harness; performance is measured by perf-smoke/A-B",
     "TestPerf_QueryRange_Simple": "manual latency harness; performance is measured by perf-smoke/A-B",
@@ -95,6 +95,14 @@ def unclassified(tests, patterns, exemptions):
 
 
 class E2ESelectionTests(unittest.TestCase):
+    def test_selection_guard_is_executed_by_ci(self):
+        ci = executable_text((ROOT / ".github/workflows/ci.yaml").read_text())
+        commands = re.findall(r"^\s+run: python3 -m unittest (.+)$", ci, re.MULTILINE)
+        self.assertTrue(any(
+            "scripts.ci.tests.test_e2e_selection" in command.split()
+            for command in commands
+        ), "the CI tooling unit-test step must execute the compatibility selection guard")
+
     def test_every_test_is_selected_or_explicitly_classified(self):
         tests = top_level_tests()
         patterns = selectors()
