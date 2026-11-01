@@ -16,7 +16,7 @@
       "query": "{app=\"api-gateway\",namespace=\"prod\",level=\"error\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -26,7 +26,7 @@
       "query": "{app=~\"api-gateway\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -36,7 +36,7 @@
       "query": "{app=~\"api-gateway|payment-service\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -46,7 +46,7 @@
       "query": "{app=~\"api\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": false
     },
     {
@@ -56,7 +56,7 @@
       "query": "{app=\"api-gateway\",level=\"error\",env=\"production\"} |= \"error\" != \"not found\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -66,7 +66,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} |= \"api\" |~ \"GET|POST\" != \"health\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -76,7 +76,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} !~ \"sqlmap\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -86,7 +86,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -96,7 +96,7 @@
       "query": "{app=\"api-gateway\",level=\"info\",env=\"production\"} | json | duration_ms>100",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -106,7 +106,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/v1/.*\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -116,7 +116,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -126,7 +126,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status >= 500",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -136,7 +136,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -146,7 +146,7 @@
       "query": "{app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | method=\"POST\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -156,7 +156,7 @@
       "query": "{app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -166,7 +166,7 @@
       "query": "{app=\"payment-service\",env=\"production\"} | logfmt | max_conns >= 50",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -176,7 +176,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -711,7 +711,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_alias=\"{{.method}}\", status_code=\"{{.status}}\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -721,7 +721,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | keep method, path, status",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -731,7 +731,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id, upstream",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count",
+      "compare": "log_entries",
       "require_non_empty": true
     },
     {
@@ -741,7 +741,7 @@
       "query": "{app=\"api-gateway\",env=\"production\"} |= \"IMPOSSIBLE_STRING_THAT_NEVER_EXISTS_12345\"",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "line_count"
+      "compare": "log_entries"
     },
     {
       "id": "invalid_metric_aggregation_on_log_query",
@@ -812,68 +812,451 @@
       "endpoint": "query",
       "query": "{app=\"api-gateway\",env=\"production\"} / 2",
       "expectation": "client_error"
+    },
+    {
+      "id": "selector_app_exact",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_regex",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=~\"api-.*\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_not_equal",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app!=\"payment-service\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "selector_app_not_regex",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app!~\"nginx.*\",env=\"production\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_contains_get",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_excludes_health",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} != \"health\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_regex_method",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} |~ \"GET|POST\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filter_regex_excludes_health",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} !~ \"health|ready\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_parser",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_logfmt_parser",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"payment-service\",env=\"production\"} | logfmt",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_regexp_parser",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"method\\\":\\\"(?P<http_method>[A-Z]+)\\\"\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_pattern_parser",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\" | pattern \"<method> <path> <code>\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_field_ne",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | method!=\"DELETE\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_field_regex",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/.*\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_field_gt",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | status>=400",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_line_format",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_label_format",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_up=\"{{.method}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_label_format_multiple",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format m=\"{{.method}}\", s=\"{{.status}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_drop_single",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_keep_multiple",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | keep method, status",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_drop_error",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | drop __error__, __error_details__",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_filter_format",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\" | line_format \"{{.status}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_json_two_field_filters",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\" | path=~\"/api/.*\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_line_filter_then_json",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\" | json",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_count_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_rate",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_bytes_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "bytes_over_time({app=\"api-gateway\",env=\"production\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_rate_with_json_filter",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_count_with_logfmt",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_sum_rate_by",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (rate({env=\"production\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_avg_by",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "avg by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_topk",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "ranked_values",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_bottomk",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "ranked_values",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_sort_metric",
+      "family": "aggregation",
+      "endpoint": "query_range",
+      "query": "sort(sum by (app) (count_over_time({env=\"production\"}[5m])))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_quantile_over_time_unwrap",
+      "family": "unwrap",
+      "endpoint": "query_range",
+      "query": "quantile_over_time(0.99, {app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_metric_bool_gt",
+      "family": "binary",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m])) > bool 0",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "perf_absent_over_time",
+      "family": "range_function",
+      "endpoint": "query_range",
+      "query": "absent_over_time({app=\"nonexistent_service_xyz\"}[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
     }
   ],
   "performance_cases": [
     {
       "id": "exact_match",
       "category": "selector",
-      "query": "{app=\"api-gateway\",env=\"production\"}"
+      "case_id": "selector_app_exact"
     },
     {
       "id": "regex_match",
       "category": "selector",
-      "query": "{app=~\"api-.*\",env=\"production\"}"
+      "case_id": "selector_app_regex"
     },
     {
       "id": "not_equal",
       "category": "selector",
-      "query": "{app!=\"payment-service\",env=\"production\"}"
+      "case_id": "selector_app_not_equal"
     },
     {
       "id": "regex_not_match",
       "category": "selector",
-      "query": "{app!~\"nginx.*\",env=\"production\"}"
+      "case_id": "selector_app_not_regex"
     },
     {
       "id": "line_contains",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\""
+      "case_id": "line_filter_contains_get"
     },
     {
       "id": "line_not_contains",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} != \"health\""
+      "case_id": "line_filter_excludes_health"
     },
     {
       "id": "line_regex",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} |~ \"GET|POST\""
+      "case_id": "line_filter_regex_method"
     },
     {
       "id": "line_not_regex",
       "category": "line_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} !~ \"health|ready\""
+      "case_id": "line_filter_regex_excludes_health"
     },
     {
       "id": "json_parser",
       "category": "parser",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json"
+      "case_id": "perf_json_parser"
     },
     {
       "id": "logfmt_parser",
       "category": "parser",
-      "query": "{app=\"payment-service\",env=\"production\"} | logfmt"
+      "case_id": "perf_logfmt_parser"
     },
     {
       "id": "regexp_parser",
       "category": "parser",
-      "query": "{app=\"api-gateway\",env=\"production\"} | regexp \"\\\"method\\\":\\\"(?P<http_method>[A-Z]+)\\\"\""
+      "case_id": "perf_regexp_parser"
     },
     {
       "id": "pattern_parser",
       "category": "parser",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\" | pattern \"<method> <path> <code>\""
+      "case_id": "perf_pattern_parser"
     },
     {
       "id": "json_field_eq",
@@ -883,17 +1266,17 @@
     {
       "id": "json_field_ne",
       "category": "field_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | method!=\"DELETE\""
+      "case_id": "perf_json_field_ne"
     },
     {
       "id": "json_field_regex",
       "category": "field_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | path=~\"/api/.*\""
+      "case_id": "perf_json_field_regex"
     },
     {
       "id": "json_field_gt",
       "category": "field_filter",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | status>=400"
+      "case_id": "perf_json_field_gt"
     },
     {
       "id": "logfmt_field_eq",
@@ -903,37 +1286,37 @@
     {
       "id": "line_format",
       "category": "format",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | line_format \"{{.method}} {{.path}}\""
+      "case_id": "perf_line_format"
     },
     {
       "id": "label_format",
       "category": "format",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format method_up=\"{{.method}}\""
+      "case_id": "perf_label_format"
     },
     {
       "id": "label_format_multiple",
       "category": "format",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | label_format m=\"{{.method}}\", s=\"{{.status}}\""
+      "case_id": "perf_label_format_multiple"
     },
     {
       "id": "drop_single",
       "category": "drop_keep",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | drop trace_id"
+      "case_id": "perf_drop_single"
     },
     {
       "id": "keep_multiple",
       "category": "drop_keep",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | keep method, status"
+      "case_id": "perf_keep_multiple"
     },
     {
       "id": "drop_error",
       "category": "drop_keep",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | drop __error__, __error_details__"
+      "case_id": "perf_drop_error"
     },
     {
       "id": "json_filter_format",
       "category": "multi_stage",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\" | line_format \"{{.status}}\""
+      "case_id": "perf_json_filter_format"
     },
     {
       "id": "chained_line_filters",
@@ -943,27 +1326,27 @@
     {
       "id": "json_two_field_filters",
       "category": "multi_stage",
-      "query": "{app=\"api-gateway\",env=\"production\"} | json | method=\"GET\" | path=~\"/api/.*\""
+      "case_id": "perf_json_two_field_filters"
     },
     {
       "id": "line_filter_then_json",
       "category": "multi_stage",
-      "query": "{app=\"api-gateway\",env=\"production\"} |= \"GET\" | json"
+      "case_id": "perf_line_filter_then_json"
     },
     {
       "id": "count_over_time",
       "category": "metric_range",
-      "query": "count_over_time({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_count_over_time"
     },
     {
       "id": "rate",
       "category": "metric_range",
-      "query": "rate({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_rate"
     },
     {
       "id": "bytes_over_time",
       "category": "metric_range",
-      "query": "bytes_over_time({app=\"api-gateway\",env=\"production\"}[5m])"
+      "case_id": "perf_bytes_over_time"
     },
     {
       "id": "rate_with_line_filter",
@@ -973,12 +1356,12 @@
     {
       "id": "rate_with_json_filter",
       "category": "metric_range",
-      "query": "rate({app=\"api-gateway\",env=\"production\"} | json | method=\"GET\"[5m])"
+      "case_id": "perf_rate_with_json_filter"
     },
     {
       "id": "count_with_logfmt",
       "category": "metric_range",
-      "query": "count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\"[5m])"
+      "case_id": "perf_count_with_logfmt"
     },
     {
       "id": "sum_by",
@@ -988,27 +1371,27 @@
     {
       "id": "sum_rate_by",
       "category": "metric_agg",
-      "query": "sum by (app) (rate({env=\"production\"}[5m]))"
+      "case_id": "perf_sum_rate_by"
     },
     {
       "id": "avg_by",
       "category": "metric_agg",
-      "query": "avg by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m]))"
+      "case_id": "perf_avg_by"
     },
     {
       "id": "topk",
       "category": "metric_agg",
-      "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_topk"
     },
     {
       "id": "bottomk",
       "category": "metric_agg",
-      "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_bottomk"
     },
     {
       "id": "sort_metric",
       "category": "metric_agg",
-      "query": "sort(sum by (app) (count_over_time({env=\"production\"}[5m])))"
+      "case_id": "perf_sort_metric"
     },
     {
       "id": "sum_over_time_unwrap",
@@ -1028,7 +1411,7 @@
     {
       "id": "quantile_over_time_unwrap",
       "category": "unwrap",
-      "query": "quantile_over_time(0.99, {app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])"
+      "case_id": "perf_quantile_over_time_unwrap"
     },
     {
       "id": "metric_gt_zero",
@@ -1038,7 +1421,7 @@
     {
       "id": "metric_bool_gt",
       "category": "metric_compare",
-      "query": "sum by (level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m])) > bool 0"
+      "case_id": "perf_metric_bool_gt"
     },
     {
       "id": "metric_scalar_mul",
@@ -1063,7 +1446,7 @@
     {
       "id": "absent_over_time",
       "category": "absent",
-      "query": "absent_over_time({app=\"nonexistent_service_xyz\"}[5m])"
+      "case_id": "perf_absent_over_time"
     }
   ]
 }

@@ -149,9 +149,12 @@ def query_semantics_details(base, head):
     keys = (("cases", "Registered cases"), ("operations", "Tracked operations"),
             ("depth_paths", "Parser × depth paths"),
             ("exact_metric_points", "Exact metric-point contracts"),
+            ("ranked_step_values", "Tie-tolerant ranked-step contracts"),
+            ("exact_log_entries", "Exact log-entry contracts"),
             ("client_errors", "Expected client errors"), ("server_errors", "Expected server errors"),
             ("performance_cases", "Performance scenario definitions"),
-            ("performance_shared", "Performance scenarios reusing quality cases"))
+            ("performance_shared", "Performance scenarios reusing quality cases"),
+            ("performance_unshared", "Performance-only scenarios"))
     rows = []
     for key, label in keys:
         old, new = before.get(key), after.get(key)
@@ -383,6 +386,14 @@ def render(base, head, evidence):
     for snapshot in (base, head):
         for key in ("tests", "compatibility", "performance"):
             snapshot[key] = mapping(snapshot.get(key))
+    catalog = mapping(sources.get("catalog"))
+    if catalog.get("state") == "completed" and catalog.get("conclusion") == "success":
+        for snapshot, name in ((base, "base"), (head, "head")):
+            inventory = mapping(snapshot.get("quality_inventory"))
+            if mapping(inventory.get("query_semantics")).get("state") != "available":
+                source = mapping(mapping(catalog.get("artifacts")).get(name))
+                if source.get("state") == "available":
+                    snapshot["quality_inventory"] = {**inventory, "query_semantics": source}
     lines = ["<!-- pr-quality-report -->", "## PR Quality Report", "", "Compared with the PR base commit; measurements below are scoped to their linked run.", ""]
     if context:
         lines += ["Base " + cell(context.get("base", "unavailable")) + " → PR " + cell(context.get("head", "unavailable")) + "; tested merge " + cell(context.get("merge", "unavailable")) + ".", ""]
@@ -401,9 +412,12 @@ def render(base, head, evidence):
     semantics = mapping(inventory.get("query_semantics"))
     semantics_run = query_semantics_runtime(sources)
     if semantics.get("state") == "available":
+        strict_logs = (", " + fmt(semantics["exact_log_entries"]) + " exact log-entry contracts") if numeric(semantics.get("exact_log_entries")) else ""
+        ranked = (", " + fmt(semantics["ranked_step_values"]) + " ranked-step contracts") if numeric(semantics.get("ranked_step_values")) and semantics["ranked_step_values"] else ""
+        perf_only = (", " + fmt(semantics["performance_unshared"]) + " performance-only scenarios") if numeric(semantics.get("performance_unshared")) else ""
         focus.append("Query semantics catalog: " + fmt(semantics.get("cases")) + " cases, " +
                      fmt(semantics.get("depth_paths")) + " parser × depth paths, " +
-                     fmt(semantics.get("exact_metric_points")) + " exact metric-point contracts; " +
+                     fmt(semantics.get("exact_metric_points")) + " exact metric-point contracts" + ranked + strict_logs + perf_only + "; " +
                      "declared coverage, not a live pass count. " + link(sources.get("loki", {})))
     if semantics_run:
         (urgent if semantics_run.get("failed") else focus).append(

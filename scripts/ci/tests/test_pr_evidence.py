@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -12,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 PATH = Path(__file__).resolve().parents[1] / "pr_evidence.py"
+sys.path.insert(0, str(PATH.parent))
 
 
 def archive(files):
@@ -28,6 +31,76 @@ class EvidenceTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("pr_evidence", PATH)
         cls.m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.m)
+
+    def test_semantics_catalog_reads_versioned_source_without_quality_run(self):
+        head = "a" * 40
+        matrix = {"cases": [{"id": "log", "query": "{app=\"a\"}", "expectation": "success", "compare": "log_entries"}],
+                  "performance_cases": [{"id": "same", "case_id": "log"}]}
+        inventory = {"operations": [{"name": "selector", "cases": ["log"]}],
+                     "depth_paths": [{"depth": 1, "matrix_cases": ["log"]}]}
+        documents = {"query-semantics-matrix.json": matrix, "query-semantics-operations.json": inventory}
+
+        class API:
+            def request(self, path):
+                self_path = path.split("/", 3)[-1].split("?", 1)[0]
+                name = self_path.rsplit("/", 1)[-1]
+                raw = json.dumps(documents[name]).encode()
+                blob = b"blob " + str(len(raw)).encode() + b"\0" + raw
+                return {"type": "file", "size": len(raw), "encoding": "base64",
+                        "content": base64.b64encode(raw).decode(), "sha": hashlib.sha1(blob).hexdigest()}
+
+        result = self.m.source_semantics_snapshot(API(), head)
+        self.assertEqual((result["cases"], result["exact_log_entries"], result["performance_shared"]), (1, 1, 1))
+        self.assertEqual(result["state"], "available")
+        with self.assertRaises(ValueError):
+            self.m.source_semantics_snapshot(API(), "bad/ref")
+
+    def test_semantics_catalog_rejects_tampered_source_blob(self):
+        class API:
+            def request(self, path):
+                return {"type": "file", "size": 2, "encoding": "base64", "content": base64.b64encode(b"{}").decode(),
+                        "sha": "0" * 40}
+
+        with self.assertRaisesRegex(ValueError, "blob"):
+            self.m.source_semantics_snapshot(API(), "a" * 40)
+
+    def test_collector_reuses_catalog_source_only_when_loki_matrix_runs(self):
+        base, head = "a" * 40, "b" * 40
+        pr = {"number": 7, "base": {"sha": base}, "head": {"sha": head}, "merge_commit_sha": "c" * 40}
+        matrix = {"cases": [{"id": "log", "query": "{app=\"a\"}", "expectation": "success", "compare": "log_entries"}],
+                  "performance_cases": []}
+        inventory = {"operations": [{"name": "selector", "cases": ["log"]}],
+                     "depth_paths": [{"depth": 1, "matrix_cases": ["log"]}]}
+        documents = {"query-semantics-matrix.json": matrix, "query-semantics-operations.json": inventory}
+
+        class API:
+            repository = "owner/repo"
+            selected = True
+
+            def pages(self, path, field=None, max_pages=10):
+                if "/compat-loki.yaml/runs" in path:
+                    return [{"id": 12, "head_sha": head, "status": "completed", "conclusion": "success", "run_attempt": 1}]
+                if path.startswith("actions/runs/12/attempts/1/jobs"):
+                    return [{"id": 13, "name": "loki-pinned", "status": "completed",
+                             "conclusion": "success" if self.selected else "skipped"}]
+                return []
+
+            def request(self, path, body=None, method=None, binary=False):
+                if path.startswith("actions/jobs/"):
+                    return b""
+                if path.startswith("contents/"):
+                    name = path.split("?", 1)[0].rsplit("/", 1)[-1]
+                    raw = json.dumps(documents[name]).encode()
+                    blob = b"blob " + str(len(raw)).encode() + b"\0" + raw
+                    return {"type": "file", "size": len(raw), "encoding": "base64",
+                            "content": base64.b64encode(raw).decode(), "sha": hashlib.sha1(blob).hexdigest()}
+                raise AssertionError(path)
+
+        api = API()
+        result = self.m.collect(api, pr)
+        self.assertEqual(result["sources"]["catalog"]["artifacts"]["head"]["exact_log_entries"], 1)
+        api.selected = False
+        self.assertNotIn("catalog", self.m.collect(api, pr)["sources"])
 
     def test_archive_reads_selected_data_without_extracting_paths(self):
         payload = archive({"meta.json": {"head": "a"}, "../verdict.json": {"exit": 0}, "x.png": "ignored"})

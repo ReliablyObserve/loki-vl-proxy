@@ -4,67 +4,67 @@
     {
       "name": "selector_exact",
       "category": "selector",
-      "cases": ["selector_exact_instant", "selector_exact_range"]
+      "cases": ["selector_exact_instant", "selector_exact_range", "selector_app_exact", "selector_app_not_equal"]
     },
     {
       "name": "selector_regex",
       "category": "selector",
-      "cases": ["multi_label_regex_range", "multi_label_negative_regex", "selector_regex_prefix_is_not_substring"]
+      "cases": ["multi_label_regex_range", "multi_label_negative_regex", "selector_regex_prefix_is_not_substring", "selector_app_regex", "selector_app_not_regex"]
     },
     {
       "name": "line_filter_substring",
       "category": "line_filter",
-      "cases": ["line_filters_chained", "line_filters_chain_mixed"]
+      "cases": ["line_filters_chained", "line_filters_chain_mixed", "line_filter_contains_get", "line_filter_excludes_health", "line_filter_regex_method"]
     },
     {
       "name": "line_filter_negative_regex",
       "category": "line_filter",
-      "cases": ["line_filters_negative_regex"]
+      "cases": ["line_filters_negative_regex", "line_filter_regex_excludes_health"]
     },
     {
       "name": "parser_json",
       "category": "parser",
-      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum"]
+      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum", "perf_json_parser", "perf_json_field_ne", "perf_json_field_regex", "perf_json_field_gt", "perf_json_two_field_filters", "perf_line_filter_then_json"]
     },
     {
       "name": "parser_logfmt",
       "category": "parser",
-      "cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum"]
+      "cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum", "perf_logfmt_parser"]
     },
     {
       "name": "parser_regexp",
       "category": "parser",
-      "cases": ["regexp_pipeline_field_filter", "regexp_numeric_filter", "regexp_rate_numeric_filter", "regexp_rate_numeric_outer_sum"]
+      "cases": ["regexp_pipeline_field_filter", "regexp_numeric_filter", "regexp_rate_numeric_filter", "regexp_rate_numeric_outer_sum", "perf_regexp_parser"]
     },
     {
       "name": "parser_pattern",
       "category": "parser",
-      "cases": ["pattern_pipeline_field_filter", "pattern_method_filter", "pattern_rate_method_filter", "pattern_rate_method_outer_sum"]
+      "cases": ["pattern_pipeline_field_filter", "pattern_method_filter", "pattern_rate_method_filter", "pattern_rate_method_outer_sum", "perf_pattern_parser"]
     },
     {
       "name": "format_line",
       "category": "formatting",
-      "cases": ["json_then_line_format"]
+      "cases": ["json_then_line_format", "perf_line_format", "perf_json_filter_format"]
     },
     {
       "name": "format_label",
       "category": "formatting",
-      "cases": ["label_format_pipeline"]
+      "cases": ["label_format_pipeline", "perf_label_format", "perf_label_format_multiple"]
     },
     {
       "name": "format_keep_drop",
       "category": "formatting",
-      "cases": ["keep_pipeline", "drop_pipeline"]
+      "cases": ["keep_pipeline", "drop_pipeline", "perf_drop_single", "perf_keep_multiple", "perf_drop_error"]
     },
     {
       "name": "metric_count_rate",
       "category": "metric_function",
-      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum"]
+      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum", "perf_count_over_time", "perf_rate"]
     },
     {
       "name": "metric_bytes",
       "category": "metric_function",
-      "cases": ["parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter"]
+      "cases": ["parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter", "perf_bytes_over_time"]
     },
     {
       "name": "metric_parser_cardinality",
@@ -74,7 +74,9 @@
         "logfmt_parser_metric_range_filter",
         "regexp_parser_metric_range_filter",
         "pattern_parser_metric_range_filter",
-        "unwrap_quantile_over_time"
+        "unwrap_quantile_over_time",
+        "perf_rate_with_json_filter",
+        "perf_count_with_logfmt"
       ]
     },
     {
@@ -89,13 +91,14 @@
         "last_over_time_unwrap",
         "stddev_over_time_unwrap",
         "stdvar_over_time_unwrap",
-        "unwrap_quantile_over_time"
+        "unwrap_quantile_over_time",
+        "perf_quantile_over_time_unwrap"
       ]
     },
     {
       "name": "metric_absent",
       "category": "metric_function",
-      "cases": ["absent_over_time_missing"]
+      "cases": ["absent_over_time_missing", "perf_absent_over_time"]
     },
     {
       "name": "metric_grouping",
@@ -106,18 +109,20 @@
         "json_parser_metric_range_outer_sum",
         "logfmt_parser_metric_range_outer_sum",
         "regexp_parser_metric_range_outer_sum",
-        "pattern_parser_metric_range_outer_sum"
+        "pattern_parser_metric_range_outer_sum",
+        "perf_sum_rate_by",
+        "perf_avg_by"
       ]
     },
     {
       "name": "instant_post_aggregation",
       "category": "aggregation",
-      "cases": ["topk_metric", "bottomk_metric", "sort_metric", "sort_desc_metric"]
+      "cases": ["topk_metric", "bottomk_metric", "sort_metric", "sort_desc_metric", "perf_topk", "perf_bottomk", "perf_sort_metric"]
     },
     {
       "name": "binary_scalar",
       "category": "binary",
-      "cases": ["comparison_scalar_metric_gt_zero", "comparison_scalar_metric_bool_gt_zero", "scalar_binary_metric"]
+      "cases": ["comparison_scalar_metric_gt_zero", "comparison_scalar_metric_bool_gt_zero", "scalar_binary_metric", "perf_metric_bool_gt"]
     },
     {
       "name": "binary_vector",
