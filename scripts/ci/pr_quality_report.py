@@ -385,6 +385,14 @@ def render(base, head, evidence):
     for snapshot in (base, head):
         for key in ("tests", "compatibility", "performance"):
             snapshot[key] = mapping(snapshot.get(key))
+    catalog = mapping(sources.get("catalog"))
+    if catalog.get("state") == "completed" and catalog.get("conclusion") == "success":
+        for snapshot, name in ((base, "base"), (head, "head")):
+            inventory = mapping(snapshot.get("quality_inventory"))
+            if mapping(inventory.get("query_semantics")).get("state") != "available":
+                source = mapping(mapping(catalog.get("artifacts")).get(name))
+                if source.get("state") == "available":
+                    snapshot["quality_inventory"] = {**inventory, "query_semantics": source}
     lines = ["<!-- pr-quality-report -->", "## PR Quality Report", "", "Compared with the PR base commit; measurements below are scoped to their linked run.", ""]
     if context:
         lines += ["Base " + cell(context.get("base", "unavailable")) + " → PR " + cell(context.get("head", "unavailable")) + "; tested merge " + cell(context.get("merge", "unavailable")) + ".", ""]

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Summarize existing CI artifacts; never execute or extract PR artifact contents."""
 import argparse
+import base64
+import binascii
+import hashlib
 import io
 import json
 import math
@@ -9,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import statistics
 import subprocess
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,6 +42,34 @@ ARTIFACTS = {
 
 def strict_json(raw):
     return json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError("non-finite JSON")))
+
+
+def source_semantics_snapshot(api, commit):
+    """Read two versioned JSON files as data with the trusted main parser."""
+    from quality_scope import query_semantics_snapshot
+
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("invalid catalog commit")
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / "test/e2e-compat"
+        target.mkdir(parents=True)
+        for name in ("query-semantics-matrix.json", "query-semantics-operations.json"):
+            item = api.request(f"contents/test/e2e-compat/{name}?ref={commit}")
+            if (not isinstance(item, dict) or item.get("type") != "file" or item.get("encoding") != "base64"
+                    or not isinstance(item.get("content"), str) or not isinstance(item.get("size"), int)
+                    or isinstance(item["size"], bool) or not 0 < item["size"] <= 1024 * 1024
+                    or not isinstance(item.get("sha"), str) or not re.fullmatch(r"[0-9a-f]{40}", item["sha"])):
+                raise ValueError("invalid catalog source metadata")
+            raw = base64.b64decode(item["content"].replace("\n", "").replace("\r", ""), validate=True)
+            # Git's object ID is SHA-1 in this repository; this verifies the
+            # API payload's stated blob identity, not a security signature.
+            if len(raw) != item["size"] or hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() != item["sha"]:
+                raise ValueError("catalog source blob differs from metadata")
+            (target / name).write_bytes(raw)
+        result = query_semantics_snapshot(directory)
+        if result.get("state") != "available":
+            raise ValueError("catalog source is malformed or inconsistent")
+        return result
 
 
 def read_artifact(raw, allowed):
@@ -449,6 +481,27 @@ def collect(api, pr):
                 source.setdefault("test_scopes", []).append(scope)
         except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile, RuntimeError, UnicodeError, AttributeError, OverflowError, RecursionError):
             source.update(state="error", note="Evidence could not be read safely; see the original CI run.", artifacts={})
+    # Test-only PRs intentionally skip the expensive quality snapshot. Read
+    # their versioned catalog files as data, then combine these declared counts
+    # with the Loki-pinned test outcomes already collected above.
+    quality_data = result["sources"]["quality"].get("artifacts", {})
+    base_snapshot = quality_data.get("pr-base-quality.json", {}) if isinstance(quality_data, dict) else {}
+    head_snapshot = quality_data.get("pr-head-quality.json", {}) if isinstance(quality_data, dict) else {}
+    base_inventory = base_snapshot.get("quality_inventory", {}) if isinstance(base_snapshot, dict) else {}
+    head_inventory = head_snapshot.get("quality_inventory", {}) if isinstance(head_snapshot, dict) else {}
+    base_catalog = base_inventory.get("query_semantics") if isinstance(base_inventory, dict) else None
+    head_catalog = head_inventory.get("query_semantics") if isinstance(head_inventory, dict) else None
+    loki_jobs = result["sources"]["loki"].get("jobs", [])
+    matrix_selected = any(isinstance(job, dict) and job.get("name") == "loki-pinned" and job.get("conclusion") != "skipped"
+                          for job in loki_jobs) if isinstance(loki_jobs, list) else False
+    if matrix_selected and (not isinstance(base_catalog, dict) or base_catalog.get("state") != "available"
+                            or not isinstance(head_catalog, dict) or head_catalog.get("state") != "available"):
+        try:
+            result["sources"]["catalog"] = {"state": "completed", "conclusion": "success", "artifacts": {
+                "base": source_semantics_snapshot(api, context["base"]),
+                "head": source_semantics_snapshot(api, context["head"])}}
+        except (ValueError, TypeError, KeyError, OSError, UnicodeError, AttributeError, RecursionError, binascii.Error):
+            result["sources"]["catalog"] = {"state": "unavailable", "note": "Versioned query catalog could not be verified.", "artifacts": {}}
     return result
 
 

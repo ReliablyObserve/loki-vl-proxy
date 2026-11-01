@@ -473,7 +473,12 @@ its separate workflow.
 The PR Quality Report compares catalog counts between base and PR without
 starting tests. Its live matrix row comes from the source-verified pinned Loki
 CI job log and reports observed passes, failures, and skips separately; a
-missing or stale job is not counted as a pass.
+missing or stale job is not counted as a pass. When a test-only PR skips the
+expensive quality snapshot, the trusted evidence publisher reads the manifest
+and operations JSON at the exact base and head commits, verifies their Git blob
+identities, and applies the same catalog counter. It does this only if the
+existing `loki-pinned` job was selected; it never executes PR code or starts
+another test or benchmark for the comment.
 
 Each manifest entry declares:
 
