@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       pull-requests: write
     env:
       PROXY_IMAGE: loki-vl-proxy:pr-quality
@@ -189,6 +190,18 @@ jobs:
                 body,
               });
             }
+
+      # The workflow_run publisher uses trusted main code. While this PR adds
+      # the matrix renderer, main cannot show its new section yet; this bounded
+      # bridge comment is published only when the base lacks that section.
+      - name: Publish query semantics catalog proof
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/ci/query_semantics_comment.py /tmp/pr-base-quality.json /tmp/pr-head-quality.json "$PR_NUMBER"
 
       - name: Clean up base worktree
         if: always()
