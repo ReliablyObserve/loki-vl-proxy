@@ -271,7 +271,7 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			if tc.ExpectResultType != "streams" {
 				return fmt.Errorf("log-entry case %q must expect streams", tc.ID)
 			}
-		case "series_count", "metric_keys", "metric_points", "any_non_empty":
+		case "series_count", "metric_keys", "metric_points", "ranked_values", "any_non_empty":
 			if !metric {
 				return fmt.Errorf("metric comparison %q must expect a matrix or vector", tc.ID)
 			}
@@ -523,6 +523,15 @@ func TestQuerySemanticsMatrixLogPerformanceCasesHaveQualityContracts(t *testing.
 	}
 }
 
+func TestQuerySemanticsMatrixAllPerformanceCasesHaveQualityContracts(t *testing.T) {
+	matrix := loadQuerySemanticsMatrix(t)
+	for _, perf := range matrix.PerformanceCases {
+		if perf.CaseID == "" {
+			t.Errorf("performance case %q lacks a quality case", perf.ID)
+		}
+	}
+}
+
 func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	metric := querySemanticsCase{ID: "metric", Family: "aggregation", Endpoint: "query_range", Query: `count_over_time({app="test"}[1m])`, Step: "60", Expectation: "success", ExpectResultType: "matrix", Compare: "metric_points", RequireNonEmpty: true}
 	for _, tc := range []struct {
@@ -552,6 +561,10 @@ func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
 	}
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
 		t.Errorf("valid metric contract rejected: %v", err)
+	}
+	metric.Compare = "ranked_values"
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
+		t.Errorf("valid tie-tolerant ranked metric contract rejected: %v", err)
 	}
 	logs := querySemanticsCase{ID: "logs", Family: "selector", Endpoint: "query_range", Query: `{app="test"}`, Expectation: "success", ExpectResultType: "streams", Compare: "log_entries"}
 	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{logs}}); err != nil {
@@ -895,7 +908,7 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 
 				switch tc.Compare {
-				case "metric_points":
+				case "metric_points", "ranked_values":
 					responses := make([]map[string]map[string]string, 0, 2)
 					for _, backend := range []struct{ name, body string }{{"Loki", lokiBody}, {"proxy", proxyBody}} {
 						var response map[string]interface{}
@@ -913,7 +926,11 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 						}
 						responses = append(responses, samples)
 					}
-					if err := metricparity.Difference(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
+					compare := metricparity.Difference
+					if tc.Compare == "ranked_values" {
+						compare = metricparity.RankedValuesDifference
+					}
+					if err := compare(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
 						t.Fatalf("%s: %v", tc.ID, err)
 					}
 				case "log_entries":

@@ -18,19 +18,21 @@ class SnapshotTests(unittest.TestCase):
             corpus = root / "test/e2e-compat"
             corpus.mkdir(parents=True)
             matrix = {"cases": [{"id": "json", "query": "{app=\"a\"}", "expectation": "success", "compare": "log_entries"},
-                                {"id": "rate", "query": "rate({app=\"a\"}[5m])"}],
+                                {"id": "rate", "query": "rate({app=\"a\"}[5m])"},
+                                {"id": "rank", "query": "topk(2, rate({app=\"a\"}[5m]))", "expectation": "success", "compare": "ranked_values"}],
                       "performance_cases": [{"id": "same", "case_id": "rate"},
                                             {"id": "other", "query": "sum(rate({app=\"a\"}[5m]))"}]}
-            inventory = {"operations": [{"cases": ["json", "rate"]}],
+            inventory = {"operations": [{"cases": ["json", "rate", "rank"]}],
                          "depth_paths": [{"depth": depth, "matrix_cases": ["json"]}
                                          for depth in (1, 2, 3) for _ in range(4)]}
             (corpus / "query-semantics-matrix.json").write_text(json.dumps(matrix))
             (corpus / "query-semantics-operations.json").write_text(json.dumps(inventory))
             result = query_semantics_snapshot(root)
-            self.assertEqual(result["cases"], 2)
+            self.assertEqual(result["cases"], 3)
             self.assertEqual((result["performance_cases"], result["performance_shared"]), (2, 1))
             self.assertEqual(result["performance_unshared"], 1)
             self.assertEqual(result["exact_log_entries"], 1)
+            self.assertEqual(result["ranked_step_values"], 1)
             self.assertEqual(result["depths"], {"1": 4, "2": 4, "3": 4})
             inventory["depth_paths"] = inventory["depth_paths"][:3]
             (corpus / "query-semantics-operations.json").write_text(json.dumps(inventory))

@@ -21,8 +21,8 @@ def snapshot(count=10, coverage=85):
 class ReportTests(unittest.TestCase):
     def test_catalog_source_populates_report_when_quality_snapshot_is_absent(self):
         catalog = {"state": "completed", "conclusion": "success", "artifacts": {
-            "base": {"state": "available", "cases": 80, "exact_log_entries": 0, "performance_unshared": 37},
-            "head": {"state": "available", "cases": 88, "exact_log_entries": 29, "performance_unshared": 29}}}
+            "base": {"state": "available", "cases": 80, "exact_log_entries": 0, "ranked_step_values": 0, "performance_unshared": 37},
+            "head": {"state": "available", "cases": 88, "exact_log_entries": 29, "ranked_step_values": 2, "performance_unshared": 29}}}
         evidence = {"sources": {"quality": {"state": "completed", "conclusion": "skipped"}, "catalog": catalog,
             "loki": {"state": "completed", "conclusion": "success", "test_scopes": [
                 {"state": "available", "query_semantics_matrix": {"passed": 88, "failed": 0, "skipped": 0}}]}}}
@@ -30,6 +30,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Query semantics catalog: 88 cases", report.split("<details>", 1)[0])
         self.assertIn("Pinned Loki query matrix: 88 passed, 0 failed, 0 skipped", report.split("<details>", 1)[0])
         self.assertIn("| Exact log-entry contracts | 0 | 29 | +29 |", report)
+        self.assertIn("| Tie-tolerant ranked-step contracts | 0 | 2 | +2 |", report)
         self.assertIn("| Performance-only scenarios | 37 | 29 | -8 |", report)
 
     def test_query_semantics_catalog_and_live_matrix_are_separate(self):
