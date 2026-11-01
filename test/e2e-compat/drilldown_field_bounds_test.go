@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 )
 
 // A byte limit may be reached before the streaming reader observes the series
@@ -203,7 +205,7 @@ func fieldBoundsSeries(t *testing.T, envelope map[string]interface{}) map[string
 	if data["resultType"] != "matrix" {
 		t.Fatalf("expected a matrix: %v", envelope)
 	}
-	out, err := decodeMetricSamples(envelope)
+	out, err := metricparity.DecodeSamples(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -455,6 +455,10 @@ malformed samples and missing/extra points fail. Timestamp coordinates retain
 their decimal precision. Values use relative tolerance `1e-6` and absolute
 tolerance `1e-9`, with explicit NaN and signed-infinity handling. Series order
 is outside this sample-map comparison, including the sort cases.
+The strict top-k case selects the three existing fixture apps with distinct
+counts (10, 6 and 5); unrelated fixture apps can tie at the cutoff and Loki
+permits different series choices for a tie. Dedicated ranked-result tests
+cover ties separately.
 
 Both backends receive the same request parameters, anchored to the ingested
 fixture rather than advancing wall clocks. Metric answers and expected HTTP
@@ -469,6 +473,21 @@ deviation. They are not counted as strict metric parity. The conformance gate
 rejects missing, unknown or unaccepted deviation references and forbids applying
 one to a strict comparison. This keeps the default behavior separate from the
 `-exact-parser-series-identity` opt-in.
+
+The shared sample comparator lives in `test/metricparity`; its 57 pure cases
+run with ordinary `go test ./...`, including malformed/duplicate samples and
+numeric/timestamp edge cases. Both the live semantic matrix and current-handler
+replay use that same implementation.
+
+`TestOrderedJSONRecordedLokiContracts` replays the existing nested-parser
+capture through current registered handlers and the existing fixture-based VL
+emulator without running services. It covers 56 complete metric answers,
+44 pipeline-error diagnostic contracts outside the selected failing series,
+and 32 syntax-error status/category contracts. Syntax-text differences remain
+owned by the existing open gap. This extends the regular unit suite; it does
+not replace live parity. The
+[retained fixture documentation](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md)
+lists the source identities, comparison limits and commands.
 
 This is where the repo makes tricky edge cases explicit instead of relying on scattered ad hoc tests. Representative cases include:
 

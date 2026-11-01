@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 )
 
 // conformance: series-limits-and-partial-results, window-bounds-and-step-alignment,
@@ -199,7 +201,7 @@ func alignLimitRangeQuery(t *testing.T, baseURL, query string, start, end time.T
 
 func alignLimitMatrix(t *testing.T, resp map[string]interface{}) map[string]map[string]string {
 	t.Helper()
-	out, err := decodeMetricSamples(resp)
+	out, err := metricparity.DecodeSamples(resp)
 	if err != nil {
 		t.Fatal(err)
 	}

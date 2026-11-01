@@ -37,6 +37,48 @@ Verify the retained records without running services:
 python3 test/e2e-compat/testdata/parser-error-matrix/verify.py
 ```
 
+The ordinary Go tests also run **current proxy handlers** against the Loki
+answers in the existing `2026-11-01-exact-fence/pr.json.gz` capture:
+
+```sh
+go test -race ./internal/proxy ./test/metricparity -count=1 \
+  -run '^(TestOrderedJSONRecorded.*|TestDecodeSamples|TestDifference)$'
+```
+
+This is different from the saved-answer verification above: every recorded
+request passes through the current registered routes and a fresh proxy, with
+the original five-row fixture served by the existing VL emulator. The oracle
+selects only the recorded **Loki** answers. It verifies the archive checksum,
+paired case identities, request coordinates and fixture inputs before replay;
+it does not use the recorded proxy answer as the expected result.
+
+| Replay contract | Cases |
+|---|---:|
+| Complete metric labels, timestamps and values | 56 |
+| Pipeline-error status and diagnostic outside the selected failing series | 44 |
+| Syntax-error status and category | 32 |
+
+Syntax errors retain the original limited contract. The replay logs whether
+their full text agrees; negative `topk`/`bottomk` parameters expose 16 text
+differences owned by the existing
+[`semantics/parse-error-text-parity`](../../../../conformance/registry/cases/semantics/parse-error-text-parity.yaml)
+gap. These are not exact error-text matches. Pipeline errors retain their
+actionable guidance, while the first failing series and its detail wording
+remain outside exact comparison. Neither class is treated as a backend outage.
+
+The shared metric comparator is also used by the live semantic/sliding tests;
+its 57 pure regression cases run under ordinary Go tests. Changed values,
+labels, coordinates, missing or duplicate samples, partial responses and
+incorrect statuses fail replay. The emulator evaluates fixture rows rather
+than returning a saved Loki or proxy response. It proves current handler
+behavior under that backend model, not live VictoriaLogs integration or a
+complete API/version matrix.
+
+Refresh reference evidence through the live paired regression below on the
+pinned stack. Retain its `matrix_response` records, exact fixture, image/source
+identities and compressed checksums in the existing capture format. Ordinary
+tests neither rewrite the capture nor promote current proxy results to oracle.
+
 Run the live regression against the regular compatibility stack:
 
 ```sh

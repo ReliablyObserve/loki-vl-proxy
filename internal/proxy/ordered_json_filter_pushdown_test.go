@@ -689,6 +689,24 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 		}
 		query := r.Form.Get("query")
 		switch r.URL.Path {
+		case "/select/logsql/stats_query":
+			fake.mu.Lock()
+			fake.stats = append(fake.stats, query)
+			fake.mu.Unlock()
+			// Reuse the existing instant stats emulator after applying this
+			// fake's base selector and pre-stats pipes to the original rows.
+			emulator := &vlEmulator{t: t}
+			beforeStats, _, found := strings.Cut(query, " | stats ")
+			if !found {
+				t.Errorf("fake VL: missing instant stats pipe: %s", query)
+				return
+			}
+			for _, row := range fake.rows {
+				if values, kept := fake.applyPipes(t, beforeStats, row); kept {
+					emulator.rows = append(emulator.rows, emuRow{ts: row.ts.UnixNano(), labels: values, msg: row.msg})
+				}
+			}
+			emulator.serveStats(w, r)
 		case "/select/logsql/stats_query_range":
 			fake.mu.Lock()
 			fake.stats = append(fake.stats, query)
@@ -823,6 +841,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			for _, row := range fake.rows {
 				ts := row.ts.UnixNano()
 				if ts < start || ts >= end {
+					continue
+				}
+				if !fakeLogsQLMatch(t, splitLogsQLPipes(query)[0], fake.values(row)) {
 					continue
 				}
 				if guard && !fake.guardMatches(t, query, row) {
