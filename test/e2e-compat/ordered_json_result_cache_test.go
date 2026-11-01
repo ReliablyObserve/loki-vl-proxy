@@ -57,7 +57,7 @@ func TestDrilldown_OrderedJSONExactResponseCache(t *testing.T) {
 				for at := start; !at.After(end); at = at.Add(time.Minute) {
 					points[strconv.FormatInt(at.Unix(), 10)] = "1"
 				}
-				want["detected_level="+level] = points
+				want[metricJSONKey(map[string]string{"detected_level": level})] = points
 			}
 			deadline := time.Now().Add(180 * time.Second)
 			for {

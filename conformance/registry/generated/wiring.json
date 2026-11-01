@@ -271,6 +271,7 @@
       "test/e2e-compat/parser_capture_identity_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
+      "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go",
@@ -347,6 +348,7 @@
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-compat/query_range_window_budget_test.go",
+      "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
@@ -625,6 +627,12 @@
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "test/e2e-compat/unwrap_extent_cache_test.go"
+    ],
+    "range_function-count-over-time": [
+      "test/e2e-compat/query_semantics_matrix_test.go"
+    ],
+    "range_function-rate": [
+      "test/e2e-compat/query_semantics_matrix_test.go"
     ],
     "semantics/absent-over-time-semantics": [
       "internal/proxy/absent_over_time_differential_test.go",
@@ -2363,6 +2371,12 @@
       "semantics/query-range-window-budget",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/query_semantics_matrix_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "range_function-count-over-time",
+      "range_function-rate"
+    ],
     "test/e2e-compat/range_metric_offset_series_limit_test.go": [
       "limits/drilldown-partial-with-warning",
       "limits/series-limit-error",
@@ -2538,7 +2552,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 257,
+  "tests_with_markers": 258,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2629,5 +2643,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 199
+  "wired_items": 201
 }

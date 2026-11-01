@@ -41,6 +41,7 @@ type querySemanticsCase struct {
 	ExpectResultType string `json:"expect_result_type"`
 	Compare          string `json:"compare"`
 	RequireNonEmpty  bool   `json:"require_non_empty"`
+	KnownDeviation   string `json:"known_deviation,omitempty"`
 }
 
 func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
@@ -54,25 +55,66 @@ func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
 	if err := json.Unmarshal(data, &matrix); err != nil {
 		t.Fatalf("decode query semantics matrix: %v", err)
 	}
-	if len(matrix.Cases) == 0 {
-		t.Fatal("query semantics matrix must not be empty")
+	if err := validateQuerySemanticsMatrix(matrix); err != nil {
+		t.Fatal(err)
 	}
+	return matrix
+}
+
+func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
+	if len(matrix.Cases) == 0 {
+		return fmt.Errorf("query semantics matrix must not be empty")
+	}
+	seen := make(map[string]bool, len(matrix.Cases))
 	for _, tc := range matrix.Cases {
+		if seen[tc.ID] {
+			return fmt.Errorf("duplicate query semantics case %q", tc.ID)
+		}
+		seen[tc.ID] = true
 		if tc.ID == "" || tc.Endpoint == "" || tc.Query == "" || tc.Expectation == "" {
-			t.Fatalf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
+			return fmt.Errorf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
 		}
 		switch tc.Endpoint {
 		case "query", "query_range":
 		default:
-			t.Fatalf("unsupported query semantics endpoint %q in case %q", tc.Endpoint, tc.ID)
+			return fmt.Errorf("unsupported query semantics endpoint %q in case %q", tc.Endpoint, tc.ID)
 		}
 		switch tc.Expectation {
 		case "success", "client_error", "server_error":
 		default:
-			t.Fatalf("unsupported query semantics expectation %q in case %q", tc.Expectation, tc.ID)
+			return fmt.Errorf("unsupported query semantics expectation %q in case %q", tc.Expectation, tc.ID)
+		}
+		if tc.Expectation != "success" {
+			if tc.Compare != "" || tc.KnownDeviation != "" {
+				return fmt.Errorf("error outcome %q cannot declare a success comparison", tc.ID)
+			}
+			continue
+		}
+		metric := tc.ExpectResultType == "matrix" || tc.ExpectResultType == "vector"
+		switch tc.Compare {
+		case "line_count":
+			if tc.ExpectResultType != "streams" {
+				return fmt.Errorf("line-count case %q must expect streams", tc.ID)
+			}
+		case "series_count", "metric_keys", "metric_points", "any_non_empty":
+			if !metric {
+				return fmt.Errorf("metric comparison %q must expect a matrix or vector", tc.ID)
+			}
+			if tc.Endpoint == "query_range" && tc.Step == "" {
+				return fmt.Errorf("metric range case %q needs an explicit step", tc.ID)
+			}
+		default:
+			return fmt.Errorf("unsupported comparison %q in case %q", tc.Compare, tc.ID)
+		}
+		if tc.Compare == "any_non_empty" {
+			if tc.KnownDeviation == "" || !tc.RequireNonEmpty {
+				return fmt.Errorf("availability case %q needs an accepted registry deviation and nonempty data", tc.ID)
+			}
+		} else if tc.KnownDeviation != "" {
+			return fmt.Errorf("case %q cannot waive a strict comparison with a deviation", tc.ID)
 		}
 	}
-	return matrix
+	return nil
 }
 
 func loadQuerySemanticsOperations(t *testing.T) querySemanticsOperations {
@@ -97,25 +139,25 @@ func loadQuerySemanticsOperations(t *testing.T) querySemanticsOperations {
 	return inventory
 }
 
-func querySemanticsGET(t *testing.T, baseURL string, tc querySemanticsCase) (int, string, map[string]interface{}) {
-	t.Helper()
-
+func querySemanticsParams(tc querySemanticsCase, evaluation time.Time) url.Values {
 	params := url.Values{}
 	params.Set("query", tc.Query)
-
-	now := time.Now()
 	if tc.Endpoint == "query_range" {
-		params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
-		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("start", fmt.Sprintf("%d", evaluation.Add(-10*time.Minute).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", evaluation.UnixNano()))
 		params.Set("limit", "1000")
 		if tc.Step != "" {
 			params.Set("step", tc.Step)
 		}
-		return doJSONGET(t, baseURL+"/loki/api/v1/query_range?"+params.Encode(), nil)
+	} else {
+		params.Set("time", fmt.Sprintf("%d", evaluation.UnixNano()))
 	}
+	return params
+}
 
-	params.Set("time", fmt.Sprintf("%d", now.UnixNano()))
-	return doJSONGET(t, baseURL+"/loki/api/v1/query?"+params.Encode(), nil)
+func querySemanticsGET(t *testing.T, baseURL, endpoint string, params url.Values) (int, string, map[string]interface{}) {
+	t.Helper()
+	return doJSONGET(t, baseURL+"/loki/api/v1/"+endpoint+"?"+params.Encode(), nil)
 }
 
 func querySemanticsResultCount(resp map[string]interface{}) int {
@@ -171,6 +213,57 @@ func TestQuerySemanticsMatrixManifest(t *testing.T) {
 	}
 }
 
+func TestQuerySemanticsMatrixContractValidation(t *testing.T) {
+	metric := querySemanticsCase{ID: "metric", Family: "aggregation", Endpoint: "query_range", Query: `count_over_time({app="test"}[1m])`, Step: "60", Expectation: "success", ExpectResultType: "matrix", Compare: "metric_points", RequireNonEmpty: true}
+	for _, tc := range []struct {
+		name string
+		edit func(*querySemanticsCase)
+	}{
+		{"unknown_comparison", func(c *querySemanticsCase) { c.Compare = "misspelled" }},
+		{"missing_comparison", func(c *querySemanticsCase) { c.Compare = "" }},
+		{"metric_comparison_on_logs", func(c *querySemanticsCase) { c.ExpectResultType = "streams" }},
+		{"line_comparison_on_metrics", func(c *querySemanticsCase) { c.Compare = "line_count" }},
+		{"missing_metric_step", func(c *querySemanticsCase) { c.Step = "" }},
+		{"comparison_on_error", func(c *querySemanticsCase) { c.Expectation = "client_error" }},
+		{"availability_without_owner", func(c *querySemanticsCase) { c.Compare = "any_non_empty" }},
+		{"deviation_on_strict_contract", func(c *querySemanticsCase) { c.KnownDeviation = "parsed-identity/dynamic-key-parsers" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := metric
+			tc.edit(&candidate)
+			if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{candidate}}); err == nil {
+				t.Fatal("invalid comparison contract accepted")
+			}
+		})
+	}
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric, metric}}); err == nil {
+		t.Error("duplicate case identity accepted")
+	}
+	if err := validateQuerySemanticsMatrix(querySemanticsMatrix{Cases: []querySemanticsCase{metric}}); err != nil {
+		t.Errorf("valid metric contract rejected: %v", err)
+	}
+}
+
+func TestQuerySemanticsMatrixRequestAxis(t *testing.T) {
+	evaluation := time.Unix(1700000000, 123456789)
+	for _, endpoint := range []string{"query", "query_range"} {
+		t.Run(endpoint, func(t *testing.T) {
+			tc := querySemanticsCase{Endpoint: endpoint, Query: `rate({app="test"}[5m])`, Step: "60"}
+			params := querySemanticsParams(tc, evaluation)
+			if params.Get("query") != tc.Query {
+				t.Fatalf("query changed: %v", params)
+			}
+			if endpoint == "query_range" {
+				if params.Get("start") != "1699999400123456789" || params.Get("end") != "1700000000123456789" || params.Get("step") != "60" || params.Get("limit") != "1000" || params.Get("time") != "" {
+					t.Fatalf("wrong shared range coordinates: %v", params)
+				}
+			} else if params.Get("time") != "1700000000123456789" || params.Get("start") != "" || params.Get("end") != "" {
+				t.Fatalf("wrong shared instant coordinate: %v", params)
+			}
+		})
+	}
+}
+
 func TestQuerySemanticsOperationsInventory(t *testing.T) {
 	matrix := loadQuerySemanticsMatrix(t)
 	inventory := loadQuerySemanticsOperations(t)
@@ -197,15 +290,28 @@ func TestQuerySemanticsOperationsInventory(t *testing.T) {
 	}
 }
 
+// conformance: loki_api_v1_query, loki_api_v1_query_range, range_function-count-over-time, range_function-rate
 func TestQuerySemanticsMatrix(t *testing.T) {
 	ensureDataIngested(t)
 	matrix := loadQuerySemanticsMatrix(t)
+	// Keep fixtures inside their five-minute metric windows even if setup or
+	// preceding shard tests took a long time. Minute alignment also matches
+	// the reference stack's align_queries_with_step profile.
+	evaluation := ingestionAnchor.Add(2 * time.Minute).Truncate(time.Minute)
 
 	for _, tc := range matrix.Cases {
 		tc := tc
 		t.Run(tc.ID, func(t *testing.T) {
-			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc)
-			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc)
+			params := querySemanticsParams(tc, evaluation)
+			t.Logf("matrix_case id=%s comparison=%s known_deviation=%s", tc.ID, tc.Compare, tc.KnownDeviation)
+			proxyStatus, proxyBody, proxyResp := querySemanticsGET(t, proxyURL, tc.Endpoint, params)
+			lokiStatus, lokiBody, lokiResp := querySemanticsGET(t, lokiURL, tc.Endpoint, params)
+			if tc.ExpectResultType != "streams" {
+				t.Log("matrix_backend proxy")
+				recordParserMatrixResponse(t, params, proxyStatus, []byte(proxyBody))
+				t.Log("matrix_backend loki")
+				recordParserMatrixResponse(t, params, lokiStatus, []byte(lokiBody))
+			}
 
 			switch tc.Expectation {
 			case "success":
@@ -226,6 +332,27 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 				}
 
 				switch tc.Compare {
+				case "metric_points":
+					responses := make([]map[string]map[string]string, 0, 2)
+					for _, backend := range []struct{ name, body string }{{"Loki", lokiBody}, {"proxy", proxyBody}} {
+						var response map[string]interface{}
+						decoder := json.NewDecoder(strings.NewReader(backend.body))
+						decoder.UseNumber()
+						if err := decoder.Decode(&response); err != nil {
+							t.Fatalf("%s metric JSON: %v", backend.name, err)
+						}
+						if warnings, ok := response["warnings"].([]interface{}); ok && len(warnings) != 0 {
+							t.Fatalf("%s returned partial metric data with warnings: %v", backend.name, warnings)
+						}
+						samples, err := decodeMetricSamples(response)
+						if err != nil {
+							t.Fatalf("%s metric samples: %v", backend.name, err)
+						}
+						responses = append(responses, samples)
+					}
+					if err := metricSamplesDifference(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
+						t.Fatalf("%s: %v", tc.ID, err)
+					}
 				case "line_count":
 					proxyCount := countLogLines(proxyResp)
 					lokiCount := countLogLines(lokiResp)

@@ -199,25 +199,9 @@ func alignLimitRangeQuery(t *testing.T, baseURL, query string, start, end time.T
 
 func alignLimitMatrix(t *testing.T, resp map[string]interface{}) map[string]map[string]string {
 	t.Helper()
-	out := map[string]map[string]string{}
-	for _, item := range extractArray(extractMap(resp, "data"), "result") {
-		series, _ := item.(map[string]interface{})
-		metric, _ := series["metric"].(map[string]interface{})
-		keys := make([]string, 0, len(metric))
-		for k, v := range metric {
-			keys = append(keys, fmt.Sprintf("%s=%v", k, v))
-		}
-		sort.Strings(keys)
-		points := map[string]string{}
-		values, _ := series["values"].([]interface{})
-		for _, raw := range values {
-			pair, _ := raw.([]interface{})
-			if len(pair) == 2 {
-				ts, _ := pair[0].(float64)
-				points[strconv.FormatFloat(ts, 'f', -1, 64)] = fmt.Sprint(pair[1])
-			}
-		}
-		out[strings.Join(keys, ",")] = points
+	out, err := decodeMetricSamples(resp)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return out
 }

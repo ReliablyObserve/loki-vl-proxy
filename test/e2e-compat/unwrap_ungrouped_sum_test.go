@@ -215,7 +215,7 @@ func TestCompat_UnwrapUngroupedSum(t *testing.T) {
 							if len(loki) != 1 {
 								t.Fatalf("%s: Loki sanity: %d series, want one", query, len(loki))
 							}
-							if _, ok := loki[""]; !ok {
+							if unwrapHasLabeledSeries(loki) {
 								t.Fatalf("%s: Loki sanity: the series carries labels: %v", query, loki)
 							}
 						}
@@ -248,10 +248,10 @@ func TestCompat_UnwrapUngroupedSumPerSeriesFunctions(t *testing.T) {
 				t.Run(g.name+"/"+shape.name+"/"+function, func(t *testing.T) {
 					loki := shape.run(t, fx, lokiURL, query)
 					proxy := shape.run(t, fx, proxyURL, query)
-					if len(loki) > 1 || (len(loki) == 1 && func() bool { _, ok := loki[""]; return !ok }()) {
+					if len(loki) > 1 || unwrapHasLabeledSeries(loki) {
 						t.Fatalf("%s: Loki sanity: %d series with labels: %v", query, len(loki), loki)
 					}
-					if len(proxy) > 1 || (len(proxy) == 1 && func() bool { _, ok := proxy[""]; return !ok }()) {
+					if len(proxy) > 1 || unwrapHasLabeledSeries(proxy) {
 						keys := make([]string, 0, len(proxy))
 						for k := range proxy {
 							keys = append(keys, k)
@@ -263,6 +263,28 @@ func TestCompat_UnwrapUngroupedSumPerSeriesFunctions(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+func unwrapHasLabeledSeries(series map[string]map[string]string) bool {
+	for key := range series {
+		if len(metricKeyLabels(key)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCompat_UnwrapUngroupedSumLabelIdentity(t *testing.T) {
+	for _, key := range []string{"", metricJSONKey(map[string]string{})} {
+		if unwrapHasLabeledSeries(map[string]map[string]string{key: {"1.5": "1"}}) {
+			t.Fatalf("unlabelled series reported as labelled: %q", key)
+		}
+	}
+	for _, key := range []string{"app=api", metricJSONKey(map[string]string{"app": ""}), metricJSONKey(map[string]string{"app": "api,a=b"})} {
+		if !unwrapHasLabeledSeries(map[string]map[string]string{key: {"1.5": "1"}}) {
+			t.Fatalf("labelled series reported as unlabelled: %q", key)
 		}
 	}
 }

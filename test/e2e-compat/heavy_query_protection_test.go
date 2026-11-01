@@ -100,7 +100,7 @@ func TestCompat_HeavyQueryProtection(t *testing.T) {
 
 		query := `topk(1, sum by (pod) (count_over_time({app="` + app + `"}[5m])))`
 		loki := slidingRangeSeries(t, lokiURL, query, start, end, 87*time.Second, nil)
-		if _, ok := loki["pod=spike"]; !ok {
+		if _, ok := loki[metricJSONKey(map[string]string{"pod": "spike"})]; !ok {
 			t.Fatalf("fixture error: Loki never ranks the spike pod first: %d series", len(loki))
 		}
 		assertSlidingParity(t, query, loki, slidingRangeSeries(t, proxyURL, query, start, end, 87*time.Second, nil))

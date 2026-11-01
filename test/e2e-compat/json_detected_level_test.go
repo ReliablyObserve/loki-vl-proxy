@@ -267,7 +267,7 @@ func TestRangeMetricCompatibilityJSONDetectedLevelProbes(t *testing.T) {
 					t.Fatalf("Loki sanity: expected one detected_level series, got %v", loki)
 				}
 				for key := range loki {
-					if key != "detected_level="+probe.want {
+					if key != metricJSONKey(map[string]string{"detected_level": probe.want}) {
 						t.Errorf("Loki answers {%s}, the table says detected_level=%s", key, probe.want)
 					}
 				}
@@ -486,10 +486,11 @@ func TestRangeMetricCompatibilityJSONDetectedLevelSharedUnpack(t *testing.T) {
 		query := `sum by (level, detected_level) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`
 		t.Run(p.name, func(t *testing.T) {
 			loki := slidingRangeSeries(t, lokiURL, query, start, end, time.Minute, nil)
-			wantKey := "detected_level=" + p.detected
+			wantLabels := map[string]string{"detected_level": p.detected}
 			if p.level != "" {
-				wantKey = wantKey + ",level=" + p.level
+				wantLabels["level"] = p.level
 			}
+			wantKey := metricJSONKey(wantLabels)
 			if _, ok := loki[wantKey]; !ok || len(loki) != 2 {
 				t.Fatalf("Loki answers %v, the table says {%s} and detected_level=unknown", loki, wantKey)
 			}
