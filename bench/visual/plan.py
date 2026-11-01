@@ -22,7 +22,8 @@ retain the core controls and their selected targeted proofs.
                                                   visual case has a fix-proof entry or an exemption
 
 Fix proofs: a spec entry lists in `fixes` the registry case ids (conformance/registry/cases, the `gap:` block)
-whose behaviour it reproduces. When a change adds a case or turns a case's gap status to `fixed`, every entry
+whose behaviour it reproduces. When a change adds a case, turns its gap status to `fixed`, or edits an open
+case with an explicit proof entry, every entry
 that lists it is captured first at the ci_ranges Loki holds (LOKI_PROOF_S), `why: ["fix proof: <case>"]`, and never trimmed or dropped by
 the capture budget. A fixed case whose impact a Grafana panel shows needs such an entry, or `visual: none` plus
 `visual_reason:` in its gap block.
@@ -99,11 +100,16 @@ def git_out(root, *args):
     return r.stdout if r.returncode == 0 else None
 
 
-def changed_cases(base, head="HEAD", root=None):
-    """Case ids a change adds, or whose gap status it turns to fixed. Compared from the merge base of base and
-    head (CI passes the merge commit's first parent, which is its own merge base); contents are read from git,
-    renames are followed, an edit of another field or a deletion triggers nothing."""
+def changed_cases(base, head="HEAD", root=None, proof_cases=None):
+    """Added, fixed, or explicitly proved open cases changed by this PR.
+
+    Compared from the merge base of base and head. A modified open case is
+    selected only when a visual entry lists it in `fixes`, allowing proof of
+    a partial fix without falsely closing the whole registry gap.
+    """
     root = root or ab.ROOT
+    if proof_cases is None:
+        proof_cases = {cid for page in load_spec().get("pages", []) for cid in page.get("fixes", [])}
     base = (git_out(root, "merge-base", base, head) or base).strip()
     diff = git_out(root, "diff", "--name-status", "-M", base, head, "--", CASES) or ""
     out = []
@@ -115,7 +121,8 @@ def changed_cases(base, head="HEAD", root=None):
         cid = new[len(CASES) + 1:-len(".yaml")]
         gap = case_gap(git_out(root, "show", f"{head}:{new}") or "")
         before = None if code == "A" else case_gap(git_out(root, "show", f"{base}:{old}") or "")
-        if before is None or (gap.get("status") == "fixed" and before.get("status") != "fixed"):
+        if (before is None or (gap.get("status") == "fixed" and before.get("status") != "fixed")
+                or (cid in proof_cases and gap.get("status") == "open" and before.get("status") == "open")):
             out.append(cid)
     return out
 
@@ -154,7 +161,7 @@ def ranges_of(entry, spec):
 
 
 def plan(files, spec=None, items=None, base=None, max_captures=MAX_CAPTURES, cases=(), case_gaps=None):
-    """cases: ids of the registry cases the change adds or fixes (changed_cases); case_gaps: id -> gap fields."""
+    """cases: added, fixed or explicitly proved open cases (changed_cases); case_gaps: id -> gap fields."""
     spec = spec or load_spec()
     items = items if items is not None else ab.registry_items()
     case_gaps = case_gaps if case_gaps is not None else (load_cases() if cases else {})

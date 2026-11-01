@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"errors"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -38,7 +39,8 @@ import (
 // line rebuilt from those fields (storedLogLineFromFJ).
 
 const (
-	detectedLevelLabel = "detected_level"
+	detectedLevelLabel                   = "detected_level"
+	detectedLevelMutationResponseVersion = "@detected-level-mutation-v1:"
 	// detectedLevelExtractedLabel names the derived value on entries whose
 	// stream already has a detected_level label, as Loki renames structured
 	// metadata that collides with a stream label.
@@ -53,6 +55,17 @@ const (
 	levelFatal    = "fatal"
 	levelUnknown  = "unknown"
 )
+
+var detectedLevelMutationStageRE = regexp.MustCompile(`\|\s*(?:drop|keep)\s+[^|]*\bdetected_level\b`)
+
+// detectedLevelMutationResponseKeyVersion fences old keep/drop answers in the
+// exact and compatibility caches, including copies fetched from cache peers.
+func detectedLevelMutationResponseKeyVersion(query string) string {
+	if strings.Contains(query, detectedLevelLabel) && detectedLevelMutationStageRE.MatchString(query) {
+		return detectedLevelMutationResponseVersion
+	}
+	return ""
+}
 
 // levelFieldNames is Loki's default log_level_fields list, in priority order.
 var levelFieldNames = [...]string{

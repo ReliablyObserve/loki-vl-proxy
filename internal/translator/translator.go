@@ -994,6 +994,12 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			}
 		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		if metric && strings.HasPrefix(stage, "keep ") && keepStageDropsLevelSource(stage[5:]) {
+			// The derived-level chain runs before pipeline stages. Keep the stored
+			// level while it computes detected_level, then remove it just as Loki's
+			// keep stage does before metric grouping reads the row.
+			translated += " | delete level"
+		}
 		if svCopied && !metric && (strings.HasPrefix(stage, "label_format ") || strings.HasPrefix(stage, "line_format ")) {
 			translated = svRewriteRefs(translated, svNamesNotFormatted(svNames, formatLabels))
 		}
@@ -1615,7 +1621,30 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 			fields = append(fields, b)
 		}
 	}
+	// detected_level is derived from the stored level when that field exists.
+	// Keep the source in the backend row; response processing removes it unless
+	// the client also named level in the keep stage.
+	if slices.Contains(fields, detectedLevelLabelName) && !slices.Contains(fields, "level") {
+		fields = append(fields, "level")
+	}
 	return logsql.PipeFields{Labels: append(base, fields...)}.String()
+}
+
+func keepStageDropsLevelSource(spec string) bool {
+	var detected, level bool
+	for _, item := range splitCSV(spec) {
+		item = strings.TrimSpace(item)
+		if field, _, _, ok := parseDropMatcher(item); ok {
+			item = field
+		}
+		switch item {
+		case detectedLevelLabelName:
+			detected = true
+		case "level":
+			level = true
+		}
+	}
+	return detected && !level
 }
 
 // splitCSV splits s on commas that are not inside parentheses or quotes.

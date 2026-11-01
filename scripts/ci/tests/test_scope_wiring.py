@@ -375,6 +375,11 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertIn("visual-publish", jobs["visual-comment"]["needs"])
         self.assertIn("replaceAll('<details><summary>', '<details open><summary>')", jobs["visual-comment"]["body"])
 
+    def test_visual_artifacts_replace_previous_attempt_before_commenting(self):
+        text = (WORKFLOWS / "visual-smoke.yaml").read_text()
+        for name in ("visual-montage", "visual-baseline-candidate", "visual-quality-evidence"):
+            self.assertRegex(text, rf"name: {name}\n\s+overwrite: true")
+
     def test_the_vl_matrix_runs_on_a_baseline_and_otherwise_as_before(self):
         jobs = parse_jobs((WORKFLOWS / "compat-vl.yaml").read_text())
         matrix = jobs["vl-matrix"]
