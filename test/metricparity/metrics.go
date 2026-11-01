@@ -143,7 +143,7 @@ func Difference(loki, proxy map[string]map[string]string, requireNonEmpty bool) 
 		points += len(series)
 	}
 	if requireNonEmpty && points == 0 {
-		return fmt.Errorf("Loki returned no samples; parity would be empty-vs-empty")
+		return fmt.Errorf("loki returned no samples; parity would be empty-vs-empty")
 	}
 	keys := make([]string, 0, len(loki)+len(proxy))
 	for key := range loki {
@@ -162,7 +162,7 @@ func Difference(loki, proxy map[string]map[string]string, requireNonEmpty bool) 
 			return fmt.Errorf("proxy series %s absent in Loki", key)
 		}
 		if !inProxy {
-			return fmt.Errorf("Loki series %s missing in proxy", key)
+			return fmt.Errorf("loki series %s missing in proxy", key)
 		}
 		times := make([]string, 0, len(want)+len(got))
 		for ts := range want {

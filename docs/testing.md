@@ -486,7 +486,7 @@ emulator without running services. It covers 56 complete metric answers,
 and 32 syntax-error status/category contracts. Syntax-text differences remain
 owned by the existing open gap. This extends the regular unit suite; it does
 not replace live parity. The
-[retained fixture documentation](../test/e2e-compat/testdata/parser-error-matrix/README.md)
+[retained fixture documentation](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/test/e2e-compat/testdata/parser-error-matrix/README.md)
 lists the source identities, comparison limits and commands.
 
 This is where the repo makes tricky edge cases explicit instead of relying on scattered ad hoc tests. Representative cases include:
