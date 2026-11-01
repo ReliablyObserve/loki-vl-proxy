@@ -3,6 +3,7 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -61,10 +62,28 @@ func TestCompat_KeepStructuredMetadataKey(t *testing.T) {
 		for _, stage := range []string{" | keep deployment_environment", " | keep deployment_environment, app"} {
 			query := f.appSelector() + stage
 			t.Run(fmt.Sprintf("categorized=%t/%s", categorized, stage), func(t *testing.T) {
-				loki := dlEntries(t, dlQueryRange(t, lokiURL, query, f, headers))
-				proxy := dlEntries(t, dlQueryRange(t, route, query, f, headers))
-				if !reflect.DeepEqual(proxy, loki) {
-					t.Fatalf("%s: Loki=%+v proxy=%+v", query, loki, proxy)
+				lokiResponse := dlQueryRange(t, lokiURL, query, f, headers)
+				proxyResponse := dlQueryRange(t, route, query, f, headers)
+				for _, response := range []dlStreamsResponse{lokiResponse, proxyResponse} {
+					for _, stream := range response.Data.Result {
+						for _, value := range stream.Values {
+							var gotLine string
+							if err := json.Unmarshal(value[1], &gotLine); err != nil || gotLine != line {
+								t.Fatalf("%s: line=%q, decode error=%v", query, gotLine, err)
+							}
+						}
+					}
+				}
+				loki := dlEntries(t, lokiResponse)
+				candidate := dlEntries(t, proxyResponse)
+				if len(loki) != 2 || len(candidate) != 2 {
+					t.Fatalf("%s: Loki=%+v proxy=%+v", query, loki, candidate)
+				}
+				for timestamp, want := range loki {
+					got, ok := candidate[timestamp]
+					if !ok || !reflect.DeepEqual(got.stream, want.stream) || !reflect.DeepEqual(got.metadata, want.metadata) || !reflect.DeepEqual(got.parsed, want.parsed) {
+						t.Errorf("%s at %s: Loki=%+v proxy=%+v (present=%t)", query, timestamp, want, got, ok)
+					}
 				}
 			})
 		}
