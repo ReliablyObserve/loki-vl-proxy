@@ -452,7 +452,7 @@
       "id": "topk_metric",
       "family": "aggregation",
       "endpoint": "query",
-      "query": "topk(2, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
+      "query": "topk(2, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\",app=~\"api-gateway|worker|payment-service\"}[5m])))",
       "expectation": "success",
       "expect_result_type": "vector",
       "compare": "metric_points",

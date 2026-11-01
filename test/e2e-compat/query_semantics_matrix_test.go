@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/metricparity"
 )
 
 type querySemanticsMatrix struct {
@@ -344,13 +346,13 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 						if warnings, ok := response["warnings"].([]interface{}); ok && len(warnings) != 0 {
 							t.Fatalf("%s returned partial metric data with warnings: %v", backend.name, warnings)
 						}
-						samples, err := decodeMetricSamples(response)
+						samples, err := metricparity.DecodeSamples(response)
 						if err != nil {
 							t.Fatalf("%s metric samples: %v", backend.name, err)
 						}
 						responses = append(responses, samples)
 					}
-					if err := metricSamplesDifference(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
+					if err := metricparity.Difference(responses[0], responses[1], tc.RequireNonEmpty); err != nil {
 						t.Fatalf("%s: %v", tc.ID, err)
 					}
 				case "line_count":
