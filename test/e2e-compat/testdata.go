@@ -15,13 +15,25 @@ import (
 // ingestRichTestData pushes realistic production-like logs into both
 // Loki and VictoriaLogs for comprehensive compatibility testing.
 func ingestRichTestData(t *testing.T) {
+	ingestRichTestDataForTenant(t, "", time.Now().Add(-3*time.Minute))
+}
+
+func ingestRichTestDataForTenant(t *testing.T, tenant string, now time.Time) {
 	t.Helper()
 	// Use a past timestamp so all entries are guaranteed to be in Loki's chunk
 	// storage (not the ingester head block) by the time metric queries run.
-	now := time.Now().Add(-3 * time.Minute)
+	push := func(sd streamDef) {
+		if tenant != "" {
+			if sd.Labels == nil {
+				sd.Labels = make(map[string]string)
+			}
+			sd.Labels["query_semantics_run_id"] = tenant
+		}
+		pushStreamForTenant(t, now, sd, tenant)
+	}
 
 	// ── Service: api-gateway ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "api-gateway", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "pod": "api-gateway-7f8d9c6b4-x2k9m",
@@ -39,7 +51,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: api-gateway errors ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "api-gateway", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "pod": "api-gateway-7f8d9c6b4-x2k9m",
@@ -53,7 +65,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: payment-service ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "payment-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "pod": "payment-svc-5c8f7d9a2-q7w3e",
@@ -67,7 +79,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: payment-service warnings (logfmt) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "payment-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "pod": "payment-svc-5c8f7d9a2-q7w3e",
@@ -80,7 +92,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: nginx ingress (access log format) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "nginx-ingress", "namespace": "ingress-nginx", "env": "production",
 			"cluster": "us-east-1", "pod": "nginx-ingress-controller-abc123",
@@ -96,7 +108,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: staging environment ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "api-gateway", "namespace": "staging", "env": "staging",
 			"cluster": "us-west-2", "pod": "api-gateway-staging-abc",
@@ -111,7 +123,7 @@ func ingestRichTestData(t *testing.T) {
 	// ── Service: otel-auth-service (OTel with full semantic conventions) ──
 	// VL-only: Loki does not natively support dotted stream labels in push API.
 	// OTel data reaches VL directly (via collector or jsonline), not via Loki push.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
 			"service.name":           "otel-auth-service",
@@ -141,7 +153,7 @@ func ingestRichTestData(t *testing.T) {
 
 	// ── Service: otel-api-service (OTel data with minimal stream labels) ──
 	// VL-only: OTel attributes in message JSON, not via Loki push
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
 			"app": "otel-api-service", "namespace": "prod",
@@ -156,7 +168,7 @@ func ingestRichTestData(t *testing.T) {
 
 	// ── Service: otel-collector-native (OTel collector with underscore-translated labels) ──
 	// VL-only: Pre-translated underscore conventions from OTel collector
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
 			"service_name":           "otel-collector",
@@ -178,7 +190,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Service: with dots in labels (OTel-style) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "otel-collector", "namespace": "observability",
 			"k8s.cluster.name": "us-east-1", "k8s.namespace.name": "prod",
@@ -196,7 +208,7 @@ func ingestRichTestData(t *testing.T) {
 	// Stream labels use dotted OTel conventions. Extra OTel span attributes
 	// (trace_id, span_id, http.method etc.) are pushed as extra VL fields
 	// and surface as structuredMetadata through the proxy.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
 			"service.name":           "otel-frontend",
@@ -231,7 +243,7 @@ func ingestRichTestData(t *testing.T) {
 	// Non-OTel path: equivalent frontend service using Loki push (underscore labels).
 	// Trace context is structured metadata, not embedded in stream labels.
 	// Both Loki and VL receive identical data for side-by-side comparison.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "frontend", "service_name": "frontend",
 			"namespace": "prod", "cluster": "us-east-1",
@@ -256,7 +268,7 @@ func ingestRichTestData(t *testing.T) {
 	//
 	// OTel path: background job worker instrumented with OTel SDK.
 	// Rich resource attributes + span attributes as structured metadata.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
 			"service.name":           "otel-worker",
@@ -289,7 +301,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// Non-OTel equivalent worker (both Loki + VL).
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "worker", "service_name": "worker",
 			"namespace": "prod", "cluster": "us-east-1",
@@ -312,7 +324,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Multiline / special chars ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "java-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "error",
@@ -324,7 +336,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Duration/bytes logs (for unwrap duration() / unwrap bytes() tests) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "duration-bytes-test", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -338,7 +350,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Pattern-matchable logs (for |> / !> pattern match line filter tests) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "pattern-filter-test", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -354,7 +366,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Unpack parser test logs (standard JSON, unpack is equivalent to json for non-packed lines) ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "unpack-test", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -370,7 +382,7 @@ func ingestRichTestData(t *testing.T) {
 	// ── Drop-error edge stream (used by TestEdge_* tests in semantics group) ──
 	// Must be here so ensureDataIngested covers it without requiring
 	// TestSetup_IngestEdgeCaseData to run first.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "edge-drop-error", "namespace": "edge-tests", "level": "info",
 		},
@@ -385,7 +397,7 @@ func ingestRichTestData(t *testing.T) {
 	// Uses a unique app name to avoid cardinality collision with the existing
 	// api-gateway streams (which carry a pod label that would cause many-to-one
 	// matching errors in binary metric queries).
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "checkout-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -404,7 +416,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Structured metadata: billing-service with cloud context ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "billing-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -423,7 +435,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Structured metadata: auth-service with OTel-style resource attributes ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "auth-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -444,7 +456,7 @@ func ingestRichTestData(t *testing.T) {
 
 	// ── Parsed fields: rich JSON logs for | json pipeline testing ──
 	// These JSON logs contain many nested fields that can be extracted via | json.
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "order-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -459,7 +471,7 @@ func ingestRichTestData(t *testing.T) {
 	})
 
 	// ── Parsed fields: logfmt logs for | logfmt pipeline testing ──
-	pushStream(t, now, streamDef{
+	push(streamDef{
 		Labels: map[string]string{
 			"app": "inventory-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
@@ -494,6 +506,24 @@ func (sd streamDef) lineTime(baseTime time.Time, i int) time.Time {
 }
 
 func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
+	pushStreamForTenant(t, baseTime, sd, "")
+}
+
+func tenantRequestHeaders(tenant string) map[string]string {
+	if tenant == "" {
+		return nil
+	}
+	return map[string]string{"X-Scope-OrgID": tenant}
+}
+
+func victoriaLogsTenantHeaders(tenant string) map[string]string {
+	if tenant == "" {
+		return nil
+	}
+	return map[string]string{"AccountID": tenant, "ProjectID": "0"}
+}
+
+func pushStreamForTenant(t *testing.T, baseTime time.Time, sd streamDef, tenant string) {
 	t.Helper()
 
 	if !sd.VLOnly {
@@ -521,7 +551,15 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 			},
 		}
 		body, _ := json.Marshal(lokiPayload)
-		resp, err := http.Post(lokiURL+"/loki/api/v1/push", "application/json", strings.NewReader(string(body)))
+		lokiReq, err := http.NewRequest(http.MethodPost, lokiURL+"/loki/api/v1/push", strings.NewReader(string(body)))
+		if err != nil {
+			t.Fatalf("build Loki push (%s): %v", sd.Labels["app"], err)
+		}
+		lokiReq.Header.Set("Content-Type", "application/json")
+		for key, value := range tenantRequestHeaders(tenant) {
+			lokiReq.Header.Set(key, value)
+		}
+		resp, err := http.DefaultClient.Do(lokiReq)
 		if err != nil {
 			t.Fatalf("Loki push (%s): failed: %v", sd.Labels["app"], err)
 		}
@@ -556,11 +594,18 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		streamFields = append(streamFields, k)
 	}
 
-	resp, err := http.Post(
+	vlReq, err := http.NewRequest(http.MethodPost,
 		vlURL+"/insert/jsonline?_stream_fields="+strings.Join(streamFields, ","),
-		"application/stream+json",
 		strings.NewReader(strings.Join(vlLines, "\n")),
 	)
+	if err != nil {
+		t.Fatalf("build VL push (%s): %v", sd.Labels["app"], err)
+	}
+	vlReq.Header.Set("Content-Type", "application/stream+json")
+	for key, value := range victoriaLogsTenantHeaders(tenant) {
+		vlReq.Header.Set(key, value)
+	}
+	resp, err := http.DefaultClient.Do(vlReq)
 	if err != nil {
 		t.Fatalf("VL push (%s): failed: %v", sd.Labels["app"], err)
 	}

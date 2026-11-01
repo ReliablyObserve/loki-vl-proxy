@@ -96,3 +96,30 @@ Laboratory-only instrumentation must not be presented as production visibility.
   Test exporter consistency, outcomes, error propagation and cancellation.
 - Put concrete metric queries, log fields and interpretation limits in a runbook
   alongside the delivered behavior, including what still cannot be measured.
+
+## Reuse the existing local test stack
+
+Follow the repository skill at
+`.agents/skills/reuse-existing-test-stack/SKILL.md` for the operational
+checklist.
+
+- Before running browser or end-to-end checks, inspect the already-running
+  Grafana, Loki, proxy and VictoriaLogs containers and their URLs. Reuse that
+  stack and its existing datasets whenever the test contract allows it.
+- Never start a second Compose project or duplicate Grafana/backend/proxy
+  containers to make a test convenient. Run test groups sequentially against
+  the one existing stack.
+- Prefer existing tests, fixtures, helpers and CI evidence. Extend them only
+  when a required behavior or edge case is not covered; do not create parallel
+  test setups or duplicate coverage.
+- Check whether a test mutates state or re-ingests data before reusing the
+  stack. If it requires a clean state, reset/recreate only the existing stack
+  in place when that is safe and preserves required data. Otherwise use a
+  non-mutating test path or report the specific E2E limitation; do not silently
+  launch another stack.
+- Stop or remove only containers and resources created by the current task.
+  Do not use broad Compose cleanup or `down -v` against a stack whose ownership
+  or data-retention requirements are uncertain.
+- If no compatible stack is already available, finish the local checks that do
+  not need it and state what must be run in the existing environment. Ask
+  before creating a new stack.

@@ -13,13 +13,18 @@ generated:
     - internal/proxy/drilldown_burst_coalescer.go
 
 semantics: |
-  TODO: Loki's exact semantics, including how it treats missing labels,
-  parse errors, ordering and empty input.
+  The live query-semantics matrix checks a capture-filtered metric range and
+  an outer `sum by (app)` against Loki. Its fixture has a captured status on
+  each matching line, and both cases compare exact metric labels, timestamps,
+  and values. Partial-match series behavior is tracked separately by the linked
+  registry case; this matrix does not claim to close that difference.
 victorialogs: |
-  TODO: the native LogsQL construct used, or the proxy-side
-  transformation and the VictoriaLogs limitation that forces it.
-consumers: []   # explore, drilldown, datasource, api
-cases: []       # case ids proving the semantics match
+  The matrix sends the same capture/filter/range queries through the proxy to
+  VictoriaLogs and to Loki and compares complete metric results. The partial-
+  capture identity difference remains open in its dedicated registry case.
+consumers: [api]
+cases:
+  - parsed-identity/regexp-partial-match-series-count
 victorialogs_candidates:
   - id: pipe-extract-regexp
     since: v1.40.0

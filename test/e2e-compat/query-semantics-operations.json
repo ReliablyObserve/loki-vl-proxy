@@ -69,7 +69,13 @@
     {
       "name": "metric_parser_cardinality",
       "category": "metric_function",
-      "cases": ["parser_metric_range_filter", "unwrap_quantile_over_time"]
+      "cases": [
+        "parser_metric_range_filter",
+        "logfmt_parser_metric_range_filter",
+        "regexp_parser_metric_range_filter",
+        "pattern_parser_metric_range_filter",
+        "unwrap_quantile_over_time"
+      ]
     },
     {
       "name": "metric_unwrap_range_functions",
@@ -94,7 +100,14 @@
     {
       "name": "metric_grouping",
       "category": "aggregation",
-      "cases": ["without_grouping_metric", "negative_regex_metric_range"]
+      "cases": [
+        "without_grouping_metric",
+        "negative_regex_metric_range",
+        "json_parser_metric_range_outer_sum",
+        "logfmt_parser_metric_range_outer_sum",
+        "regexp_parser_metric_range_outer_sum",
+        "pattern_parser_metric_range_outer_sum"
+      ]
     },
     {
       "name": "instant_post_aggregation",
@@ -140,31 +153,136 @@
   ],
   "depth_paths": [
     {
-      "id": "parser_filter",
+      "id": "json_parser_filter",
       "depth": 1,
+      "parser": "json",
       "stages": ["selector", "parser", "parsed_field_filter"],
-      "matrix_cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "regexp_pipeline_field_filter"],
+      "matrix_cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter"],
+      "registry_items": ["loki/logql/parser-json"],
       "registry_cases": ["semantics/json-filter-pushdown-without-error-drop"],
-      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
     },
     {
-      "id": "parser_filter_range_function",
+      "id": "logfmt_parser_filter",
+      "depth": 1,
+      "parser": "logfmt",
+      "stages": ["selector", "parser", "parsed_field_filter"],
+      "matrix_cases": ["logfmt_pipeline_field_filter"],
+      "registry_items": ["loki/logql/parser-logfmt"],
+      "registry_cases": ["parsed-identity/dynamic-key-parsers"],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "regexp_parser_filter",
+      "depth": 1,
+      "parser": "regexp",
+      "stages": ["selector", "parser", "parsed_field_filter"],
+      "matrix_cases": ["regexp_pipeline_field_filter"],
+      "registry_items": ["loki/logql/parser-regexp"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "pattern_parser_filter",
+      "depth": 1,
+      "parser": "pattern",
+      "stages": ["selector", "parser", "parsed_field_filter"],
+      "matrix_cases": ["pattern_pipeline_field_filter"],
+      "registry_items": ["loki/logql/parser-pattern"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "json_parser_range_function",
       "depth": 2,
+      "parser": "json",
       "stages": ["selector", "parser", "parsed_field_filter", "range_function"],
       "matrix_cases": ["parser_metric_range_filter", "parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter"],
+      "registry_items": ["loki/logql/parser-json"],
       "registry_cases": ["semantics/json-filter-pushdown-without-error-drop", "semantics/json-error-filter-metric-split-pushdown"],
-      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
     },
     {
-      "id": "parser_filter_range_function_aggregation",
+      "id": "logfmt_parser_range_function",
+      "depth": 2,
+      "parser": "logfmt",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function"],
+      "matrix_cases": ["logfmt_parser_metric_range_filter"],
+      "registry_items": ["loki/logql/parser-logfmt"],
+      "registry_cases": ["parsed-identity/dynamic-key-parsers"],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "regexp_parser_range_function",
+      "depth": 2,
+      "parser": "regexp",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function"],
+      "matrix_cases": ["regexp_parser_metric_range_filter"],
+      "registry_items": ["loki/logql/parser-regexp"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "pattern_parser_range_function",
+      "depth": 2,
+      "parser": "pattern",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function"],
+      "matrix_cases": ["pattern_parser_metric_range_filter"],
+      "registry_items": ["loki/logql/parser-pattern"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "json_parser_range_function_aggregation",
       "depth": 3,
+      "parser": "json",
       "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
-      "matrix_cases": ["parser_metric_range_filter"],
+      "matrix_cases": ["json_parser_metric_range_outer_sum"],
+      "registry_items": ["loki/logql/parser-json"],
       "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown"],
-      "live_test": "TestChaining_ParserErrorNestedAggregations",
+      "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
+    },
+    {
+      "id": "logfmt_parser_range_function_aggregation",
+      "depth": 3,
+      "parser": "logfmt",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
+      "matrix_cases": ["logfmt_parser_metric_range_outer_sum"],
+      "registry_items": ["loki/logql/parser-logfmt"],
+      "registry_cases": ["parsed-identity/dynamic-key-parsers"],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "regexp_parser_range_function_aggregation",
+      "depth": 3,
+      "parser": "regexp",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
+      "matrix_cases": ["regexp_parser_metric_range_outer_sum"],
+      "registry_items": ["loki/logql/parser-regexp"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
+    },
+    {
+      "id": "pattern_parser_range_function_aggregation",
+      "depth": 3,
+      "parser": "pattern",
+      "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
+      "matrix_cases": ["pattern_parser_metric_range_outer_sum"],
+      "registry_items": ["loki/logql/parser-pattern"],
+      "registry_cases": [],
+      "live_test": "TestQuerySemanticsMatrix",
+      "recorded_evidence": ""
     }
   ]
 }

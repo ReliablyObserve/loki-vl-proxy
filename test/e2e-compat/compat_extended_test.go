@@ -200,6 +200,10 @@ func waitForLokiMetricData(t *testing.T) {
 }
 
 func waitForLokiMetricDataSelector(t *testing.T, selector string) {
+	waitForLokiMetricDataSelectorForTenant(t, selector, "")
+}
+
+func waitForLokiMetricDataSelectorForTenant(t *testing.T, selector, tenant string) {
 	t.Helper()
 	deadline := time.Now().Add(90 * time.Second)
 	probe := url.Values{}
@@ -208,7 +212,7 @@ func waitForLokiMetricDataSelector(t *testing.T, selector string) {
 	probe.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
 	probe.Set("step", "60")
 	for time.Now().Before(deadline) {
-		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), nil)
+		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), tenantRequestHeaders(tenant))
 		if status == http.StatusOK {
 			data := extractMap(resp, "data")
 			if len(extractArray(data, "result")) > 0 {

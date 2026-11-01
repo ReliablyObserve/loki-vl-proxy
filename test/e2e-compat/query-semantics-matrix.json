@@ -194,6 +194,84 @@
       "require_non_empty": true
     },
     {
+      "id": "json_parser_metric_range_outer_sum",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({app=\"api-gateway\",env=\"production\"} | json | status >= 500 [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_parser_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\" [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "any_non_empty",
+      "require_non_empty": true,
+      "known_deviation": "parsed-identity/dynamic-key-parsers"
+    },
+    {
+      "id": "logfmt_parser_metric_range_outer_sum",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\" [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "regexp_parser_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\" [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "regexp_parser_metric_range_outer_sum",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({app=\"api-gateway\",env=\"production\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\" [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "pattern_parser_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400 [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "pattern_parser_metric_range_outer_sum",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({app=\"nginx-ingress\",env=\"production\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400 [5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
       "id": "parser_bytes_metric_range_filter",
       "family": "metric_aggregation",
       "endpoint": "query_range",
