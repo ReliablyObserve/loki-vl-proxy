@@ -75,3 +75,24 @@ matrix in its PR summary, with links to retained, reproducible evidence.
 
 Infrastructure, release metadata and documentation changes may mark this matrix
 not applicable with their scope reason; they must not claim runtime savings.
+
+## Production investigations
+
+Cache investigations and operational checks must be reproducible in a deployed
+proxy. Reuse existing runtime metrics first; when a required signal is missing,
+add bounded metrics or structured diagnostics and document the production check.
+Laboratory-only instrumentation must not be presented as production visibility.
+
+- Keep Prometheus and OTLP definitions consistent. Use fixed labels; never put
+  queries, selectors, keys, tenants or credentials into metric labels or logs.
+- Distinguish client requests, internal tier lookups, exclusions, background
+  admission, backend requests and body completion. Separate decoded consumed
+  bytes from encoded network traffic and requested spans from scanned rows.
+- Explain counter resets, process churn, measurement boundaries and partial
+  observations. Pair resource deltas with successful answers and errors; reduced
+  transfer due to failures is not an optimization.
+- Normal hits/misses and exclusions belong in metrics or debug diagnostics.
+  Keep actionable error/timeout events bounded and free of raw sensitive text.
+  Test exporter consistency, outcomes, error propagation and cancellation.
+- Put concrete metric queries, log fields and interpretation limits in a runbook
+  alongside the delivered behavior, including what still cannot be measured.
