@@ -63,8 +63,11 @@ route to retain correct parser behavior and final request accounting. Aggregate-
 nests can consequently read raw rows where the previous native path counted them;
 that cost needs separate workload measurements. These nested expressions bypass
 generic settled-step fragments, including entries produced before the parser fix;
-the direct JSON point-cache compiler remains unchanged. Exact local response
-caching keeps its existing policy. Moving-window, disk-restart and peer-loss cache
+the direct JSON point-cache compiler remains unchanged. Exact nested query and
+query_range replies use a targeted version segment, including Tier0, so old
+peer-prefetched L1 copies cannot bypass the corrected evaluator. Unaffected
+response key identities, admission and TTL policies remain unchanged.
+Moving-window, disk-restart and peer-loss cache
 costs for the nested route are not measured by this parity matrix.
 Logfmt, unwrap functions, binary
 joins, offsets, unsupported vector operators and broader high-cardinality workloads

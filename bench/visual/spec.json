@@ -58,7 +58,7 @@
   {
    "id": "explore-nested-json-filtered-count",
    "kind": "explore",
-   "query": "topk(3, sum by (cluster, app) (count_over_time({env=\"production\"} | json | __error__=\"\" [$__auto])))",
+   "query": "avg(sum by (cluster, app) (count_over_time({env=\"production\"} | json | __error__=\"\" [$__auto])))",
    "ranges": [
     "1h"
    ],

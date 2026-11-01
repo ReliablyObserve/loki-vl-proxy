@@ -894,6 +894,7 @@
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/ordered_json_metric_test.go",
       "internal/proxy/ordered_json_valid_split_test.go",
+      "internal/proxy/ordered_json_vector_cache_test.go",
       "internal/proxy/ordered_json_vector_test.go",
       "test/e2e-compat/parser_error_matrix_test.go"
     ],
@@ -1658,6 +1659,9 @@
     ],
     "internal/proxy/ordered_json_valid_split_test.go": [
       "semantics/json-error-filter-metric-split-pushdown",
+      "semantics/pipeline-error-text-parity"
+    ],
+    "internal/proxy/ordered_json_vector_cache_test.go": [
       "semantics/pipeline-error-text-parity"
     ],
     "internal/proxy/ordered_json_vector_test.go": [
@@ -2534,7 +2538,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 256,
+  "tests_with_markers": 257,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

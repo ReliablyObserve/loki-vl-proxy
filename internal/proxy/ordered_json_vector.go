@@ -8,14 +8,31 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
+
+const orderedJSONVectorResponseVersion = "@ordered-json-vector-v1:"
+
+// orderedJSONVectorResponseKeyVersion fences exact replies from older peers,
+// including local-memory copies installed by optional peer hot read-ahead.
+// Scope it to the newly owned expressions; unrelated response keys stay intact.
+func orderedJSONVectorResponseKeyVersion(r *http.Request, query string) string {
+	if !strings.Contains(query, "json") {
+		return ""
+	}
+	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if _, _, ok := orderedJSONVectorPlan(query); ok {
+		return orderedJSONVectorResponseVersion
+	}
+	return ""
+}
 
 // orderedJSONVectorPlan keeps the innermost sum's parser hints and ordered
 // pipeline semantics. Outer vector operators consume its samples; they cannot
 // turn parser failures into successful samples or discard its error filters.
 // Read the AST directly: its display rendering need not preserve pipeline text.
 func orderedJSONVectorPlan(query string) (*orderedJSONMetricPlan, []*logqlpkg.VectorAggregation, bool) {
-	if !strings.Contains(query, "json") {
+	if !strings.Contains(query, "json") || (!translator.HasNestedVectorKeywords(query) && !strings.Contains(query, "topk") && !strings.Contains(query, "bottomk")) {
 		return nil, nil, false
 	}
 	expr, err := logqlpkg.Parse(query)

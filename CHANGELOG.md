@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nested functions and explicit parser-error filtering.
   Nested ordered JSON answers bypass generic settled-step fragments so older
   fragments cannot supply pre-fix results; direct JSON point reuse is retained.
+  Version exact response keys only for these nested expressions so replies
+  prefetched from an earlier peer cannot bypass the corrected evaluator.
 
 ## [2.55.0] - 2026-11-01
 
