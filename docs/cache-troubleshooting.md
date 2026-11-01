@@ -79,6 +79,20 @@ Use `sum by (kind) (rate(loki_vl_proxy_backend_read_bytes_total[5m]))` to
 verify reduced transfer without enabling debug logs. In-flight bodies have
 not yet contributed their closing snapshot.
 
+```promql
+sum by (outcome) (
+  rate(loki_vl_proxy_internal_operation_total{operation="backend_body_read"}[5m])
+)
+histogram_quantile(0.95, sum by (le, outcome) (
+  rate(loki_vl_proxy_internal_operation_duration_seconds_bucket{operation="backend_body_read"}[5m])
+))
+```
+
+Compare byte rates, completion outcomes and duration with request volume.
+Lower transfer with more `error`/`timeout` completions is not a successful
+optimization. A stable backend request rate can still hide a large reduction
+in the requested range or bytes; inspect these signals together.
+
 The span describes requested backend bounds, including any lookback, rather
 than rows actually scanned. Decoded bytes are consumed application bytes,
 not compressed network traffic. Duration runs from HTTP start until caller
