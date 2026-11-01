@@ -166,7 +166,7 @@ func TestKeepProjectsRawAndLokiMetadataNames(t *testing.T) {
 		t.Fatalf("keep projection = %q, want %q", got, want)
 	}
 	if got := translateKeepStage("detected_level, service_name", func(string) string { return "level" }); got != "| fields _time, _msg, _stream, detected_level, service_name, level" {
-		t.Fatalf("derived labels unexpectedly projected stored fields: %q", got)
+		t.Fatalf("detected_level must retain its source without projecting a service_name source twice: %q", got)
 	}
 }
 
