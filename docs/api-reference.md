@@ -15,9 +15,9 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 
 | Read API signal | Registry evidence |
 |---|---|
-| Routed endpoints | 24/27 |
-| Endpoints with Loki differential tests | 18/27 |
-| Endpoints declared `proven` | 11/27 |
+| Routed endpoints | 25/27 |
+| Endpoints with Loki differential tests | 19/27 |
+| Endpoints declared `proven` | 12/27 |
 
 Routing, linked tests and declared proof are different signals; none means
 every LogQL shape or every backend version is compatible. See the
@@ -28,7 +28,6 @@ Read routes without an implementation:
 | Route | Current scope |
 |---|---|
 | `/loki/api/v1/cache/generation_numbers` | Not implemented |
-| `/loki/api/v1/label` | Not implemented |
 | `/loki/api/v1/index/shards` | Optional planner gap; low priority, counted in scores |
 
 `index/shards` is not required by the pinned Grafana/Drilldown request paths
@@ -54,6 +53,7 @@ Conditional and unsupported APIs are listed separately below.
 | `GET/POST /loki/api/v1/query_range` (metrics) | Routed | `/select/logsql/stats_query_range` | 5m (2) |
 | `GET/POST /loki/api/v1/query` | Routed | `/select/logsql/query` or `stats_query` | 5m (2) |
 | `GET/POST /loki/api/v1/labels` | Routed | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 5m (3) |
+| `GET/POST /loki/api/v1/label` | Routed, singular labels alias | Same labels handler and metadata cache as `/labels`; outer GET cache remains path-specific | 5m (3) |
 | `GET/POST /loki/api/v1/label/{name}/values` | Routed | `field_names` (label alias resolution) → `stream_field_values` when the backend supports stream metadata endpoints, else `field_values` (also used when `stream_field_values` returns a 4xx) | 5m (3) |
 | `GET/POST /loki/api/v1/series` | Routed | `/select/logsql/streams` | 30s |
 | `GET/POST /loki/api/v1/index/stats` | Routed | `/select/logsql/query` (`stats count(), count_uniq_hash(_stream_id)`) | 10s |

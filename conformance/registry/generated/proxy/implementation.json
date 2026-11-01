@@ -229,8 +229,22 @@
       ]
     },
     {
+      "execution": "native_vl",
+      "functions_reached": 121,
+      "handler": "handleLabels",
       "id": "loki_api_v1_label",
-      "implemented": false
+      "implemented": true,
+      "proxy_side_work": {},
+      "route": "labels",
+      "vl_endpoints": [
+        "/select/logsql/field_names"
+      ],
+      "vl_pipes": [
+        "len"
+      ],
+      "where": [
+        "internal/proxy/label_handlers.go:24 handleLabels"
+      ]
     },
     {
       "execution": "native_vl",
@@ -334,7 +348,7 @@
         "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2720 handleQuery"
+        "internal/proxy/proxy.go:2721 handleQuery"
       ]
     },
     {
@@ -367,7 +381,7 @@
         "unpack_json"
       ],
       "where": [
-        "internal/proxy/proxy.go:2300 handleQueryRange"
+        "internal/proxy/proxy.go:2301 handleQueryRange"
       ]
     },
     {

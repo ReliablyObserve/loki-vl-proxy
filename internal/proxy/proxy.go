@@ -1876,6 +1876,7 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 
 	// Metadata endpoints — rate-limited but cached
 	mux.Handle("/loki/api/v1/labels", p.routeHandler("labels", "/loki/api/v1/labels", p.handleLabels))
+	mux.Handle("/loki/api/v1/label", p.routeHandler("labels", "/loki/api/v1/label", p.handleLabels))
 	mux.Handle("/loki/api/v1/label/", p.routeHandler("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
 	mux.Handle("/loki/api/v1/detected_fields", p.routeHandler("detected_fields", "/loki/api/v1/detected_fields", p.handleDetectedFields))
 	mux.Handle("/loki/api/v1/detected_field/", p.routeHandler("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))

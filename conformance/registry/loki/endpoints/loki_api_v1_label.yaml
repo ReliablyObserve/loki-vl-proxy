@@ -5,43 +5,48 @@ path: "/loki/api/v1/label"
 methods: [GET, POST]
 generated:
   loki_version: v3.7.7
-  proxy_route: null
-  proxy_handler: null
+  proxy_route: "labels"
+  proxy_handler: "handleLabels"
   tests:
-    unit: 44
+    unit: 2
     unit_vs_loki: 0
-    e2e: 17
-    e2e_vs_loki: 11
-    ui: 1
+    e2e: 1
+    e2e_vs_loki: 1
+    ui: 0
     ui_vs_loki: 0
   implementation:
-    implemented: false
-    where: null
-    execution: not_implemented
-    vl_endpoints: []
-    vl_pipes: []
+    implemented: true
+    where: "internal/proxy/label_handlers.go:24 handleLabels"
+    execution: native_vl
+    vl_endpoints: [/select/logsql/field_names]
+    vl_pipes: [len]
     proxy_side_work:
       []
 
+
 description: |
-  TODO: what this endpoint returns and the Loki behaviour a client depends on.
+  Singular Loki label-names alias of /loki/api/v1/labels. GET and form-encoded POST
+  use the same handler, tenant/auth admission and metadata cache identity.
+  The optional outer GET response cache remains path-specific.
 context:
   consumers:
+    - explore
+    - drilldown
+    - datasource
     - api
   notes: |
-    TODO: how each consumer calls it, and how their parameter combinations differ.
+    Served directly without the prior subtree redirect to /loki/api/v1/label/.
+    Label-values paths below /loki/api/v1/label/{name}/values keep their own route.
 examples:
   - consumer: api
     request: |
-      TODO: a real request, with the exact parameters a client sends.
+      GET /loki/api/v1/label?start=1790871720000000000&end=1790875320000000000
     expectation: |
-      TODO: Loki's response shape and the values that must match.
+      Same status, JSON shape and labels as /loki/api/v1/labels for the same scope.
 victorialogs:
-  # Confirmed by the differential runner at runtime; the generated block above
-  # is a static approximation. Say what VictoriaLogs answers natively, what the
-  # proxy has to compute, and why VictoriaLogs cannot do that part.
   native: []
-  transformed: []
+  transformed:
+    - stream_field_names
   vl_cannot: |
-    TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
-edge_cases: []    # case ids under conformance/registry/cases/
+    The proxy applies the existing Loki label translation and synthetic labels.
+edge_cases: []

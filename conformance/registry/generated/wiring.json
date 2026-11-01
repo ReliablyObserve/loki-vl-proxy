@@ -211,6 +211,11 @@
       "test/e2e-compat/drilldown_volume_bytes_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
+    "loki_api_v1_label": [
+      "internal/proxy/labels_alias_test.go",
+      "internal/proxy/labels_post_form_cache_test.go",
+      "test/e2e-compat/labels_alias_test.go"
+    ],
     "loki_api_v1_label_name_values": [
       "internal/proxy/label_surface_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
@@ -221,9 +226,12 @@
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/label_surface_test.go",
+      "internal/proxy/labels_alias_test.go",
+      "internal/proxy/labels_post_form_cache_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "internal/proxy/metadata_inventory_test.go",
       "internal/proxy/metadata_scan_admission_test.go",
+      "test/e2e-compat/labels_alias_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
@@ -1471,6 +1479,10 @@
       "operator-configurable-limits",
       "semantics/label-inventory-exact-and-incremental"
     ],
+    "internal/proxy/labels_alias_test.go": [
+      "loki_api_v1_label",
+      "loki_api_v1_labels"
+    ],
     "internal/proxy/labels_cache_warm_test.go": [
       "quality/label-cache-warm",
       "tenant-label-isolation",
@@ -1478,6 +1490,10 @@
     ],
     "internal/proxy/labels_inclusive_end_test.go": [
       "semantics/labels-end-inclusive-like-loki"
+    ],
+    "internal/proxy/labels_post_form_cache_test.go": [
+      "loki_api_v1_label",
+      "loki_api_v1_labels"
     ],
     "internal/proxy/lifecycle_leak_test.go": [
       "shutdown-releases-background-work"
@@ -2224,6 +2240,10 @@
       "semantics/label-replace-new-label",
       "semantics/label-replace-range-binary-marker"
     ],
+    "test/e2e-compat/labels_alias_test.go": [
+      "loki_api_v1_label",
+      "loki_api_v1_labels"
+    ],
     "test/e2e-compat/labels_zero_width_test.go": [
       "semantics/labels-end-inclusive-like-loki"
     ],
@@ -2484,7 +2504,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 249,
+  "tests_with_markers": 252,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2506,7 +2526,6 @@
     "loki_api_v1_format_query",
     "loki_api_v1_index_shards",
     "loki_api_v1_index_volume_range",
-    "loki_api_v1_label",
     "loki_api_v1_patterns",
     "loki_api_v1_push",
     "loki_api_v1_status_buildinfo",
@@ -2576,5 +2595,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 198
+  "wired_items": 199
 }

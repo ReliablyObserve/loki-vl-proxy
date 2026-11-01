@@ -1,6 +1,6 @@
 id: loki_api_v1_label
-state: gap
+state: proven
 reason: |
-  Seeded from the repository: no proxy route, 0 test files compare it against Loki.
+  Uses the same route middleware, labels handler and labels metadata-cache identity as /loki/api/v1/labels. TestLabelsAliasSharesCanonicalHandlerAndMetadataCache covers GET/POST and cold/warm metadata reuse in both directions; TestCompat_LabelsSingularAlias compares the singular and plural routes against real Loki with nonempty ingested data. The optional outer GET response cache remains path-specific.
 owner_decision: null
 waiver: null

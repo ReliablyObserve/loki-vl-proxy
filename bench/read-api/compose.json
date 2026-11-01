@@ -1,0 +1,243 @@
+{
+  "name": "read-api-proof",
+  "services": {
+    "loki": {
+      "command": [
+        "-config.file=/etc/loki/local-config.yaml",
+        "-compactor.retention-enabled=true",
+        "-compactor.working-directory=/tmp/loki/compactor",
+        "-compactor.delete-request-store=filesystem",
+        "-compactor.compaction-interval=10m",
+        "-compactor.retention-delete-delay=1h",
+        "-store.retention=72h",
+        "-validation.reject-old-samples.max-age=72h"
+      ],
+      "entrypoint": null,
+      "environment": {
+        "GOGC": "80",
+        "GOMEMLIMIT": "10GiB"
+      },
+      "healthcheck": {
+        "disable": true
+      },
+      "image": "grafana/loki:3.7.9",
+      "mem_limit": "12884901888",
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 3100,
+          "published": "34101",
+          "protocol": "tcp",
+          "host_ip": "127.0.0.1"
+        }
+      ],
+      "restart": "unless-stopped",
+      "user": "0:0",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "../../test/e2e-compat/loki-local-config.yaml",
+          "target": "/etc/loki/local-config.yaml",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "e2e-loki-data",
+          "target": "/tmp/loki",
+          "volume": {}
+        }
+      ]
+    },
+    "victorialogs": {
+      "command": [
+        "-storageDataPath=/vlogs",
+        "-retentionPeriod=3d",
+        "-httpListenAddr=:9428",
+        "-search.maxConcurrentRequests=16",
+        "-search.maxQueueDuration=60s",
+        "-search.maxQueryDuration=60s",
+        "-blockcache.missesBeforeCaching=1",
+        "-internStringCacheExpireDuration=15m",
+        "-memory.allowedBytes=3GiB",
+        "-inmemoryDataFlushInterval=1s"
+      ],
+      "entrypoint": null,
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/victoria-logs-prod",
+          "-version"
+        ],
+        "timeout": "2s",
+        "interval": "3s",
+        "retries": 10,
+        "start_period": "5s"
+      },
+      "image": "victoriametrics/victoria-logs:v1.52.0",
+      "mem_limit": "8589934592",
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 9428,
+          "published": "34428",
+          "protocol": "tcp",
+          "host_ip": "127.0.0.1"
+        }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "vl-data",
+          "target": "/vlogs",
+          "volume": {}
+        }
+      ]
+    },
+    "loki-vl-proxy": {
+      "command": [
+        "-listen=:3100",
+        "-backend=http://victorialogs:9428",
+        "-max-stats-query-series=1000000",
+        "-tenant-default-limits={\"max_entries_limit_per_query\":0,\"max_query_length\":\"721h\",\"query_timeout\":\"5m\",\"retention_period\":\"3d\"}",
+        "-backend-timeout=5m",
+        "-log-level=info",
+        "-cache-ttl=5s",
+        "-label-values-indexed-cache=true",
+        "-label-values-hot-limit=200",
+        "-label-values-index-max-entries=50000",
+        "-label-values-index-persist-path=/cache/label-values-index.json",
+        "-label-values-index-persist-interval=5s",
+        "-label-values-index-startup-stale-threshold=30s",
+        "-label-values-index-startup-peer-warm-timeout=2s",
+        "-disk-cache-path=/cache/proxy-l2.bolt",
+        "-disk-cache-max-bytes=536870912",
+        "-disk-cache-min-ttl=1s",
+        "-drilldown-scan-timeout=3s",
+        "-rate-limit-per-second=0",
+        "-rate-limit-burst=0",
+        "-max-concurrent=0",
+        "-metadata-default-lookback=1h",
+        "-label-style=underscores",
+        "-metadata-field-mode=translated",
+        "-emit-structured-metadata=true",
+        "-server.register-instrumentation=true"
+      ],
+      "depends_on": {
+        "victorialogs": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "environment": {
+        "GOMEMLIMIT": "2GiB"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/usr/local/bin/healthcheck"
+        ],
+        "timeout": "2s",
+        "interval": "3s",
+        "retries": 10,
+        "start_period": "5s"
+      },
+      "image": "loki-vl-proxy:read-api-local",
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 3100,
+          "published": "34100",
+          "protocol": "tcp",
+          "host_ip": "127.0.0.1"
+        }
+      ],
+      "user": "root",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "e2e-proxy-cache",
+          "target": "/cache",
+          "volume": {}
+        }
+      ]
+    },
+    "loki-vl-proxy-base": {
+      "command": [
+        "-listen=:3100",
+        "-backend=http://victorialogs:9428",
+        "-max-stats-query-series=1000000",
+        "-tenant-default-limits={\"max_entries_limit_per_query\":0,\"max_query_length\":\"721h\",\"query_timeout\":\"5m\",\"retention_period\":\"3d\"}",
+        "-backend-timeout=5m",
+        "-log-level=info",
+        "-cache-ttl=5s",
+        "-label-values-indexed-cache=true",
+        "-label-values-hot-limit=200",
+        "-label-values-index-max-entries=50000",
+        "-label-values-index-persist-path=/cache/label-values-index.json",
+        "-label-values-index-persist-interval=5s",
+        "-label-values-index-startup-stale-threshold=30s",
+        "-label-values-index-startup-peer-warm-timeout=2s",
+        "-disk-cache-path=/cache/proxy-l2.bolt",
+        "-disk-cache-max-bytes=536870912",
+        "-disk-cache-min-ttl=1s",
+        "-drilldown-scan-timeout=3s",
+        "-rate-limit-per-second=0",
+        "-rate-limit-burst=0",
+        "-max-concurrent=0",
+        "-metadata-default-lookback=1h",
+        "-label-style=underscores",
+        "-metadata-field-mode=translated",
+        "-emit-structured-metadata=true",
+        "-server.register-instrumentation=true"
+      ],
+      "depends_on": {
+        "victorialogs": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "environment": {
+        "GOMEMLIMIT": "2GiB"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/usr/local/bin/healthcheck"
+        ],
+        "timeout": "2s",
+        "interval": "3s",
+        "retries": 10,
+        "start_period": "5s"
+      },
+      "image": "loki-vl-proxy:read-api-base",
+      "ports": [
+        {
+          "mode": "ingress",
+          "target": 3100,
+          "published": "34102",
+          "protocol": "tcp",
+          "host_ip": "127.0.0.1"
+        }
+      ],
+      "user": "root",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "e2e-proxy-base-cache",
+          "target": "/cache",
+          "volume": {}
+        }
+      ]
+    }
+  },
+  "volumes": {
+    "vl-data": {},
+    "e2e-loki-data": {},
+    "e2e-proxy-base-cache": {},
+    "e2e-proxy-cache": {}
+  }
+}

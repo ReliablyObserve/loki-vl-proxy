@@ -15,10 +15,10 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 
 | Score | Value | Meaning |
 |---|---|---|
-| Implementation | 24/27 | endpoints the proxy routes |
-| Differential evidence | 18/27 | endpoints with tests comparing the proxy against Loki |
-| Proven | 11/27 | endpoints whose registry state is `proven` |
-| VictoriaLogs native share | 5/24 | implemented endpoints answered natively |
+| Implementation | 25/27 | endpoints the proxy routes |
+| Differential evidence | 19/27 | endpoints with tests comparing the proxy against Loki |
+| Proven | 12/27 | endpoints whose registry state is `proven` |
+| VictoriaLogs native share | 6/25 | implemented endpoints answered natively |
 
 Counts exclude optional deletion management as well as out-of-scope writes and deprecated aliases.
 A route or a linked test is not a full compatibility claim.
@@ -38,11 +38,12 @@ A route or a linked test is not a full compatibility claim.
 | `/loki/api/v1/index/stats` | GET, POST | proven | VictoriaLogs native | explore, datasource, api | 20 | 7 | internal/proxy/label_handlers.go:546 |
 | `/loki/api/v1/index/volume` | GET, POST | proven | proxy-side | drilldown, api | 29 | 10 | internal/proxy/volume.go:192 |
 | `/loki/api/v1/index/volume_range` | GET, POST | proven | proxy-side | drilldown, api | 21 | 4 | internal/proxy/volume.go:200 |
+| `/loki/api/v1/label` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 3 | 1 | internal/proxy/label_handlers.go:24 |
 | `/loki/api/v1/label/{name}/values` | GET, POST | partial | VictoriaLogs native | explore, drilldown, datasource, api | 50 | 15 | internal/proxy/label_handlers.go:124 |
-| `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 80 | 17 | internal/proxy/label_handlers.go:24 |
+| `/loki/api/v1/labels` | GET, POST | proven | VictoriaLogs native | explore, drilldown, datasource, api | 84 | 18 | internal/proxy/label_handlers.go:24 |
 | `/loki/api/v1/patterns` | GET, POST | proven | hybrid | drilldown, api | 23 | 3 | internal/proxy/patterns.go:108 |
-| `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 104 | 40 | internal/proxy/proxy.go:2720 |
-| `/loki/api/v1/query_range` | GET, POST | proven | hybrid | explore, drilldown, api | 217 | 64 | internal/proxy/proxy.go:2300 |
+| `/loki/api/v1/query` | GET, POST | proven | hybrid | explore, drilldown, api | 104 | 40 | internal/proxy/proxy.go:2721 |
+| `/loki/api/v1/query_range` | GET, POST | proven | hybrid | explore, drilldown, api | 217 | 64 | internal/proxy/proxy.go:2301 |
 | `/loki/api/v1/rules` | GET | partial | proxy-side | api | 10 | 2 | internal/proxy/alerting.go:95 |
 | `/loki/api/v1/rules/{namespace}` | GET | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:95 |
 | `/loki/api/v1/rules/{namespace}/{groupName}` | GET | partial | proxy-side | api | 4 | 0 | internal/proxy/alerting.go:95 |
@@ -53,7 +54,6 @@ A route or a linked test is not a full compatibility claim.
 | `/prometheus/api/v1/rules` | GET | partial | proxy-side | api | 5 | 1 | internal/proxy/alerting.go:95 |
 | `/loki/api/v1/cache/generation_numbers` | GET | gap | not implemented | api | 0 | 0 | — |
 | `/loki/api/v1/index/shards` | GET, POST | gap (optional) | not implemented | api | 0 | 0 | — |
-| `/loki/api/v1/label` | GET, POST | gap | not implemented | api | 0 | 0 | — |
 
 Optional API gaps remain included in the totals and scores:
 

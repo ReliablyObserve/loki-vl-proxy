@@ -6,7 +6,7 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 
 ## Where we are
 
-- Read endpoints with a test comparing the proxy against Loki: **67%**
+- Read endpoints with a test comparing the proxy against Loki: **70%**
 - Behaviour and feature items: **6 proven**, 19 partial, 3 gaps, 0 waived
 
 

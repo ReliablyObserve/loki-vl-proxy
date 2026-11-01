@@ -20,7 +20,6 @@ The proxy serves Loki's read API; write endpoints such as push are not supported
 | 6 | `/loki/api/v1/detected_labels` | drilldown, api | proxy_side | 21 | 7 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 5 | `/loki/api/v1/status/buildinfo` | datasource, api | proxy_side | 8 | 4 | no test wired to the registry; proxy-side: justify in the registry or push down to VictoriaLogs |
 | 4 | `/loki/api/v1/patterns` | drilldown, api | hybrid | 23 | 3 | no test wired to the registry |
-| 4 | `/loki/api/v1/label` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 4 | `/loki/api/v1/cache/generation_numbers` | api | not_implemented | 0 | 0 | not implemented; no test compares it against Loki; no test wired to the registry |
 | 3 | `/loki/api/v1/drilldown-limits` | api | proxy_side | 8 | 2 | proxy-side: justify in the registry or push down to VictoriaLogs |
 | 6 | `/prometheus/api/v1/alerts` | api | proxy_side | 5 | 0 | no test compares it against Loki; proxy-side: justify in the registry or push down to VictoriaLogs |
