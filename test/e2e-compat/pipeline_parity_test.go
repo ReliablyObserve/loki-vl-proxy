@@ -55,23 +55,23 @@ func TestPipeline_ParserStages(t *testing.T) {
 	}{
 		// JSON parser
 		{"json_basic", `{app="api-gateway",env="production"} | json`},
-		{"json_with_field_filter", `{app="api-gateway",env="production"} | json | method="GET"`},
+		{"json_with_field_filter", querySemanticsCaseQuery(t, "json_pipeline_field_filter")},
 		{"json_with_numeric_filter", `{app="api-gateway",env="production"} | json | status>=400`},
-		{"json_with_regex_filter", `{app="api-gateway",env="production"} | json | path=~"/api/v1/.*"`},
+		{"json_with_regex_filter", querySemanticsCaseQuery(t, "json_pipeline_regex_filter")},
 
 		// Logfmt parser
 		{"logfmt_basic", `{app="payment-service",env="production"} | logfmt`},
-		{"logfmt_with_field_filter", `{app="payment-service",env="production"} | logfmt | level="error"`},
+		{"logfmt_with_field_filter", querySemanticsCaseQuery(t, "logfmt_pipeline_field_filter")},
 
 		// Line format
-		{"line_format_basic", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}} {{.status}}"`},
+		{"line_format_basic", querySemanticsCaseQuery(t, "json_then_line_format")},
 
 		// Label format
 		{"label_format_basic", `{app="api-gateway",env="production"} | json | label_format method_upper="{{.method}}"`},
 
 		// Drop / Keep
 		{"drop_labels", `{app="api-gateway",env="production"} | json | drop trace_id, user_id`},
-		{"keep_labels", `{app="api-gateway",env="production"} | json | keep method, path, status`},
+		{"keep_labels", querySemanticsCaseQuery(t, "keep_pipeline")},
 
 		// Decolorize
 		{"decolorize", `{app="api-gateway",env="production"} | decolorize`},
@@ -133,7 +133,7 @@ func TestPipeline_LineFilters(t *testing.T) {
 
 		// Chained filters
 		{"chained_contains", `{app="api-gateway",env="production"} |= "api" |= "GET"`},
-		{"chained_mixed", `{app="api-gateway",env="production"} |= "api" |~ "GET|POST" != "health"`},
+		{"chained_mixed", querySemanticsCaseQuery(t, "line_filters_chain_mixed")},
 		{"chained_regex", `{app="api-gateway",env="production"} |~ "status.*[45][0-9][0-9]"`},
 	}
 
@@ -204,8 +204,8 @@ func TestPipeline_MetricQueries(t *testing.T) {
 		{"rate", `rate({app="api-gateway",env="production"}[5m])`},
 		{"bytes_over_time", `bytes_over_time({app="api-gateway",env="production"}[5m])`},
 		{"bytes_rate", `bytes_rate({app="api-gateway",env="production"}[5m])`},
-		{"sum_by_level", `sum by (level) (count_over_time({app="api-gateway",env="production"}[5m]))`},
-		{"rate_with_filter", `rate({app="api-gateway",env="production"} |= "GET"[5m])`},
+		{"sum_by_level", querySemanticsCaseQuery(t, "count_over_time_by_level")},
+		{"rate_with_filter", querySemanticsCaseQuery(t, "rate_with_line_filter")},
 		{"topk", `topk(3, sum by (app) (count_over_time({env="production"}[5m])))`},
 		{"bottomk", `bottomk(3, sum by (app) (count_over_time({env="production"}[5m])))`},
 	}

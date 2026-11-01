@@ -19,6 +19,23 @@ def snapshot(count=10, coverage=85):
 
 
 class ReportTests(unittest.TestCase):
+    def test_query_semantics_catalog_and_live_matrix_are_separate(self):
+        base, head = snapshot(), snapshot()
+        base["quality_inventory"] = {"query_semantics": {"state": "available", "cases": 67,
+            "operations": 24, "depth_paths": 12, "exact_metric_points": 33, "client_errors": 8, "server_errors": 0}}
+        head["quality_inventory"] = {"query_semantics": {"state": "available", "cases": 80,
+            "operations": 25, "depth_paths": 12, "exact_metric_points": 41, "client_errors": 9, "server_errors": 0}}
+        evidence = {"sources": {"loki": {"state": "completed", "conclusion": "failure",
+            "test_scopes": [{"state": "available", "query_semantics_matrix":
+                             {"passed": 79, "failed": 1, "skipped": 0, "failed_cases": ["parser"]}}]}}}
+        report = self.render(base=base, head=head, evidence=evidence)
+        focus = report.split("<details>", 1)[0]
+        self.assertIn("Query semantics catalog: 80 cases", focus)
+        self.assertIn("Pinned Loki query matrix: 79 passed, 1 failed, 0 skipped", focus)
+        self.assertIn("| Registered cases | 67 | 80 | +13 |", report)
+        self.assertIn("| Matrix cases | 79 | 1 | 0 |", report)
+        self.assertIn("Failing case IDs: parser", report)
+
     def test_recorded_conformance_subtests_are_scoped_and_collapsed(self):
         report = self.render(evidence={"sources": {"ci": {"state": "completed", "conclusion": "success", "artifacts": {
             "ci-conformance-summary.json": {"source": "a" * 40, "parents": {"pass": 3, "fail": 0, "skip": 2, "incomplete": 1, "not-run": 8},

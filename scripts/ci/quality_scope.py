@@ -14,6 +14,50 @@ DEPRECATED_READ_ALIASES = {
 }
 
 
+def query_semantics_snapshot(root):
+    """Count the declared matrix and its references without running PR code."""
+    try:
+        tree = Path(root).resolve()
+        directory = tree / "test/e2e-compat"
+        def load(name):
+            path = directory / name
+            if not path.resolve().is_relative_to(tree) or path.stat().st_size > 1024 * 1024:
+                raise ValueError("invalid semantics input")
+            return json.loads(path.read_text(encoding="utf-8"),
+                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError("non-finite JSON")))
+        matrix, inventory = load("query-semantics-matrix.json"), load("query-semantics-operations.json")
+        cases, paths, operations = matrix["cases"], inventory["depth_paths"], inventory["operations"]
+        performance = matrix.get("performance_cases", [])
+        ids = [row["id"] for row in cases]
+        if not ids or any(not isinstance(i, str) or not i for i in ids) or len(ids) != len(set(ids)):
+            raise ValueError("invalid semantics case ids")
+        referenced = [i for row in operations for i in row["cases"]]
+        if set(referenced) != set(ids):
+            raise ValueError("semantics operation references differ from cases")
+        perf_ids = [row["id"] for row in performance]
+        if len(perf_ids) != len(set(perf_ids)) or any(not i for i in perf_ids):
+            raise ValueError("duplicate performance case ids")
+        for row in performance:
+            if bool(row.get("case_id")) == bool(row.get("query")) or (row.get("case_id") and row["case_id"] not in ids):
+                raise ValueError("performance case has invalid query reference")
+        depth = Counter(row["depth"] for row in paths)
+        if any(value not in (1, 2, 3) for value in depth) or any(depth[i] != 4 for i in (1, 2, 3)):
+            raise ValueError("incomplete parser depth paths")
+        for row in paths:
+            if any(i not in ids for i in row["matrix_cases"]):
+                raise ValueError("unknown parser depth case")
+        comparison = Counter(row.get("compare", "") for row in cases if row.get("expectation") == "success")
+        outcome = Counter(row.get("expectation") for row in cases)
+        return {"state": "available", "cases": len(cases), "operations": len(operations),
+                "performance_cases": len(performance),
+                "performance_shared": sum(bool(row.get("case_id")) for row in performance),
+                "depth_paths": len(paths), "depths": {str(i): depth[i] for i in (1, 2, 3)},
+                "exact_metric_points": comparison["metric_points"],
+                "client_errors": outcome["client_error"], "server_errors": outcome["server_error"]}
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        return {"state": "unavailable", "note": "Matrix or inventory missing, malformed or inconsistent."}
+
+
 def scalar(text, name, indent="", optional=False):
     matches = re.findall(rf"^{indent}{re.escape(name)}:[ \t]*(.*)$", text, re.M)
     if len(matches) != 1:
@@ -215,6 +259,7 @@ def registry_snapshot(root):
         if not isinstance(errors.get("ceiling"), int) or isinstance(errors["ceiling"], bool) or errors["ceiling"] != links:
             raise ValueError("error-layer ceiling differs from case/cell links")
         return {"state": "available", "surface_version": version, "endpoints": endpoints, "tracks": tracks,
+                "query_semantics": query_semantics_snapshot(tree),
                 "endpoint_scope": "loki-read-api", "deletion_management": deletion,
                 "excluded_write_endpoints": excluded_write_endpoints,
                 "excluded_deprecated_read_endpoints": excluded_deprecated_read_endpoints,

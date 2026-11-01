@@ -143,6 +143,36 @@ def conformance_details(summary):
     return lines
 
 
+def query_semantics_details(base, head):
+    before = mapping(mapping(base.get("quality_inventory")).get("query_semantics"))
+    after = mapping(mapping(head.get("quality_inventory")).get("query_semantics"))
+    keys = (("cases", "Registered cases"), ("operations", "Tracked operations"),
+            ("depth_paths", "Parser × depth paths"),
+            ("exact_metric_points", "Exact metric-point contracts"),
+            ("client_errors", "Expected client errors"), ("server_errors", "Expected server errors"),
+            ("performance_cases", "Performance scenario definitions"),
+            ("performance_shared", "Performance scenarios reusing quality cases"))
+    rows = []
+    for key, label in keys:
+        old, new = before.get(key), after.get(key)
+        rows.append([label, fmt(old), fmt(new),
+                     f"{new - old:+d}" if numeric(old) and numeric(new) else "n/a"])
+    return ["Declared query cases and parser paths in the base and PR source. These counts do not claim execution or parity; the Loki compatibility check supplies live proof.", "",
+            *table(["Signal", "Base", "PR", "Delta"], rows), "",
+            "The matrix is the query catalog for quality and later performance scenarios. Visual evidence remains separate."]
+
+
+def query_semantics_runtime(sources):
+    source = mapping(sources.get("loki"))
+    if source.get("state") != "completed":
+        return {}
+    for scope in records(source.get("test_scopes")):
+        matrix = mapping(scope.get("query_semantics_matrix"))
+        if scope.get("state") == "available" and matrix:
+            return matrix
+    return {}
+
+
 def paired_benchmarks(base, head):
     if mapping(head.get("performance")).get("mode") == "skipped":
         return []
@@ -368,6 +398,17 @@ def render(base, head, evidence):
         focus.append("Declared API inventory: " + fmt(endpoints.get("implemented")) + "/" + fmt(endpoints.get("total")) +
                      " " + population + " implemented, " + fmt(endpoints.get("differential")) + " linked to Loki comparison tests, " +
                      fmt(endpoints.get("declared_proven")) + " declared proven; " + fmt(gaps.get("open")) + " open compatibility gaps. These are registry counts, not a runtime pass percentage.")
+    semantics = mapping(inventory.get("query_semantics"))
+    semantics_run = query_semantics_runtime(sources)
+    if semantics.get("state") == "available":
+        focus.append("Query semantics catalog: " + fmt(semantics.get("cases")) + " cases, " +
+                     fmt(semantics.get("depth_paths")) + " parser × depth paths, " +
+                     fmt(semantics.get("exact_metric_points")) + " exact metric-point contracts; " +
+                     "declared coverage, not a live pass count. " + link(sources.get("loki", {})))
+    if semantics_run:
+        (urgent if semantics_run.get("failed") else focus).append(
+            "Pinned Loki query matrix: " + ", ".join(fmt(semantics_run.get(k)) + " " + k for k in ("passed", "failed", "skipped")) +
+            " cases observed in CI. " + link(sources.get("loki", {})))
     for key in ("base", "head"):
         sample = (base if key == "base" else head).get("tests", {})
         if sample.get("execution_state") == "failed":
@@ -459,6 +500,13 @@ def render(base, head, evidence):
         names += sorted(set(sources) - set(names))
         lines += fold("Evidence sources and revision status", table(["Source", "State", "Result", "Link", "Notes"], [[cell(key), cell(sources[key].get("state", "unavailable")), cell(sources[key].get("conclusion") or "pending / unavailable"), link(sources[key]), cell(sources[key].get("note", ""))] for key in names]) + ["", "Pending, stale, unavailable and skipped sources contribute no measurements."])
     lines += fold("Coverage and tests", test_details(base, head, ci))
+    if semantics.get("state") == "available":
+        details = query_semantics_details(base, head)
+        if semantics_run:
+            details += ["", *table(["Live pinned Loki result", "Passed", "Failed", "Skipped"],
+                                    [["Matrix cases", *(fmt(semantics_run.get(k)) for k in ("passed", "failed", "skipped"))]]),
+                        "", "Failing case IDs: " + (", ".join(cell(x) for x in semantics_run.get("failed_cases", [])[:8]) or "none") + "."]
+        lines += fold("Query semantics catalog: base versus PR", details)
     if conformance:
         lines += fold("Recorded conformance contracts and subtests", conformance_details(conformance))
     lines += fold("API contract coverage and regression changes", comparison["details"])

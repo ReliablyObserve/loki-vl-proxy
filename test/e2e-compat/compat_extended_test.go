@@ -1058,7 +1058,7 @@ func TestExtended_OnGrouping(t *testing.T) {
 	now := time.Now()
 
 	params := url.Values{}
-	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) / on(app) sum by (app) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("query", querySemanticsCaseQuery(t, "on_grouping_metric"))
 	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("step", "60")
@@ -1100,7 +1100,7 @@ func TestExtended_GroupLeftJoin(t *testing.T) {
 	now := time.Now()
 
 	params := url.Values{}
-	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) * on(app) group_left(level) sum by (app, level) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("query", querySemanticsCaseQuery(t, "group_left_join_metric"))
 	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("step", "60")

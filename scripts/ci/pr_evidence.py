@@ -249,7 +249,17 @@ def log_scope(text, context):
             playwright["not_run" if result[2] == "did not run" else result[2]] = int(result[1])
     if events:
         summary = unit_summary("\n".join(json.dumps(event) for event in events))
-        summary.pop("outcomes")
+        outcomes = summary.pop("outcomes")
+        matrix = {name.split("\t", 1)[1].split("/", 1)[1]: action
+                  for name, action in outcomes.items()
+                  if name.startswith("job\tTestQuerySemanticsMatrix/")}
+        if matrix:
+            summary["query_semantics_matrix"] = {
+                "passed": sum(v == "pass" for v in matrix.values()),
+                "failed": sum(v == "fail" for v in matrix.values()),
+                "skipped": sum(v == "skip" for v in matrix.values()),
+                "failed_cases": sorted(k for k, v in matrix.items() if v == "fail")[:20],
+            }
         summary.update(state="available", kind="Go", scope="Go cases in one retained CI job", source=checkout, versions=versions)
         return summary
     if playwright:

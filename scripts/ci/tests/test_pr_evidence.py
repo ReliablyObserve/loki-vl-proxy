@@ -326,6 +326,15 @@ class EvidenceTests(unittest.TestCase):
     def test_empty_or_unfinished_logs_are_not_zero_test_success(self):
         self.assertEqual(self.m.log_scope("setup only", {"head": "a" * 40})["state"], "unavailable")
 
+    def test_pinned_loki_log_retains_matrix_case_outcomes(self):
+        lines = ["[command]/usr/bin/git log -1 --format=%H", "a" * 40,
+                 "--- PASS: TestQuerySemanticsMatrix/selector (0.01s)",
+                 "--- FAIL: TestQuerySemanticsMatrix/parser (0.01s)",
+                 "--- PASS: TestQuerySemanticsMatrix/selector (0.01s)"]
+        result = self.m.log_scope("\n".join(lines), {"head": "a" * 40})
+        self.assertEqual(result["query_semantics_matrix"],
+                         {"passed": 1, "failed": 1, "skipped": 0, "failed_cases": ["parser"]})
+
     def test_multiple_playwright_commands_keep_separate_results_and_instability(self):
         lines = ["[command]/usr/bin/git log -1 --format=%H", "a" * 40, "Running 14 tests using 2 workers", "  10 passed (1m)", "  3 failed", "  1 flaky", "Running 9 tests using 1 worker", "  7 passed (20s)", "  1 interrupted", "  1 did not run"]
         result = self.m.log_scope("\n".join(lines), {"head": "a" * 40})

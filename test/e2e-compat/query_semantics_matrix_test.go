@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,9 +85,17 @@ func TestQuerySemanticsMatrixScopeQueryAddsFixtureMarker(t *testing.T) {
 }
 
 type querySemanticsMatrix struct {
-	Description string               `json:"description"`
-	Oracle      string               `json:"oracle"`
-	Cases       []querySemanticsCase `json:"cases"`
+	Description      string                          `json:"description"`
+	Oracle           string                          `json:"oracle"`
+	Cases            []querySemanticsCase            `json:"cases"`
+	PerformanceCases []querySemanticsPerformanceCase `json:"performance_cases"`
+}
+
+type querySemanticsPerformanceCase struct {
+	ID       string `json:"id"`
+	Category string `json:"category"`
+	CaseID   string `json:"case_id,omitempty"`
+	Query    string `json:"query,omitempty"`
 }
 
 type querySemanticsOperations struct {
@@ -111,6 +120,7 @@ type querySemanticsDepthPath struct {
 	RegistryCases    []string `json:"registry_cases"`
 	LiveTest         string   `json:"live_test"`
 	RecordedEvidence string   `json:"recorded_evidence"`
+	RelatedTests     []string `json:"related_tests,omitempty"`
 }
 
 type querySemanticsCase struct {
@@ -126,7 +136,7 @@ type querySemanticsCase struct {
 	KnownDeviation   string `json:"known_deviation,omitempty"`
 }
 
-func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
+func loadQuerySemanticsMatrix(t testing.TB) querySemanticsMatrix {
 	t.Helper()
 
 	data, err := os.ReadFile("query-semantics-matrix.json")
@@ -143,16 +153,31 @@ func loadQuerySemanticsMatrix(t *testing.T) querySemanticsMatrix {
 	return matrix
 }
 
+func querySemanticsCaseQuery(t testing.TB, id string) string {
+	t.Helper()
+	for _, tc := range loadQuerySemanticsMatrix(t).Cases {
+		if tc.ID == id {
+			return tc.Query
+		}
+	}
+	t.Fatalf("unknown query semantics case %q", id)
+	return ""
+}
+
 func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 	if len(matrix.Cases) == 0 {
 		return fmt.Errorf("query semantics matrix must not be empty")
 	}
 	seen := make(map[string]bool, len(matrix.Cases))
+	qualityQueries := make(map[string]string, len(matrix.Cases))
+	qualitySuccess := make(map[string]bool, len(matrix.Cases))
 	for _, tc := range matrix.Cases {
 		if seen[tc.ID] {
 			return fmt.Errorf("duplicate query semantics case %q", tc.ID)
 		}
 		seen[tc.ID] = true
+		qualityQueries[tc.Query] = tc.ID
+		qualitySuccess[tc.ID] = tc.Expectation == "success"
 		if tc.ID == "" || tc.Endpoint == "" || tc.Query == "" || tc.Expectation == "" {
 			return fmt.Errorf("query semantics case must define id, endpoint, query, and expectation: %+v", tc)
 		}
@@ -194,6 +219,19 @@ func validateQuerySemanticsMatrix(matrix querySemanticsMatrix) error {
 			}
 		} else if tc.KnownDeviation != "" {
 			return fmt.Errorf("case %q cannot waive a strict comparison with a deviation", tc.ID)
+		}
+	}
+	performanceIDs := make(map[string]bool, len(matrix.PerformanceCases))
+	for _, perf := range matrix.PerformanceCases {
+		if perf.ID == "" || performanceIDs[perf.ID] || perf.Category == "" || (perf.CaseID == "") == (perf.Query == "") {
+			return fmt.Errorf("invalid or duplicate performance case %q", perf.ID)
+		}
+		performanceIDs[perf.ID] = true
+		if perf.CaseID != "" && !qualitySuccess[perf.CaseID] {
+			return fmt.Errorf("performance case %q references unknown or unsuccessful quality case %q", perf.ID, perf.CaseID)
+		}
+		if sharedID, ok := qualityQueries[perf.Query]; perf.Query != "" && ok {
+			return fmt.Errorf("performance case %q duplicates quality query %q instead of referencing it", perf.ID, sharedID)
 		}
 	}
 	return nil
@@ -481,6 +519,26 @@ func TestQuerySemanticsOperationsInventory(t *testing.T) {
 	}
 }
 
+func TestQuerySemanticsPerformanceCatalog(t *testing.T) {
+	matrix := loadQuerySemanticsMatrix(t)
+	cases := validParityCases(t)
+	if len(cases) != len(matrix.PerformanceCases) {
+		t.Fatalf("resolved %d performance cases, want %d", len(cases), len(matrix.PerformanceCases))
+	}
+	seen := make(map[string]bool, len(cases))
+	for _, tc := range cases {
+		if tc.name == "" || tc.category == "" || tc.query == "" || seen[tc.name] {
+			t.Fatalf("invalid resolved performance case %+v", tc)
+		}
+		seen[tc.name] = true
+	}
+	for _, id := range []string{"exact_match", "sum_by", "avg_over_time_unwrap", "vector_div", "json_two_field_filters"} {
+		if !seen[id] {
+			t.Errorf("focused benchmark case %q is missing", id)
+		}
+	}
+}
+
 func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 	inventory := loadQuerySemanticsOperations(t)
 	matrix := loadQuerySemanticsMatrix(t)
@@ -554,6 +612,29 @@ func TestQuerySemanticsMatrixDepthPaths(t *testing.T) {
 		if path.RecordedEvidence != "" {
 			if _, err := os.Stat(path.RecordedEvidence); err != nil {
 				t.Fatalf("depth path %q references missing retained evidence %q: %v", path.ID, path.RecordedEvidence, err)
+			}
+		}
+		for _, name := range path.RelatedTests {
+			if name == path.LiveTest || !strings.HasPrefix(name, "Test") {
+				t.Fatalf("depth path %q has redundant or invalid related test %q", path.ID, name)
+			}
+			matches, err := filepath.Glob("*_test.go")
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, file := range matches {
+				contents, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(contents), "func "+name+"(") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("depth path %q references missing related test %q", path.ID, name)
 			}
 		}
 	}
@@ -633,11 +714,11 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 		tc := tc
 		t.Run(tc.ID, func(t *testing.T) {
 			params := querySemanticsParams(tc, evaluation)
-			if tc.Expectation == "success" {
-				query, err := scopeQuerySemanticsQuery(params.Get("query"), tenant)
-				if err != nil {
-					t.Fatalf("scope query to matrix fixtures: %v", err)
-				}
+			query, err := scopeQuerySemanticsQuery(params.Get("query"), tenant)
+			if err != nil && tc.Expectation == "success" {
+				t.Fatalf("scope query to matrix fixtures: %v", err)
+			}
+			if err == nil {
 				params.Set("query", query)
 			}
 			t.Logf("matrix_case id=%s comparison=%s known_deviation=%s", tc.ID, tc.Compare, tc.KnownDeviation)
