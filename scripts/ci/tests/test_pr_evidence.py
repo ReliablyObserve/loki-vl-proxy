@@ -83,6 +83,56 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(self.m.current_meta({"base": "b", "head": "old"}, context, "visual"))
         self.assertFalse(self.m.current_meta({}, context, "quality"))
 
+    def test_handler_benchmarks_use_medians_and_keep_cpu_variants_separate(self):
+        text = "\n".join([
+            "BenchmarkProxy_Series_CompatCacheHit-8 100 1000 ns/op 20 B/op 2 allocs/op",
+            "BenchmarkProxy_Series_CompatCacheHit-8 100 9000 ns/op 90 B/op 9 allocs/op",
+            "BenchmarkProxy_Series_CompatCacheHit-8 100 2000 ns/op 30 B/op 3 allocs/op",
+            "BenchmarkProxy_Series_CompatCacheHit-1 100 500 ns/op 10 B/op 1 allocs/op",
+            "BenchmarkProxy_LabelValues_Scale_CacheHit/values_10000-8 100 7000 ns/op 60 B/op 5 allocs/op",
+            "BenchmarkTranslate-8 100 1 ns/op 1 B/op 1 allocs/op"])
+        rows = self.m.handler_benchmarks(text)
+        self.assertEqual(len(rows), 3)
+        row = next(r for r in rows if r["name"] == "BenchmarkProxy_Series_CompatCacheHit" and r["cpu"] == 8)
+        self.assertEqual((row["samples"], row["ns_per_op"], row["bytes_per_op"], row["allocs_per_op"]), (3, 2000, 30, 3))
+
+    def test_handler_benchmarks_reject_invalid_samples(self):
+        for value in ("NaN", "inf", "-1"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.m.handler_benchmarks(f"BenchmarkProxy_Labels_CacheHit-8 100 {value} ns/op 20 B/op 2 allocs/op")
+        with self.assertRaises(ValueError):
+            self.m.handler_benchmarks("BenchmarkProxy_Labels_CacheHit-8 100 1 ns/op")
+
+    def test_ci_handler_benchmarks_require_current_checkout(self):
+        head, merge, base = "a" * 40, "b" * 40, "c" * 40
+        pr = {"number": 4, "base": {"sha": base}, "head": {"sha": head}, "merge_commit_sha": merge}
+        payload = archive({"bench-results.txt": "BenchmarkProxy_Series_CompatCacheHit-8 100 2000 ns/op 30 B/op 3 allocs/op"})
+
+        class API:
+            repository = "owner/repo"
+            checkout = merge
+
+            def pages(self, path, field=None, max_pages=10):
+                if "workflows/" in path:
+                    return [{"id": 10, "head_sha": head, "status": "completed", "conclusion": "success", "run_started_at": "2026-01-01"}] if "/ci.yaml/" in path else []
+                if "/jobs" in path:
+                    return [{"id": 1, "name": "bench", "status": "completed", "conclusion": "success"}]
+                return [{"id": 11, "name": "benchmarks", "created_at": "2026-01-02"}]
+
+            def request(self, path, **kwargs):
+                if "/logs" in path:
+                    return ("2026-01-01T00:00:00Z [command]/usr/bin/git log -1 --format=%H\n2026-01-01T00:00:00Z " + self.checkout).encode()
+                return payload
+
+        api = API()
+        result = self.m.collect(api, pr)["sources"]["ci"]["artifacts"]["ci-handler-benchmarks.json"]
+        self.assertEqual(result["source"], merge)
+        self.assertEqual(result["cases"][0]["samples"], 1)
+        api.checkout = "d" * 40
+        result = self.m.collect(api, pr)["sources"]["ci"]["artifacts"]["ci-handler-benchmarks.json"]
+        self.assertEqual(result["state"], "unavailable")
+        self.assertNotIn("cases", result)
+
     def test_coverage_weights_statements_and_deduplicates_atomic_blocks(self):
         profile = "mode: atomic\na.go:1.1,2.2 10 1\nb.go:1.1,2.2 2 0\na.go:1.1,2.2 10 2\n"
         self.assertAlmostEqual(self.m.coverage_pct(profile), 1000 / 12)
