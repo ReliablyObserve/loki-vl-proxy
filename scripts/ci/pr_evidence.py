@@ -19,7 +19,9 @@ WORKFLOWS.update(loki="compat-loki.yaml", drilldown="compat-drilldown.yaml", vl=
 ARTIFACTS = {
     "quality": {"pr-quality-report": {"pr-base-quality.json", "pr-head-quality.json", "quality-meta.json"}},
     "perf": {"perf-ab-smoke": {"meta.json", "verdict.json", "summary-*.json"}},
-    "visual": {"visual-quality-evidence": {"meta.json", "plan.json", "compare.json", "verdict.json"}},
+    # The report uses the verdict, not compare.json's per-capture array. Keep
+    # unused comparison payloads outside the strict object-only reader.
+    "visual": {"visual-quality-evidence": {"meta.json", "plan.json", "verdict.json"}},
     "ci": {"unit-results": {"unit-results.json", "quality-meta.json"}, "coverage": {"coverage.out", "coverage-cache.out"},
            "fleet-peer-cache-proof": {"fleet-peer-cache-proof-rf1.json", "fleet-peer-cache-proof-rf2.json", "fleet-meta.json"}},
 }

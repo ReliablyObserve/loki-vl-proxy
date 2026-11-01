@@ -41,6 +41,40 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.m.read_artifact(archive({"meta.json": value}), {"meta.json"})
 
+    def test_visual_verdict_survives_unused_comparison_array(self):
+        pr = {"number": 4, "state": "open", "base": {"sha": "b"}, "head": {"sha": "h"}, "merge_commit_sha": "m"}
+        payload = archive({"meta.json": {"base": "b", "head": "h"}, "plan.json": {"captures": []},
+                           "compare.json": [{"capture": "example", "state": "same"}],
+                           "verdict.json": {"captures": 37, "failures": [], "missing": [], "warnings": 3, "improved": 0}})
+
+        class API:
+            repository = "owner/repo"
+
+            def pages(self, path, field=None, max_pages=10):
+                if "workflows/" in path:
+                    return [{"id": 10, "head_sha": "h", "status": "completed", "conclusion": "success", "run_started_at": "2026-01-01"}] if "visual-smoke" in path else []
+                if "/jobs" in path:
+                    return [{"id": 1, "name": "visual-smoke", "status": "completed", "conclusion": "success"}]
+                return [{"id": 11, "name": "visual-quality-evidence", "created_at": "2026-01-02"}]
+
+            def request(self, path, **kwargs):
+                return pr if path == "pulls/4" else payload
+
+        api = API()
+        evidence = self.m.collect(api, pr)
+        source = evidence["sources"]["visual"]
+        self.assertEqual(source["state"], "completed")
+        self.assertNotIn("compare.json", source["artifacts"])
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "report.md"
+            sys.path.insert(0, str(PATH.parent))
+            try:
+                self.assertTrue(self.m.publish(api, pr, evidence, str(output), dry_run=True))
+            finally:
+                sys.path.pop(0)
+            self.assertIn("Visual proof: 37 captures, 0 failures, 0 missing, 0 improved, 3 warnings", output.read_text())
+            self.assertNotIn("Evidence could not be read safely", output.read_text())
+
     def test_current_merge_and_pr_head_have_different_valid_provenance(self):
         context = {"base": "b", "head": "h", "merge": "m"}
         self.assertTrue(self.m.current_meta({"base": "b", "head": "m"}, context, "perf"))
