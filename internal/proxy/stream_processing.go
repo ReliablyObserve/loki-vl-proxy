@@ -1342,6 +1342,12 @@ func dropEntryFields(fields []string, sm, pf map[string]string) {
 // when the entry has no collision and x is no label Loki keeps.
 func keepEntryFields(keep []string, sm, pf map[string]string) {
 	for _, f := range keep {
+		// The backend retains level to derive detected_level, but Loki's keep
+		// stage must not expose that source field unless it was named too.
+		if f == detectedLevelLabel && !slices.Contains(keep, "level") {
+			delete(sm, "level")
+			delete(pf, "level")
+		}
 		if base, ok := strings.CutSuffix(f, extractedSuffix); ok && !slices.Contains(keep, base) {
 			delete(sm, base)
 			delete(pf, base)
@@ -1469,7 +1475,7 @@ func applyBareFieldMutationToStreamLabels(
 	dropSet := make(map[string]struct{}, len(dropFields))
 	for _, f := range dropFields {
 		dropSet[f] = struct{}{}
-		if lt != nil {
+		if lt != nil && f != detectedLevelLabel {
 			dropSet[lt.ToVL(f)] = struct{}{}
 		}
 	}
@@ -1477,7 +1483,7 @@ func applyBareFieldMutationToStreamLabels(
 	keepSet := make(map[string]struct{}, len(keepFields))
 	for _, f := range keepFields {
 		keepSet[f] = struct{}{}
-		if lt != nil {
+		if lt != nil && f != detectedLevelLabel {
 			keepSet[lt.ToVL(f)] = struct{}{}
 		}
 	}
@@ -1516,7 +1522,7 @@ func applyBareFieldMutationToStreamLabels(
 	for k, v := range translatedLabels {
 		// Find the VL key for this translated key.
 		vlKey := k
-		if lt != nil {
+		if lt != nil && k != detectedLevelLabel {
 			vlKey = lt.ToVL(k)
 		}
 		if _, skip := toRemove[vlKey]; skip {

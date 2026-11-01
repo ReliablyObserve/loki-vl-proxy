@@ -1615,6 +1615,12 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 			fields = append(fields, b)
 		}
 	}
+	// detected_level is derived from the stored level when that field exists.
+	// Keep the source in the backend row; response processing removes it unless
+	// the client also named level in the keep stage.
+	if slices.Contains(fields, detectedLevelLabelName) && !slices.Contains(fields, "level") {
+		fields = append(fields, "level")
+	}
 	return logsql.PipeFields{Labels: append(base, fields...)}.String()
 }
 

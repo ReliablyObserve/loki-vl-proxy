@@ -5,11 +5,14 @@ proves:
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  `| keep detected_level` leaves only detected_level on Loki; the proxy also
-  keeps level and service_name. `| drop detected_level` keeps the stream label
-  level on Loki; the proxy drops it too. `| detected_level!=""` without a
-  parser makes the proxy report the logfmt keys of the line (key, msg, op,
-  ...) as labels; Loki adds none.
+  The proxy now matches Loki for `| keep detected_level` and
+  `| drop detected_level` across stored level fields and stream labels, in
+  both ordinary and categorize-labels responses. A bare
+  `| detected_level!=""` also matches on streams without that label.
+  Two related cases remain open: `| drop level` changes a derived
+  detected_level computed from stored structured metadata, and a bare
+  detected_level filter omits a stream carrying that label. Both were
+  exposed by extending the same live Loki comparison fixture.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -30,11 +33,11 @@ gap:
   status: open
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/detected_level.go (level/detected_level coupling in keep/drop/filter)'
+  area: 'internal/proxy/detected_level.go, internal/translator/translator.go (derived level after drop/filter)'
   loki: 'pkg/logql/log/keep_labels.go, drop_labels.go (detected_level is ordinary structured metadata)'
-  proxy: 'level coupled to detected_level; parsed fields leak'
-  planned_test: 'TestCompat_DetectedLevelKeepDrop (test/e2e-compat, group drilldown)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  proxy: 'keep/drop detected_level corrected; drop level and label-collision filter remain open'
+  planned_test: 'TestCompat_DetectedLevelKeepDrop (test/e2e-compat core); extend it for drop level and stream-label filter after their implementation'
+  note: 'The older bare-filter parsed-field leak no longer reproduces on main at 6159745f. The two remaining failures reproduce with the existing dual-ingest fixture and are not asserted as passing.'
   clusters:
     - 89a7162d
     - ab9cc1fc

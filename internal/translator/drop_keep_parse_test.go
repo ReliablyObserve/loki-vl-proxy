@@ -109,6 +109,14 @@ func TestParseDropKeepConditions_Table(t *testing.T) {
 	}
 }
 
+func TestKeepDetectedLevelProjectsStoredLevelSource(t *testing.T) {
+	got := translateKeepStage("detected_level", nil)
+	want := "| fields _time, _msg, _stream, detected_level, level"
+	if got != want {
+		t.Fatalf("keep detected_level translated to %q, want %q", got, want)
+	}
+}
+
 // TestDropConditionMatches verifies the matcher predicate semantics used when the
 // proxy post-processes drop/keep stages, across all four operators.
 func TestDropConditionMatches(t *testing.T) {
