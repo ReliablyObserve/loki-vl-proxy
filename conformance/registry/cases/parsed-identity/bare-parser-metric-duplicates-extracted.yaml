@@ -1,17 +1,18 @@
 id: parsed-identity/bare-parser-metric-duplicates-extracted
-title: A bare `| json` metric labels each series with every parsed key twice, once with _extracted (open)
+title: Bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields (open)
 proves:
   - parsed-label-series-identity
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  `count_over_time({service_name="api-gateway"} | json [3m])` gives the same
-  series count on both sides, but every proxy series carries each parsed key
-  twice: `duration_ms` and `duration_ms_extracted`, `method` and
-  `method_extracted`, and so on. Loki adds the `_extracted` suffix only to a
-  parsed key that collides with a stream label or structured metadata name, so
-  its series have no such duplicates; Grafana's legend and series names
-  differ.
+  Bare `| json` metrics previously duplicated every parsed key in series
+  labels because VictoriaLogs stored JSON body fields outside `_stream` at
+  ingestion. The proxy now suppresses this false collision when the stored
+  and parsed values agree; a dual-ingest Loki comparison checks full series
+  identity. A stream-label collision or a differing structured-metadata value
+  still receives `_extracted`. VictoriaLogs does not preserve provenance when
+  genuine structured metadata and a JSON body key have the same name and
+  value, so that indistinguishable edge remains open.
 request:
   method: GET
   path: /loki/api/v1/query
@@ -29,10 +30,10 @@ gap:
   status: open
   impact: explore-visible
   effort: S
-  area: 'internal/proxy exact parser series identity (bare parser metric labels)'
+  area: 'internal/proxy/ordered_json_metric.go (stored field provenance)'
   loki: 'pkg/logql/log/parser.go:152 (suffix only on collision)'
-  proxy: 'every parsed key duplicated with _extracted'
-  planned_test: 'TestCompat_BareParserMetricLabels (test/e2e-compat, group semantics)'
+  proxy: 'common ingested-body duplicates removed; equal-valued metadata/body collision is ambiguous'
+  planned_test: 'TestCompat_BareParserMetricLabels (test/e2e-compat) and TestOrderedJSONMetricStoredBodyKeysAreNotParserCollisions; add an equal-valued metadata/body fixture when provenance is available'
   clusters:
     - 1173e4c5
     - 5262a574

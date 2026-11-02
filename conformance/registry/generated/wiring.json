@@ -439,6 +439,10 @@
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/sanitized_json_key_filter_test.go"
     ],
+    "parsed-identity/bare-parser-metric-duplicates-extracted": [
+      "internal/proxy/ordered_json_metric_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go"
+    ],
     "parsed-label-series-identity": [
       "internal/logql/parser_captures_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go",
@@ -1685,6 +1689,7 @@
       "semantics/json-instant-volume-stats"
     ],
     "internal/proxy/ordered_json_metric_test.go": [
+      "parsed-identity/bare-parser-metric-duplicates-extracted",
       "semantics/pipeline-error-text-parity"
     ],
     "internal/proxy/ordered_json_recorded_test.go": [
@@ -2250,6 +2255,7 @@
     "test/e2e-compat/extracted_suffix_collision_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
+      "parsed-identity/bare-parser-metric-duplicates-extracted",
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
     ],
@@ -2642,7 +2648,6 @@
     "loki_api_v1_push",
     "loki_api_v1_status_buildinfo",
     "metric-identity/structured-metadata-splits-series",
-    "parsed-identity/bare-parser-metric-duplicates-extracted",
     "parsed-identity/dynamic-key-parsers",
     "parsed-identity/regexp-partial-match-series-count",
     "profiles/detected-fields-no-extracted-suffix",
@@ -2703,5 +2708,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 207
+  "wired_items": 208
 }

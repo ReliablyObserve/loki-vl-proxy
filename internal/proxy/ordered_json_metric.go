@@ -46,6 +46,22 @@ const (
 // VictoriaLogs work; retained memory is bounded by the row limit.
 const defaultOrderedJSONMetricMaxBytes = 1 << 30
 
+const bareJSONMetricResponseVersion = "@bare-json-metric-labels-v1:"
+
+// Fence cached bare JSON metric replies produced before stored JSON body
+// fields were distinguished from parser label collisions.
+func bareJSONMetricResponseKeyVersion(r *http.Request, query string) string {
+	if !strings.Contains(query, "json") {
+		return ""
+	}
+	query = resolveGrafanaRangeTemplateTokens(query, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	spec, ok := parseBareParserMetricCompatSpec(query)
+	if ok && strings.Contains(spec.baseQuery, "| json") {
+		return bareJSONMetricResponseVersion
+	}
+	return ""
+}
+
 // orderedJSONMetricMaxBytes returns -ordered-json-metric-max-bytes, the cap on
 // the raw rows response read and the response built by the raw evaluator.
 func (p *Proxy) orderedJSONMetricMaxBytes() int64 {
@@ -2706,7 +2722,7 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 					plan.parseLogfmt(line, collisions, labels, extracted)
 					continue
 				}
-				if err := plan.parseJSON(line, collisions, labels, extracted); err != nil {
+				if err := plan.parseJSON(line, collisions, streamLabels, labels, extracted); err != nil {
 					if errors.Is(err, errOrderedJSONFilterRejected) {
 						return nil, false, nil
 					}
@@ -2757,7 +2773,7 @@ var errOrderedJSONFilterRejected = errors.New("JSON label filter rejected row")
 
 var errOrderedJSONComplexity = errors.New("JSON metric parser depth or field limit exceeded")
 
-func (plan *orderedJSONMetricPlan) parseJSON(line string, base, labels map[string]string, extracted map[string]bool) error {
+func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels, labels map[string]string, extracted map[string]bool) error {
 	if len(line) > 1<<20 {
 		return errOrderedJSONComplexity
 	}
@@ -2799,13 +2815,21 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, labels map[strin
 			if kind != jsonparser.String && kind != jsonparser.Number && kind != jsonparser.Boolean {
 				return nil
 			}
-			if _, exists := base[name]; exists {
-				name += "_extracted"
+			decoded := orderedJSONScalar(value, kind)
+			if stored, exists := base[name]; exists {
+				_, streamCollision := streamLabels[name]
+				// VL may store a JSON body key as a field at ingestion; parsing
+				// that same value again is not a second Loki label. A stream
+				// label or a different stored value is a real collision.
+				// Equal-valued structured metadata and a body key are
+				// indistinguishable after VL has flattened the row.
+				if streamCollision || stored != decoded {
+					name += extractedSuffix
+				}
 			}
 			if (plan.required != nil && !plan.required[name]) || extracted[name] {
 				return nil
 			}
-			decoded := orderedJSONScalar(value, kind)
 			labels[name], extracted[name] = decoded, true
 			if !plan.acceptExtractedLabel(name, decoded) {
 				return errOrderedJSONFilterRejected
@@ -3053,9 +3077,10 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 	return ctx.Err()
 }
 
-// Raw VL rows have not executed unpack_json: regular fields outside _stream
-// therefore represent structured metadata under the documented data model.
-// Keep them available to filters and suffix parser collisions with _extracted.
+// Raw VL rows have not executed unpack_json. Fields outside _stream may be
+// structured metadata or keys VL extracted from the JSON body at ingestion.
+// Keep them available to filters; parseJSON resolves the common duplicate
+// body-field case when it sees the original line.
 func (p *Proxy) orderedJSONBaseLabels(row map[string]string, desc cachedLogQueryStreamDescriptor, exposures map[string][]metadataFieldExposure) (map[string]string, error) {
 	base := cloneStringMap(desc.translatedLabels)
 	for key, value := range row {

@@ -2691,6 +2691,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	key.Grow(len(logqlQuery) + 256)
 	key.WriteString("query_range:v3:" + logLineCacheKeyVersion + ":")
 	key.WriteString(orderedJSONVectorResponseKeyVersion(r, logqlQuery))
+	key.WriteString(bareJSONMetricResponseKeyVersion(r, logqlQuery))
 	key.WriteString(logfmtPresenceResponseKeyVersion(r, logqlQuery))
 	key.WriteString(detectedLevelMutationResponseKeyVersion(logqlQuery))
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(logqlQuery))

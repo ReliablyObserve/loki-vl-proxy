@@ -163,6 +163,69 @@ func extractedSeries(t *testing.T, base, query string, end time.Time) map[string
 	return out
 }
 
+// conformance: parsed-identity/bare-parser-metric-duplicates-extracted, loki_api_v1_query
+func TestCompat_BareParserMetricLabels(t *testing.T) {
+	app := fmt.Sprintf("bare-json-%d", time.Now().UnixNano())
+	end := time.Now().UTC()
+	values := [][]interface{}{
+		{strconv.FormatInt(end.Add(-40*time.Second).UnixNano(), 10), `{"level":"debug","method":"GET","duration_ms":12}`},
+		{strconv.FormatInt(end.Add(-30*time.Second).UnixNano(), 10), `{"level":"error","method":"POST","duration_ms":13}`},
+		{strconv.FormatInt(end.Add(-20*time.Second).UnixNano(), 10), `{"level":"warn","method":"PATCH","duration_ms":14}`,
+			map[string]string{"method": "OVERRIDE"}},
+	}
+	stream := map[string]string{"app": app, "level": "info"}
+	body, err := json.Marshal(map[string]interface{}{"streams": []interface{}{map[string]interface{}{"stream": stream, "values": values}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlPost(t, lokiURL+"/loki/api/v1/push", "application/json", body)
+	var rows []string
+	for _, value := range values {
+		line := value[1].(string)
+		var fields map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &fields); err != nil {
+			t.Fatal(err)
+		}
+		ts, err := strconv.ParseInt(value[0].(string), 10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields["_time"] = time.Unix(0, ts).UTC().Format(time.RFC3339Nano)
+		fields["_msg"] = line
+		fields["app"] = app
+		fields["level"] = "info"
+		if len(value) > 2 {
+			for name, stored := range value[2].(map[string]string) {
+				fields[name] = stored
+			}
+		}
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows = append(rows, string(encoded))
+	}
+	dlPost(t, vlURL+"/insert/jsonline?_stream_fields=app,level", "application/stream+json", []byte(strings.Join(rows, "\n")))
+	forceVLFlush(t)
+	query := fmt.Sprintf(`count_over_time({app=%q} | json [3m])`, app)
+	var loki map[string]string
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		loki = extractedSeries(t, lokiURL, query, end)
+		if len(loki) == 3 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if len(loki) != 3 {
+		t.Fatalf("Loki fixture: %d series, want 3: %v", len(loki), loki)
+	}
+	proxy := extractedSeries(t, proxyURL, query, end)
+	if !reflect.DeepEqual(proxy, loki) {
+		t.Errorf("%s\nproxy %v\nloki  %v", query, proxy, loki)
+	}
+}
+
 // TestCompat_ExtractedSuffixOnParsedCollision: a key a parser stage reads
 // from the line that is also a stream label's name leaves the stream label
 // alone and shows as name_extracted (a collision Loki renames: pkg/logql/log

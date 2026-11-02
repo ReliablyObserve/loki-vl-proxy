@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `detected_level!=""` and `detected_level=""` filters. Dual-ingest tests
   compare complete answers against Loki for ordinary and categorized
   responses; scoped response-cache keys fence earlier local and peer answers.
+- Avoid duplicating every JSON body key as `_extracted` on bare `| json`
+  metrics when VictoriaLogs also stored those keys at ingestion. Preserve
+  genuine stream-label and differing structured-metadata collisions, and
+  fence older exact and compatibility cache replies. A dual-ingest test
+  compares complete metric series labels and values with Loki.
 
 ## [2.57.1] - 2026-11-02
 
