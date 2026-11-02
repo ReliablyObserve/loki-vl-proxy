@@ -288,6 +288,9 @@ func TestDetectedLevelMutationResponseCacheVersion(t *testing.T) {
 	for _, query := range []string{
 		`{app="api"} | keep detected_level`,
 		`{app="api"} | drop detected_level`,
+		`{app="api"} | drop level`,
+		`{app="api"} | detected_level!=""`,
+		`{app="api"} | detected_level=""`,
 		`sum(count_over_time({app="api"} | keep detected_level [1m]))`,
 	} {
 		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(query), nil)
@@ -300,7 +303,7 @@ func TestDetectedLevelMutationResponseCacheVersion(t *testing.T) {
 	}
 	for _, query := range []string{
 		`{app="api"} | keep level`,
-		`{app="api"} | detected_level!=""`,
+		`{app="api"} | detected_level="warn"`,
 	} {
 		if version := detectedLevelMutationResponseKeyVersion(query); version != "" {
 			t.Fatalf("unrelated query %q was versioned: %q", query, version)

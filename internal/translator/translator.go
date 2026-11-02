@@ -707,6 +707,9 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// Track whether we've seen a parser pipe (json, logfmt, pattern, regexp).
 	// After a parser, label filters must become VL `| filter` pipes.
 	afterParser := false
+	// Loki adds a non-empty detected_level at ingest. Bare drop/keep can
+	// change whether later presence filters see it.
+	detectedPresence := detectedLevelPresent
 	// afterKeyParser is set once a json or logfmt parser ran: label filters after
 	// it name sanitized keys (see parsedKeyVariants).
 	afterKeyParser := false
@@ -994,6 +997,20 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			}
 		}
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
+		if !metric {
+			if nonempty, ok := detectedLevelEmptyPresenceFilter(stage); ok && detectedPresence != detectedLevelUnknown {
+				if (detectedPresence == detectedLevelPresent) == nonempty {
+					translated = ""
+				} else {
+					translated = "| filter (detected_level:* -detected_level:*)"
+				}
+			}
+		}
+		if !metric && strings.HasPrefix(stage, "drop ") {
+			// Log responses derive detected_level from the backend row. Keep
+			// its stored sources until response projection applies the drop.
+			translated = translateLogDropStage(stage[5:], stageLabelFn)
+		}
 		if metric && strings.HasPrefix(stage, "keep ") && keepStageDropsLevelSource(stage[5:]) {
 			// The derived-level chain runs before pipeline stages. Keep the stored
 			// level while it computes detected_level, then remove it just as Loki's
@@ -1075,6 +1092,9 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if svCopied && isPlainParserStage(stage) {
 				parts = append(parts, svFillPipes(svNames, metric))
 			}
+		}
+		if !metric {
+			detectedPresence = nextDetectedLevelPresence(detectedPresence, stage)
 		}
 	}
 
@@ -1580,6 +1600,73 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 		return ""
 	}
 	return logsql.PipeDelete{Labels: fields}.String()
+}
+
+func translateLogDropStage(spec string, labelFn LabelTranslateFunc) string {
+	items := splitCSV(spec)
+	kept := items[:0]
+	for _, item := range items {
+		name := strings.TrimSpace(item)
+		if slices.Contains(DetectedLevelFieldNames[1:], name) {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	return translateDropStage(strings.Join(kept, ","), labelFn)
+}
+
+type detectedLevelPresence uint8
+
+const (
+	detectedLevelUnknown detectedLevelPresence = iota
+	detectedLevelPresent
+	detectedLevelAbsent
+)
+
+func detectedLevelEmptyPresenceFilter(stage string) (nonempty, ok bool) {
+	match := detectedLevelEmptyFilterRE.FindStringSubmatch(stage)
+	if match == nil {
+		return false, false
+	}
+	return match[1] == "!=", true
+}
+
+var detectedLevelEmptyFilterRE = regexp.MustCompile(`^\s*detected_level\s*(!=|==|=)\s*""\s*$`)
+
+func nextDetectedLevelPresence(current detectedLevelPresence, stage string) detectedLevelPresence {
+	if strings.HasPrefix(stage, "drop ") {
+		for _, item := range splitCSV(stage[5:]) {
+			item = strings.TrimSpace(item)
+			if item == detectedLevelLabelName {
+				return detectedLevelAbsent
+			}
+			if strings.HasPrefix(item, detectedLevelLabelName) {
+				return detectedLevelUnknown // conditional drop
+			}
+		}
+	}
+	if strings.HasPrefix(stage, "keep ") {
+		keepsDetected := false
+		for _, item := range splitCSV(stage[5:]) {
+			item = strings.TrimSpace(item)
+			if strings.ContainsAny(item, "=!<>") {
+				return detectedLevelUnknown // conditional keep
+			}
+			keepsDetected = keepsDetected || item == detectedLevelLabelName
+		}
+		if !keepsDetected {
+			return detectedLevelAbsent
+		}
+	}
+	if strings.HasPrefix(stage, "label_format ") {
+		// The later stage can rename or replace detected_level, and the
+		// response classifier must preserve Loki's label category as well.
+		return detectedLevelUnknown
+	}
+	if current == detectedLevelAbsent && isKeyParserStage(stage) {
+		return detectedLevelUnknown // a parser may create a new label
+	}
+	return current
 }
 
 // translateKeepStage translates a `keep <spec>` pipeline stage.
