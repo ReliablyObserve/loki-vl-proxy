@@ -27,10 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sample is 17 s before the start; the proxy started its grid at the start, so
   its series were shifted by `start mod step` next to Loki. A refresh that
   moved both bounds by less than a step changed the grid phase the stats
-  extent cache keys on and read VictoriaLogs again: on the compatibility stack,
-  unwrap metrics over 24h windows moved 15 s at step 60 s took 98 to 1,080 ms
-  on 14 of 15 shapes, where Loki with its defaults answered in 2.6 to 11.8 ms
-  (13x to 199x). The proxy now moves the bounds of a metric `query_range`
+  extent cache keys on and read VictoriaLogs again: on an isolated stack with
+  24h of data, 15 unwrap metrics over 24h windows refreshed by 15 s at step
+  60 s took 211 to 4,102 ms per refresh, where Loki answered in 3.6 to 31 ms
+  (12x to 577x; both Loki profiles), and 0.6 to 1.9 ms with the alignment
+  (0.04x to 0.25x Loki). The proxy now moves the bounds of a metric `query_range`
   request the same way, after the tenant limits and before the response cache,
   so every evaluation path, cache key and VictoriaLogs call of the request
   uses Loki's bounds: a refresh inside one step is the same request (answered
