@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep a `level` field stored from a JSON or logfmt line out of log-query
+  labels when an extraction list does not select it. The field still informs
+  `detected_level`; dual-ingest tests compare default and categorized replies
+  with Loki across preserved-line and projected-field ingestion.
+
 ## [2.57.3] - 2026-11-02
 
 ### Fixed
@@ -22,15 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Keep a `level` field stored from a JSON or logfmt line out of log-query
-  labels when an extraction list does not select it. The field still informs
-  `detected_level`; dual-ingest tests compare default and categorized replies
-  with Loki across preserved-line and projected-field ingestion.
 - Preserve stored level sources until Loki log entries derive `detected_level`
   after `| drop level`, and match Loki's non-empty ingest-time label for
   `detected_level!=""` and `detected_level=""` filters. Dual-ingest tests
   compare complete answers against Loki for ordinary and categorized
   responses; scoped response-cache keys fence earlier local and peer answers.
+
 ## [2.57.1] - 2026-11-02
 
 ### Fixed
