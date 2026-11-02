@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.57.1] - 2026-11-02
+
 ### Fixed
 
 - Preserve Loki-facing structured metadata keys through `| keep` when their
