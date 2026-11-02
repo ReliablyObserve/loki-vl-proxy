@@ -1,22 +1,26 @@
 id: limits/row-limit-error-names-flag
-title: A raw-row metric read past the row limit answers a Loki-shaped error that names the flag
+title: A metric read past the row limit answers Loki's limit status (400 bad_data) and names the flag
 proves:
   - heavy-metric-fetch-bounds
-  - status-500
+  - status-400
 consumer: any
 why: |
-  Both raw-row evaluators (the ordered JSON one behind `| json` metrics, and the
-  bare-parser one behind `| logfmt` and unwrap fallbacks) stop at
-  -manual-range-metric-row-limit rows. One of them answered the generic
-  `Internal Server Error` and the other left the flag out of its Go error text,
-  so an operator who hit the limit on a 24h Drilldown level breakdown was not
-  told what to raise. Every site now builds the error the limits registry
-  documents: 500, errorType internal, and the text
+  Loki answers a query over one of its limits (logqlmodel.ErrLimit, for example
+  max_query_series) with 400
+  (pkg/util/server/error.go ClientHTTPStatusAndError, v3.7.9 lines 110-118),
+  written as the raw message (WriteError, lines 46-52). The proxy's row limit,
+  -manual-range-metric-row-limit, stops every proxy-side metric evaluation: the
+  ordered JSON and bare-parser raw-row evaluators, the manual range metric and
+  quantile evaluators, the sliding-window stats grids and the count precheck.
+  Loki has no equivalent flag, so the text names the proxy's:
   `manual range metric row limit exceeded (N); narrow the query or increase
-  -manual-range-metric-row-limit`, with nothing of VictoriaLogs or Go in it.
-  The read stops as the limit is hit: the proxy hangs up on VictoriaLogs and
-  buffers no further row (the fetch also asks VictoriaLogs for at most N+1
-  rows).
+  -manual-range-metric-row-limit`. Every site builds that one error, and one
+  mapping in the error layer answers it 400 with errorType bad_data (the same
+  as the series limit), where two sites used to answer a bare
+  `Internal Server Error` and the rest 500. Nothing of VictoriaLogs or Go is in
+  the text. The read stops as the limit is hit: the proxy hangs up on
+  VictoriaLogs and buffers no further row (the fetch also asks VictoriaLogs for
+  at most N+1 rows).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -36,8 +40,8 @@ compare:
   mode: exact
   fields: [status, errorType, body]
   expect:
-    status: 500
-    error_type: internal
+    status: 400
+    error_type: bad_data
     body_contains:
       - manual range metric row limit exceeded
       - -manual-range-metric-row-limit

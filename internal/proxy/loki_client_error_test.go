@@ -119,7 +119,13 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"vector matching", context.Background(), vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)"), http.StatusInternalServerError, ""},
 		{"label values too large", context.Background(), &labelValuesResponseTooLargeError{read: 10, limit: 5}, http.StatusInternalServerError, ""},
 		{"buffered response limit", context.Background(), fmt.Errorf("stats: %w", &backendBodyTooLargeError{limit: 4096}), http.StatusInternalServerError, (&backendBodyTooLargeError{limit: 4096}).Error()},
-		{"row limit", context.Background(), errors.New(rowLimit), http.StatusInternalServerError, rowLimit},
+		// A proxy buffer limit that names its flag stays Loki's failed call (500) with its own text.
+		{"buffer limit", context.Background(), errors.New("manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes"), http.StatusInternalServerError, "manual metric response exceeds 64 bytes; narrow the query or increase -backend-max-buffered-response-bytes"},
+		// error.go:110-118 (logqlmodel.ErrLimit): a query over a limit is 400. The raw-row limit has no Loki flag, so the text names the proxy's.
+		{"row limit", context.Background(), manualRowLimitError(3), http.StatusBadRequest, rowLimit},
+		{"row limit wrapped", context.Background(), fmt.Errorf("fold: %w", manualRowLimitError(3)), http.StatusBadRequest, rowLimit},
+		{"row limit of a bucket grid", context.Background(), &rowLimitError{limit: 3, unit: "stats rows in one bucket grid"}, http.StatusBadRequest, "manual range metric row limit exceeded (3 stats rows in one bucket grid); narrow the query or increase -manual-range-metric-row-limit"},
+		{"row limit of a count precheck", context.Background(), &rowLimitError{limit: 3, matches: 5000}, http.StatusBadRequest, "manual range metric row limit exceeded (3); the query matches 5000 log lines; narrow the query or increase -manual-range-metric-row-limit"},
 		{"row limit of a without fold", context.Background(), &seriesLimitError{limit: 3, rowBudget: true}, http.StatusBadRequest, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

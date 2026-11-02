@@ -138,7 +138,7 @@ Raw metric collectors request one extra row and reject overflow rather than retu
 
 | Guard | Setting | Client-visible result |
 | --- | --- | --- |
-| Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 502, `errorType` `unavailable`, `manual range metric row limit exceeded` |
+| Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 400, `errorType` `bad_data`, `manual range metric row limit exceeded` naming the flag |
 | Metric query series | `-max-stats-query-series` (default 500) | HTTP 400, Loki's `maximum number of series (N) reached for a single query`; Logs Drilldown gets a partial result with the `... returning partial results` warning |
 
 Every metric path applies the series limit the same way: raw and ordered-parser evaluators, stats and hits buckets, sliding windows, binary expressions and unions, multi-tenant merges, range and instant. Logs Drilldown's partial result holds the busiest series by total value, where Loki keeps the first series it encounters. Logs Drilldown label and field breakdowns take the same path: every series up to the limit with Loki's values, and over it the busiest series, ranked by VictoriaLogs in a bounded second call, with Loki's warning.

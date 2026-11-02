@@ -11,8 +11,9 @@
   line has it in `upstream_error`: the transport error, VictoriaLogs' message
   or the front proxy's status.
 - Not every `500` means the backend is down: queries that exceed
-  `-manual-range-metric-row-limit` or `-backend-max-buffered-response-bytes`
-  are rejected with `500` and a message naming that flag. Check the error
+  `-backend-max-buffered-response-bytes` are rejected with `500` and a
+  message naming that flag. A query that exceeds
+  `-manual-range-metric-row-limit` is a `400` naming it. Check the error
   message before treating the backend as unreachable.
 
 ## Triage

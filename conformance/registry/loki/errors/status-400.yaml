@@ -43,3 +43,4 @@ consumers: |
 cases:
   - semantics/pipeline-error-text-parity
   - semantics/unwrap-conversion-error
+  - limits/row-limit-error-names-flag

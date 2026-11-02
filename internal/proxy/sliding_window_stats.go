@@ -384,7 +384,7 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 			}
 		}
 		if rows++; rows > rowLimit {
-			return fmt.Errorf("manual range metric row limit exceeded (%d stats rows in one bucket grid); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+			return &rowLimitError{limit: rowLimit, unit: "stats rows in one bucket grid"}
 		}
 		stats.records = append(stats.records, rec)
 	}

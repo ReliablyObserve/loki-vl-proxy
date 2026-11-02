@@ -67,8 +67,9 @@ func rowLimitRequest(p *Proxy, endpoint, query string) *httptest.ResponseRecorde
 
 // A metric read by the raw-row evaluator past -manual-range-metric-row-limit
 // answers the limit error on every route, range and instant, for each of the
-// two evaluators (ordered JSON and the bare parser): status 500 and errorType
-// internal as the limits registry documents, and the text names the flag. The
+// two evaluators (ordered JSON and the bare parser): status 400 and errorType
+// bad_data as Loki answers a query over one of its limits (logqlmodel.ErrLimit,
+// pkg/util/server/error.go:110-118), and the text names the flag. The
 // client reads nothing of VictoriaLogs or Go.
 // conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag
 func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
@@ -77,6 +78,8 @@ func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 		{"ordered json", `sum by (detected_level) (count_over_time({env="production"} | json | __error__!="" [5m]))`},
 		// A bare logfmt metric, read by the bare-parser evaluator.
 		{"bare parser", `count_over_time({env="production"} | logfmt [5m])`},
+		// rate_counter always reads raw rows through the manual range metric evaluator.
+		{"manual range metric", `sum(rate_counter({env="production"} | logfmt | unwrap n [5m]))`},
 	} {
 		for _, endpoint := range []string{"query_range", "query"} {
 			t.Run(tc.name+"/"+endpoint, func(t *testing.T) {
@@ -84,15 +87,15 @@ func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 				p := newFilterPushdownProxy(t, srv.URL)
 				p.rangeMetricRowLimit = 3
 				rec := rowLimitRequest(p, endpoint, tc.query)
-				if rec.Code != http.StatusInternalServerError {
-					t.Fatalf("status %d, want 500: %s", rec.Code, rec.Body.String())
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body.String())
 				}
 				var body map[string]string
 				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 					t.Fatalf("body is not the JSON error envelope: %v: %s", err, rec.Body.String())
 				}
-				if body["status"] != "error" || body["errorType"] != "internal" || body["error"] != rowLimitErrorText || body["message"] != rowLimitErrorText {
-					t.Fatalf("body %v, want status error, errorType internal and %q as error and message", body, rowLimitErrorText)
+				if body["status"] != "error" || body["errorType"] != "bad_data" || body["error"] != rowLimitErrorText || body["message"] != rowLimitErrorText {
+					t.Fatalf("body %v, want status error, errorType bad_data and %q as error and message", body, rowLimitErrorText)
 				}
 				// Nothing of VictoriaLogs, LogsQL or Go in what the client reads.
 				host := strings.TrimPrefix(srv.URL, "http://")
@@ -131,7 +134,7 @@ func TestRangeMetricRowLimitStopsReadingUpstream(t *testing.T) {
 			p := newFilterPushdownProxy(t, srv.URL)
 			p.rangeMetricRowLimit = 3
 			rec := rowLimitRequest(p, "query_range", tc.query)
-			if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
 				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 			}
 			select {

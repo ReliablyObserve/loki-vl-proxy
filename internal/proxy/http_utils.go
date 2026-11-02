@@ -282,7 +282,7 @@ func statusFromUpstreamErr(err error) int {
 	if isLabelValuesResponseTooLarge(err) {
 		return http.StatusInternalServerError
 	}
-	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) {
+	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) || isRowLimitError(err) {
 		return http.StatusBadRequest
 	}
 	if isHeavyQueryQueueFull(err) || isUpstreamQueueFull(err) {
@@ -364,6 +364,7 @@ func lokiClientText(status int, err error) string {
 		matchingErr vectorMatchError
 		tooLarge    *labelValuesResponseTooLargeError
 		bodyLimit   *backendBodyTooLargeError
+		rowLimitErr *rowLimitError
 	)
 	switch {
 	case errors.As(err, &seriesErr):
@@ -378,6 +379,8 @@ func lokiClientText(status int, err error) string {
 		return tooLarge.Error()
 	case errors.As(err, &bodyLimit):
 		return bodyLimit.Error()
+	case errors.As(err, &rowLimitErr):
+		return rowLimitErr.Error()
 	case status == http.StatusBadRequest:
 		return lokiErrParse
 	}

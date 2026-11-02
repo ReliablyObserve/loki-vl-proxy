@@ -167,7 +167,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 				return
 			}
 			if held++; held > rowLimit {
-				resultErr = fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+				resultErr = manualRowLimitError(rowLimit)
 				return
 			}
 			current.Samples = append(current.Samples, quantileSample{ts: ts, value: value, count: count})
