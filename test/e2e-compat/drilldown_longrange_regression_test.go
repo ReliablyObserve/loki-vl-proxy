@@ -166,7 +166,7 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 		name, path, layer string
 	}{
 		{"label_values", "/loki/api/v1/label/app/values?" + metadataParams.Encode(), "loki"},
-		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "vl"},
+		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "loki"},
 		{"short_log_range", "/loki/api/v1/query_range?" + url.Values{
 			"query": {query}, "start": proofWindow["start"], "end": proofWindow["end"], "limit": {"50"},
 		}.Encode(), "loki"},
@@ -238,6 +238,24 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 				if windowHitsAfter <= windowHitsBefore {
 					t.Fatalf("log query did not reuse a source window after restart: before=%d after=%d", windowHitsBefore, windowHitsAfter)
 				}
+			}
+			if tc.name == "metric_range" {
+				// Changing raw parameter order misses the exact Loki reply but
+				// keeps the metric extent identity, proving VL L2 separately.
+				beforeVL := proxyMetricValue(t, patternsAutodetectProxyURL,
+					`loki_vl_proxy_cache_layer_hits_total{layer="vl",component="primary",tier="l2_disk"} `)
+				extentPath := "/loki/api/v1/query_range?query=" + url.QueryEscape(metricParams.Get("query")) +
+					"&start=" + metricParams.Get("start") + "&end=" + metricParams.Get("end") + "&step=300"
+				extentAnswer := readL2ProofAnswer(t, patternsAutodetectProxyURL+extentPath, true)
+				if !reflect.DeepEqual(extentAnswer, warmAnswers[tc.name]) {
+					t.Fatalf("metric extent probe changed answer: got=%v want=%v", extentAnswer, warmAnswers[tc.name])
+				}
+				afterVL := proxyMetricValue(t, patternsAutodetectProxyURL,
+					`loki_vl_proxy_cache_layer_hits_total{layer="vl",component="primary",tier="l2_disk"} `)
+				if afterVL <= beforeVL {
+					t.Fatalf("metric extent did not read VL L2 after restart: before=%d after=%d", beforeVL, afterVL)
+				}
+				t.Logf("metric extent VL L2 hits after restart: %d", afterVL-beforeVL)
 			}
 		})
 	}

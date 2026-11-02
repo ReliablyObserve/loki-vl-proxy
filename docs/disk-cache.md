@@ -18,11 +18,11 @@ memory-only. Shared reply keys include the routing configuration fingerprint,
 so a tenant or field-mapping reload cannot reuse an older disk or peer answer.
 The fragment key also includes direction, row budget, aligned window bounds,
 parser shape and response profile, so a fragment fetched for a smaller limit
-cannot answer a larger request. The local e2e stack tests all four read paths
+cannot answer a larger request. The local e2e stack tests these read paths
 on one bounded disk volume: it restarts the patterns datasource and requires
 identical answers and L2 hits for a shifted pattern request, label values,
-metric range, short and windowed log ranges, series and instant metric. Live tail is a
-streaming read and does not have a reusable completed answer.
+metric range, short and windowed log ranges, series and instant metric. Live
+tail is a streaming read and does not have a reusable completed answer.
 
 See the [cache storage verification](benchmarks/cache-storage-2026-10-30.md) for
 matched benchmarks, allocation profiles and restart/peer regression evidence.
