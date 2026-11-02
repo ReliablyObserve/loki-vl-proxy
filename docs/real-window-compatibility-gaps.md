@@ -62,7 +62,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 | Endpoints with tests that compare the proxy against Loki | **19 of 27** (70%) |
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
-| Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
+| Behaviour and feature items | 6 proven, 20 partial, 3 gaps |
 | Known differences from Loki (ranked) | **84**: 64 open, 12 documented, 6 owner-kept, 2 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
