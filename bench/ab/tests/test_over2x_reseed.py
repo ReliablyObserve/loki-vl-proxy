@@ -83,7 +83,7 @@ class ReplayTest(unittest.TestCase):
         # The daily alerts on the frozen aligned lines: nothing leaves, and the list says it judged nothing.
         a = history.alerts(self.directory(), spec=self.spec, bounds=history.NO_BOUNDS)
         self.assertEqual(a["over_2x_removed"], [])
-        self.assertTrue(self.keys(self.fx["listed"]) <= self.keys(a["over_2x"]))  # every legacy row is still there
+        self.assertEqual(self.keys(self.fx["listed"]) - self.keys(a["over_2x"]), set())  # every legacy row is still there
         # the profile that ran is judged, and only it adds rows
         self.assertEqual({r["profile"] for r in a["over_2x_added"]}, {DEFAULTS})
         self.assertEqual({r["set"] for r in a["over_2x_unjudged"]}, set(self.spec["sets"]))

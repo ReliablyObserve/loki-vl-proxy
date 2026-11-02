@@ -225,8 +225,8 @@ def over_2x_failing_table(merged):
 
 def effect(mode):
     return (("🔴", "This fails `perf-smoke`.") if mode == "fail" else
-            ("⚠️", "Warning only: `perf-smoke` does not fail on it yet; it becomes blocking once the "
-                   f"above-2× list (`{over2x.BASELINE_REL}`) is empty."))
+            ("⚠️", "Warning only: this run used `--over-2x-loki warn`; CI runs `fail`, where a new or worsened "
+                   f"row fails `perf-smoke` (rows already on `{over2x.BASELINE_REL}` do not)."))
 
 
 def locked_section(locked, mode):

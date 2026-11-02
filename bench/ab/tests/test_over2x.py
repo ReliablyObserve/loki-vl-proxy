@@ -313,7 +313,7 @@ class BaselineFileTest(unittest.TestCase):
         self.assertEqual(rows[("aligned", "control", "b", "1h", "warm")]["since"], "2026-10-24")
         self.assertEqual(over2x.count_line(list(rows.values())),
                          "above-2× baseline: 3 rows (cold 1, warm 2, refresh 0; aligned 3, loki-defaults 0); "
-                         "the gate becomes blocking at 0")
+                         "a new or worsened row fails a pull request")
 
     def test_the_committed_list_reads(self):
         # pr_smoke reads it from the base of every pull request: a list that cannot be read would stop them all.
@@ -382,7 +382,7 @@ class DailyListTest(unittest.TestCase):
         self.assertEqual(self.held(), [("aligned", "control", "s", "1h", "warm")])
         body = history.render_alerts(a, limit=history.PR_LIMIT)
         self.assertTrue(body.startswith("## ⚠️ Above 2× Loki\n\n**above-2× baseline: 1 rows (cold 0, warm 1, refresh 0; "
-                                        "aligned 1, loki-defaults 0); the gate becomes blocking at 0.**"))
+                                        "aligned 1, loki-defaults 0); a new or worsened row fails a pull request.**"))
         self.assertIn("- `control` (aligned) t · 1h · warm: 500 ms against Loki's 100 ms, 5.00×", body)
         self.assertEqual((a["regressions"], a["ratchet_lost"]), ([], []))  # warnings, never a red run
 
@@ -854,7 +854,6 @@ class ProfileGateTest(unittest.TestCase):
         # Every listed row is judged by the history of its own profile. The rows listed before the profiles
         # existed (proxy_side unaligned) moved to loki-defaults, the profile the daily run measures with that
         # proxy side; the aligned profile (no build supports its flag) holds none and judges none.
-        import history
         rows, _ = over2x.read_baseline(over2x.BASELINE)
         self.assertEqual({r.get("proxy_side") for r in rows.values()}, {None})
         spec = history.load_spec()

@@ -402,7 +402,7 @@ def count_line(rows):
     by_mode = counts(rows)
     by_profile = {p: sum(1 for r in rows if (r.get("profile") or LEGACY_PROFILE) == p) for p in PROFILES}
     return (f"above-2× baseline: {len(rows)} rows ({', '.join(f'{m} {n}' for m, n in by_mode.items())}; "
-            f"{', '.join(f'{p} {n}' for p, n in by_profile.items())}); the gate becomes blocking at 0")
+            f"{', '.join(f'{p} {n}' for p, n in by_profile.items())}); a new or worsened row fails a pull request")
 
 
 # --- measuring a summary ----------------------------------------------------------------------------------------

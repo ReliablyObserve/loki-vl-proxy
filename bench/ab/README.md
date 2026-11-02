@@ -604,8 +604,8 @@ cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) kee
   not judged (`over_2x_stale`, `over_2x_unjudged`). When the align flag ships
   the `aligned` profile starts running and fills its own list by the same rule.
 
-The body of the daily pull request starts with `above-2× baseline: N rows ...; the gate
-becomes blocking at 0`.
+The body of the daily pull request starts with `above-2× baseline: N rows ...; a new or
+worsened row fails a pull request`.
 
 In each pull request, `over2x.gate` compares the PR build's rows with the list
 as committed on the base (so a pull request cannot list its own rows) and with
@@ -628,13 +628,14 @@ has one cold sample): the row keeps the first pass's cold timings
 it was measured in. The comment's table gives both ratios, `not run` for a profile that did not run.
 The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
 
-- `warn` (now): new and worsened rows are a ⚠️ section at the top of the
-  comment and `::warning::` annotations; the check's verdict and exit status
-  are what they would be without them.
-- `fail`: the same rows fail `perf-smoke` (state `failed`, exit 1, title
-  "above 2× Loki"). Once the list is empty, switching is the one-line change
-  of `--over-2x-loki warn` to `--over-2x-loki fail` in
-  `.github/workflows/perf-ab.yaml`. The daily run only ever warns.
+- `fail` (CI): a row the pull request adds above 2× Loki, or makes worse, fails
+  `perf-smoke` (state `failed`, exit 1, title "above 2× Loki"). Rows already on
+  the list are debt being paid down and do not fail a pull request; the list
+  itself changes only by the daily rule (added after two consecutive runs above
+  2×, removed after two within).
+- `warn` (the script's default, for local runs): the same rows are a ⚠️ section
+  at the top of the comment and `::warning::` annotations only. The daily run
+  only ever warns.
 
 To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
 on cold, warm and refresh, and check the comment's PR ÷ Loki column; a row the

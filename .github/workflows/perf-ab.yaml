@@ -5,8 +5,8 @@ name: Perf A/B
 # files. Posts one sticky comment and fails the `perf-smoke` check on a broken
 # shape, a slowdown confirmed by a re-run, or a new result difference from
 # Loki. A row the PR adds above 2x Loki or makes worse (bench/ab/over2x.py)
-# is a warning at the top of the comment and an annotation; --over-2x-loki
-# below is the switch that makes it fail the check. See bench/ab/README.md.
+# fails the check too (--over-2x-loki fail below); rows already on the list
+# are the debt being paid down and do not fail it. See bench/ab/README.md.
 #
 # Each build is compared with Loki in two profiles on the one seeded stack
 # (bench/ab/README.md, "Like for like"): the stack's Loki (aligned) and Loki with
@@ -95,7 +95,7 @@ jobs:
           CANDIDATE=()
           if [ "$BASELINE" = "true" ]; then CANDIDATE=(--baseline-candidate "$OUT/baseline-candidate"); fi
           python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT" \
-            --over-2x-loki warn --profiles auto "${CANDIDATE[@]}"
+            --over-2x-loki fail --profiles auto "${CANDIDATE[@]}"
           # The verdict file, not the exit status, decides: a crash of the
           # interpreter itself leaves none and is reported as incomplete.
           CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
