@@ -54,7 +54,7 @@ services:
   # Resolves proxy-peers.local → all three proxy IPs (one A record per host).
   # This mirrors what a k8s headless Service provides automatically.
   coredns:
-    image: coredns/coredns:1.14.7
+    image: coredns/coredns:1.15.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.2
@@ -65,7 +65,7 @@ services:
 
   # ── proxy-a ────────────────────────────────────────────────────────────────
   proxy-a:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.34.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.56.2
     networks:
       proxy-net:
         ipv4_address: 172.28.0.10
@@ -101,7 +101,7 @@ services:
 
   # ── proxy-b ────────────────────────────────────────────────────────────────
   proxy-b:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.34.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.56.2
     networks:
       proxy-net:
         ipv4_address: 172.28.0.11
@@ -136,7 +136,7 @@ services:
 
   # ── proxy-c ────────────────────────────────────────────────────────────────
   proxy-c:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.34.1
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:2.56.2
     networks:
       proxy-net:
         ipv4_address: 172.28.0.12
