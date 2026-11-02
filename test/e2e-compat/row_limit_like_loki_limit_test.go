@@ -21,7 +21,7 @@ import (
 // query cannot reach, so the Loki side is max_query_length (default 721h), a
 // limit the stack Loki enforces with the same status. The proxy side is an
 // in-process proxy on the stack's VictoriaLogs with a row limit of 1, reading
-// a metric that always scans raw rows (rate_counter), on query_range and query.
+// a metric that always scans raw rows (rate_counter), on query_range.
 // The body is the message alone as text/plain, as Loki writes it; the text
 // must name the proxy's flag since Loki has none.
 // conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag, status-400
@@ -57,13 +57,15 @@ func TestCompat_RowLimitAnswersLikeLokiLimit(t *testing.T) {
 	}
 
 	route := newErrLayerProxy(t, errLayerFaultBackend(t, "pass"), func(cfg *proxy.Config) { cfg.RangeMetricRowLimit = 1 })
-	instantParams := url.Values{"query": {rawRows}, "time": {strconv.FormatInt(end.UnixNano(), 10)}}
+	// Only the range route is compared with the stack: an instant evaluation
+	// of this query can be an empty vector on a stack whose data is older than
+	// the window, which proves nothing. The instant route is held by
+	// TestRangeMetricRowLimitErrorIsLokiShaped in internal/proxy.
 	for _, tc := range []struct {
 		name, path string
 		params     url.Values
 	}{
 		{"query_range", "/loki/api/v1/query_range", rangeParams},
-		{"query", "/loki/api/v1/query", instantParams},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			status, body := rejectedQueryGet(t, route, tc.path, tc.params, "0", nil)

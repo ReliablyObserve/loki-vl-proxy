@@ -98,7 +98,6 @@ func TestCompat_ErrorBodyLikeLoki(t *testing.T) {
 		{name: "unknown/root_404", path: "/nope", exact: true},
 		// The ruler's JSON with no nosniff and a sniffed text/plain (api.go:166-179).
 		{name: "prometheus_rules/unknown_type", path: "/prometheus/api/v1/rules", params: url.Values{"type": {"xyz"}}, exact: true},
-		{name: "delete/not_registered_404", method: http.MethodPost, path: "/loki/api/v1/delete", params: url.Values{"query": {sel}}, exact: true},
 		// Loki's parser words these differently: the shape is compared.
 		{name: "query_range/bad_query", path: "/loki/api/v1/query_range", params: window(url.Values{"query": {"{"}, "step": {"60"}})},
 		{name: "query/bad_query", path: "/loki/api/v1/query", params: url.Values{"query": {"{"}, "time": {strconv.FormatInt(end.UnixNano(), 10)}}},

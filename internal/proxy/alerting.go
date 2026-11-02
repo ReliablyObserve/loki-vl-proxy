@@ -448,6 +448,20 @@ func isLegacyRulesPath(path string) bool {
 		strings.HasPrefix(path, "/api/prom/rules/")
 }
 
+// legacyRulesPathError is a legacy rules path the proxy cannot serve, with the
+// status Loki gives that class: a path with more segments than the route has
+// is gorilla/mux's 404; a namespace or group that is not a local name is a
+// client error (Loki looks the name up in its store and answers the miss with
+// a 400 http.Error); an escape that cannot be decoded is parseRequest's
+// respondServerError, a 500 in the ruler's JSON (pkg/ruler/base/api.go:523,
+// :564).
+type legacyRulesPathError struct {
+	status int
+	msg    string
+}
+
+func (e *legacyRulesPathError) Error() string { return e.msg }
+
 func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 	var suffix string
 	switch {
@@ -463,22 +477,22 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 	}
 	parts := strings.Split(suffix, "/")
 	if len(parts) > 2 {
-		return "", "", fmt.Errorf("invalid legacy rules path")
+		return "", "", &legacyRulesPathError{http.StatusNotFound, "404 page not found"}
 	}
 	namespace, err = url.PathUnescape(parts[0])
 	if err != nil {
-		return "", "", fmt.Errorf("invalid namespace: %w", err)
+		return "", "", &legacyRulesPathError{http.StatusInternalServerError, fmt.Sprintf("invalid namespace: %v", err)}
 	}
 	if !filepath.IsLocal(namespace) {
-		return "", "", fmt.Errorf("invalid namespace: path traversal not allowed")
+		return "", "", &legacyRulesPathError{http.StatusBadRequest, "invalid namespace: path traversal not allowed"}
 	}
 	if len(parts) == 2 {
 		group, err = url.PathUnescape(parts[1])
 		if err != nil {
-			return "", "", fmt.Errorf("invalid group name: %w", err)
+			return "", "", &legacyRulesPathError{http.StatusInternalServerError, fmt.Sprintf("invalid group name: %v", err)}
 		}
 		if !filepath.IsLocal(group) {
-			return "", "", fmt.Errorf("invalid group name: path traversal not allowed")
+			return "", "", &legacyRulesPathError{http.StatusBadRequest, "invalid group name: path traversal not allowed"}
 		}
 	}
 	return namespace, group, nil
@@ -487,9 +501,15 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
 	if err != nil {
-		// Loki's parseRequest failures are respondServerError, a 500 in the
-		// ruler's JSON (pkg/ruler/base/api.go:523, :564).
-		p.writeErrorShaped(w, http.StatusInternalServerError, err.Error(), nil, writeLokiRulerError)
+		status, shape := http.StatusInternalServerError, errorShape(writeLokiRulerError)
+		var pathErr *legacyRulesPathError
+		if errors.As(err, &pathErr) {
+			status = pathErr.status
+			if status != http.StatusInternalServerError {
+				shape = writeLokiHTTPError
+			}
+		}
+		p.writeErrorShaped(w, status, err.Error(), nil, shape)
 		return
 	}
 

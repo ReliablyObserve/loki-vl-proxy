@@ -203,7 +203,9 @@ func TestErrorBody_RulerAndDeleteShapes(t *testing.T) {
 		{"loki_rules/backend_500", "GET", "/loki/api/v1/rules", 500, plain, true, "Internal Server Error\n"},
 		{"prom_rules/backend_500", "GET", "/api/prom/rules", 500, plain, true, "Internal Server Error\n"},
 		{"loki_rules/group_does_not_exist", "GET", "/loki/api/v1/rules/ns/g-empty", 404, plain, true, "group does not exist\n"},
-		{"loki_rules/path_cannot_be_parsed", "GET", "/loki/api/v1/rules/a/b/c", 500, plain, false, `{"status":"error","data":null,"errorType":"server_error","error":"invalid legacy rules path"}`},
+		{"loki_rules/more_segments_than_the_route", "GET", "/loki/api/v1/rules/a/b/c", 404, plain, true, "404 page not found\n"},
+		{"loki_rules/traversal_is_a_client_error", "GET", "/loki/api/v1/rules/%2e%2e/escape", 400, plain, true, "invalid namespace: path traversal not allowed\n"},
+		{"loki_rules/escape_cannot_be_decoded", "GET", "/loki/api/v1/rules/%25zz", 500, plain, false, `{"status":"error","data":null,"errorType":"server_error","error":"invalid namespace: invalid URL escape \"%zz\""}`},
 		{"delete/missing_confirmation_post", "POST", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "delete requires X-Delete-Confirmation: true header for safety\n"},
 		{"delete/missing_confirmation_put", "PUT", "/loki/api/v1/delete?query=%7Bapp%3D%22a%22%7D&start=1&end=2", 400, plain, true, "delete requires X-Delete-Confirmation: true header for safety\n"},
 		// Loki serves GET (list) and DELETE (cancel) here; the proxy does not
