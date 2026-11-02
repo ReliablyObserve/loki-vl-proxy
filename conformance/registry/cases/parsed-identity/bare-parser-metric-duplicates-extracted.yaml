@@ -7,12 +7,13 @@ consumer: explore
 why: |
   Bare `| json` metrics previously duplicated every parsed key in series
   labels because VictoriaLogs stored JSON body fields outside `_stream` at
-  ingestion. The proxy now suppresses this false collision when the stored
-  and parsed values agree; a dual-ingest Loki comparison checks full series
-  identity. A stream-label collision or a differing structured-metadata value
-  still receives `_extracted`. VictoriaLogs does not preserve provenance when
-  genuine structured metadata and a JSON body key have the same name and
-  value, so that indistinguishable edge remains open.
+  ingestion. The proxy now suppresses this false collision when the VL row
+  contains a complete scalar body-field projection; a dual-ingest Loki
+  comparison checks full series identity. Stream-label collisions and rows
+  carrying fields outside the body keep the original metadata-collision
+  behaviour, including same-valued metadata/body keys. VL does not preserve
+  provenance when all regular fields coincide with body keys; that edge and
+  partial projections remain open.
 request:
   method: GET
   path: /loki/api/v1/query
@@ -32,8 +33,8 @@ gap:
   effort: S
   area: 'internal/proxy/ordered_json_metric.go (stored field provenance)'
   loki: 'pkg/logql/log/parser.go:152 (suffix only on collision)'
-  proxy: 'common ingested-body duplicates removed; equal-valued metadata/body collision is ambiguous'
-  planned_test: 'TestCompat_BareParserMetricLabels (test/e2e-compat) and TestOrderedJSONMetricStoredBodyKeysAreNotParserCollisions; add an equal-valued metadata/body fixture when provenance is available'
+  proxy: 'complete scalar body projections corrected; equal-valued all-body metadata collisions and partial projections remain ambiguous'
+  planned_test: 'TestCompat_BareParserMetricLabels and TestHardeningLive_ParserErrorStructuredMetadata (test/e2e-compat); add an all-body equal-metadata fixture when provenance is available'
   clusters:
     - 1173e4c5
     - 5262a574

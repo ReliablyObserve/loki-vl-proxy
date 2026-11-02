@@ -74,6 +74,17 @@ func TestOrderedJSONMetricStoredBodyKeysAreNotParserCollisions(t *testing.T) {
 	if err != nil || !keep || labels["method"] != "OVERRIDE" || labels["method_extracted"] != "GET" {
 		t.Fatalf("different structured metadata must retain a parser collision: labels=%v keep=%t err=%v", labels, keep, err)
 	}
+	base["method"] = "GET"
+	base["span_id"] = "stored-only"
+	labels, keep, err = plan.processWithStreamLabels(`{"level":"debug","method":"GET","duration_ms":12}`, base, stream)
+	if err != nil || !keep || labels["method_extracted"] != "GET" || labels["duration_ms_extracted"] != "12" {
+		t.Fatalf("an extra metadata field must retain same-valued collisions: labels=%v keep=%t err=%v", labels, keep, err)
+	}
+	labels, keep, err = plan.processWithStreamLabels(`{"method":"GET"}`,
+		map[string]string{"app": "api", "method": "GET"}, map[string]string{"app": "api"})
+	if err != nil || !keep || labels["method_extracted"] != "GET" {
+		t.Fatalf("one matching field is insufficient evidence of body projection: labels=%v keep=%t err=%v", labels, keep, err)
+	}
 }
 
 func TestBareJSONMetricResponseCacheVersion(t *testing.T) {
@@ -305,7 +316,7 @@ func TestOrderedJSONMetricRowsCancellationAndTenant(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
-	_, _, err = plan.processWithContext(ctx, `{}`, map[string]string{"app": "test"}, map[string]string{"app": "test"})
+	_, _, err = plan.processWithContext(ctx, `{}`, map[string]string{"app": "test"}, map[string]string{"app": "test"}, map[string]string{"app": "test"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("pipeline cancellation=%v", err)
 	}

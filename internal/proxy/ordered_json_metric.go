@@ -2683,7 +2683,7 @@ func (p *Proxy) unparsedLinePipelineError(ctx context.Context, plan *orderedJSON
 	if !plan.acceptDerivedLevel(base, &levels, row, desc) {
 		return nil, nil
 	}
-	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels)
+	labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
 	if err != nil || !keep || labels["__error__"] == "" {
 		return nil, err
 	}
@@ -2695,11 +2695,12 @@ func (plan *orderedJSONMetricPlan) process(line string, base map[string]string) 
 }
 
 func (plan *orderedJSONMetricPlan) processWithStreamLabels(line string, base, streamLabels map[string]string) (map[string]string, bool, error) {
-	return plan.processWithContext(context.Background(), line, base, streamLabels)
+	return plan.processWithContext(context.Background(), line, base, streamLabels, base)
 }
 
-func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels map[string]string) (map[string]string, bool, error) {
+func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
 	labels := cloneStringMap(base)
+	bodyProjection := storedJSONBodyFieldProjection(line, rawFields, streamLabels)
 	metadata := make(map[string]bool)
 	for name := range base {
 		if _, isStream := streamLabels[name]; !isStream {
@@ -2722,7 +2723,7 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 					plan.parseLogfmt(line, collisions, labels, extracted)
 					continue
 				}
-				if err := plan.parseJSON(line, collisions, streamLabels, labels, extracted); err != nil {
+				if err := plan.parseJSON(line, collisions, streamLabels, bodyProjection, labels, extracted); err != nil {
 					if errors.Is(err, errOrderedJSONFilterRejected) {
 						return nil, false, nil
 					}
@@ -2773,7 +2774,47 @@ var errOrderedJSONFilterRejected = errors.New("JSON label filter rejected row")
 
 var errOrderedJSONComplexity = errors.New("JSON metric parser depth or field limit exceeded")
 
-func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels, labels map[string]string, extracted map[string]bool) error {
+// Only infer an ingestion-time JSON body projection when every non-stream VL
+// field names a scalar in the body. At least two fields must match: one
+// equal-valued metadata field alone is insufficient evidence of projection.
+// An extra field is evidence of structured metadata, so preserve Loki's
+// collision suffixes for the whole row.
+func storedJSONBodyFieldProjection(line string, rawFields, streamLabels map[string]string) bool {
+	regularFields := 0
+	for name := range rawFields {
+		if isVLInternalField(name) || name == "_stream_id" {
+			continue
+		}
+		if _, isStream := streamLabels[name]; isStream {
+			continue
+		}
+		regularFields++
+	}
+	if regularFields < 2 {
+		return false
+	}
+	matched := 0
+	valid := true
+	err := jsonparser.ObjectEach([]byte(line), func(key, _ []byte, kind jsonparser.ValueType, _ int) error {
+		name := orderedJSONLabelName(string(key), true)
+		if _, isStream := streamLabels[name]; isStream {
+			return nil
+		}
+		if name == "" || kind != jsonparser.String && kind != jsonparser.Number && kind != jsonparser.Boolean {
+			valid = false
+			return nil
+		}
+		if _, exists := rawFields[name]; !exists {
+			valid = false
+			return nil
+		}
+		matched++
+		return nil
+	})
+	return err == nil && valid && matched == regularFields
+}
+
+func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels map[string]string, bodyProjection bool, labels map[string]string, extracted map[string]bool) error {
 	if len(line) > 1<<20 {
 		return errOrderedJSONComplexity
 	}
@@ -2823,7 +2864,7 @@ func (plan *orderedJSONMetricPlan) parseJSON(line string, base, streamLabels, la
 				// label or a different stored value is a real collision.
 				// Equal-valued structured metadata and a body key are
 				// indistinguishable after VL has flattened the row.
-				if streamCollision || stored != decoded {
+				if streamCollision || !bodyProjection || stored != decoded {
 					name += extractedSuffix
 				}
 			}
@@ -3042,7 +3083,7 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		if !plan.acceptDerivedLevel(base, &reader.levels, row, desc) {
 			continue
 		}
-		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels)
+		labels, keep, err := plan.processWithContext(ctx, row["_msg"], base, desc.translatedLabels, row)
 		if err != nil {
 			return err
 		}
