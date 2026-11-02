@@ -130,6 +130,28 @@
       "require_non_empty": true
     },
     {
+      "id": "json_extraction_list_metric_projected_level",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (level, detected_level) (count_over_time({app=\"matrix-extraction-list\",case=\"json\"} | json msg=\"msg\" | drop __error__ [1m]))",
+      "step": "10",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_extraction_list_metric_projected_level",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (level, detected_level) (count_over_time({app=\"matrix-extraction-list\",case=\"logfmt\"} | logfmt op | drop __error__ [1m]))",
+      "step": "10",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_points",
+      "require_non_empty": true
+    },
+    {
       "id": "json_pipeline_numeric_filter",
       "family": "parser_pipeline",
       "endpoint": "query_range",

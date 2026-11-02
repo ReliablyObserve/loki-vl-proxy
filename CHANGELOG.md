@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Keep a `level` field stored from a JSON or logfmt line out of log-query
-  labels when an extraction list does not select it. The field still informs
-  `detected_level`; dual-ingest tests compare default and categorized replies
-  with Loki across preserved-line and projected-field ingestion.
+  and range-metric labels when an extraction list does not select it. The field
+  still informs `detected_level`; dual-ingest tests compare default and
+  categorized replies and Grafana volume queries with Loki.
 
 ## [2.57.3] - 2026-11-02
 

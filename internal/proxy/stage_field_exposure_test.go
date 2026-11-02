@@ -105,6 +105,52 @@ func (stageFieldsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(append(body, '\n'))
 }
 
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestBareParserMetric_ExtractionListHidesProjectedLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name, line, parser, stream, wantLevel string
+	}{
+		{"json", `{"level":"info","msg":"hello"}`, `json msg="msg"`, `{app="projection"}`, ""},
+		{"logfmt", `level=info op=read`, `logfmt op`, `{app="projection"}`, ""},
+		{"stream label survives", `{"level":"info","msg":"hello"}`, `json msg="msg"`, `{app="projection",level="warn"}`, "warn"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row, err := json.Marshal(map[string]string{
+				"_time": "1704067200000000000", "_stream": tc.stream,
+				"_msg": tc.line, "level": "info",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/select/logsql/query" {
+					t.Errorf("unexpected backend path %s", r.URL.Path)
+				}
+				_, _ = w.Write(append(row, '\n'))
+			}))
+			defer backend.Close()
+			p := lineFieldsProxy(t, backend.URL, "buffered")
+			baseQuery := `{app="projection"} | ` + tc.parser + ` | drop __error__`
+			series, err := p.fetchBareParserMetricSeries(t.Context(),
+				`count_over_time(`+baseQuery+` [1m])`,
+				bareParserMetricCompatSpec{funcName: "count_over_time", baseQuery: baseQuery, rangeWindow: time.Minute},
+				"1704067140000000000", "1704067260000000000")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(series) != 1 {
+				t.Fatalf("series: %+v", series)
+			}
+			if got := series[0].metric["level"]; got != tc.wantLevel {
+				t.Errorf("level = %q, want %q: %+v", got, tc.wantLevel, series[0].metric)
+			}
+			if got := series[0].metric[detectedLevelLabel]; got == "" {
+				t.Errorf("detected_level missing: %+v", series[0].metric)
+			}
+		})
+	}
+}
+
 type stageRow struct {
 	line   string
 	stream []string

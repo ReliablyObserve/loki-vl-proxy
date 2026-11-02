@@ -1193,6 +1193,13 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
+		if exposure != nil {
+			if _, streamLevel := desc.streamLabels["level"]; !streamLevel {
+				if msg, ok := entry["_msg"].(string); ok && exposure.hidesStoredLevel([]byte(msg)) {
+					delete(metric, "level")
+				}
+			}
+		}
 		p.addBareParserMetricFields(metric, entry, desc, spec.unwrapField, exposure, captureLabels, includeParsedInMetric, exposureCache, smBuf, pfBuf)
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
