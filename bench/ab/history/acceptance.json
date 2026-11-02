@@ -270,6 +270,33 @@
      }
     }
    }
+  },
+  {
+   "commits": [
+    "6159745fb4"
+   ],
+   "date": "2026-11-02",
+   "profiles": {
+    "loki-defaults": {
+     "cold": {
+      "above": 50,
+      "below": 273,
+      "between": 16,
+      "close": 162,
+      "rows": 501,
+      "share_below": 54.5
+     },
+     "sets": 29,
+     "warm": {
+      "above": 17,
+      "below": 97,
+      "between": 1,
+      "close": 544,
+      "rows": 659,
+      "share_below": 14.7
+     }
+    }
+   }
   }
  ],
  "targets": {

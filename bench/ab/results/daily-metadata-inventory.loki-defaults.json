@@ -1,6 +1,6 @@
 {
  "label": "daily-metadata-inventory-loki-defaults",
- "date": "2026-11-01",
+ "date": "2026-11-02",
  "set": "metadata-inventory",
  "description": "Label, field and volume inventory calls Explore's label browser and Logs Drilldown make over 1h-7d. The metadata inventory answers them from time buckets; the refresh shapes move the window past the response cache's time bucket on every run (5 min up to 6h, 1h up to 48h, 6h beyond, plus 17 s), which is what a Grafana refresh does once per bucket, so runs after the first measure a shifted window",
  "baseline": "release",
@@ -33,17 +33,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.008
+    "loki": 0.009
    },
    "p95": {
-    "release": 0.006,
-    "main": 0.005,
-    "loki": 0.01
+    "release": 0.007,
+    "main": 0.007,
+    "loki": 0.013
    },
    "cold": {
-    "release": 0.015,
-    "main": 0.007,
-    "loki": 0.008
+    "release": 0.017,
+    "main": 0.009,
+    "loki": 0.01
    },
    "status": {
     "release": "200",
@@ -72,17 +72,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.044
+    "loki": 0.042
    },
    "p95": {
-    "release": 0.014,
+    "release": 0.015,
     "main": 0.014,
-    "loki": 0.049
+    "loki": 0.047
    },
    "cold": {
-    "release": 0.176,
-    "main": 0.168,
-    "loki": 0.047
+    "release": 0.155,
+    "main": 0.15,
+    "loki": 0.042
    },
    "status": {
     "release": "200",
@@ -90,9 +90,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 329.19,
-    "main": 329.19,
-    "loki": 329.19
+    "release": 348.6,
+    "main": 348.6,
+    "loki": 348.6
    },
    "stale": [
     "release",
@@ -111,17 +111,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.049
+    "loki": 0.042
    },
    "p95": {
     "release": 0.001,
-    "main": 0.003,
-    "loki": 0.106
+    "main": 0.001,
+    "loki": 0.048
    },
    "cold": {
-    "release": 0.609,
-    "main": 0.611,
-    "loki": 0.039
+    "release": 0.599,
+    "main": 0.593,
+    "loki": 0.044
    },
    "status": {
     "release": "200",
@@ -129,9 +129,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 329.19,
-    "main": 329.19,
-    "loki": 329.19
+    "release": 348.6,
+    "main": 348.6,
+    "loki": 348.6
    },
    "stale": [
     "release",
@@ -150,17 +150,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.069
+    "loki": 0.06
    },
    "p95": {
-    "release": 0.005,
+    "release": 0.006,
     "main": 0.005,
-    "loki": 0.07
+    "loki": 0.061
    },
    "cold": {
-    "release": 0.039,
-    "main": 0.049,
-    "loki": 0.097
+    "release": 0.029,
+    "main": 0.027,
+    "loki": 0.064
    },
    "status": {
     "release": "200",
@@ -168,9 +168,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 329.19,
-    "main": 329.19,
-    "loki": 329.19
+    "release": 348.6,
+    "main": 348.6,
+    "loki": 348.6
    },
    "stale": [
     "release",
@@ -189,134 +189,56 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.101
+    "loki": 0.096
    },
    "p95": {
-    "release": 0.016,
-    "main": 0.015,
-    "loki": 0.113
+    "release": 0.021,
+    "main": 0.023,
+    "loki": 0.2
    },
    "cold": {
-    "release": 0.195,
-    "main": 0.181,
-    "loki": 0.097
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 329.19,
-    "main": 139.97,
-    "loki": 139.97
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "explore labels with selector",
-   "range": "24h",
-   "p50": {
-    "release": 0.001,
-    "main": 0.001,
-    "loki": 0.106
-   },
-   "p95": {
-    "release": 0.001,
-    "main": 0.001,
-    "loki": 0.128
-   },
-   "cold": {
-    "release": 0.692,
-    "main": 0.665,
-    "loki": 0.106
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 305.46,
-    "main": 305.46,
-    "loki": 305.46
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "explore label values env",
-   "range": "1h",
-   "p50": {
-    "release": 0.001,
-    "main": 0.001,
-    "loki": 0.046
-   },
-   "p95": {
-    "release": 0.009,
-    "main": 0.007,
-    "loki": 0.049
-   },
-   "cold": {
-    "release": 0.034,
-    "main": 0.031,
-    "loki": 0.051
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 305.46,
-    "main": 305.46,
-    "loki": 305.46
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "explore label values env",
-   "range": "6h",
-   "p50": {
-    "release": 0.001,
-    "main": 0.001,
-    "loki": 0.099
-   },
-   "p95": {
-    "release": 0.028,
-    "main": 0.028,
+    "release": 0.163,
+    "main": 0.178,
     "loki": 0.107
    },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 348.6,
+    "main": 348.6,
+    "loki": 348.6
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "explore labels with selector",
+   "range": "24h",
+   "p50": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.108
+   },
+   "p95": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.117
+   },
    "cold": {
-    "release": 0.229,
-    "main": 0.264,
-    "loki": 0.282
+    "release": 0.662,
+    "main": 0.637,
+    "loki": 0.086
    },
    "status": {
     "release": "200",
@@ -324,9 +246,87 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 305.46,
-    "main": 305.46,
-    "loki": 325.23
+    "release": 221.92,
+    "main": 221.92,
+    "loki": 221.92
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "explore label values env",
+   "range": "1h",
+   "p50": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.044
+   },
+   "p95": {
+    "release": 0.01,
+    "main": 0.01,
+    "loki": 0.046
+   },
+   "cold": {
+    "release": 0.04,
+    "main": 0.048,
+    "loki": 0.048
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 221.92,
+    "main": 221.92,
+    "loki": 221.92
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "explore label values env",
+   "range": "6h",
+   "p50": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.082
+   },
+   "p95": {
+    "release": 0.026,
+    "main": 0.026,
+    "loki": 0.09
+   },
+   "cold": {
+    "release": 0.247,
+    "main": 0.198,
+    "loki": 0.078
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 221.92,
+    "main": 221.92,
+    "loki": 221.92
    },
    "stale": [
     "release",
@@ -345,17 +345,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.095
+    "loki": 0.08
    },
    "p95": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.1
+    "loki": 0.085
    },
    "cold": {
-    "release": 0.706,
-    "main": 0.676,
-    "loki": 0.089
+    "release": 0.652,
+    "main": 0.625,
+    "loki": 0.088
    },
    "status": {
     "release": "200",
@@ -363,9 +363,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 325.23,
-    "main": 325.23,
-    "loki": 325.23
+    "release": 123.48,
+    "main": 123.48,
+    "loki": 123.48
    },
    "stale": [
     "release",
@@ -384,17 +384,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.061
+    "loki": 0.058
    },
    "p95": {
     "release": 0.004,
-    "main": 0.003,
-    "loki": 0.065
+    "main": 0.004,
+    "loki": 0.06
    },
    "cold": {
-    "release": 0.012,
+    "release": 0.014,
     "main": 0.016,
-    "loki": 0.063
+    "loki": 0.061
    },
    "status": {
     "release": "200",
@@ -402,9 +402,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 325.23,
-    "main": 325.23,
-    "loki": 325.23
+    "release": 77.08,
+    "main": 77.08,
+    "loki": 77.08
    },
    "stale": [
     "release",
@@ -423,17 +423,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.126
+    "loki": 0.122
    },
    "p95": {
     "release": 0.014,
-    "main": 0.014,
-    "loki": 0.138
+    "main": 0.013,
+    "loki": 0.132
    },
    "cold": {
-    "release": 0.086,
-    "main": 0.083,
-    "loki": 0.14
+    "release": 0.077,
+    "main": 0.077,
+    "loki": 0.122
    },
    "status": {
     "release": "200",
@@ -441,9 +441,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 325.23,
-    "main": 325.23,
-    "loki": 325.23
+    "release": 170.75,
+    "main": 170.75,
+    "loki": 170.75
    },
    "stale": [
     "release",
@@ -462,17 +462,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.12
+    "loki": 0.118
    },
    "p95": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.128
+    "loki": 0.137
    },
    "cold": {
-    "release": 0.259,
-    "main": 0.247,
-    "loki": 0.124
+    "release": 0.234,
+    "main": 0.241,
+    "loki": 0.12
    },
    "status": {
     "release": "200",
@@ -480,9 +480,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 66.07,
-    "main": 66.07,
-    "loki": 66.07
+    "release": 170.75,
+    "main": 170.75,
+    "loki": 170.75
    },
    "stale": [
     "release",
@@ -501,17 +501,17 @@
    "p50": {
     "release": 0.021,
     "main": 0.021,
-    "loki": 0.098
+    "loki": 0.093
    },
    "p95": {
-    "release": 0.021,
-    "main": 0.023,
-    "loki": 0.106
+    "release": 0.024,
+    "main": 0.022,
+    "loki": 0.095
    },
    "cold": {
-    "release": 0.021,
-    "main": 0.023,
-    "loki": 0.099
+    "release": 0.026,
+    "main": 0.021,
+    "loki": 0.095
    },
    "status": {
     "release": "200",
@@ -519,9 +519,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 54.74,
-    "main": 54.74,
-    "loki": 260.56
+    "release": 170.75,
+    "main": 170.75,
+    "loki": 170.75
    },
    "cache": {
     "loki": {
@@ -571,7 +571,7 @@
       "volumeResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 4488
+       "bytesReceived": 4489
       },
       "seriesResult": {
        "entriesFound": 0,
@@ -601,19 +601,19 @@
    "shape": "drilldown landing volume",
    "range": "6h",
    "p50": {
-    "release": 0.115,
-    "main": 0.113,
-    "loki": 0.128
-   },
-   "p95": {
-    "release": 0.125,
+    "release": 0.116,
     "main": 0.115,
     "loki": 0.137
    },
+   "p95": {
+    "release": 0.134,
+    "main": 0.126,
+    "loki": 0.279
+   },
    "cold": {
-    "release": 0.115,
-    "main": 0.11,
-    "loki": 0.242
+    "release": 0.113,
+    "main": 0.115,
+    "loki": 0.235
    },
    "status": {
     "release": "200",
@@ -621,9 +621,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 330.21,
-    "main": 330.21,
-    "loki": 330.21
+    "release": 254.61,
+    "main": 254.61,
+    "loki": 254.61
    },
    "cache": {
     "loki": {
@@ -700,25 +700,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.02
+   "speedup": 1.01
   },
   {
    "shape": "drilldown landing volume",
    "range": "24h",
    "p50": {
     "release": 0.425,
-    "main": 0.42,
-    "loki": 0.133
+    "main": 0.414,
+    "loki": 0.122
    },
    "p95": {
-    "release": 0.441,
-    "main": 0.51,
-    "loki": 0.204
+    "release": 0.439,
+    "main": 0.416,
+    "loki": 0.129
    },
    "cold": {
-    "release": 0.405,
-    "main": 0.408,
-    "loki": 0.168
+    "release": 0.417,
+    "main": 0.411,
+    "loki": 0.166
    },
    "status": {
     "release": "200",
@@ -726,9 +726,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 330.21,
-    "main": 330.21,
-    "loki": 330.21
+    "release": 326.18,
+    "main": 326.18,
+    "loki": 326.18
    },
    "cache": {
     "loki": {
@@ -805,25 +805,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.01
+   "speedup": 1.03
   },
   {
    "shape": "drilldown detected labels",
    "range": "1h",
    "p50": {
-    "release": 0.002,
+    "release": 0.001,
     "main": 0.001,
-    "loki": 0.004
+    "loki": 0.002
    },
    "p95": {
-    "release": 0.014,
-    "main": 0.013,
-    "loki": 0.004
+    "release": 0.01,
+    "main": 0.01,
+    "loki": 0.003
    },
    "cold": {
-    "release": 0.014,
-    "main": 0.015,
-    "loki": 0.004
+    "release": 0.011,
+    "main": 0.011,
+    "loki": 0.003
    },
    "status": {
     "release": "200",
@@ -831,9 +831,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 287.74,
-    "main": 287.74,
-    "loki": 287.74
+    "release": 298.2,
+    "main": 298.2,
+    "loki": 298.2
    },
    "stale": [
     "release",
@@ -844,7 +844,7 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 2.0
+   "speedup": 1.0
   },
   {
    "shape": "drilldown detected labels",
@@ -852,17 +852,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 1.001
+    "loki": 1.002
    },
    "p95": {
-    "release": 0.011,
-    "main": 0.012,
-    "loki": 1.304
+    "release": 0.009,
+    "main": 0.008,
+    "loki": 1.185
    },
    "cold": {
-    "release": 0.01,
+    "release": 0.007,
     "main": 0.01,
-    "loki": 1.073
+    "loki": 1.282
    },
    "status": {
     "release": "200",
@@ -870,9 +870,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 287.74,
-    "main": 287.74,
-    "loki": 287.74
+    "release": 159.14,
+    "main": 159.14,
+    "loki": 159.14
    },
    "stale": [
     "release",
@@ -889,19 +889,19 @@
    "shape": "drilldown detected labels",
    "range": "24h",
    "p50": {
-    "release": 0.002,
+    "release": 0.001,
     "main": 0.001,
-    "loki": 6.535
+    "loki": 5.761
    },
    "p95": {
-    "release": 0.002,
+    "release": 0.001,
     "main": 0.001,
-    "loki": 7.525
+    "loki": 5.931
    },
    "cold": {
     "release": 0.008,
-    "main": 0.007,
-    "loki": 6.292
+    "main": 0.01,
+    "loki": 5.408
    },
    "status": {
     "release": "200",
@@ -909,9 +909,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 3.82,
-    "main": 4.04,
-    "loki": 157.53
+    "release": 3.99,
+    "main": 3.99,
+    "loki": 31.78
    },
    "stale": [
     "release",
@@ -922,25 +922,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 2.0
+   "speedup": 1.0
   },
   {
    "shape": "drilldown detected fields",
    "range": "1h",
    "p50": {
-    "release": 0.002,
+    "release": 0.001,
     "main": 0.001,
-    "loki": 0.023
+    "loki": 0.019
    },
    "p95": {
-    "release": 0.015,
-    "main": 0.015,
-    "loki": 0.025
+    "release": 0.018,
+    "main": 0.017,
+    "loki": 0.02
    },
    "cold": {
-    "release": 0.024,
-    "main": 0.026,
-    "loki": 0.036
+    "release": 0.018,
+    "main": 0.016,
+    "loki": 0.03
    },
    "status": {
     "release": "200",
@@ -948,9 +948,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
+    "release": 31.78,
+    "main": 31.78,
+    "loki": 31.78
    },
    "stale": [
     "release",
@@ -961,7 +961,7 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 2.0
+   "speedup": 1.0
   },
   {
    "shape": "drilldown detected fields",
@@ -969,17 +969,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.021
+    "loki": 0.029
    },
    "p95": {
-    "release": 0.037,
-    "main": 0.04,
-    "loki": 0.024
+    "release": 0.071,
+    "main": 0.076,
+    "loki": 0.036
    },
    "cold": {
-    "release": 0.093,
-    "main": 0.084,
-    "loki": 0.021
+    "release": 0.048,
+    "main": 1.172,
+    "loki": 0.02
    },
    "status": {
     "release": "200",
@@ -987,9 +987,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
    },
    "stale": [
     "release",
@@ -1008,17 +1008,17 @@
    "p50": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.021
+    "loki": 0.018
    },
    "p95": {
     "release": 0.001,
     "main": 0.001,
-    "loki": 0.022
+    "loki": 0.021
    },
    "cold": {
-    "release": 0.104,
-    "main": 0.1,
-    "loki": 0.021
+    "release": 0.118,
+    "main": 0.106,
+    "loki": 0.023
    },
    "status": {
     "release": "200",
@@ -1026,9 +1026,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
    },
    "stale": [
     "release",
@@ -1045,19 +1045,19 @@
    "shape": "refresh labels (label browser)",
    "range": "1h",
    "p50": {
-    "release": 0.007,
-    "main": 0.006,
-    "loki": 0.01
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.007
    },
    "p95": {
-    "release": 0.008,
+    "release": 0.009,
     "main": 0.009,
-    "loki": 0.011
+    "loki": 0.01
    },
    "cold": {
     "release": 0.002,
-    "main": 0.002,
-    "loki": 0.007
+    "main": 0.001,
+    "loki": 0.01
    },
    "status": {
     "release": "200",
@@ -1065,9 +1065,360 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "refresh labels (label browser)",
+   "range": "6h",
+   "p50": {
+    "release": 0.021,
+    "main": 0.022,
+    "loki": 0.041
+   },
+   "p95": {
+    "release": 0.025,
+    "main": 0.025,
+    "loki": 0.047
+   },
+   "cold": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.043
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.95
+  },
+  {
+   "shape": "refresh labels (label browser)",
+   "range": "24h",
+   "p50": {
+    "release": 0.031,
+    "main": 0.018,
+    "loki": 0.037
+   },
+   "p95": {
+    "release": 0.044,
+    "main": 0.041,
+    "loki": 0.052
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.05
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.72
+  },
+  {
+   "shape": "refresh labels with selector",
+   "range": "1h",
+   "p50": {
+    "release": 0.009,
+    "main": 0.009,
+    "loki": 0.062
+   },
+   "p95": {
+    "release": 0.01,
+    "main": 0.01,
+    "loki": 0.063
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.063
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "refresh labels with selector",
+   "range": "6h",
+   "p50": {
+    "release": 0.022,
+    "main": 0.023,
+    "loki": 0.098
+   },
+   "p95": {
+    "release": 0.05,
+    "main": 0.05,
+    "loki": 0.2
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.098
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 132.52,
+    "main": 132.52,
+    "loki": 132.52
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.96
+  },
+  {
+   "shape": "refresh labels with selector",
+   "range": "24h",
+   "p50": {
+    "release": 0.034,
+    "main": 0.018,
+    "loki": 0.075
+   },
+   "p95": {
+    "release": 0.047,
+    "main": 0.041,
+    "loki": 0.088
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.003,
+    "loki": 0.1
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 73.4,
+    "main": 112.15,
+    "loki": 112.15
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.89
+  },
+  {
+   "shape": "refresh label values env",
+   "range": "1h",
+   "p50": {
+    "release": 0.014,
+    "main": 0.013,
+    "loki": 0.045
+   },
+   "p95": {
+    "release": 0.015,
+    "main": 0.014,
+    "loki": 0.046
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.04
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 112.15,
+    "main": 112.15,
+    "loki": 112.15
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.08
+  },
+  {
+   "shape": "refresh label values env",
+   "range": "6h",
+   "p50": {
+    "release": 0.041,
+    "main": 0.042,
+    "loki": 0.079
+   },
+   "p95": {
+    "release": 0.049,
+    "main": 0.05,
+    "loki": 0.088
+   },
+   "cold": {
+    "release": 0.003,
+    "main": 0.003,
+    "loki": 0.082
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 112.15,
+    "main": 112.15,
+    "loki": 112.15
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.98
+  },
+  {
+   "shape": "refresh label values env",
+   "range": "24h",
+   "p50": {
+    "release": 0.043,
+    "main": 0.028,
+    "loki": 0.059
+   },
+   "p95": {
+    "release": 0.057,
+    "main": 0.052,
+    "loki": 0.075
+   },
+   "cold": {
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.077
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 112.15,
+    "main": 112.15,
+    "loki": 112.15
+   },
+   "stale": [
+    "release",
+    "main",
+    "loki"
+   ],
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.54
+  },
+  {
+   "shape": "refresh label values service_name",
+   "range": "1h",
+   "p50": {
+    "release": 0.007,
+    "main": 0.006,
+    "loki": 0.059
+   },
+   "p95": {
+    "release": 0.007,
+    "main": 0.007,
+    "loki": 0.061
+   },
+   "cold": {
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.057
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 112.15,
+    "main": 112.15,
+    "loki": 112.15
    },
    "stale": [
     "release",
@@ -1081,373 +1432,22 @@
    "speedup": 1.17
   },
   {
-   "shape": "refresh labels (label browser)",
-   "range": "6h",
-   "p50": {
-    "release": 0.021,
-    "main": 0.021,
-    "loki": 0.042
-   },
-   "p95": {
-    "release": 0.026,
-    "main": 0.026,
-    "loki": 0.048
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.043
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "refresh labels (label browser)",
-   "range": "24h",
-   "p50": {
-    "release": 0.029,
-    "main": 0.025,
-    "loki": 0.042
-   },
-   "p95": {
-    "release": 0.043,
-    "main": 0.051,
-    "loki": 0.052
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.046
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.16
-  },
-  {
-   "shape": "refresh labels with selector",
-   "range": "1h",
-   "p50": {
-    "release": 0.008,
-    "main": 0.007,
-    "loki": 0.07
-   },
-   "p95": {
-    "release": 0.009,
-    "main": 0.008,
-    "loki": 0.073
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.072
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 157.53,
-    "main": 157.53,
-    "loki": 157.53
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.14
-  },
-  {
-   "shape": "refresh labels with selector",
-   "range": "6h",
-   "p50": {
-    "release": 0.027,
-    "main": 0.027,
-    "loki": 0.116
-   },
-   "p95": {
-    "release": 0.044,
-    "main": 0.036,
-    "loki": 0.19
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.099
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 58.51,
-    "main": 58.51,
-    "loki": 58.51
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "refresh labels with selector",
-   "range": "24h",
-   "p50": {
-    "release": 0.034,
-    "main": 0.024,
-    "loki": 0.081
-   },
-   "p95": {
-    "release": 0.048,
-    "main": 0.044,
-    "loki": 0.123
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.099
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 58.51,
-    "main": 58.51,
-    "loki": 58.51
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.42
-  },
-  {
-   "shape": "refresh label values env",
-   "range": "1h",
-   "p50": {
-    "release": 0.01,
-    "main": 0.01,
-    "loki": 0.051
-   },
-   "p95": {
-    "release": 0.014,
-    "main": 0.012,
-    "loki": 0.053
-   },
-   "cold": {
-    "release": 0.003,
-    "main": 0.002,
-    "loki": 0.053
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 58.51,
-    "main": 58.51,
-    "loki": 58.51
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "refresh label values env",
-   "range": "6h",
-   "p50": {
-    "release": 0.042,
-    "main": 0.042,
-    "loki": 0.096
-   },
-   "p95": {
-    "release": 0.056,
-    "main": 0.053,
-    "loki": 0.112
-   },
-   "cold": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.09
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 104.64,
-    "main": 104.64,
-    "loki": 104.64
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "refresh label values env",
-   "range": "24h",
-   "p50": {
-    "release": 0.037,
-    "main": 0.038,
-    "loki": 0.072
-   },
-   "p95": {
-    "release": 0.049,
-    "main": 0.056,
-    "loki": 0.094
-   },
-   "cold": {
-    "release": 0.004,
-    "main": 0.003,
-    "loki": 0.092
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 104.64,
-    "main": 104.64,
-    "loki": 104.64
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 0.97
-  },
-  {
-   "shape": "refresh label values service_name",
-   "range": "1h",
-   "p50": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.068
-   },
-   "p95": {
-    "release": 0.006,
-    "main": 0.006,
-    "loki": 0.07
-   },
-   "cold": {
-    "release": 0.002,
-    "main": 0.002,
-    "loki": 0.063
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 104.64,
-    "main": 104.64,
-    "loki": 104.64
-   },
-   "stale": [
-    "release",
-    "main",
-    "loki"
-   ],
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
    "shape": "refresh label values service_name",
    "range": "6h",
    "p50": {
-    "release": 0.021,
+    "release": 0.02,
     "main": 0.021,
-    "loki": 0.134
+    "loki": 0.126
    },
    "p95": {
     "release": 0.025,
-    "main": 0.026,
-    "loki": 0.151
+    "main": 0.024,
+    "loki": 0.134
    },
    "cold": {
     "release": 0.002,
     "main": 0.002,
-    "loki": 0.12
+    "loki": 0.116
    },
    "status": {
     "release": "200",
@@ -1455,9 +1455,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 104.64,
-    "main": 104.64,
-    "loki": 104.64
+    "release": 49.92,
+    "main": 49.92,
+    "loki": 49.92
    },
    "stale": [
     "release",
@@ -1468,25 +1468,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.95
   },
   {
    "shape": "refresh label values service_name",
    "range": "24h",
    "p50": {
-    "release": 0.016,
-    "main": 0.018,
-    "loki": 0.098
+    "release": 0.017,
+    "main": 0.013,
+    "loki": 0.092
    },
    "p95": {
     "release": 0.02,
-    "main": 0.029,
+    "main": 0.024,
     "loki": 0.123
    },
    "cold": {
     "release": 0.002,
     "main": 0.002,
-    "loki": 0.146
+    "loki": 0.123
    },
    "status": {
     "release": "200",
@@ -1494,9 +1494,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 59.91,
-    "main": 59.91,
-    "loki": 59.91
+    "release": 49.92,
+    "main": 49.92,
+    "loki": 49.92
    },
    "stale": [
     "release",
@@ -1507,11 +1507,11 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.89
+   "speedup": 1.31
   }
  ],
- "baseline_ref": "v2.54.0",
- "commit": "4c5b769f96f1630dd69854449dd0e0f1872b1859",
+ "baseline_ref": "v2.56.2",
+ "commit": "6159745fb4bcfed65660d02f1ee33c9d2525c68c",
  "proxy_align": {
   "release": "off",
   "main": "off"

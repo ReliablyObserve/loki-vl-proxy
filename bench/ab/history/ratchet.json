@@ -2429,6 +2429,13 @@
   "shape": "W3 sum without pod, rate"
  },
  {
+  "added": "2026-11-02",
+  "commit": "6159745fb4bcfed65660d02f1ee33c9d2525c68c",
+  "range": "6h",
+  "set": "unwrap-sum-without",
+  "shape": "W3 sum without pod, rate"
+ },
+ {
   "added": "2026-10-29",
   "commit": "9aa207755fd60f77fe01ffaa48238528d721508f",
   "range": "1h",
