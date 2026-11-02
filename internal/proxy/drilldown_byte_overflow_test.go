@@ -115,7 +115,7 @@ func TestDrilldownBreakdown_CanceledBeforeSlot(t *testing.T) {
 	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 	rec := httptest.NewRecorder()
 	p.proxyStatsQueryRangeDirectAnchored(rec, req, `app:="x" | stats by (pod) count()`, 0)
-	if rec.Code != 499 || !strings.Contains(rec.Body.String(), `"errorType":"canceled"`) {
+	if rec.Code != 499 || readErrorRec(t, rec).Error != lokiErrClientCanceled {
 		t.Fatalf("expected cancellation, got %d: %s", rec.Code, rec.Body)
 	}
 }
@@ -146,7 +146,7 @@ func TestDrilldownBreakdown_CanceledOverflowDoesNotRetry(t *testing.T) {
 	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 	rec := httptest.NewRecorder()
 	p.proxyStatsQueryRangeDirectAnchored(rec, req, `app:="x" | stats by (pod) count()`, 0)
-	if rec.Code != 499 || !strings.Contains(rec.Body.String(), `"errorType":"canceled"`) || calls != 1 {
+	if rec.Code != 499 || readErrorRec(t, rec).Error != lokiErrClientCanceled || calls != 1 {
 		t.Fatalf("expected one canceled read, got %d calls, status %d: %s", calls, rec.Code, rec.Body)
 	}
 }

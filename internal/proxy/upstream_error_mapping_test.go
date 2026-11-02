@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -59,12 +58,8 @@ func TestHandleLabels_MapsCanceledContextTo499(t *testing.T) {
 	if rec.Code != 499 {
 		t.Fatalf("expected 499 for canceled request context, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	if resp["errorType"] != "canceled" {
-		t.Fatalf("expected errorType=canceled, got %v", resp["errorType"])
+	if resp := readErrorRec(t, rec); rec.Code != 499 || resp.Error != lokiErrClientCanceled {
+		t.Fatalf("expected Loki's cancelled text, got %+v", resp)
 	}
 }
 
@@ -85,11 +80,7 @@ func TestHandleLabels_MapsUpstreamTimeoutTo504(t *testing.T) {
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("expected 504 for upstream timeout, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-	if resp["errorType"] != "timeout" {
-		t.Fatalf("expected errorType=timeout, got %v", resp["errorType"])
+	if resp := readErrorRec(t, rec); rec.Code != http.StatusGatewayTimeout || resp.Error != lokiErrDeadlineExceeded {
+		t.Fatalf("expected Loki's deadline text, got %+v", resp)
 	}
 }

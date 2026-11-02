@@ -64,6 +64,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "false"`) to evaluate at the start the client sent, as before. Registry
   `semantics/query-range-step-alignment`. Re-implements #574 by @clain23.
 
+### Fixed
+
+- Error responses are Loki's own bytes. Every query, metadata and tail-upgrade
+  route (`query`, `query_range`, `labels`, label values, `series`,
+  `index/stats`, `index/volume`, `index/volume_range`, `patterns`,
+  `detected_fields`, `detected_field/{name}/values`, `detected_labels`,
+  `tail`) answers a failure with the status, `Content-Type: text/plain;
+  charset=utf-8`, `X-Content-Type-Options: nosniff` and the message alone,
+  as Loki's query frontend does (`pkg/util/server/error.go` `WriteError`),
+  where it used to wrap every error in a JSON envelope with an `errorType`
+  and a `message` field. The Prometheus rules API answers in the ruler's JSON
+  (`{"status":"error","data":null,"errorType":...,"error":...}` with no
+  `nosniff`, sniffed as `text/plain`; the alerts API with `application/json`),
+  an unknown rules `type` is Loki's `400` `not supported value "xyz"`, the
+  legacy rule views and the delete API answer in Go's `http.Error` text and
+  newline (a missing group is `group does not exist`), and the rate-limit
+  (`429`) and `-max-concurrent` (`503`) bodies are the message in
+  `text/plain`. The delete API accepts `PUT` as well as `POST`, as Loki's
+  create request does.
+  **Breaking:** (1) API clients, dashboards and alerts that parse the JSON
+  error envelope (`status`, `errorType`, `error`, `message`) now get Loki's
+  body and must read the text, as they do against Loki; Grafana's Loki
+  datasource and Logs Drilldown already do. (2) `-error-response-message-field`
+  is accepted and ignored: with `=false` the envelope is gone too. (3) A ruler,
+  alerts or delete backend failure no longer passes the backend's status (no
+  `502`) or body: it is Loki's `500` and `Internal Server Error`, and so is a
+  `4xx` from vmalert, as Loki answers every ruler read failure with `500`.
+  (4) The `429` and `503` admission bodies change from JSON to text. (5) The
+  delete API now serves `PUT`.
+
+- A range metric that passes `-manual-range-metric-row-limit` now answers
+  Loki's answer to a query over one of its limits: HTTP 400 (Loki's
+  `logqlmodel.ErrLimit` is a 400), and the text names the
+  setting to raise, `manual range metric row limit exceeded (N); narrow the
+  query or increase -manual-range-metric-row-limit` (Loki has no equivalent
+  flag). Before, two raw-row evaluators answered a bare `Internal Server
+  Error` that did not say which setting to raise, such as the Logs Drilldown
+  level breakdown over `| json` on a long range, and the others answered 500.
+  Every evaluator that can hit the limit (raw `| json` and `| logfmt` rows, the
+  manual range metric and quantile evaluators, the window stats grids and the
+  count precheck) now builds the same error, on `query_range` and `query`.
+  **Breaking:** clients, dashboards and alerts that keyed on HTTP 500 for this
+  limit now see 400; it counts toward `LokiVLProxyHighClientErrors`
+  and no longer toward `LokiVLProxyHighErrorRate`.
+
 ## [2.60.0] - 2026-11-02
 
 ### Fixed

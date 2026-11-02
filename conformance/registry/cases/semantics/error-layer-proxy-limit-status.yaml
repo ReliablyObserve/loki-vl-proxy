@@ -7,8 +7,10 @@ consumer: any
 why: |
   -backend-max-buffered-response-bytes and -manual-range-metric-row-limit
   are proxy limits. Loki's message-size limit is a 500 ResourceExhausted
-  (pkg/util/server/error.go:93-100), its query limits 400 with their own
-  text. The error layer now answers the proxy's limits with 500 and the
+  (pkg/util/server/error.go:93-100), its query limits (logqlmodel.ErrLimit)
+  400 with their own text, which is how the row limit answers
+  (limits/row-limit-error-names-flag). The error layer answers the other
+  proxy limits with 500 and the
   message naming their flag (`manual metric response exceeds N bytes; narrow
   the query or increase -backend-max-buffered-response-bytes`), never 502,
   including bench shape U9 (`sum(rate_counter(... | logfmt | unwrap amount

@@ -51,9 +51,42 @@ func (p *Proxy) precheckRawMetricRows(ctx context.Context, baseQuery string, fet
 		return nil
 	}
 	if rows, convErr := strconv.ParseInt(row.Rows, 10, 64); convErr == nil && rows > int64(rowLimit) {
-		return fmt.Errorf("manual range metric row limit exceeded (%d); the query matches %d log lines; narrow the query or increase -manual-range-metric-row-limit", rowLimit, rows)
+		return &rowLimitError{limit: rowLimit, matches: rows}
 	}
 	return nil
+}
+
+// rowLimitError is a metric evaluation that passed -manual-range-metric-row-limit.
+// The error layer answers it as Loki answers a query over one of its own limits
+// (logqlmodel.ErrLimit, pkg/util/server/error.go ClientHTTPStatusAndError): 400.
+// Loki has no equivalent flag, so the text names the proxy's own.
+type rowLimitError struct {
+	limit   int
+	unit    string // what the limit counted, when not raw log rows
+	matches int64  // the rows the query matches, when a count said so; 0 = unknown
+}
+
+// manualRowLimitError is the error of an evaluator that read more rows than
+// -manual-range-metric-row-limit allows.
+func manualRowLimitError(limit int) error { return &rowLimitError{limit: limit} }
+
+func (e *rowLimitError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "manual range metric row limit exceeded (%d", e.limit)
+	if e.unit != "" {
+		b.WriteString(" " + e.unit)
+	}
+	b.WriteByte(')')
+	if e.matches > 0 {
+		fmt.Fprintf(&b, "; the query matches %d log lines", e.matches)
+	}
+	b.WriteString(proxyLimitMarker + "manual-range-metric-row-limit")
+	return b.String()
+}
+
+func isRowLimitError(err error) bool {
+	var limitErr *rowLimitError
+	return errors.As(err, &limitErr)
 }
 
 // seriesLimitMessagePrefix opens Loki's series limit message; writeError uses it
@@ -94,7 +127,7 @@ func tenantSeriesLimitContext(ctx context.Context) context.Context {
 
 func (e *seriesLimitError) Error() string {
 	if e.rowBudget {
-		return fmt.Sprintf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", e.limit)
+		return manualRowLimitError(e.limit).Error()
 	}
 	return fmt.Sprintf("%s%d) reached for a single query; consider reducing query cardinality by adding more specific stream selectors, reducing the time range, or aggregating results with functions like sum(), count() or topk()", seriesLimitMessagePrefix, e.limit)
 }

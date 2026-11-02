@@ -43,6 +43,15 @@ const (
 	slidingStatsCountName = "__sample_count"
 )
 
+// slidingStatsByteBudgetError is the row limit's own byte budget: the stats
+// stream may carry rowLimit rows of at most slidingStatsMaxRowBytes each, so
+// passing it means the grid holds more than -manual-range-metric-row-limit
+// rows' worth of data, and only raising that flag raises the budget. It is the
+// same limit error as the row count.
+func slidingStatsByteBudgetError(rowLimit int) error {
+	return &rowLimitError{limit: rowLimit, unit: fmt.Sprintf("stats rows of up to %d bytes in one bucket grid", slidingStatsMaxRowBytes)}
+}
+
 // slidingStatsMaxRowBytes bounds one stats row: a bucket timestamp, the group
 // label values and two numbers.
 const slidingStatsMaxRowBytes = 64 << 10
@@ -339,7 +348,7 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 			return err
 		}
 		if limited.N <= 0 {
-			return fmt.Errorf("manual metric stats response exceeds %d bytes (%d rows of %d bytes); narrow the query or increase -manual-range-metric-row-limit", int64(rowLimit)*slidingStatsMaxRowBytes, rowLimit, slidingStatsMaxRowBytes)
+			return slidingStatsByteBudgetError(rowLimit)
 		}
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -384,7 +393,7 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 			}
 		}
 		if rows++; rows > rowLimit {
-			return fmt.Errorf("manual range metric row limit exceeded (%d stats rows in one bucket grid); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
+			return &rowLimitError{limit: rowLimit, unit: "stats rows in one bucket grid"}
 		}
 		stats.records = append(stats.records, rec)
 	}
@@ -392,7 +401,7 @@ func (p *Proxy) fetchSlidingStatsGrid(ctx context.Context, stats *slidingStats, 
 		return fmt.Errorf("read stats rows: %w", err)
 	}
 	if limited.N <= 0 {
-		return fmt.Errorf("manual metric stats response exceeds %d bytes (%d rows of %d bytes); narrow the query or increase -manual-range-metric-row-limit", int64(rowLimit)*slidingStatsMaxRowBytes, rowLimit, slidingStatsMaxRowBytes)
+		return slidingStatsByteBudgetError(rowLimit)
 	}
 	return ctx.Err()
 }

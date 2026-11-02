@@ -624,11 +624,7 @@ func TestLock_VLErrorsRemainErrorsForGrafana(t *testing.T) {
 			if w.Header().Get("Warning") != "" || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" || w.Header().Get("X-Proxy-Upstream-Error") != "" {
 				t.Errorf("backend details or fabricated partial headers: %v", w.Header())
 			}
-			var envelope struct {
-				Status, Error string
-				Warnings      []string
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil || envelope.Status != "error" || envelope.Error != tc.expectText || len(envelope.Warnings) != 0 {
+			if envelope := readErrorRec(t, w); envelope.Error != tc.expectText {
 				t.Errorf("expected sanitized Loki failure, got: %s", w.Body.String())
 			}
 		})

@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -54,17 +53,7 @@ func assertLokiBadData(t *testing.T, w *httptest.ResponseRecorder) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
 	}
-	var body struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-		Error     string `json:"error"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode error body: %v; body=%s", err, w.Body.String())
-	}
-	if body.Status != "error" || body.ErrorType != "bad_data" {
-		t.Fatalf("envelope = %+v, want status=error errorType=bad_data", body)
-	}
+	body := readErrorRec(t, w)
 	if body.Error == "" {
 		t.Fatalf("expected a non-empty error message")
 	}
@@ -690,11 +679,7 @@ func TestUpstreamBadRequest_GrafanaStatsQueries(t *testing.T) {
 						assertLokiBadData(t, w)
 						return
 					}
-					var envelope struct {
-						Status, Error string
-						Warnings      []string
-					}
-					if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil || w.Code != http.StatusInternalServerError || envelope.Status != "error" || envelope.Error != lokiErrInternal || len(envelope.Warnings) != 0 {
+					if envelope := readErrorRec(t, w); w.Code != http.StatusInternalServerError || envelope.Error != lokiErrInternal {
 						t.Fatalf("expected sanitized Loki 500, got %d body=%s", w.Code, w.Body.String())
 					}
 					if strings.Contains(w.Body.String(), "billing-secret-value") || w.Header().Get("Warning") != "" || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {

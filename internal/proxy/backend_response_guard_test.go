@@ -67,17 +67,7 @@ func getLabelValues(p *Proxy, tenant string) *httptest.ResponseRecorder {
 
 func lokiErrorText(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	var body struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode error body %q: %v", bodyHead(rec), err)
-	}
-	if body.Status != "error" {
-		t.Fatalf("status field = %q, want error", body.Status)
-	}
-	return body.Error
+	return readErrorRec(t, rec).Error
 }
 
 // bodyHead keeps failure messages short when a body holds thousands of values.

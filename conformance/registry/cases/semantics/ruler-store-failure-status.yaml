@@ -1,0 +1,39 @@
+id: semantics/ruler-store-failure-status
+title: A rule backend failure on the legacy rule views is 500, where Loki's rule store failure is 400 (owner-kept)
+proves:
+  - status-500
+consumer: any
+why: |
+  Loki's ListRules reads the rule groups from its rule store and answers a
+  store failure with `http.Error(err, 400)`, for example `unable to read rule
+  dir /tmp/loki/rules/fake: open ...: no such file or directory\n`
+  (pkg/ruler/base/api.go:534; the same for LoadRuleGroups at :546, and for
+  GetRuleGroup at :575). The proxy has no rule store: its rules come from a
+  remote backend (vmalert), so a failed read is a failed backend call, and it
+  answers Loki's failed-call `500 Internal Server Error\n`
+  (pkg/util/server/error.go:124-128 for that class). A directory-read 400 with
+  a path would mislead an operator, because there is no directory.
+request:
+  method: GET
+  path: /loki/api/v1/rules
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The ruler backend fails or answers an error status.
+compare:
+  mode: observed
+  fields: [status, headers, body]
+  expect: |
+    Loki: 400, text/plain, nosniff, `unable to read rule dir ...` and a newline.
+    Proxy: 500, text/plain, nosniff, `Internal Server Error` and a newline.
+gap:
+  status: owner-kept
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/alerting.go writeAlertingBackendStatus and the legacy rule views'
+  loki: 'pkg/ruler/base/api.go:534, :546, :575 http.Error(err, 400)'
+  proxy: '500 Internal Server Error'
+  owner_decision: |
+    2026-11-02: keep 500. The rule source is a remote backend, so Loki's
+    directory-read 400 would mislead. The alerting flow as a whole is later,
+    separate work.

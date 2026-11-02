@@ -238,6 +238,12 @@ func askInstantAs(t *testing.T, p *Proxy, q, orgID string, extra url.Values, hea
 	rec := httptest.NewRecorder()
 	p.handleQuery(rec, req)
 	a := instantAnswer{code: rec.Code, body: rec.Body.Bytes()}
+	if a.code >= 400 {
+		// An error answer is Loki's text, not a JSON envelope.
+		readErrorRec(t, rec)
+		a.resp.Status = "error"
+		return a
+	}
 	if err := json.Unmarshal(a.body, &a.resp); err != nil {
 		t.Fatalf("%s: body is not JSON (HTTP %d): %v\n%s", q, a.code, err, a.body)
 	}

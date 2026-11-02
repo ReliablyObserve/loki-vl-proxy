@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,8 +45,7 @@ func TestSubquery_RejectedLikeLoki(t *testing.T) {
 				if w.Code != http.StatusBadRequest {
 					t.Fatalf("status=%d body=%s", w.Code, w.Body)
 				}
-				var body struct{ ErrorType, Error string }
-				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.ErrorType != "bad_data" || !strings.Contains(body.Error, tc.want) {
+				if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || !strings.Contains(body.Error, tc.want) {
 					t.Fatalf("body=%s, want bad_data error containing %q", w.Body, tc.want)
 				}
 			})
@@ -82,8 +80,7 @@ func TestQueryRange_ResolutionLimitPrecedesQueryValidation(t *testing.T) {
 			params := url.Values{"query": {tc.query}, "start": {"1789449300"}, "end": {"1789450381"}, "step": {step.value}}
 			t.Run(step.value+"/"+tc.query, func(t *testing.T) {
 				w := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-				var body struct{ ErrorType, Error string }
-				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusBadRequest || body.ErrorType != "bad_data" || body.Error != step.want {
+				if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || body.Error != step.want {
 					t.Fatalf("status=%d body=%s, want 400 %q", w.Code, w.Body, step.want)
 				}
 			})

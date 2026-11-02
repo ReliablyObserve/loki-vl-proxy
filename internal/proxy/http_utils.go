@@ -214,9 +214,20 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	p.writeErrorCause(w, code, msg, nil)
 }
 
-// writeErrorCause writes the JSON error envelope; cause, when set, is the full
-// error behind msg and goes to the log line only.
+// writeErrorCause writes the error as Loki's query frontend does (see
+// writeLokiErrorBody); cause, when set, is the full error behind msg and goes to
+// the log line only.
 func (p *Proxy) writeErrorCause(w http.ResponseWriter, code int, msg string, cause error) {
+	p.writeErrorShaped(w, code, msg, cause, writeLokiErrorBody)
+}
+
+// errorShape writes an error body in the shape one Loki component uses.
+type errorShape func(w http.ResponseWriter, code int, msg string)
+
+// writeErrorShaped is writeErrorCause for a route where Loki answers errors in
+// another shape than its query frontend does: the ruler's Prometheus JSON, and
+// the http.Error text of the compactor and ruler.
+func (p *Proxy) writeErrorShaped(w http.ResponseWriter, code int, msg string, cause error, shape errorShape) {
 	// Call sites that map backend failures to a fixed 5xx still surface the
 	// heavy-query queue rejection with Loki's queue-full status.
 	if code != http.StatusTooManyRequests && strings.HasPrefix(msg, lokiTooManyOutstandingRequests+": heavy VictoriaLogs queries") {
@@ -243,21 +254,101 @@ func (p *Proxy) writeErrorCause(w http.ResponseWriter, code int, msg string, cau
 		}
 		p.log.Log(context.Background(), level, "request error", attrs...)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	shape(w, code, msg)
+}
+
+// writeErrShaped is writeErr in the shape of one Loki component.
+func (p *Proxy) writeErrShaped(w http.ResponseWriter, ctx context.Context, err error, shape errorShape) int {
+	status, _, text := lokiClientError(ctx, err)
+	p.writeErrorShaped(w, status, text, err, shape)
+	return status
+}
+
+// writeLokiErrorBody answers an error as Loki's query frontend does
+// (pkg/util/server/error.go WriteError, v3.7.9): the status, text/plain, nosniff
+// and the message alone, with no JSON envelope, no errorType and no trailing
+// newline. Grafana's Loki datasource reads that text as it is
+// (pkg/tsdb/loki/api.go makeLokiError).
+func writeLokiErrorBody(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	// Loki answers errors as text/plain. Grafana's Loki datasource shows the
-	// "message" field of a JSON error body and the raw body otherwise, so the
-	// envelope carries the text there too: Explore then shows exactly Loki's
-	// message instead of this JSON.
-	body := map[string]interface{}{
-		"status":    "error",
-		"errorType": lokiErrorType(code),
-		"error":     msg,
+	_, _ = io.WriteString(w, msg)
+}
+
+// writeBodylessError answers as gorilla/mux does for an unregistered method:
+// the status alone, with no body and no Content-Type or nosniff. The
+// middleware presets both headers, so they are removed (and not re-added at
+// write time).
+func writeBodylessError(w http.ResponseWriter, code int) {
+	w.Header().Del("Content-Type")
+	w.Header().Del("X-Content-Type-Options")
+	w.WriteHeader(code)
+}
+
+// setReplayContentType sets the Content-Type of a replayed buffered answer:
+// JSON for a result, Loki's error shape for a failure (the buffered body is the
+// error layer's text, which must not be relabelled as JSON).
+func setReplayContentType(w http.ResponseWriter, code int) {
+	if code >= http.StatusBadRequest {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		return
 	}
-	if p == nil || p.errorMessageField {
-		body["message"] = msg
+	w.Header().Set("Content-Type", "application/json")
+}
+
+// writeLokiHTTPError answers like Go's http.Error, which Loki's compactor
+// (delete API) and ruler (rule group API) use: text/plain, nosniff and the
+// message followed by a newline.
+func writeLokiHTTPError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Del("Content-Length")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	_, _ = io.WriteString(w, msg+"\n")
+}
+
+// writeLokiRulerError answers a Prometheus-compatible rules request as Loki's
+// ruler does (pkg/ruler/base/api.go respondError, v3.7.9 :106-123): the JSON
+// {"status","data","errorType","error"} in that order. PrometheusRules sets no
+// Content-Type (:150-285), so Go sniffs text/plain from the body. The ruler's
+// only failure classes are respondInvalidRequest (400, bad_data) and
+// respondServerError (500, server_error), so any other status is 500.
+func writeLokiRulerError(w http.ResponseWriter, code int, msg string) {
+	writeLokiRulerJSON(w, code, msg, "text/plain; charset=utf-8")
+}
+
+// writeLokiAlertsError is writeLokiRulerError for PrometheusAlerts, which sets
+// Content-Type: application/json before it asks for the rules
+// (pkg/ruler/base/api.go:286), so a failure after that keeps it.
+func writeLokiAlertsError(w http.ResponseWriter, code int, msg string) {
+	writeLokiRulerJSON(w, code, msg, "application/json")
+}
+
+func writeLokiRulerJSON(w http.ResponseWriter, code int, msg, contentType string) {
+	errorType := "server_error"
+	if code == http.StatusBadRequest {
+		errorType = "bad_data"
+	} else {
+		code = http.StatusInternalServerError
 	}
-	json.NewEncoder(w).Encode(body)
+	body, err := json.Marshal(struct {
+		Status    string      `json:"status"`
+		Data      interface{} `json:"data"`
+		ErrorType string      `json:"errorType"`
+		Error     string      `json:"error"`
+	}{"error", nil, errorType, msg})
+	if err != nil {
+		writeLokiHTTPError(w, http.StatusInternalServerError, lokiErrInternal)
+		return
+	}
+	// Loki's ruler writes no X-Content-Type-Options here; the middleware
+	// presets it, so it is removed (and not re-added at write time).
+	w.Header().Del("X-Content-Type-Options")
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(code)
+	_, _ = w.Write(body)
 }
 
 // statusFromUpstreamErr classifies a failed backend call (or the proxy work
@@ -282,7 +373,7 @@ func statusFromUpstreamErr(err error) int {
 	if isLabelValuesResponseTooLarge(err) {
 		return http.StatusInternalServerError
 	}
-	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) {
+	if isUpstreamQueryRejected(err) || isOrderedJSONPipelineError(err) || isRowLimitError(err) {
 		return http.StatusBadRequest
 	}
 	if isHeavyQueryQueueFull(err) || isUpstreamQueueFull(err) {
@@ -364,6 +455,7 @@ func lokiClientText(status int, err error) string {
 		matchingErr vectorMatchError
 		tooLarge    *labelValuesResponseTooLargeError
 		bodyLimit   *backendBodyTooLargeError
+		rowLimitErr *rowLimitError
 	)
 	switch {
 	case errors.As(err, &seriesErr):
@@ -378,6 +470,8 @@ func lokiClientText(status int, err error) string {
 		return tooLarge.Error()
 	case errors.As(err, &bodyLimit):
 		return bodyLimit.Error()
+	case errors.As(err, &rowLimitErr):
+		return rowLimitErr.Error()
 	case status == http.StatusBadRequest:
 		return lokiErrParse
 	}
@@ -1287,18 +1381,27 @@ type statusCapture struct {
 	http.ResponseWriter
 	code         int
 	bytesWritten int
+	wroteHeader  bool
 }
 
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
+	sc.wroteHeader = true
 	sc.ResponseWriter.WriteHeader(code)
 }
 
 func (sc *statusCapture) Write(b []byte) (int, error) {
-	if sc.ResponseWriter.Header().Get("Content-Type") == "" {
-		sc.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// The defaults belong to the implicit 200 of a first Write. After an
+	// explicit WriteHeader the headers are already sent, and a writer that
+	// removed them on purpose (Loki's ruler JSON carries no nosniff) must
+	// stay as it wrote them.
+	if !sc.wroteHeader {
+		if sc.ResponseWriter.Header().Get("Content-Type") == "" {
+			sc.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
+		sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
+		sc.wroteHeader = true
 	}
-	sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	n, err := sc.ResponseWriter.Write(b)
 	sc.bytesWritten += n
 	return n, err

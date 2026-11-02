@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -126,9 +125,7 @@ func TestMultiTenantFanout_TenantFailureFailsWholeRequest(t *testing.T) {
 				if strings.Contains(body, family.beta) || strings.Contains(body, `"warnings"`) || rec.Header().Get("X-Multi-Tenant-Partial-Failures") != "" {
 					t.Fatalf("failed request carries merged or partial data: headers=%v body=%s", rec.Header(), body)
 				}
-				if !strings.Contains(body, `"status":"error"`) {
-					t.Fatalf("failure body is not the proxy error envelope: %s", body)
-				}
+				readErrorRec(t, rec)
 				if _, cached := p.cache.Get(mtKey); cached {
 					t.Fatal("failed request stored in the multi-tenant merge cache")
 				}
@@ -185,11 +182,7 @@ func TestMultiTenantFanout_DrilldownTenantFailureFailsWholeRequest(t *testing.T)
 				if mode.wantStatus == http.StatusGatewayTimeout {
 					wantText = lokiErrDeadlineExceeded
 				}
-				var envelope struct {
-					Status, Error string
-					Warnings      []string
-				}
-				if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil || rec.Code != mode.wantStatus || envelope.Status != "error" || envelope.Error != wantText || len(envelope.Warnings) != 0 {
+				if envelope := readErrorRec(t, rec); rec.Code != mode.wantStatus || envelope.Error != wantText {
 					t.Fatalf("tenant failure hidden or unsanitized: %d %s", rec.Code, rec.Body.String())
 				}
 				if rec.Header().Get("Warning") != "" || rec.Header().Get(drilldownPartialUpstreamStatusHeader) != "" || rec.Header().Get("X-Multi-Tenant-Partial-Failures") != "" {

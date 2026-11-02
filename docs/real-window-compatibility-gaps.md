@@ -63,7 +63,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 20 partial, 3 gaps |
-| Known differences from Loki (ranked) | **84**: 63 open, 12 documented, 6 owner-kept, 3 upstream |
+| Known differences from Loki (ranked) | **87**: 65 open, 12 documented, 7 owner-kept, 3 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
@@ -138,7 +138,7 @@ Raw metric collectors request one extra row and reject overflow rather than retu
 
 | Guard | Setting | Client-visible result |
 | --- | --- | --- |
-| Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 502, `errorType` `unavailable`, `manual range metric row limit exceeded` |
+| Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 400, `manual range metric row limit exceeded` naming the flag |
 | Metric query series | `-max-stats-query-series` (default 500) | HTTP 400, Loki's `maximum number of series (N) reached for a single query`; Logs Drilldown gets a partial result with the `... returning partial results` warning |
 
 Every metric path applies the series limit the same way: raw and ordered-parser evaluators, stats and hits buckets, sliding windows, binary expressions and unions, multi-tenant merges, range and instant. Logs Drilldown's partial result holds the busiest series by total value, where Loki keeps the first series it encounters. Logs Drilldown label and field breakdowns take the same path: every series up to the limit with Loki's values, and over it the busiest series, ranked by VictoriaLogs in a bounded second call, with Loki's warning.

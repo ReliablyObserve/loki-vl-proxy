@@ -1159,7 +1159,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		rows++
 		if rows > rowLimit {
-			return nil, fmt.Errorf("manual range metric row limit exceeded (%d)", rowLimit)
+			return nil, manualRowLimitError(rowLimit)
 		}
 
 		entry := vlEntryPool.Get().(map[string]interface{})

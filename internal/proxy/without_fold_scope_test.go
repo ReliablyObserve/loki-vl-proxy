@@ -71,7 +71,9 @@ func withoutScopeAnswer(t *testing.T, rows []emuRow, query string, instant bool,
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
+	if res.Code >= 400 {
+		resp.Error = readErrorRec(t, res).Error
+	} else if err := json.Unmarshal(res.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("%s: %v: %s", query, err, res.Body)
 	}
 	if res.Code != 200 {

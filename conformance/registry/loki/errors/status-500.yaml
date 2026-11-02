@@ -15,7 +15,8 @@ loki_behaviour: |
   the single error layer gives every failed VictoriaLogs call (refused, reset,
   VictoriaLogs 4xx/5xx other than a query rejection, a front proxy's 502/503,
   a truncated or malformed body) and every documented proxy buffer limit, with
-  Loki-shaped text and no VictoriaLogs text. TestErrorLayer_NoVictoriaLogsLeak
+  Loki-shaped text and no VictoriaLogs text. The body is the text alone,
+  text/plain, as on every Loki error (semantics/error-layer-body-shape). TestErrorLayer_NoVictoriaLogsLeak
   holds the cells that do not yet; error-layer-known-leaks.json lists them.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
@@ -24,3 +25,4 @@ cases:
   - semantics/error-layer-backend-failure-status
   - semantics/error-layer-internal-go-text
   - semantics/error-layer-silent-success
+  - semantics/error-layer-body-shape

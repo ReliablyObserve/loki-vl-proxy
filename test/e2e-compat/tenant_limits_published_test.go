@@ -161,11 +161,8 @@ func TestDrilldown_TenantLimitsPublishedAsEnforced(t *testing.T) {
 				return
 			}
 			want := fmt.Sprintf("max entries limit per query exceeded, limit > max_entries_limit_per_query (%d > %d)", asked, int(published))
-			var answer struct {
-				Error string `json:"error"`
-			}
-			_ = json.Unmarshal(body, &answer)
-			if resp.StatusCode != http.StatusBadRequest || answer.Error != want {
+			// Loki's body is the message alone as text/plain.
+			if resp.StatusCode != http.StatusBadRequest || string(body) != want {
 				t.Fatalf("limit=%d: want 400 %q, got %d %s", asked, want, resp.StatusCode, strings.TrimSpace(string(body)))
 			}
 		})

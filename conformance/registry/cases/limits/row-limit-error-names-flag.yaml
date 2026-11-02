@@ -1,0 +1,47 @@
+id: limits/row-limit-error-names-flag
+title: A metric read past the row limit answers Loki's limit status (400) and names the flag
+proves:
+  - heavy-metric-fetch-bounds
+  - status-400
+consumer: any
+why: |
+  Loki answers a query over one of its limits (logqlmodel.ErrLimit, for example
+  max_query_series) with 400
+  (pkg/util/server/error.go ClientHTTPStatusAndError, v3.7.9 lines 110-118),
+  written as the raw message (WriteError, lines 46-52). The proxy's row limit,
+  -manual-range-metric-row-limit, stops every proxy-side metric evaluation: the
+  ordered JSON and bare-parser raw-row evaluators, the manual range metric and
+  quantile evaluators, the sliding-window stats grids and the count precheck.
+  Loki has no equivalent flag, so the text names the proxy's:
+  `manual range metric row limit exceeded (N); narrow the query or increase
+  -manual-range-metric-row-limit`. Every site builds that one error, and one
+  mapping in the error layer answers it 400 (the same as the series limit), as
+  text/plain with the message alone, like every Loki error, where two sites used to answer a bare
+  `Internal Server Error` and the rest 500. Nothing of VictoriaLogs or Go is in
+  the text. The read stops as the limit is hit: the proxy hangs up on
+  VictoriaLogs and buffers no further row (the fetch also asks VictoriaLogs for
+  at most N+1 rows).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({env="production"} | json | __error__!="" [$__auto]))'
+    start: now-24h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The selector matches more lines than -manual-range-metric-row-limit and the
+    metric cannot be answered from VictoriaLogs stats buckets, so the raw-row
+    evaluator reads the lines. Instant queries (/loki/api/v1/query) answer the
+    same error.
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect:
+    status: 400
+    content_type: text/plain; charset=utf-8
+    body_contains:
+      - manual range metric row limit exceeded
+      - -manual-range-metric-row-limit

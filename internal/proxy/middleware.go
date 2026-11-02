@@ -505,13 +505,15 @@ func (w *compatCacheCaptureWriter) WriteHeader(code int) {
 
 func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
+		// The implicit 200 of a first Write: defaults apply. After an explicit
+		// WriteHeader the headers are sent and stay as the writer left them.
 		w.code = http.StatusOK
-	}
-	if strings.TrimSpace(w.Header().Get("Content-Type")) == "" {
-		w.Header().Set("Content-Type", "application/json")
-	}
-	if strings.TrimSpace(w.Header().Get("X-Content-Type-Options")) == "" {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if strings.TrimSpace(w.Header().Get("Content-Type")) == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		if strings.TrimSpace(w.Header().Get("X-Content-Type-Options")) == "" {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+		}
 	}
 	w.capture(b)
 	return w.ResponseWriter.Write(b)

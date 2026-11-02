@@ -144,15 +144,9 @@ check_instant_log_query_error() {
   local payload="$1"
   local endpoint="$2"
 
-  if ! echo "$payload" | jq -e '
-    .status == "error"
-    and .errorType == "bad_data"
-    and (.error | type == "string")
-    and (.error | contains("log queries are not supported as an instant query type"))
-  ' >/dev/null; then
-    local sample
-    sample="$(echo "$payload" | jq -c '.')"
-    echo "expected Loki-compatible bad_data error for ${endpoint}; payload=${sample:-<none>}" >&2
+  # Loki writes the rejection as text/plain, the message alone (no JSON).
+  if [[ "$payload" != "log queries are not supported as an instant query type, please change your query to a range query type" ]]; then
+    echo "expected Loki's text/plain log-query rejection for ${endpoint}; payload=${payload:-<none>}" >&2
     return 1
   fi
 }
@@ -192,4 +186,4 @@ check_categorize_three_tuple "$range_categorized_payload" "/query_range"
 check_instant_log_query_error "$query_payload" "/query"
 check_instant_log_query_error "$query_categorized_payload" "/query categorize-labels"
 
-echo "tuple contract smoke check passed (query_range strict 2-tuple; query_range categorize-labels 3-tuple; query instant log selector returns Loki-compatible bad_data)"
+echo "tuple contract smoke check passed (query_range strict 2-tuple; query_range categorize-labels 3-tuple; query instant log selector returns Loki's text/plain rejection)"

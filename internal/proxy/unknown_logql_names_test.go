@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -88,8 +87,7 @@ func TestUnknownLogQLNamesRejectedLikeLoki(t *testing.T) {
 			t.Run(endpoint+"/"+tc.query, func(t *testing.T) {
 				want := strings.Replace(identifier, "%d", strconv.Itoa(tc.col), 1)
 				w := serve(p, http.MethodGet, queryURL(endpoint, tc.query), nil)
-				var got struct{ ErrorType, Error, Message string }
-				if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != want || got.Message != want {
+				if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.Error != want {
 					t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, want)
 				}
 			})

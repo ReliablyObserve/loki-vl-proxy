@@ -18,8 +18,9 @@ reason: |
   exposed, and JSON lines pushed without _msg (stored without the line).
 owner_decision: |
   2026-09-24: every behaviour stays configurable - -logql-dotted-names,
-  -label-browse-extensions and -error-response-message-field restore the
-  previous behaviour; "auto" keeps dotted names and the browse window in the
+  -label-browse-extensions restore the previous behaviour
+  (-error-response-message-field is deprecated and ignored since the error
+  body became Loki's text/plain message); "auto" keeps dotted names and the browse window in the
   hybrid and native modes (profile-scoped, accepted deviations). In the
   Loki-compatible default, detected_fields names dotted JSON keys by Loki's
   sanitized label with the key in jsonPath. The 2026-04-25 _extracted

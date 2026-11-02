@@ -396,7 +396,9 @@ func TestSeriesLimit_EveryMetricRouteFollowsLoki(t *testing.T) {
 func assertSeriesLimitAnswer(t *testing.T, rec *httptest.ResponseRecorder, limit, total int, drilldown bool, label, kept string) {
 	t.Helper()
 	var answer seriesLimitAnswer
-	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+	if rec.Code >= http.StatusBadRequest {
+		answer.Error = readErrorRec(t, rec).Error
+	} else if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
 		t.Fatalf("limit=%d drilldown=%v: decode %d %s: %v", limit, drilldown, rec.Code, rec.Body.String(), err)
 	}
 	switch {

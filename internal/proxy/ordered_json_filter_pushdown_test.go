@@ -1756,7 +1756,7 @@ func TestOrderedJSONDetectedLevelFilterBeforeParserPipelineError(t *testing.T) {
 			rec := httptest.NewRecorder()
 			p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
 			if tc.fail {
-				if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "pipeline error: 'JSONParserErr'") || !strings.Contains(rec.Body.String(), `detected_level=\"info\"`) {
+				if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "pipeline error: 'JSONParserErr'") || !strings.Contains(rec.Body.String(), `detected_level="info"`) {
 					t.Fatalf("expected Loki's pipeline error for the info line: %d %s", rec.Code, rec.Body)
 				}
 				return
@@ -1983,11 +1983,7 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 		params := url.Values{"query": {query}, "start": {strconv.FormatInt(at.UnixNano(), 10)}, "end": {strconv.FormatInt(at.UnixNano(), 10)}, "step": {"60"}}
 		rec := httptest.NewRecorder()
 		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-		var body struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(rec.Body.Bytes(), &body)
-		return rec.Code, body.Error
+		return rec.Code, rec.Body.String()
 	}
 	query := `sum by (status) (count_over_time({app="api"} | json [1m]))`
 	code, msg := run(query, s0.Add(time.Minute))

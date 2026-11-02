@@ -99,9 +99,9 @@ For Grafana Logs Drilldown and Explore compatibility:
 
 | Endpoint | Method | VL Backend |
 |---|---|---|
-| `/loki/api/v1/delete` | POST | `/select/logsql/delete` |
+| `/loki/api/v1/delete` | POST, PUT (Loki's create) | `/select/logsql/delete` |
 
-The delete endpoint is the only write route, and it is registered only with `-delete-api-enabled=true`; by default every method on the path answers `404` (`404 page not found`), as Loki does with deletion disabled. When enabled it is **not functional against current VictoriaLogs**: the handler forwards to `/select/logsql/delete`, which VictoriaLogs rejects as an unsupported path (observed on v1.52.0; VictoriaLogs deletion uses the asynchronous `/delete/run_task` API), and the proxy returns the backend's error status. Do not rely on it for deletion; see [Security hardening migration](security-hardening-migration.md#remaining-delete-api-gap).
+The delete endpoint is the only write route, and it is registered only with `-delete-api-enabled=true`; by default every method on the path answers `404` (`404 page not found`), as Loki does with deletion disabled. When enabled it is **not functional against current VictoriaLogs**: the handler forwards to `/select/logsql/delete`, which VictoriaLogs rejects as an unsupported path (observed on v1.52.0; VictoriaLogs deletion uses the asynchronous `/delete/run_task` API), and the proxy answers it as Loki answers a failed call (`500`, never the backend's status). GET (list) and DELETE (cancel), which Loki also serves on this path, are not implemented and answer a bodyless `405` (an open gap). Do not rely on it for deletion; see [Security hardening migration](security-hardening-migration.md#remaining-delete-api-gap).
 
 Requests are still validated before forwarding:
 
@@ -175,15 +175,30 @@ Tenant limits notes:
 
 ## Error Response Format
 
-All error responses from the proxy use the standard Loki JSON error envelope:
+Error responses are Loki's, byte for byte in shape (Loki v3.7.9). Every query, metadata and tail-upgrade route answers with the status, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff` and the message alone, with no JSON envelope and no trailing newline (`pkg/util/server/error.go` `WriteError`):
 
-```json
-{"status": "error", "errorType": "<type>", "error": "<message>"}
+```text
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain; charset=utf-8
+X-Content-Type-Options: nosniff
+
+the query time range exceeds the limit (query length: 800h0m0s, limit: 721h0m0s)
 ```
 
-`errorType` is derived from the HTTP status, following Loki's Prometheus-style API handler:
+Where Loki itself writes another shape, the proxy does the same:
 
-| HTTP Status | `errorType` | Typical causes |
+| Routes | Error body |
+|---|---|
+| `/prometheus/api/v1/rules` | the ruler's Prometheus JSON `{"status":"error","data":null,"errorType":"bad_data\|server_error","error":"<message>"}` (`pkg/ruler/base/api.go` `respondError`, `:106-123`) with no `Content-Type` of its own, so Go sniffs `text/plain; charset=utf-8`, and no `nosniff`; an unknown `type` is `400` `not supported value "xyz"`; every other failure is `500` |
+| `/prometheus/api/v1/alerts` | the same JSON, with `Content-Type: application/json`, which `PrometheusAlerts` sets before it asks the ruler (`:286`) |
+| `/loki/api/v1/alerts`, `/api/prom/alerts` | proxy aliases of the alerts API, answered in the alerts shape above (they are not Loki routes) |
+| `/loki/api/v1/rules`, `/api/prom/rules` and their namespace and group forms | Go's `http.Error`: `text/plain; charset=utf-8`, `nosniff`, the message and a newline; a group that does not exist is `404` `group does not exist` (`:572`); a path that cannot be parsed is `500` in the ruler's JSON (`:523`, `:564`) |
+| `/loki/api/v1/delete` (with `-delete-api-enabled`) | the same `http.Error` shape; PUT and POST are the create request (`pkg/loki/modules.go:1936`); GET (list, `:1937`) and DELETE (cancel, `:1938`) are not implemented and answer a bodyless `405` (open gap) |
+| `/loki/api/v1/tail` after the upgrade | a close frame `1011` with the message, as Loki's `TailHandler` |
+
+The status codes below follow Loki's Prometheus-style API handler and are the statuses of the message above; there is no `errorType` field on the wire:
+
+| HTTP Status | Prometheus `errorType` (not sent) | Typical causes |
 |---|---|---|
 | 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
 | 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant, or unmapped wildcard `X-Scope-OrgID: *` (and, with `-tenant-label`, an unmapped default alias or empty org) without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
@@ -191,15 +206,15 @@ All error responses from the proxy use the standard Loki JSON error envelope:
 | 406 | `not_acceptable` | Loki status mapping |
 | 429 | `bad_data` | a full query queue: `too many outstanding requests`, Loki's text (`pkg/queue/queue.go:21`), for the proxy's heavy-query and metadata-scan queues, for a VictoriaLogs `429`, and for VictoriaLogs' `503` when a query waited `-search.maxQueueDuration` for a slot |
 | 499 | `canceled` | client canceled the request: `the request was cancelled by the client`, Loki's text (`pkg/util/server/error.go:26`) |
-| 500 | `internal` | any failed backend call: VictoriaLogs (or the ruler, or the cold tier) refused or reset the connection, answered an error status (VictoriaLogs' `400`/`422` for a query it could not execute, `500`, a front proxy's `502`/`503`), or sent a truncated or malformed body. The text is `Internal Server Error`; Loki returns its storage error's own text there (`pkg/util/server/error.go:124-128`), and the proxy never forwards the backend's. Also proxy evaluation errors, including implicit many-to-one / multiple-match vector joins, an open circuit breaker, and the proxy's limits that name their flag (`manual range metric row limit exceeded`, `manual metric response exceeds N bytes`, `-backend-max-buffered-response-bytes`, `-ordered-json-metric-max-bytes`) |
-| 400 | `bad_data` | invalid LogQL, out-of-range parameters, a query VictoriaLogs rejects as unparsable (`failed to parse the log query`, Loki's `logqlmodel.ErrParse` text), `maximum number of series (N) reached for a single query` (as Loki answers above `max_query_series`), `manual range metric row limit exceeded` for a `without` aggregation whose series before the fold pass `-manual-range-metric-row-limit`, when that limit is not below the tenant's effective `max_query_series` (otherwise the series limit message answers) |
+| 500 | `internal` | any failed backend call: VictoriaLogs (or the ruler, or the cold tier) refused or reset the connection, answered an error status (VictoriaLogs' `400`/`422` for a query it could not execute, `500`, a front proxy's `502`/`503`), or sent a truncated or malformed body. The text is `Internal Server Error`; Loki returns its storage error's own text there (`pkg/util/server/error.go:124-128`), and the proxy never forwards the backend's. Also proxy evaluation errors, including implicit many-to-one / multiple-match vector joins, an open circuit breaker, and the proxy's limits that name their flag (`manual metric response exceeds N bytes`, `-backend-max-buffered-response-bytes`, `-ordered-json-metric-max-bytes`) |
+| 400 | `bad_data` | invalid LogQL, out-of-range parameters, a query VictoriaLogs rejects as unparsable (`failed to parse the log query`, Loki's `logqlmodel.ErrParse` text), `maximum number of series (N) reached for a single query` (as Loki answers above `max_query_series`), `manual range metric row limit exceeded (N); narrow the query or increase -manual-range-metric-row-limit` whenever a raw-row or stats-row metric evaluation passes `-manual-range-metric-row-limit` (Loki answers a query over one of its limits with 400, `logqlmodel.ErrLimit`; it has no equivalent flag). A `without` aggregation whose series before the fold pass that limit gets it too, unless the limit is below the tenant's effective `max_query_series` (then the series limit message answers) |
 | 504 | `timeout` | backend or window timeouts, including a timeout on one tenant of a multi-tenant request: `request timed out, decrease the duration of the request or add more label matchers (prefer exact match over regex match) to reduce the amount of data processed`, Loki's text (`pkg/util/server/error.go:27`) |
 
 See [Fixed Execution Limits](configuration.md#fixed-execution-limits) for the limit values.
 
-Errors answered through the proxy's error layer carry no backend text: not VictoriaLogs' message, status or LogsQL, not a transport error with the backend's host and port, not a Go decoder error. The routes that do not yet (the Logs Drilldown stats partial-results reply, the ruler's non-2xx answers passed through, native tail close frames after the stream started) are listed in `conformance/registry/error-layer-known-leaks.json`. The proxy's `request error` log line carries the full error as `upstream_error`, with VictoriaLogs' message redacted (potential secrets, label selectors, long quoted literals and long hex strings replaced, truncated to 500 characters; `-debug-log-raw-queries=true` disables this redaction).
+Errors answered through the proxy's error layer carry no backend text: not VictoriaLogs' message, status or LogsQL, not a transport error with the backend's host and port, not a Go decoder error. The routes that do not yet (the Logs Drilldown stats partial-results reply, a ruler or alerts backend that answers 200 with a malformed or truncated body, native tail close frames after the stream started) are listed in `conformance/registry/error-layer-known-leaks.json`. The proxy's `request error` log line carries the full error as `upstream_error`, with VictoriaLogs' message redacted (potential secrets, label selectors, long quoted literals and long hex strings replaced, truncated to 500 characters; `-debug-log-raw-queries=true` disables this redaction).
 
-A few responses are produced before the Loki error writer and carry no `errorType`: per-client rate limiting (`429`, `{"status":"error","error":"rate limit exceeded"}`), the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), and blocked writes (`405`).
+A few responses are produced before the Loki error writer: per-client rate limiting (`429`, `rate limit exceeded`) and the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), both as the message alone in `text/plain`, and blocked writes (`405`, `/loki/api/v1/push`): the one proxy-only answer that stays JSON (`{"error":"write operations are not supported..."}`), since Loki has no read-only push answer to match.
 
 ### Partial Results
 

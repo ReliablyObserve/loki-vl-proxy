@@ -76,7 +76,7 @@ func (p *Proxy) writeEmptyRules(w http.ResponseWriter) {
 func (p *Proxy) writeEmptyLegacyRules(w http.ResponseWriter) {
 	data, err := yaml.Marshal(map[string][]legacyRuleGroup{})
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/yaml")
@@ -101,11 +101,17 @@ func (p *Proxy) handleRules(w http.ResponseWriter, r *http.Request) {
 		p.writeEmptyLegacyRules(w)
 		return
 	}
+	// PrometheusRules rejects any other rule type before it asks the ruler
+	// (pkg/ruler/base/api.go:166-179).
+	if ruleType := strings.ToLower(r.URL.Query().Get("type")); ruleType != "" && ruleType != "alert" && ruleType != "record" {
+		p.writeErrorShaped(w, http.StatusBadRequest, fmt.Sprintf("not supported value %q", ruleType), nil, writeLokiRulerError)
+		return
+	}
 	if p.rulerBackend == nil {
 		p.writeEmptyRules(w)
 		return
 	}
-	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules")
+	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules", writeLokiRulerError)
 }
 
 func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +119,7 @@ func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		p.writeEmptyAlerts(w)
 		return
 	}
-	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts")
+	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts", writeLokiAlertsError)
 }
 
 // handleConfigStub returns a minimal config response.
@@ -139,10 +145,19 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 
 // --- Backend request helpers ---
 
-func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
+// writeAlertingBackendStatus answers a ruler or alerts backend that replied
+// with an error status. Its body is vmalert's, so the client reads only the
+// failure in Loki's words: 500 in the ruler's JSON or the legacy views' text.
+func (p *Proxy) writeAlertingBackendStatus(w http.ResponseWriter, status int, shape errorShape) {
+	// Loki answers every GetRules error with respondServerError, 500
+	// (pkg/ruler/base/api.go:196-200, :301-305); a backend 4xx is no different.
+	p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, fmt.Errorf("alerting backend replied %d", status), shape)
+}
+
+func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string, shape errorShape) {
 	resp, err := p.alertingBackendGet(p.withRequestScope(r), backend, path)
 	if err != nil {
-		p.writeErr(w, r.Context(), err)
+		p.writeErrShaped(w, r.Context(), err, shape)
 		return
 	}
 	defer resp.Body.Close()
@@ -151,8 +166,8 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	if confined {
 		if resp.StatusCode/100 != 2 {
 			// A backend error body is not attributable to the org; keep the
-			// status and say nothing else.
-			p.writeError(w, resp.StatusCode, "alerting backend error")
+			// status class and say nothing else.
+			p.writeAlertingBackendStatus(w, resp.StatusCode, shape)
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
@@ -160,7 +175,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 			body, err = filterAlertingJSONForTenant(body, label, org)
 		}
 		if err != nil || len(body) > maxAlertingResponseBytes {
-			p.writeErr(w, r.Context(), errors.New("invalid alerting backend response"))
+			p.writeErrShaped(w, r.Context(), errors.New("invalid alerting backend response"), shape)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -168,6 +183,10 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 		return
 	}
 
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.writeAlertingBackendStatus(w, resp.StatusCode, shape)
+		return
+	}
 	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
@@ -429,6 +448,20 @@ func isLegacyRulesPath(path string) bool {
 		strings.HasPrefix(path, "/api/prom/rules/")
 }
 
+// legacyRulesPathError is a legacy rules path the proxy cannot serve, with the
+// status Loki gives that class: a path with more segments than the route has
+// is gorilla/mux's 404; a namespace or group that is not a local name is a
+// client error (Loki looks the name up in its store and answers the miss with
+// a 400 http.Error); an escape that cannot be decoded is parseRequest's
+// respondServerError, a 500 in the ruler's JSON (pkg/ruler/base/api.go:523,
+// :564).
+type legacyRulesPathError struct {
+	status int
+	msg    string
+}
+
+func (e *legacyRulesPathError) Error() string { return e.msg }
+
 func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 	var suffix string
 	switch {
@@ -444,22 +477,22 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 	}
 	parts := strings.Split(suffix, "/")
 	if len(parts) > 2 {
-		return "", "", fmt.Errorf("invalid legacy rules path")
+		return "", "", &legacyRulesPathError{http.StatusNotFound, "404 page not found"}
 	}
 	namespace, err = url.PathUnescape(parts[0])
 	if err != nil {
-		return "", "", fmt.Errorf("invalid namespace: %w", err)
+		return "", "", &legacyRulesPathError{http.StatusInternalServerError, fmt.Sprintf("invalid namespace: %v", err)}
 	}
 	if !filepath.IsLocal(namespace) {
-		return "", "", fmt.Errorf("invalid namespace: path traversal not allowed")
+		return "", "", &legacyRulesPathError{http.StatusBadRequest, "invalid namespace: path traversal not allowed"}
 	}
 	if len(parts) == 2 {
 		group, err = url.PathUnescape(parts[1])
 		if err != nil {
-			return "", "", fmt.Errorf("invalid group name: %w", err)
+			return "", "", &legacyRulesPathError{http.StatusInternalServerError, fmt.Sprintf("invalid group name: %v", err)}
 		}
 		if !filepath.IsLocal(group) {
-			return "", "", fmt.Errorf("invalid group name: path traversal not allowed")
+			return "", "", &legacyRulesPathError{http.StatusBadRequest, "invalid group name: path traversal not allowed"}
 		}
 	}
 	return namespace, group, nil
@@ -468,7 +501,15 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
+		status, shape := http.StatusInternalServerError, errorShape(writeLokiRulerError)
+		var pathErr *legacyRulesPathError
+		if errors.As(err, &pathErr) {
+			status = pathErr.status
+			if status != http.StatusInternalServerError {
+				shape = writeLokiHTTPError
+			}
+		}
+		p.writeErrorShaped(w, status, err.Error(), nil, shape)
 		return
 	}
 
@@ -482,25 +523,23 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.alertingBackendGetWithParams(p.withRequestScope(r), p.rulerBackend, "/api/v1/rules", params)
 	if err != nil {
-		p.writeErr(w, r.Context(), err)
+		p.writeErrShaped(w, r.Context(), err, writeLokiHTTPError)
 		return
 	}
 	defer resp.Body.Close()
 	label, org, confined := p.alertingTenantScope(r.Context())
 	if confined && resp.StatusCode/100 != 2 {
-		p.writeError(w, resp.StatusCode, "alerting backend error")
+		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiHTTPError)
 		return
 	}
 	if !confined && resp.StatusCode != http.StatusOK {
-		copyHeaders(w.Header(), resp.Header)
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiHTTPError)
 		return
 	}
 
 	var decoded alertingRulesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		p.writeErr(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err))
+		p.writeErrShaped(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err), writeLokiHTTPError)
 		return
 	}
 
@@ -525,13 +564,13 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	if group != "" {
 		if len(decoded.Data.Groups) == 0 {
-			p.writeError(w, http.StatusNotFound, "no rule groups found")
+			p.writeErrorShaped(w, http.StatusNotFound, "group does not exist", nil, writeLokiHTTPError) // rulestore.ErrGroupNotFound, api.go:572
 			return
 		}
 		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])
 		data, err := yaml.Marshal(out)
 		if err != nil {
-			p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+			p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/yaml")
@@ -545,7 +584,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := yaml.Marshal(formatted)
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/yaml")

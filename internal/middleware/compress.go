@@ -59,7 +59,6 @@ type compressedResponseWriter struct {
 }
 
 func (w *compressedResponseWriter) Write(b []byte) (int, error) {
-	ensureSafeResponseHeaders(w.ResponseWriter, "text/plain; charset=utf-8")
 	if w.started {
 		if w.bypass {
 			header := w.Header()
@@ -111,7 +110,6 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 }
 
 func (w *compressedResponseWriter) WriteHeader(code int) {
-	ensureSafeResponseHeaders(w.ResponseWriter, "text/plain; charset=utf-8")
 	if w.started {
 		return
 	}

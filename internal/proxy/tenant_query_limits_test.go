@@ -336,11 +336,10 @@ func TestTenantQueryLimits_PublishedEqualsEnforced(t *testing.T) {
 // errorText returns the error message of a Loki JSON error response.
 func errorText(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	var body struct {
-		Error string `json:"error"`
+	if rec.Code < http.StatusBadRequest {
+		return ""
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
-	return body.Error
+	return readErrorRec(t, rec).Error
 }
 
 // -max-entries-limit-per-query-cap keeps the proxy's earlier behaviour: the

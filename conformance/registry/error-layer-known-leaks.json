@@ -1,5 +1,5 @@
 {
-  "ceiling": 74,
+  "ceiling": 46,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -7,34 +7,6 @@
     ],
     "alerts truncated": [
       "semantics/error-layer-silent-success"
-    ],
-    "alerts vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl400_parse": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "alerts vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ],
     "detected_field_values client_cancel": [
       "semantics/error-layer-silent-success"
@@ -140,34 +112,6 @@
     ],
     "query_range_unwrap_rate_counter malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "rules vl400_limit": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl400_parse": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl422": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl429": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl500": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl502_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
-    ],
-    "rules vl503_front": [
-      "semantics/error-layer-backend-failure-status",
-      "semantics/error-layer-backend-text"
     ],
     "series malformed": [
       "semantics/error-layer-silent-success"

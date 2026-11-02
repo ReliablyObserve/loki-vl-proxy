@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -81,16 +80,10 @@ func TestLokiError_BackendDown_ReturnsUnavailable(t *testing.T) {
 	p.RegisterRoutes(mux)
 	mux.ServeHTTP(w, r)
 
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse: %v\nbody: %s", err, w.Body.String())
-	}
-	// Loki answers a failed backend call with 500 (pkg/util/server/error.go:124-128).
-	if w.Code != http.StatusInternalServerError || resp.ErrorType != "internal" {
-		t.Errorf("backend down should return 500 errorType=internal, got %d %q", w.Code, resp.ErrorType)
+	resp := readErrorRec(t, w)
+	// Loki answers a failed backend call with 500 and its own text (pkg/util/server/error.go:124-128).
+	if w.Code != http.StatusInternalServerError || resp.Error != lokiErrInternal {
+		t.Errorf("backend down should return 500 %q, got %d %q", lokiErrInternal, w.Code, resp.Error)
 	}
 }
 
@@ -127,33 +120,13 @@ func TestVLError_OOMBodyIsRewritten(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 	mux.ServeHTTP(w, r)
 
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-		Error     string `json:"error"`
+	resp := readErrorRec(t, w)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("a failed VL call is Loki's 500, got %d", w.Code)
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse error response: %v\nbody: %s", err, w.Body.String())
-	}
-	if resp.Status != "error" {
-		t.Errorf("expected status=error, got %q", resp.Status)
-	}
-	// The error field must be the VL message string, NOT VL's raw JSON body.
-	if strings.Contains(resp.Error, `"errorType"`) || strings.Contains(resp.Error, `"status"`) {
-		t.Errorf("error field must not contain VL JSON envelope fields; got %q", resp.Error)
-	}
-	// Loki's 500 carries no backend text: VictoriaLogs' message stays in the log.
+	// Loki's 500 carries no backend text and no VL JSON: VictoriaLogs' message stays in the log.
 	if resp.Error != lokiErrInternal {
-		t.Errorf("error field = %q, want Loki's %q", resp.Error, lokiErrInternal)
-	}
-	// errorType must be a valid Loki errorType string (not "unavailable" from VL for 500).
-	validTypes := map[string]bool{"internal": true, "execution": true, "bad_data": true, "timeout": true, "not_found": true, "canceled": true, "unavailable": true}
-	if !validTypes[resp.ErrorType] {
-		t.Errorf("errorType %q is not a valid Loki errorType", resp.ErrorType)
-	}
-	// For a 500, should NOT be "unavailable" (that's Loki's 502 errorType).
-	if resp.ErrorType == "unavailable" {
-		t.Errorf("500 from VL should map to 'internal' not 'unavailable'; VL's raw errorType leaked through")
+		t.Errorf("error body = %q, want Loki's %q", resp.Error, lokiErrInternal)
 	}
 }
 
@@ -355,18 +328,16 @@ func TestLokiError_QueryRangeResolutionLimit(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-			var resp struct {
-				Status    string `json:"status"`
-				ErrorType string `json:"errorType"`
-				Error     string `json:"error"`
+			resp := errBodyView{}
+			if w.Code >= http.StatusBadRequest {
+				resp = readErrorRec(t, w)
 			}
-			_ = json.Unmarshal(w.Body.Bytes(), &resp)
 			rejected := w.Code == http.StatusBadRequest && resp.Error == errLokiStepTooSmall
 			if rejected != tc.reject {
 				t.Fatalf("rejected=%v, want %v: %d %s", rejected, tc.reject, w.Code, w.Body.String())
 			}
-			if tc.reject && (resp.Status != "error" || resp.ErrorType != "bad_data" || backendCalls.Load() != 0) {
-				t.Fatalf("expected a Loki bad_data error without backend calls, got %+v and %d backend calls", resp, backendCalls.Load())
+			if tc.reject && backendCalls.Load() != 0 {
+				t.Fatalf("expected a Loki 400 without backend calls, got %+v and %d backend calls", resp, backendCalls.Load())
 			}
 		})
 	}
@@ -388,14 +359,8 @@ func TestLokiError_BadQuery_ReturnsBadData(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("bad query should return 400, got %d", w.Code)
 	}
-	body := w.Body.String()
-	// Loki returns plain text parse errors for syntax issues.
-	// Accept either plain text "parse error" or JSON errorType=bad_data.
-	var resp struct {
-		ErrorType string `json:"errorType"`
-	}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.ErrorType != "bad_data" && !strings.Contains(body, "parse error") {
-		t.Errorf("bad query should return errorType=bad_data or parse error, got %q", body)
+	// Loki returns the parse error as plain text.
+	if body := readErrorRec(t, w).Error; !strings.Contains(body, "parse error") {
+		t.Errorf("bad query should return the parse error text, got %q", body)
 	}
 }

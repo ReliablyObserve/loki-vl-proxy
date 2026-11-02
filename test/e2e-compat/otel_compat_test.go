@@ -1627,8 +1627,7 @@ func assertDottedQueryMatchesLokiParseError(t *testing.T, base, query string) {
 		t.Fatalf("Loki fixture drifted: want a 400 parse error for %q, got %d %s", query, lokiStatus, lokiBody)
 	}
 	status, body := rejectedQueryGet(t, base, "/loki/api/v1/query_range", params, "0", nil)
-	var envelope struct{ Error string }
-	if status != http.StatusBadRequest || json.Unmarshal(body, &envelope) != nil || envelope.Error != lokiMsg {
+	if status != http.StatusBadRequest || string(body) != lokiMsg {
 		t.Fatalf("%q: proxy %d %s, want 400 %q", query, status, body, lokiMsg)
 	}
 }

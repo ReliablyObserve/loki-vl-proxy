@@ -303,8 +303,10 @@ type Config struct {
 	// outside the Loki-compatible profile or with LabelValuesIndexedCache),
 	// "on" or "off" for limit/offset/search on the label endpoints.
 	LabelBrowseExtensions string
-	// DisableErrorMessageField drops the "message" copy of the error text
-	// from JSON error bodies (-error-response-message-field=false).
+	// DisableErrorMessageField is -error-response-message-field=false. It is
+	// ignored: error bodies are Loki's text/plain message, with no JSON
+	// envelope to carry a message field. It stays so configurations that set
+	// the flag keep starting.
 	DisableErrorMessageField bool
 
 	// Label translation
@@ -620,7 +622,6 @@ type Proxy struct {
 	metadataFieldMode                     MetadataFieldMode
 	rejectDottedNames                     bool                  // -logql-dotted-names resolved; see loki_profile.go
 	labelBrowse                           bool                  // -label-browse-extensions resolved
-	errorMessageField                     bool                  // -error-response-message-field
 	streamFieldsMap                       map[string]bool       // known _stream_fields for VL stream selector optimization
 	streamLabelNames                      streamLabelNamesState // last known stream label names per tenant, refreshed in the background
 	metadataEdges                         metadataEdgeState     // last VictoriaLogs read per near-now label answer, and its background refreshes
@@ -1297,7 +1298,6 @@ func New(cfg Config) (*Proxy, error) {
 		metadataFieldMode:                     metadataFieldMode,
 		rejectDottedNames:                     rejectDottedNames,
 		labelBrowse:                           labelBrowse,
-		errorMessageField:                     !cfg.DisableErrorMessageField,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
 		declaredLabelFields:                   declaredLabelFields,
 		peerCache:                             cfg.PeerCache,
@@ -1471,7 +1471,6 @@ func New(cfg Config) (*Proxy, error) {
 			metadataFieldMode:                     p.metadataFieldMode,
 			rejectDottedNames:                     p.rejectDottedNames,
 			labelBrowse:                           p.labelBrowse,
-			errorMessageField:                     p.errorMessageField,
 			streamFieldsMap:                       p.streamFieldsMap,
 			declaredLabelFields:                   p.declaredLabelFields,
 			registerInstrumentation:               p.registerInstrumentation,

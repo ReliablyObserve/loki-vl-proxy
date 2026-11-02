@@ -1,0 +1,33 @@
+id: semantics/error-layer-body-shape
+title: An error answer has the Content-Type and body shape Loki writes on its route
+proves:
+  - status-400
+  - status-500
+consumer: any
+why: |
+  Loki's query frontend writes every query, metadata and tail-upgrade error as
+  text/plain; charset=utf-8 with X-Content-Type-Options: nosniff and the
+  message alone, no JSON envelope, no errorType and no trailing newline
+  (pkg/util/server/error.go WriteError, v3.7.9). Its ruler writes the
+  Prometheus-compatible rules and alerts API as {"status","data","errorType",
+  "error"} JSON without a Content-Type, so the answer is sniffed as text/plain
+  (pkg/ruler/base/api.go respondError); the legacy rule views and the delete
+  API use Go's http.Error, text plus a newline. The proxy used to wrap every
+  error in its own JSON envelope with an errorType and a message field, so a
+  client parsing Loki's body saw JSON where Loki sends text. The gate checks
+  the Content-Type, the framing and the absence of the envelope per route.
+request:
+  scope: internal
+  entry: writeLokiErrorBody, writeLokiHTTPError, writeLokiRulerError
+  setup: |
+    TestErrorLayer_NoVictoriaLogsLeak drives every route through every
+    failure mode and checks the body shape of each answer
+    (errLayerBodyShapeProblem). TestCompat_ErrorBodyLikeLoki compares the
+    bytes and headers with the stack Loki's.
+compare:
+  mode: exact
+  fields: [status, headers, body]
+  expect: |
+    text/plain; charset=utf-8, nosniff and the message alone on the query
+    frontend routes; the ruler's JSON on rules and alerts; message and newline
+    on the legacy rule views and the delete API.

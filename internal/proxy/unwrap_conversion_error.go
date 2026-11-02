@@ -1641,10 +1641,7 @@ func (p *Proxy) writeLokiTextError(w http.ResponseWriter, code int, msg string) 
 	if p.log != nil {
 		p.log.Warn("request error", "code", code, "error", msg)
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	_, _ = w.Write([]byte(msg))
+	writeLokiErrorBody(w, code, msg)
 }
 
 // unwrapStripResponse applies strip to a 200 answer's body, bounded like the

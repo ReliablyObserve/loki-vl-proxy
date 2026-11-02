@@ -5526,7 +5526,7 @@
         "package": "github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy",
         "recorded": "2026-10-31T18:09:28+00:00",
         "seconds": 0,
-        "test": "TestErrorResponseMessageField_Optional"
+        "test": "TestErrorResponseMessageField_IsANoOp"
       },
       {
         "commit": "9db35e2cf7bfce07670829a1e3ff64c8696e910b",

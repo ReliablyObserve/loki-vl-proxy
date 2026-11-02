@@ -215,8 +215,7 @@ func TestCompatOptionMatrix(t *testing.T) {
 			before := calls.Load()
 			w := serve(p, http.MethodGet, "/loki/api/v1/query_range?"+window+"&limit=10&query="+url.QueryEscape(dotted), nil)
 			if o.wantRejectDotted() {
-				var got struct{ Error, Message string }
-				if w.Code != http.StatusBadRequest || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Error != dottedErr {
+				if w.Code != http.StatusBadRequest || readErrorRec(t, w).Error != dottedErr {
 					t.Fatalf("dotted name: status %d body %.200s, want 400 %q", w.Code, w.Body, dottedErr)
 				}
 				if calls.Load() != before {
@@ -368,10 +367,9 @@ func TestLokiProfile_DottedNamesReturnLokiParseError(t *testing.T) {
 			req.Header.Set("X-Scope-OrgID", "0")
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
-			// message is what Grafana's Loki datasource displays; it must be
-			// Loki's text, as error is for API clients.
-			var got struct{ ErrorType, Error, Message string }
-			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != tc.want || got.Message != tc.want {
+			// Grafana's Loki datasource displays the body of a non-JSON error as
+			// it is, so the body must be Loki's text alone.
+			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.Error != tc.want {
 				t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, tc.want)
 			}
 		})
@@ -381,19 +379,25 @@ func TestLokiProfile_DottedNamesReturnLokiParseError(t *testing.T) {
 	}
 }
 
-// -error-response-message-field=false restores the previous error body.
+// -error-response-message-field is accepted and ignored: the error body is
+// Loki's text/plain message whatever its value, with no JSON envelope to add a
+// message field to.
 //
 // conformance: profiles/grafana-shows-loki-error-text
-func TestErrorResponseMessageField_Optional(t *testing.T) {
+func TestErrorResponseMessageField_IsANoOp(t *testing.T) {
+	var bodies []string
 	for _, off := range []bool{false, true} {
 		p := newCompatProxy(t, "http://127.0.0.1:1", compatOptions{style: LabelStyleUnderscores, mode: MetadataFieldModeTranslated, emit: true, noMessageFld: off})
 		w := serve(p, http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(`{a.b="x"}`), nil)
-		var body map[string]any
-		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusBadRequest {
+		if w.Code != http.StatusBadRequest {
 			t.Fatalf("off=%v: %d %s", off, w.Code, w.Body)
 		}
-		if _, has := body["message"]; has == off {
-			t.Fatalf("off=%v: message field present=%v: %s", off, has, w.Body)
+		if got := readErrorRec(t, w); strings.HasPrefix(got.Error, "{") {
+			t.Fatalf("off=%v: body is not Loki's text: %s", off, w.Body)
 		}
+		bodies = append(bodies, w.Body.String())
+	}
+	if bodies[0] != bodies[1] {
+		t.Fatalf("the flag changed the body: %q vs %q", bodies[0], bodies[1])
 	}
 }
