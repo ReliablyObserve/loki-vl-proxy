@@ -36,9 +36,11 @@
     ],
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/range_metric_row_limit_error_test.go",
       "internal/proxy/sliding_window_stats_test.go",
       "internal/proxy/topk_over_aggregation_test.go",
-      "test/e2e-compat/heavy_query_protection_test.go"
+      "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/row_limit_like_loki_limit_test.go"
     ],
     "limits/concurrent-full-retention-scans-exhaust-backend": [
       "internal/proxy/metadata_inventory_test.go",
@@ -149,6 +151,11 @@
     ],
     "limits/raw-metric-row-precheck": [
       "internal/proxy/backend_heavy_test.go"
+    ],
+    "limits/row-limit-error-names-flag": [
+      "internal/proxy/error_body_shape_test.go",
+      "internal/proxy/range_metric_row_limit_error_test.go",
+      "test/e2e-compat/row_limit_like_loki_limit_test.go"
     ],
     "limits/series-limit-error": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
@@ -744,7 +751,12 @@
       "internal/proxy/ranked_topk_cached_route_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
+    "semantics/error-layer-body-shape": [
+      "internal/proxy/error_body_shape_test.go",
+      "test/e2e-compat/error_body_like_loki_test.go"
+    ],
     "semantics/error-layer-cancel-deadline": [
+      "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -759,6 +771,7 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-silent-success": [
+      "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -1201,19 +1214,26 @@
     ],
     "status-400": [
       "internal/proxy/absent_over_time_test.go",
+      "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
       "internal/proxy/unwrap_conversion_error_test.go",
       "internal/proxy/volume_test.go",
       "test/e2e-compat/absent_over_time_test.go",
+      "test/e2e-compat/error_body_like_loki_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go",
+      "test/e2e-compat/row_limit_like_loki_limit_test.go",
       "test/e2e-compat/unwrap_conversion_error_test.go",
       "test/e2e-compat/unwrap_duration_seconds_test.go",
       "test/e2e-compat/unwrap_rate_counter_one_sample_test.go",
       "test/e2e-compat/unwrap_value_forms_test.go"
     ],
+    "status-404": [
+      "test/e2e-compat/error_body_like_loki_test.go"
+    ],
     "status-500": [
+      "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
@@ -1284,7 +1304,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 368,
+  "registry_items": 373,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1485,6 +1505,14 @@
     "internal/proxy/drilldown_longrange_survival_test.go": [
       "limits/drilldown-breakdown-exact",
       "loki_api_v1_query_range"
+    ],
+    "internal/proxy/error_body_shape_test.go": [
+      "limits/row-limit-error-names-flag",
+      "semantics/error-layer-body-shape",
+      "semantics/error-layer-cancel-deadline",
+      "semantics/error-layer-silent-success",
+      "status-400",
+      "status-500"
     ],
     "internal/proxy/error_layer_gate_test.go": [
       "backend-deadlines-and-cancellation",
@@ -1815,6 +1843,10 @@
     "internal/proxy/range_lower_bound_test.go": [
       "semantics/lower-bound-exclusive",
       "window-bounds-and-step-alignment"
+    ],
+    "internal/proxy/range_metric_row_limit_error_test.go": [
+      "heavy-metric-fetch-bounds",
+      "limits/row-limit-error-names-flag"
     ],
     "internal/proxy/ranked_topk_cached_route_test.go": [
       "limits/top-n-ranking-not-silent",
@@ -2282,6 +2314,11 @@
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
     ],
+    "test/e2e-compat/error_body_like_loki_test.go": [
+      "semantics/error-layer-body-shape",
+      "status-400",
+      "status-404"
+    ],
     "test/e2e-compat/error_layer_like_loki_test.go": [
       "backend-deadlines-and-cancellation",
       "semantics/error-layer-backend-failure-status",
@@ -2511,6 +2548,11 @@
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/row_limit_like_loki_limit_test.go": [
+      "heavy-metric-fetch-bounds",
+      "limits/row-limit-error-names-flag",
+      "status-400"
+    ],
     "test/e2e-compat/sanitized_json_key_filter_test.go": [
       "profiles/sanitized-json-key-filter"
     ],
@@ -2678,7 +2720,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 268,
+  "tests_with_markers": 272,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2727,6 +2769,7 @@
     "semantics/detected-fields-extracted-suffix",
     "semantics/drop-keep-plain-name-after-parser",
     "semantics/eager-pipeline-validation",
+    "semantics/error-request-validation-parity",
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
@@ -2741,6 +2784,8 @@
     "semantics/proxy-accepts-invalid-logql",
     "semantics/proxy-rejects-valid-logql",
     "semantics/repeated-label-filter-replaced-across-label-format",
+    "semantics/ruler-empty-list-status",
+    "semantics/ruler-store-failure-status",
     "semantics/stddev-stdvar-nested-or-binary",
     "semantics/stddev-stdvar-parsed-label-series-identity",
     "semantics/tail-history-start-limit",
@@ -2761,5 +2806,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 214
+  "wired_items": 217
 }
