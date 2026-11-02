@@ -465,7 +465,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 	// Key by that actual backend limit: a shorter fragment cannot answer a
 	// shifted request which needs more rows from the same aligned window.
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, windowLimit, window, shape, categorizedLabels, emitStructuredMetadata)
-	if cached, ok := p.cache.Get(cacheKey); ok {
+	if cached, _, _, ok := p.cache.GetSharedWithTTL(cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
 			if err := json.Unmarshal(decompressed, &entry); err == nil {
@@ -524,10 +524,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
 				if data, encErr := json.Marshal(cacheEntry); encErr == nil {
 					compressed := windowCacheEnc.EncodeAll(data, make([]byte, 0, len(data)/4))
-					// Window fragments are short-lived and high churn. Keeping them
-					// local avoids concentrating peer-cache write-through on a single
-					// ring owner when Drilldown or Explore fans a read into many windows.
-					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
+					// The bounded shared cache admits the same compressed fragment to
+					// L1, L2 and its peer owner. A restart or another frontend can then
+					// reuse settled windows without reading VictoriaLogs again.
+					p.cache.SetWithTTL(cacheKey, compressed, ttl)
 				}
 			}
 			return cacheEntry, nil

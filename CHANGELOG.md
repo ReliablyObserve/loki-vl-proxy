@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Reuse settled ordinary log `query_range` windows from bounded disk and
+  peer tiers, including after a proxy restart. The window cache key retains
+  tenant and auth identity, parser shape, direction, row limits, and exact
+  aligned bounds; recent windows retain their configured short TTL.
+
 - Reuse settled source-window pattern mining results across shifted Logs
   Drilldown ranges through the existing Loki-layer memory, disk and peer
   cache. Moving edges and windows inside the configured query-range

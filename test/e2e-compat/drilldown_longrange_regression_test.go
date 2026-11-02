@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,6 +127,42 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 	}
 	t.Logf("shifted pattern source-window cache hits: %d", hitsAfter-hitsBefore)
 
+	// Cover the other read paths on the same bounded L2, using this fixture's
+	// settled hour. These are ordinary Loki API calls, independent of Drilldown.
+	proofStart, proofEnd := start.Add(time.Hour), start.Add(2*time.Hour)
+	proofWindow := url.Values{
+		"start": {strconv.FormatInt(proofStart.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(proofEnd.UnixNano(), 10)},
+	}
+	metadataParams := url.Values{
+		"query": {query},
+		"start": proofWindow["start"],
+		"end":   proofWindow["end"],
+	}
+	metricParams := url.Values{
+		"query": {fmt.Sprintf(`sum(count_over_time(%s[5m]))`, query)},
+		"start": proofWindow["start"],
+		"end":   proofWindow["end"],
+		"step":  {"300"},
+	}
+	logParams := url.Values{
+		"query": {query},
+		"start": proofWindow["start"],
+		"end":   proofWindow["end"],
+		"limit": {"50"},
+	}
+	readCases := []struct {
+		name, path, layer string
+	}{
+		{"label_values", "/loki/api/v1/label/app/values?" + metadataParams.Encode(), "loki"},
+		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "vl"},
+		{"log_range", "/loki/api/v1/query_range?" + logParams.Encode(), "loki"},
+	}
+	warmAnswers := make(map[string]any, len(readCases))
+	for _, tc := range readCases {
+		warmAnswers[tc.name] = readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values")
+	}
+
 	// The CI/playground patterns datasource has a bounded L2 on its named
 	// volume. Restart clears L1; a second shifted range must reuse persisted
 	// source windows, while its moving edges still reach VictoriaLogs.
@@ -149,6 +186,65 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 		t.Fatalf("shifted patterns after restart did not read L2: before=%d after=%d", diskHitsBefore, diskHitsAfter)
 	}
 	t.Logf("shifted pattern L2 hits after restart: %d; persisted objects: %d", diskHitsAfter-diskHitsBefore, diskObjects)
+
+	for _, tc := range readCases {
+		t.Run("L2ReadRoutes/"+tc.name, func(t *testing.T) {
+			var before int64
+			if tc.layer != "" {
+				before = proxyMetricValue(t, patternsAutodetectProxyURL,
+					fmt.Sprintf(`loki_vl_proxy_cache_layer_hits_total{layer=%q,component="primary",tier="l2_disk"} `, tc.layer))
+			}
+			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values")
+			if !reflect.DeepEqual(got, warmAnswers[tc.name]) {
+				t.Fatalf("%s answer changed after restart: got=%v want=%v", tc.name, got, warmAnswers[tc.name])
+			}
+			if tc.layer != "" {
+				after := proxyMetricValue(t, patternsAutodetectProxyURL,
+					fmt.Sprintf(`loki_vl_proxy_cache_layer_hits_total{layer=%q,component="primary",tier="l2_disk"} `, tc.layer))
+				if after <= before {
+					t.Fatalf("%s did not read %s L2 after restart: before=%d after=%d", tc.name, tc.layer, before, after)
+				}
+				t.Logf("%s L2 hits after restart: %d", tc.name, after-before)
+			}
+		})
+	}
+}
+
+func readL2ProofAnswer(t *testing.T, target string, rangeQuery bool) any {
+	t.Helper()
+	resp, err := http.Get(target)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	var payload struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode %s: %v", target, err)
+	}
+	if resp.StatusCode != http.StatusOK || payload.Status != "success" {
+		t.Fatalf("GET %s: HTTP %d status=%q", target, resp.StatusCode, payload.Status)
+	}
+	data := payload.Data
+	if rangeQuery {
+		var rangeData struct {
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(data, &rangeData); err != nil {
+			t.Fatalf("decode range result from %s: %v", target, err)
+		}
+		data = rangeData.Result
+	}
+	var answer []any
+	if err := json.Unmarshal(data, &answer); err != nil {
+		t.Fatalf("decode answer from %s: %v", target, err)
+	}
+	if len(answer) == 0 {
+		t.Fatalf("empty answer from %s", target)
+	}
+	return answer
 }
 
 func patternWindowCacheHits(t *testing.T, baseURL string) int64 {
