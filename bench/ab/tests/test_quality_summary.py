@@ -94,7 +94,7 @@ class RenderTest(unittest.TestCase):
                      "**40 of 80** comparable pairs are faster (50%)", "**30 of 80** pairs are within noise (38%)",
                      "**10 of 80** pairs are slower (12%)", "**70 of 100** pairs return the same result as Loki (70%)",
                      "**25 of 100** pairs return a different result", "**50.0%** (40 of 80 rows)",
-                     "**3 shape, range and mode rows are on the above-2× list**",
+                     "**3 shape, range and mode rows are on the above-2× list for the `aligned` profile**",
                      "1 of 2 covered registry items are locked", "| Behaviour and feature items | 6 proven, 12 partial, 3 gaps |",
                      "**3**: 2 open, 1 documented, 0 owner-kept, 0 upstream",
                      "A zero divisor is NaN.", pe.SCOPE_SENTENCE):
@@ -107,6 +107,32 @@ class RenderTest(unittest.TestCase):
         shown = pe.render_quality_summary(inputs(profile="loki-defaults"))
         self.assertIn("Loki profile shown: `loki-defaults`", shown)
         self.assertIn("The `aligned` profile", shown)
+
+    def test_the_list_sentence_counts_only_the_profile_shown(self):
+        mixed = [{**r, "profile": "aligned"} for r in inputs()["over"]["rows"]] + [
+            {"mode": "cold", "shape": "defaults only", "range": "1h", "proxy_s": 5.0, "loki_s": 1.0, "profile": "loki-defaults"}]
+        defaults = pe.render_quality_summary(inputs(profile="loki-defaults", over={"rows": mixed}))
+        self.assertIn("**1 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile**", defaults)
+        self.assertIn("`defaults only` over 1h", defaults)
+        self.assertNotIn("slow one", defaults)
+        aligned = pe.render_quality_summary(inputs(over={"rows": mixed}))
+        self.assertIn("**3 shape, range and mode rows are on the above-2× list for the `aligned` profile**", aligned)
+        self.assertNotIn("defaults only", aligned)
+        none = pe.render_quality_summary(inputs(profile="loki-defaults", over={"rows": mixed[:3]}))
+        self.assertIn("No row is on the above-2× list for the `loki-defaults` profile.", none)
+
+    def test_a_profile_that_did_not_run_that_day_is_said_not_to_be_measured(self):
+        last = {"aligned": "2026-10-28", "loki-defaults": "2026-11-02"}
+        stale = pe.render_quality_summary(inputs(profile="loki-defaults", date="2026-11-02", profile_last=last))
+        self.assertIn("The `aligned` profile (", stale)
+        self.assertIn("did not run on 2026-11-02 (its newest daily run is 2026-10-28), so it is not shown, and no row is "
+                      "judged in it.", stale)
+        self.assertNotIn("is measured too", stale)
+        ran = pe.render_quality_summary(inputs(profile="loki-defaults", date="2026-11-02",
+                                               profile_last={"aligned": "2026-11-02", "loki-defaults": "2026-11-02"}))
+        self.assertIn("is measured too and is not shown here.", ran)
+        never = pe.render_quality_summary(inputs(profile="loki-defaults", profile_last={"aligned": "", "loki-defaults": "x"}))
+        self.assertIn("The `aligned` profile has no valid daily run yet.", never)
 
     def test_the_top_open_differences_are_ranked_and_exclude_fixed_rows(self):
         text = pe.render_quality_summary(inputs())

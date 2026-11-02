@@ -493,7 +493,7 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per day, append-only (the first file also holds every line written before the profiles existed): date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
-| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the 165 rows listed before the profiles are `aligned`, `proxy_side: unaligned`: no proxy build aligned queries then; `loki-defaults` starts empty and is seeded from its first daily run, with the owner's approval); the run only removes from it (see "Above 2× Loki" below) |
+| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the rows listed before the profiles existed were measured with an unaligned proxy side and live in `loki-defaults`, the profile that measures that side; `aligned` is empty until a build supports `-align-queries-with-step`, then it fills itself); the daily run adds a row after two consecutive full runs above 2× and removes one after two within 2× (see "Above 2× Loki" below) |
 | `history/acceptance.json` | per day of the history and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
@@ -579,19 +579,33 @@ definition the pull request smoke, the daily run and `perf_evidence.py` share:
   compared as measured. A Loki error or timeout is not a proxy defect: it is
   recorded apart ("Loki failed") and never counted.
 
-`history/over-2x-loki.json` is the list of rows above 2× Loki, seeded from the
-daily results of 2026-10-27 (`over2x.py seed`): 165 rows, 55 cold and 110
-warm. Each daily run (`history.py alerts`, full measurements only) keeps it:
+`history/over-2x-loki.json` is the list of rows above 2× Loki, one per profile × set × shape × range × mode.
+It was seeded from the daily results of 2026-10-27 (`over2x.py seed`): 165 rows, 55 cold and 110 warm,
+measured against the stack's Loki with an unaligned proxy side. The `aligned` profile needs a proxy build with
+`-align-queries-with-step`, none had one, so it stopped running after 2026-10-28 and its frozen lines judged
+nothing. `history.py over-2x-reseed --write` moved those rows to `loki-defaults` (same proxy side, measured
+daily) and replayed the history of 2026-10-29 to 2026-11-02 through the rule below: 165 rows became 67 (45
+cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) keeps the list, symmetrically
+(a pull request never edits it):
 
+- a row is added once two consecutive full runs measure it comparable and above 2× (both answered 200, Loki's
+  results cache did not answer the cold run, beyond the 50 ms floor). Its `since` is the first of the two
+  runs. A row above 2× on one run only is a warning at the top of the daily pull request body and a
+  `::warning::` annotation ("pending add"), the way a listed row within 2× once is pending removal;
 - a listed row is removed once two consecutive full runs measure it
   comparable and within 2× (a run where Loki failed, or its cache answered the
   cold run, does not count either way). The state comes from the history
   lines, so an unmerged daily pull request does not reset it;
 - a listed row's ratio is tightened when a run measures it lower, never raised;
-- a row above 2× that is not listed is a warning at the top of the daily pull
-  request body and a `::warning::` annotation. It is never added: the list only
-  shrinks. The body starts with `above-2× baseline: N rows ...; the gate
-  becomes blocking at 0`.
+- a row is judged by the history of its own profile, and only while that profile
+  runs: when a set's newest line of a profile is older than another profile's
+  (or has no like-for-like row), the profile is stale for the set, nothing in
+  its frozen lines is re-judged, and the alerts say how many listed rows were
+  not judged (`over_2x_stale`, `over_2x_unjudged`). When the align flag ships
+  the `aligned` profile starts running and fills its own list by the same rule.
+
+The body of the daily pull request starts with `above-2× baseline: N rows ...; a new or
+worsened row fails a pull request`.
 
 In each pull request, `over2x.gate` compares the PR build's rows with the list
 as committed on the base (so a pull request cannot list its own rows) and with
@@ -614,13 +628,14 @@ has one cold sample): the row keeps the first pass's cold timings
 it was measured in. The comment's table gives both ratios, `not run` for a profile that did not run.
 The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
 
-- `warn` (now): new and worsened rows are a ⚠️ section at the top of the
-  comment and `::warning::` annotations; the check's verdict and exit status
-  are what they would be without them.
-- `fail`: the same rows fail `perf-smoke` (state `failed`, exit 1, title
-  "above 2× Loki"). Once the list is empty, switching is the one-line change
-  of `--over-2x-loki warn` to `--over-2x-loki fail` in
-  `.github/workflows/perf-ab.yaml`. The daily run only ever warns.
+- `fail` (CI): a row the pull request adds above 2× Loki, or makes worse, fails
+  `perf-smoke` (state `failed`, exit 1, title "above 2× Loki"). Rows already on
+  the list are debt being paid down and do not fail a pull request; the list
+  itself changes only by the daily rule (added after two consecutive runs above
+  2×, removed after two within).
+- `warn` (the script's default, for local runs): the same rows are a ⚠️ section
+  at the top of the comment and `::warning::` annotations only. The daily run
+  only ever warns.
 
 To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
 on cold, warm and refresh, and check the comment's PR ÷ Loki column; a row the

@@ -116,180 +116,82 @@ target) and 2 with one (accepted up to the bound).
 ## Above 2× Loki (must fix)
 
 Rows the daily run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range
-slower than 2× Loki on any mode is a defect. The list only shrinks: the daily run removes a row after two
-consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`. A row is
+slower than 2× Loki on any mode is a defect. The daily run keeps the list: it adds a row after two consecutive
+runs above 2× and removes one after two consecutive runs within 2×; a pull request that adds or worsens one is flagged by `perf-smoke`. A row is
 above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;
 rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.
 
-165 rows: cold 55, warm 110, refresh 0; aligned 165, loki-defaults 0.
+67 rows: cold 45, warm 22, refresh 0; aligned 0, loki-defaults 67.
 
 | profile | set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |
 |---|---|---|---|---|---|---|---|---|
-| aligned (proxy unaligned) | control | topk rate by app | 24h | warm | 0.26s | 0.08s | 3.25× | 2026-10-27 |
-| aligned (proxy unaligned) | drilldown-breakdown-exact | DB4 json field breakdown batch_id | 24h | warm | 0.90s | 0.30s | 2.95× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 1h | cold | 1.14s | 0.23s | 5.03× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 1h | warm | 0.08s | 0.02s | 3.80× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 24h | cold | 19.72s | 4.66s | 4.23× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 24h | warm | 0.10s | 0.04s | 2.63× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 6h | cold | 5.43s | 1.19s | 4.56× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-pushdown | X1 json filter level_extracted, by level | 6h | warm | 0.10s | 0.04s | 2.71× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-suffix | E7 json count by level_extracted | 1h | cold | 0.45s | 0.06s | 8.11× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-suffix | E7 json count by level_extracted | 1h | warm | 0.06s | 0.01s | 6.20× | 2026-10-27 |
-| aligned (proxy unaligned) | extracted-suffix | E7 json count by level_extracted | 3h | warm | 0.07s | 0.01s | 6.60× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 1h | cold | 0.43s | 0.06s | 6.95× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 1h | warm | 0.40s | 0.01s | 39.80× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 24h | cold | 10.40s | 1.05s | 9.90× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 24h | warm | 9.61s | 0.02s | 457.62× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 6h | cold | 2.33s | 0.25s | 9.40× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV1 drilldown logs volume, json | 6h | warm | 2.37s | 0.02s | 124.89× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV2 json error filter, detected_level | 1h | cold | 1.72s | 0.23s | 7.44× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV2 json error filter, detected_level | 1h | warm | 1.70s | 0.03s | 60.57× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV2 json error filter, detected_level | 6h | cold | 10.15s | 1.31s | 7.74× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV2 json error filter, detected_level | 6h | warm | 10.27s | 0.04s | 270.29× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 1h | cold | 0.42s | 0.06s | 7.17× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 1h | warm | 0.40s | 0.01s | 39.80× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 24h | cold | 9.60s | 1.08s | 8.90× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 24h | warm | 9.56s | 0.01s | 735.31× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 6h | cold | 2.35s | 0.24s | 9.97× | 2026-10-27 |
-| aligned (proxy unaligned) | json-detected-level | DLV3 plain json, detected_level | 6h | warm | 2.37s | 0.01s | 169.50× | 2026-10-27 |
-| aligned (proxy unaligned) | json-filter-pushdown | F field breakdown service_version (explore) | 1h | cold | 0.56s | 0.27s | 2.10× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF1 logs, detected_level equals | 6h | cold | 0.36s | 0.12s | 2.91× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF10 drilldown logs, level pill multi-select, json service | 6h | cold | 0.28s | 0.10s | 2.90× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF12 drilldown logs volume by level, level pill | 24h | cold | 1.14s | 0.43s | 2.64× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF12 drilldown logs volume by level, level pill | 6h | cold | 0.31s | 0.11s | 2.89× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF14 explore volume, plain-text service | 24h | cold | 0.32s | 0.11s | 2.99× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF14 explore volume, plain-text service | 6h | cold | 0.10s | 0.03s | 3.45× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF16 drilldown label breakdown, level filter | 24h | warm | 0.13s | 0.02s | 7.65× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF16 drilldown label breakdown, level filter | 6h | warm | 0.08s | 0.01s | 6.33× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF2 logs, detected_level regexp | 1h | cold | 0.12s | 0.03s | 3.84× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF2 logs, detected_level regexp | 1h | warm | 0.11s | 0.03s | 4.07× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF2 logs, detected_level regexp | 6h | cold | 0.50s | 0.06s | 7.92× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF26 topk services by errors | 1h | cold | 0.29s | 0.14s | 2.10× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF26 topk services by errors | 1h | warm | 0.29s | 0.03s | 10.81× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF26 topk services by errors | 24h | warm | 6.32s | 0.08s | 79.99× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF26 topk services by errors | 6h | cold | 1.70s | 0.78s | 2.17× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF26 topk services by errors | 6h | warm | 1.63s | 0.08s | 19.65× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF29 logs, drop detected_level | 6h | cold | 0.20s | 0.02s | 11.39× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF29 logs, drop detected_level | 6h | warm | 0.08s | 0.02s | 4.22× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF3 logs, detected_level not equal, all services | 1h | cold | 0.15s | 0.04s | 3.58× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF3 logs, detected_level not equal, all services | 1h | warm | 0.17s | 0.04s | 3.93× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF3 logs, detected_level not equal, all services | 6h | cold | 0.58s | 0.12s | 4.61× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF30 logs, drop level | 6h | cold | 0.22s | 0.03s | 6.64× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF30 logs, drop level | 6h | warm | 0.07s | 0.02s | 4.00× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF4 logs, detected_level regexp with unknown | 1h | cold | 0.25s | 0.10s | 2.58× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF4 logs, detected_level regexp with unknown | 1h | warm | 0.25s | 0.10s | 2.51× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF4 logs, detected_level regexp with unknown | 6h | cold | 1.21s | 0.23s | 5.25× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF5 logs, plain-text service, detected_level regexp | 24h | cold | 0.22s | 0.09s | 2.48× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF5 logs, plain-text service, detected_level regexp | 6h | cold | 0.17s | 0.03s | 5.79× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter | LF9 drilldown logs, level pill, logfmt service | 6h | cold | 0.12s | 0.05s | 2.51× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS2 logs, level stream label regexp, all services | 6h | cold | 0.23s | 0.10s | 2.36× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS3 logs, level in the selector | 6h | cold | 0.10s | 0.02s | 4.57× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS8 json count by level_extracted, collision | 1h | cold | 0.45s | 0.04s | 10.44× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS8 json count by level_extracted, collision | 1h | warm | 0.06s | 0.01s | 8.71× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 2.16s | 0.18s | 12.21× | 2026-10-27 |
-| aligned (proxy unaligned) | level-filter-stored | LS8 json count by level_extracted, collision | 6h | warm | 0.08s | 0.01s | 7.55× | 2026-10-27 |
-| aligned (proxy unaligned) | metadata-inventory | drilldown landing volume | 24h | warm | 0.42s | 0.12s | 3.49× | 2026-10-27 |
-| aligned (proxy unaligned) | metric-latency-gap | DL3 drilldown logfmt field breakdown, level filter | 24h | warm | 5.30s | 0.63s | 8.39× | 2026-10-27 |
-| aligned (proxy unaligned) | parenthesized-range-or-filters | OR2 logs, negated or alternatives | 3h | cold | 0.11s | 0.05s | 2.12× | 2026-10-27 |
-| aligned (proxy unaligned) | parenthesized-range-or-filters | OR2 logs, negated or alternatives | 6h | cold | 0.24s | 0.09s | 2.55× | 2026-10-27 |
-| aligned (proxy unaligned) | parenthesized-range-or-filters | OR2 logs, negated or alternatives | 6h | warm | 0.18s | 0.08s | 2.11× | 2026-10-27 |
-| aligned (proxy unaligned) | pattern-line-filter-anchoring | A1 nginx include GET, log query | 24h | cold | 0.27s | 0.02s | 11.83× | 2026-10-27 |
-| aligned (proxy unaligned) | pattern-line-filter-anchoring | A2 nginx exclude GET, log query | 24h | cold | 0.25s | 0.06s | 4.36× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF1 logs, json extraction list | 1h | cold | 0.10s | 0.03s | 3.09× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF1 logs, json extraction list | 1h | warm | 0.09s | 0.03s | 2.94× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF1 logs, json extraction list | 3h | cold | 0.14s | 0.03s | 4.34× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF1 logs, json extraction list | 6h | cold | 0.15s | 0.03s | 4.55× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 1h | cold | 0.14s | 0.03s | 4.00× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 1h | warm | 0.11s | 0.03s | 3.47× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 3h | cold | 0.23s | 0.04s | 5.97× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 3h | warm | 0.09s | 0.04s | 2.49× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 6h | cold | 0.29s | 0.03s | 8.56× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF2 logs, logfmt extraction list | 6h | warm | 0.11s | 0.03s | 3.12× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF3 logs, json then line_format | 3h | cold | 0.14s | 0.05s | 2.96× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF3 logs, json then line_format | 6h | cold | 0.22s | 0.05s | 4.27× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF3 logs, json then line_format | 6h | warm | 0.11s | 0.05s | 2.16× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF4 logs, line_format without a parser | 3h | cold | 0.10s | 0.03s | 3.74× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF4 logs, line_format without a parser | 6h | cold | 0.15s | 0.03s | 5.85× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF4 logs, line_format without a parser | 6h | warm | 0.09s | 0.02s | 3.67× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 1h | cold | 0.16s | 0.04s | 3.83× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 1h | warm | 0.14s | 0.04s | 3.78× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 3h | cold | 0.25s | 0.04s | 6.05× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 3h | warm | 0.10s | 0.04s | 2.61× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 6h | cold | 0.34s | 0.04s | 8.39× | 2026-10-27 |
-| aligned (proxy unaligned) | stage-field-exposure | SF5 logs, regexp capture | 6h | warm | 0.12s | 0.04s | 3.30× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E1 json duration_ms sum by service | 24h | warm | 0.65s | 0.02s | 35.94× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E1 json duration_ms sum by service | 6h | warm | 0.18s | 0.02s | 9.37× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E2 json duration_ms p95 by service | 1h | warm | 0.09s | 0.01s | 9.78× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E2 json duration_ms p95 by service | 24h | warm | 1.42s | 0.01s | 118.67× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E2 json duration_ms p95 by service | 6h | warm | 0.43s | 0.01s | 35.75× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E3 logfmt latency_ms rate, production | 1h | warm | 0.17s | 0.04s | 3.73× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E3 logfmt latency_ms rate, production | 24h | warm | 3.75s | 0.07s | 56.86× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E3 logfmt latency_ms rate, production | 6h | warm | 0.93s | 0.06s | 14.48× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E4 logfmt size_bytes max by service | 24h | warm | 0.35s | 0.01s | 31.55× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E4 logfmt size_bytes max by service | 6h | warm | 0.10s | 0.01s | 7.92× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E8 json duration_ms sum by service, namespace prod | 24h | warm | 1.51s | 0.08s | 19.91× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E8 json duration_ms sum by service, namespace prod | 6h | warm | 0.40s | 0.07s | 5.28× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E9 logfmt latency_ms sum by service, namespace prod | 1h | warm | 0.10s | 0.04s | 2.89× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E9 logfmt latency_ms sum by service, namespace prod | 24h | warm | 2.41s | 0.05s | 48.12× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-conversion-error | E9 logfmt latency_ms sum by service, namespace prod | 6h | warm | 0.61s | 0.05s | 11.98× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-duration-seconds | D1 logfmt ttl duration_seconds rate by service | 24h | warm | 0.40s | 0.01s | 36.09× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-duration-seconds | D2 logfmt ttl duration rate by service | 24h | warm | 0.39s | 0.01s | 43.56× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G1 logfmt amount sum_over_time, no filter | 24h | warm | 0.27s | 0.01s | 20.69× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G1 logfmt amount sum_over_time, no filter | 6h | warm | 0.08s | 0.01s | 6.08× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G10 logfmt latency_ms sum_over_time, production | 1h | warm | 0.16s | 0.05s | 3.29× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G10 logfmt latency_ms sum_over_time, production | 24h | warm | 3.71s | 0.07s | 56.14× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G10 logfmt latency_ms sum_over_time, production | 6h | warm | 0.92s | 0.07s | 13.98× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G2 json duration_ms sum_over_time, no filter | 24h | warm | 0.65s | 0.02s | 40.38× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G2 json duration_ms sum_over_time, no filter | 6h | warm | 0.17s | 0.02s | 10.12× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G3 logfmt amount sum_over_time, error filter | 24h | warm | 0.27s | 0.01s | 27.00× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G3 logfmt amount sum_over_time, error filter | 6h | warm | 0.08s | 0.01s | 7.27× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G4 json duration_ms sum_over_time, error filter | 24h | warm | 0.65s | 0.02s | 37.94× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G4 json duration_ms sum_over_time, error filter | 6h | warm | 0.18s | 0.02s | 10.11× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G5 logfmt amount sum by rate | 24h | warm | 0.27s | 0.01s | 27.30× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G5 logfmt amount sum by rate | 6h | warm | 0.08s | 0.01s | 8.20× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G6 json duration_ms sum by rate | 24h | warm | 0.66s | 0.02s | 38.53× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G6 json duration_ms sum by rate | 6h | warm | 0.18s | 0.02s | 10.76× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G7 duration() of a unit string | 24h | warm | 0.40s | 0.01s | 44.00× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G7 duration() of a unit string | 6h | warm | 0.12s | 0.01s | 11.60× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G8 bytes() of a number | 24h | warm | 0.41s | 0.01s | 50.87× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G8 bytes() of a number | 6h | cold | 0.12s | 0.06s | 2.02× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G8 bytes() of a number | 6h | warm | 0.12s | 0.01s | 12.89× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G9 json duration_ms max_over_time | 24h | warm | 0.74s | 0.04s | 16.49× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-gate | G9 json duration_ms max_over_time | 6h | warm | 0.20s | 0.05s | 3.77× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W1 sum without pod, max_over_time | 24h | warm | 0.33s | 0.02s | 20.44× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W1 sum without pod, max_over_time | 6h | warm | 0.09s | 0.02s | 5.35× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W2 sum without pod, sum_over_time | 24h | warm | 0.33s | 0.01s | 27.58× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W2 sum without pod, sum_over_time | 6h | warm | 0.09s | 0.01s | 7.50× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W3 sum without pod, rate | 24h | warm | 0.60s | 0.01s | 54.73× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W3 sum without pod, rate | 6h | cold | 0.26s | 0.11s | 2.35× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W3 sum without pod, rate | 6h | warm | 0.19s | 0.01s | 17.64× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W4 max without pod, max_over_time | 24h | warm | 0.33s | 0.01s | 29.91× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W4 max without pod, max_over_time | 6h | warm | 0.09s | 0.01s | 7.50× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W7 topk 5 of sum without pod | 24h | warm | 0.33s | 0.01s | 27.25× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-sum-without | W7 topk 5 of sum without pod | 6h | warm | 0.09s | 0.01s | 7.08× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U1 logfmt amount rate | 24h | warm | 0.24s | 0.01s | 18.23× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U1 logfmt amount rate | 6h | warm | 0.07s | 0.01s | 5.36× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U2 json duration_ms rate | 24h | warm | 0.61s | 0.02s | 28.86× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U2 json duration_ms rate | 6h | warm | 0.17s | 0.02s | 7.86× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U3 json duration_ms rate, error filter | 24h | warm | 0.60s | 0.02s | 37.81× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U3 json duration_ms rate, error filter | 6h | warm | 0.17s | 0.02s | 10.69× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U4 logfmt latency_ms rate, production | 1h | warm | 0.12s | 0.05s | 2.64× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U4 logfmt latency_ms rate, production | 24h | warm | 2.65s | 0.07s | 39.49× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U4 logfmt latency_ms rate, production | 6h | warm | 0.68s | 0.07s | 10.38× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U8 logfmt amount rate by service (grouped) | 24h | warm | 0.28s | 0.01s | 28.00× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U8 logfmt amount rate by service (grouped) | 6h | warm | 0.08s | 0.01s | 8.40× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U9 logfmt amount rate_counter (folded per series) | 1h | warm | 0.07s | 0.02s | 4.18× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-ungrouped-sum | U9 logfmt amount rate_counter (folded per series) | 6h | warm | 0.55s | 0.02s | 30.56× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U1 json duration_ms sum by service | 3h | warm | 0.09s | 0.01s | 10.33× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U12 json duration_ms over every service | 1h | warm | 0.09s | 0.02s | 4.38× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U12 json duration_ms over every service | 3h | warm | 0.26s | 0.02s | 12.38× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U13 logfmt latency_ms over every service | 1h | warm | 0.18s | 0.03s | 7.28× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U13 logfmt latency_ms over every service | 3h | warm | 0.53s | 0.03s | 20.23× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U14 duration() of a unit string | 3h | warm | 0.06s | 0.01s | 10.17× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U2 json duration_ms max by service | 3h | warm | 0.10s | 0.02s | 5.53× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U3 json duration_ms sliding sum | 3h | warm | 0.09s | 0.02s | 5.47× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U8 rate of an unwrapped label | 3h | warm | 0.10s | 0.01s | 9.70× | 2026-10-27 |
-| aligned (proxy unaligned) | unwrap-validity | U9 bytes() conversion | 3h | warm | 0.06s | 0.01s | 6.40× | 2026-10-27 |
+| loki-defaults | control | logs plain | 24h | cold | 0.20s | 0.10s | 2.06× | 2026-10-31 |
+| loki-defaults | drilldown-breakdown-exact | DB4 json field breakdown batch_id | 24h | warm | 0.60s | 0.23s | 2.60× | 2026-10-27 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 1h | cold | 1.10s | 0.32s | 3.50× | 2026-10-27 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 1h | warm | 0.08s | 0.02s | 3.81× | 2026-11-01 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 24h | cold | 10.62s | 3.48s | 3.05× | 2026-10-27 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 24h | warm | 0.10s | 0.05s | 2.13× | 2026-10-31 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 6h | cold | 2.95s | 0.94s | 3.14× | 2026-10-27 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 6h | warm | 0.10s | 0.04s | 2.28× | 2026-10-31 |
+| loki-defaults | extracted-suffix | E7 json count by level_extracted | 1h | cold | 0.26s | 0.05s | 5.59× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 1h | cold | 0.26s | 0.06s | 4.55× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 1h | warm | 0.32s | 0.01s | 35.11× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 24h | cold | 6.26s | 0.76s | 8.23× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 24h | warm | 7.61s | 0.02s | 345.77× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 6h | cold | 2.59s | 0.44s | 5.92× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 6h | warm | 1.89s | 0.02s | 89.86× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV2 json error filter, detected_level | 1h | cold | 1.87s | 0.27s | 7.00× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV2 json error filter, detected_level | 1h | warm | 1.70s | 0.03s | 60.57× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV2 json error filter, detected_level | 6h | cold | 6.78s | 0.88s | 7.67× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV2 json error filter, detected_level | 6h | warm | 8.20s | 0.04s | 205.03× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 1h | cold | 0.45s | 0.07s | 6.31× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 1h | warm | 0.40s | 0.01s | 39.80× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 24h | cold | 9.60s | 1.08s | 8.90× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 24h | warm | 5.84s | 0.01s | 648.67× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 6h | cold | 2.35s | 0.24s | 9.97× | 2026-10-27 |
+| loki-defaults | json-detected-level | DLV3 plain json, detected_level | 6h | warm | 1.46s | 0.01s | 146.40× | 2026-10-27 |
+| loki-defaults | label-replace | L7 label_replace around a binary of two sums by level | 6h | warm | 0.07s | 0.01s | 5.00× | 2026-10-31 |
+| loki-defaults | level-filter | LF1 logs, detected_level equals | 6h | cold | 0.29s | 0.12s | 2.53× | 2026-10-27 |
+| loki-defaults | level-filter | LF10 drilldown logs, level pill multi-select, json service | 6h | cold | 0.16s | 0.08s | 2.10× | 2026-10-27 |
+| loki-defaults | level-filter | LF12 drilldown logs volume by level, level pill | 24h | cold | 1.20s | 0.57s | 2.09× | 2026-10-27 |
+| loki-defaults | level-filter | LF12 drilldown logs volume by level, level pill | 6h | cold | 0.32s | 0.14s | 2.27× | 2026-10-27 |
+| loki-defaults | level-filter | LF14 explore volume, plain-text service | 24h | cold | 0.33s | 0.12s | 2.75× | 2026-10-27 |
+| loki-defaults | level-filter | LF14 explore volume, plain-text service | 6h | cold | 0.10s | 0.03s | 3.43× | 2026-10-31 |
+| loki-defaults | level-filter | LF2 logs, detected_level regexp | 1h | cold | 0.12s | 0.03s | 3.84× | 2026-10-27 |
+| loki-defaults | level-filter | LF2 logs, detected_level regexp | 1h | warm | 0.11s | 0.03s | 4.07× | 2026-10-27 |
+| loki-defaults | level-filter | LF2 logs, detected_level regexp | 6h | cold | 0.50s | 0.06s | 7.92× | 2026-10-27 |
+| loki-defaults | level-filter | LF2 logs, detected_level regexp | 6h | warm | 0.13s | 0.06s | 2.29× | 2026-11-01 |
+| loki-defaults | level-filter | LF29 logs, drop detected_level | 1h | cold | 0.07s | 0.01s | 4.60× | 2026-11-01 |
+| loki-defaults | level-filter | LF29 logs, drop detected_level | 6h | cold | 0.20s | 0.02s | 11.39× | 2026-10-27 |
+| loki-defaults | level-filter | LF29 logs, drop detected_level | 6h | warm | 0.08s | 0.01s | 5.47× | 2026-10-31 |
+| loki-defaults | level-filter | LF3 logs, detected_level not equal, all services | 1h | cold | 0.18s | 0.04s | 4.09× | 2026-11-01 |
+| loki-defaults | level-filter | LF3 logs, detected_level not equal, all services | 1h | warm | 0.09s | 0.03s | 3.35× | 2026-10-27 |
+| loki-defaults | level-filter | LF3 logs, detected_level not equal, all services | 6h | cold | 0.58s | 0.12s | 4.61× | 2026-10-27 |
+| loki-defaults | level-filter | LF30 logs, drop level | 6h | cold | 0.22s | 0.03s | 6.64× | 2026-10-27 |
+| loki-defaults | level-filter | LF30 logs, drop level | 6h | warm | 0.08s | 0.02s | 4.82× | 2026-10-31 |
+| loki-defaults | level-filter | LF4 logs, detected_level regexp with unknown | 1h | cold | 0.25s | 0.10s | 2.58× | 2026-10-27 |
+| loki-defaults | level-filter | LF4 logs, detected_level regexp with unknown | 1h | warm | 0.14s | 0.06s | 2.46× | 2026-10-27 |
+| loki-defaults | level-filter | LF4 logs, detected_level regexp with unknown | 6h | cold | 1.37s | 0.45s | 3.04× | 2026-10-27 |
+| loki-defaults | level-filter | LF5 logs, plain-text service, detected_level regexp | 24h | cold | 0.22s | 0.09s | 2.48× | 2026-10-27 |
+| loki-defaults | level-filter | LF5 logs, plain-text service, detected_level regexp | 6h | cold | 0.11s | 0.02s | 5.33× | 2026-10-27 |
+| loki-defaults | level-filter | LF9 drilldown logs, level pill, logfmt service | 6h | cold | 0.12s | 0.04s | 2.67× | 2026-10-31 |
+| loki-defaults | level-filter-stored | LS3 logs, level in the selector | 6h | cold | 0.10s | 0.04s | 2.49× | 2026-10-31 |
+| loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.74s | 0.12s | 6.08× | 2026-10-27 |
+| loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | warm | 0.08s | 0.01s | 6.83× | 2026-10-31 |
+| loki-defaults | metadata-inventory | drilldown landing volume | 24h | warm | 0.23s | 0.09s | 2.48× | 2026-10-27 |
+| loki-defaults | metric-latency-gap | DL3 drilldown logfmt field breakdown, level filter | 24h | warm | 2.87s | 0.45s | 6.40× | 2026-10-27 |
+| loki-defaults | pattern-line-filter-anchoring | A1 nginx include GET, log query | 24h | cold | 0.16s | 0.03s | 5.47× | 2026-10-27 |
+| loki-defaults | pattern-line-filter-anchoring | A2 nginx exclude GET, log query | 24h | cold | 0.25s | 0.06s | 4.36× | 2026-10-27 |
+| loki-defaults | pattern-line-filter-anchoring | A7 nginx exclude ends on a literal, log query | 24h | cold | 0.24s | 0.09s | 2.68× | 2026-11-01 |
+| loki-defaults | stage-field-exposure | SF1 logs, json extraction list | 3h | cold | 0.14s | 0.06s | 2.26× | 2026-10-31 |
+| loki-defaults | stage-field-exposure | SF1 logs, json extraction list | 6h | cold | 0.17s | 0.07s | 2.54× | 2026-10-31 |
+| loki-defaults | stage-field-exposure | SF2 logs, logfmt extraction list | 3h | cold | 0.12s | 0.05s | 2.37× | 2026-10-27 |
+| loki-defaults | stage-field-exposure | SF2 logs, logfmt extraction list | 6h | cold | 0.15s | 0.06s | 2.37× | 2026-10-27 |
+| loki-defaults | stage-field-exposure | SF3 logs, json then line_format | 6h | cold | 0.17s | 0.08s | 2.25× | 2026-11-01 |
+| loki-defaults | stage-field-exposure | SF4 logs, line_format without a parser | 6h | cold | 0.13s | 0.06s | 2.19× | 2026-10-31 |
+| loki-defaults | stage-field-exposure | SF5 logs, regexp capture | 3h | cold | 0.14s | 0.06s | 2.60× | 2026-10-27 |
+| loki-defaults | stage-field-exposure | SF5 logs, regexp capture | 6h | cold | 0.10s | 0.05s | 2.02× | 2026-10-27 |
+| loki-defaults | unwrap-gate | G8 bytes() of a number | 24h | cold | 0.41s | 0.20s | 2.01× | 2026-10-30 |
 
 ## Slower than Loki on first load
 

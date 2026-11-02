@@ -313,7 +313,7 @@ class BaselineFileTest(unittest.TestCase):
         self.assertEqual(rows[("aligned", "control", "b", "1h", "warm")]["since"], "2026-10-24")
         self.assertEqual(over2x.count_line(list(rows.values())),
                          "above-2× baseline: 3 rows (cold 1, warm 2, refresh 0; aligned 3, loki-defaults 0); "
-                         "the gate becomes blocking at 0")
+                         "a new or worsened row fails a pull request")
 
     def test_the_committed_list_reads(self):
         # pr_smoke reads it from the base of every pull request: a list that cannot be read would stop them all.
@@ -382,7 +382,7 @@ class DailyListTest(unittest.TestCase):
         self.assertEqual(self.held(), [("aligned", "control", "s", "1h", "warm")])
         body = history.render_alerts(a, limit=history.PR_LIMIT)
         self.assertTrue(body.startswith("## ⚠️ Above 2× Loki\n\n**above-2× baseline: 1 rows (cold 0, warm 1, refresh 0; "
-                                        "aligned 1, loki-defaults 0); the gate becomes blocking at 0.**"))
+                                        "aligned 1, loki-defaults 0); a new or worsened row fails a pull request.**"))
         self.assertIn("- `control` (aligned) t · 1h · warm: 500 ms against Loki's 100 ms, 5.00×", body)
         self.assertEqual((a["regressions"], a["ratchet_lost"]), ([], []))  # warnings, never a red run
 
@@ -850,10 +850,16 @@ class ProfileGateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             over2x.parse_baseline(json.dumps(legacy))
 
-    def test_the_committed_list_is_all_aligned_with_an_unaligned_proxy_side_and_nothing_is_invented_for_defaults(self):
+    def test_the_committed_list_holds_only_rows_of_a_profile_that_ran(self):
+        # Every listed row is judged by the history of its own profile. The rows listed before the profiles
+        # existed (proxy_side unaligned) moved to loki-defaults, the profile the daily run measures with that
+        # proxy side; the aligned profile (no build supports its flag) holds none and judges none.
         rows, _ = over2x.read_baseline(over2x.BASELINE)
-        self.assertEqual({k[0] for k in rows}, {"aligned"})
-        self.assertEqual({r.get("proxy_side") for r in rows.values()}, {"unaligned"})
+        self.assertEqual({r.get("proxy_side") for r in rows.values()}, {None})
+        spec = history.load_spec()
+        state = history.profile_state(history.HISTORY, spec)
+        stale = {k: v for k, v in state.items() if v["stale"] and any(r[0] == k[1] and r[1] == k[0] for r in rows)}
+        self.assertEqual(stale, {})
         self.assertIn("loki-defaults", over2x.count_line(list(rows.values())))
 
     def test_the_comment_shows_both_profiles_and_marks_the_unaligned_build(self):
@@ -866,6 +872,16 @@ class ProfileGateTest(unittest.TestCase):
         self.assertEqual(verdict["over_2x"]["new"], 2)  # one record per cold / warm, not per profile
         self.assertEqual(verdict["profiles"]["aligned"]["not_like_for_like"], ["base"])
         self.assertIn("‡", text)
+
+    def test_the_comment_says_which_profile_the_list_it_read_holds_even_when_nothing_is_flagged(self):
+        r = row(pr=0.12, base=0.12, loki=0.1)
+        listed = {("loki-defaults", "control", "s", "1h", "warm"): {"profile": "loki-defaults", "set": "control",
+                                                                    "shape": "s", "range": "1h", "mode": "warm",
+                                                                    "ratio": 3.0}}
+        meta = dict(META, profiles={"aligned": {"ran": False, "why_not": "x"}, "loki-defaults": {"ran": True}})
+        text, _ = comment.render([summary(r, profile="loki-defaults")], SELECTION, meta, listed)
+        self.assertNotIn("Above 2× Loki:", text)
+        self.assertIn("Compared with the above-2× baseline: 1 rows (cold 0, warm 1, refresh 0; aligned 0, loki-defaults 1)", text)
 
 
 if __name__ == "__main__":

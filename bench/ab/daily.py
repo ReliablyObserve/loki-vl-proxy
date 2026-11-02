@@ -15,9 +15,9 @@ fresh runner and opens a bot pull request with what it writes:
   bench/ab/history/<set>.loki-defaults.jsonl   the same, per profile
   bench/ab/history/trend.md           day-over-day and week-over-week report
   bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
-  bench/ab/history/over-2x-loki.json  rows above 2x Loki (only ever removed from:
-                                      after two runs within 2x; new rows are
-                                      warnings in alerts, see over2x.py)
+  bench/ab/history/over-2x-loki.json  rows above 2x Loki (a row is added after two
+                                      consecutive runs above 2x and removed after two
+                                      within 2x; one run is a warning, see over2x.py)
   bench/ab/history/acceptance.json    per day, the rows below Loki, close, 1-2x
                                       and above 2x (history.py acceptance)
   <out>/alerts.md, alerts.json        regressions, improvements and ratchet
@@ -205,7 +205,8 @@ def main():
                   f"{len(found['ratchet_lost'])} ratchet losses, {len(found['loki_failed'])} Loki failures, "
                   f"ratchet {len(found['ratchet'])} rows (+{len(found['ratchet_added'])}, "
                   f"{found['ratchet_unmeasured']} not measured), above 2x Loki {len(found['over_2x'])} rows "
-                  f"(-{len(found['over_2x_removed'])}, {len(found['over_2x_new'])} new not listed)")
+                  f"(+{len(found['over_2x_added'])}, -{len(found['over_2x_removed'])}, "
+                  f"{len(found['over_2x_new'])} pending add)")
     except Exception as e:  # noqa: BLE001
         stack.log(f"alerts failed, the day is delivered without them: {e!r}")
     for script in ("perf_evidence.py", "gaps.py"):
