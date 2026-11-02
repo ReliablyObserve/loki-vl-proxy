@@ -1,5 +1,5 @@
 id: limits/row-limit-error-names-flag
-title: A metric read past the row limit answers Loki's limit status (400 bad_data) and names the flag
+title: A metric read past the row limit answers Loki's limit status (400) and names the flag
 proves:
   - heavy-metric-fetch-bounds
   - status-400
