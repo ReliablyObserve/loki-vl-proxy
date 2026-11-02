@@ -399,11 +399,6 @@ func (p *Proxy) collectOrderedJSONRowSpans(ctx context.Context, plan *orderedJSO
 			continue
 		}
 		if err := p.readOrderedJSONMetricRows(ctx, plan, reader, rowQuery, from, to, start, end, step); err != nil {
-			if plan.split != jsonSplitValid && reader.rows > reader.limit {
-				// The rows read stay within -manual-range-metric-row-limit; past
-				// it the answer is the documented limit error naming the flag.
-				return nil, &seriesLimitError{limit: reader.limit, rowBudget: true}
-			}
 			return nil, err
 		}
 	}

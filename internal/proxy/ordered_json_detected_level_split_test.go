@@ -6,7 +6,9 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -171,9 +173,10 @@ func runDetectedLevelSplit(t *testing.T, rows []pushdownRow, query string, start
 	code, got, body := runSplitQuery(t, p, query, start, end, step)
 	switch {
 	case wantErr != nil:
+		// Loki's error body is the message alone (pkg/util/server/error.go WriteError).
 		status, _, text := lokiClientError(context.Background(), wantErr)
-		if code != status || !strings.Contains(body, jsonQuote(text)) {
-			t.Fatalf("%s: got %d %s, want the row evaluator's %d %q", label, code, body, status, text)
+		if code != status || body != text {
+			t.Fatalf("%s: got %d %q, want the row evaluator's %d %q", label, code, body, status, text)
 		}
 	case code != http.StatusOK:
 		t.Fatalf("%s: status %d: %s", label, code, body)
@@ -181,12 +184,6 @@ func runDetectedLevelSplit(t *testing.T, rows []pushdownRow, query string, start
 		t.Fatalf("%s: differs from the row evaluator\n got: %v\nwant: %v", label, got, want)
 	}
 	return fake
-}
-
-// jsonQuote renders s as it appears inside a JSON string.
-func jsonQuote(s string) string {
-	q := fmt.Sprintf("%q", s)
-	return q[1 : len(q)-1]
 }
 
 // assertBoundedRawReads fails when a request read every selected row instead
@@ -473,5 +470,58 @@ func TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit(t *testing.T) {
 		if reads == 0 {
 			t.Fatalf("%s: no raw read", tc.query)
 		}
+	}
+}
+
+// With -align-queries-with-step (on by default) an off-grid request is
+// answered on Loki's bounds, each moved down to a multiple of the step
+// (queryrangebase/step_align.go): the split answers exactly what the row
+// evaluator answers for the aligned window, in both modes, with the levels
+// stored and partly derived by the chain.
+// conformance: semantics/json-detected-level-error-split
+func TestJSONDetectedLevelSplitOffGridBoundsAlign(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	rng := rand.New(rand.NewSource(7))
+	body := jsonSplitRows(rng, s0, 400, false)
+	stored := withStoredLevels(body)
+	partly := append([]pushdownRow(nil), body...)
+	for i := range partly {
+		if i%2 == 0 {
+			partly[i] = stored[i]
+		}
+	}
+	const off = 17 * time.Second
+	start, end := s0.Add(2*time.Minute), s0.Add(10*time.Minute)
+	for _, tc := range []struct {
+		query string
+		rows  []pushdownRow
+	}{
+		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__!="" [1m]))`, stored},
+		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__!="" [1m]))`, partly},
+		{`sum by (detected_level) (rate({env="prod"} | json [2m]))`, braceOnlyRows(t, stored, false)},
+		{`sum by (detected_level) (count_over_time({env="prod"} | json [1m]))`, braceOnlyRows(t, partly, false)},
+	} {
+		srv, fake := newPushdownFakeVL(t, tc.rows, nil)
+		fake.jsonUnpack = vlFastjsonUnpackFields
+		p := newFilterPushdownProxy(t, srv.URL)
+		fake.stored = p.labelTranslator.ToVL
+		p.alignQueriesWithStep = true
+		plan, _ := compileOrderedJSONMetric(tc.query)
+		want := rowEvaluatorMatrix(t, p, plan, start, end, time.Minute)
+		fake.mu.Lock()
+		fake.raw, fake.rawQueries, fake.stats, fake.guards = 0, nil, nil, nil
+		fake.mu.Unlock()
+		// Through the alignment middleware, as the server routes query_range.
+		params := url.Values{"query": {tc.query}, "start": {strconv.FormatInt(start.Add(off).UnixNano(), 10)}, "end": {strconv.FormatInt(end.Add(off).UnixNano(), 10)}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		p.stepAlignMiddleware("query_range", p.handleQueryRange)(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", tc.query, rec.Code, rec.Body)
+		}
+		got := decodeExtractedMatrix(t, rec.Body.Bytes())
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: off-grid request differs from the aligned window's answer\n got: %v\nwant: %v", tc.query, got, want)
+		}
+		assertBoundedRawReads(t, fake, tc.query)
 	}
 }
