@@ -1,23 +1,19 @@
 id: profiles/json-extraction-list-exposes-only-listed
-title: Extraction lists (`| json msg="msg"`, `| logfmt op`) expose level from the line (open)
+title: Extraction lists (`| json msg="msg"`, `| logfmt op`) expose only selected fields (fixed)
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  Loki's JSON expression parser extracts only the listed keys
-  (JSONExpressionParser), so `| json msg="msg"` adds one parsed label. The
-  proxy also reports `level` from the line (the row's level reading for
-  detected_level leaks into the labels).
-
-  Measured by the differential run: `{service_name="cache-redis"} | logfmt op`
-  reports level=info (the line's) where Loki keeps the stream label
-  level=debug, on 20 queries.
+  Loki's extraction-list parsers expose only the listed keys. When a preserved
+  JSON or logfmt line also had a projected `level` body field in VictoriaLogs,
+  the proxy exposed that unlisted field as a label. The projected field is
+  still available internally to derive `detected_level`.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: '{service_name="api-gateway"} | json msg="msg"'
+    query: '{app="matrix-extraction-list",case="json"} | json msg="msg"'
     start: 'now-15m'
     end: 'now'
     limit: '100'
@@ -25,18 +21,20 @@ request:
     X-Scope-OrgID: "0"
     X-Loki-Response-Encoding-Flags: categorize-labels
 compare:
-  mode: observed
-  fields: [streams.values, parsed labels]
+  mode: exact
+  fields: [streams.stream, streams.values, parsed labels, structured metadata]
   expect: |
-    Parsed labels: msg only.
+    The named JSON parser exposes msg but not level; the named logfmt parser
+    exposes op but not level. Full parsers remain a separate control.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 526397333f5e602af9d5c7232ed365ddba7970d8
   impact: explore-visible
   effort: S
   area: 'internal/proxy stage-field exposure (extraction lists)'
   loki: 'pkg/logql/log/parser.go:671-700 JSONExpressionParser.Process (listed ids only)'
-  proxy: 'extra parsed label level'
-  planned_test: 'TestCompat_JSONExtractionListExposesOnlyListed (test/e2e-compat, group semantics)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  proxy: 'unlisted projected line level is hidden from extraction-list output while retained for detected_level'
+  planned_test: 'TestCompat_JSONExtractionListExposesOnlyListed and TestQuerySemanticsMatrix (test/e2e-compat, group core)'
+  note: 'Reproduced on main 8d5c553a and compared against Loki 3.7.9 on the existing playground. The shared preserved-line fixture covers JSON and logfmt in the typed matrix, with full-parser controls; focused E2E also checks default and categorize-labels responses. Missing original line on a separate VL ingest path remains profiles/json-line-stored-without-line.'
   clusters:
     - 7dac2581

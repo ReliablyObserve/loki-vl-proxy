@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -487,6 +488,47 @@ func TestLogQuery_ExtractionListHidesStoredLineLevel(t *testing.T) {
 				if slices.Contains(row.stream, "level") || slices.Contains(row.sm, "level") || slices.Contains(row.parsed, "level") {
 					t.Errorf("%s %s categorize=%v: unlisted line level exposed: %+v", path, query, categorize, row)
 				}
+			}
+		}
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestWindowEntries_ExtractionListHidesStoredLineLevel(t *testing.T) {
+	p := lineFieldsProxy(t, "http://unused", "windowed")
+	for _, tc := range []struct {
+		query, row string
+	}{
+		{`{app="levjson"} | json msg="msg"`, stageJSONLevelRow},
+		{`{app="levlogfmt"} | logfmt op`, stageLogfmtLevelRow},
+	} {
+		for _, categorized := range []bool{false, true} {
+			entries := p.vlLogsToLokiWindowEntriesStream(bytes.NewBufferString(tc.row+"}\n"), newLogQueryShape(tc.query), categorized, categorized)
+			if len(entries) != 1 {
+				t.Fatalf("%s categorized=%v: got %d window entries", tc.query, categorized, len(entries))
+			}
+			if _, ok := entries[0].Stream["level"]; ok {
+				t.Errorf("%s categorized=%v: unlisted level in window stream: %v", tc.query, categorized, entries[0].Stream)
+			}
+			if _, ok := entries[0].Parsed["level"]; ok {
+				t.Errorf("%s categorized=%v: unlisted level in parsed fields: %v", tc.query, categorized, entries[0].Parsed)
+			}
+		}
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed
+func TestExtractionListResponseCacheVersion(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	query := `{app="levjson"} | json msg="msg"`
+	for _, endpoint := range []string{"query", "query_range"} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?query="+url.QueryEscape(query), nil)
+		if key, ok := p.compatCacheKey(endpoint, r); !ok || !strings.Contains(key, logLineCacheKeyVersion) {
+			t.Fatalf("%s compatibility cache key lacks log output version: %q", endpoint, key)
+		}
+		if endpoint == "query_range" {
+			if key := p.queryRangeCacheKey(r, query); !strings.Contains(key, logLineCacheKeyVersion) {
+				t.Fatalf("range response cache key lacks log output version: %q", key)
 			}
 		}
 	}

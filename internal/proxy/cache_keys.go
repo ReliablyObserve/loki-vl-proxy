@@ -33,10 +33,10 @@ const indexStatsCacheKeyVersion = "@form-v1"
 
 // logLineCacheKeyVersion versions the cache keys of log query responses and
 // query_range windows, which the disk (L2) and peer (L3) tiers keep for up to
-// a day. "line-v3": older binaries wrapped _msg and the row's other fields into
-// a {"_msg":...} JSON line instead of returning the stored line, or returned
-// VictoriaLogs' missing-message placeholder as the line.
-const logLineCacheKeyVersion = "line-v3"
+// a day. "line-v4": older binaries also exposed an unlisted projected level
+// field from JSON/logfmt extraction-list lines. v3 had already fenced wrapped
+// _msg and missing-message placeholder responses.
+const logLineCacheKeyVersion = "line-v4"
 
 // detectedMetadataCacheKeyVersion versions the cache keys of /detected_fields,
 // /detected_field/{name}/values and /detected_labels. "@detected-level-form-v2":

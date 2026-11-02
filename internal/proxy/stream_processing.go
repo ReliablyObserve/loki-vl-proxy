@@ -655,16 +655,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
 		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
-		levelBytes := fjVal.GetStringBytes("level")
-		if _, onStream := rowStream.labels["level"]; !onStream {
-			storedLine := fjVal.GetStringBytes(translator.StoredLineField)
-			if len(storedLine) == 0 {
-				storedLine = fjVal.GetStringBytes("_msg")
-			}
-			if exposure.hidesStoredLevel(storedLine) {
-				levelBytes = nil
-			}
-		}
+		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
 
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
 		// logRowStreamDescriptor uses m[string([]byte)] (zero-alloc lookup)
@@ -772,6 +763,24 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		patterns = buildPatternResponse(miner, maxPatternResponseLimit)
 	}
 	return result, patterns, nil
+}
+
+// visibleStoredLevelFJ is shared by the direct and windowed log converters.
+// It leaves the field available for detected_level while preventing an
+// unlisted line key from becoming a Loki response label.
+func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposure *lineFieldExposure) []byte {
+	level := row.GetStringBytes("level")
+	if _, onStream := streamLabels["level"]; onStream {
+		return level
+	}
+	line := row.GetStringBytes(translator.StoredLineField)
+	if len(line) == 0 {
+		line = row.GetStringBytes("_msg")
+	}
+	if exposure.hidesStoredLevel(line) {
+		return nil
+	}
+	return level
 }
 
 // mergesParsedStreamLabels reports whether labels extracted by | json or

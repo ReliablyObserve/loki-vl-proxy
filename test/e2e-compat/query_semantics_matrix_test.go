@@ -946,7 +946,7 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 						t.Fatalf("expected non-empty logs for %s", tc.ID)
 					}
 					if !querySemanticsSameLogEntries(proxyEntries, lokiEntries) {
-						t.Fatalf("log-entry mismatch for %s: proxy distinct=%d Loki distinct=%d", tc.ID, len(proxyEntries), len(lokiEntries))
+						t.Fatalf("log-entry mismatch for %s: proxy=%v Loki=%v", tc.ID, proxyEntries, lokiEntries)
 					}
 				case "series_count":
 					proxyCount := querySemanticsResultCount(proxyResp)

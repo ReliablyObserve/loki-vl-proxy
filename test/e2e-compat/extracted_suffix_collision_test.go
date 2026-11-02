@@ -257,36 +257,12 @@ func TestCompat_JSONExtractionListExposesOnlyListed(t *testing.T) {
 	projectionApp := fmt.Sprintf("extraction-list-projection-%d", time.Now().UnixNano())
 	projectionBase := time.Now().UTC().Add(-40 * time.Second)
 	projected := []struct {
-		name, line, query string
-		fields            map[string]string
+		name, query string
 	}{
-		{"json", `{"msg":"hello","level":"info"}`, `| json msg="msg"`, map[string]string{"msg": "hello", "level": "info"}},
-		{"logfmt", `op=read level=info`, `| logfmt op`, map[string]string{"op": "read", "level": "info"}},
+		{"json", `| json msg="msg"`},
+		{"logfmt", `| logfmt op`},
 	}
-	streams := make([]map[string]interface{}, 0, len(projected))
-	rows := make([]string, 0, len(projected))
-	for i, item := range projected {
-		at := projectionBase.Add(time.Duration(i) * time.Second)
-		stream := map[string]string{"app": projectionApp, "case": item.name}
-		streams = append(streams, map[string]interface{}{
-			"stream": stream, "values": [][]string{{strconv.FormatInt(at.UnixNano(), 10), item.line}},
-		})
-		row := map[string]string{"_time": at.Format(time.RFC3339Nano), "_msg": item.line, "app": projectionApp, "case": item.name}
-		for k, v := range item.fields {
-			row[k] = v
-		}
-		encoded, err := json.Marshal(row)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rows = append(rows, string(encoded))
-	}
-	push, err := json.Marshal(map[string]interface{}{"streams": streams})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dlPost(t, lokiURL+"/loki/api/v1/push", "application/json", push)
-	dlPost(t, vlURL+"/insert/jsonline?_stream_fields=app,case", "application/stream+json", []byte(strings.Join(rows, "\n")))
+	pushExtractionListProjectionFixture(t, projectionBase, "", projectionApp)
 	forceVLFlush(t)
 	for _, categorize := range []bool{false, true} {
 		for _, item := range projected {

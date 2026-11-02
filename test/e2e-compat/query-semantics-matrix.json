@@ -90,6 +90,46 @@
       "require_non_empty": true
     },
     {
+      "id": "json_extraction_list_projected_level",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"matrix-extraction-list\",case=\"json\"} | json msg=\"msg\" | msg=\"hello\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_full_parser_projected_level",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"matrix-extraction-list\",case=\"json\"} | json | msg=\"hello\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_extraction_list_projected_level",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"matrix-extraction-list\",case=\"logfmt\"} | logfmt op | op=\"read\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_full_parser_projected_level",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"matrix-extraction-list\",case=\"logfmt\"} | logfmt | op=\"read\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "log_entries",
+      "require_non_empty": true
+    },
+    {
       "id": "json_pipeline_numeric_filter",
       "family": "parser_pipeline",
       "endpoint": "query_range",

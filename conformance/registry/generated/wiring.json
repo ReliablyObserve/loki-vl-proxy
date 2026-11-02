@@ -533,6 +533,10 @@
       "internal/proxy/loki_profile_test.go",
       "test/e2e-ui/tests/datasource.spec.ts"
     ],
+    "profiles/json-extraction-list-exposes-only-listed": [
+      "internal/proxy/stage_field_exposure_test.go",
+      "test/e2e-compat/extracted_suffix_collision_test.go"
+    ],
     "profiles/keep-removes-derived-service-name": [
       "internal/proxy/stream_metadata_test.go",
       "test/e2e-compat/keep_service_name_test.go"
@@ -1837,6 +1841,7 @@
       "loki_api_v1_detected_fields",
       "loki_api_v1_query_range",
       "profiles/detected-fields-dotted-json-keys",
+      "profiles/json-extraction-list-exposes-only-listed",
       "profiles/label-filter-on-line-field",
       "profiles/parsed-fields-without-parser",
       "profiles/stage-field-exposure"
@@ -2256,6 +2261,7 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "parsed-identity/bare-parser-metric-duplicates-extracted",
+      "profiles/json-extraction-list-exposes-only-listed",
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
     ],
@@ -2653,7 +2659,6 @@
     "profiles/detected-fields-no-extracted-suffix",
     "profiles/existence-filter-on-sanitized-key",
     "profiles/grafana-stats-error-as-warning",
-    "profiles/json-extraction-list-exposes-only-listed",
     "profiles/json-extraction-list-missing-key",
     "profiles/json-line-stored-without-line",
     "profiles/json-number-label-text",
@@ -2708,5 +2713,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 208
+  "wired_items": 209
 }
