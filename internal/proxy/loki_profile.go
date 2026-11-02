@@ -519,6 +519,28 @@ func (e *lineFieldExposure) exposesJSONLine(lineKeys map[string]bool) bool {
 	return e.unpack && packed
 }
 
+// hidesStoredLevel reports when VictoriaLogs' level field came from a line
+// key that this pipeline did not expose. The value can still determine Loki's
+// ingest-time detected_level, but it must not become a log stream label.
+func (e *lineFieldExposure) hidesStoredLevel(line []byte) bool {
+	if e == nil || e.names["level"] || len(line) == 0 {
+		return false
+	}
+	if line[0] == '{' {
+		if e.jsonAll {
+			return false
+		}
+		if e.unpack {
+			if _, _, _, err := jsonparser.Get(line, "_entry"); err == nil {
+				return false
+			}
+		}
+		_, _, _, err := jsonparser.Get(line, "level")
+		return err == nil
+	}
+	return e.logfmt && !e.logfmtAll && logfmtLineHasKey(line, "level")
+}
+
 // fieldCategory returns how a stored field of a row shows up in Loki: a
 // parsed label, structured metadata, or nothing (hidden). lineKeys are the
 // row's JSON line keys (jsonLineKeys), nil when the line is not a JSON

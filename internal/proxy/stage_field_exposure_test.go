@@ -38,6 +38,10 @@ const (
 		`"_stream":"{app=\"arr\",env=\"ev\"}","app":"arr","env":"ev","msg":"tagged","tags":"[\"a\",\"b\"]","svc.zones":"[1,2]","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
 	stageMissingLineRow = `{"_time":"2026-10-01T17:21:12Z","_msg":"missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",` +
 		`"_stream":"{app=\"pl\",env=\"ev\"}","app":"pl","env":"ev","msg":"login ok","user":"u1","status":"200","svc.name":"api","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
+	stageJSONLevelRow = `{"_time":"2026-10-01T17:21:14Z","_msg":"{\"msg\":\"hello\",\"level\":\"info\"}",` +
+		`"_stream":"{app=\"levjson\"}","app":"levjson","msg":"hello","level":"info"`
+	stageLogfmtLevelRow = `{"_time":"2026-10-01T17:21:15Z","_msg":"op=read level=info",` +
+		`"_stream":"{app=\"levlogfmt\"}","app":"levlogfmt","op":"read","level":"info"`
 )
 
 // stageFieldsBackend answers like VictoriaLogs for the rows above: the
@@ -50,6 +54,10 @@ func (stageFieldsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.Form.Get("query")
 	src := stageJSONRow
 	switch {
+	case strings.Contains(q, `"levlogfmt"`):
+		src = stageLogfmtLevelRow
+	case strings.Contains(q, `"levjson"`):
+		src = stageJSONLevelRow
 	case strings.Contains(q, `"lf"`):
 		src = stageLogfmtRow
 	case strings.Contains(q, `"pl"`):
@@ -457,6 +465,30 @@ func TestLineFieldExposure_LokiProfileOnly(t *testing.T) {
 	}
 	if lineFieldsProxy(t, "http://127.0.0.1:1", "buffered").lineFieldExposure(`{app="a"`) != nil {
 		t.Fatal("a query the parser rejects has a line field exposure")
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestLogQuery_ExtractionListHidesStoredLineLevel(t *testing.T) {
+	srv := httptest.NewServer(&stageFieldsBackend{})
+	defer srv.Close()
+	for _, path := range []string{"buffered", "streamed", "windowed"} {
+		p := lineFieldsProxy(t, srv.URL, path)
+		for _, query := range []string{
+			`{app="levjson"} | json msg="msg"`,
+			`{app="levlogfmt"} | logfmt op`,
+		} {
+			for _, categorize := range []bool{false, true} {
+				rows := stageRows(t, p, query, categorize)
+				if len(rows) != 1 {
+					t.Fatalf("%s %s categorize=%v: %d rows", path, query, categorize, len(rows))
+				}
+				row := rows[0]
+				if slices.Contains(row.stream, "level") || slices.Contains(row.sm, "level") || slices.Contains(row.parsed, "level") {
+					t.Errorf("%s %s categorize=%v: unlisted line level exposed: %+v", path, query, categorize, row)
+				}
+			}
+		}
 	}
 }
 
