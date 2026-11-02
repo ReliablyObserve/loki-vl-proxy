@@ -30,13 +30,13 @@ compare:
     a separate control.
 gap:
   status: fixed
-  fixed_by: 3c3451e84ba9a7853756118a27da9361548b3a1f
+  fixed_by: cf203629987b042cb2edb5022c77d6cf1a121c45
   impact: explore-visible
   effort: S
   area: 'internal/proxy stage-field exposure (extraction lists)'
   loki: 'pkg/logql/log/parser.go:671-700 JSONExpressionParser.Process (listed ids only)'
   proxy: 'unlisted projected line level is hidden from extraction-list log and metric output while retained for detected_level'
   planned_test: 'TestCompat_JSONExtractionListExposesOnlyListed and TestQuerySemanticsMatrix (test/e2e-compat, group core)'
-  note: 'Reproduced on main 8d5c553a and compared against Loki 3.7.9 on the existing playground. The shared preserved-line fixture covers JSON and logfmt in the typed matrix, with full-parser controls; focused E2E also checks default and categorize-labels responses. Missing original line on a separate VL ingest path remains profiles/json-line-stored-without-line.'
+  note: 'Reproduced on main 8d5c553a and compared against Loki 3.7.9 on the existing playground. The shared preserved-line fixture covers JSON and logfmt log queries and grouped range metrics in the typed matrix, with full-parser controls; focused E2E also checks default and categorize-labels responses. Missing original line on a separate VL ingest path remains profiles/json-line-stored-without-line.'
   clusters:
     - 7dac2581

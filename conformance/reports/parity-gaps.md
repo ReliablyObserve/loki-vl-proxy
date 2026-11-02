@@ -117,7 +117,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 6 | 42 |
 | `semantics/logfmt-existence-filter-ungrouped-sum` — An ungrouped sum over `\| logfmt \| key!=""` retains parsed fields (fixed) | #968 | 1 | 36 |
 | `profiles/keep-structured-metadata-key` — `\| keep` retains a mapped structured-metadata key (fixed) | #971 | 1 | 24 |
-| `profiles/json-extraction-list-exposes-only-listed` — Extraction lists (`\| json msg="msg"`, `\| logfmt op`) expose only selected fields (fixed) | 3c3451e84ba9a7853756118a27da9361548b3a1f | 1 | 18 |
+| `profiles/json-extraction-list-exposes-only-listed` — Extraction lists (`\| json msg="msg"`, `\| logfmt op`) expose only selected fields (fixed) | cf203629987b042cb2edb5022c77d6cf1a121c45 | 1 | 18 |
 | `semantics/topk-bottomk-range-series` — A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed) | #736 | 5 | 15 |
 | `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 2 | 14 |
 | `semantics/absent-over-time-semantics` — absent_over_time is the series valued 1 at the steps without data and nothing at the steps with data, after a parser too (fixed) | #737 | 6 | 8 |
