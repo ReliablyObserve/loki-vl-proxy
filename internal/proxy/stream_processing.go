@@ -770,6 +770,12 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 // unlisted line key from becoming a Loki response label.
 func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposure *lineFieldExposure) []byte {
 	level := row.GetStringBytes("level")
+	if len(level) == 0 {
+		return nil
+	}
+	if exposure == nil {
+		return level
+	}
 	if _, onStream := streamLabels["level"]; onStream {
 		return level
 	}
