@@ -938,6 +938,22 @@
    ]
   },
   {
+   "id": "explore-bare-json-metric-labels",
+   "kind": "explore",
+   "query": "count_over_time({app=\"visual-bare-json-metric\"} | json [3m])",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "parsed-identity/bare-parser-metric-duplicates-extracted",
+    "parsed-label-series-identity",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "parsed-identity/bare-parser-metric-duplicates-extracted"
+   ]
+  },
+  {
    "id": "explore-extracted-filter-metric",
    "kind": "explore",
    "query": "sum by (level) (count_over_time({env=\"production\"} | json | level_extracted!=\"\" [$__auto]))",

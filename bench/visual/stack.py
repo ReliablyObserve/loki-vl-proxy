@@ -177,6 +177,30 @@ def seed_detected_level_stage_fixture(st, end):
             pass
 
 
+def seed_bare_json_metric_fixture(st, end):
+    """Mirror JSON body fields that VictoriaLogs also extracts at ingestion."""
+    app = "visual-bare-json-metric"
+    values = []
+    rows = []
+    for offset, level, method, duration in ((240, "debug", "GET", 12), (180, "error", "POST", 13)):
+        at = end - offset
+        line = json.dumps({"level": level, "method": method, "duration_ms": duration})
+        values.append([str(at * 1_000_000_000 + 500_000_000), line])
+        rows.append(json.dumps({"_time": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(at)) + ".5Z",
+                                "_msg": line, "app": app, "level": "info", "method": method,
+                                "duration_ms": duration}))
+    loki = json.dumps({"streams": [{"stream": {"app": app, "level": "info"}, "values": values}]}).encode()
+    for url, payload, content_type in (
+        (f"{st.loki}/loki/api/v1/push", loki, "application/json"),
+        (f"{st.vl}/insert/jsonline?_stream_fields=app,level", "\n".join(rows).encode(),
+         "application/stream+json"),
+    ):
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": content_type, "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+
+
 def up(a):
     os.makedirs(a.out, exist_ok=True)
     st = stack(a.project, a.overlay, a.no_level_label)
@@ -213,6 +237,7 @@ def up(a):
         seed_unknown_level_fixture(st, end)
         seed_keep_metadata_fixture(st, end)
         seed_detected_level_stage_fixture(st, end)
+        seed_bare_json_metric_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         st.seed(end - loki_start, end)
     specs, procs = [], []

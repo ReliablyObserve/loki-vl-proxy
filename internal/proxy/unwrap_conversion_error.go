@@ -1418,7 +1418,7 @@ func unwrapParseLine(stage *logqlpkg.ParserStage, line string, labels map[string
 		plan := &orderedJSONMetricPlan{preserveError: preserveError}
 		extracted := map[string]bool{}
 		before := cloneStringMap(labels)
-		if err := plan.parseJSON(line, before, labels, extracted); err != nil {
+		if err := plan.parseJSON(line, before, before, false, labels, extracted); err != nil {
 			return false
 		}
 		// parseJSON stores only true values.

@@ -49,6 +49,64 @@ func TestOrderedJSONMetricPipelineState(t *testing.T) {
 	}
 }
 
+// conformance: parsed-identity/bare-parser-metric-duplicates-extracted
+func TestOrderedJSONMetricStoredBodyKeysAreNotParserCollisions(t *testing.T) {
+	plan, ok := compileOrderedJSONMetric(`count_over_time({app="api"} | json [3m])`)
+	if !ok {
+		t.Fatal("bare JSON metric was not compiled")
+	}
+	base := map[string]string{"app": "api", "level": "info", "method": "GET", "duration_ms": "12"}
+	stream := map[string]string{"app": "api", "level": "info"}
+	labels, keep, err := plan.processWithStreamLabels(`{"level":"debug","method":"GET","duration_ms":12}`, base, stream)
+	if err != nil || !keep {
+		t.Fatalf("labels=%v keep=%t err=%v", labels, keep, err)
+	}
+	if labels["method"] != "GET" || labels["duration_ms"] != "12" || labels["level_extracted"] != "debug" {
+		t.Fatalf("missing parsed keys or true stream collision: %v", labels)
+	}
+	for _, key := range []string{"method_extracted", "duration_ms_extracted"} {
+		if _, exists := labels[key]; exists {
+			t.Errorf("VL ingest field produced a false parser collision %q: %v", key, labels)
+		}
+	}
+	base["method"] = "OVERRIDE"
+	labels, keep, err = plan.processWithStreamLabels(`{"level":"debug","method":"GET","duration_ms":12}`, base, stream)
+	if err != nil || !keep || labels["method"] != "OVERRIDE" || labels["method_extracted"] != "GET" {
+		t.Fatalf("different structured metadata must retain a parser collision: labels=%v keep=%t err=%v", labels, keep, err)
+	}
+	base["method"] = "GET"
+	base["span_id"] = "stored-only"
+	labels, keep, err = plan.processWithStreamLabels(`{"level":"debug","method":"GET","duration_ms":12}`, base, stream)
+	if err != nil || !keep || labels["method_extracted"] != "GET" || labels["duration_ms_extracted"] != "12" {
+		t.Fatalf("an extra metadata field must retain same-valued collisions: labels=%v keep=%t err=%v", labels, keep, err)
+	}
+	labels, keep, err = plan.processWithStreamLabels(`{"method":"GET"}`,
+		map[string]string{"app": "api", "method": "GET"}, map[string]string{"app": "api"})
+	if err != nil || !keep || labels["method_extracted"] != "GET" {
+		t.Fatalf("one matching field is insufficient evidence of body projection: labels=%v keep=%t err=%v", labels, keep, err)
+	}
+}
+
+func TestBareJSONMetricResponseCacheVersion(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?step=60", nil)
+	for _, query := range []string{
+		`count_over_time({app="api"} | json [3m])`,
+		`rate({app="api"} | json [3m])`,
+	} {
+		if got := bareJSONMetricResponseKeyVersion(r, query); got != bareJSONMetricResponseVersion {
+			t.Errorf("%s version=%q, want %q", query, got, bareJSONMetricResponseVersion)
+		}
+	}
+	for _, query := range []string{
+		`{app="api"} | json`,
+		`count_over_time({app="api"} | logfmt [3m])`,
+	} {
+		if got := bareJSONMetricResponseKeyVersion(r, query); got != "" {
+			t.Errorf("unrelated query %s was versioned: %q", query, got)
+		}
+	}
+}
+
 func TestOrderedJSONMetricHintsAndEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		query, line, wantError       string
@@ -258,7 +316,7 @@ func TestOrderedJSONMetricRowsCancellationAndTenant(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
-	_, _, err = plan.processWithContext(ctx, `{}`, map[string]string{"app": "test"}, map[string]string{"app": "test"})
+	_, _, err = plan.processWithContext(ctx, `{}`, map[string]string{"app": "test"}, map[string]string{"app": "test"}, map[string]string{"app": "test"})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("pipeline cancellation=%v", err)
 	}
