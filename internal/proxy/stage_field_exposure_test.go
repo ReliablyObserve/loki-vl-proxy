@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -38,6 +39,10 @@ const (
 		`"_stream":"{app=\"arr\",env=\"ev\"}","app":"arr","env":"ev","msg":"tagged","tags":"[\"a\",\"b\"]","svc.zones":"[1,2]","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
 	stageMissingLineRow = `{"_time":"2026-10-01T17:21:12Z","_msg":"missing _msg field; see https://docs.victoriametrics.com/victorialogs/keyconcepts/#message-field",` +
 		`"_stream":"{app=\"pl\",env=\"ev\"}","app":"pl","env":"ev","msg":"login ok","user":"u1","status":"200","svc.name":"api","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`
+	stageJSONLevelRow = `{"_time":"2026-10-01T17:21:14Z","_msg":"{\"msg\":\"hello\",\"level\":\"info\"}",` +
+		`"_stream":"{app=\"levjson\"}","app":"levjson","msg":"hello","level":"info"`
+	stageLogfmtLevelRow = `{"_time":"2026-10-01T17:21:15Z","_msg":"op=read level=info",` +
+		`"_stream":"{app=\"levlogfmt\"}","app":"levlogfmt","op":"read","level":"info"`
 )
 
 // stageFieldsBackend answers like VictoriaLogs for the rows above: the
@@ -50,6 +55,10 @@ func (stageFieldsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.Form.Get("query")
 	src := stageJSONRow
 	switch {
+	case strings.Contains(q, `"levlogfmt"`):
+		src = stageLogfmtLevelRow
+	case strings.Contains(q, `"levjson"`):
+		src = stageJSONLevelRow
 	case strings.Contains(q, `"lf"`):
 		src = stageLogfmtRow
 	case strings.Contains(q, `"pl"`):
@@ -94,6 +103,73 @@ func (stageFieldsBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := json.Marshal(row)
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestBareParserMetric_ExtractionListHidesProjectedLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name, line, parser, stream, wantLevel string
+	}{
+		{"json", `{"level":"info","msg":"hello"}`, `json msg="msg"`, `{app="projection"}`, ""},
+		{"logfmt", `level=info op=read`, `logfmt op`, `{app="projection"}`, ""},
+		{"stream label survives", `{"level":"info","msg":"hello"}`, `json msg="msg"`, `{app="projection",level="warn"}`, "warn"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row, err := json.Marshal(map[string]string{
+				"_time": "1704067200000000000", "_stream": tc.stream,
+				"_msg": tc.line, "level": "info",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/select/logsql/query" {
+					t.Errorf("unexpected backend path %s", r.URL.Path)
+				}
+				_, _ = w.Write(append(row, '\n'))
+			}))
+			defer backend.Close()
+			p := lineFieldsProxy(t, backend.URL, "buffered")
+			baseQuery := `{app="projection"} | ` + tc.parser + ` | drop __error__`
+			series, err := p.fetchBareParserMetricSeries(t.Context(),
+				`count_over_time(`+baseQuery+` [1m])`,
+				bareParserMetricCompatSpec{funcName: "count_over_time", baseQuery: baseQuery, rangeWindow: time.Minute},
+				"1704067140000000000", "1704067260000000000")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(series) != 1 {
+				t.Fatalf("series: %+v", series)
+			}
+			if got := series[0].metric["level"]; got != tc.wantLevel {
+				t.Errorf("level = %q, want %q: %+v", got, tc.wantLevel, series[0].metric)
+			}
+			if got := series[0].metric[detectedLevelLabel]; got == "" {
+				t.Errorf("detected_level missing: %+v", series[0].metric)
+			}
+		})
+	}
+}
+
+func TestExtractionListMetricLevelUsesRawRows(t *testing.T) {
+	p := lineFieldsProxy(t, "http://127.0.0.1:1", "buffered")
+	for _, tc := range []struct {
+		name, query string
+		groupBy     []string
+		want        bool
+	}{
+		{"json unlisted level", `{app="projection"} | json msg="msg" | drop __error__`, []string{"level", "detected_level"}, true},
+		{"logfmt unlisted level", `{app="projection"} | logfmt op | drop __error__`, []string{"level", "detected_level"}, true},
+		{"listed level", `{app="projection"} | json level="level" | drop __error__`, []string{"level"}, false},
+		{"unrelated group", `{app="projection"} | json msg="msg" | drop __error__`, []string{"app"}, false},
+		{"bare parser", `{app="projection"} | json | drop __error__`, []string{"level"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := p.extractionListNeedsRawLevelRows(tc.query, tc.groupBy); got != tc.want {
+				t.Errorf("extractionListNeedsRawLevelRows(%q, %v) = %t, want %t", tc.query, tc.groupBy, got, tc.want)
+			}
+		})
+	}
 }
 
 type stageRow struct {
@@ -457,6 +533,71 @@ func TestLineFieldExposure_LokiProfileOnly(t *testing.T) {
 	}
 	if lineFieldsProxy(t, "http://127.0.0.1:1", "buffered").lineFieldExposure(`{app="a"`) != nil {
 		t.Fatal("a query the parser rejects has a line field exposure")
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestLogQuery_ExtractionListHidesStoredLineLevel(t *testing.T) {
+	srv := httptest.NewServer(&stageFieldsBackend{})
+	defer srv.Close()
+	for _, path := range []string{"buffered", "streamed", "windowed"} {
+		p := lineFieldsProxy(t, srv.URL, path)
+		for _, query := range []string{
+			`{app="levjson"} | json msg="msg"`,
+			`{app="levlogfmt"} | logfmt op`,
+		} {
+			for _, categorize := range []bool{false, true} {
+				rows := stageRows(t, p, query, categorize)
+				if len(rows) != 1 {
+					t.Fatalf("%s %s categorize=%v: %d rows", path, query, categorize, len(rows))
+				}
+				row := rows[0]
+				if slices.Contains(row.stream, "level") || slices.Contains(row.sm, "level") || slices.Contains(row.parsed, "level") {
+					t.Errorf("%s %s categorize=%v: unlisted line level exposed: %+v", path, query, categorize, row)
+				}
+			}
+		}
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestWindowEntries_ExtractionListHidesStoredLineLevel(t *testing.T) {
+	p := lineFieldsProxy(t, "http://unused", "windowed")
+	for _, tc := range []struct {
+		query, row string
+	}{
+		{`{app="levjson"} | json msg="msg"`, stageJSONLevelRow},
+		{`{app="levlogfmt"} | logfmt op`, stageLogfmtLevelRow},
+	} {
+		for _, categorized := range []bool{false, true} {
+			entries := p.vlLogsToLokiWindowEntriesStream(bytes.NewBufferString(tc.row+"}\n"), newLogQueryShape(tc.query), categorized, categorized)
+			if len(entries) != 1 {
+				t.Fatalf("%s categorized=%v: got %d window entries", tc.query, categorized, len(entries))
+			}
+			if _, ok := entries[0].Stream["level"]; ok {
+				t.Errorf("%s categorized=%v: unlisted level in window stream: %v", tc.query, categorized, entries[0].Stream)
+			}
+			if _, ok := entries[0].Parsed["level"]; ok {
+				t.Errorf("%s categorized=%v: unlisted level in parsed fields: %v", tc.query, categorized, entries[0].Parsed)
+			}
+		}
+	}
+}
+
+// conformance: profiles/json-extraction-list-exposes-only-listed
+func TestExtractionListResponseCacheVersion(t *testing.T) {
+	p := newCompatTestProxy(t, "http://unused")
+	query := `{app="levjson"} | json msg="msg"`
+	for _, endpoint := range []string{"query", "query_range"} {
+		r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/"+endpoint+"?query="+url.QueryEscape(query), nil)
+		if key, ok := p.compatCacheKey(endpoint, r); !ok || !strings.Contains(key, logLineCacheKeyVersion) {
+			t.Fatalf("%s compatibility cache key lacks log output version: %q", endpoint, key)
+		}
+		if endpoint == "query_range" {
+			if key := p.queryRangeCacheKey(r, query); !strings.Contains(key, logLineCacheKeyVersion) {
+				t.Fatalf("range response cache key lacks log output version: %q", key)
+			}
+		}
 	}
 }
 

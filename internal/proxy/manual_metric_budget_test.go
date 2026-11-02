@@ -44,7 +44,7 @@ func TestRawManualMetricLimitsFailClosedAndRecover(t *testing.T) {
 						result, err := p.fetchBareParserMetricSeries(t.Context(), "", spec, stamp.Format(time.RFC3339Nano), stamp.Add(time.Minute).Format(time.RFC3339Nano))
 						return len(result), err
 					}
-					result, err := p.collectRangeMetricSamples(t.Context(), "*", nil, nil, false, "latency", "", stamp, stamp.Add(time.Minute))
+					result, err := p.collectRangeMetricSamples(t.Context(), "*", nil, nil, false, "latency", "", stamp, stamp.Add(time.Minute), nil)
 					return len(result), err
 				}
 				if count, err := fetch(); err == nil || count != 0 {

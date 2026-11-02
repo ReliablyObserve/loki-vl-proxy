@@ -1,5 +1,29 @@
 # Repository working rules
 
+## Loki difference registry and query matrix
+
+Every difference discovered between the proxy and Loki must enter the existing
+conformance registry and the typed query matrix before it is considered covered.
+Use `conformance/registry/cases/` for the gap and Loki evidence,
+`test/e2e-compat/query-semantics-matrix.json` for the query contract, and
+`test/e2e-compat/query-semantics-operations.json` for its operation and depth
+path. Link the registry ID, matrix case and focused differential test so CI
+reports the same behavior from one catalog. Extend existing fixtures and
+harnesses; do not create a parallel registry or test suite.
+
+- Record the actual ingest path, query stages, response encoding, tenant and
+  time window that expose the difference. A passing variant with a different
+  ingest path does not close the original gap.
+- Compare complete Loki and proxy answers for correctness, including labels,
+  line content, timestamps, metadata categories and expected errors as relevant.
+  Keep availability-only checks and `known_deviation` cases visibly open.
+- Fix each difference at the layer that can preserve its required information,
+  then retain a regression test and pinned-Loki proof in CI. Close the registry
+  gap only after those checks pass; document any still-open axes explicitly.
+- Reuse matrix cases for later performance scenarios by case ID. Keep visual
+  proof in its existing separate harness and add a PR-specific capture when the
+  behavior changes what Grafana or Drilldown shows.
+
 ## Cache semantic layers
 
 Keep the proxy's Loki-facing cache and VictoriaLogs-facing backend cache

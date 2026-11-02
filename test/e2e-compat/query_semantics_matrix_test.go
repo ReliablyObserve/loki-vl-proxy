@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -832,7 +833,7 @@ func TestQuerySemanticsMatrixCoversParserMetricDepths(t *testing.T) {
 			if !strings.Contains(tc.Query, "| "+path.Parser) {
 				t.Errorf("depth path %q case %q does not exercise the declared %s parser", path.ID, caseID, path.Parser)
 			}
-			if path.Depth >= 2 && (tc.ExpectResultType != "matrix" || !strings.Contains(tc.Query, "[5m]")) {
+			if path.Depth >= 2 && (tc.ExpectResultType != "matrix" || !matrixRangeWindowRE.MatchString(tc.Query)) {
 				t.Errorf("depth %d path %q case %q must exercise a range metric", path.Depth, path.ID, caseID)
 			}
 			if path.Depth == 3 && !strings.Contains(tc.Query, "sum by (") {
@@ -848,6 +849,8 @@ func TestQuerySemanticsMatrixCoversParserMetricDepths(t *testing.T) {
 		}
 	}
 }
+
+var matrixRangeWindowRE = regexp.MustCompile(`\[[0-9]+(ms|s|m|h|d|w|y)\]`)
 
 // conformance: loki_api_v1_query, loki_api_v1_query_range, range_function-count-over-time, range_function-rate, parser-json, parser-logfmt, parser-pattern, parser-regexp
 func TestQuerySemanticsMatrix(t *testing.T) {
@@ -946,7 +949,7 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 						t.Fatalf("expected non-empty logs for %s", tc.ID)
 					}
 					if !querySemanticsSameLogEntries(proxyEntries, lokiEntries) {
-						t.Fatalf("log-entry mismatch for %s: proxy distinct=%d Loki distinct=%d", tc.ID, len(proxyEntries), len(lokiEntries))
+						t.Fatalf("log-entry mismatch for %s: proxy=%v Loki=%v", tc.ID, proxyEntries, lokiEntries)
 					}
 				case "series_count":
 					proxyCount := querySemanticsResultCount(proxyResp)

@@ -264,6 +264,7 @@ func TestCollectRangeMetricSamples_RedactsBackendError(t *testing.T) {
 		nil, nil, false, "", "",
 		time.Unix(1700000000, 0),
 		time.Unix(1700000060, 0),
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected backend error")

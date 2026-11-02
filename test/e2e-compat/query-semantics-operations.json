@@ -24,12 +24,12 @@
     {
       "name": "parser_json",
       "category": "parser",
-      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum", "perf_json_parser", "perf_json_field_ne", "perf_json_field_regex", "perf_json_field_gt", "perf_json_two_field_filters", "perf_line_filter_then_json"]
+      "cases": ["json_pipeline_field_filter", "json_extraction_list_projected_level", "json_extraction_list_metric_projected_level", "json_full_parser_projected_level", "json_pipeline_numeric_filter", "json_pipeline_regex_filter", "json_rate_line_filter", "json_rate_line_filter_outer_sum", "perf_json_parser", "perf_json_field_ne", "perf_json_field_regex", "perf_json_field_gt", "perf_json_two_field_filters", "perf_line_filter_then_json"]
     },
     {
       "name": "parser_logfmt",
       "category": "parser",
-      "cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum", "perf_logfmt_parser"]
+      "cases": ["logfmt_pipeline_field_filter", "logfmt_extraction_list_projected_level", "logfmt_extraction_list_metric_projected_level", "logfmt_full_parser_projected_level", "logfmt_numeric_filter", "logfmt_rate_numeric_filter", "logfmt_rate_numeric_outer_sum", "perf_logfmt_parser"]
     },
     {
       "name": "parser_regexp",
@@ -59,7 +59,7 @@
     {
       "name": "metric_count_rate",
       "category": "metric_function",
-      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum", "perf_count_over_time", "perf_rate"]
+      "cases": ["count_over_time_by_level", "json_extraction_list_metric_projected_level", "logfmt_extraction_list_metric_projected_level", "sum_rate_by_app", "rate_with_line_filter", "json_error_filter_rate_outer_sum", "perf_count_over_time", "perf_rate"]
     },
     {
       "name": "metric_bytes",
@@ -107,7 +107,9 @@
         "without_grouping_metric",
         "negative_regex_metric_range",
         "json_parser_metric_range_outer_sum",
+        "json_extraction_list_metric_projected_level",
         "logfmt_parser_metric_range_outer_sum",
+        "logfmt_extraction_list_metric_projected_level",
         "regexp_parser_metric_range_outer_sum",
         "pattern_parser_metric_range_outer_sum",
         "perf_sum_rate_by",
@@ -167,26 +169,26 @@
       "depth": 1,
       "parser": "json",
       "stages": ["selector", "parser", "parsed_field_filter"],
-      "matrix_cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter"],
+      "matrix_cases": ["json_pipeline_field_filter", "json_extraction_list_projected_level", "json_full_parser_projected_level", "json_pipeline_numeric_filter", "json_pipeline_regex_filter"],
       "registry_items": ["loki/logql/parser-json"],
-      "registry_cases": ["semantics/json-filter-pushdown-without-error-drop"],
+      "registry_cases": ["semantics/json-filter-pushdown-without-error-drop", "profiles/json-extraction-list-exposes-only-listed"],
       "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
     ,
-      "related_tests": ["TestLogQL_Exhaustive_QueryParity"]
+      "related_tests": ["TestLogQL_Exhaustive_QueryParity", "TestCompat_JSONExtractionListExposesOnlyListed"]
     },
     {
       "id": "logfmt_parser_filter",
       "depth": 1,
       "parser": "logfmt",
       "stages": ["selector", "parser", "parsed_field_filter"],
-      "matrix_cases": ["logfmt_pipeline_field_filter", "logfmt_numeric_filter"],
+      "matrix_cases": ["logfmt_pipeline_field_filter", "logfmt_extraction_list_projected_level", "logfmt_full_parser_projected_level", "logfmt_numeric_filter"],
       "registry_items": ["loki/logql/parser-logfmt"],
-      "registry_cases": ["parsed-identity/dynamic-key-parsers"],
+      "registry_cases": ["parsed-identity/dynamic-key-parsers", "profiles/json-extraction-list-exposes-only-listed"],
       "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": ""
     ,
-      "related_tests": ["TestLogQL_Exhaustive_QueryParity"]
+      "related_tests": ["TestLogQL_Exhaustive_QueryParity", "TestCompat_JSONExtractionListExposesOnlyListed"]
     },
     {
       "id": "regexp_parser_filter",
@@ -263,9 +265,9 @@
       "depth": 3,
       "parser": "json",
       "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
-      "matrix_cases": ["json_parser_metric_range_outer_sum", "json_rate_line_filter_outer_sum", "json_error_filter_rate_outer_sum"],
+      "matrix_cases": ["json_parser_metric_range_outer_sum", "json_extraction_list_metric_projected_level", "json_rate_line_filter_outer_sum", "json_error_filter_rate_outer_sum"],
       "registry_items": ["loki/logql/parser-json"],
-      "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown"],
+      "registry_cases": ["semantics/pipeline-error-text-parity", "semantics/nested-aggregation-outer-by-native-routes", "semantics/non-sum-vector-aggregation-unreduced", "semantics/json-error-filter-metric-split-pushdown", "profiles/json-extraction-list-exposes-only-listed"],
       "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": "testdata/parser-error-matrix/2026-11-01-exact-fence/manifest.json"
     ,
@@ -276,9 +278,9 @@
       "depth": 3,
       "parser": "logfmt",
       "stages": ["selector", "parser", "parsed_field_filter", "range_function", "aggregation"],
-      "matrix_cases": ["logfmt_parser_metric_range_outer_sum", "logfmt_rate_numeric_outer_sum"],
+      "matrix_cases": ["logfmt_parser_metric_range_outer_sum", "logfmt_extraction_list_metric_projected_level", "logfmt_rate_numeric_outer_sum"],
       "registry_items": ["loki/logql/parser-logfmt"],
-      "registry_cases": ["parsed-identity/dynamic-key-parsers"],
+      "registry_cases": ["parsed-identity/dynamic-key-parsers", "profiles/json-extraction-list-exposes-only-listed"],
       "live_test": "TestQuerySemanticsMatrix",
       "recorded_evidence": ""
     ,

@@ -148,7 +148,7 @@ func (p *Proxy) collectQuantileHistogram(ctx context.Context, spec statsCompatSp
 		if byFields {
 			labels = p.statsGroupMetric(metric.GetObject(), vlToLoki)
 		} else {
-			labels = p.manualSeriesEntry(cache, metric, string(metric.GetStringBytes("_stream")), strings.TrimSpace(string(metric.GetStringBytes("level"))), nil, "", spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, true).translated
+			labels = p.manualSeriesEntry(cache, metric, string(metric.GetStringBytes("_stream")), strings.TrimSpace(string(metric.GetStringBytes("level"))), nil, "", spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, true, false).translated
 		}
 		key := canonicalLabelsKey(labels)
 		current, seen := series[key]

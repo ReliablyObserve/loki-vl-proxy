@@ -400,6 +400,9 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	}
 	prefix := "compat:v2:" + endpoint + ":"
 	if endpoint == "query" || endpoint == "query_range" {
+		// Align final-response cache invalidation with the exact and windowed
+		// log-query keys after an output-semantic change.
+		prefix += logLineCacheKeyVersion + ":"
 		prefix += orderedJSONVectorResponseKeyVersion(r, r.FormValue("query"))
 		prefix += bareJSONMetricResponseKeyVersion(r, r.FormValue("query"))
 		prefix += detectedLevelMutationResponseKeyVersion(r.FormValue("query"))

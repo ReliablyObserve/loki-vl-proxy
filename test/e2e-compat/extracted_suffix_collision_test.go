@@ -226,6 +226,62 @@ func TestCompat_BareParserMetricLabels(t *testing.T) {
 	}
 }
 
+// conformance: profiles/json-extraction-list-exposes-only-listed, loki_api_v1_query_range
+func TestCompat_JSONExtractionListExposesOnlyListed(t *testing.T) {
+	app, end := ensureExtractedSuffixFixture(t)
+	selector := fmt.Sprintf(`{app=%q,env="keys"}`, app)
+	queries := []struct {
+		name, query string
+		lines       int
+	}{
+		{"json named key", selector + ` |= "{" | json msg="msg"`, 3},
+		{"logfmt named key", selector + ` |= "level=" | logfmt user`, 2},
+	}
+	for _, categorize := range []bool{false, true} {
+		for _, q := range queries {
+			t.Run(q.name+map[bool]string{false: "/default", true: "/categorize-labels"}[categorize], func(t *testing.T) {
+				loki := extractedLogEntries(t, lokiURL, q.query, end, 5*time.Minute, categorize, q.lines)
+				if len(loki) != q.lines {
+					t.Fatalf("Loki fixture: %d entries for %s, want %d", len(loki), q.query, q.lines)
+				}
+				proxy := extractedLogEntries(t, proxyURL, q.query, end, 5*time.Minute, categorize, q.lines)
+				if !reflect.DeepEqual(proxy, loki) {
+					t.Errorf("%s\nproxy %+v\nloki  %+v", q.query, proxy, loki)
+				}
+			})
+		}
+	}
+
+	// VictoriaLogs may also store fields from the line while keeping _msg.
+	// Loki still exposes only the names selected by the extraction list.
+	projectionApp := fmt.Sprintf("extraction-list-projection-%d", time.Now().UnixNano())
+	projectionBase := time.Now().UTC().Add(-40 * time.Second)
+	projected := []struct {
+		name, query string
+	}{
+		{"json", `| json msg="msg"`},
+		{"logfmt", `| logfmt op`},
+	}
+	pushExtractionListProjectionFixture(t, projectionBase, "", projectionApp)
+	forceVLFlush(t)
+	for _, categorize := range []bool{false, true} {
+		for _, item := range projected {
+			t.Run(item.name+"/projected"+map[bool]string{false: "/default", true: "/categorize-labels"}[categorize], func(t *testing.T) {
+				query := fmt.Sprintf(`{app=%q,case=%q} %s`, projectionApp, item.name, item.query)
+				end := projectionBase.Add(5 * time.Second)
+				loki := extractedLogEntries(t, lokiURL, query, end, time.Minute, categorize, 1)
+				if len(loki) != 1 {
+					t.Fatalf("Loki fixture: %d entries for %s, want 1", len(loki), query)
+				}
+				proxy := extractedLogEntries(t, proxyURL, query, end, time.Minute, categorize, 1)
+				if !reflect.DeepEqual(proxy, loki) {
+					t.Errorf("%s\nproxy %+v\nloki  %+v", query, proxy, loki)
+				}
+			})
+		}
+	}
+}
+
 // TestCompat_ExtractedSuffixOnParsedCollision: a key a parser stage reads
 // from the line that is also a stream label's name leaves the stream label
 // alone and shows as name_extracted (a collision Loki renames: pkg/logql/log

@@ -51,7 +51,7 @@ func TestCollectRangeMetric_CountOverTime_SingleStream(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	// The raw evaluator itself: bucketed stats serve these range metrics on the
 	// query path.
-	series, err := p.collectRangeMetricSamples(t.Context(), `app:="api" env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(3*step))
+	series, err := p.collectRangeMetricSamples(t.Context(), `app:="api" env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(3*step), nil)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestCollectRangeMetric_MultipleStreams_MultipleSeries(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	series, err := p.collectRangeMetricSamples(t.Context(), `env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(5*time.Minute))
+	series, err := p.collectRangeMetricSamples(t.Context(), `env:="prod"`, []string{"_stream"}, nil, false, "__count__", "", base, base.Add(5*time.Minute), nil)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}

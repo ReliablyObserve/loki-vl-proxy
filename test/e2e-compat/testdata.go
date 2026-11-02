@@ -32,6 +32,10 @@ func ingestRichTestDataForTenant(t *testing.T, tenant string, now time.Time) {
 		pushStreamForTenant(t, now, sd, tenant)
 	}
 
+	if tenant != "" {
+		pushExtractionListProjectionFixture(t, now, tenant, "matrix-extraction-list")
+	}
+
 	// ── Service: api-gateway ──
 	push(streamDef{
 		Labels: map[string]string{
@@ -492,9 +496,33 @@ func ingestRichTestDataForTenant(t *testing.T, tenant string, now time.Time) {
 type streamDef struct {
 	Labels             map[string]string
 	Lines              []string
-	StructuredMetadata map[string]string // applied to all lines; exposed via categorize-labels
-	VLOnly             bool              // push only to VL (not Loki) — for OTel data with dotted labels
-	Interval           time.Duration     // spacing between consecutive lines; zero means one second
+	ProjectedFields    []map[string]string // VL body fields from the original line, not Loki stream labels
+	StructuredMetadata map[string]string   // applied to all lines; exposed via categorize-labels
+	VLOnly             bool                // push only to VL (not Loki) — for OTel data with dotted labels
+	Interval           time.Duration       // spacing between consecutive lines; zero means one second
+}
+
+// pushExtractionListProjectionFixture retains the original line while VL also
+// stores its level as a projected body field. Both parity suites use these
+// exact rows so an ingest-path difference cannot hide a query-stage gap.
+func pushExtractionListProjectionFixture(t *testing.T, baseTime time.Time, tenant, app string) {
+	t.Helper()
+	for _, fixture := range []struct {
+		name, line string
+	}{
+		{"json", `{"msg":"hello","level":"info"}`},
+		{"logfmt", `op=read level=info`},
+	} {
+		labels := map[string]string{"app": app, "case": fixture.name}
+		if tenant != "" {
+			labels["query_semantics_run_id"] = tenant
+		}
+		pushStreamForTenant(t, baseTime, streamDef{
+			Labels:          labels,
+			Lines:           []string{fixture.line},
+			ProjectedFields: []map[string]string{{"level": "info"}},
+		}, tenant)
+	}
 }
 
 func (sd streamDef) lineTime(baseTime time.Time, i int) time.Time {
@@ -525,6 +553,9 @@ func victoriaLogsTenantHeaders(tenant string) map[string]string {
 
 func pushStreamForTenant(t *testing.T, baseTime time.Time, sd streamDef, tenant string) {
 	t.Helper()
+	if len(sd.ProjectedFields) != 0 && len(sd.ProjectedFields) != len(sd.Lines) {
+		t.Fatalf("projected fixture fields: got %d rows for %d lines", len(sd.ProjectedFields), len(sd.Lines))
+	}
 
 	if !sd.VLOnly {
 		// Loki: use 3-element values when structured metadata is set.
@@ -582,6 +613,14 @@ func pushStreamForTenant(t *testing.T, baseTime time.Time, sd streamDef, tenant 
 		}
 		for k, v := range sd.StructuredMetadata {
 			entry[k] = v
+		}
+		if len(sd.ProjectedFields) != 0 {
+			for k, v := range sd.ProjectedFields[i] {
+				if _, exists := entry[k]; exists {
+					t.Fatalf("projected fixture field %q collides with stream or metadata", k)
+				}
+				entry[k] = v
+			}
 		}
 		j, _ := json.Marshal(entry)
 		vlLines = append(vlLines, string(j))

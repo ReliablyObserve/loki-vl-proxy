@@ -655,12 +655,13 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
 		msg := storedLogLineFromFJ(fjVal, rowStream.labels, lineFields, p.defaultMsgValue())
+		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
 
 		// Pass raw bytes to avoid string allocation on descriptor cache hits.
 		// logRowStreamDescriptor uses m[string([]byte)] (zero-alloc lookup)
 		// and only promotes to heap strings on cache miss (once per unique
 		// stream and level pair).
-		desc := p.logRowStreamDescriptor(rawStream, rowStream, fjVal.GetStringBytes("level"), detected, levelAsMetadata, levelStages, streamDescriptorCache)
+		desc := p.logRowStreamDescriptor(rawStream, rowStream, levelBytes, detected, levelAsMetadata, levelStages, streamDescriptorCache)
 
 		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
 		// buildStreamValue → metadataFieldMap copies them before the next iteration
@@ -762,6 +763,30 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		patterns = buildPatternResponse(miner, maxPatternResponseLimit)
 	}
 	return result, patterns, nil
+}
+
+// visibleStoredLevelFJ is shared by the direct and windowed log converters.
+// It leaves the field available for detected_level while preventing an
+// unlisted line key from becoming a Loki response label.
+func visibleStoredLevelFJ(row *fj.Value, streamLabels map[string]string, exposure *lineFieldExposure) []byte {
+	level := row.GetStringBytes("level")
+	if len(level) == 0 {
+		return nil
+	}
+	if exposure == nil {
+		return level
+	}
+	if _, onStream := streamLabels["level"]; onStream {
+		return level
+	}
+	line := row.GetStringBytes(translator.StoredLineField)
+	if len(line) == 0 {
+		line = row.GetStringBytes("_msg")
+	}
+	if exposure.hidesStoredLevel(line) {
+		return nil
+	}
+	return level
 }
 
 // mergesParsedStreamLabels reports whether labels extracted by | json or
@@ -1798,7 +1823,13 @@ func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, strea
 		// A stream label level keeps its value: a parser stage overwrites the
 		// stored level field with the line's own.
 	} else if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
-		labels["level"] = value
+		storedLine, _ := stringifyEntryValue(entry[translator.StoredLineField])
+		if storedLine == "" {
+			storedLine, _ = stringifyEntryValue(entry["_msg"])
+		}
+		if !exposure.hidesStoredLevel([]byte(storedLine)) {
+			labels["level"] = value
+		}
 	}
 	// Loki's detected_level for the stored row joins the stream labels.
 	msg, _ := stringifyEntryValue(entry["_msg"])

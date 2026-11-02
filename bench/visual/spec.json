@@ -995,6 +995,22 @@
    ]
   },
   {
+   "id": "explore-json-extraction-list-level",
+   "kind": "explore",
+   "query": "{app=\"visual-extraction-list\",case=\"json\"} | json msg=\"msg\"",
+   "ranges": ["15m", "1h"],
+   "covers": ["profiles/json-extraction-list-exposes-only-listed", "loki_api_v1_query_range"],
+   "fixes": ["profiles/json-extraction-list-exposes-only-listed"]
+  },
+  {
+   "id": "explore-logfmt-extraction-list-level",
+   "kind": "explore",
+   "query": "{app=\"visual-extraction-list\",case=\"logfmt\"} | logfmt op",
+   "ranges": ["15m", "1h"],
+   "covers": ["profiles/json-extraction-list-exposes-only-listed", "loki_api_v1_query_range"],
+   "fixes": ["profiles/json-extraction-list-exposes-only-listed"]
+  },
+  {
    "id": "explore-plain-level-metric",
    "kind": "explore",
    "query": "sum by (level) (count_over_time({env=\"production\"} | logfmt [$__auto]))",

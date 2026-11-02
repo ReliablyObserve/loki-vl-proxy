@@ -941,7 +941,8 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, shape logQueryShape
 		rowStream := rowLevels.stream(rawStream)
 		detected := rowLevels.fjRow(fjVal, fjObj, rowStream)
 		msg := storedLogLineFromFJ(fjVal, rowStream.labels, shape.lineFields, p.defaultMsgValue())
-		desc := p.logRowStreamDescriptor(rawStream, rowStream, fjVal.GetStringBytes("level"), detected, emitTupleMetadata, levelStages, streamDescriptorCache)
+		levelBytes := visibleStoredLevelFJ(fjVal, rowStream.labels, exposure)
+		desc := p.logRowStreamDescriptor(rawStream, rowStream, levelBytes, detected, emitTupleMetadata, levelStages, streamDescriptorCache)
 
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
