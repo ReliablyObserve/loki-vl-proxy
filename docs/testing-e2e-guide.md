@@ -71,10 +71,10 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
 | 12 proxy variants | 13100, 13102-13103, 13105-13111, 13150-13151 | See [Proxy Variants](#proxy-variants) |
 | `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
-| `grafana` (Grafana 13.2.3) | 3002 | UI with all datasources provisioned |
+| `grafana` (Grafana 13.3.0) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
 
-Grafana preinstalls `victoriametrics-logs-datasource@0.32.0` and `grafana-lokiexplore-app@2.6.0`.
+Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@2.6.0`.
 
 ## Dual-Write Pattern
 
@@ -235,7 +235,7 @@ Set environment variables before `docker compose up` to override image versions:
 |----------|---------|
 | `LOKI_IMAGE` | `grafana/loki:3.7.9` |
 | `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.52.0` |
-| `GRAFANA_IMAGE` | `grafana/grafana:13.2.3` |
+| `GRAFANA_IMAGE` | `grafana/grafana:13.3.0` |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |
 | `VMAUTH_IMAGE` | `victoriametrics/vmauth:v1.138.0` |
 | `VMALERT_IMAGE` | `victoriametrics/vmalert:v1.138.0` |
