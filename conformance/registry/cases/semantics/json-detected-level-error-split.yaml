@@ -89,7 +89,7 @@ gap:
   area: 'internal/proxy ordered_json_valid_split.go (jsonSplitStrict, jsonSplitErrors, jsonUnparsedLineRisk), ordered_json_metric.go pushdownLabelFilters and the split stats query'
   loki: 'pkg/logql/log/parser.go:74-170 JSONParser.Process/parseLabelValue; pkg/logql/log/parser_hints.go:145-215 NewParserHint/appendLabelHints; pkg/logql/log/labels.go:664-688 GroupedLabels; pkg/logql/evaluator.go:722-735 RangeVectorEvaluator.Next'
   proxy: 'every selected line read as a raw row; 500 at -manual-range-metric-row-limit on 24h'
-  planned_test: 'proxy TestJSONErrorSplitPredicateDifferential, FuzzJSONErrorSplitPredicate, TestJSONDetectedLevelSplitMatchesRawEvaluator, TestJSONDetectedLevelSplitEdgeTable, TestJSONDetectedLevelSplitEligibility, TestJSONUnparsedLineRiskPerTenant, TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit'
+  planned_test: 'proxy TestJSONErrorSplitPredicateDifferential, FuzzJSONErrorSplitPredicate, TestJSONDetectedLevelSplitMatchesRawEvaluator, TestJSONDetectedLevelSplitEdgeTable, TestJSONDetectedLevelSplitEligibility, TestJSONUnparsedLineRiskPerTenant, TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit, TestJSONDetectedLevelSplitOffGridBoundsAlign'
   note: 'Bytes metrics take the split too but keep the whole-window evaluation on a moved window (settled steps hold count and rate only).'
   clusters: []
 perf:
