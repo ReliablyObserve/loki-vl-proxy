@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.59.1] - 2026-11-02
+
 ### Fixed
 
 - Stop warning `label values index disk restore failed: decode label index
