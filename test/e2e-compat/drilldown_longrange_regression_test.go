@@ -148,8 +148,19 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 	logParams := url.Values{
 		"query": {query},
 		"start": proofWindow["start"],
-		"end":   proofWindow["end"],
+		// More than one one-hour source window is required to exercise the
+		// reusable log-fragment path rather than the direct-query fallback.
+		"end":   {strconv.FormatInt(proofStart.Add(2*time.Hour).UnixNano(), 10)},
 		"limit": {"50"},
+	}
+	seriesParams := url.Values{
+		"match[]": {query},
+		"start":   proofWindow["start"],
+		"end":     proofWindow["end"],
+	}
+	instantParams := url.Values{
+		"query": metricParams["query"],
+		"time":  proofWindow["end"],
 	}
 	readCases := []struct {
 		name, path, layer string
@@ -157,10 +168,12 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 		{"label_values", "/loki/api/v1/label/app/values?" + metadataParams.Encode(), "loki"},
 		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "vl"},
 		{"log_range", "/loki/api/v1/query_range?" + logParams.Encode(), "loki"},
+		{"series", "/loki/api/v1/series?" + seriesParams.Encode(), "loki"},
+		{"instant_metric", "/loki/api/v1/query?" + instantParams.Encode(), "loki"},
 	}
 	warmAnswers := make(map[string]any, len(readCases))
 	for _, tc := range readCases {
-		warmAnswers[tc.name] = readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values")
+		warmAnswers[tc.name] = readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values" && tc.name != "series")
 	}
 
 	// The CI/playground patterns datasource has a bounded L2 on its named
@@ -190,11 +203,15 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 	for _, tc := range readCases {
 		t.Run("L2ReadRoutes/"+tc.name, func(t *testing.T) {
 			var before int64
+			var windowHitsBefore int64
 			if tc.layer != "" {
 				before = proxyMetricValue(t, patternsAutodetectProxyURL,
 					fmt.Sprintf(`loki_vl_proxy_cache_layer_hits_total{layer=%q,component="primary",tier="l2_disk"} `, tc.layer))
 			}
-			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values")
+			if tc.name == "log_range" {
+				windowHitsBefore = proxyMetricValue(t, patternsAutodetectProxyURL, "loki_vl_proxy_window_cache_hit_total ")
+			}
+			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values" && tc.name != "series")
 			if !reflect.DeepEqual(got, warmAnswers[tc.name]) {
 				t.Fatalf("%s answer changed after restart: got=%v want=%v", tc.name, got, warmAnswers[tc.name])
 			}
@@ -205,6 +222,12 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 					t.Fatalf("%s did not read %s L2 after restart: before=%d after=%d", tc.name, tc.layer, before, after)
 				}
 				t.Logf("%s L2 hits after restart: %d", tc.name, after-before)
+			}
+			if tc.name == "log_range" {
+				windowHitsAfter := proxyMetricValue(t, patternsAutodetectProxyURL, "loki_vl_proxy_window_cache_hit_total ")
+				if windowHitsAfter <= windowHitsBefore {
+					t.Fatalf("log query did not reuse a source window after restart: before=%d after=%d", windowHitsBefore, windowHitsAfter)
+				}
 			}
 		})
 	}

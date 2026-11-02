@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tenant and auth identity, parser shape, direction, row limits, and exact
   aligned bounds; recent windows retain their configured short TTL.
 
+- Admit small completed instant metric and series replies to the Loki-layer
+  disk and peer tiers, while retaining the existing exact-response and
+  near-now freshness checks. Historical replies can be reused after a
+  frontend restart; oversized replies remain bounded by cache admission.
+
 - Reuse settled source-window pattern mining results across shifted Logs
   Drilldown ranges through the existing Loki-layer memory, disk and peer
   cache. Moving edges and windows inside the configured query-range

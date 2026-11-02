@@ -667,7 +667,17 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		if cached, remainingTTL, entryAge, ok := p.compatCache.GetWithAge(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
+		cached, remainingTTL, entryAge, ok := p.compatCache.GetWithAge(cacheKey)
+		if ok && p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
+			ok = false
+		}
+		// Instant metric and series replies have no reusable source-window
+		// path. Small completed replies can recover from the bounded Loki
+		// cache after a process restart or on another frontend.
+		if !ok && (endpoint == "query" || endpoint == "series") && p.cache != nil {
+			cached, remainingTTL, entryAge, _, ok = p.cache.GetSharedWithAge(cacheKey)
+		}
+		if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			body := cached
@@ -726,7 +736,11 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 				ttl = p.metadataNegativeTTL()
 			}
 			if captureAllowed {
-				p.compatCache.SetWithTTL(cacheKey, append([]byte(nil), body...), ttl)
+				body = append([]byte(nil), body...)
+				p.compatCache.SetWithTTL(cacheKey, body, ttl)
+				if (endpoint == "query" || endpoint == "series") && len(body) <= 128<<10 && p.cache != nil {
+					p.cache.SetWithTTL(cacheKey, body, ttl)
+				}
 			}
 		}
 		capture.Release()
