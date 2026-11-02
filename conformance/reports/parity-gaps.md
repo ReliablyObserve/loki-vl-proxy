@@ -142,7 +142,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/lower-bound-exclusive` — the raw-row range evaluator reads the window (t-range, t] for every range function (fixed) | TBD-PR | 0 | 0 |
 | `semantics/nested-aggregation-outer-by-native-routes` — A vector aggregation over another one keeps every level's own by on the native routes (fixed) | #746 | 0 | 0 |
 | `semantics/proxy-accepts-operators-not-in-loki` — group(), label_join() and other names Loki does not have are answered; uppercase keywords are not (fixed) | #748 | 0 | 0 |
-| `semantics/query-range-step-alignment` — A metric query_range is answered on Loki's step grid by default (-align-queries-with-step) and a refresh inside one step is served from t... | TBD-PR | 0 | 0 |
+| `semantics/query-range-step-alignment` — A metric query_range is answered on Loki's step grid by default (-align-queries-with-step) and a refresh inside one step is served from t... | #989 | 0 | 0 |
 | `semantics/query-range-window-budget` — A shifted log range does not reuse a window truncated by an earlier request's remaining limit | #929 | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
 | `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |

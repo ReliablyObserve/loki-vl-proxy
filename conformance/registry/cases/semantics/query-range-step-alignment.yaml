@@ -73,7 +73,7 @@ compare:
     VictoriaLogs call once the window's buckets are stored.
 gap:
   status: fixed
-  fixed_by: TBD-PR
+  fixed_by: "#989"
   impact: explore-visible
   visual: none
   visual_reason: 'Grafana''s Loki datasource already floors start to the step when it splits a metric query (metricTimeSplitting.ts splitTimeRange, on by default), and samples stop at the last grid point at or before end with or without the flag, so its panels are the same; the shift shows for API clients with an off-grid start, and the change is in refresh latency'
