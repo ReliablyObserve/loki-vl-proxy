@@ -3,7 +3,9 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,7 +27,21 @@ type Schema struct {
 
 // LoadSchema reads and checks a schema file.
 func LoadSchema(path string) (*Schema, error) {
-	raw, err := os.ReadFile(path)
+	dir, name := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return LoadSchemaFS(root.FS(), name)
+}
+
+// LoadSchemaFS reads and checks a schema file from fsys.
+func LoadSchemaFS(fsys fs.FS, path string) (*Schema, error) {
+	raw, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return nil, err
 	}

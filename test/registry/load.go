@@ -88,40 +88,46 @@ func normalize(v any, at string) (any, error) {
 // file that does not parse strictly, an id that is not its path under cases/, a duplicate id, and every
 // violation of the schema. A problem in one file does not stop the others being checked.
 func LoadAll(root string) ([]Case, []string, error) {
-	schema, err := LoadSchema(filepath.Join(root, SchemaFile))
+	// Everything is read through an os.Root, so a symlink inside the registry cannot lead the walk out of it.
+	reg, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, nil, err
 	}
-	base := filepath.Join(root, CasesDir)
+	defer func() { _ = reg.Close() }()
+	schema, err := LoadSchemaFS(reg.FS(), SchemaFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	fsys := reg.FS()
 	var cases []Case
 	var problems []string
 	seen := map[string]string{}
-	err = filepath.WalkDir(base, func(path string, d fs.DirEntry, walkErr error) error {
+	err = fs.WalkDir(fsys, CasesDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
 			return walkErr
 		}
-		rel, _ := filepath.Rel(base, path)
-		id := strings.TrimSuffix(filepath.ToSlash(rel), ".yaml")
-		data, err := os.ReadFile(path)
+		id := strings.TrimSuffix(strings.TrimPrefix(path, CasesDir+"/"), ".yaml")
+		display := filepath.ToSlash(filepath.Join(root, path))
+		data, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}
 		doc, err := Parse(data)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
+			problems = append(problems, fmt.Sprintf("%s: %v", display, err))
 			return nil
 		}
 		for _, p := range schema.Validate(doc) {
-			problems = append(problems, fmt.Sprintf("%s: %s", path, p))
+			problems = append(problems, fmt.Sprintf("%s: %s", display, p))
 		}
 		if got, _ := doc["id"].(string); got != id {
-			problems = append(problems, fmt.Sprintf("%s: id %q is not the path %q", path, got, id))
+			problems = append(problems, fmt.Sprintf("%s: id %q is not the path %q", display, got, id))
 		}
 		if first, dup := seen[id]; dup {
-			problems = append(problems, fmt.Sprintf("%s: duplicate id, first in %s", path, first))
+			problems = append(problems, fmt.Sprintf("%s: duplicate id, first in %s", display, first))
 		}
-		seen[id] = path
-		cases = append(cases, Case{ID: id, Path: filepath.ToSlash(path), Doc: doc})
+		seen[id] = display
+		cases = append(cases, Case{ID: id, Path: display, Doc: doc})
 		return nil
 	})
 	if err != nil {
