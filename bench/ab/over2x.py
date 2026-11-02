@@ -435,8 +435,42 @@ def slower(old, new, noise, min_delta):
     return old is not None and new is not None and new > old * (1 + noise) and new - old > min_delta
 
 
-def gate(summary, baseline, noise, min_delta, bounds=None):
+def base_elsewhere(summary, row, mode, others):
+    """The base-vs-PR evidence another Loki profile holds for a row whose base build is not like-for-like in
+    this profile: ((base pair, PR pair), profile name), or None.
+
+    A build without the profile's setting is never compared in that profile, so the profile cannot show whether
+    the PR added the row. The same two builds ran in the other profile of the same set; when both are
+    like-for-like there, answered 200 with a time, and the PR ran the same setting in both profiles
+    (summary["proxy_align"]), that profile's base-versus-PR comparison stands in. `others` are summaries (any set
+    or profile); the first usable one of the same set in another profile is used.
+    """
+    b, c = summary["baseline"], summary["candidate"]
+    for o in others or ():
+        if o is summary or o.get("set") != summary["set"] or profile_of(o) == profile_of(summary):
+            continue
+        if (o.get("baseline"), o.get("candidate")) != (b, c) or not (like_for_like(o, b) and like_for_like(o, c)):
+            continue
+        if (o.get("proxy_align") or {}).get(c) != (summary.get("proxy_align") or {}).get(c):
+            continue
+        orow = next((r for r in o["rows"] if r["shape"] == row["shape"] and r["range"] == row["range"]), None)
+        if orow is None:
+            continue
+        ob, op = (summary_pairs(o, orow, b).get(mode), summary_pairs(o, orow, summary["candidate"]).get(mode))
+        if ob and op and ob[0] is not None and op[0] is not None and ob[2] == "200" and op[2] == "200":
+            return (ob, op), profile_of(o)
+    return None
+
+
+def gate(summary, baseline, noise, min_delta, bounds=None, others=()):
     """Findings for one pr_smoke summary: each above-2× row of the PR build with its kind (and a note).
+
+    others: the run's other summaries; a profile whose base build is not like-for-like (the base lacks the
+    flag the profile needs) cannot show that the PR added a row, so it is classified by the other profile's
+    base-versus-PR comparison of the same set, shape, range and mode (base_elsewhere): "as slow on base" or
+    "within noise of base" there is known, slower than the base there is new (worsened when the base was
+    above 2× too). With no comparable base in either profile and the row not listed, the kind is
+    "first_measurement": reported as a warning, never failing.
 
     bounds (bounds_at the base): a locked row is judged at its own max_ratio instead of 2× and its findings
     carry locked=True (a new or worsened one is a locked-row regression); a row whose base build was below Loki
@@ -446,6 +480,8 @@ def gate(summary, baseline, noise, min_delta, bounds=None):
               ("as slow on base"); or the row is listed and the PR is not worsened ("listed"); or the base
               build is comparable, just under 2× (e.g. inside the absolute floor), and the PR is within noise of
               it ("within noise of base": the PR did not move it);
+    first_measurement  above 2× on the PR in a profile whose base build is not like-for-like, with no
+              comparable base in the other profile and not listed: nothing to compare with yet;
     new       above 2× on the PR, not listed, and slower than the base build beyond noise (or the base did not
               answer comparably), with the base not above 2×;
     worsened  listed, and the PR's time is worse beyond noise than both the listed ratio predicts and the base
@@ -479,6 +515,11 @@ def gate(summary, baseline, noise, min_delta, bounds=None):
                 out.append({**found, "kind": "cleared"})
             if state != "above":
                 continue
+            if not like_for_like(summary, b):
+                found, kind, note = unlike_base_kind(summary, row, mode, others, found, pr, listed, limit, noise,
+                                                     min_delta)
+                out.append({**found, "kind": kind, "note": note})
+                continue
             worse_than_base = base_ratio is not None and slower(base[0], pr[0], noise, min_delta)
             if base_state == "above" and not worse_than_base:
                 kind, note = "known", "as slow on base"
@@ -493,6 +534,28 @@ def gate(summary, baseline, noise, min_delta, bounds=None):
                 kind, note = "new", ""
             out.append({**found, "kind": kind, "note": note})
     return out
+
+
+def unlike_base_kind(summary, row, mode, others, found, pr, listed, limit, noise, min_delta):
+    """(finding, kind, note) of an above-2× PR row in a profile whose base build is not like-for-like."""
+    via = base_elsewhere(summary, row, mode, others)
+    if via is None:
+        if listed:
+            return found, "known", "listed"
+        return found, "first_measurement", ("first measurement: the base build did not run this profile's setting and "
+                                            "the other profile has no comparable base")
+    (ob, op), where = via
+    base_state = judge(*ob, bound=limit)
+    base_above = base_state == "above"
+    found = {**found, "base_via": {"profile": where, "base_s": ob[0], "pr_s": op[0],
+                                   "ratio": ratio(ob[0], ob[1]) if base_state in ("above", "within") else None}}
+    if slower(ob[0], op[0], noise, min_delta):
+        if listed:  # as in the like-for-like path: a listed row is worsened only beyond its listed ratio too
+            worse = slower(listed["ratio"] * pr[1], pr[0], noise, min_delta)
+            return found, ("worsened" if worse else "known"), ("slower than the base build in " + where if worse else "listed")
+        return found, ("worsened" if base_above else "new"), f"slower than the base build in {where} (base not like-for-like here)"
+    return found, "known", (f"as slow on base in {where} (base not like-for-like here)" if base_above else
+                            f"proxy time within noise of base in {where} (base not like-for-like here)")
 
 
 def failing(findings):
@@ -549,11 +612,11 @@ def locked_failing(findings):
     return [f for f in failing(findings) if f.get("locked")]
 
 
-def remeasure(summary, baseline, noise, min_delta, bounds=None):
+def remeasure(summary, baseline, noise, min_delta, bounds=None, others=()):
     """Shapes with a new or worsened cold or warm finding: re-measured like slower rows before they count.
     The confirmation pass has no refresh run, so a refresh finding stands on the first pass; a cold one does too
     when Loki's cache answered the re-run's cold (pr_smoke.confirm keeps the first pass's cold then)."""
-    return sorted({f["shape"] for f in failing(gate(summary, baseline, noise, min_delta, bounds))
+    return sorted({f["shape"] for f in failing(gate(summary, baseline, noise, min_delta, bounds, others))
                    if f["mode"] != "refresh"})
 
 
@@ -701,14 +764,15 @@ def main():
     if problem:
         print(problem, file=sys.stderr)
         return 1
-    for path in args.summaries:
-        found = gate(load(path), baseline, args.noise, args.min_delta)
+    loaded = [load(p) for p in args.summaries]
+    for path, summary in zip(args.summaries, loaded):
+        found = gate(summary, baseline, args.noise, args.min_delta, others=loaded)
         by_kind = {}
         for f in found:
             by_kind[f["kind"]] = by_kind.get(f["kind"], 0) + 1
         print(f"{os.path.basename(path)}: {by_kind or 'nothing above 2x Loki'}")
         for f in found:
-            if f["kind"] in ("new", "worsened"):
+            if f["kind"] in ("new", "worsened", "first_measurement"):
                 print(f"  {f['kind']} ({f['profile']}): {f['shape']} {f['range']} {f['mode']}: PR {secs(f['proxy_s'])} vs Loki "
                       f"{secs(f['loki_s'])} = {times(f['ratio'])} (base {times(f['base_ratio'])}, listed "
                       f"{times(f['baseline_ratio'])})")

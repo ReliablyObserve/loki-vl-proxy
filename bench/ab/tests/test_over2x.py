@@ -243,6 +243,14 @@ class ConfirmTest(unittest.TestCase):
         self.assertEqual([(f["kind"], f["mode"], f["confirmed"]) for f in over2x.failing(over2x.gate(out, {}, NOISE, MIN_DELTA))],
                          [("new", "cold", True)])
 
+    def test_a_row_the_other_profile_s_base_clears_is_not_remeasured(self):
+        sums = pr989()
+        aligned = [sm for sm in sums if sm["profile"] == "aligned" and sm["set"] == "extracted-pushdown"][0]
+        args = type("Args", (), dict(noise=NOISE, min_delta=MIN_DELTA, confirm_runs=7))()
+        with mock.patch.object(pr_smoke, "run_matrix") as run:
+            pr_smoke.confirm(aligned, args, {"confirm_end": 1}, None, "/out", [("base", "u")], {}, None, sums)
+        run.assert_not_called()
+
     def test_without_a_baseline_nothing_extra_is_remeasured(self):
         first = summary(row(shape="s", pr=0.5, base=0.15))
         args = type("Args", (), dict(noise=NOISE, min_delta=MIN_DELTA, confirm_runs=7))()
@@ -788,9 +796,13 @@ class ProfileGateTest(unittest.TestCase):
         self.assertEqual({m["state"] for m in over2x.measure(s)}, {"not_comparable"})
         self.assertEqual(over2x.gate(s, {}, NOISE, MIN_DELTA), [])
         # the base build not like-for-like: the PR is compared with Loki, the base cannot excuse it
+        # the base build not like-for-like: the PR is compared with Loki, the base cannot excuse it, but with no
+        # comparable base in the other profile either nothing shows the PR added the row (see Pr989GateTest)
         s = summary(r, profile="aligned", not_like_for_like=["base"])
-        found = over2x.failing(over2x.gate(s, {}, NOISE, MIN_DELTA))
-        self.assertEqual({(f["kind"], f["mode"], f["base_ratio"]) for f in found}, {("new", "cold", None), ("new", "warm", None)})
+        found = over2x.gate(s, {}, NOISE, MIN_DELTA)
+        self.assertEqual({(f["kind"], f["mode"], f["base_ratio"]) for f in found},
+                         {("first_measurement", "cold", None), ("first_measurement", "warm", None)})
+        self.assertEqual(over2x.failing(found), [])
 
     def test_pairs_of_a_target_that_is_not_like_for_like_have_no_time_and_no_status_but_keep_loki(self):
         s = summary(row(pr=0.9, loki=0.1), not_like_for_like=["pr"])
@@ -882,6 +894,208 @@ class ProfileGateTest(unittest.TestCase):
         text, _ = comment.render([summary(r, profile="loki-defaults")], SELECTION, meta, listed)
         self.assertNotIn("Above 2× Loki:", text)
         self.assertIn("Compared with the above-2× baseline: 1 rows (cold 0, warm 1, refresh 0; aligned 0, loki-defaults 1)", text)
+
+
+FIXTURE = os.path.join(HERE, "fixtures", "pr989-profiles.json")
+
+
+def pr989():
+    with open(FIXTURE) as f:
+        return json.load(f)["summaries"]
+
+
+def pr989_with(changes):
+    """The fixture with (set, profile, key) -> value patches on the row's cold / p50 maps: {"pr": 9.0} etc."""
+    out = pr989()
+    for (set_name, profile, key), patch in changes.items():
+        for sm in out:
+            if sm["set"] == set_name and sm["profile"] == profile:
+                for r in sm["rows"]:
+                    r[key].update(patch)
+    return out
+
+
+def gate_all(summaries, baseline=None, **kw):
+    return [f for sm in summaries for f in over2x.gate(sm, baseline or {}, NOISE, MIN_DELTA, others=summaries, **kw)]
+
+
+def by_row(findings):
+    return {(f["profile"], f["shape"].split()[0], f["mode"]): (f["kind"], f.get("note", "")) for f in findings
+            if f["kind"] in ("new", "worsened", "known", "first_measurement")}
+
+
+class Pr989GateTest(unittest.TestCase):
+    """PR 989 is the first PR whose head knows -align-queries-with-step, so in the aligned profile its base build is not
+    like-for-like and has no ratio. The real summaries of its perf-smoke run (X1, LS8 and D1, all measured
+    the same on the base and the PR in loki-defaults) must not fail the gate. The rule stays: a PR fails only
+    for a row it adds above 2× or makes worse."""
+
+    def test_the_real_run_fails_nothing(self):
+        found = gate_all(pr989())
+        self.assertEqual(over2x.failing(found), [])
+        got = by_row(found)
+        # loki-defaults: the base ratio exists and the PR is within noise of it
+        for k in (("loki-defaults", "X1", "cold"), ("loki-defaults", "LS8", "cold"), ("loki-defaults", "LS8", "warm")):
+            self.assertEqual(got[k], ("known", "as slow on base"), k)
+        # aligned: no base ratio of its own, classified by the loki-defaults base-versus-PR comparison
+        for k in (("aligned", "X1", "cold"), ("aligned", "LS8", "cold"), ("aligned", "LS8", "warm")):
+            self.assertEqual(got[k], ("known", "as slow on base in loki-defaults (base not like-for-like here)"), k)
+        # D1 cold is above 2× only against the aligned Loki; the proxy is not slower than the base build (80 ms base, 71 ms PR)
+        self.assertEqual(got[("aligned", "D1", "cold")],
+                         ("known", "proxy time within noise of base in loki-defaults (base not like-for-like here)"))
+        self.assertNotIn(("loki-defaults", "D1", "cold"), got)  # 1.18×: not above 2× there
+        self.assertNotIn("first_measurement", {k for k, _ in got.values()})
+
+    def test_the_old_verdict_is_what_the_comment_reported(self):
+        # Without the other profile the aligned rows have no comparable base anywhere: first measurement, no failure.
+        aligned = [sm for sm in pr989() if sm["profile"] == "aligned"]
+        found = [f for sm in aligned for f in over2x.gate(sm, {}, NOISE, MIN_DELTA)]
+        self.assertEqual(over2x.failing(found), [])
+        self.assertEqual({f["kind"] for f in found if f["kind"] != "cleared"}, {"first_measurement"})
+        self.assertEqual(len([f for f in found if f["kind"] == "first_measurement"]), 4)
+
+    def test_the_findings_carry_the_base_they_were_judged_by(self):
+        d1 = [f for f in gate_all(pr989()) if f["profile"] == "aligned" and f["shape"].startswith("D1")][0]
+        self.assertIsNone(d1["base_ratio"])
+        self.assertEqual(d1["base_via"], {"profile": "loki-defaults", "base_s": 0.08, "pr_s": 0.071, "ratio": 1.33})
+        x1 = [f for f in gate_all(pr989()) if f["profile"] == "aligned" and f["shape"].startswith("X1")][0]
+        self.assertEqual((x1["base_via"]["ratio"], x1["base_via"]["profile"]), (5.21, "loki-defaults"))
+
+    def test_a_row_the_pr_really_worsens_still_fails(self):
+        # X1 cold: the PR takes 9 s where the base took 3.48 s (both above 2×): worsened, in both profiles.
+        sums = pr989_with({("extracted-pushdown", "loki-defaults", "cold"): {"pr": 9.0},
+                             ("extracted-pushdown", "aligned", "cold"): {"pr": 9.0}})
+        got = by_row(gate_all(sums))
+        self.assertEqual(got[("loki-defaults", "X1", "cold")][0], "worsened")
+        self.assertEqual(got[("aligned", "X1", "cold")], ("worsened", "slower than the base build in loki-defaults "
+                                                                     "(base not like-for-like here)"))
+        merged = over2x.merge_failing(gate_all(sums), sums)
+        self.assertEqual([(m["shape"].split()[0], m["mode"], m["kind"], sorted(m["profiles"])) for m in merged],
+                         [("X1", "cold", "worsened", ["aligned", "loki-defaults"])])
+
+    def test_a_row_the_base_had_within_2x_and_the_pr_takes_above_fails_as_new(self):
+        # D1 cold: base 80 ms, Loki 60 ms (fine); the PR takes 400 ms: new in loki-defaults, and in aligned.
+        sums = pr989_with({("unwrap-duration-seconds", "loki-defaults", "cold"): {"pr": 0.4},
+                             ("unwrap-duration-seconds", "aligned", "cold"): {"pr": 0.4}})
+        got = by_row(gate_all(sums))
+        self.assertEqual(got[("loki-defaults", "D1", "cold")][0], "new")
+        self.assertEqual(got[("aligned", "D1", "cold")][0], "new")
+
+    def test_a_pr_that_is_slower_only_in_the_aligned_profile_is_not_judged_by_the_other(self):
+        # The base comes from the other profile and only that profile's base-versus-PR comparison decides: the PR
+        # ran the same setting in both, so a slower aligned run alone is noise, not a change the PR made.
+        sums = pr989_with({("unwrap-duration-seconds", "aligned", "cold"): {"pr": 0.4}})
+        self.assertEqual(over2x.failing(gate_all(sums)), [])
+
+    def test_a_first_measurement_warns_and_does_not_fail(self):
+        aligned = [sm for sm in pr989() if sm["profile"] == "aligned"]
+        base = {}
+        text, verdict = comment.render(aligned, SELECTION, dict(META, over_2x_loki="fail"), base)
+        self.assertEqual((verdict["state"], verdict["exit"], verdict["failed"]), ("passed", 0, False))
+        self.assertEqual({k: verdict["over_2x"][k] for k in ("new", "worsened", "known", "first_measurement")},
+                         {"new": 0, "worsened": 0, "known": 0, "first_measurement": 4})
+        self.assertIn("#### 🟡 First measurement above 2× Loki: 4 (warning, does not fail)", text)
+        self.assertNotIn("This fails `perf-smoke`", text)
+        self.assertIn("| first measurement | aligned | cold | X1 json filter level_extracted, by level | 1h |", text)
+
+    def test_no_comparable_base_in_the_other_profile_either(self):
+        # the other profile's base build is not like-for-like too; or it answered 500; or the PR ran another setting
+        for change in (lambda sm: sm.update(not_like_for_like=["base"]),
+                       lambda sm: [r["status"].update(base="500") for r in sm["rows"]],
+                       lambda sm: sm.update(proxy_align={"base": "off", "pr": "off"})):
+            sums = pr989()
+            for sm in sums:
+                if sm["profile"] == "loki-defaults":
+                    change(sm)
+            found = [f for sm in sums if sm["profile"] == "aligned" for f in over2x.gate(sm, {}, NOISE, MIN_DELTA, others=sums)]
+            self.assertEqual(over2x.failing(found), [])
+            self.assertEqual({f["kind"] for f in found}, {"first_measurement"})
+
+    def test_a_listed_row_without_a_comparable_base_is_known_as_listed(self):
+        aligned = [sm for sm in pr989() if sm["profile"] == "aligned" and sm["set"] == "level-filter-stored"][0]
+        base = {("aligned", "level-filter-stored", aligned["rows"][0]["shape"], "1h", "warm"):
+                {"profile": "aligned", "set": "level-filter-stored", "shape": aligned["rows"][0]["shape"],
+                 "range": "1h", "mode": "warm", "ratio": 5.0}}
+        got = {f["mode"]: (f["kind"], f["note"]) for f in over2x.gate(aligned, base, NOISE, MIN_DELTA)}
+        self.assertEqual(got["warm"], ("known", "listed"))
+        self.assertEqual(got["cold"][0], "first_measurement")
+
+    def test_a_listed_row_is_never_new_through_the_other_profile(self):
+        # D1 cold slower than the other profile's base (within 2× there), listed in aligned at 5×: as in the
+        # like-for-like path it is worsened only beyond its listed ratio too.
+        sums = pr989_with({("unwrap-duration-seconds", "loki-defaults", "cold"): {"pr": 0.4},
+                           ("unwrap-duration-seconds", "aligned", "cold"): {"pr": 0.4}})
+        aligned = [sm for sm in sums if sm["profile"] == "aligned" and sm["set"] == "unwrap-duration-seconds"][0]
+        shape = aligned["rows"][0]["shape"]
+
+        def kind(ratio):
+            base = {("aligned", "unwrap-duration-seconds", shape, "1h", "cold"):
+                    {"profile": "aligned", "set": "unwrap-duration-seconds", "shape": shape, "range": "1h",
+                     "mode": "cold", "ratio": ratio}}
+            return [(f["kind"], f["note"]) for f in over2x.gate(aligned, base, NOISE, MIN_DELTA, others=sums)
+                    if f["mode"] == "cold"]
+
+        self.assertEqual(kind(10.0), [("known", "listed")])   # 0.4 s / 40 ms = 10×: not beyond the listed 10×
+        self.assertEqual(kind(5.0)[0][0], "worsened")          # beyond the listed 5× and slower than the base
+
+    def test_a_profile_with_a_comparable_base_ignores_the_other(self):
+        # base like-for-like in both: each profile is judged by its own base, as before
+        sums = pr989()
+        for sm in sums:
+            sm["not_like_for_like"] = []
+        for sm in sums:
+            if sm["profile"] == "aligned":
+                for r in sm["rows"]:
+                    r["cold"]["base"], r["p50"]["base"] = 0.05, 0.05
+        got = by_row(gate_all(sums))
+        self.assertEqual(got[("aligned", "X1", "cold")][0], "new")
+        self.assertEqual(got[("loki-defaults", "X1", "cold")][0], "known")
+
+    def test_remeasure_follows_the_other_profile_s_base(self):
+        sums = pr989_with({("unwrap-duration-seconds", "loki-defaults", "cold"): {"pr": 0.4},
+                             ("unwrap-duration-seconds", "aligned", "cold"): {"pr": 0.4}})
+        aligned = [sm for sm in sums if sm["profile"] == "aligned" and sm["set"] == "unwrap-duration-seconds"][0]
+        self.assertEqual(over2x.remeasure(aligned, {}, NOISE, MIN_DELTA, others=sums), [aligned["rows"][0]["shape"]])
+        self.assertEqual(over2x.remeasure(aligned, {}, NOISE, MIN_DELTA), [])  # alone: first measurement, nothing to confirm
+        calm = [sm for sm in pr989() if sm["profile"] == "aligned"]
+        self.assertEqual([over2x.remeasure(sm, {}, NOISE, MIN_DELTA, others=pr989()) for sm in calm], [[], [], []])
+
+    def test_the_comment_of_the_real_run_passes_and_names_its_reasons(self):
+        meta = dict(META, over_2x_loki="fail", profiles={"aligned": {"ran": True}, "loki-defaults": {"ran": True}})
+        text, verdict = comment.render(pr989(), SELECTION, meta, {})
+        self.assertEqual((verdict["state"], verdict["exit"], verdict["failed"]), ("passed", 0, False))
+        self.assertEqual({k: verdict["over_2x"][k] for k in ("new", "worsened", "known", "first_measurement")},
+                         {"new": 0, "worsened": 0, "known": 8, "first_measurement": 0})
+        self.assertNotIn("This fails `perf-smoke`", text)
+        # the rows stay listed, with the reason and the base they were judged by
+        self.assertIn("8 shape×range above 2× Loki already", text)
+        self.assertIn("as slow on base in loki-defaults (base not like-for-like here)", text)
+        self.assertIn("proxy time within noise of base in loki-defaults (base not like-for-like here)", text)
+        self.assertIn("| 5.21× (defaults) |", text)
+
+    def test_the_comment_of_a_worsened_run_fails(self):
+        sums = pr989_with({("extracted-pushdown", "loki-defaults", "cold"): {"pr": 9.0},
+                             ("extracted-pushdown", "aligned", "cold"): {"pr": 9.0}})
+        meta = dict(META, over_2x_loki="fail", profiles={"aligned": {"ran": True}, "loki-defaults": {"ran": True}})
+        text, verdict = comment.render(sums, SELECTION, meta, {})
+        self.assertEqual((verdict["state"], verdict["exit"], verdict["failed"]), ("failed", 1, True))
+        self.assertEqual((verdict["over_2x"]["new"], verdict["over_2x"]["worsened"]), (0, 1))
+
+    def test_replay_cli_passes_every_summary_as_the_other_profiles(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = []
+            for i, sm in enumerate(pr989()):
+                paths.append(os.path.join(d, f"{i}.json"))
+                with open(paths[-1], "w") as f:
+                    json.dump(sm, f)
+            empty = os.path.join(d, "baseline.json")
+            with open(empty, "w") as f:
+                json.dump({"rows": []}, f)
+            out = io.StringIO()
+            with mock.patch.object(sys, "argv", ["over2x.py", "replay", *paths, "--baseline", empty]), contextlib.redirect_stdout(out):
+                self.assertEqual(over2x.main(), 0)
+        self.assertNotIn("first_measurement", out.getvalue())
+        self.assertNotIn("  new ", out.getvalue())
 
 
 if __name__ == "__main__":
