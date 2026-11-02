@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep and drop `detected_level` independently of the stored `level` field
+  in Loki log responses. The backend retains `level` long enough to derive
+  the entry value, while response projection hides it unless requested.
+  A dual-ingest Loki comparison covers stream and structured-metadata levels,
+  existing `detected_level` stream labels and both response encodings. Scoped
+  response-cache versions prevent older local or peer entries from restoring
+  pre-fix labels.
+
 ## [2.56.2] - 2026-11-01
 
 ### Fixed
