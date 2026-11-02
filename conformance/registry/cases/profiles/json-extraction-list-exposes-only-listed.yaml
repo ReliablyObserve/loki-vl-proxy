@@ -28,7 +28,7 @@ compare:
     exposes op but not level. Full parsers remain a separate control.
 gap:
   status: fixed
-  fixed_by: 526397333f5e602af9d5c7232ed365ddba7970d8
+  fixed_by: 3c3451e84ba9a7853756118a27da9361548b3a1f
   impact: explore-visible
   effort: S
   area: 'internal/proxy stage-field exposure (extraction lists)'
