@@ -587,6 +587,71 @@ func TestQueryRangeStepAlignment_SubStepRefreshServedFromCaches(t *testing.T) {
 	}
 }
 
+// With the flag on, a refresh inside one step after the edge response cache
+// is gone (a frontend restart) is answered by the routing-scoped shared tier
+// of the read-reply cache, which is keyed on the moved bounds like the edge
+// cache: byte for byte the uncached aligned answer, with no VictoriaLogs call.
+// The extent cache is off here, so only the shared tier can answer it.
+// conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
+func TestQueryRangeStepAlignment_SharedTierAnswersMovedRefresh(t *testing.T) {
+	s0 := time.Unix(1700001000, 0).UTC()
+	lines := alignFixture(s0, 5*time.Hour)
+	cachedSrv, cachedShim := newExtentShim(t, func() http.Handler { srv, _ := newSlidingFakeVL(t, lines); return srv.Config.Handler }())
+	refSrv, _ := newExtentShim(t, func() http.Handler { srv, _ := newSlidingFakeVL(t, lines); return srv.Config.Handler }())
+	cached, err := New(Config{
+		BackendURL:  cachedSrv.URL,
+		Cache:       cache.NewWithMaxBytes(time.Minute, 100000, 256<<20),
+		CompatCache: cache.New(time.Minute, 1000),
+		LogLevel:    "error",
+		// the default; the extent cache stays off
+		AlignQueriesWithStep: true,
+	})
+	if err != nil {
+		t.Fatalf("proxy: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cached.Shutdown(context.Background())
+		cached.cache.Close()
+		cached.compatCache.Close()
+	})
+	cached.storeBackendVersion("v1.50.0", "v1.50.0")
+	cached.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
+	ref := newAlignTestProxy(t, refSrv.URL, true, false, nil)
+	cachedMux, refMux := alignRouteMux(cached), alignRouteMux(ref)
+	queries := []string{
+		`sum by (app) (count_over_time({app=~".+"}[5m]))`,
+		`sum by (app) (rate({app=~".+"}[1m]))`,
+		`sum(bytes_over_time({app=~".+"}[2m]))`,
+	}
+	for _, query := range queries {
+		for _, step := range []time.Duration{15 * time.Second, time.Minute, 137 * time.Second} {
+			// both bounds a fifth of a step past a grid point, then moved by half a
+			// step: still inside the same step on both sides
+			start := time.Unix(0, lokiStepAlignNanos(s0.Add(time.Hour), step.Milliseconds())).Add(step / 5)
+			end := time.Unix(0, lokiStepAlignNanos(s0.Add(3*time.Hour), step.Milliseconds())).Add(step / 5)
+			_, want := alignRouteQueryRange(t, refMux, ref, query, start.Add(step/2), end.Add(step/2), step)
+			if code, _ := alignRouteQueryRange(t, cachedMux, cached, query, start, end, step); code != http.StatusOK {
+				t.Fatalf("%s step %s: first request answered %d", query, step, code)
+			}
+			// a restart: the edge cache is empty, the shared tier keeps its entries
+			cached.compatCache.Close()
+			cached.compatCache = cache.New(time.Minute, 1000)
+			callsBefore, _ := cachedShim.bucketsRead()
+			code, got := alignRouteQueryRange(t, cachedMux, cached, query, start.Add(step/2), end.Add(step/2), step)
+			callsAfter, _ := cachedShim.bucketsRead()
+			if code != http.StatusOK || !bytes.Equal(got, want) {
+				t.Fatalf("%s step %s: the shared tier changed the answer\n  cached: %d %s\nuncached: %s", query, step, code, got, want)
+			}
+			if !bytes.Contains(want, []byte(`"values":[[`)) {
+				t.Fatalf("%s step %s: the run must answer with data, got %s", query, step, want)
+			}
+			if callsAfter != callsBefore {
+				t.Fatalf("%s step %s: a refresh inside one step made %d VictoriaLogs calls after the edge cache was lost; the shared tier holds it", query, step, callsAfter-callsBefore)
+			}
+		}
+	}
+}
+
 // A refresh near now is never served a stale answer. Loki recomputes the
 // newest max_cache_freshness_per_query of every request, so a row that arrives
 // late in the newest sample's window shows on the next refresh. With the flag
