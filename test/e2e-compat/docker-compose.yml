@@ -163,7 +163,7 @@ services:
 
   # VictoriaMetrics Auth proxy in front of VictoriaLogs
   vmauth:
-    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.154.0}
+    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.154.1}
     container_name: e2e-vmauth
     command:
       - "-auth.config=/etc/vmauth/auth.yml"
@@ -186,7 +186,7 @@ services:
   # proxy, exercising L0 hot-index advertisement, L3 cross-peer fetches,
   # and peer write-through behaviour under realistic distributed traffic.
   vmauth-ring:
-    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.154.0}
+    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.154.1}
     container_name: e2e-vmauth-ring
     ports:
       - "13200:8427"
@@ -211,7 +211,7 @@ services:
 
   # VictoriaMetrics TSDB for vmalert recording-rule remote write
   victoriametrics:
-    image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.154.0}
+    image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.154.1}
     container_name: e2e-victoriametrics
     # Expose to host so the bench script + ad-hoc curl can query process_cpu /
     # RSS time-series for the bench window. Single-node VM with -promscrape.config
@@ -236,7 +236,7 @@ services:
 
   # vmalert alert/rule backend against VictoriaLogs
   vmalert:
-    image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.154.0}
+    image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.154.1}
     container_name: e2e-vmalert
     working_dir: /rules
     ports:
