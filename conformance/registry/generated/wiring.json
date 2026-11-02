@@ -1274,7 +1274,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 367,
+  "registry_items": 368,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2667,6 +2667,7 @@
     "drilldown/detected-field-values",
     "drilldown/detected-fields-type-inference",
     "drilldown/detected-labels-sampled-cardinality",
+    "drilldown/logs-footer-query-stats",
     "drilldown/patterns-mined-differently",
     "drilldown/plugin-legend-sync-race",
     "limits/drilldown-7d-breakdown-response-limit",
