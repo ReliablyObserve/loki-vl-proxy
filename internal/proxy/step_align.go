@@ -64,8 +64,8 @@ func (p *Proxy) stepAlignMiddleware(endpoint string, next http.HandlerFunc) http
 
 // boundsOnStepGrid reports whether the request carries a step and both a
 // start and an end that alignment would leave where they are: each decodes to
-// a multiple of the step, and the proxy's own parser reads it as the same
-// instant Loki does (lokiBoundUnixNano). Such a request goes on as it came,
+// a multiple of the step as the proxy reads it (lokiBoundUnixNano, which reads
+// a decimal as Loki does). Such a request goes on as it came,
 // without parsing its query or copying it, as on a build without alignment.
 // A bound that is missing is derived (end defaults to now) and is aligned.
 func boundsOnStepGrid(r *http.Request) bool {
@@ -82,11 +82,6 @@ func boundsOnStepGrid(r *http.Request) bool {
 		ns, ok := lokiBoundUnixNano(raw)
 		if !ok || ns%gridNs != 0 {
 			return false
-		}
-		if _, integer := integerBoundUnixNano(raw); !integer {
-			if read, ok := parseLokiTimeToUnixNano(raw); !ok || read != ns {
-				return false
-			}
 		}
 	}
 	return true
@@ -233,23 +228,20 @@ func reencodeWithBounds(rawQuery, start, end string) string {
 	return params.Encode()
 }
 
-// lokiBoundUnixNano parses a start or end as Loki does where the proxy's own
-// parser rounds differently: a number with a decimal point is seconds, with
-// its fraction rounded to milliseconds (pkg/loghttp/params.go:166-171,
-// parseTimestamp). parseLokiTimeToUnixNano multiplies the float instead, so
-// "1700000000.3" lands 1ns before .300 and a 100ms step grid moves it down to
-// .200 where Loki has .300. Every other form, and a decimal of 1e11 or more
-// (which the proxy reads as milliseconds), goes through
-// parseLokiTimeToUnixNano.
+// lokiBoundUnixNano parses a start or end as parseLokiTimeToUnixNano does, for
+// the two forms Grafana and API clients send without first trying the RFC3339
+// layouts, whose failures allocate: an integer (integerBoundUnixNano), and a
+// number with a decimal point below 1e11, seconds whose fraction is rounded to
+// milliseconds (pkg/loghttp/params.go:166-171 parseTimestamp) by
+// lokiFloatSecondsToNanos, the one reader of that form. Everything else goes
+// through parseLokiTimeToUnixNano.
 func lokiBoundUnixNano(raw string) (int64, bool) {
 	if ns, ok := integerBoundUnixNano(raw); ok {
 		return ns, true
 	}
 	if strings.Contains(raw, ".") {
 		if seconds, err := strconv.ParseFloat(raw, 64); err == nil && math.Abs(seconds) < 1e11 {
-			whole, fraction := math.Modf(seconds)
-			fraction = math.Round(fraction*1000) / 1000
-			return time.Unix(int64(whole), int64(fraction*float64(time.Second))).UnixNano(), true
+			return lokiFloatSecondsToNanos(seconds), true
 		}
 	}
 	return parseLokiTimeToUnixNano(raw)

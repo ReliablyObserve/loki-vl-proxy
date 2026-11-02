@@ -1,0 +1,47 @@
+id: semantics/window-wider-than-step-raw-rows
+title: a range window far wider than a sub-second step falls to the bounded raw-row evaluator instead of aggregated buckets (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The proxy asks VictoriaLogs for buckets of gcd(step, window) over range plus
+  window and falls to the raw-sample evaluator (bounded by
+  -manual-range-metric-row-limit) above heavyQueryBucketThreshold (11,000)
+  buckets (range_metric_compat.go proxyManualRangeMetricRange). Sub-second
+  steps reach that regime at short ranges: `avg_over_time(... | unwrap x [5m])`
+  at a 1 ms step over 1 s is 301,000 buckets, at 20 ms over 10 s 15,500; the
+  Grafana case (200 ms over 5 minutes, 3,000 buckets) is aggregated. The answer
+  equals Loki's (semantics/sub-second-step-grid, TestSubSecondStepGrafanaShapes)
+  but reads rows, against the rule that metrics are computed from aggregates.
+
+  Design for additive functions (count, bytes, sum, rate, avg as sum/count):
+  S(t_k) = S(t_0) + sum_{j<=k}(A_j - B_j), with A the buckets of the evaluation
+  grid, B the same grid moved back by the window, and S(t_0) one count over
+  (start-window, start]: two stats calls of at most the 11,000-point limit and
+  one anchor, independent of the window. min, max and quantile need another
+  approach or a documented limit.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)'
+    start: '1793653187704000000'
+    end: '1793653197704000000'
+    step: '0.02'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    Loki's series and values, from aggregated buckets only.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/proxy/range_metric_compat.go proxyManualRangeMetricRange (bucket budget branch)'
+  loki: 'pkg/logql/range_vector.go:42-89'
+  proxy: 'bounded raw-row evaluator above heavyQueryBucketThreshold'
+  planned_test: 'TestSubSecondStepGrafanaShapes asserts no raw read once the cumulative-difference route exists (internal/proxy)'
+  clusters: []

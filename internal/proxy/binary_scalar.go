@@ -75,7 +75,7 @@ func binaryConstantVectorResponse(r *http.Request, value float64, resultType str
 	if err := checkBinaryOutputSample(ctx); err != nil {
 		return nil, err
 	}
-	points := [][]any{{float64(ts) / 1e9, strconv.FormatFloat(value, 'f', -1, 64)}}
+	points := [][]any{{lokiSampleSeconds(ts), strconv.FormatFloat(value, 'f', -1, 64)}}
 	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 }
 
@@ -107,7 +107,7 @@ func binaryConstantResponse(r *http.Request, value float64, resultType string) (
 		if err := checkBinaryOutputSample(ctx); err != nil {
 			return nil, err
 		}
-		points = append(points, []any{float64(ts) / 1e9, encoded})
+		points = append(points, []any{lokiSampleSeconds(ts), encoded})
 		if end-ts < int64(step) {
 			break
 		}

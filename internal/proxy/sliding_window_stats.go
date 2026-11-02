@@ -713,7 +713,7 @@ func encodeSlidingWindowMatrix(series []slidingOutputSeries, start time.Time, st
 					return nil, errSlidingResponseTooLarge(maxBytes)
 				}
 				t := start.Add(time.Duration(k) * step)
-				points = append(points, []interface{}{float64(t.UnixNano()) / float64(time.Second), formatted})
+				points = append(points, []interface{}{lokiSampleSeconds(t.UnixNano()), formatted})
 			}
 		}
 		results = append(results, map[string]interface{}{"metric": entry.metric, "values": points})

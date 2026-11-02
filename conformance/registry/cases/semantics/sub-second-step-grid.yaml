@@ -1,0 +1,109 @@
+id: semantics/sub-second-step-grid
+title: a query_range step under a second answers a point every step at Loki's millisecond times, a step under a millisecond is Loki's 500 (fixed)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Grafana 13.3 sends `step=0.2` (`intervalMs` 200, and 1 for a one second
+  range) for a short panel, and Loki answers a distinct point every 200 ms.
+  The proxy answered the same request with whole seconds, five samples at
+  `1793653352` in one series (CI trace of the unwrap Explore test).
+
+  Loki v3.7.9 reads the step as float seconds scaled by float64(time.Second)
+  and truncated to a Duration, else as a Prometheus duration of whole units
+  (pkg/loghttp/params.go:122-129, :191-203: `1.5s` and `500us` are 400 there),
+  rejects a step <= 0 and a range of more than 11,000 steps on that
+  nanosecond value (pkg/loghttp/query.go:503-515), and keeps
+  `Step.Milliseconds()` (pkg/querier/queryrange/codec.go:2265-2284), a
+  truncation: `1.003` is 1002 ms because 1.003 * 1e9 is 1002999999.99. The
+  engine evaluates at start, start+step, ... up to and including end
+  (pkg/logql/range_vector.go:42-89) and stamps each sample with
+  current/1e6, whole milliseconds (:189-204); the response prints that as
+  FormatFloat(ms/1000, 'f', -1, 64) (model.Time.String, pkg/util/marshal/query.go
+  encodeScalar, encodeValue). A float-seconds timestamp is read with its
+  fraction rounded to a millisecond, an integer of at most ten digits is
+  seconds, else nanoseconds (params.go:163-186).
+
+  A step that is positive but under a millisecond passes those checks and
+  reaches the frontend as 0: the metric splitter takes the range modulo it
+  (pkg/querier/queryrange/splitters.go:308-319 alignStartEnd, run for every
+  metric range query while split_queries_by_interval is set, one hour by
+  default and in the compose stack) and the recovery middleware
+  (pkg/util/server/recovery.go onPanic) answers HTTP 500
+  `error while processing request: runtime error: integer divide by zero`.
+
+  VictoriaLogs buckets at any nanosecond step (stats_query_range reads `step`
+  with tryParseDuration into int64 nanoseconds and truncates the bucket
+  timestamp, lib/logstorage/block_result.go truncateTimestamp, v1.49.0 and
+  v1.53.0 alike), so the buckets come from VictoriaLogs; the proxy only had to
+  stop truncating:
+    - the manual window evaluator wrote `float64(t.Unix())` and the bucket
+      route `tNS/1e9` as integers (range_metric_compat.go encodeWindowMatrix,
+      buildHitsRangeMetricMatrix, buildManualRangeMetricVector); the other
+      routes printed `float64(ns)/1e9`, which prints `.6499999` for `.65`
+      above 2^53 ns;
+    - the step kept its sub-millisecond fraction and was sent to
+      VictoriaLogs as float seconds, which it reads as `1.003s` ->
+      1002999999 ns;
+    - float-seconds timestamps were read as `int64(v * 1e9)`, up to 256 ns
+      below the millisecond Loki rounds to;
+    - the `time` of an instant stats call and the `start`/`end` of a stats
+      range were floored to the second (nanosToVLTimestamp).
+
+  Fixed: handleQueryRange rewrites the step to Loki's whole milliseconds
+  after the 11,000-point check (a step under a millisecond is Loki's 500);
+  every route writes lokiSampleSeconds(ns); steps reach VictoriaLogs as exact
+  counts; the three float timestamp parsers read the fraction as Loki does;
+  VictoriaLogs gets exact fractional-second start/end/time and an instant
+  stats answer carries Loki's evaluation time.
+
+  Known, not changed here: a window far wider than its step (a 5 minute
+  window on a 20 ms step over 10 s) makes more buckets than one VictoriaLogs
+  call is given (heavyQueryBucketThreshold) and the bounded raw-sample
+  evaluator answers, as it does for whole-second steps at longer ranges;
+  the proxy still accepts durations Loki rejects (`1.5s`, `500us`) and
+  answers a step of 0, a negative one or an unparsable one with an empty 200
+  where Loki answers 400. Open gaps: semantics/window-wider-than-step-raw-rows,
+  semantics/step-duration-grammar-wider-than-loki,
+  semantics/step-nonpositive-or-unparsable-is-400.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)'
+    start: '1793653187704000000'
+    end: '1793653487704000000'
+    step: '0.2'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series, the same evaluation times as text (a millisecond fraction
+    in seconds, no time twice) and the same values as Loki, for steps of 1 ms
+    to 3 s as float seconds or a duration, windows shorter than, equal to and
+    longer than the step, bounds on and off the step grid, in nanoseconds,
+    float seconds and RFC 3339, range and instant.
+gap:
+  status: fixed
+  fixed_by: "#1004"
+  impact: explore-visible
+  visual: none
+  visual_reason: 'the evidence is the panel data of one Explore request (a point every 200 ms against five samples sharing a second); the answer is proven value for value against Loki by the differential and the e2e'
+  effort: M
+  area: 'internal/proxy/proxy.go handleQueryRange (lokiWholeMillisecondStep, withLokiStep); internal/proxy/time_utils.go lokiSampleSeconds, nanosToVLTimestamp, exactVLDuration, lokiFloatSecondsToNanos, restampInstantVector; internal/proxy/range_metric_compat.go encodeWindowMatrix, buildHitsRangeMetricMatrix, buildManualRangeMetricVector'
+  loki: 'pkg/loghttp/params.go:122-129, :163-203; pkg/loghttp/query.go:473-515; pkg/querier/queryrange/codec.go:2265-2284; pkg/logql/range_vector.go:42-89, :189-204; pkg/util/marshal/query.go; pkg/querier/queryrange/splitters.go:308-319; pkg/util/server/recovery.go'
+  proxy: 'the step in whole milliseconds, Loki''s time text on every route, exact steps and times to VictoriaLogs'
+  planned_test: 'TestSubSecondStepDifferential, TestSubSecondStepEdgeTable, TestSubSecondStepGrafanaShapes, TestSubMillisecondStepIsLokisInternalError, TestLokiSampleSecondsIsModelTimeText, TestNanosToVLTimestampKeepsTheFraction, TestTimestampParsersReadLokisInstant, TestWholeMillisecondStepIsLokisStep, TestExactVLDurationReadsBack, FuzzSubSecondStepAndTimestamps (internal/proxy, CI fuzz-smoke); TestCompat_SubSecondStep (test/e2e-compat, group core)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

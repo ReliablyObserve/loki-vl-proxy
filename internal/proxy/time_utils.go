@@ -1,12 +1,103 @@
 package proxy
 
 import (
+	"bytes"
+	"fmt"
 	"math"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// lokiSampleSeconds is the time Loki writes for a sample evaluated at ns
+// nanoseconds: its engine keeps whole milliseconds (the sample time is
+// current/1e6, a truncation, pkg/logql/range_vector.go) and prints them as
+// seconds, FormatFloat(ms/1000, 'f', -1, 64) (model.Time.String). Dividing the
+// nanoseconds instead keeps a fraction Loki drops and, above 2^53, rounds the
+// division the other way often enough to print 1793653191.6499999 for
+// 1793653191.65.
+func lokiSampleSeconds(ns int64) float64 {
+	ms := ns / int64(time.Millisecond)
+	if ns%int64(time.Millisecond) < 0 {
+		ms--
+	}
+	return float64(ms) / 1e3
+}
+
+// exactVLDuration writes d as a VictoriaLogs duration that reads back as
+// exactly d. VictoriaLogs scales a decimal by its unit and truncates, so a step
+// written as float seconds ("1.003s") reads as 1002999999 ns and moves every
+// bucket edge by a nanosecond; an integer count of a unit does not.
+func exactVLDuration(d time.Duration) string {
+	switch {
+	case d%time.Second == 0:
+		return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	case d%time.Millisecond == 0:
+		return strconv.FormatInt(int64(d/time.Millisecond), 10) + "ms"
+	}
+	return strconv.FormatInt(int64(d), 10) + "ns"
+}
+
+// lokiWholeMillisecondStep reads the step of a range request as Loki does
+// (parsePositiveStepDuration: float seconds, else a duration) and reports,
+// when it is not a whole number of milliseconds, the step Loki evaluates on:
+// the codec keeps Milliseconds(), a truncation (queryrange/codec.go
+// parseRangeQuery). subMs is false for a missing or unreadable step and for
+// one that is whole milliseconds already, which are left as they are.
+func lokiWholeMillisecondStep(r *http.Request) (wholeMs int64, subMs bool) {
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok || step%time.Millisecond == 0 {
+		return 0, false
+	}
+	return step.Milliseconds(), true
+}
+
+// withLokiStep returns r with its step replaced by ms whole milliseconds. The
+// form is copied: r's is shared with the callers that hold it.
+func withLokiStep(r *http.Request, ms int64) *http.Request {
+	_ = r.ParseForm()
+	clone := r.Clone(r.Context())
+	step := strconv.FormatInt(ms, 10) + "ms"
+	clone.Form.Set("step", step)
+	if clone.PostForm.Has("step") {
+		clone.PostForm.Set("step", step)
+	}
+	if query := clone.URL.Query(); query.Has("step") {
+		query.Set("step", step)
+		clone.URL.RawQuery = query.Encode()
+	}
+	return clone
+}
+
+// restampInstantVector writes the evaluation time Loki prints into every
+// sample of a Loki vector body. VictoriaLogs stamps an instant stats result
+// with float64(ns)/1e9 of its own query time, one nanosecond early, which
+// prints a value like 1793653199.5830002 for 1793653199.583.
+func restampInstantVector(body []byte, evalNs int64) []byte {
+	const marker = `"value":[`
+	stamp := strconv.FormatFloat(lokiSampleSeconds(evalNs), 'f', -1, 64)
+	// The buffer grows as it is written: its size is not computed from the
+	// length of the body, which is the backend's.
+	var out bytes.Buffer
+	for {
+		at := bytes.Index(body, []byte(marker))
+		if at < 0 {
+			out.Write(body)
+			return out.Bytes()
+		}
+		head := at + len(marker)
+		comma := bytes.IndexByte(body[head:], ',')
+		if comma < 0 {
+			out.Write(body)
+			return out.Bytes()
+		}
+		out.Write(body[:head])
+		out.WriteString(stamp)
+		body = body[head+comma:]
+	}
+}
 
 func parseFlexibleUnixSeconds(raw string) (int64, bool) {
 	value := strings.TrimSpace(raw)
@@ -62,10 +153,21 @@ func parseFlexibleUnixNanos(raw string) (int64, bool) {
 		case abs >= 1_000_000_000_000:
 			return int64(floating * 1_000_000), true
 		default:
-			return int64(floating * float64(time.Second)), true
+			return lokiFloatSecondsToNanos(floating), true
 		}
 	}
 	return 0, false
+}
+
+// lokiFloatSecondsToNanos reads a timestamp written as float seconds the way
+// Loki does (pkg/loghttp/params.go parseTimestamp): the fraction is rounded to
+// a millisecond. Multiplying the whole value by 1e9 instead lands below the
+// millisecond about half the time, where float64 steps are 256 ns, and Loki's
+// engine truncating it to milliseconds would then print .703 for .704.
+func lokiFloatSecondsToNanos(seconds float64) int64 {
+	whole, fraction := math.Modf(seconds)
+	fraction = math.Round(fraction*1000) / 1000
+	return int64(whole)*int64(time.Second) + int64(fraction*float64(time.Second))
 }
 
 func normalizeUnixSeconds(v int64) int64 {
@@ -89,8 +191,17 @@ func normalizeUnixSeconds(v int64) int64 {
 // string that VictoriaLogs expects for start/end params. Using this helper
 // prevents accidentally forwarding nanosecond values to VL endpoints that
 // only accept second precision, which would silently scan the wrong time range.
+// A time that is not a whole second keeps its fraction, as decimal digits
+// VictoriaLogs reads exactly (timeutil.TryParseUnixTimestamp): flooring it to
+// the second moved an instant evaluation, or the end of a range read in steps
+// under a second, up to a second early.
 func nanosToVLTimestamp(nanos int64) string {
-	return strconv.FormatInt(nanos/int64(time.Second), 10)
+	seconds, fraction := nanos/int64(time.Second), nanos%int64(time.Second)
+	if fraction <= 0 {
+		return strconv.FormatInt(seconds, 10)
+	}
+	digits := strings.TrimRight(fmt.Sprintf("%09d", fraction), "0")
+	return strconv.FormatInt(seconds, 10) + "." + digits
 }
 
 // formatVLStatsTimestamp normalizes any Loki/Grafana timestamp representation

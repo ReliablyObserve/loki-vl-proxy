@@ -314,11 +314,13 @@ func TestQuery_OffsetWithMissingTimeDefaultsToNow(t *testing.T) {
 		t.Fatal("backend should have received a time parameter")
 	}
 
-	// nanosToVLTimestamp converts to Unix seconds.
-	capturedSec, err := strconv.ParseInt(capturedTime, 10, 64)
+	// nanosToVLTimestamp converts to Unix seconds, with the fraction as decimal
+	// digits when the time is not a whole second.
+	capturedFloat, err := strconv.ParseFloat(capturedTime, 64)
 	if err != nil {
 		t.Fatalf("could not parse captured time %q: %v", capturedTime, err)
 	}
+	capturedSec := int64(capturedFloat)
 
 	// Expected: now - 1h (in seconds). Allow ±5s tolerance for test execution time.
 	nowSec := (beforeNs + afterNs) / 2 / int64(time.Second)

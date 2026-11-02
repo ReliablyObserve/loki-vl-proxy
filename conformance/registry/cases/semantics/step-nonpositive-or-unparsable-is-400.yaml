@@ -1,0 +1,38 @@
+id: semantics/step-nonpositive-or-unparsable-is-400
+title: query_range with a step of 0, a negative step or an unparsable step answers 400 as Loki does, not an empty 200 (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki v3.7.9 rejects a step that does not parse with 400
+  `cannot parse "<step>" to a valid duration` (pkg/loghttp/params.go:191-203
+  parseSecondsOrDuration) and a step <= 0 with 400
+  `zero or negative query resolution step widths are not accepted. Try a positive integer`
+  (pkg/loghttp/query.go:503-505). The proxy's query_range handler answers
+  `step=0`, `step=-1` and `step=abc` with an empty matrix and HTTP 200
+  (found while testing sub-second steps, semantics/sub-second-step-grid).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({app="api-gateway"}[1m]))'
+    start: '1800000000'
+    end: '1800000600'
+    step: '0'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, message]
+  expect: |
+    HTTP 400 with Loki's text for step 0 and negative steps, and for an unparsable step.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/proxy.go handleQueryRange (step validation beside exceedsLokiRangeResolution)'
+  loki: 'pkg/loghttp/params.go:191-203; pkg/loghttp/query.go:503-505'
+  proxy: 'empty matrix with HTTP 200'
+  planned_test: 'table over 0, -1, abc, 0s in the edge table of internal/proxy; TestCompat_ step status parity (test/e2e-compat)'
+  clusters: []

@@ -248,8 +248,10 @@ func shiftLokiResultTimestamps(body []byte, shift time.Duration) []byte {
 			return
 		}
 		if ts, err := strconv.ParseFloat(string(point[0]), 64); err == nil {
-			ns := int64(math.Round(ts*1e9)) + int64(shift)
-			point[0] = json.RawMessage(strconv.FormatFloat(float64(ns)/1e9, 'f', -1, 64))
+			// The point time is whole milliseconds; take the nearest one before
+			// the shift, since ts*1e9 is only within 256 ns of it.
+			ns := int64(math.Round(ts*1e3))*int64(time.Millisecond) + int64(shift)
+			point[0] = json.RawMessage(strconv.FormatFloat(lokiSampleSeconds(ns), 'f', -1, 64))
 		}
 	}
 	for i, raw := range result {
@@ -501,7 +503,7 @@ func buildBoundedBareParserMetric(ctx context.Context, series []bareParserMetric
 					return nil, err
 				}
 				value := bareParserMetricWindowValue(spec.funcName, entry.samples[left:right], spec)
-				out.points = append(out.points, []any{float64(evaluation) / float64(time.Second), strconv.FormatFloat(value, 'f', -1, 64)})
+				out.points = append(out.points, []any{lokiSampleSeconds(evaluation), strconv.FormatFloat(value, 'f', -1, 64)})
 			}
 			if end-evaluation < step {
 				break

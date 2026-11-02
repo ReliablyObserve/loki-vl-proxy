@@ -2266,6 +2266,13 @@ func (p *Proxy) peerCacheMetrics() string {
 const (
 	lokiMaxPointsPerSeries = 11000
 	errLokiStepTooSmall    = "exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter"
+	// errLokiStepBelowMillisecond is Loki's answer to a step that is positive
+	// but shorter than a millisecond: its query frontend keeps the step in
+	// whole milliseconds (0), and splitting the metric query by interval takes
+	// the range modulo that step (queryrange/splitters.go alignStartEnd), a
+	// division by zero its recovery middleware turns into this 500
+	// (util/server/recovery.go onPanic).
+	errLokiStepBelowMillisecond = "error while processing request: runtime error: integer divide by zero"
 )
 
 // exceedsLokiRangeResolution reports whether Loki would reject the request's
@@ -2335,6 +2342,18 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, http.StatusBadRequest, errLokiStepTooSmall)
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
+	}
+	// Loki evaluates a range query on its step in whole milliseconds, after the
+	// checks above ran on the step as sent. Every later reader of the step
+	// (the evaluation grid, the VictoriaLogs bucket size, the cache key) then
+	// sees the step Loki uses.
+	if wholeMs, subMs := lokiWholeMillisecondStep(r); subMs {
+		if wholeMs == 0 {
+			p.writeError(w, http.StatusInternalServerError, errLokiStepBelowMillisecond)
+			p.metrics.RecordRequest("query_range", http.StatusInternalServerError, time.Since(start))
+			return
+		}
+		r = withLokiStep(r, wholeMs)
 	}
 	logqlQuery := r.FormValue("query")
 	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder

@@ -3207,7 +3207,7 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 					return nil, fmt.Errorf("ordered JSON metric output exceeds %d samples", maxMetricEvalSamples)
 				}
 				value := metricWindowValue(plan.function, total, plan.window)
-				points = append(points, []interface{}{float64(eval.UnixNano()) / float64(time.Second), formatMetricSampleValue(value)})
+				points = append(points, []interface{}{lokiSampleSeconds(eval.UnixNano()), formatMetricSampleValue(value)})
 			}
 		}
 		if len(points) == 0 {

@@ -19,6 +19,10 @@
   "7d": [
    604800,
    600
+  ],
+  "5m-200ms": [
+   300,
+   0.2
   ]
  },
  "sets": {
@@ -2993,6 +2997,38 @@
      "query": "max without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
      "covers": [
       "metric-series-identity",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
+  "sub-second-step": {
+   "description": "A step under a second, the one Grafana sends for a short panel (intervalMs 200 over 5 minutes, 1,500 points): every sample is a point at Loki's millisecond time (semantics/sub-second-step-grid). SS1 is a window of 5 s over the 200 ms step, SS2 the unwrap average over a 5 minute window that the CI trace of the Explore unwrap test asked, SS3 a window of 1 s. Run with the control set.",
+   "ranges": [
+    "5m-200ms"
+   ],
+   "shapes": [
+    {
+     "name": "SS1 count_over_time 5s window on a 200ms step",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"}[5s]))",
+     "covers": [
+      "semantics/sub-second-step-grid",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SS2 json duration_ms avg by service, 5m window on a 200ms step",
+     "query": "avg_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]) by (service_name)",
+     "covers": [
+      "semantics/sub-second-step-grid",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "SS3 rate by service, 1s window on a 200ms step",
+     "query": "sum by (service_name) (rate({service_name=\"api-gateway\"}[1s]))",
+     "covers": [
+      "semantics/sub-second-step-grid",
       "loki_api_v1_query_range"
      ]
     }

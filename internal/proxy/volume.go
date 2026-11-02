@@ -464,7 +464,7 @@ func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQu
 		path = "/select/logsql/stats_query_range"
 		params = buildStatsQueryRangeParams(statsQuery,
 			strconv.FormatInt(req.startNs, 10), strconv.FormatInt(req.endNs, 10),
-			formatVLStep(strconv.FormatFloat(float64(req.stepNs)/float64(time.Second), 'f', -1, 64)))
+			exactVLDuration(time.Duration(req.stepNs)))
 	} else {
 		params = url.Values{}
 		params.Set("query", statsQuery)

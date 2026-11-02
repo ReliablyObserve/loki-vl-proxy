@@ -306,7 +306,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	}
 	result := []lokiVectorResult{}
 	if labels, value, has := spec.series(); has && len(presenceSteps(body, spec.unwrapped())) == 0 {
-		result = append(result, lokiVectorResult{Metric: labels, Value: []any{float64(evalNs) / float64(time.Second), value}})
+		result = append(result, lokiVectorResult{Metric: labels, Value: []any{lokiSampleSeconds(evalNs), value}})
 	}
 	out, _ := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "vector", "result": result}})
 	p.finishAbsent(w, "query", originalQuery, start, out)
@@ -351,7 +351,7 @@ func buildAbsentOverTimeMatrix(spec absentOverTimeCompatSpec, present map[int64]
 		var values [][]any
 		for i, ts := int64(0), startNs; ts <= endNs; i, ts = i+1, ts+stepNs {
 			if !has[i] {
-				values = append(values, []any{float64(ts) / float64(time.Second), value})
+				values = append(values, []any{lokiSampleSeconds(ts), value})
 			}
 		}
 		if len(values) > 0 {
