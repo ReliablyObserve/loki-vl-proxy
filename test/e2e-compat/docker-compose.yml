@@ -1113,8 +1113,9 @@ services:
       # Playwright selectors — deterministically breaking e2e-ui (drilldown-core)
       # and (drilldown-multitenant) in CI while a cached older plugin still passes
       # locally. Bump this pin deliberately alongside any selector updates.
-      # Drilldown 3.x needs Grafana >= 13.2; the previous-family Grafana profile
-      # (12.x) overrides this whole value with Drilldown 2.6.0 from the matrix.
+      # CI sets GRAFANA_PLUGINS_PREINSTALL from stack.grafana.plugins of the compatibility matrix; the default is that
+      # same pin (checked by scripts/ci/matrix_pins.py). Drilldown 3.x needs Grafana >= 13.2; the previous-family
+      # Grafana profile (12.x) overrides the whole value with the Drilldown version of its matrix profile.
       - GF_PLUGINS_PREINSTALL=${GRAFANA_PLUGINS_PREINSTALL:-victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0}
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:

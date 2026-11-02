@@ -31,16 +31,39 @@ jobs:
       drilldown_versions: ${{ steps.matrix.outputs.drilldown_versions }}
       grafana_runtime_profiles: ${{ steps.matrix.outputs.grafana_runtime_profiles }}
       grafana_pr_runtime_profiles: ${{ steps.matrix.outputs.grafana_pr_runtime_profiles }}
+      pinned_loki_image: ${{ steps.matrix.outputs.pinned_loki_image }}
+      pinned_vl_image: ${{ steps.matrix.outputs.pinned_vl_image }}
+      pinned_grafana_image: ${{ steps.matrix.outputs.pinned_grafana_image }}
+      grafana_image_repo: ${{ steps.matrix.outputs.grafana_image_repo }}
+      plugins_preinstall: ${{ steps.matrix.outputs.plugins_preinstall }}
+      vl_datasource_plugin: ${{ steps.matrix.outputs.vl_datasource_plugin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
       - id: matrix
         run: |
+          set -euo pipefail
+          m=test/e2e-compat/compatibility-matrix.json
+          drilldown_versions=$(jq -ce '.stack.logs_drilldown_contract.matrix_versions' "$m")
+          grafana_runtime_profiles=$(jq -ce '.stack.grafana.runtime_profiles' "$m")
+          grafana_pr_runtime_profiles=$(jq -ce '.stack.grafana.runtime_profiles | map(select((.run_on_pr // false) == true))' "$m")
+          pinned_loki_image=$(jq -er '.stack.loki | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_vl_image=$(jq -er '.stack.victorialogs | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_grafana_image=$(jq -er '.stack.grafana | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          grafana_image_repo=$(jq -er '.stack.grafana.image_repo | select(. != null)' "$m")
+          plugins_preinstall=$(jq -er '.stack.grafana.plugins | select(. != null) | to_entries | map("\(.key)@\(.value.pinned_version)") | join(",")' "$m")
+          vl_datasource_plugin=$(jq -er '.stack.grafana.plugins["victoriametrics-logs-datasource"].pinned_version | select(. != null) | "victoriametrics-logs-datasource@\(.)"' "$m")
           {
-            echo "drilldown_versions=$(jq -c '.stack.logs_drilldown_contract.matrix_versions' test/e2e-compat/compatibility-matrix.json)"
-            echo "grafana_runtime_profiles=$(jq -c '.stack.grafana.runtime_profiles' test/e2e-compat/compatibility-matrix.json)"
-            echo "grafana_pr_runtime_profiles=$(jq -c '.stack.grafana.runtime_profiles | map(select((.run_on_pr // false) == true))' test/e2e-compat/compatibility-matrix.json)"
+            echo "drilldown_versions=$drilldown_versions"
+            echo "grafana_runtime_profiles=$grafana_runtime_profiles"
+            echo "grafana_pr_runtime_profiles=$grafana_pr_runtime_profiles"
+            echo "pinned_loki_image=$pinned_loki_image"
+            echo "pinned_vl_image=$pinned_vl_image"
+            echo "pinned_grafana_image=$pinned_grafana_image"
+            echo "grafana_image_repo=$grafana_image_repo"
+            echo "plugins_preinstall=$plugins_preinstall"
+            echo "vl_datasource_plugin=$vl_datasource_plugin"
           } >> "$GITHUB_OUTPUT"
 
   drilldown-pinned-runtime:
@@ -48,9 +71,10 @@ jobs:
     needs: [drilldown-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:13.2.5
+      LOKI_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_loki_image }}
+      VICTORIALOGS_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_grafana_image }}
+      GRAFANA_PLUGINS_PREINSTALL: ${{ needs.drilldown-matrix-source.outputs.plugins_preinstall }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -90,11 +114,12 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_pr_runtime_profiles) }}
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
-      # The previous Grafana family cannot run Drilldown 3.x; its profile names the plugin version.
-      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@{0}', matrix.drilldown_plugin_version) || '' }}
+      LOKI_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_loki_image }}
+      VICTORIALOGS_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ format('{0}:{1}', needs.drilldown-matrix-source.outputs.grafana_image_repo, matrix.version) }}
+      # A runtime profile may name the Logs Drilldown version its Grafana family can run (drilldown_plugin_version);
+      # every other profile preinstalls the plugin pins of stack.grafana.plugins.
+      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('{0},grafana-lokiexplore-app@{1}', needs.drilldown-matrix-source.outputs.vl_datasource_plugin, matrix.drilldown_plugin_version) || needs.drilldown-matrix-source.outputs.plugins_preinstall }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -153,11 +178,12 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_runtime_profiles) }}
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
-      # The previous Grafana family cannot run Drilldown 3.x; its profile names the plugin version.
-      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@{0}', matrix.drilldown_plugin_version) || '' }}
+      LOKI_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_loki_image }}
+      VICTORIALOGS_IMAGE: ${{ needs.drilldown-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ format('{0}:{1}', needs.drilldown-matrix-source.outputs.grafana_image_repo, matrix.version) }}
+      # A runtime profile may name the Logs Drilldown version its Grafana family can run (drilldown_plugin_version);
+      # every other profile preinstalls the plugin pins of stack.grafana.plugins.
+      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('{0},grafana-lokiexplore-app@{1}', needs.drilldown-matrix-source.outputs.vl_datasource_plugin, matrix.drilldown_plugin_version) || needs.drilldown-matrix-source.outputs.plugins_preinstall }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7

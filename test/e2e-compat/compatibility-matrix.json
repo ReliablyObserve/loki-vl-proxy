@@ -97,6 +97,15 @@
       "image_repo": "grafana/grafana",
       "pinned_version": "13.2.5",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
+      "plugins": {
+        "victoriametrics-logs-datasource": {
+          "pinned_version": "0.33.1"
+        },
+        "grafana-lokiexplore-app": {
+          "pinned_version": "3.1.0",
+          "note": "the Logs Drilldown the default stack preinstalls; it must equal logs_drilldown_contract.pinned_version"
+        }
+      },
       "support_window": {
         "policy": "latest_full_plus_current_and_previous_smoke",
         "description": "Run the fuller Drilldown compatibility track on the pinned current Grafana family (13.x), and keep smaller current-family, previous-family, and lts datasource-plus-Drilldown smoke profiles on pull requests so browser/runtime regressions are caught across real Grafana builds without exploding cost.",

@@ -29,21 +29,39 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       loki_versions: ${{ steps.matrix.outputs.loki_versions }}
+      pinned_loki_image: ${{ steps.matrix.outputs.pinned_loki_image }}
+      pinned_vl_image: ${{ steps.matrix.outputs.pinned_vl_image }}
+      pinned_grafana_image: ${{ steps.matrix.outputs.pinned_grafana_image }}
+      loki_image_repo: ${{ steps.matrix.outputs.loki_image_repo }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
       - id: matrix
-        run: echo "loki_versions=$(jq -c '.stack.loki.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          m=test/e2e-compat/compatibility-matrix.json
+          loki_versions=$(jq -ce '.stack.loki.matrix_versions' "$m")
+          pinned_loki_image=$(jq -er '.stack.loki | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_vl_image=$(jq -er '.stack.victorialogs | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_grafana_image=$(jq -er '.stack.grafana | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          loki_image_repo=$(jq -er '.stack.loki.image_repo | select(. != null)' "$m")
+          {
+            echo "loki_versions=$loki_versions"
+            echo "pinned_loki_image=$pinned_loki_image"
+            echo "pinned_vl_image=$pinned_vl_image"
+            echo "pinned_grafana_image=$pinned_grafana_image"
+            echo "loki_image_repo=$loki_image_repo"
+          } >> "$GITHUB_OUTPUT"
 
   loki-pinned:
     if: ${{ !cancelled() && github.event_name != 'schedule' && needs.loki-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
     needs: [loki-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:13.2.5
+      LOKI_IMAGE: ${{ needs.loki-matrix-source.outputs.pinned_loki_image }}
+      VICTORIALOGS_IMAGE: ${{ needs.loki-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ needs.loki-matrix-source.outputs.pinned_grafana_image }}
       PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -114,8 +132,8 @@ jobs:
       matrix:
         loki_version: ${{ fromJson(needs.loki-matrix-source.outputs.loki_versions) }}
     env:
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:13.2.5
+      VICTORIALOGS_IMAGE: ${{ needs.loki-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ needs.loki-matrix-source.outputs.pinned_grafana_image }}
       PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -137,14 +155,14 @@ jobs:
       - name: Start matrix stack
         working-directory: test/e2e-compat
         env:
-          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+          LOKI_IMAGE: ${{ format('{0}:{1}', needs.loki-matrix-source.outputs.loki_image_repo, matrix.loki_version) }}
         run: |
           docker compose up -d --no-build loki victorialogs vmalert loki-vl-proxy loki-vl-proxy-underscore
           docker compose up -d --no-build --no-deps grafana
           bash ../../scripts/ci/wait_loki_track_stack.sh 180
       - name: Run Loki compatibility score
         env:
-          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+          LOKI_IMAGE: ${{ format('{0}:{1}', needs.loki-matrix-source.outputs.loki_image_repo, matrix.loki_version) }}
         run: |
           set -euo pipefail
           go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/ | tee /tmp/loki-track-score.log
@@ -170,13 +188,13 @@ jobs:
           PY
       - name: Run Loki query semantics matrix
         env:
-          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+          LOKI_IMAGE: ${{ format('{0}:{1}', needs.loki-matrix-source.outputs.loki_image_repo, matrix.loki_version) }}
         run: |
           set -euo pipefail
           go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
       - name: Run label cache tests
         env:
-          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+          LOKI_IMAGE: ${{ format('{0}:{1}', needs.loki-matrix-source.outputs.loki_image_repo, matrix.loki_version) }}
         run: |
           set -euo pipefail
           go test -v -tags=e2e -run '^TestLabelCache_' -timeout=120s ./test/e2e-compat/
@@ -184,5 +202,5 @@ jobs:
         if: always()
         working-directory: test/e2e-compat
         env:
-          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+          LOKI_IMAGE: ${{ format('{0}:{1}', needs.loki-matrix-source.outputs.loki_image_repo, matrix.loki_version) }}
         run: docker compose down -v

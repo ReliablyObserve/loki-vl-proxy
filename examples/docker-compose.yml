@@ -24,7 +24,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.53.0
+    image: victoriametrics/victoria-logs:v1.52.0
     ports:
       - "9428:9428"
     command:
@@ -68,7 +68,7 @@ services:
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.2.5
     ports:
       - "3000:3000"
     environment:
