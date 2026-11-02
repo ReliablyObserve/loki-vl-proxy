@@ -217,6 +217,11 @@ type Config struct {
 	// extracted, as Loki does, at the cost of evaluating the query from rows.
 	// Captures of `| regexp` and `| pattern` are always part of the identity.
 	ExactParserSeriesIdentity bool
+	// AlignQueriesWithStep moves the bounds of a metric query_range request
+	// down to multiples of its step, as Loki's step-align middleware does
+	// under query_range.align_queries_with_step (stepAlignMiddleware). The
+	// -align-queries-with-step flag defaults to true.
+	AlignQueriesWithStep bool
 	// PatternsCustom is a static list of patterns always prepended to
 	// /loki/api/v1/patterns responses.
 	PatternsCustom []string
@@ -609,6 +614,7 @@ type Proxy struct {
 	deleteAPIEnabled                      bool
 	patternsAutodetectFromQueries         bool
 	exactParserSeriesIdentity             bool
+	alignQueriesWithStep                  bool
 	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
@@ -1285,6 +1291,7 @@ func New(cfg Config) (*Proxy, error) {
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
+		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,
@@ -1854,7 +1861,8 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 				p.requestLogger(endpoint, route,
 					lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
-							p.compatCacheMiddleware(endpoint, route, h))))))))
+							p.stepAlignMiddleware(endpoint,
+								p.compatCacheMiddleware(endpoint, route, h)))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2277,19 +2285,20 @@ func exceedsLokiRangeResolution(r *http.Request, now time.Time) bool {
 
 // lokiRangeBounds is the window Loki reads a range request for
 // (pkg/loghttp/params.go:83-120 determineBounds): end defaults to now, start to
-// min(end, now) minus since, and since to one hour (params.go:23). ok is false
-// when a given start, end or since does not parse.
+// min(end, now) minus since, and since to one hour (params.go:23); start and
+// end are decoded as Loki decodes them (lokiBoundUnixNano). ok is false when a
+// given start, end or since does not parse.
 func lokiRangeBounds(r *http.Request, now time.Time) (start, end time.Time, ok bool) {
 	end = now
 	if raw := strings.TrimSpace(r.FormValue("end")); raw != "" {
-		ns, ok := parseLokiTimeToUnixNano(raw)
+		ns, ok := lokiBoundUnixNano(raw)
 		if !ok {
 			return start, end, false
 		}
 		end = time.Unix(0, ns)
 	}
 	if raw := strings.TrimSpace(r.FormValue("start")); raw != "" {
-		ns, ok := parseLokiTimeToUnixNano(raw)
+		ns, ok := lokiBoundUnixNano(raw)
 		if !ok {
 			return start, end, false
 		}
@@ -2320,8 +2329,10 @@ const queryRangeResponseCacheTTL = 5 * time.Minute
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	start := time.Now()
-	// Loki validates the range parameters before it parses the query.
-	if exceedsLokiRangeResolution(r, start) {
+	// Loki validates the range parameters before it parses the query, on the
+	// bounds the client sent: a request moved onto the step grid was checked
+	// before it was moved (stepAlignMiddleware).
+	if !requestStepAligned(r) && exceedsLokiRangeResolution(r, start) {
 		p.writeError(w, http.StatusBadRequest, errLokiStepTooSmall)
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
@@ -2470,7 +2481,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
-	if startNs, okS := parseLokiTimeToUnixNano(r.FormValue("start")); okS {
+	// Loki checks it before its step alignment only (the limits middleware,
+	// tenantLimitsMiddleware here), so moved bounds are not checked again.
+	if startNs, okS := parseLokiTimeToUnixNano(r.FormValue("start")); okS && !requestStepAligned(r) {
 		if endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end")); okE {
 			if errMsg := p.checkQueryRangeLength(r.Context(), startNs, endNs); errMsg != "" {
 				p.writeError(w, http.StatusBadRequest, errMsg)

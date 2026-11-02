@@ -112,6 +112,7 @@ type proxyRuntimeConfig struct {
 	deleteAPIEnabled                    bool
 	patternsAutodetectFromQueries       bool
 	exactParserSeriesIdentity           bool
+	alignQueriesWithStep                bool
 	patternsCustomRaw                   string
 	patternsCustomFile                  string
 	queryRangeWindowing                 bool
@@ -586,6 +587,7 @@ func run(
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
+	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
 	patternsCustomFile := fs.String("patterns-custom-file", "", "Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup")
@@ -886,6 +888,7 @@ func run(
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
 			exactParserSeriesIdentity:           *exactParserSeriesIdentity,
+			alignQueriesWithStep:                *alignQueriesWithStep,
 			patternsCustomRaw:                   *patternsCustomRaw,
 			patternsCustomFile:                  *patternsCustomFile,
 			queryRangeWindowing:                 *queryRangeWindowing,
@@ -2129,6 +2132,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		ExactParserSeriesIdentity:          cfg.exactParserSeriesIdentity,
+		AlignQueriesWithStep:               cfg.alignQueriesWithStep,
 		PatternsCustom:                     customPatterns,
 		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
 		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,

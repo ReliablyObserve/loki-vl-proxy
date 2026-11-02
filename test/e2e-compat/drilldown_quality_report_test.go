@@ -46,6 +46,8 @@ func TestDrilldown_QualityMatrix(t *testing.T) {
 
 	svc := fmt.Sprintf("drilldown-quality-%d", time.Now().UnixNano()/1e9)
 
+	// The first seeded row is 2h before the seed's now.
+	firstRow := time.Now().Add(-2 * time.Hour)
 	seedDrilldownQualityData(t, svc)
 	// Give VL time to index the seeded data.
 	time.Sleep(3 * time.Second)
@@ -82,6 +84,21 @@ func TestDrilldown_QualityMatrix(t *testing.T) {
 				continue
 			}
 
+			// Loki's frontend (align_queries_with_step) and the proxy move the
+			// end down to a multiple of the step: rows after the last grid
+			// point are in no sample. At 7d's 336m step that point can come
+			// before the first seeded row; then Loki has no series either.
+			stepS := int64(r.step / time.Second)
+			lastPoint := time.Unix(now.Unix()/stepS*stepS, 0)
+			if d := lastPoint.Sub(firstRow); d > -time.Minute && d < time.Minute {
+				continue // within the seed's own clock skew of the first row
+			}
+			if lastPoint.Before(firstRow) {
+				if res.seriesCount != 0 {
+					t.Errorf("HARD FAIL field=%s range=%s returned %d series; the last step-grid point %s precedes every seeded row", f.lokiName, r.label, res.seriesCount, lastPoint.UTC().Format(time.RFC3339))
+				}
+				continue
+			}
 			if f.mustBeNonEmpty && res.seriesCount == 0 {
 				t.Errorf("HARD FAIL field=%s range=%s returned 0 series", f.lokiName, r.label)
 			}

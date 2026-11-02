@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Metric range queries are answered on Loki's step grid by default
+  (`-align-queries-with-step`, on), and a refresh that moves the window by
+  less than a step is served from the caches.** Loki's query frontend, with
+  `query_range.align_queries_with_step` on (false in its flag defaults,
+  `pkg/querier/queryrange/queryrangebase/roundtrip.go:38,49`; true in its
+  example configuration and Helm chart), moves both bounds of a metric range
+  query down to a multiple of the step before it evaluates it,
+  `(start_ms / step_ms) * step_ms` and the same for the end
+  (`pkg/querier/queryrange/queryrangebase/step_align.go:20-24`), in the metric
+  tripperware after its limits middleware and before splitting and the results
+  cache (`pkg/querier/queryrange/roundtrip.go:1028-1058`). A Loki with its flag
+  defaults floors the start too, in its metric splitter
+  (`split_queries_by_interval`, 1h by default;
+  `pkg/querier/queryrange/splitters.go:236,308-319`), and rounds the end up.
+  With `step=137s` and a start 17 s past a multiple of 137, Loki's first
+  sample is 17 s before the start; the proxy started its grid at the start, so
+  its series were shifted by `start mod step` next to Loki. A refresh that
+  moved both bounds by less than a step changed the grid phase the stats
+  extent cache keys on and read VictoriaLogs again: on an isolated stack with
+  24h of data, 15 unwrap metrics over 24h windows refreshed by 15 s at step
+  60 s took 211 to 4,102 ms per refresh, where Loki answered in 3.6 to 31 ms
+  (12x to 577x; both Loki profiles), and 0.6 to 1.9 ms with the alignment
+  (0.04x to 0.25x Loki). The proxy now moves the bounds of a metric `query_range`
+  request the same way, after the tenant limits and before the response cache,
+  so every evaluation path, cache key and VictoriaLogs call of the request
+  uses Loki's bounds: a refresh inside one step is the same request (answered
+  by the response cache, or by the extent cache from stored buckets). A
+  request whose bounds are already on the grid, and a log query, go on
+  unchanged, with no allocation added; a moved request is checked through the
+  handler's memoized query validation, so its query is not parsed twice, and
+  costs 11 allocations (1.2 KiB) more than before on a response-cache hit.
+  Bounds are decoded as Loki decodes them first: a decimal number of seconds keeps
+  its fraction rounded to milliseconds (`pkg/loghttp/params.go:166-171`), so
+  `1700000000.3` on a 100 ms grid stays at `.300`. A request that ends near
+  now is still recomputed once its cached answer is older than
+  `-recent-tail-refresh-max-staleness`, judged on the end the client sent, as
+  Loki recomputes the newest `max_cache_freshness_per_query` of every request,
+  so a row that arrives late shows on the next refresh. The 11,000-point limit
+  and `max_query_length` are checked on the bounds the client sent, as in
+  Loki. Log queries, instant queries and `/loki/api/v1/index/volume_range`
+  keep their bounds, as in Loki. Not covered, unlike Loki: a request without a
+  step (Loki aligns to its derived range/250 step, which the proxy does not
+  evaluate on), `/loki/api/v1/patterns` (Loki aligns it when the flag is on;
+  the proxy's pattern samples are already bucketed on the step grid), Grafana
+  Logs Drilldown query-split residual chunks, a step under a millisecond, and
+  the end of a Loki with the flag off, which its splitter rounds up where the
+  proxy moves it down. Grafana panels look the same either way: Grafana's Loki
+  datasource floors the start to the step when it splits a metric query, and
+  samples stop at the last grid point at or before the end. **Breaking:** an
+  API client that sends a start or end off the step grid now gets step-aligned
+  answers, the samples of a Loki with `align_queries_with_step: true`; set
+  `-align-queries-with-step=false` (Helm `extraArgs.align-queries-with-step:
+  "false"`) to evaluate at the start the client sent, as before. Registry
+  `semantics/query-range-step-alignment`. Re-implements #574 by @clain23.
+
 ## [2.60.0] - 2026-11-02
 
 ### Fixed

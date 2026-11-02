@@ -409,7 +409,11 @@ test.describe("@regression Proxy series cap", () => {
     // ingesters) and the proxy both list them immediately.
     const query = `rate({app="api-gateway"}[5m])`;
     await ensureStackWarm(page);
-    const end = windowEnd();
+    // On the 60 s step grid: the proxy, like Loki's frontend with
+    // align_queries_with_step, moves an off-grid end down to the grid, and
+    // the streams the generator started after that point would then be in
+    // Loki's index window but in no sample.
+    const end = Math.floor(windowEnd() / 60) * 60;
     // 15 minutes is enough to reach the cap on a stack older than a few
     // minutes and keeps both the proxy's zero-filled matrix and Loki's series
     // listing bounded on a long-running stack.

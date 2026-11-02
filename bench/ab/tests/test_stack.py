@@ -183,14 +183,29 @@ class AlignFlagTest(unittest.TestCase):
 
     def test_the_builds_own_stack_flag_never_leaks_into_another_profile(self):
         # Once the flag is in the compose file every proxy service carries it; the loki-defaults profile runs
-        # the proxy on its default, so it is removed, in every spelling.
+        # the proxy on its default, so it is removed, in every spelling, and the state is that default.
         for have in ("-align-queries-with-step=true", "-align-queries-with-step=false", "-align-queries-with-step"):
             args = ["-backend=http://vl", have, "-x=1"]
             self.assertEqual(stack.align_args(args, "loki-defaults", True), (["-backend=http://vl", "-x=1"], "off"))
+            self.assertEqual(stack.align_args(args, "loki-defaults", True, True), (["-backend=http://vl", "-x=1"], "on"))
             self.assertEqual(stack.align_args(args, "loki-defaults", False), (["-backend=http://vl", "-x=1"], "off"))
+            # a source default without the flag in the binary is not trusted
+            self.assertEqual(stack.align_args(args, "loki-defaults", False, True), (["-backend=http://vl", "-x=1"], "off"))
             self.assertEqual(stack.align_args(args, "aligned", True)[0].count("-align-queries-with-step=true"), 1)
             # a build without the flag does not run it even if its compose file somehow had it: nothing is added
             self.assertNotIn("-align-queries-with-step=true", stack.align_args(["-x=1"], "aligned", False)[0])
+
+    def test_source_align_default_reads_the_flag_definition(self):
+        with tempfile.TemporaryDirectory() as tree:
+            self.assertFalse(stack.source_align_default(tree))  # no main.go
+            os.makedirs(os.path.join(tree, "cmd", "proxy"))
+            main = os.path.join(tree, "cmd", "proxy", "main.go")
+            for line, want in (('fs.Bool("align-queries-with-step", true, "Move")', True),
+                               ('fs.Bool("align-queries-with-step", false, "Move")', False),
+                               ('fs.Bool("exact-parser-series-identity", true, "x")', False)):
+                with open(main, "w") as f:
+                    f.write("package main\n" + line + "\n")
+                self.assertEqual(stack.source_align_default(tree), want, line)
 
     def test_like_for_like(self):
         self.assertTrue(stack.like_for_like("aligned", "on"))
@@ -210,6 +225,7 @@ class AlignFlagTest(unittest.TestCase):
         proxies = []
         with tempfile.TemporaryDirectory() as out, \
                 mock.patch.object(stack, "proxy_command", return_value=(["-backend=x", "-align-queries-with-step=true"], {})), \
+                mock.patch.object(stack, "source_align_default", side_effect=lambda tree: tree == "/t2"), \
                 mock.patch.object(stack, "Proxy", P):
             stack.start_proxies(specs, out, mock.Mock(vl="http://vl"), "svc", proxies, profile="aligned",
                                 supported={"base": False, "pr": True})
@@ -217,7 +233,7 @@ class AlignFlagTest(unittest.TestCase):
                                 supported={"base": False, "pr": True})
         self.assertEqual([(p.name, p.profile, p.align) for p in proxies],
                          [("base", "aligned", "unsupported"), ("pr", "aligned", "on"),
-                          ("base", "loki-defaults", "off"), ("pr", "loki-defaults", "off")])
+                          ("base", "loki-defaults", "off"), ("pr", "loki-defaults", "on")])
         by = {(p.name, p.profile): p.args for p in proxies}
         self.assertNotIn("-align-queries-with-step=true", by[("base", "aligned")])
         self.assertIn("-align-queries-with-step=true", by[("pr", "aligned")])

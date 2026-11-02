@@ -153,10 +153,14 @@ func seedChunkMergeHistory(t *testing.T) (string, time.Time) {
 
 // TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed verifies that
 // the proxy explicitly emits `X-Proxy-Drilldown-Path: hits-leftover-suppressed`
-// for the tiny residual chunk Grafana sends at the trailing edge of a
+// for the tiny residual chunk Logs Drilldown sends at the trailing edge of a
 // 24h-aligned split. This is the safety net that prevents the right-edge
 // spike from re-appearing if any other layer regresses — as long as the
 // residual is suppressed, mergeFrames has no 1-bucket block to glue.
+//
+// Only Logs Drilldown's residual is suppressed (isQuerySplitResidualParams
+// reads its X-Query-Tags source). Any other Grafana client's residual is
+// answered as Loki answers it: with align_queries_with_step, on the step grid.
 func TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed(t *testing.T) {
 	waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
 
@@ -205,6 +209,29 @@ func TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed(t *testing.T) {
 			pathHeader := resp.Header.Get("X-Proxy-Drilldown-Path")
 			emptyMatrix := `{"status":"success","data":{"resultType":"matrix","result":[]}}`
 			gotSuppress := pathHeader == "hits-leftover-suppressed" || string(body) == emptyMatrix
+			if source == "grafana-ua" {
+				if resp.StatusCode != http.StatusOK || pathHeader == "hits-leftover-suppressed" {
+					t.Fatalf("source=%s: status %d header=%q, want 200 and no suppression: only Logs Drilldown's residual is suppressed", source, resp.StatusCode, pathHeader)
+				}
+				var answer struct {
+					Data struct {
+						Result []struct {
+							Values [][]any `json:"values"`
+						} `json:"result"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(body, &answer); err != nil {
+					t.Fatalf("source=%s: decode %s: %v", source, body, err)
+				}
+				for _, series := range answer.Data.Result {
+					for _, v := range series.Values {
+						if ts, _ := v[0].(float64); int64(ts)%int64(chunkLockStep.Seconds()) != 0 {
+							t.Fatalf("source=%s: sample at %v is off the %s step grid Loki answers on: %s", source, v[0], chunkLockStep, body)
+						}
+					}
+				}
+				return
+			}
 			if !gotSuppress {
 				t.Errorf("source=%s expected suppression (header=hits-leftover-suppressed OR empty matrix body), got header=%q body=%s",
 					source, pathHeader, body)

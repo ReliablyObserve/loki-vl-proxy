@@ -34,6 +34,12 @@ func ValidateLogQL(query string) string {
 	return msg
 }
 
+// ValidateLogQLExpr is ValidateLogQL that also returns the parsed expression
+// (nil for the bare wildcard or on error).
+func ValidateLogQLExpr(query string) (Expr, string) {
+	return validateLogQL(query)
+}
+
 // validateLogQL is ValidateLogQL that also returns the parsed expression (nil
 // for the bare wildcard or on error), so callers can inspect it without a
 // second parse.

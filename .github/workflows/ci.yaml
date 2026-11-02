@@ -248,6 +248,12 @@ jobs:
       - name: Fuzz smoke (index/stats window like Loki)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzIndexStatsWindowLikeLoki$' -fuzztime=12s
 
+      - name: Fuzz smoke (query_range step alignment)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzAlignQueryRangeToStep$' -fuzztime=12s
+
+      - name: Fuzz smoke (query_range step alignment query string)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRawQueryWithBounds$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

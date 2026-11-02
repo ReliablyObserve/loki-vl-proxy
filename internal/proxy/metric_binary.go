@@ -510,6 +510,9 @@ func isGrafanaSourcedRequest(r *http.Request) bool {
 // query never spans < one step except as this residual — Grafana aligns standalone
 // ranges to the step. See [[grafana-loki-querysplitting-24h]].
 func isQuerySplitResidual(r *http.Request) bool {
+	if !isGrafanaDrilldownRequest(r) { // before r.URL.Query(), which allocates
+		return false
+	}
 	// Read start/end/step from the URL query directly. r.FormValue depends on
 	// r.Form, which upstream handlers may have parsed before r.URL was rewritten
 	// for downstream VL calls — leaving an empty cached r.Form that makes the

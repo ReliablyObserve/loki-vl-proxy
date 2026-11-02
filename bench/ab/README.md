@@ -190,7 +190,7 @@ evidence record names its profile:
 | profile | Loki | proxy builds |
 |---|---|---|
 | `aligned` | the stack as it is: align on, freshness 0s | `-align-queries-with-step=true` |
-| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults (the flag is removed from the build's own stack flags, so a build whose compose file carries it does not run aligned against an unaligned Loki) |
+| `loki-defaults` | `docker-compose.ab-loki-defaults.yml`: `-querier.align-querier-with-step=false -frontend.max-cache-freshness=10m` (flags win over the config file, as in `docker-compose.ab-loki-uncached.yml`) | their defaults: the flag is removed from the build's own stack flags, and a build whose `-align-queries-with-step` defaults to on (`stack.source_align_default`, read from the build's `cmd/proxy/main.go`) runs aligned, recorded as `proxy_align: on`. That is like for like: a Loki with its defaults floors the start to the step too, in its metric splitter (`split_queries_by_interval`, 1h by default; `pkg/querier/queryrange/splitters.go:236,308-319`), and rounds the end up where the aligned proxy moves it down |
 
 - One seeded stack serves both: after the first profile `stack.set_profile` recreates only
   Loki (its results cache is in memory, so the second Loki starts cold) on the same volume,

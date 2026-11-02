@@ -359,6 +359,9 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 	if !captured.proxyCfg.patternsEnabled {
 		t.Fatal("expected -patterns-enabled to default to true")
 	}
+	if !captured.proxyCfg.alignQueriesWithStep {
+		t.Fatal("expected -align-queries-with-step to default to true")
+	}
 	if captured.proxyCfg.deleteAPIEnabled {
 		t.Fatal("expected -delete-api-enabled to default to false")
 	}
@@ -1396,6 +1399,27 @@ func TestParseForwardHeaders(t *testing.T) {
 	}
 	if got[0] != "authorization" || got[1] != "X-Scope-OrgID" {
 		t.Fatalf("unexpected forward header order/content: %+v", got)
+	}
+}
+
+// -align-queries-with-step reaches the proxy as set, on (the default) or off.
+// conformance: semantics/query-range-step-alignment
+func TestBuildProxyConfig_AlignQueriesWithStep(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		got, err := buildProxyConfig(proxyRuntimeConfig{
+			backendURL:           "http://backend",
+			cache:                cache.New(60*time.Second, 1000),
+			logLevel:             "error",
+			labelStyle:           "passthrough",
+			metadataFieldMode:    "hybrid",
+			alignQueriesWithStep: on,
+		})
+		if err != nil {
+			t.Fatalf("unexpected buildProxyConfig error: %v", err)
+		}
+		if got.AlignQueriesWithStep != on {
+			t.Fatalf("AlignQueriesWithStep = %v, want %v", got.AlignQueriesWithStep, on)
+		}
 	}
 }
 
