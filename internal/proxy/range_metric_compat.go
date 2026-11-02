@@ -800,7 +800,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		manualFunc, spec, rawSpec = counterFunc, counterSpec, rateCounterRawSpec(r.Context(), counterSpec, startTS, step, origSpec.Window)
 	}
 	markQueryStepsRoute(r.Context(), "raw")
-	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
+	series, err := p.collectRangeMetricSamples(r.Context(), rawSpec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd, p.lineFieldExposure(origSpec.BaseQuery))
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
 		return true
@@ -1046,7 +1046,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	spec = withoutUnwrapGate(spec)
 	// Inclusive upper bound for every function, as above.
 	fetchEnd := evalTS.Add(time.Nanosecond)
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd, p.lineFieldExposure(origSpec.BaseQuery))
 	if err != nil {
 		p.writeErr(w, r.Context(), err)
 		return true
@@ -1764,7 +1764,7 @@ type metricSeriesCacheEntry struct {
 	key          string
 }
 
-func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
+func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time, exposure *lineFieldExposure) (map[string]manualSeriesSamples, error) {
 	// A stream-identity grouping reads detected_level from the rows: the query
 	// carries the derivation pipes, which filter nothing, so the pipe-free row
 	// count precheck runs on the query without them.
@@ -1867,7 +1867,12 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			derived, derivedKey = &value, "|"+value
 		}
 
-		seriesEntry := p.manualSeriesEntry(seriesCache, v, streamStr, levelStr, derived, derivedKey, groupBy, origGroupBy, byExplicit, includeParsedLabels)
+		hideLevel := false
+		if exposure != nil && levelStr != "" && exposure.hidesStoredLevel(v.GetStringBytes("_msg")) {
+			_, streamLevel := parseStreamLabels(streamStr)["level"]
+			hideLevel = !streamLevel
+		}
+		seriesEntry := p.manualSeriesEntry(seriesCache, v, streamStr, levelStr, derived, derivedKey, groupBy, origGroupBy, byExplicit, includeParsedLabels, hideLevel)
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
@@ -1901,7 +1906,10 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 // read the same way): the stream and level labels, plus, when
 // includeParsedLabels is set and the query groups, the by(...) fields the row
 // holds beyond them. seriesCache holds the entries built in this request.
-func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry, v *fj.Value, streamStr, levelStr string, derived *string, derivedKey string, groupBy, origGroupBy []string, byExplicit, includeParsedLabels bool) *metricSeriesCacheEntry {
+func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry, v *fj.Value, streamStr, levelStr string, derived *string, derivedKey string, groupBy, origGroupBy []string, byExplicit, includeParsedLabels, hideLevel bool) *metricSeriesCacheEntry {
+	if hideLevel {
+		derivedKey += "|hidden-level"
+	}
 	if !includeParsedLabels || len(groupBy) == 0 {
 		// Hot path: series identity depends only on _stream + level.
 		// Build once per unique (stream, level) pair and reuse across all matching lines.
@@ -1909,6 +1917,11 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 		seriesEntry := seriesCache[cacheKey]
 		if seriesEntry == nil {
 			seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, derived, groupBy, byExplicit, origGroupBy)
+			if hideLevel {
+				delete(seriesEntry.metricLabels, "level")
+				seriesEntry.translated = p.labelTranslator.TranslateLabelsMap(seriesEntry.metricLabels)
+				seriesEntry.key = canonicalLabelsKey(seriesEntry.translated)
+			}
 			seriesCache[cacheKey] = seriesEntry
 		}
 		return seriesEntry
@@ -1931,6 +1944,9 @@ func (p *Proxy) manualSeriesEntry(seriesCache map[string]*metricSeriesCacheEntry
 		// Loki groups by stream labels only when no by(...) is present; parsed
 		// fields become metric dimensions only when explicitly named in by(...).
 		addGroupByParsedLabelsFJ(metricLabels, v, groupBy)
+		if hideLevel {
+			delete(metricLabels, "level")
+		}
 		translatedParsed := p.labelTranslator.TranslateLabelsMap(metricLabels)
 		seriesEntry = &metricSeriesCacheEntry{
 			metricLabels: metricLabels,

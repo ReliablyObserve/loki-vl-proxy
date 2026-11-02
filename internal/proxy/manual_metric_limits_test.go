@@ -78,7 +78,7 @@ func TestManualMetricRowLimitCountsSkippedRows(t *testing.T) {
 	p := newGapTestProxy(t, backend.URL)
 	p.rangeMetricRowLimit = 1
 	stamp := time.Now()
-	series, err := p.collectRangeMetricSamples(context.Background(), "*", nil, nil, true, "latency", "", stamp.Add(-time.Minute), stamp)
+	series, err := p.collectRangeMetricSamples(context.Background(), "*", nil, nil, true, "latency", "", stamp.Add(-time.Minute), stamp, nil)
 	if err == nil || !strings.Contains(err.Error(), "row limit exceeded") || series != nil {
 		t.Fatalf("skipped rows must not hide truncation: series=%v err=%v", series, err)
 	}
@@ -97,7 +97,7 @@ func TestManualMetricStreamingLimitSortsCompleteInputLocally(t *testing.T) {
 	defer backend.Close()
 	p := newGapTestProxy(t, backend.URL)
 	p.rangeMetricRowLimit = 3
-	series, err := p.collectRangeMetricSamples(t.Context(), "*", nil, nil, true, "latency", "", stamp, stamp.Add(time.Minute))
+	series, err := p.collectRangeMetricSamples(t.Context(), "*", nil, nil, true, "latency", "", stamp, stamp.Add(time.Minute), nil)
 	if err != nil || len(series) != 1 {
 		t.Fatalf("complete unordered input rejected: %v %v", series, err)
 	}

@@ -135,7 +135,7 @@ func TestRangeMetricSamplesConcurrency(t *testing.T) {
 				groupBy, groupBy,
 				false,
 				"latency_ms", "",
-				start, now,
+				start, now, nil,
 			)
 			if err != nil {
 				mu.Lock()
