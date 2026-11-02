@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.57.0] - 2026-11-02
+
 ### Fixed
 
 - Keep and drop `detected_level` independently of the stored `level` field
