@@ -3,11 +3,13 @@
 package e2e_compat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,11 +125,40 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 		t.Fatalf("shifted long-range patterns reused no settled source windows: hits before=%d after=%d", hitsBefore, hitsAfter)
 	}
 	t.Logf("shifted pattern source-window cache hits: %d", hitsAfter-hitsBefore)
+
+	// The CI/playground patterns datasource has a bounded L2 on its named
+	// volume. Restart clears L1; a second shifted range must reuse persisted
+	// source windows, while its moving edges still reach VictoriaLogs.
+	restartCtx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	if output, err := exec.CommandContext(restartCtx, "docker", "restart", "e2e-proxy-patterns-autodetect").CombinedOutput(); err != nil {
+		t.Fatalf("restart patterns proxy: %v: %s", err, output)
+	}
+	waitForReady(t, patternsAutodetectProxyURL+"/ready", 30*time.Second)
+	diskObjects := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_objects{tier="l2_disk"} `)
+	if diskObjects < 1 {
+		t.Fatal("patterns source windows did not survive the proxy restart on L2")
+	}
+	diskHitsBefore := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"} `)
+	shiftedAgain, err := fetchPatternsViaGrafanaDatasource(dsUID, query, start.Add(2*cfg.step), end.Add(2*cfg.step), cfg.step, cfg.patternCount)
+	if err != nil || len(shiftedAgain) == 0 {
+		t.Fatalf("patterns after restart failed: entries=%d err=%v", len(shiftedAgain), err)
+	}
+	diskHitsAfter := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"} `)
+	if diskHitsAfter <= diskHitsBefore {
+		t.Fatalf("shifted patterns after restart did not read L2: before=%d after=%d", diskHitsBefore, diskHitsAfter)
+	}
+	t.Logf("shifted pattern L2 hits after restart: %d; persisted objects: %d", diskHitsAfter-diskHitsBefore, diskObjects)
 }
 
 func patternWindowCacheHits(t *testing.T, baseURL string) int64 {
 	t.Helper()
 	const prefix = `loki_vl_proxy_internal_operation_total{operation="patterns_window_cache",outcome="hit"} `
+	return proxyMetricValue(t, baseURL, prefix)
+}
+
+func proxyMetricValue(t *testing.T, baseURL, prefix string) int64 {
+	t.Helper()
 	for _, line := range strings.Split(scrapeProxyMetrics(t, baseURL), "\n") {
 		if raw, ok := strings.CutPrefix(line, prefix); ok {
 			value, err := strconv.ParseInt(raw, 10, 64)

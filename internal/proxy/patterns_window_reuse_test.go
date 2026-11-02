@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -188,6 +189,114 @@ func TestPatternsShiftedRangeReusesCompletedWindows(t *testing.T) {
 	_ = request(recent, recentStart.Add(30*time.Second), recentEnd.Add(30*time.Second))
 	if recentReReads := backendCalls.Load() - recentFirstCalls; recentReReads <= 4 {
 		t.Fatalf("near-now windows were cached despite disabled recent-window TTL; only %d VL reads", recentReReads)
+	}
+}
+
+// A fresh process has no L1 entries or pattern snapshot state. Its shifted
+// request must read completed source windows from the persisted Loki L2 tier.
+func TestPatternsShiftedRangeReusesDiskWindowsAfterRestart(t *testing.T) {
+	var backendCalls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse source bounds: %v", err)
+			return
+		}
+		startNs, startErr := strconv.ParseInt(r.FormValue("start"), 10, 64)
+		endNs, endErr := strconv.ParseInt(r.FormValue("end"), 10, 64)
+		if startErr != nil || endErr != nil {
+			t.Errorf("invalid source bounds: %q %q", r.FormValue("start"), r.FormValue("end"))
+			return
+		}
+		backendCalls.Add(1)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for ts := time.Unix(0, startNs).UTC().Truncate(time.Minute).Add(time.Minute); ts.UnixNano() <= endNs; ts = ts.Add(time.Minute) {
+			_, _ = fmt.Fprintf(w, `{"_time":%q,"_msg":"api request completed successfully from worker","level":"info"}`+"\n", ts.Format(time.RFC3339Nano))
+		}
+	}))
+	defer backend.Close()
+
+	path := filepath.Join(t.TempDir(), "patterns-l2.db")
+	diskConfig := cache.DiskCacheConfig{Path: path, MaxBytes: 1 << 20, FlushInterval: time.Hour}
+	newProxy := func(disk *cache.DiskCache) (*Proxy, *cache.Cache) {
+		t.Helper()
+		memory := cache.New(time.Minute, 1000)
+		memory.SetL2(disk)
+		p, err := New(Config{BackendURL: backend.URL, Cache: memory, LogLevel: "error"})
+		if err != nil {
+			memory.Close()
+			t.Fatal(err)
+		}
+		p.backendSupportsDensePatternWindowing = true
+		p.queryRangeHistoryCacheTTL = 24 * time.Hour
+		return p, memory
+	}
+	request := func(p *Proxy, from time.Time) patternsResponse {
+		t.Helper()
+		target := fmt.Sprintf("/loki/api/v1/patterns?query=%%7Bapp%%3D%%22web%%22%%7D&start=%s&end=%s&step=30s", from.Format(time.RFC3339Nano), from.Add(6*time.Hour).Format(time.RFC3339Nano))
+		rec := httptest.NewRecorder()
+		p.handlePatterns(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("patterns status %d: %s", rec.Code, rec.Body.String())
+		}
+		var answer patternsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil || len(answer.Data) == 0 {
+			t.Fatalf("decode patterns: %v, entries=%d", err, len(answer.Data))
+		}
+		return answer
+	}
+
+	start := time.Date(2026, 10, 1, 0, 0, 10, 0, time.UTC)
+	disk, err := cache.NewDiskCache(diskConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, memory := newProxy(disk)
+	_ = request(first, start)
+	coldCalls := backendCalls.Load()
+	if coldCalls < 10 {
+		t.Fatalf("fixture did not populate multiple source windows: %d backend calls", coldCalls)
+	}
+	disk.Flush()
+	entries, bytes := disk.Size()
+	if entries == 0 || bytes == 0 {
+		t.Fatalf("completed pattern windows were not persisted to L2: entries=%d bytes=%d writes=%d rejected=%d flushes=%d", entries, bytes, disk.Writes.Load(), disk.RejectedWrites.Load(), disk.FlushCount.Load())
+	}
+	if err := first.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	memory.Close()
+	if err := disk.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := cache.NewDiskCache(diskConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	second, secondMemory := newProxy(reopened)
+	t.Cleanup(func() { _ = second.Shutdown(context.Background()); secondMemory.Close() })
+	shifted := request(second, start.Add(30*time.Second))
+	if fetched := backendCalls.Load() - coldCalls; fetched > 4 {
+		t.Fatalf("shifted range fetched %d source windows after restart; expected moving edges only", fetched)
+	}
+	if reopened.Hits.Load() == 0 {
+		t.Fatal("shifted range did not read persisted L2 entries")
+	}
+	requireProxyMetricsContain(t, second, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"}`)
+
+	uncached := newTestProxy(t, backend.URL)
+	uncached.backendSupportsDensePatternWindowing = true
+	uncached.queryRangeHistoryCacheTTL = 24 * time.Hour
+	expected := request(uncached, start.Add(30*time.Second))
+	gotJSON, _ := json.Marshal(shifted)
+	wantJSON, _ := json.Marshal(expected)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("L2-backed answer differs from cold calculation\nreused: %s\ncold: %s", gotJSON, wantJSON)
 	}
 }
 

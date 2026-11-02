@@ -313,7 +313,7 @@ services:
       # L2 disk cache (bbolt) — enables across-restart cache reuse so bench
       # script can measure L1 -> L2 promotion after `docker compose restart`.
       - "-disk-cache-path=/cache/proxy-l2.bolt"
-      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-max-bytes=134217728"
       - "-disk-cache-min-ttl=1s"
       - "-drilldown-scan-timeout=3s"
       # L3 peer cache (static discovery, 3-node ring with self + 2 peers).
@@ -398,7 +398,7 @@ services:
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
       - "-disk-cache-path=/cache/proxy-l2.bolt"
-      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-max-bytes=134217728"
       - "-disk-cache-min-ttl=1s"
       - "-drilldown-scan-timeout=3s"
       - "-peer-discovery=static"
@@ -477,7 +477,7 @@ services:
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
       - "-disk-cache-path=/cache/proxy-l2.bolt"
-      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-max-bytes=134217728"
       - "-disk-cache-min-ttl=1s"
       - "-drilldown-scan-timeout=3s"
       - "-peer-discovery=static"
@@ -551,6 +551,13 @@ services:
       - "-patterns-persist-interval=5s"
       - "-patterns-startup-stale-threshold=30s"
       - "-patterns-startup-peer-warm-timeout=2s"
+      # Keep settled pattern source windows through a container restart.
+      # This is a separate bbolt file on the variant's existing named volume;
+      # its logical data budget is intentionally small for CI and playgrounds.
+      - "-disk-cache-path=/cache/proxy-l2.bolt"
+      - "-disk-cache-max-bytes=67108864"
+      - "-disk-cache-max-index-bytes=2097152"
+      - "-disk-cache-max-buffer-bytes=4194304"
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
       - "-max-concurrent=0"
@@ -1128,7 +1135,7 @@ services:
 volumes:
   vl-data:
   vm-data:
-  patterns-cache:
+  patterns-cache: # Also holds the patterns variant's L2 bbolt file across restarts.
   e2e-loki-data:  # Loki chunks (BoltDB-shipper + filesystem) — persist across container restarts
   # Per-proxy named volumes so L2 disk cache (bbolt) survives `docker compose restart`.
   # Each proxy gets its own volume — sharing would break bbolt single-writer locks.
