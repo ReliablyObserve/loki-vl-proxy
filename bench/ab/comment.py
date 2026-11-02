@@ -141,6 +141,11 @@ def cold_ratio(row, c, r):
     return f"{cc / rc:.2f}×"
 
 
+def median_mark(row, target):
+    """ᵐ on a cold the harness re-measured: the median of the first pass's sample and the flushed re-samples."""
+    return " ᵐ" if target in row.get("cold_samples", {}) else ""
+
+
 def cold_table(rows, b, c, r):
     """Cold timings; with a refresh run, also each target's refresh p50 and the PR's multiple of Loki's."""
     refresh = any("refresh" in row for _, row in rows)
@@ -156,8 +161,8 @@ def cold_table(rows, b, c, r):
                   " ↺" if row.get("loki_cold_reused_from") else " ¹" if row.get("cold_from_first_pass") else "")
         line = (f"| {cell(row['shape'])} | {row['range']} | "
                 + (f"{SHORT.get(row.get('profile'), '—')} | " if prof else "")
-                + f"{tag(row, b, secs(row['cold'].get(b), row['status'].get(b)))} | "
-                f"{tag(row, c, secs(cc, row['status'].get(c)))} | {secs(rc, row['status'].get(r))}{served} | "
+                + f"{tag(row, b, secs(row['cold'].get(b), row['status'].get(b)))}{median_mark(row, b)} | "
+                f"{tag(row, c, secs(cc, row['status'].get(c)))}{median_mark(row, c)} | {secs(rc, row['status'].get(r))}{served} | "
                 f"{cold_ratio(row, c, r)} |")
         if refresh:
             rf, st = row.get("refresh", {}), row.get("refresh_status", {})
@@ -381,8 +386,16 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
         lines += ["", "† Loki's results cache answered this cold run (its own counters, or identical answers for "
                   "windows a minute apart): not a computed time, so it is in no ratio."]
     if any(row.get("cold_from_first_pass") for _, row in rows):
-        lines += ["", "¹ (Loki cold) the confirm pass's cold run was cache-served, so every cold column of the row is "
-                  "the first pass's."]
+        lines += ["", "¹ (Loki cold) the confirm pass's cold run was cache-served, so the row keeps the first pass's cold "
+                  "columns (the proxies' too, unless ᵐ marks them)."]
+    sampled = [row for _, row in rows if row.get("cold_samples")]
+    if sampled:
+        lines += ["", f"ᵐ median of the first pass's cold and {len(next(iter(sampled[0]['cold_samples'].values()))) - 1} "
+                  "re-measured colds (caches flushed, logs quiet, the build asked first alternating), taken because the "
+                  "first-pass cold was a new or worse above-2× finding: " + "; ".join(
+                      f"{cell(row['shape'])} {row['range']}: " + ", ".join(
+                          f"{t} " + "/".join(f"{x:.2f}" for x in v) for t, v in row["cold_samples"].items())
+                      for row in sampled[:5]) + (" …" if len(sampled) > 5 else "") + "."]
     if any(row.get("unlike") for _, row in rows):
         lines += ["", "‡ this build did not run the setting of the row's Loki profile (no "
                   "`-align-queries-with-step` in the aligned profile): shown, never compared."]

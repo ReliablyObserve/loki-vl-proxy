@@ -55,6 +55,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -62,6 +63,8 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import stack  # noqa: E402
 
 
 SAMPLE_WINDOW = 1.5  # seconds around a request in which a sample belongs to it (CPUSampler.between)
@@ -122,6 +125,52 @@ def run_end_for(end, shape, rname, run, runs, refresh_s=0):
     if refresh_s:
         return base - (runs - 1 - run) * refresh_s
     return base - shape_shift(shape, rname) * run
+
+
+def shape_query(shape, step):
+    """The shape's query with $__auto set to the range's step."""
+    return shape.get("query", "").replace("$__auto", f"{step}s")
+
+
+def request_url(base, shape, query, secs, step, run_end):
+    """The URL of one request of a shape: an instant query at run_end, a metadata endpoint (labels, label
+    values, detected labels or fields, index volume) over the range, or a query_range over it."""
+    if shape.get("instant"):
+        return f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
+    if shape.get("path"):
+        # The shape's params are passed through and its query, if any, becomes the selector.
+        params = {"start": f"{run_end - secs}000000000", "end": f"{run_end}000000000", **shape.get("params", {})}
+        if shape.get("query"):
+            params["query"] = query
+        return f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
+    params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
+              "limit": shape.get("limit", 1000), "direction": "backward"}
+    return f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
+
+
+def target_order(targets, k):
+    """The targets in the order a (shape, range) pair asks them: the builds (every target but the reference) swap
+    places on odd pairs (ABAB over the pairs), the reference keeps its place. Without this the first-listed build
+    always goes first and the second meets its post-request background work."""
+    builds = [t for t in targets if t[0] != REFERENCE_TARGET]
+    if k % 2 and len(builds) > 1:
+        swapped = iter(builds[::-1])
+        return [next(swapped) if t[0] != REFERENCE_TARGET else t for t in targets]
+    return list(targets)
+
+
+def quiet_before(targets, tname, logs, quiet, cap):
+    """Seconds spent waiting for the other builds' logs to go quiet before a cold request to `tname`.
+
+    The other builds, not the one asked: its own work is part of what it costs. A build with no log given is not
+    waited for. cap 0 turns the wait off.
+    """
+    paths = [logs[t] for t, _ in targets if t != tname and t in logs]
+    if not paths or cap <= 0:
+        return 0.0
+    t0 = time.time()
+    stack.logs_quiet(paths, quiet, cap)
+    return time.time() - t0
 
 
 def request_headers(shape):
@@ -361,8 +410,15 @@ def main():
                          "shape and range, so run 0 is a cold first request for that proxy; repeatable; the admin "
                          "token, if any, is read from $AB_ADMIN_TOKEN. Loki's results cache is not flushed: read its "
                          "run-0 cache counters")
+    ap.add_argument("--quiet-log", action="append", default=[], metavar="TARGET=PATH",
+                    help="repeatable: the log file of a proxy build; before a cold request (run 0) the other builds' logs "
+                         "are waited on until they have not grown for --quiet-s seconds (at most --quiet-cap-s), so the "
+                         "request does not meet the work the previous one started")
+    ap.add_argument("--quiet-s", type=float, default=1.0)
+    ap.add_argument("--quiet-cap-s", type=float, default=4.0, help="0 = no wait")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    logs = dict(x.split("=", 1) for x in args.quiet_log)
 
     with open(args.shapes_file) as f:
         spec = json.load(f)
@@ -399,6 +455,7 @@ def main():
     sampler.start()
     timed_out = read_known_timeouts(args.known_timeouts)
     restart0, rows, timings, timeouts, aborted = restarts(), [], [], [], False
+    pair, quiet_waited = 0, 0.0
     for shape in shape_set["shapes"]:
         if wanted and not any(shape["name"].startswith(w) for w in wanted):
             continue
@@ -406,8 +463,9 @@ def main():
             continue
         shape_ranges = ["instant"] if shape.get("instant") else ranges
         for rname in shape_ranges:
+            pair += 1
             secs, step = range_defs.get(rname, (0, 0))
-            query = shape.get("query", "").replace("$__auto", f"{step}s")
+            query = shape_query(shape, step)
             for run in range(args.runs):
                 if run == 0:
                     for flush_url in args.flush_before_run0:
@@ -423,7 +481,9 @@ def main():
                 # outlast a cache's max staleness so each run meets an aged entry.
                 if run and shape.get("pause"):
                     time.sleep(float(shape["pause"]))
-                for tname, base in targets:
+                for tname, base in target_order(targets, pair - 1):
+                    if run == 0 and tname != REFERENCE_TARGET:  # Loki runs on its own host process: nothing to wait for
+                        quiet_waited += quiet_before(targets, tname, logs, args.quiet_s, args.quiet_cap_s)
                     if secs >= 86400 and tname in long_runs and run >= int(long_runs[tname]):
                         continue
                     key = (tname, shape["name"], rname)
@@ -433,20 +493,7 @@ def main():
                         print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {row['status']} not sent: "
                               f"{tname} timed out on this shape and range", flush=True)
                         continue
-                    if shape.get("instant"):
-                        url = f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
-                    elif shape.get("path"):
-                        # A metadata endpoint (labels, label values, detected labels or
-                        # fields, index volume) over the range; the shape's params are
-                        # passed through and its query, if any, becomes the selector.
-                        params = {"start": f"{run_end - secs}000000000", "end": f"{run_end}000000000", **shape.get("params", {})}
-                        if shape.get("query"):
-                            params["query"] = query
-                        url = f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
-                    else:
-                        params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
-                                  "limit": shape.get("limit", 1000), "direction": "backward"}
-                        url = f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
+                    url = request_url(base, shape, query, secs, step, run_end)
                     headers = request_headers(shape)
                     status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
                     if args.pause:
@@ -486,6 +533,7 @@ def main():
               "valid": not aborted and restart0 == restart1, "cpu_samples_missed": sampler.failed,
               "mode": "refresh" if args.refresh_s else "shifted", "refresh_s": args.refresh_s,
               "profile": args.profile, "not_like_for_like": args.not_like_for_like,
+              "quiet_wait_s": round(quiet_waited, 1),
               "timeouts": timeouts, "rows": rows}
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)

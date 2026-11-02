@@ -22,7 +22,7 @@ def read_json(path):
 
 def args(**over):
     base = dict(ranges=["1h"], runs=4, confirm_runs=7, refresh_s=0, refresh_runs=5, noise=0.3, min_delta=0.1, end_lead=0,
-                timeout=90)
+                timeout=90, cold_samples=0, warm_rounds=0)  # the cold re-measure and the warm-up have their own tests
     base.update(over)
     return type("Args", (), base)()
 

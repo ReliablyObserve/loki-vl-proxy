@@ -32,6 +32,7 @@ or log line. Use the Loki compatibility tests for those comparisons.
 | `docker-compose.ab-loki-defaults.yml` | The A/B-only overlay that gives the stack's Loki its own defaults for `align_queries_with_step` and `max_cache_freshness_per_query` (the `loki-defaults` profile). The shared e2e Loki config is not touched. |
 | `pr_smoke.py` | The per-PR run: select, stack, seed, build base and PR, measure, re-measure what looks slower, render the comment. |
 | `comment.py` | Renders the PR comment and decides the `perf-smoke` check. |
+| `cold.py` | The warm-up before a build's first measured request and the cold re-measure of a flagged row (below, "Cold cells that one sample cannot fail"). |
 | `daily.py` | The daily run: last release vs `main` vs Loki, every set and range up to 24h. |
 | `history.py` | Appends the daily results to `history/<set>.jsonl` (`history/<set>.loki-defaults.jsonl` for the second profile) and renders `history/trend.md`. |
 | `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` (`daily-<set>.loki-defaults.json` for the second profile) from the daily run. Commit these; keep raw rows out of the repository. |
@@ -111,6 +112,60 @@ answered from a cache the harness itself filled.
 | cold | run 0 of a shape x range, on a window no earlier request of that query covered | no header; whether its results cache answered is read from its own counters | no header |
 | warm | runs 1.. , each window shifted back by the shape's `shift` (a minute by default) | no header; its cache serves the overlapping splits, as for a user | no header |
 | refresh (opt-in) | run k ends at `end + k*refresh_s`, the last run at `end` (nothing in the future); the p50 of runs 1.. | no header, so run 0 fills its cache the way a first dashboard load does | no header |
+
+### Cold cells that one sample cannot fail
+
+A cold cell is one sample per build: run 0, taken right after the other build's request. The
+builds do background work after a request (window warming, label refreshes) and VictoriaLogs may be
+busy with it, so one sample can be slow on a build that is not: two PRs failed `perf-smoke` on
+`A explore volume, 2 filters, drop` and on `X1 json filter level_extracted, by level` (1h, cold) while the
+base and the PR made the same upstream calls and every other run of the row was equal. The confirm
+pass cannot clear that. Its windows share the first pass's 1-hour split buckets, so the proxies answer its
+run 0 from their window cache (0.02 s against 3.8 s); it is a warm re-measure, and it only keeps the
+first pass's cold columns when Loki's cache answered.
+
+`pr_smoke.py` therefore does three things, and changes no threshold, lock or rule:
+
+- **Quiet before a cold request, and the builds take turns** (`perf_matrix.py --quiet-log`, `--quiet-cap-s`,
+  `pr_smoke.py --quiet-cap-s`, default 4 s, 0 = off). This is the source of the interference: the build asked
+  first leaves background work (window warming, `stream_field_names` calls) running while the second one is
+  measured. Before run 0 of every shape x range, a build's request waits until the *other* build's log has not
+  grown for 1 s (every upstream request is logged), at most 4 s; Loki is not waited for and does not wait. The two
+  builds also swap places on every other shape x range (base, PR on the first, PR, base on the next; Loki always
+  last), so no build is systematically second. Warm runs are not delayed. The seconds spent are in each raw file
+  and in `meta.json` as `quiet_wait_s`. The two re-measures below are the safety net for what this does not remove.
+- **Warm-up** (`cold.warm_up`, `--warm-rounds`, default 3 at most). After a build starts and before its
+  first measured request: labels, label values, a metric query and a log query on a window below every
+  block of every set (none of them has a measured shape's URL or window), repeated until a round is
+  not slower than the one before it beyond the noise, then until the build's log has been quiet for
+  2 s (10 s at most). It removes the start-up state from the first cold cell of every set. It does not
+  by itself remove the interference above.
+- **Cold re-measure** (`cold.recold`, `--cold-samples`, default 3; 0 keeps today's single sample). Before the
+  confirm pass the first-pass summary is judged by `over2x.gate` as it always was (baseline, locks,
+  bounds, the other profile's base). Each shape x range with a new or worsened **cold** finding then
+  gets 3 more cold samples of each build, on windows below every block (1 minute apart): the build's
+  caches are flushed (`/admin/cache/flush`, the main listener with the stack's admin token), both builds'
+  logs go quiet (2 s without a line, waited for in parallel, 10 s at most), and the request is sent; the build asked first alternates (base, PR, PR, base, base,
+  PR). The cell of both builds becomes the **median of the first-pass sample and the 3 new ones** (`ᵐ`
+  in the cold table, the samples under `cold_samples` in `summary-<set>-<profile>.json`), and the gate
+  judges the row exactly as before. Loki's cold is not re-measured (its cache would answer).
+
+What that keeps. A real cold regression is slower in every sample: the median stays slow and the
+row stays a finding (`worsened` for a row already above 2× on the base or listed, `new` otherwise,
+locked rows judged at their bound). One slow sample among four never enters the median (it is the
+mean of the second and third); two of four put it half-way between the fast and the slow value, where
+the unchanged noise rule decides; three or four slow samples fail the row. When a sample cannot be taken (flush refused, an error status, a shape on a
+moved window `end_offset`) or the run's re-measure budget is used up (`--cold-budget-s`, default 300 s, in
+`meta.json` as `cold_resample_s` and per row under `cold_resampled`), the row gets the **first pass's cold back for
+every target** and its finding stands: the confirm pass had replaced the proxies' colds by window-cache
+answers, and keeping them would clear a finding on a measurement that was never cold. Only rows the gate already calls a
+cold finding are re-measured, so a clean PR pays for the warm-up (a few requests and one quiet wait per build and profile) and
+nothing else; a flagged row costs 6 requests of its own time plus one quiet wait (parallel over the builds) before each of the 6, in the proxy logs of the failed runs a 2 s gap without a line starts 4 s (median) to 12 s (90th percentile) after a request, so a flagged row takes about a minute and the budget holds about five.
+
+Measured on the 74 first-pass cold cells of 1 s or more in 12 recent `perf-smoke` runs (base and PR, both
+profiles), the PR ÷ base ratio has a median of 0.99 and exceeded 1.3 once; the two failures above were
+1.63 and 1.41. The cells are stable and the tail is rare, which is why the gate stays on a cold cell and
+asks for more samples only when it is about to fail one.
 
 A strictly cold comparison, where neither side answers run 0 from an extent
 another set or range filled: start the stack with `--loki-uncached` (`stack.py`
@@ -218,6 +273,8 @@ evidence record names its profile:
   keeps the first pass's cold columns, with their marks, whenever its own Loki cold was
   cache-served (`cold_from_first_pass`, `¹`): Loki's results cache reuses overlapping extents of
   a query, so a re-run on fresh windows over the same data is cache-served almost always.
+  The confirm pass's own cold is a warm time for the proxies (window cache); a row whose first-pass
+  cold is a finding gets its cold re-measured instead (`ᵐ`, "Cold cells that one sample cannot fail").
 - Files: `raw-<set>-<profile>.json`, `summary-<set>-<profile>.json`, `proxy-<build>-<profile>.log`;
   the daily run writes `results/daily-<set>.json` (aligned, as before) and
   `results/daily-<set>.loki-defaults.json`, `history/<set>.jsonl` and `history/<set>.loki-defaults.jsonl`.

@@ -445,6 +445,26 @@ def teardown(proxies, trees, st, keep_stack=False):
             log(f"cleanup step {getattr(fn, '__name__', fn)} failed: {e}")
 
 
+def logs_quiet(paths, quiet=2.0, cap=20.0, poll=0.25):
+    """Wait until none of the log files has grown for `quiet` seconds, at most `cap` seconds; whether they went
+    quiet. Every upstream request a build makes is logged, so a quiet log means no background work is running."""
+    def size(path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
+
+    deadline, sizes, since = time.time() + cap, [size(p) for p in paths], time.time()
+    while time.time() < deadline:
+        time.sleep(poll)
+        now = [size(p) for p in paths]
+        if now != sizes:
+            sizes, since = now, time.time()
+        elif time.time() - since >= quiet:
+            return True
+    return False
+
+
 class Proxy:
     """One proxy build as a host process on a port proven to be its own."""
 
@@ -480,6 +500,24 @@ class Proxy:
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
+
+    def flush_target(self):
+        """(URL, admin token) of this build's /admin/cache/flush: the main listener when the stack file gives
+        the proxy an admin token (admin endpoints ride the main listener then), else the admin listener."""
+        token = next((a.partition("=")[2] for a in self.args if a.startswith("-server.admin-auth-token=")), "")
+        return f"{self.url if token.strip() else f'http://127.0.0.1:{self.port + 1}'}/admin/cache/flush", token
+
+    def log_size(self):
+        try:
+            return os.path.getsize(self.log_path)
+        except OSError:
+            return 0
+
+    def wait_quiet(self, quiet=2.0, cap=20.0, poll=0.25):
+        """Wait until the log has not grown for `quiet` seconds (every upstream request is logged), at most `cap`
+        seconds: the build's background work (window warming, label refreshes) is not running next to the
+        request that follows. Returns whether it went quiet."""
+        return logs_quiet([self.log_path], quiet, cap, poll)
 
     def stop(self):
         if not self.alive():
