@@ -413,21 +413,8 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// excludes parse-failed lines from metric aggregation; VL counts all lines. The manual
 	// path (collectRangeMetricSamples) preserves Loki's error-exclusion semantics.
 	// The unwrap gate's own math pipe does not make a query one of these.
-	if strings.Contains(queryWithoutUnwrapGate(logsqlQuery), "| math ") {
-		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
-		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
-		if stepOk && hasOrigSpec && origSpec.Window > 0 && statsRangeIsTumbling(origSpec.Window, step) {
-			spec, specOk := parseStatsCompatSpec(logsqlQuery)
-			// Parser stages without an explicit drop-error opt-in require the manual path
-			// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
-			// LogQL stream selector + pipeline without the range window) for the drop-error
-			// check — hasDropErrorOnlyPostParserStage requires the pipeline without outer
-			// aggregation or range window brackets.
-			if !specOk || !queryUsesParserStages(spec.BaseQuery) || (hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) && !p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, parseOriginalByLabels(originalLogql))) {
-				return false
-			}
-			// Parser stage without drop-error — fall through to the manual path below.
-		}
+	if p.nativeMathTumblingStatsCompatible(r, originalLogql, logsqlQuery) {
+		return false
 	}
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok {
@@ -490,6 +477,26 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	return foldVectorAggregations(p, w, r, r.FormValue("query"), func(w http.ResponseWriter, r *http.Request) bool {
 		return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 	})
+}
+
+func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql, logsqlQuery string) bool {
+	if !strings.Contains(queryWithoutUnwrapGate(logsqlQuery), "| math ") {
+		return false
+	}
+	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
+	if !stepOk || !hasOrigSpec || origSpec.Window <= 0 || !statsRangeIsTumbling(origSpec.Window, step) {
+		return false
+	}
+	spec, specOk := parseStatsCompatSpec(logsqlQuery)
+	// Parser stages without an explicit drop-error opt-in require the manual path
+	// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
+	// pipeline without outer aggregation or range brackets) for the drop-error check.
+	if !specOk || !queryUsesParserStages(spec.BaseQuery) {
+		return true
+	}
+	return hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) &&
+		!p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, parseOriginalByLabels(originalLogql))
 }
 
 // statsRangeIsTumbling reports whether native step buckets answer a range

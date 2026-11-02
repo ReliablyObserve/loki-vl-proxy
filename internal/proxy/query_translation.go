@@ -1193,13 +1193,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			levelKey := asString(entry["_stream"]) + "\x00" + asString(entry["level"])
 			metric[detectedLevelLabel] = rowLevels.mapRow(entry, msg, rowLevels.streamLabels(levelKey, desc.rawLabels)).String()
 		}
-		if exposure != nil {
-			if _, streamLevel := desc.streamLabels["level"]; !streamLevel {
-				if msg, ok := entry["_msg"].(string); ok && exposure.hidesStoredLevel([]byte(msg)) {
-					delete(metric, "level")
-				}
-			}
-		}
+		hideUnlistedBareParserMetricLevel(metric, entry, desc, exposure)
 		p.addBareParserMetricFields(metric, entry, desc, spec.unwrapField, exposure, captureLabels, includeParsedInMetric, exposureCache, smBuf, pfBuf)
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
@@ -1243,6 +1237,19 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
 	})
 	return result, nil
+}
+
+func hideUnlistedBareParserMetricLevel(metric map[string]string, entry map[string]interface{}, desc cachedLogQueryStreamDescriptor, exposure *lineFieldExposure) {
+	if exposure == nil {
+		return
+	}
+	if _, streamLevel := desc.streamLabels["level"]; streamLevel {
+		return
+	}
+	msg, ok := entry["_msg"].(string)
+	if ok && exposure.hidesStoredLevel([]byte(msg)) {
+		delete(metric, "level")
+	}
 }
 
 func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineFieldExposure {
