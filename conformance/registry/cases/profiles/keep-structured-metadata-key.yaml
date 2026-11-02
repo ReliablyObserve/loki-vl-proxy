@@ -1,5 +1,5 @@
 id: profiles/keep-structured-metadata-key
-title: `| keep` retains a mapped structured-metadata key (fixed)
+title: '`| keep` retains a mapped structured-metadata key (fixed)'
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range

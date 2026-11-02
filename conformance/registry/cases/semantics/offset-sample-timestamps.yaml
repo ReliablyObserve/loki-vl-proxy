@@ -22,7 +22,7 @@ request:
     X-Scope-OrgID: "0"
 compare:
   mode: structural
-  fields: [status, data.resultType, data.result[].metric, data.result[].values[][0]]
+  fields: [status, data.resultType, 'data.result[].metric', 'data.result[].values[][0]']
   values:
     mode: exact
     field: data.result[].values[][1]

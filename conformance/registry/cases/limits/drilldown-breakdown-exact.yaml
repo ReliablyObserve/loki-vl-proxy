@@ -33,7 +33,7 @@ request:
     X-Query-Tags: Source=grafana-lokiexplore-app
 compare:
   mode: structural
-  fields: [status, warnings, data.resultType, data.result[].metric]
+  fields: [status, warnings, data.resultType, 'data.result[].metric']
   values:
     mode: exact
     field: data.result[].values

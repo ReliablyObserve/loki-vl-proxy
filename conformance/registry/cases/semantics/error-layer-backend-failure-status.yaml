@@ -48,5 +48,5 @@ gap:
   effort: M
   area: 'internal/proxy/http_utils.go statusFromUpstreamErr/statusFromBackendErr/badRequestStatusOr/lokiErrorType and their call sites'
   loki: 'pkg/util/server/error.go:56-130; pkg/queue/queue.go:21'
-  proxy: 'rules and alerts copy the ruler's non-2xx status (alerting.go)'
+  proxy: 'rules and alerts copy the ruler''s non-2xx status (alerting.go)'
   planned_test: 'TestErrorLayer_NoVictoriaLogsLeak (internal/proxy) and TestCompat_ErrorLayerLikeLoki (test/e2e-compat, group core)'

@@ -1,5 +1,5 @@
 id: drilldown/detected-field-values
-title: detected_field values differ: none for service_name, other values for numeric and id fields (open)
+title: 'detected_field values differ: none for service_name, other values for numeric and id fields (open)'
 proves:
   - loki_api_v1_detected_field_name_values
 consumer: drilldown
@@ -34,4 +34,4 @@ gap:
   clusters:
     - 0e9d9652
     - 4a75b280
-    - 92699938
+    - '92699938'

@@ -5,6 +5,9 @@ Fails when:
   * a test claims a registry id that does not exist,
   * a proxy route has no registry item,
   * a registry item points at code that no longer exists,
+  * a case file does not load through the strict loader (test/registry) or breaks conformance/registry/schema/case.schema.json,
+  * a track of test/e2e-compat/compatibility-matrix.json names a score test that does not exist, or a pinned version
+    is not among the versions the matrix runs (matrix_link.py --check);
   * a bench/ab shape covers an unknown registry id, or a saved A/B result does
     not match the shape sets (performance evidence);
   * a registry item a bench/ab shape covers has no valid `perf:` acceptance block (max_ratio at most
@@ -18,7 +21,7 @@ Fails when:
     per-PR visual smoke (bench/visual/plan.py);
   * a generated report is stale (performance, coverage map and its published copy
     docs/compatibility-coverage.md, gaps, translation map, roadmap, compatibility matrix,
-    ranked parity gaps) or the "Quality and performance vs Loki" section of README.md and
+    ranked parity gaps, the matrix-link json and the census) or the "Quality and performance vs Loki" section of README.md and
     docs/real-window-compatibility-gaps.md (between its quality-summary markers),
   * the method-level scope is inconsistent: a write method of an endpoint is neither listed
     in its state's out_of_scope_methods (with the owner decision) nor allowed (delete), or
@@ -67,6 +70,11 @@ REPORTS = (
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),
     ("matrix_link.py", "conformance/reports/compatibility-matrix.md", None),
+    # matrix_link.py writes the JSON beside the report; it was regenerated but never compared.
+    ("matrix_link.py", "conformance/registry/generated/matrix-link.json", None),
+    # The baseline of what the proof pipeline claims (cases x modes, shapes, pages, qsm cases, Playwright specs, gates).
+    ("census.py", "conformance/reports/census.md", None),
+    ("census.py", "conformance/registry/generated/census.json", None),
     ("parity_gaps.py", "conformance/reports/parity-gaps.md", None),
     # The "Quality and performance vs Loki" section between the quality-summary markers: it reads the registry and
     # the evidence, so it runs after every generator above.
@@ -181,10 +189,23 @@ def main():
     args = parser.parse_args()
     failures = []
 
+    # Every case file loads through the one strict loader and matches conformance/registry/schema/case.schema.json.
+    cases = subprocess.run(["go", "run", "./test/registry/cmd/regload", "check", "conformance/registry"],
+                           capture_output=True, text=True)
+    print(cases.stdout.strip() or cases.stderr.strip())
+    if cases.returncode:
+        failures.append("registry case schema")
+
     wiring = run("wire.py", "--check")
     print(wiring.stdout.strip())
     if wiring.returncode:
         failures.append("registry wiring")
+
+    # A track whose score test is gone, or a pinned version the matrix does not run, fails here.
+    matrix = run("matrix_link.py", "--check")
+    print(matrix.stdout.strip())
+    if matrix.returncode:
+        failures.append("compatibility matrix link")
 
     performance = run("perf_evidence.py", "--check")
     print(performance.stdout.strip())

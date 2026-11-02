@@ -248,5 +248,86 @@ class ExecutedCombinationEvidenceTest(unittest.TestCase):
                          ("fields @cov:ui-contract", "example.spec.ts", "pass", 0.05))
 
 
+
+def load_script(name):
+    """A conformance script imported by path, with its directory on sys.path as when it runs as a script."""
+    path = REPO / "conformance/scripts" / name
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec = importlib.util.spec_from_file_location(name[:-3] + "_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(str(path.parent))
+
+
+class MatrixAndCensusReportsTest(unittest.TestCase):
+    def test_census_and_matrix_link_outputs_are_staleness_checked(self):
+        targets = [target for _, target, _ in load_gate().REPORTS]
+        for target in ("conformance/reports/compatibility-matrix.md", "conformance/registry/generated/matrix-link.json",
+                       "conformance/reports/census.md", "conformance/registry/generated/census.json"):
+            self.assertIn(target, targets)
+
+
+class MatrixLinkCheckTest(unittest.TestCase):
+    """matrix_link.py --check is a gate: a pinned version the matrix does not run, or a missing score test, fails."""
+
+    def check(self, matrix):
+        module = load_script("matrix_link.py")
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(matrix))
+            module.MATRIX = str(path)
+            module.ROOT = str(Path(directory) / "registry")
+            (Path(module.ROOT) / "generated").mkdir(parents=True)
+            os.chdir(directory)
+            old_argv, sys.argv = sys.argv, ["matrix_link.py", "--check"]
+            try:
+                return module.main()
+            finally:
+                sys.argv = old_argv
+                os.chdir(cwd)
+
+    def test_pinned_version_must_be_in_matrix_versions(self):
+        ok = {"tracks": {}, "stack": {"loki": {"pinned_version": "3.7.9", "matrix_versions": ["3.7.8", "3.7.9"]}}}
+        self.assertEqual(0, self.check(ok))
+        bad = {"tracks": {}, "stack": {"loki": {"pinned_version": "3.7.9", "matrix_versions": ["3.7.8"]}}}
+        self.assertEqual(1, self.check(bad))
+
+    def test_a_track_score_test_must_exist(self):
+        bad = {"tracks": {"loki": {"workflow": "w", "score_test": "TestNoSuchScoreTestAnywhere"}}, "stack": {}}
+        self.assertEqual(1, self.check(bad))
+
+
+class CensusDiffTest(unittest.TestCase):
+    def diff(self, old, new):
+        module = load_script("census.py")
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, doc in (("old.json", old), ("new.json", new)):
+                paths.append(str(Path(directory) / name))
+                Path(paths[-1]).write_text(json.dumps(doc))
+            return module.diff(*paths)
+
+    def test_a_cell_that_disappears_fails(self):
+        self.assertEqual(1, self.diff({"cases": ["a | compare:exact", "b | compare:exact"]}, {"cases": ["a | compare:exact"]}))
+
+    def test_a_cell_that_moves_under_another_id_is_listed_and_still_fails_until_mapped(self):
+        self.assertEqual(1, self.diff({"shapes": ["s/A"]}, {"shapes": ["s/B"]}))
+
+    def test_added_cells_pass(self):
+        self.assertEqual(0, self.diff({"cases": ["a | compare:exact"]},
+                                      {"cases": ["a | compare:exact", "b | compare:exact"]}))
+
+    def test_a_growing_count_is_information_not_a_failure(self):
+        self.assertEqual(0, self.diff({"counts": {"claiming_tests": {"go": 264}}, "claim_cells": ["t_test.go | x"]},
+                                      {"counts": {"claiming_tests": {"go": 265}}, "claim_cells": ["t_test.go | x", "u_test.go | y"]}))
+
+    def test_a_claim_dropped_from_a_file_that_keeps_others_fails(self):
+        self.assertEqual(1, self.diff({"claim_cells": ["t_test.go | x", "t_test.go | y"]}, {"claim_cells": ["t_test.go | x"]}))
+
+
 if __name__ == "__main__":
     unittest.main()

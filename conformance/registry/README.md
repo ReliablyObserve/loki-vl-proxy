@@ -14,6 +14,7 @@ conformance/registry/
                                  with how the proxy uses each one
   cases/<track>/<endpoint>/<id>.yaml   edge cases and consumer-specific combinations, each with a
                                  real request and the comparison contract
+  schema/case.schema.json        the JSON Schema every case file must match
   state/<track>/<id>.yaml        the state of each item: proven, partial, gap, waived,
                                  not-applicable, with the reason and any owner decision
   generated/                     raw extraction output, refreshed by the sync scripts, never edited
@@ -24,6 +25,20 @@ Each endpoint file carries a `generated:` block (refreshed automatically) and cu
 parameter combinations differ (Grafana Explore and Logs Drilldown send different shapes),
 real example requests, what VictoriaLogs answers natively, what the proxy must compute
 itself and why VictoriaLogs cannot, and the edge cases that prove it.
+
+## Case files are strict YAML
+
+Every file under `cases/` loads through one strict loader (`test/registry`) and must match
+`schema/case.schema.json`: one document, string keys only, no duplicate key, no unquoted
+timestamp, and only the keys the schema lists. Free text that holds a colon, a backtick, a
+bracket or an apostrophe is quoted, and a cluster id made only of digits (or `0e123`-style) is
+a quoted string. `python3 scripts/ci/check_conformance.py` runs the check
+(`go run ./test/registry/cmd/regload check`); new Python tools read cases through
+`registry_io.load_cases()`, which calls the same loader (the older readers still use regular
+expressions on the same files). `conformance/reports/census.md` and
+`generated/census.json` count every case x mode cell, shape, page and Playwright spec; they
+are regenerated with `python3 conformance/scripts/census.py`, and
+`census.py --diff OLD.json NEW.json` lists the cells one census lacks.
 
 ## Write methods are out of scope
 

@@ -42,7 +42,7 @@ gap:
   planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics); TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastRangeLevelBy (written, not yet run)'
   clusters:
     - 13f557ca
-    - 20680725
+    - '20680725'
     - 3c0a55f2
     - 56b4c549
     - 61ff16ca

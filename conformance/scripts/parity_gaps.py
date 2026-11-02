@@ -65,7 +65,7 @@ def items(text, key, indent="  "):
     if found:
         return [x.strip().strip('"') for x in found.group(1).split(",") if x.strip()]
     found = re.search(rf"^{indent}{key}:\n((?:{indent}  - .+\n)+)", text, re.M)
-    return re.findall(r"- (\S+)", found.group(1)) if found else []
+    return [x.strip("'\"") for x in re.findall(r"- (\S+)", found.group(1))] if found else []
 
 
 def cases(root=ROOT):
@@ -82,8 +82,7 @@ def cases(root=ROOT):
             gap = block(text, "gap")
             if not gap:
                 continue
-            title = re.search(r"^title:\s*(.+)$", text, re.M)
-            out.append({"id": identifier, "title": title.group(1).strip() if title else identifier,
+            out.append({"id": identifier, "title": scalar(text, "title", "") or identifier,
                         "status": scalar(gap, "status") or "open", "impact": scalar(gap, "impact") or "api-only",
                         "effort": scalar(gap, "effort") or "?", "area": scalar(gap, "area"),
                         "loki": scalar(gap, "loki"), "planned_test": scalar(gap, "planned_test"),

@@ -1,5 +1,5 @@
 id: profiles/keep-removes-derived-service-name
-title: `| keep` removes service_name the proxy derived for a stream without one (fixed)
+title: '`| keep` removes service_name the proxy derived for a stream without one (fixed)'
 proves:
   - service-name-derivation
   - loki_api_v1_query_range
