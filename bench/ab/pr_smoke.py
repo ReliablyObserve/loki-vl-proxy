@@ -33,6 +33,13 @@ Steps:
      bench/ab/history/over-2x-loki.json as committed on the base) is re-measured
      the same way before it is reported; so is a locked row (the registry's
      perf: blocks as committed on the base) above its bound.
+     Before its first request each build is warmed on windows no shape uses (cold.warm_up). A flagged
+     above-2× row whose finding rests on its cold cell gets the cold re-measured, not the confirm pass:
+     the confirm windows share the first pass's split buckets, so the proxies answer its run 0 from their
+     window cache. cold.recold takes --cold-samples more cold samples of each build, caches flushed, both
+     logs quiet, the build asked first alternating, below every block; the cell becomes the median of the
+     first pass's sample and the new ones, and the gate judges it as before (bench/ab/README.md, "Cold
+     cells that one sample cannot fail").
   6. comment.py renders the sticky comment and sets the exit status. With
      --over-2x-loki warn (the default) an above-2× finding is a warning at the
      top of the comment and a ::warning:: annotation; with fail it fails the job.
@@ -70,6 +77,7 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import baseline_candidate  # noqa: E402
+import cold  # noqa: E402
 import comment  # noqa: E402
 import over2x  # noqa: E402
 import perf_matrix  # noqa: E402
@@ -198,6 +206,14 @@ def main():
     ap.add_argument("--ranges", default="1h", help="comma-separated ranges (instant shapes always run instant)")
     ap.add_argument("--runs", type=int, default=4, help="per shape x range x target; the first is cold")
     ap.add_argument("--confirm-runs", type=int, default=7)
+    ap.add_argument("--cold-samples", type=int, default=cold.COLD_SAMPLES, metavar="N",
+                    help="new cold samples of each build for a row whose above-2x finding rests on its cold cell "
+                         f"(0 = keep the single first-pass sample; at most {cold.SPARE_WINDOWS})")
+    ap.add_argument("--cold-budget-s", type=int, default=cold.BUDGET_S, metavar="S",
+                    help="most seconds the cold re-measures of the whole run take; a row past the budget keeps its "
+                         "first-pass cold and its finding")
+    ap.add_argument("--warm-rounds", type=int, default=cold.WARM_ROUNDS, metavar="N",
+                    help="most rounds of warm-up requests per build before its first measured request (0 = none)")
     ap.add_argument("--refresh-s", type=int, default=0, metavar="N",
                     help="also run each set in refresh mode: windows move forward N seconds per run (a multiple of "
                          "every range's step), p50 reported next to cold and warm; 0 = off (default)")
@@ -227,6 +243,8 @@ def main():
                          "make the baseline into DIR, and add the section to the comment (nothing is committed)")
     stack.stack_args(ap, profile=False)
     args = ap.parse_args()
+    if not 0 <= args.cold_samples <= cold.SPARE_WINDOWS:
+        ap.error(f"--cold-samples must be between 0 and {cold.SPARE_WINDOWS}: the seeded margin holds that many windows")
     args.ranges = [r for r in args.ranges.split(",") if r]
     with open(os.path.join(HERE, "shapes.json")) as f:
         steps = [v[1] for k, v in json.load(f)["ranges"].items() if k in args.ranges]
@@ -239,7 +257,8 @@ def main():
 
     meta = {"runs": args.runs, "ranges": args.ranges, "noise": args.noise, "min_delta": args.min_delta,
             "confirm_runs": args.confirm_runs, "same_build": args.same_build,
-            "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs, "over_2x_loki": args.over_2x_loki}
+            "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs, "over_2x_loki": args.over_2x_loki,
+            "cold_samples": args.cold_samples, "warm_rounds": args.warm_rounds, "cold_budget_s": args.cold_budget_s}
     sel = {"run": True, "sets": {}}
     try:
         base = args.base or git("merge-base", "origin/main", "HEAD")
@@ -373,9 +392,16 @@ def window_plan(args, sel, end, runs=None):
                                      args.confirm_runs, end, args.refresh_s, refresh_runs)
     for plan, (profile, _, _) in zip(plans, runs):
         plan["profile"] = profile
-    range_secs = max(1 if r == "instant" else stack_range_seconds(r) for r in args.ranges)
-    blocks = plans[-1]["offset"] + plans[-1]["span"] if plans else 0
-    return plans, range_secs + blocks + 900
+    return plans, max_range_secs(args) + blocks_span(plans) + 900
+
+
+def max_range_secs(args):
+    return max(1 if r == "instant" else stack_range_seconds(r) for r in args.ranges)
+
+
+def blocks_span(plans):
+    """Seconds from the first set's end to the end of the last set's block."""
+    return plans[-1]["offset"] + plans[-1]["span"] if plans else 0
 
 
 def reuse_first_cold(summaries):
@@ -453,6 +479,10 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
     st = stack.stack_from(args)
     proxies, trees, summaries = [], {}, []
     mode = getattr(args, "profiles", "loki-defaults")
+    # The warm-up and the cold re-measure are the PR smoke's: a caller that builds its own args (the daily run
+    # has no use for them, and warming would move its run-0 conditions) gets neither.
+    warm_rounds, cold_samples = getattr(args, "warm_rounds", 0), getattr(args, "cold_samples", 0)
+    budget_left = getattr(args, "cold_budget_s", cold.BUDGET_S)
     phases = {}
     clock = time.time()
 
@@ -489,6 +519,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
             trees.update(getattr(e, "trees", {}))
             raise
         lap("seed_and_build")
+        spare = cold.spare_region(end, blocks_span(plans), max_range_secs(args))
         base_name = "pr" if args.same_build else "base"
         specs = [("base", bins[base_name], trees[base_name], args.proxy_port),
                  ("pr", bins["pr"], trees["pr"], args.proxy_port + 2)]
@@ -515,13 +546,33 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
             if meta is not None:
                 meta["profiles"][profile].update(loki=settings, proxy_align=align, not_like_for_like=unlike)
             lap(f"{profile}:proxies")
+            by_name = {p.name: p for p in here}
+            if warm_rounds:
+                warmed = cold.warm_up(by_name, spare["warm_end"], warm_rounds, args.noise, args.min_delta)
+                stack.log(f"warm-up ({profile}): {warmed}")
+                if meta is not None:
+                    meta["profiles"][profile]["warm_up"] = warmed
+                lap(f"{profile}:warm_up")
             targets = [("base", here[0].url), ("pr", here[1].url), ("loki", st.loki)]
             for plan, (_, set_name, shapes) in mine:
                 refresh = (plan["refresh_end"], args.refresh_s, args.refresh_runs) if args.refresh_s else None
                 summary = run_matrix(set_name, shapes, targets, args, plan["end"], st, out, args.runs,
                                      refresh=refresh, profile=profile, unlike=unlike)
                 summary["proxy_align"] = align  # the gate compares profiles that ran the PR with the same setting
+                # The cold cells the gate calls a finding on the first pass, and the first pass's colds: confirm()
+                # replaces the rows, and its run 0 is a warm time for the proxies (cold.py).
+                first_cold = {(r["shape"], r["range"]): dict(r["cold"]) for r in summary["rows"]}
+                pairs = (cold.flagged(over2x.gate(summary, baseline, args.noise, args.min_delta, bounds, summaries))
+                         if baseline is not None and cold_samples else [])
                 summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
+                if pairs:
+                    records = cold.recold(summary, first_cold, pairs, by_name, spec, spare["cold_end"], cold_samples,
+                                          stack.log, time.time() + budget_left)
+                    budget_left -= sum(r["seconds"] for r in records)
+                    summary["cold_resampled"] = records
+                    if meta is not None:
+                        meta.setdefault("cold_resampled", []).extend(records)
+                        meta["cold_resample_s"] = round(meta.get("cold_resample_s", 0) + sum(r["seconds"] for r in records), 1)
                 # The set ran on its own block of windows: perf_evidence trusts its warm and refresh figures.
                 # summary-<set>-<profile>.json is rewritten with the marker and the confirmed rows, as the
                 # comment shows them.

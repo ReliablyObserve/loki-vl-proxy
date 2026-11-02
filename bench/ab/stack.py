@@ -463,6 +463,32 @@ class Proxy:
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
+    def flush_target(self):
+        """(URL, admin token) of this build's /admin/cache/flush: the main listener when the stack file gives
+        the proxy an admin token (admin endpoints ride the main listener then), else the admin listener."""
+        token = next((a.partition("=")[2] for a in self.args if a.startswith("-server.admin-auth-token=")), "")
+        return f"{self.url if token.strip() else f'http://127.0.0.1:{self.port + 1}'}/admin/cache/flush", token
+
+    def log_size(self):
+        try:
+            return os.path.getsize(self.log_path)
+        except OSError:
+            return 0
+
+    def wait_quiet(self, quiet=2.0, cap=20.0, poll=0.25):
+        """Wait until the log has not grown for `quiet` seconds (every upstream request is logged), at most `cap`
+        seconds: the build's background work (window warming, label refreshes) is not running next to the
+        request that follows. Returns whether it went quiet."""
+        deadline, size, since = time.time() + cap, self.log_size(), time.time()
+        while time.time() < deadline:
+            time.sleep(poll)
+            now = self.log_size()
+            if now != size:
+                size, since = now, time.time()
+            elif time.time() - since >= quiet:
+                return True
+        return False
+
     def stop(self):
         if not self.alive():
             return

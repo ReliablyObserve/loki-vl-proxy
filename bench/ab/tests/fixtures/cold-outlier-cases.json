@@ -1,0 +1,957 @@
+{
+ "about": "First-pass raw rows (run, target, status, seconds, signature, end) of the one shape x range of two perf-smoke runs that failed on a single cold sample, per Loki profile, and the confirm pass's rows of the profile that failed. Nothing else of the runs is kept.",
+ "cases": [
+  {
+   "name": "case-1",
+   "run": "41491248052",
+   "set": "json-filter-pushdown",
+   "shape": "A explore volume, 2 filters, drop",
+   "range": "1h",
+   "raw": {
+    "loki-defaults": {
+     "set": "json-filter-pushdown",
+     "runs": 4,
+     "targets": [
+      "base",
+      "pr",
+      "loki"
+     ],
+     "profile": "loki-defaults",
+     "not_like_for_like": [],
+     "valid": true,
+     "restart_before": "0",
+     "restart_after": "0",
+     "rows": [
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "base",
+       "status": 200,
+       "seconds": 1.88,
+       "signature": "series=2 points=1237 sum=41817",
+       "end": 1793640480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "pr",
+       "status": 200,
+       "seconds": 3.059,
+       "signature": "series=2 points=1237 sum=41817",
+       "end": 1793640480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.611,
+       "signature": "series=2 points=1237 sum=41817",
+       "end": 1793640480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.156,
+       "signature": "series=2 points=1232 sum=41879",
+       "end": 1793640420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.144,
+       "signature": "series=2 points=1232 sum=41879",
+       "end": 1793640420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.248,
+       "signature": "series=2 points=1232 sum=41879",
+       "end": 1793640420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.089,
+       "signature": "series=2 points=1234 sum=41995",
+       "end": 1793640360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.093,
+       "signature": "series=2 points=1234 sum=41995",
+       "end": 1793640360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.289,
+       "signature": "series=2 points=1234 sum=41995",
+       "end": 1793640360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.101,
+       "signature": "series=2 points=1232 sum=42034",
+       "end": 1793640300
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.095,
+       "signature": "series=2 points=1232 sum=42034",
+       "end": 1793640300
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.282,
+       "signature": "series=2 points=1232 sum=42034",
+       "end": 1793640300
+      }
+     ]
+    },
+    "aligned": {
+     "set": "json-filter-pushdown",
+     "runs": 4,
+     "targets": [
+      "base",
+      "pr",
+      "loki"
+     ],
+     "profile": "aligned",
+     "not_like_for_like": [
+      "base"
+     ],
+     "valid": true,
+     "restart_before": "0",
+     "restart_after": "0",
+     "rows": [
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "base",
+       "status": 200,
+       "seconds": 1.524,
+       "signature": "series=2 points=1280 sum=42818",
+       "end": 1793622480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "pr",
+       "status": 200,
+       "seconds": 1.441,
+       "signature": "series=2 points=1280 sum=42818",
+       "end": 1793622480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 0,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.76,
+       "signature": "series=2 points=1280 sum=42818",
+       "end": 1793622480
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.078,
+       "signature": "series=2 points=1277 sum=42851",
+       "end": 1793622420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.077,
+       "signature": "series=2 points=1277 sum=42851",
+       "end": 1793622420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 1,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.085,
+       "signature": "series=2 points=1277 sum=42851",
+       "end": 1793622420
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.072,
+       "signature": "series=2 points=1278 sum=43022",
+       "end": 1793622360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.067,
+       "signature": "series=2 points=1278 sum=43022",
+       "end": 1793622360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 2,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.074,
+       "signature": "series=2 points=1278 sum=43022",
+       "end": 1793622360
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.066,
+       "signature": "series=2 points=1278 sum=43164",
+       "end": 1793622300
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.064,
+       "signature": "series=2 points=1278 sum=43164",
+       "end": 1793622300
+      },
+      {
+       "shape": "A explore volume, 2 filters, drop",
+       "range": "1h",
+       "run": 3,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.079,
+       "signature": "series=2 points=1278 sum=43164",
+       "end": 1793622300
+      }
+     ]
+    }
+   },
+   "confirm": {
+    "loki-defaults": [
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 0,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.06,
+      "end": 1793640240
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 0,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.054,
+      "end": 1793640240
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 0,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.245,
+      "end": 1793640240
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 1,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793640180
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 1,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.053,
+      "end": 1793640180
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 1,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.214,
+      "end": 1793640180
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 2,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.065,
+      "end": 1793640120
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 2,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.057,
+      "end": 1793640120
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 2,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.212,
+      "end": 1793640120
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 3,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793640060
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 3,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793640060
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 3,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.198,
+      "end": 1793640060
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 4,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793640000
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 4,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793640000
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 4,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.197,
+      "end": 1793640000
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 5,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.052,
+      "end": 1793639940
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 5,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.053,
+      "end": 1793639940
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 5,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.207,
+      "end": 1793639940
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 6,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.061,
+      "end": 1793639880
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 6,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.055,
+      "end": 1793639880
+     },
+     {
+      "shape": "A explore volume, 2 filters, drop",
+      "range": "1h",
+      "run": 6,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.26,
+      "end": 1793639880
+     }
+    ]
+   }
+  },
+  {
+   "name": "case-2",
+   "run": "41518105706",
+   "set": "extracted-pushdown",
+   "shape": "X1 json filter level_extracted, by level",
+   "range": "1h",
+   "raw": {
+    "loki-defaults": {
+     "set": "extracted-pushdown",
+     "runs": 4,
+     "targets": [
+      "base",
+      "pr",
+      "loki"
+     ],
+     "profile": "loki-defaults",
+     "not_like_for_like": [],
+     "valid": true,
+     "restart_before": "0",
+     "restart_after": "0",
+     "rows": [
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "base",
+       "status": 200,
+       "seconds": 3.785,
+       "signature": "series=3 points=2163 sum=2.27884e+06",
+       "end": 1793640720
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "pr",
+       "status": 200,
+       "seconds": 5.323,
+       "signature": "series=3 points=2163 sum=2.27884e+06",
+       "end": 1793640720
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.602,
+       "signature": "series=3 points=2163 sum=2.27884e+06",
+       "end": 1793640720
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.148,
+       "signature": "series=3 points=2163 sum=2.28169e+06",
+       "end": 1793640660
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.169,
+       "signature": "series=3 points=2163 sum=2.28169e+06",
+       "end": 1793640660
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.088,
+       "signature": "series=3 points=2163 sum=2.28169e+06",
+       "end": 1793640660
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.158,
+       "signature": "series=3 points=2163 sum=2.28522e+06",
+       "end": 1793640600
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.161,
+       "signature": "series=3 points=2163 sum=2.28522e+06",
+       "end": 1793640600
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.096,
+       "signature": "series=3 points=2163 sum=2.28522e+06",
+       "end": 1793640600
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.161,
+       "signature": "series=3 points=2163 sum=2.28667e+06",
+       "end": 1793640540
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.155,
+       "signature": "series=3 points=2163 sum=2.28667e+06",
+       "end": 1793640540
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.1,
+       "signature": "series=3 points=2163 sum=2.28667e+06",
+       "end": 1793640540
+      }
+     ]
+    },
+    "aligned": {
+     "set": "extracted-pushdown",
+     "runs": 4,
+     "targets": [
+      "base",
+      "pr",
+      "loki"
+     ],
+     "profile": "aligned",
+     "not_like_for_like": [
+      "base"
+     ],
+     "valid": true,
+     "restart_before": "0",
+     "restart_after": "0",
+     "rows": [
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "base",
+       "status": 200,
+       "seconds": 3.756,
+       "signature": "series=3 points=2163 sum=2.26308e+06",
+       "end": 1793627040
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "pr",
+       "status": 200,
+       "seconds": 3.738,
+       "signature": "series=3 points=2163 sum=2.26308e+06",
+       "end": 1793627040
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 0,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.869,
+       "signature": "series=3 points=2163 sum=2.26308e+06",
+       "end": 1793627040
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.142,
+       "signature": "series=3 points=2163 sum=2.26841e+06",
+       "end": 1793626980
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.146,
+       "signature": "series=3 points=2163 sum=2.26841e+06",
+       "end": 1793626980
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 1,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.157,
+       "signature": "series=3 points=2163 sum=2.26841e+06",
+       "end": 1793626980
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.138,
+       "signature": "series=3 points=2163 sum=2.26838e+06",
+       "end": 1793626920
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.153,
+       "signature": "series=3 points=2163 sum=2.26838e+06",
+       "end": 1793626920
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 2,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.146,
+       "signature": "series=3 points=2163 sum=2.26838e+06",
+       "end": 1793626920
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "base",
+       "status": 200,
+       "seconds": 0.144,
+       "signature": "series=3 points=2163 sum=2.26551e+06",
+       "end": 1793626860
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "pr",
+       "status": 200,
+       "seconds": 0.145,
+       "signature": "series=3 points=2163 sum=2.26551e+06",
+       "end": 1793626860
+      },
+      {
+       "shape": "X1 json filter level_extracted, by level",
+       "range": "1h",
+       "run": 3,
+       "target": "loki",
+       "status": 200,
+       "seconds": 0.129,
+       "signature": "series=3 points=2163 sum=2.26551e+06",
+       "end": 1793626860
+      }
+     ]
+    }
+   },
+   "confirm": {
+    "loki-defaults": [
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 0,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.029,
+      "end": 1793640480
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 0,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.022,
+      "end": 1793640480
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 0,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.092,
+      "end": 1793640480
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 1,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.019,
+      "end": 1793640420
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 1,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.021,
+      "end": 1793640420
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 1,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.089,
+      "end": 1793640420
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 2,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.023,
+      "end": 1793640360
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 2,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.019,
+      "end": 1793640360
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 2,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.094,
+      "end": 1793640360
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 3,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.017,
+      "end": 1793640300
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 3,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.019,
+      "end": 1793640300
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 3,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.09,
+      "end": 1793640300
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 4,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.149,
+      "end": 1793640240
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 4,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.148,
+      "end": 1793640240
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 4,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.085,
+      "end": 1793640240
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 5,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.139,
+      "end": 1793640180
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 5,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.17,
+      "end": 1793640180
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 5,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.097,
+      "end": 1793640180
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 6,
+      "target": "base",
+      "status": 200,
+      "seconds": 0.16,
+      "end": 1793640120
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 6,
+      "target": "pr",
+      "status": 200,
+      "seconds": 0.15,
+      "end": 1793640120
+     },
+     {
+      "shape": "X1 json filter level_extracted, by level",
+      "range": "1h",
+      "run": 6,
+      "target": "loki",
+      "status": 200,
+      "seconds": 0.089,
+      "end": 1793640120
+     }
+    ]
+   }
+  }
+ ]
+}

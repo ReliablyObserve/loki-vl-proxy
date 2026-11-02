@@ -124,6 +124,27 @@ def run_end_for(end, shape, rname, run, runs, refresh_s=0):
     return base - shape_shift(shape, rname) * run
 
 
+def shape_query(shape, step):
+    """The shape's query with $__auto set to the range's step."""
+    return shape.get("query", "").replace("$__auto", f"{step}s")
+
+
+def request_url(base, shape, query, secs, step, run_end):
+    """The URL of one request of a shape: an instant query at run_end, a metadata endpoint (labels, label
+    values, detected labels or fields, index volume) over the range, or a query_range over it."""
+    if shape.get("instant"):
+        return f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
+    if shape.get("path"):
+        # The shape's params are passed through and its query, if any, becomes the selector.
+        params = {"start": f"{run_end - secs}000000000", "end": f"{run_end}000000000", **shape.get("params", {})}
+        if shape.get("query"):
+            params["query"] = query
+        return f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
+    params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
+              "limit": shape.get("limit", 1000), "direction": "backward"}
+    return f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
+
+
 def request_headers(shape):
     """Headers of one request: the shape's own. No target gets a Cache-Control header."""
     return dict(shape.get("headers", {}))
@@ -407,7 +428,7 @@ def main():
         shape_ranges = ["instant"] if shape.get("instant") else ranges
         for rname in shape_ranges:
             secs, step = range_defs.get(rname, (0, 0))
-            query = shape.get("query", "").replace("$__auto", f"{step}s")
+            query = shape_query(shape, step)
             for run in range(args.runs):
                 if run == 0:
                     for flush_url in args.flush_before_run0:
@@ -433,20 +454,7 @@ def main():
                         print(f"{shape['name'][:44]:44} {rname:>7} run{run} {tname:8} {row['status']} not sent: "
                               f"{tname} timed out on this shape and range", flush=True)
                         continue
-                    if shape.get("instant"):
-                        url = f"{base}/loki/api/v1/query?" + urllib.parse.urlencode({"query": query, "time": run_end})
-                    elif shape.get("path"):
-                        # A metadata endpoint (labels, label values, detected labels or
-                        # fields, index volume) over the range; the shape's params are
-                        # passed through and its query, if any, becomes the selector.
-                        params = {"start": f"{run_end - secs}000000000", "end": f"{run_end}000000000", **shape.get("params", {})}
-                        if shape.get("query"):
-                            params["query"] = query
-                        url = f"{base}{shape['path']}?" + urllib.parse.urlencode(params)
-                    else:
-                        params = {"query": query, "start": run_end - secs, "end": run_end, "step": step,
-                                  "limit": shape.get("limit", 1000), "direction": "backward"}
-                        url = f"{base}/loki/api/v1/query_range?" + urllib.parse.urlencode(params)
+                    url = request_url(base, shape, query, secs, step, run_end)
                     headers = request_headers(shape)
                     status, body, dt, t0 = request(url, headers, args.tenant, args.timeout)
                     if args.pause:
