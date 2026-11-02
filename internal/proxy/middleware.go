@@ -671,11 +671,14 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		if ok && p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
 			ok = false
 		}
-		// Instant metric and series replies have no reusable source-window
-		// path. Small completed replies can recover from the bounded Loki
-		// cache after a process restart or on another frontend.
-		if !ok && (endpoint == "query" || endpoint == "series") && p.cache != nil {
-			cached, remainingTTL, entryAge, _, ok = p.cache.GetSharedWithAge(cacheKey)
+		// Exact read replies can recover from the bounded Loki cache after a
+		// restart. The routing scope fences disk and peer entries across tenant
+		// and field-mapping reloads, which clear only the in-memory edge cache.
+		sharedRead := (endpoint == "query" || endpoint == "query_range" || endpoint == "series") && p.cache != nil
+		sharedKey := ""
+		if !ok && sharedRead {
+			sharedKey = cacheKey + ":routing:" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
+			cached, remainingTTL, entryAge, _, ok = p.cache.GetSharedWithAge(sharedKey)
 		}
 		if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
 			setCacheResult(r.Context(), "hit")
@@ -738,8 +741,8 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			if captureAllowed {
 				body = append([]byte(nil), body...)
 				p.compatCache.SetWithTTL(cacheKey, body, ttl)
-				if (endpoint == "query" || endpoint == "series") && len(body) <= 128<<10 && p.cache != nil {
-					p.cache.SetWithTTL(cacheKey, body, ttl)
+				if sharedRead && len(body) <= 128<<10 {
+					p.cache.SetWithTTL(sharedKey, body, ttl)
 				}
 			}
 		}

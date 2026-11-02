@@ -167,6 +167,9 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 	}{
 		{"label_values", "/loki/api/v1/label/app/values?" + metadataParams.Encode(), "loki"},
 		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "vl"},
+		{"short_log_range", "/loki/api/v1/query_range?" + url.Values{
+			"query": {query}, "start": proofWindow["start"], "end": proofWindow["end"], "limit": {"50"},
+		}.Encode(), "loki"},
 		{"log_range", "/loki/api/v1/query_range?" + logParams.Encode(), "loki"},
 		{"series", "/loki/api/v1/series?" + seriesParams.Encode(), "loki"},
 		{"instant_metric", "/loki/api/v1/query?" + instantParams.Encode(), "loki"},
@@ -211,7 +214,14 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 			if tc.name == "log_range" {
 				windowHitsBefore = proxyMetricValue(t, patternsAutodetectProxyURL, "loki_vl_proxy_window_cache_hit_total ")
 			}
-			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values" && tc.name != "series")
+			readPath := tc.path
+			if tc.name == "log_range" {
+				// Reorder the same parameters so the exact-response key misses,
+				// while the source-window key remains identical.
+				readPath = "/loki/api/v1/query_range?query=" + url.QueryEscape(query) +
+					"&start=" + logParams.Get("start") + "&end=" + logParams.Get("end") + "&limit=50"
+			}
+			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+readPath, tc.name != "label_values" && tc.name != "series")
 			if !reflect.DeepEqual(got, warmAnswers[tc.name]) {
 				t.Fatalf("%s answer changed after restart: got=%v want=%v", tc.name, got, warmAnswers[tc.name])
 			}

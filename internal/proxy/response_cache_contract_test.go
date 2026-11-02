@@ -17,9 +17,10 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-func TestResponseCache_InstantAndSeriesUseDiskAfterRestart(t *testing.T) {
+func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
 	for _, tc := range []struct{ name, target string }{
 		{"instant", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600"},
+		{"short_range", "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200&limit=50"},
 		{"series", "/loki/api/v1/series?match%5B%5D=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -48,6 +49,8 @@ func TestResponseCache_InstantAndSeriesUseDiskAfterRestart(t *testing.T) {
 				endpoint := "query"
 				if tc.name == "series" {
 					endpoint = "series"
+				} else if tc.name == "short_range" {
+					endpoint = "query_range"
 				}
 				p.compatCacheMiddleware(endpoint, r.URL.Path, answer)(w, r)
 				return w
@@ -87,6 +90,11 @@ func TestResponseCache_InstantAndSeriesUseDiskAfterRestart(t *testing.T) {
 			otherTenant := request(second, "team-b")
 			if otherTenant.Code != http.StatusOK || calls != 2 || otherTenant.Body.String() == want.Body.String() {
 				t.Fatalf("tenant reused another tenant's disk reply: status=%d calls=%d body=%s", otherTenant.Code, calls, otherTenant.Body)
+			}
+			second.ReloadTenantMap(map[string]TenantMapping{"team-a": {AccountID: "7", ProjectID: "0"}})
+			_ = request(second, "team-a")
+			if calls != 3 {
+				t.Fatalf("routing reload reused a stale shared reply: calls=%d", calls)
 			}
 		})
 	}

@@ -548,24 +548,14 @@ func TestQueryRangeWindow_FetchWritesThroughToPeer(t *testing.T) {
 	if err := req.ParseForm(); err != nil {
 		t.Fatalf("parse form: %v", err)
 	}
-	cacheKey := (&Proxy{}).queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
-
-	var pc *cache.PeerCache
-	for i := 0; i < 1024; i++ {
-		candidate := cache.NewPeerCache(cache.PeerConfig{
-			SelfAddr: fmt.Sprintf("self-%d:3100", i), DiscoveryType: "static",
-			StaticPeers: fmt.Sprintf("self-%d:3100,%s", i, ownerURL.Host),
-			Timeout:     time.Second, WriteThrough: true, WriteThroughMinTTL: 5 * time.Second,
-		})
-		if !candidate.IsOwner(cacheKey) {
-			pc = candidate
-			break
-		}
-		candidate.Close()
-	}
-	if pc == nil {
-		t.Fatal("could not select a remote owner for the window key")
-	}
+	// Both ring members are replicas, so publication must reach the remote
+	// peer regardless of which member owns the finalized proxy cache key.
+	pc := cache.NewPeerCache(cache.PeerConfig{
+		SelfAddr: "self:3100", DiscoveryType: "static",
+		StaticPeers:       "self:3100," + ownerURL.Host,
+		ReplicationFactor: 2,
+		Timeout:           time.Second, WriteThrough: true, WriteThroughMinTTL: 5 * time.Second,
+	})
 	defer pc.Close()
 	c := cache.New(60*time.Second, 1000)
 	c.SetL3(pc)
@@ -585,11 +575,16 @@ func TestQueryRangeWindow_FetchWritesThroughToPeer(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 
-	cacheKey = p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
+	cacheKey := p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
 	if _, err := p.fetchQueryRangeWindow(context.Background(), req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false); err != nil {
 		t.Fatalf("fetchQueryRangeWindow returned error: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	// Peer publication is queued; wait for the observable request instead of
+	// assuming its worker runs within a fixed scheduler interval.
+	deadline := time.Now().Add(2 * time.Second)
+	for remoteSetCalls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	if got := remoteSetCalls.Load(); got == 0 {
 		t.Fatal("expected log window to be offered to its peer owner")

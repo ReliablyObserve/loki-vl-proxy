@@ -67,7 +67,7 @@ their normal window TTL (24 hours for historical windows by default), and
 LRU eviction may remove them sooner. A named volume does not turn cached data
 into permanent storage. `TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples`
 verifies a shifted Grafana request uses L2 after restarting the patterns proxy.
-The same test also checks that ordinary label values, metric and log ranges,
+The same test also checks that ordinary label values, metric and short/windowed log ranges,
 series and instant metrics return identical answers and read L2 after restart.
 
 ## Static Custom Patterns
