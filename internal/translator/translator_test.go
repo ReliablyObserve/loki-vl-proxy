@@ -565,9 +565,8 @@ func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
 }
 
 // TestDetectedLevelEmptyFilter pins the translation for detected_level="" in
-// both stream-selector and pipeline-label-filter positions. VL's -level:*
-// matches absent-or-empty; level:="" would only match explicitly empty strings
-// and miss the common case where level is simply not present in the log entry.
+// both stream-selector and pipeline-label-filter positions. Loki attaches a
+// non-empty detected_level even when no stored level field exists.
 func TestDetectedLevelEmptyFilter(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -575,25 +574,22 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 		want  string
 	}{
 		{
-			// Without a preceding parser stage, the translated filter is emitted
-			// as a top-level LogsQL condition (no | filter prefix required).
+			// The ingested label cannot be empty, so the LogsQL filter is false.
 			name:  "detected_level empty in pipeline filter (no preceding parser)",
 			logql: `{app="nginx"} | detected_level=""`,
-			want:  `app:="nginx" -level:*`,
+			want:  `app:="nginx" | filter (detected_level:* -detected_level:*)`,
 		},
 		{
-			// detected_level!="" before a parser: use logfmt pipeline.
+			// Every ingested entry has the label, so the filter is a no-op.
 			name:  "detected_level empty negated in pipeline filter (no preceding parser)",
 			logql: `{app="nginx"} | detected_level!=""`,
-			want:  `app:="nginx" | unpack_logfmt | filter level:!""`,
+			want:  `app:="nginx"`,
 		},
 		{
-			// After a parser, the translated filter is wrapped in | filter.
-			// -level:* is not a standard field filter (no :="/:~/etc.), but a
-			// bare filter after a pipe stage still needs its own | filter stage.
+			// Parser output does not remove the original detected_level label.
 			name:  "detected_level empty after logfmt parser",
 			logql: `{app="nginx"} | logfmt | detected_level=""`,
-			want:  `app:="nginx" | unpack_logfmt | filter -level:*`,
+			want:  `app:="nginx" | unpack_logfmt | filter (detected_level:* -detected_level:*)`,
 		},
 		{
 			// Loki keeps detected_level out of the index, so a stream selector
@@ -909,6 +905,75 @@ func TestParseAllLabelReplaceMarkers(t *testing.T) {
 			t.Errorf("no-marker query was modified: %q", clean)
 		}
 	})
+}
+
+// conformance: severity/detected-level-stage-side-effects
+func TestLogDropPreservesDetectedLevelSource(t *testing.T) {
+	for _, query := range []string{
+		`{app="api"} | drop level`,
+		`{app="api"} | drop level, env`,
+	} {
+		got, err := TranslateLogQL(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(got, "| delete level") {
+			t.Errorf("log query dropped the source of detected_level: %q", got)
+		}
+	}
+	got, err := TranslateLogQL(`{app="api"} | drop level, env`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "| delete env") {
+		t.Errorf("log query did not push down unrelated drop: %q", got)
+	}
+	metric, err := TranslateLogQL(`sum by (detected_level) (count_over_time({app="api"} | drop level [1m]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(metric, "| delete level") {
+		t.Errorf("metric query lost its post-derivation level drop: %q", metric)
+	}
+}
+
+// conformance: severity/detected-level-stage-side-effects
+func TestDetectedLevelPresenceFilterStages(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{`{app="api"} | detected_level!=""`, `app:="api"`},
+		{`{app="api"} | detected_level=""`, `app:="api" | filter (detected_level:* -detected_level:*)`},
+		{`{app="api"} | drop detected_level | detected_level!=""`, `app:="api" | delete detected_level | filter (detected_level:* -detected_level:*)`},
+		{`{app="api"} | keep app | detected_level!=""`, `app:="api" | fields _time, _msg, _stream, app | filter (detected_level:* -detected_level:*)`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			got, err := TranslateLogQL(tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("translation = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDetectedLevelWhitespaceLiteralIsNotEmpty(t *testing.T) {
+	for _, query := range []string{
+		`{app="api"} | detected_level=" "`,
+		`{app="api"} | detected_level!=" "`,
+	} {
+		got, err := TranslateLogQL(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == `app:="api"` || strings.Contains(got, `detected_level:* -detected_level:*`) {
+			t.Errorf("non-empty literal was treated as the empty-string presence filter: %q", got)
+		}
+	}
 }
 
 func TestParseBareDropFields(t *testing.T) {

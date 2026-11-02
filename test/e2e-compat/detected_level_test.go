@@ -423,9 +423,9 @@ func TestCompat_DetectedLevelKeepDrop(t *testing.T) {
 		}
 		for _, caseName := range []string{"label-level", "sm-level", "streamfields-level", "label-detected-level", "streamfields-detected"} {
 			selector := fmt.Sprintf(`{app=%q,case=%q}`, f.app, caseName)
-			stages := []string{" | keep detected_level", " | keep detected_level, level", " | drop detected_level"}
-			if caseName != "label-detected-level" && caseName != "streamfields-detected" {
-				stages = append(stages, ` | detected_level!=""`)
+			stages := []string{" | keep detected_level", " | keep detected_level, level", " | drop detected_level", ` | detected_level!=""`}
+			if caseName == "sm-level" || caseName == "label-level" || caseName == "streamfields-level" {
+				stages = append(stages, " | drop level")
 			}
 			for _, stage := range stages {
 				query := selector + stage
@@ -443,6 +443,43 @@ func TestCompat_DetectedLevelKeepDrop(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// conformance: severity/detected-level-stage-side-effects, loki_api_v1_query_range
+func TestCompat_DetectedLevelPresenceFilters(t *testing.T) {
+	f := ensureDetectedLevelFixture(t)
+	route, _ := newJSONVolumeRouteProxy(t)
+	cases := []struct {
+		name, stage string
+		want        int
+	}{
+		{"plain-nolevel", ` | detected_level!=""`, 1},
+		{"sm-level-empty", ` | detected_level!=""`, 1},
+		{"label-detected-level", ` | detected_level!=""`, 1},
+		{"plain-nolevel", ` | detected_level=""`, 0},
+		{"label-detected-level", ` | detected_level=""`, 0},
+		{"plain-nolevel", ` | drop detected_level | detected_level!=""`, 0},
+		{"plain-nolevel", ` | keep app | detected_level!=""`, 0},
+	}
+	for _, categorized := range []bool{false, true} {
+		var headers map[string]string
+		if categorized {
+			headers = map[string]string{"X-Loki-Response-Encoding-Flags": "categorize-labels"}
+		}
+		for _, tc := range cases {
+			query := fmt.Sprintf(`{app=%q,case=%q}%s`, f.app, tc.name, tc.stage)
+			t.Run(fmt.Sprintf("categorized=%t/%s/%s", categorized, tc.name, tc.stage), func(t *testing.T) {
+				loki := dlEntries(t, dlQueryRange(t, lokiURL, query, f, headers))
+				proxy := dlEntries(t, dlQueryRange(t, route, query, f, headers))
+				if len(loki) != tc.want {
+					t.Fatalf("%s: Loki entries=%d, want %d", query, len(loki), tc.want)
+				}
+				if !reflect.DeepEqual(proxy, loki) {
+					t.Errorf("%s: Loki=%v proxy=%v", query, loki, proxy)
+				}
+			})
 		}
 	}
 }

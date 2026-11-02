@@ -149,6 +149,34 @@ def seed_keep_metadata_fixture(st, end):
             pass
 
 
+def seed_detected_level_stage_fixture(st, end):
+    """Keep the drop-level and stream-label presence fixes visible in Grafana."""
+    app = "visual-detected-level-stage"
+    at = end - 240
+    ts = str(at * 1_000_000_000 + 500_000_000)
+    loki = json.dumps({"streams": [
+        {"stream": {"app": app, "case": "sm-level"},
+         "values": [[ts, "stage metadata level sample", {"level": "Warning"}]]},
+        {"stream": {"app": app, "case": "label-detected-level", "detected_level": "warn"},
+         "values": [[ts, "stage stream level sample"]]},
+    ]}).encode()
+    vl_metadata = json.dumps({"_time": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(at)) + ".5Z",
+                              "_msg": "stage metadata level sample", "app": app,
+                              "case": "sm-level", "level": "Warning"}).encode()
+    vl_stream = json.dumps({"streams": [{"stream": {"app": app, "case": "label-detected-level",
+                                                    "detected_level": "warn"},
+                                        "values": [[ts, "stage stream level sample"]]}]}).encode()
+    for url, payload, content_type in (
+        (f"{st.loki}/loki/api/v1/push", loki, "application/json"),
+        (f"{st.vl}/insert/jsonline?_stream_fields=app,case", vl_metadata, "application/stream+json"),
+        (f"{st.vl}/insert/loki/api/v1/push?disable_message_parsing=1", vl_stream, "application/json"),
+    ):
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": content_type, "X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60):
+            pass
+
+
 def up(a):
     os.makedirs(a.out, exist_ok=True)
     st = stack(a.project, a.overlay, a.no_level_label)
@@ -184,6 +212,7 @@ def up(a):
             seed_vl_only(st, end - int(a.hours * 3600), loki_start, a.out)
         seed_unknown_level_fixture(st, end)
         seed_keep_metadata_fixture(st, end)
+        seed_detected_level_stage_fixture(st, end)
         ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
         st.seed(end - loki_start, end)
     specs, procs = [], []

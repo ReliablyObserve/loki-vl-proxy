@@ -589,9 +589,6 @@
     "severity-exposure-surfaces",
     "operator-keep",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "severity/detected-level-stage-side-effects"
    ]
   },
   {
@@ -606,9 +603,6 @@
     "severity-exposure-surfaces",
     "operator-drop",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "severity/detected-level-stage-side-effects"
    ]
   },
   {
@@ -623,6 +617,39 @@
     "severity-exposure-surfaces",
     "operator-drop",
     "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-drop-level-stored",
+   "kind": "explore",
+   "query": "{app=\"visual-detected-level-stage\",case=\"sm-level\"} | drop level",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "operator-drop",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-stage-side-effects"
+   ]
+  },
+  {
+   "id": "lvl-explore-logs-dl-presence-stream",
+   "kind": "explore",
+   "query": "{app=\"visual-detected-level-stage\",case=\"label-detected-level\"} | detected_level!=\"\"",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "severity/detected-level-stage-side-effects",
+    "severity-exposure-surfaces",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-stage-side-effects"
    ]
   },
   {

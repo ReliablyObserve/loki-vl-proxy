@@ -1156,6 +1156,7 @@
     ],
     "severity/detected-level-stage-side-effects": [
       "internal/proxy/detected_level_response_test.go",
+      "internal/translator/translator_test.go",
       "test/e2e-compat/detected_level_test.go"
     ],
     "severity/normalisation-table": [
@@ -2117,6 +2118,9 @@
     "internal/translator/series_aggregation_test.go": [
       "metric-series-identity"
     ],
+    "internal/translator/translator_test.go": [
+      "severity/detected-level-stage-side-effects"
+    ],
     "internal/translator/unwrap_gate_property_test.go": [
       "semantics/unwrap-gate-parsefloat-divergences",
       "semantics/unwrap-sample-validity"
@@ -2612,7 +2616,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 262,
+  "tests_with_markers": 263,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

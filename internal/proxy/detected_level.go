@@ -40,7 +40,7 @@ import (
 
 const (
 	detectedLevelLabel                   = "detected_level"
-	detectedLevelMutationResponseVersion = "@detected-level-mutation-v1:"
+	detectedLevelMutationResponseVersion = "@detected-level-mutation-v2:"
 	// detectedLevelExtractedLabel names the derived value on entries whose
 	// stream already has a detected_level label, as Loki renames structured
 	// metadata that collides with a stream label.
@@ -57,11 +57,14 @@ const (
 )
 
 var detectedLevelMutationStageRE = regexp.MustCompile(`\|\s*(?:drop|keep)\s+[^|]*\bdetected_level\b`)
+var detectedLevelSourceDropStageRE = regexp.MustCompile(`(?i)\|\s*drop\s+[^|]*\b(?:level|log\.level|severity|severitytext|severity_text|severity_number|lvl)\b`)
+var detectedLevelPresenceStageRE = regexp.MustCompile(`\|\s*detected_level\s*(?:!=|==|=)\s*""`)
 
 // detectedLevelMutationResponseKeyVersion fences old keep/drop answers in the
 // exact and compatibility caches, including copies fetched from cache peers.
 func detectedLevelMutationResponseKeyVersion(query string) string {
-	if strings.Contains(query, detectedLevelLabel) && detectedLevelMutationStageRE.MatchString(query) {
+	if (strings.Contains(query, detectedLevelLabel) && (detectedLevelMutationStageRE.MatchString(query) || detectedLevelPresenceStageRE.MatchString(query))) ||
+		detectedLevelSourceDropStageRE.MatchString(query) {
 		return detectedLevelMutationResponseVersion
 	}
 	return ""
