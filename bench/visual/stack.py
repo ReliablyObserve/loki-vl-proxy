@@ -157,14 +157,14 @@ def seed_detected_level_stage_fixture(st, end):
     loki = json.dumps({"streams": [
         {"stream": {"app": app, "case": "sm-level"},
          "values": [[ts, "stage metadata level sample", {"level": "Warning"}]]},
-        {"stream": {"app": app, "case": "label-detected-level", "detected_level": "Warning"},
+        {"stream": {"app": app, "case": "label-detected-level", "detected_level": "warn"},
          "values": [[ts, "stage stream level sample"]]},
     ]}).encode()
     vl_metadata = json.dumps({"_time": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(at)) + ".5Z",
                               "_msg": "stage metadata level sample", "app": app,
                               "case": "sm-level", "level": "Warning"}).encode()
     vl_stream = json.dumps({"streams": [{"stream": {"app": app, "case": "label-detected-level",
-                                                    "detected_level": "Warning"},
+                                                    "detected_level": "warn"},
                                         "values": [[ts, "stage stream level sample"]]}]}).encode()
     for url, payload, content_type in (
         (f"{st.loki}/loki/api/v1/push", loki, "application/json"),
