@@ -31,6 +31,31 @@ import (
 // The guards of the row evaluator (nesting depth, field count, line and value
 // size) therefore apply to the third set only.
 
+// jsonSplitMode is what a split plan (validOnly) does with the three sets of
+// lines above.
+type jsonSplitMode uint8
+
+const (
+	jsonSplitNone jsonSplitMode = iota
+	// jsonSplitValid: `| json | __error__=""` counts the lines Loki's parser
+	// accepts and drops the others.
+	jsonSplitValid
+	// jsonSplitStrict: `| json` grouped by detected_level only, with the errors
+	// kept. Loki fails the query on a line its parser rejects
+	// (RangeVectorEvaluator.Next, logqlmodel.NewPipelineErr: the label builder
+	// returns the full label set with __error__ before grouping), so a line that
+	// does not open with a brace leaves the query to the row evaluator, which
+	// answers Loki's error (unparsedLinePipelineError), and the lines read as raw
+	// rows fail it the same way; the other lines count as with
+	// jsonSplitValid.
+	jsonSplitStrict
+	// jsonSplitErrors: `| json | __error__!=""` counts the lines Loki's parser
+	// rejects: every line that does not open with a brace, counted by
+	// VictoriaLogs, and the raw rows the row evaluator rejects. The lines
+	// VictoriaLogs vouches for are not counted.
+	jsonSplitErrors
+)
+
 // jsonObjectStartFilter keeps the lines Loki's JSON parser may accept.
 var jsonObjectStartFilter = "_msg:~" + strconv.Quote(`^[ \t\n\r]*\{`)
 
@@ -152,6 +177,22 @@ func (p *Proxy) jsonLokiRejectHazardRisk(ctx context.Context, base string, start
 		// before.
 		query := base + " | filter " + jsonObjectStartFilter + " " + jsonLokiRejectHazard + " | limit 1"
 		risky, err := p.statsPushdownRiskExists(ctx, query, from, to)
+		return "", risky, err
+	})
+	return risky, err
+}
+
+// jsonUnparsedLineRisk reports whether a line that does not open with a brace
+// lies in a window a range query evaluates: (start-window, last], last the
+// final evaluation time on the step grid, the lines unparsedLinePipelineError
+// looks up (step is never wider than window here). Windows found free of one
+// are remembered like the hazard probe's (coveredWindowProbe, local to the
+// replica).
+func (p *Proxy) jsonUnparsedLineRisk(ctx context.Context, base string, start, end time.Time, step, window time.Duration) (bool, error) {
+	last := start.Add(end.Sub(start) / step * step)
+	key := "json-unparsed-line:v1:" + getOrgID(ctx) + ":" + base
+	_, risky, err := p.coveredWindowProbe(ctx, key, start.Add(-window).Add(time.Nanosecond), last, func(from, to time.Time, _ string) (string, bool, error) {
+		risky, err := p.statsPushdownRiskExists(ctx, base+" | filter -"+jsonObjectStartFilter+" | limit 1", from, to)
 		return "", risky, err
 	})
 	return risky, err
@@ -346,6 +387,11 @@ func (p *Proxy) collectOrderedJSONRowSpans(ctx context.Context, plan *orderedJSO
 			continue
 		}
 		if err := p.readOrderedJSONMetricRows(ctx, plan, reader, rowQuery, from, to, start, end, step); err != nil {
+			if plan.split != jsonSplitValid && reader.rows > reader.limit {
+				// The rows read stay within -manual-range-metric-row-limit; past
+				// it the answer is the documented limit error naming the flag.
+				return nil, &seriesLimitError{limit: reader.limit, rowBudget: true}
+			}
 			return nil, err
 		}
 	}
