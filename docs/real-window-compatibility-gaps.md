@@ -63,13 +63,13 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 19 partial, 3 gaps |
-| Known differences from Loki (ranked) | **86**: 66 open, 12 documented, 6 owner-kept, 2 upstream |
+| Known differences from Loki (ranked) | **85**: 65 open, 12 documented, 6 owner-kept, 2 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `profiles/keep-structured-metadata-key` (`| keep` of a structured-metadata key drops it), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected), `profiles/json-extraction-list-exposes-only-listed` (extraction lists (`| json msg="msg"`, `| logfmt op`) expose level from the line). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `severity/detected-level-stage-side-effects` (keep/drop detected_level and a detected_level filter change other labels), `parsed-identity/bare-parser-metric-duplicates-extracted` (A bare `| json` metric labels each series with every parsed key twice, once with _extracted), `semantics/label-filter-expression-syntax` (comma-joined and parenthesized label-filter expressions are rejected), `profiles/json-extraction-list-exposes-only-listed` (extraction lists (`| json msg="msg"`, `| logfmt op`) expose level from the line), `semantics/first-last-over-time-translation` (first_over_time and last_over_time with offset or a line filter, proof against Loki pending). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md#summary-versus-loki) · [performance guide](performance.md#current-position-versus-loki) · [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md) · [coverage map](compatibility-coverage.md) · [Known Issues](KNOWN_ISSUES.md).
 

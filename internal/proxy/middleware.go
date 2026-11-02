@@ -402,6 +402,7 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if endpoint == "query" || endpoint == "query_range" {
 		prefix += orderedJSONVectorResponseKeyVersion(r, r.FormValue("query"))
 		prefix += detectedLevelMutationResponseKeyVersion(r.FormValue("query"))
+		prefix += keepMetadataProjectionResponseKeyVersion(r.FormValue("query"))
 		if endpoint == "query_range" {
 			prefix += logfmtPresenceResponseKeyVersion(r, r.FormValue("query"))
 		}

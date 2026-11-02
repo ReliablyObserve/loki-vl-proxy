@@ -1,13 +1,15 @@
 id: profiles/keep-structured-metadata-key
-title: `| keep` of a structured-metadata key drops it (open)
+title: `| keep` retains a mapped structured-metadata key (fixed)
 proves:
   - loki-compatible-profile
   - loki_api_v1_query_range
 consumer: explore
 why: |
-  `{service_name="checkout-svc"} | keep deployment_environment` keeps the
-  structured-metadata label on Loki; the proxy removes it (and keeps the
-  derived service_name instead, profiles/keep-removes-derived-service-name).
+  Loki keeps `deployment_environment` when a log line carries that structured
+  metadata. VictoriaLogs can store the same attribute as either
+  `deployment.environment` or `deployment_environment`; the old keep
+  projection requested only the latter and dropped the dotted field.
+  The proxy now projects both spellings and exposes only Loki's label name.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -25,13 +27,14 @@ compare:
   expect: |
     deployment_environment kept.
 gap:
-  status: open
+  status: fixed
+  fixed_by: "#971"
   impact: explore-visible
   effort: S
-  area: 'internal/proxy keep stage over structured metadata (Loki-compatible profile names)'
+  area: 'internal/translator/translator.go translateKeepStage, internal/proxy response caches'
   loki: 'pkg/logql/log/keep_labels.go:15-44'
-  proxy: 'structured-metadata key dropped'
-  planned_test: 'TestCompat_KeepStructuredMetadataKey (test/e2e-compat, group otel-edge)'
-  note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
+  proxy: 'keeps mapped and pre-normalized field names; versions old keep-response cache entries'
+  planned_test: 'TestCompat_KeepStructuredMetadataKey (test/e2e-compat core) and explore-keep-structured-metadata (visual fix proof)'
+  note: 'Reproduced on main 6159745f with a dual-ingest fixture; all four ordinary/categorized keep queries differed before and matched Loki after the fix. Visual smoke seeds the dotted stored field separately.'
   clusters:
     - 4e8cf844
