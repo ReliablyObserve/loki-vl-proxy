@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.59.0] - 2026-11-02
+
 ### Performance
 
 - Reuse settled ordinary log `query_range` windows from bounded disk and
