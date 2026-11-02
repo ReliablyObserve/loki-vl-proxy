@@ -34,5 +34,5 @@ gap:
   area: 'internal/proxy/label_handlers.go handleIndexStats; internal/proxy/proxy.go lokiRangeBounds'
   loki: 'pkg/loghttp/params.go:91-120 determineBounds (default since 1h, params.go:23)'
   proxy: 'Loki default window for a missing start or end'
-  planned_test: 'TestIndexStats_WindowLikeLoki, TestIndexStats_DifferentialVsLokiReference (internal/proxy); TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown)'
+  planned_test: 'TestIndexStats_WindowLikeLoki, TestIndexStats_DifferentialVsLokiReference, FuzzIndexStatsWindowLikeLoki (internal/proxy, CI fuzz-smoke); TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown)'
   clusters: []

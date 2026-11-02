@@ -245,6 +245,9 @@ jobs:
       - name: Fuzz smoke (parser probe leaves a binary to its operands)
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzParserProbeLeavesBinaries$' -fuzztime=12s
 
+      - name: Fuzz smoke (index/stats window like Loki)
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzIndexStatsWindowLikeLoki$' -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s

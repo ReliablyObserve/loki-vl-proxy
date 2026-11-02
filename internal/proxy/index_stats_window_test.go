@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // indexStatsRow is one stored log line: its tenant, stream and timestamp.
@@ -38,7 +40,7 @@ func (f *indexStatsFakeVL) set(rows []indexStatsRow) {
 	f.mu.Unlock()
 }
 
-func (f *indexStatsFakeVL) server(t *testing.T) *httptest.Server {
+func (f *indexStatsFakeVL) server(t testing.TB) *httptest.Server {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		if r.URL.Path != "/select/logsql/query" || !strings.HasSuffix(r.Form.Get("query"), "| stats count() entries, count_uniq_hash(_stream_id) streams") {
@@ -307,4 +309,84 @@ func TestIndexStats_DifferentialVsLokiReference(t *testing.T) {
 	if compared < 250 {
 		t.Fatalf("only %d of 300 random windows were compared", compared)
 	}
+}
+
+// FuzzIndexStatsWindowLikeLoki: for any window around now in any encoding Loki
+// reads (seconds, nanoseconds, float seconds, RFC3339, or missing), with or
+// without `since`, index/stats counts what Loki's range window holds
+// (lokiIndexStatsReference). A missing start or end must never widen the count
+// to all of VictoriaLogs' retention.
+//
+// conformance: quality/index-stats-default-window
+func FuzzIndexStatsWindowLikeLoki(f *testing.F) {
+	f.Add(int32(-1800), uint32(900), uint8(0), uint8(1), uint8(0), int64(1))
+	f.Add(int32(-7200), uint32(3600), uint8(4), uint8(4), uint8(2), int64(2))
+	f.Add(int32(-600), uint32(7200), uint8(3), uint8(4), uint8(3), int64(3))
+	f.Add(int32(60), uint32(60), uint8(2), uint8(2), uint8(1), int64(4))
+	fake := &indexStatsFakeVL{}
+	p, err := New(Config{BackendURL: fake.server(f).URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error"})
+	if err != nil {
+		f.Fatalf("failed to create proxy: %v", err)
+	}
+	f.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	it := 0
+	f.Fuzz(func(t *testing.T, startOffset int32, length uint32, startEnc, endEnc, sinceIdx uint8, seed int64) {
+		// a window from 4h before now to 1h after it, at least a second long
+		startOffset %= 4 * 3600
+		if startOffset > 3600 {
+			startOffset -= 5 * 3600
+		}
+		length = length%(5*3600) + 1
+		rng := rand.New(rand.NewSource(seed))
+		now := time.Now()
+		var rows []indexStatsRow
+		for i := rng.Intn(40); i > 0; i-- {
+			rows = append(rows, indexStatsRow{
+				tenant: "0",
+				stream: fmt.Sprintf("s%d", rng.Intn(6)),
+				ns:     now.UnixNano() + int64(rng.Intn(6*3600)-5*3600)*int64(time.Second) + 137,
+			})
+		}
+		fake.set(rows)
+		start := now.Add(time.Duration(startOffset) * time.Second)
+		end := start.Add(time.Duration(length) * time.Second)
+		encode := func(ts time.Time, how uint8) string {
+			switch how % 5 {
+			case 0:
+				return strconv.FormatInt(ts.Unix(), 10)
+			case 1:
+				return strconv.FormatInt(ts.UnixNano(), 10)
+			case 2:
+				return strconv.FormatInt(ts.Unix(), 10) + ".25"
+			case 3:
+				return ts.UTC().Format(time.RFC3339Nano)
+			default:
+				return ""
+			}
+		}
+		it++
+		startRaw, endRaw := encode(start, startEnc), encode(end, endEnc)
+		sinceRaw := []string{"", "30m", "2h", "4h"}[sinceIdx%4]
+		params := url.Values{"query": {fmt.Sprintf(`{app="x", fuzz="%d"}`, it)}}
+		for k, v := range map[string]string{"start": startRaw, "end": endRaw, "since": sinceRaw} {
+			if v != "" {
+				params.Set(k, v)
+			}
+		}
+		before := time.Now()
+		w := doCompatProxyRequest(p, "/loki/api/v1/index/stats?"+params.Encode(), nil)
+		after := time.Now()
+		s1, e1, ok1 := lokiIndexStatsReference(rows, []string{"0"}, startRaw, endRaw, sinceRaw, before)
+		s2, e2, ok2 := lokiIndexStatsReference(rows, []string{"0"}, startRaw, endRaw, sinceRaw, after)
+		if !ok1 || !ok2 || s1 != s2 || e1 != e2 {
+			return // a row on a moving bound: the answer depends on the instant
+		}
+		var got indexStatsAnswer
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("index/stats %s: status=%d body=%s", params.Encode(), w.Code, w.Body)
+		}
+		if got.Streams != s1 || got.Entries != e1 {
+			t.Fatalf("index/stats %s: proxy %+v, Loki reference streams=%d entries=%d", params.Encode(), got, s1, e1)
+		}
+	})
 }
