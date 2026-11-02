@@ -28,7 +28,7 @@ compare:
     The streams and lines of the hour before now, as Loki counts them.
 gap:
   status: fixed
-  fixed_by: "TBD-PR"
+  fixed_by: "#988"
   impact: api-only
   effort: S
   area: 'internal/proxy/label_handlers.go handleIndexStats; internal/proxy/proxy.go lokiRangeBounds'
