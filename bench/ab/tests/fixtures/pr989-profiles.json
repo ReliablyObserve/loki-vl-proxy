@@ -1,0 +1,380 @@
+{
+ "about": "report.py summaries of the perf-smoke run of PR 989 (run 41480532188, 2026-11-02), cut to the rows of X1, LS8 and D1: base lacks -align-queries-with-step, so its aligned profile is not like-for-like.",
+ "summaries": [
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-extracted-pushdown-loki-defaults",
+   "loki_restarted": false,
+   "noise": 0.3,
+   "not_like_for_like": [],
+   "profile": "loki-defaults",
+   "proxy_align": {
+    "base": "off",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 3.478,
+      "loki": 0.668,
+      "pr": 3.56
+     },
+     "p50": {
+      "base": 0.137,
+      "loki": 0.064,
+      "pr": 0.133
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "X1 json filter level_extracted, by level",
+     "speedup": 1.03,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "same"
+    }
+   ],
+   "runs": 4,
+   "set": "extracted-pushdown",
+   "stale_answers": {
+    "base": 0,
+    "loki": 0,
+    "pr": 0
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "same": 5
+   }
+  },
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-extracted-pushdown-aligned",
+   "loki_restarted": true,
+   "noise": 0.3,
+   "not_like_for_like": [
+    "base"
+   ],
+   "profile": "aligned",
+   "proxy_align": {
+    "base": "unsupported",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 3.334,
+      "loki": 0.895,
+      "pr": 3.327
+     },
+     "cold_from_first_pass": true,
+     "confirmed": true,
+     "note": "not like-for-like with the Loki profile: base",
+     "p50": {
+      "base": 0.081,
+      "loki": 0.1,
+      "pr": 0.082
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "X1 json filter level_extracted, by level",
+     "speedup": 0.99,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "n/a"
+    }
+   ],
+   "runs": 4,
+   "set": "extracted-pushdown",
+   "stale_answers": {
+    "base": 0,
+    "loki": 0,
+    "pr": 0
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "n/a": 5
+   }
+  },
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-level-filter-stored-loki-defaults",
+   "loki_restarted": false,
+   "noise": 0.3,
+   "not_like_for_like": [],
+   "profile": "loki-defaults",
+   "proxy_align": {
+    "base": "off",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 1.319,
+      "loki": 0.176,
+      "pr": 1.341
+     },
+     "p50": {
+      "base": 0.092,
+      "loki": 0.018,
+      "pr": 0.095
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "LS8 json count by level_extracted, collision",
+     "speedup": 0.97,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "same"
+    }
+   ],
+   "runs": 4,
+   "set": "level-filter-stored",
+   "stale_answers": {
+    "base": 2,
+    "loki": 2,
+    "pr": 2
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "same": 3
+   }
+  },
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-level-filter-stored-aligned",
+   "loki_restarted": true,
+   "noise": 0.3,
+   "not_like_for_like": [
+    "base"
+   ],
+   "profile": "aligned",
+   "proxy_align": {
+    "base": "unsupported",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 1.365,
+      "loki": 0.127,
+      "pr": 1.32
+     },
+     "cold_from_first_pass": true,
+     "confirmed": true,
+     "note": "not like-for-like with the Loki profile: base",
+     "p50": {
+      "base": 0.092,
+      "loki": 0.029,
+      "pr": 0.092
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "LS8 json count by level_extracted, collision",
+     "speedup": 1.0,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "n/a"
+    }
+   ],
+   "runs": 4,
+   "set": "level-filter-stored",
+   "stale_answers": {
+    "base": 0,
+    "loki": 0,
+    "pr": 0
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "n/a": 1
+   }
+  },
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-unwrap-duration-seconds-loki-defaults",
+   "loki_restarted": false,
+   "noise": 0.3,
+   "not_like_for_like": [],
+   "profile": "loki-defaults",
+   "proxy_align": {
+    "base": "off",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 0.08,
+      "loki": 0.06,
+      "pr": 0.071
+     },
+     "p50": {
+      "base": 0.028,
+      "loki": 0.012,
+      "pr": 0.027
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "D1 logfmt ttl duration_seconds rate by service",
+     "speedup": 1.04,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "same"
+    }
+   ],
+   "runs": 4,
+   "set": "unwrap-duration-seconds",
+   "stale_answers": {
+    "base": 0,
+    "loki": 0,
+    "pr": 0
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "same": 2
+   }
+  },
+  {
+   "baseline": "base",
+   "candidate": "pr",
+   "date": "2026-11-02",
+   "isolated_windows": true,
+   "label": "pr-smoke-unwrap-duration-seconds-aligned",
+   "loki_restarted": true,
+   "noise": 0.3,
+   "not_like_for_like": [
+    "base"
+   ],
+   "profile": "aligned",
+   "proxy_align": {
+    "base": "unsupported",
+    "pr": "on"
+   },
+   "reference": "loki",
+   "refresh_runs": null,
+   "refresh_s": null,
+   "restart_after": "0",
+   "restart_before": "0",
+   "result_differs_from_reference": 0,
+   "result_differs_preexisting": 0,
+   "rows": [
+    {
+     "baseline_parity_vs_reference": "same",
+     "cold": {
+      "base": 0.086,
+      "loki": 0.04,
+      "pr": 0.094
+     },
+     "cold_from_first_pass": true,
+     "confirmed": true,
+     "note": "not like-for-like with the Loki profile: base",
+     "p50": {
+      "base": 0.028,
+      "loki": 0.014,
+      "pr": 0.027
+     },
+     "parity_vs_baseline": "same",
+     "parity_vs_reference": "same",
+     "range": "1h",
+     "shape": "D1 logfmt ttl duration_seconds rate by service",
+     "speedup": 1.04,
+     "status": {
+      "base": "200",
+      "loki": "200",
+      "pr": "200"
+     },
+     "verdict": "n/a"
+    }
+   ],
+   "runs": 4,
+   "set": "unwrap-duration-seconds",
+   "stale_answers": {
+    "base": 0,
+    "loki": 0,
+    "pr": 0
+   },
+   "timing": "warm",
+   "valid": true,
+   "verdicts": {
+    "n/a": 2
+   }
+  }
+ ]
+}

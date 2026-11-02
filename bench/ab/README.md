@@ -617,6 +617,15 @@ and ranges are not the daily run's:
 | known | above 2× on the PR and on the base build within noise (±30% and 100 ms), listed or not; or listed and not worsened; or the base is comparable, just under 2×, and the PR is within noise of it |
 | new | above 2× on the PR, not listed, the base not above 2× and the PR slower than the base beyond noise (or the base did not answer comparably) |
 | worsened | listed, and the PR is worse beyond noise than both the listed ratio and the base build in the same run; or not listed, above 2× on the base too, and the PR worse than the base beyond noise |
+| first measurement | above 2× on the PR in a profile whose base build did not run the profile's setting (the base lacks `-align-queries-with-step` in the aligned profile), not listed, and no comparable base in the other profile either: a warning section, never a failure |
+
+Rule: a pull request fails only for a row it adds above 2× or makes worse. A profile whose base build is not
+like-for-like has no base ratio of its own, so it cannot show that the PR added a row; its rows are classified by
+the other profile's base-versus-PR comparison of the same set, shape, range and mode, provided both builds are
+like-for-like there, answered 200, and the PR ran the same setting in both profiles. In that comparison "as slow on
+base" and "proxy time within noise of base" are known, slower than the base beyond noise is new (worsened when the
+base was above 2× too). The `base ÷ Loki` column then shows the other profile's ratio, named. The rows stay listed
+in the collapsed "already" section with that reason.
 
 A new or worsened cold or warm row is re-measured with the 7-run pass, like a
 slower row, before it is reported. The confirmation pass has no refresh run,

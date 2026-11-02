@@ -193,15 +193,24 @@ def errored(selection, meta, message):
     return "\n".join(lines) + "\n", {"state": "error", "failed": True, "exit": 3}
 
 
+def base_cell(f):
+    """base ÷ Loki of a finding: its own profile's, or (the base build not like-for-like there) the other
+    profile's, named."""
+    via = f.get("base_via")
+    if via and via["ratio"] is not None:
+        return f"{over2x.times(via['ratio'])} ({SHORT.get(via['profile'], via['profile'])})"
+    return over2x.times(f["base_ratio"])
+
+
 def over_2x_table(findings, with_note=False):
     """Known rows, one per profile finding."""
     out = ["| | profile | mode | shape | range | PR | Loki | PR ÷ Loki | base ÷ Loki | listed ÷ Loki |" + (" why |" if with_note else ""),
            "|---|---|---|---|---|--:|--:|--:|--:|--:|" + ("---|" if with_note else "")]
     for f in findings:
         mark = " ¹" if f.get("confirmed") else ""
-        out.append(f"| {f['kind']} | {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {f['range']} | "
+        out.append(f"| {f['kind'].replace('_', ' ')} | {SHORT.get(f.get('profile'), '—')} | {f['mode']} | {cell(f['shape'])} | {f['range']} | "
                    f"{secs(f['proxy_s'])}{mark} | {secs(f['loki_s'])} | **{over2x.times(f['ratio'])}** | "
-                   f"{over2x.times(f['base_ratio'])} | {over2x.times(f['baseline_ratio'])} |"
+                   f"{base_cell(f)} | {over2x.times(f['baseline_ratio'])} |"
                    + (f" {f.get('note', '')} |" if with_note else ""))
     return out
 
@@ -219,7 +228,7 @@ def over_2x_failing_table(merged):
             shown[p] = f"**{shown[p]}**"
         out.append(f"| {m['kind']} | {m['mode']} | {cell(m['shape'])} | {m['range']} | {shown['aligned']} | "
                    f"{shown['loki-defaults']} | {secs(f['proxy_s'])}{mark} | {secs(f['loki_s'])} | "
-                   f"{over2x.times(f['base_ratio'])} | {over2x.times(f['baseline_ratio'])} |")
+                   f"{base_cell(f)} | {over2x.times(f['baseline_ratio'])} |")
     return out
 
 
@@ -264,6 +273,20 @@ def over_2x_section(bad, mode):
             *over_2x_failing_table(bad), ""]
 
 
+def first_measurement_section(first):
+    """Rows above 2× Loki in a profile whose base build did not run the profile's setting, with no comparable
+    base in the other profile: nothing says the PR added them, nothing says it did not. A warning, never failing."""
+    shown = first[:KNOWN_CAP]
+    out = [f"#### 🟡 First measurement above 2× Loki: {len(first)} (warning, does not fail)", "",
+           "These rows are above 2× Loki on this PR in a Loki profile where the base build did not run the profile's "
+           "setting (so it is never compared there), and the other profile has no comparable base build for them. "
+           "The PR cannot be shown to have added them; the daily run measures them once a build runs the profile.", "",
+           *over_2x_table(shown, with_note=True)]
+    if len(first) > len(shown):
+        out.append(f"… and {len(first) - len(shown)} more (`verdict.json` counts them).")
+    return out + [""]
+
+
 def profile_lines(meta, summaries):
     """What each Loki profile compared: whether it ran and why not, and which builds were like-for-like."""
     info = meta.get("profiles") or {}
@@ -303,11 +326,12 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     failed = bool(counts.get("broken") or counts.get("slower") or new_diffs)
     mode = meta.get("over_2x_loki", over2x.DEFAULT_GATE)
     findings = ([f for s in summaries for f in over2x.gate(s, baseline, meta.get("noise", 0.30),
-                                                            meta.get("min_delta", 0.10), bounds)]
+                                                            meta.get("min_delta", 0.10), bounds, summaries)]
                 if baseline is not None else [])
     bad = over2x.merge_failing(findings, summaries)  # one record per row, above 2× in either profile
     locked = over2x.locked_failing(bad)
     lost = [f for f in findings if f["kind"] == "lost_below"]
+    first = [f for f in findings if f["kind"] == "first_measurement"]
     failed_2x = mode == "fail" and bool(bad)
 
     if not valid:
@@ -327,6 +351,7 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     others = [f for f in bad if not f.get("locked")]
     lines = [MARKER, f"### {title}", "", *(locked_section(locked, mode) if locked else []),
              *(over_2x_section(others, mode) if others else []),
+             *(first_measurement_section(first) if first else []),
              f"**{n} shape×range** — " + " · ".join(verdict_bits) +
              f" · results vs Loki: {same_as_loki} same, {len(new_diffs)} new difference(s), {pre} pre-existing", ""]
     prof_info = profile_lines(meta, summaries) if any(s.get("profile") for s in summaries) else []
@@ -369,8 +394,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     cleared = sum(1 for f in findings if f["kind"] == "cleared")
     loki_failed = sum(1 for f in findings if f["kind"] == "loki_failed")
     if known or cleared or loki_failed:
-        lines += ["", f"<details><summary>{len(known)} shape×range above 2× Loki already (listed, or as slow on the "
-                  "base build)</summary>", ""]
+        lines += ["", f"<details><summary>{len(known)} shape×range above 2× Loki already (listed, or not moved by "
+                  "this PR: as slow on the base build)</summary>", ""]
         if known:
             lines += over_2x_table(known[:KNOWN_CAP], with_note=True)
             if len(known) > KNOWN_CAP:
@@ -424,7 +449,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
         verdict["over_2x"] = {"mode": mode, "new": sum(1 for f in bad if f["kind"] == "new"),
                               "worsened": sum(1 for f in bad if f["kind"] == "worsened"), "known": len(known),
                               "cleared": cleared, "loki_not_200": loki_failed, "rows": bad,
-                              "locked": len(locked), "lost_below": len(lost)}
+                              "locked": len(locked), "lost_below": len(lost),
+                              "first_measurement": len(first)}
     return "\n".join(lines) + "\n", verdict
 
 

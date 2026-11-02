@@ -140,7 +140,7 @@ def run_matrix(set_name, shapes, targets, args, end, st, out, runs, tag="", rang
 KEEP_ON_CONFIRM = ("refresh", "refresh_status")
 
 
-def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None):
+def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None, others=()):
     """Re-measure the shapes the first pass called slower or faster, or found newly or further above 2× Loki;
     keep the re-run's rows.
 
@@ -148,7 +148,7 @@ def confirm(summary, args, plan, st, out, targets, baseline=None, bounds=None):
     ~70% on a first pass of 4 runs; a 7-run pass on fresh windows settles them.
     """
     moved = ("slower", "faster")
-    over = (set(over2x.remeasure(summary, baseline, args.noise, args.min_delta, bounds)) if baseline is not None
+    over = (set(over2x.remeasure(summary, baseline, args.noise, args.min_delta, bounds, others)) if baseline is not None
             else set())
     slow = sorted({row["shape"] for row in summary["rows"] if row["verdict"] in moved} | over)
     if not slow:
@@ -520,7 +520,8 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 refresh = (plan["refresh_end"], args.refresh_s, args.refresh_runs) if args.refresh_s else None
                 summary = run_matrix(set_name, shapes, targets, args, plan["end"], st, out, args.runs,
                                      refresh=refresh, profile=profile, unlike=unlike)
-                summary = confirm(summary, args, plan, st, out, targets, baseline, bounds)
+                summary["proxy_align"] = align  # the gate compares profiles that ran the PR with the same setting
+                summary = confirm(summary, args, plan, st, out, targets, baseline, bounds, summaries)
                 # The set ran on its own block of windows: perf_evidence trusts its warm and refresh figures.
                 # summary-<set>-<profile>.json is rewritten with the marker and the confirmed rows, as the
                 # comment shows them.
