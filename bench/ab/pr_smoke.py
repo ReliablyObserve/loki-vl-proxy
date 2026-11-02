@@ -33,7 +33,9 @@ Steps:
      bench/ab/history/over-2x-loki.json as committed on the base) is re-measured
      the same way before it is reported; so is a locked row (the registry's
      perf: blocks as committed on the base) above its bound.
-     Before its first request each build is warmed on windows no shape uses (cold.warm_up). A flagged
+     Before a cold request (run 0) perf_matrix.py waits, at most --quiet-cap-s, for the other build's log to
+     go quiet, and the two builds swap places on every other shape x range: neither meets the other's
+     post-request work as a rule. Before its first request each build is warmed on windows no shape uses (cold.warm_up). A flagged
      above-2× row whose finding rests on its cold cell gets the cold re-measured, not the confirm pass:
      the confirm windows share the first pass's split buckets, so the proxies answer its run 0 from their
      window cache. cold.recold takes --cold-samples more cold samples of each build, caches flushed, both
@@ -101,6 +103,11 @@ def matrix_cmd(set_name, shapes, targets, args, end, st, runs, ranges, raw, extr
         cmd += ["--shape", name]
     for name, url in targets:
         cmd += ["--target", f"{name}={url}"]
+    # The builds' logs (set by measure): a cold request waits for the other build's background work to end.
+    for name, path in getattr(args, "quiet_logs", {}).items():
+        cmd += ["--quiet-log", f"{name}={path}"]
+    if getattr(args, "quiet_cap_s", None) is not None:
+        cmd += ["--quiet-cap-s", str(args.quiet_cap_s)]
     return cmd
 
 
@@ -209,6 +216,9 @@ def main():
     ap.add_argument("--cold-samples", type=int, default=cold.COLD_SAMPLES, metavar="N",
                     help="new cold samples of each build for a row whose above-2x finding rests on its cold cell "
                          f"(0 = keep the single first-pass sample; at most {cold.SPARE_WINDOWS})")
+    ap.add_argument("--quiet-cap-s", type=float, default=4.0, metavar="S",
+                    help="before a cold request (run 0) wait at most this long for the other build's log to go quiet, "
+                         "so it does not meet the previous request's background work (0 = no wait)")
     ap.add_argument("--cold-budget-s", type=int, default=cold.BUDGET_S, metavar="S",
                     help="most seconds the cold re-measures of the whole run take; a row past the budget keeps its "
                          "first-pass cold and its finding")
@@ -258,7 +268,7 @@ def main():
     meta = {"runs": args.runs, "ranges": args.ranges, "noise": args.noise, "min_delta": args.min_delta,
             "confirm_runs": args.confirm_runs, "same_build": args.same_build,
             "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs, "over_2x_loki": args.over_2x_loki,
-            "cold_samples": args.cold_samples, "warm_rounds": args.warm_rounds, "cold_budget_s": args.cold_budget_s}
+            "quiet_cap_s": args.quiet_cap_s, "cold_samples": args.cold_samples, "warm_rounds": args.warm_rounds, "cold_budget_s": args.cold_budget_s}
     sel = {"run": True, "sets": {}}
     try:
         base = args.base or git("merge-base", "origin/main", "HEAD")
@@ -466,6 +476,16 @@ def note_ages(entry, out, set_name, profile):
                 entry["window_age_s"] = list(ages) if not old else [min(old[0], ages[0]), max(old[1], ages[1])]
 
 
+def note_quiet(meta, out, set_name, profile):
+    """Add to meta["quiet_wait_s"] the seconds the passes of this set spent waiting for the other build's log to go
+    quiet before a cold request (perf_matrix records it per pass)."""
+    for suffix in ("", "-refresh", "-confirm"):
+        path = raw_path(out, set_name, profile, suffix)
+        if os.path.exists(path):
+            with open(path) as f:
+                meta["quiet_wait_s"] = round(meta.get("quiet_wait_s", 0) + json.load(f).get("quiet_wait_s", 0), 1)
+
+
 def reuse_per_profile(summaries):
     """reuse_first_cold within each profile: the profiles ran against different Loki processes, so a cold one
     computed does not stand for a query the other's cache answered."""
@@ -547,6 +567,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 meta["profiles"][profile].update(loki=settings, proxy_align=align, not_like_for_like=unlike)
             lap(f"{profile}:proxies")
             by_name = {p.name: p for p in here}
+            args.quiet_logs = {p.name: p.log_path for p in here}
             if warm_rounds:
                 warmed = cold.warm_up(by_name, spare["warm_end"], warm_rounds, args.noise, args.min_delta)
                 stack.log(f"warm-up ({profile}): {warmed}")
@@ -583,6 +604,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
                 summaries.append(summary)
                 if meta is not None:
                     note_ages(meta["profiles"][profile], out, set_name, profile)
+                    note_quiet(meta, out, set_name, profile)
                 for p in here:
                     if not p.alive():
                         raise RuntimeError(f"proxy '{p.name}' died during the run; see {p.log_path}")

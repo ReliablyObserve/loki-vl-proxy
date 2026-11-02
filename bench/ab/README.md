@@ -124,8 +124,16 @@ pass cannot clear that. Its windows share the first pass's 1-hour split buckets,
 run 0 from their window cache (0.02 s against 3.8 s); it is a warm re-measure, and it only keeps the
 first pass's cold columns when Loki's cache answered.
 
-`pr_smoke.py` therefore does two things, and changes no threshold, lock or rule:
+`pr_smoke.py` therefore does three things, and changes no threshold, lock or rule:
 
+- **Quiet before a cold request, and the builds take turns** (`perf_matrix.py --quiet-log`, `--quiet-cap-s`,
+  `pr_smoke.py --quiet-cap-s`, default 4 s, 0 = off). This is the source of the interference: the build asked
+  first leaves background work (window warming, `stream_field_names` calls) running while the second one is
+  measured. Before run 0 of every shape x range, a build's request waits until the *other* build's log has not
+  grown for 1 s (every upstream request is logged), at most 4 s; Loki is not waited for and does not wait. The two
+  builds also swap places on every other shape x range (base, PR on the first, PR, base on the next; Loki always
+  last), so no build is systematically second. Warm runs are not delayed. The seconds spent are in each raw file
+  and in `meta.json` as `quiet_wait_s`. The two re-measures below are the safety net for what this does not remove.
 - **Warm-up** (`cold.warm_up`, `--warm-rounds`, default 3 at most). After a build starts and before its
   first measured request: labels, label values, a metric query and a log query on a window below every
   block of every set (none of them has a measured shape's URL or window), repeated until a round is

@@ -147,7 +147,7 @@ class FakeProxy:
     """Records what the re-measure does to a build: flushes, quiet waits and the requests it receives."""
 
     def __init__(self, name, log):
-        self.name, self.url, self.log = name, f"http://{name}", log
+        self.name, self.url, self.log, self.log_path = name, f"http://{name}", log, f"/dev/null/{name}"
 
     def flush_target(self):
         return f"http://{self.name}/admin/cache/flush", "tok"
@@ -355,6 +355,122 @@ class CommentTest(unittest.TestCase):
     def test_a_row_that_was_not_re_measured_has_no_mark(self):
         text, _ = comment.render([summary(row(shape="X1"))], SELECTION, META, {})
         self.assertNotIn("ᵐ", text)
+
+
+class FirstPassOrderTest(unittest.TestCase):
+    """perf_matrix: the builds alternate who is asked first, and a cold request waits for the other build's log."""
+
+    TARGETS = [["base", "http://base"], ["pr", "http://pr"], ["loki", "http://loki"]]
+
+    def test_the_builds_swap_places_on_odd_pairs_and_loki_keeps_its_place(self):
+        names = lambda k: [t[0] for t in perf_matrix.target_order(self.TARGETS, k)]  # noqa: E731
+        self.assertEqual([names(k) for k in range(4)],
+                         [["base", "pr", "loki"], ["pr", "base", "loki"], ["base", "pr", "loki"], ["pr", "base", "loki"]])
+        self.assertEqual([t[0] for t in perf_matrix.target_order([["loki", "u"], ["a", "u"], ["b", "u"]], 1)],
+                         ["loki", "b", "a"])
+        self.assertEqual(perf_matrix.target_order([["only", "u"]], 1), [["only", "u"]])
+
+    def test_the_wait_is_for_the_other_builds_logs_and_off_at_cap_zero(self):
+        calls = []
+        logs = {"base": "/l/base", "pr": "/l/pr"}
+        with mock.patch.object(perf_matrix.stack, "logs_quiet", lambda paths, quiet, cap: calls.append((paths, quiet, cap))):
+            perf_matrix.quiet_before(self.TARGETS, "pr", logs, 1.0, 4.0)
+            perf_matrix.quiet_before(self.TARGETS, "base", logs, 1.0, 0)
+            perf_matrix.quiet_before(self.TARGETS, "pr", {}, 1.0, 4.0)
+        self.assertEqual(calls, [(["/l/base"], 1.0, 4.0)])  # not its own log, not when off, not without logs
+
+    def run_main(self, argv, shapes):
+        events = []
+        spec = {"ranges": {"1h": [3600, 5]}, "sets": {"s": {"shapes": shapes}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            shapes_file, out = os.path.join(tmp, "shapes.json"), os.path.join(tmp, "raw.json")
+            with open(shapes_file, "w") as f:
+                json.dump(spec, f)
+
+            def fake_request(url, headers, tenant, timeout):
+                events.append(("request", url.split("//")[1].split("/")[0]))
+                return 200, b'{"data": {"result": []}}', 0.01, 0
+
+            sampler = mock.Mock(samples=[], failed=0)
+            sampler.between.return_value = (None, None)
+            with mock.patch.object(sys, "argv", ["perf_matrix.py", "--set", "s", "--shapes-file", shapes_file, "--out", out,
+                                                 "--end", "1800000000", "--ranges", "1h", *argv]), \
+                    mock.patch.object(perf_matrix.subprocess, "check_output", return_value="0"), \
+                    mock.patch.object(perf_matrix, "CPUSampler", return_value=sampler), \
+                    mock.patch.object(perf_matrix, "request", fake_request), \
+                    mock.patch.object(perf_matrix.stack, "logs_quiet",
+                                      lambda paths, quiet, cap: events.append(("quiet", tuple(paths), cap)) or True), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                perf_matrix.main()
+            with open(out) as f:
+                return events, json.load(f)
+
+    def test_first_pass_alternates_the_first_build_per_shape_and_waits_before_each_cold_request(self):
+        shapes = [{"name": "one", "query": "q"}, {"name": "two", "query": "q"}]
+        events, raw = self.run_main(["--runs", "2", "--target", "base=http://base", "--target", "pr=http://pr",
+                                     "--target", "loki=http://loki", "--quiet-log", "base=/l/base", "--quiet-log", "pr=/l/pr",
+                                     "--quiet-cap-s", "3"], shapes)
+        self.assertEqual(events, [
+            # shape one, run 0: base first (waits for pr's log), then pr (waits for base's), then loki (no wait)
+            ("quiet", ("/l/pr",), 3.0), ("request", "base"), ("quiet", ("/l/base",), 3.0), ("request", "pr"),
+            ("request", "loki"),
+            # shape one, run 1 is warm: no wait
+            ("request", "base"), ("request", "pr"), ("request", "loki"),
+            # shape two swaps the builds
+            ("quiet", ("/l/base",), 3.0), ("request", "pr"), ("quiet", ("/l/pr",), 3.0), ("request", "base"),
+            ("request", "loki"),
+            ("request", "pr"), ("request", "base"), ("request", "loki")])
+        self.assertIn("quiet_wait_s", raw)
+        self.assertEqual({r["target"] for r in raw["rows"]}, {"base", "pr", "loki"})
+
+    def test_without_logs_nothing_is_waited_for_and_the_order_still_alternates(self):
+        events, _ = self.run_main(["--runs", "1", "--target", "base=http://base", "--target", "pr=http://pr"],
+                                  [{"name": "one", "query": "q"}, {"name": "two", "query": "q"}])
+        self.assertEqual(events, [("request", "base"), ("request", "pr"), ("request", "pr"), ("request", "base")])
+
+    def test_the_command_line_carries_the_logs_and_the_cap(self):
+        st = mock.Mock(vl_container="vl", vl="http://vl")
+        a = types.SimpleNamespace(ranges=["1h"], timeout=90, quiet_logs={"base": "/o/b.log", "pr": "/o/p.log"}, quiet_cap_s=4.0)
+        cmd = pr_smoke.matrix_cmd("s", None, [("base", "u1"), ("pr", "u2")], a, 1, st, 4, None, "/o/raw.json")
+        self.assertEqual([cmd[i + 1] for i, c in enumerate(cmd) if c == "--quiet-log"], ["base=/o/b.log", "pr=/o/p.log"])
+        self.assertEqual(cmd[cmd.index("--quiet-cap-s") + 1], "4.0")
+        bare = pr_smoke.matrix_cmd("s", None, [("base", "u1")], types.SimpleNamespace(ranges=["1h"], timeout=90), 1, st, 4,
+                                   None, "/o/raw.json")
+        self.assertNotIn("--quiet-log", bare)
+
+    def test_the_added_time_is_added_to_meta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for suffix, secs in (("", 12.5), ("-confirm", 3.0)):
+                with open(pr_smoke.raw_path(tmp, "s", "loki-defaults", suffix), "w") as f:
+                    json.dump({"quiet_wait_s": secs}, f)
+            meta = {}
+            pr_smoke.note_quiet(meta, tmp, "s", "loki-defaults")
+            pr_smoke.note_quiet(meta, tmp, "other", "loki-defaults")  # no raw file: nothing added
+        self.assertEqual(meta["quiet_wait_s"], 15.5)
+
+    def test_logs_quiet_waits_for_every_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = os.path.join(tmp, "a"), os.path.join(tmp, "b")
+            for p in (a, b):
+                open(p, "w").close()
+            self.assertTrue(cold.stack.logs_quiet([a, b], quiet=0.2, cap=3, poll=0.05))
+            stop = threading.Event()
+
+            def writer():
+                with open(b, "a") as f:
+                    while not stop.is_set():
+                        f.write("x\n")
+                        f.flush()
+                        time.sleep(0.05)
+
+            t = threading.Thread(target=writer)
+            t.start()
+            try:
+                self.assertFalse(cold.stack.logs_quiet([a, b], quiet=0.2, cap=0.6, poll=0.05))  # b keeps growing
+                self.assertTrue(cold.stack.logs_quiet([a], quiet=0.2, cap=3, poll=0.05))
+            finally:
+                stop.set()
+                t.join()
 
 
 class WarmUpTest(unittest.TestCase):
