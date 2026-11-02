@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -276,6 +277,21 @@ func TestQueryRangeWindowCacheKey_IsolatesBackendBudgetAndDirection(t *testing.T
 	}
 }
 
+func TestQueryRangeWindowCacheKey_IsolatesRoutingReload(t *testing.T) {
+	p := newWindowingTestProxy(t, "http://127.0.0.1:1")
+	req := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D`, nil)
+	req.Header.Set("X-Scope-OrgID", "team-a")
+	window := queryRangeWindow{startNs: 1, endNs: 2}
+	key := func() string {
+		return p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
+	}
+	before := key()
+	p.ReloadTenantMap(map[string]TenantMapping{"team-a": {AccountID: "7", ProjectID: "0"}})
+	if after := key(); after == before {
+		t.Fatal("tenant routing reload reused an old shared log fragment key")
+	}
+}
+
 func TestQueryRangeWindow_LimitAndDirection(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -512,7 +528,7 @@ func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	}
 }
 
-func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *testing.T) {
+func TestQueryRangeWindow_FetchWritesThroughToPeer(t *testing.T) {
 	var remoteSetCalls atomic.Int64
 	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/_cache/set" {
@@ -547,9 +563,14 @@ func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *
 	if err := req.ParseForm(); err != nil {
 		t.Fatalf("parse form: %v", err)
 	}
-	cacheKey := (&Proxy{}).queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
-
-	pc := newNonOwnerPeerCacheForKey(t, ownerURL.Host, cacheKey)
+	// Both ring members are replicas, so publication must reach the remote
+	// peer regardless of which member owns the finalized proxy cache key.
+	pc := cache.NewPeerCache(cache.PeerConfig{
+		SelfAddr: "self:3100", DiscoveryType: "static",
+		StaticPeers:       "self:3100," + ownerURL.Host,
+		ReplicationFactor: 2,
+		Timeout:           time.Second, WriteThrough: true, WriteThroughMinTTL: 5 * time.Second,
+	})
 	defer pc.Close()
 	c := cache.New(60*time.Second, 1000)
 	c.SetL3(pc)
@@ -569,23 +590,85 @@ func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *
 		t.Fatalf("create proxy: %v", err)
 	}
 
-	cacheKey = p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
+	cacheKey := p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
 	if _, err := p.fetchQueryRangeWindow(context.Background(), req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false); err != nil {
 		t.Fatalf("fetchQueryRangeWindow returned error: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
-
-	if got := remoteSetCalls.Load(); got != 0 {
-		t.Fatalf("expected window cache entry to stay local, got %d remote /_cache/set calls", got)
+	// Peer publication is queued; wait for the observable request instead of
+	// assuming its worker runs within a fixed scheduler interval.
+	deadline := time.Now().Add(2 * time.Second)
+	for remoteSetCalls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
-	if got := pc.WTPushes.Load(); got != 0 {
-		t.Fatalf("expected local-only window cache write to skip write-through pushes, got %d", got)
+
+	if got := remoteSetCalls.Load(); got == 0 {
+		t.Fatal("expected log window to be offered to its peer owner")
 	}
 	if got := pc.WTErrors.Load(); got != 0 {
-		t.Fatalf("expected local-only window cache write to skip write-through errors, got %d", got)
+		t.Fatalf("log window peer write-through errors: %d", got)
 	}
 	if _, ok := p.cache.Get(cacheKey); !ok {
 		t.Fatalf("expected local cache key %q to be stored", cacheKey)
+	}
+}
+
+func TestQueryRangeWindow_FetchReadsDiskAfterRestart(t *testing.T) {
+	var backendCalls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls.Add(1)
+		_, _ = fmt.Fprintln(w, `{"_time":"2026-10-01T00:01:00Z","_msg":"settled log","_stream":"{app=\"api\"}"}`)
+	}))
+	defer backend.Close()
+
+	config := cache.DiskCacheConfig{Path: filepath.Join(t.TempDir(), "log-window.db"), MaxBytes: 1 << 20, FlushInterval: time.Hour}
+	request := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&limit=100", nil)
+	if err := request.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	window := queryRangeWindow{startNs: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC).UnixNano()}
+	window.endNs = window.startNs + int64(time.Hour) - 1
+	shape := newLogQueryShape(request.FormValue("query"))
+	newProxy := func(disk *cache.DiskCache) (*Proxy, *cache.Cache) {
+		memory := cache.New(time.Minute, 1000)
+		memory.SetL2(disk)
+		p, err := New(Config{BackendURL: backend.URL, Cache: memory, LogLevel: "error", QueryRangeHistoryCacheTTL: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p, memory
+	}
+	firstDisk, err := cache.NewDiskCache(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, firstMemory := newProxy(firstDisk)
+	want, err := first.fetchQueryRangeWindow(context.Background(), request, `{app="api"}`, "100", 100, window, shape, false, false)
+	if err != nil || len(want.Entries) != 1 {
+		t.Fatalf("cold window: entries=%d err=%v", len(want.Entries), err)
+	}
+	firstDisk.Flush()
+	if objects, _ := firstDisk.Size(); objects == 0 {
+		t.Fatal("settled log window was not persisted to L2")
+	}
+	_ = first.Shutdown(context.Background())
+	firstMemory.Close()
+	if err := firstDisk.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	secondDisk, err := cache.NewDiskCache(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = secondDisk.Close() })
+	second, secondMemory := newProxy(secondDisk)
+	t.Cleanup(func() { _ = second.Shutdown(context.Background()); secondMemory.Close() })
+	got, err := second.fetchQueryRangeWindow(context.Background(), request, `{app="api"}`, "100", 100, window, shape, false, false)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("L2 window differs after restart: got=%v want=%v err=%v", got, want, err)
+	}
+	if backendCalls.Load() != 1 || secondDisk.Hits.Load() == 0 {
+		t.Fatalf("expected disk hit without backend refetch: backend calls=%d disk hits=%d", backendCalls.Load(), secondDisk.Hits.Load())
 	}
 }
 

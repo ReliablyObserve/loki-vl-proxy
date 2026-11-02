@@ -23,16 +23,14 @@ import (
 // The ring owner of a key is not chosen by the test. The assertions hold
 // whichever replica owns each key:
 //
-//   - Write-through layers (stats extent buckets, patterns) push every entry
+//   - Write-through layers (stats extent buckets, patterns, log query-range
+//     windows) push every admitted entry
 //     to its owner, so after A computed it, B and C answer with no
 //     VictoriaLogs call for that layer, and at least one of them reads it
 //     from a peer (a key owned by A is read by both, one owned by B is read
 //     by C, one owned by C by B).
-//   - Read-through layers (metadata answers, query_range windows) are not
-//     pushed: a peer finds an entry only on its owner, which holds it only
-//     when it computed it. Read on A, then B, then C, at least one of B and
-//     C reads every key not owned by C from a peer; with 12 metadata probes
-//     and 16 windows the chance that C owns them all is below 1e-5.
+//   - Metadata answers also use the shared tiered path. Read on A, then B,
+//     then C, so a cold frontend can use an owner's retained answer.
 //
 // The compatibility edge cache in front of every endpoint is per replica:
 // a replica that already answered a request answers it again from there, so
@@ -40,8 +38,8 @@ import (
 // time (a restarted or recreated replica, a fresh request, or the same
 // buckets through a shifted window).
 //
-// Layers that never reach the peer tier (that edge cache, the query_range
-// response cache behind it, the translation and stream field name caches,
+// Layers that never reach the peer tier (the exact-response edge cache, the
+// query_range response cache behind it, translation and stream field caches,
 // the detected-level probes) are per-replica memory by design; the registry
 // rows wired here say which layer uses which tier.
 
@@ -376,8 +374,8 @@ func requireMetadataReadThrough(t *testing.T, reqs []proofRequest, want answers,
 	return total, fromPeer, fromDisk
 }
 
-// requireWindowReadThrough reads each log request on the replicas in order;
-// every window hit on a replica whose memory is cold came from a peer.
+// requireWindowReadThrough reads each log request on replicas whose memory is
+// cold; a reused window must come from disk or a peer.
 func requireWindowReadThrough(t *testing.T, reqs []proofRequest, want answers, replicas ...int) fleetCounters {
 	t.Helper()
 	var total fleetCounters
@@ -385,8 +383,8 @@ func requireWindowReadThrough(t *testing.T, reqs []proofRequest, want answers, r
 		for _, idx := range replicas {
 			rep := fleetReplica(idx)
 			d, _ := askSame(t, rep, req, want[req.path])
-			if d.windowHits > d.peerHits {
-				t.Errorf("%s on %s: %.0f window hits but only %.0f peer reads; windows are kept in memory only, so every hit on a cold replica must come from a peer", req, rep.name, d.windowHits, d.peerHits)
+			if d.windowHits > d.tierL2Hits+d.tierL3Hits {
+				t.Errorf("%s on %s: %.0f window hits but only %.0f L2 and %.0f L3 reads on a cold replica", req, rep.name, d.windowHits, d.tierL2Hits, d.tierL3Hits)
 			}
 			total = total.plus(d)
 		}
@@ -590,12 +588,12 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Errorf("B served no metadata answer from its own disk after a restart (%s)", total)
 			}
 		})
-		proofRun(t, "query_range_window_memory_only", func(t *testing.T) {
-			// Windows are kept in memory only (SetLocalOnlyWithTTL): after a
-			// restart every window hit on B is a peer read, none a disk read.
+		proofRun(t, "query_range_window_disk_or_peer", func(t *testing.T) {
+			// A restart clears L1; settled windows on B's disk or its peers
+			// should answer the same log request without a VL scan.
 			total := requireWindowReadThrough(t, base.windows, first, replicaB)
-			if total.tierL2Hits != 0 {
-				t.Errorf("B served %.0f lookups of log queries from its disk after a restart; windows are kept in memory only (%s)", total.tierL2Hits, total)
+			if total.windowHits == 0 || total.tierL2Hits+total.tierL3Hits == 0 {
+				t.Errorf("B reused no settled log window from disk or peers after restart (%s)", total)
 			}
 		})
 		readAgain(t, []replica{b}, base.all(), first)

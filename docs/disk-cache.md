@@ -9,6 +9,22 @@ Set `-disk-cache-path` to enable L2. L1 misses can recover values from disk;
 peers can serve their disk copies without calling VictoriaLogs. TTLs and full
 cache keys, including their tenant and authentication identity, remain intact.
 
+Historical log `query_range` fragments use the same tiered path as settled
+pattern source windows, metadata replies and VictoriaLogs metric extents.
+Completed `query`, `query_range` and `series` replies up to 128 KiB also enter
+the Loki layer's disk and peer tiers; larger replies remain subject to the
+existing bounded in-memory edge cache. The exact-response edge cache remains
+memory-only. Shared reply keys include the routing configuration fingerprint,
+so a tenant or field-mapping reload cannot reuse an older disk or peer answer.
+The fragment key also includes routing scope, direction, row budget, aligned
+window bounds, parser shape and response profile, so a fragment fetched for a
+smaller limit or before a tenant-map reload cannot answer a later request. The
+local e2e stack tests these read paths
+on one bounded disk volume: it restarts the patterns datasource and requires
+identical answers and L2 hits for a shifted pattern request, label values,
+metric range, short and windowed log ranges, series and instant metric. Live
+tail is a streaming read and does not have a reusable completed answer.
+
 See the [cache storage verification](benchmarks/cache-storage-2026-10-30.md) for
 matched benchmarks, allocation profiles and restart/peer regression evidence.
 See [fleet operations](fleet-cache-operations.md) for replica capacity, combined

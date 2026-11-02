@@ -8,10 +8,98 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
+
+func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
+	for _, tc := range []struct{ name, target string }{
+		{"instant", "/loki/api/v1/query?query=sum%28count_over_time%28%7Bapp%3D%22api%22%7D%5B5m%5D%29%29&time=1767225600"},
+		{"short_range", "/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200&limit=50"},
+		{"series", "/loki/api/v1/series?match%5B%5D=%7Bapp%3D%22api%22%7D&start=1767225600&end=1767229200"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "exact-response.db")
+			config := cache.DiskCacheConfig{Path: path, MaxBytes: 1 << 20, FlushInterval: time.Hour}
+			newProxy := func(disk *cache.DiskCache) (*Proxy, *cache.Cache, *cache.Cache) {
+				primary := cache.New(time.Minute, 1000)
+				primary.SetL2(disk)
+				edge := cache.New(time.Minute, 100)
+				p, err := New(Config{BackendURL: "http://unused", Cache: primary, CompatCache: edge, LogLevel: "error"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return p, primary, edge
+			}
+			calls := 0
+			answer := func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"tenant":%q}}`, r.Header.Get("X-Scope-OrgID"))
+			}
+			request := func(p *Proxy, org string) *httptest.ResponseRecorder {
+				w := httptest.NewRecorder()
+				r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+				r.Header.Set("X-Scope-OrgID", org)
+				endpoint := "query"
+				switch tc.name {
+				case "series":
+					endpoint = "series"
+				case "short_range":
+					endpoint = "query_range"
+				}
+				p.compatCacheMiddleware(endpoint, r.URL.Path, answer)(w, r)
+				return w
+			}
+
+			firstDisk, err := cache.NewDiskCache(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, firstPrimary, firstEdge := newProxy(firstDisk)
+			want := request(first, "team-a")
+			if want.Code != http.StatusOK || calls != 1 {
+				t.Fatalf("initial reply: status=%d calls=%d", want.Code, calls)
+			}
+			firstDisk.Flush()
+			if objects, _ := firstDisk.Size(); objects == 0 {
+				t.Fatal("completed read reply did not reach L2")
+			}
+			_ = first.Shutdown(context.Background())
+			firstPrimary.Close()
+			firstEdge.Close()
+			if err := firstDisk.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			secondDisk, err := cache.NewDiskCache(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = secondDisk.Close() })
+			second, secondPrimary, secondEdge := newProxy(secondDisk)
+			t.Cleanup(func() { _ = second.Shutdown(context.Background()); secondPrimary.Close(); secondEdge.Close() })
+			got := request(second, "team-a")
+			if got.Code != http.StatusOK || got.Body.String() != want.Body.String() || calls != 1 || secondDisk.Hits.Load() == 0 {
+				t.Fatalf("restart did not reuse L2 reply: status=%d got=%s want=%s calls=%d disk_hits=%d", got.Code, got.Body, want.Body, calls, secondDisk.Hits.Load())
+			}
+			otherTenant := request(second, "team-b")
+			if otherTenant.Code != http.StatusOK || calls != 2 || otherTenant.Body.String() == want.Body.String() {
+				t.Fatalf("tenant reused another tenant's disk reply: status=%d calls=%d body=%s", otherTenant.Code, calls, otherTenant.Body)
+			}
+			second.ReloadTenantMap(map[string]TenantMapping{"team-a": {AccountID: "7", ProjectID: "0"}})
+			_ = request(second, "team-a")
+			if calls != 3 {
+				t.Fatalf("routing reload reused a stale shared reply: calls=%d", calls)
+			}
+		})
+	}
+}
 
 func TestGrafanaStatsFailure_PreservesFailures(t *testing.T) {
 	p := newCompatTestProxy(t, "http://unused")

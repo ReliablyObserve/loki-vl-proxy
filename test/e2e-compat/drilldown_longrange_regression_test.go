@@ -3,11 +3,14 @@
 package e2e_compat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os/exec"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,11 +126,186 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 		t.Fatalf("shifted long-range patterns reused no settled source windows: hits before=%d after=%d", hitsBefore, hitsAfter)
 	}
 	t.Logf("shifted pattern source-window cache hits: %d", hitsAfter-hitsBefore)
+
+	// Cover the other read paths on the same bounded L2, using this fixture's
+	// settled hour. These are ordinary Loki API calls, independent of Drilldown.
+	proofStart, proofEnd := start.Add(time.Hour), start.Add(2*time.Hour)
+	proofWindow := url.Values{
+		"start": {strconv.FormatInt(proofStart.UnixNano(), 10)},
+		"end":   {strconv.FormatInt(proofEnd.UnixNano(), 10)},
+	}
+	metadataParams := url.Values{
+		"query": {query},
+		"start": proofWindow["start"],
+		"end":   proofWindow["end"],
+	}
+	metricParams := url.Values{
+		"query": {fmt.Sprintf(`sum(count_over_time(%s[5m]))`, query)},
+		"start": proofWindow["start"],
+		"end":   proofWindow["end"],
+		"step":  {"300"},
+	}
+	logParams := url.Values{
+		"query": {query},
+		"start": proofWindow["start"],
+		// More than one one-hour source window is required to exercise the
+		// reusable log-fragment path rather than the direct-query fallback.
+		"end":   {strconv.FormatInt(proofStart.Add(2*time.Hour).UnixNano(), 10)},
+		"limit": {"50"},
+	}
+	seriesParams := url.Values{
+		"match[]": {query},
+		"start":   proofWindow["start"],
+		"end":     proofWindow["end"],
+	}
+	instantParams := url.Values{
+		"query": metricParams["query"],
+		"time":  proofWindow["end"],
+	}
+	readCases := []struct {
+		name, path, layer string
+	}{
+		{"label_values", "/loki/api/v1/label/app/values?" + metadataParams.Encode(), "loki"},
+		{"metric_range", "/loki/api/v1/query_range?" + metricParams.Encode(), "loki"},
+		{"short_log_range", "/loki/api/v1/query_range?" + url.Values{
+			"query": {query}, "start": proofWindow["start"], "end": proofWindow["end"], "limit": {"50"},
+		}.Encode(), "loki"},
+		{"log_range", "/loki/api/v1/query_range?" + logParams.Encode(), "loki"},
+		{"series", "/loki/api/v1/series?" + seriesParams.Encode(), "loki"},
+		{"instant_metric", "/loki/api/v1/query?" + instantParams.Encode(), "loki"},
+	}
+	warmAnswers := make(map[string]any, len(readCases))
+	for _, tc := range readCases {
+		warmAnswers[tc.name] = readL2ProofAnswer(t, patternsAutodetectProxyURL+tc.path, tc.name != "label_values" && tc.name != "series")
+	}
+
+	// The CI/playground patterns datasource has a bounded L2 on its named
+	// volume. Restart clears L1; a second shifted range must reuse persisted
+	// source windows, while its moving edges still reach VictoriaLogs.
+	restartCtx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	if output, err := exec.CommandContext(restartCtx, "docker", "restart", "e2e-proxy-patterns-autodetect").CombinedOutput(); err != nil {
+		t.Fatalf("restart patterns proxy: %v: %s", err, output)
+	}
+	waitForReady(t, patternsAutodetectProxyURL+"/ready", 30*time.Second)
+	diskObjects := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_objects{tier="l2_disk"} `)
+	if diskObjects < 1 {
+		t.Fatal("patterns source windows did not survive the proxy restart on L2")
+	}
+	diskHitsBefore := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"} `)
+	shiftedAgain, err := fetchPatternsViaGrafanaDatasource(dsUID, query, start.Add(2*cfg.step), end.Add(2*cfg.step), cfg.step, cfg.patternCount)
+	if err != nil || len(shiftedAgain) == 0 {
+		t.Fatalf("patterns after restart failed: entries=%d err=%v", len(shiftedAgain), err)
+	}
+	diskHitsAfter := proxyMetricValue(t, patternsAutodetectProxyURL, `loki_vl_proxy_cache_layer_hits_total{layer="loki",component="primary",tier="l2_disk"} `)
+	if diskHitsAfter <= diskHitsBefore {
+		t.Fatalf("shifted patterns after restart did not read L2: before=%d after=%d", diskHitsBefore, diskHitsAfter)
+	}
+	t.Logf("shifted pattern L2 hits after restart: %d; persisted objects: %d", diskHitsAfter-diskHitsBefore, diskObjects)
+
+	for _, tc := range readCases {
+		t.Run("L2ReadRoutes/"+tc.name, func(t *testing.T) {
+			var before int64
+			var windowHitsBefore int64
+			if tc.layer != "" {
+				before = proxyMetricValue(t, patternsAutodetectProxyURL,
+					fmt.Sprintf(`loki_vl_proxy_cache_layer_hits_total{layer=%q,component="primary",tier="l2_disk"} `, tc.layer))
+			}
+			if tc.name == "log_range" {
+				windowHitsBefore = proxyMetricValue(t, patternsAutodetectProxyURL, "loki_vl_proxy_window_cache_hit_total ")
+			}
+			readPath := tc.path
+			if tc.name == "log_range" {
+				// Reorder the same parameters so the exact-response key misses,
+				// while the source-window key remains identical.
+				readPath = "/loki/api/v1/query_range?query=" + url.QueryEscape(query) +
+					"&start=" + logParams.Get("start") + "&end=" + logParams.Get("end") + "&limit=50"
+			}
+			got := readL2ProofAnswer(t, patternsAutodetectProxyURL+readPath, tc.name != "label_values" && tc.name != "series")
+			if !reflect.DeepEqual(got, warmAnswers[tc.name]) {
+				t.Fatalf("%s answer changed after restart: got=%v want=%v", tc.name, got, warmAnswers[tc.name])
+			}
+			if tc.layer != "" {
+				after := proxyMetricValue(t, patternsAutodetectProxyURL,
+					fmt.Sprintf(`loki_vl_proxy_cache_layer_hits_total{layer=%q,component="primary",tier="l2_disk"} `, tc.layer))
+				if after <= before {
+					t.Fatalf("%s did not read %s L2 after restart: before=%d after=%d", tc.name, tc.layer, before, after)
+				}
+				t.Logf("%s L2 hits after restart: %d", tc.name, after-before)
+			}
+			if tc.name == "log_range" {
+				windowHitsAfter := proxyMetricValue(t, patternsAutodetectProxyURL, "loki_vl_proxy_window_cache_hit_total ")
+				if windowHitsAfter <= windowHitsBefore {
+					t.Fatalf("log query did not reuse a source window after restart: before=%d after=%d", windowHitsBefore, windowHitsAfter)
+				}
+			}
+			if tc.name == "metric_range" {
+				// Changing raw parameter order misses the exact Loki reply but
+				// keeps the metric extent identity, proving VL L2 separately.
+				beforeVL := proxyMetricValue(t, patternsAutodetectProxyURL,
+					`loki_vl_proxy_cache_layer_hits_total{layer="vl",component="primary",tier="l2_disk"} `)
+				extentPath := "/loki/api/v1/query_range?query=" + url.QueryEscape(metricParams.Get("query")) +
+					"&start=" + metricParams.Get("start") + "&end=" + metricParams.Get("end") + "&step=300"
+				extentAnswer := readL2ProofAnswer(t, patternsAutodetectProxyURL+extentPath, true)
+				if !reflect.DeepEqual(extentAnswer, warmAnswers[tc.name]) {
+					t.Fatalf("metric extent probe changed answer: got=%v want=%v", extentAnswer, warmAnswers[tc.name])
+				}
+				afterVL := proxyMetricValue(t, patternsAutodetectProxyURL,
+					`loki_vl_proxy_cache_layer_hits_total{layer="vl",component="primary",tier="l2_disk"} `)
+				if afterVL <= beforeVL {
+					t.Fatalf("metric extent did not read VL L2 after restart: before=%d after=%d", beforeVL, afterVL)
+				}
+				t.Logf("metric extent VL L2 hits after restart: %d", afterVL-beforeVL)
+			}
+		})
+	}
+}
+
+func readL2ProofAnswer(t *testing.T, target string, rangeQuery bool) any {
+	t.Helper()
+	resp, err := http.Get(target)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	var payload struct {
+		Status string          `json:"status"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode %s: %v", target, err)
+	}
+	if resp.StatusCode != http.StatusOK || payload.Status != "success" {
+		t.Fatalf("GET %s: HTTP %d status=%q", target, resp.StatusCode, payload.Status)
+	}
+	data := payload.Data
+	if rangeQuery {
+		var rangeData struct {
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(data, &rangeData); err != nil {
+			t.Fatalf("decode range result from %s: %v", target, err)
+		}
+		data = rangeData.Result
+	}
+	var answer []any
+	if err := json.Unmarshal(data, &answer); err != nil {
+		t.Fatalf("decode answer from %s: %v", target, err)
+	}
+	if len(answer) == 0 {
+		t.Fatalf("empty answer from %s", target)
+	}
+	return answer
 }
 
 func patternWindowCacheHits(t *testing.T, baseURL string) int64 {
 	t.Helper()
 	const prefix = `loki_vl_proxy_internal_operation_total{operation="patterns_window_cache",outcome="hit"} `
+	return proxyMetricValue(t, baseURL, prefix)
+}
+
+func proxyMetricValue(t *testing.T, baseURL, prefix string) int64 {
+	t.Helper()
 	for _, line := range strings.Split(scrapeProxyMetrics(t, baseURL), "\n") {
 		if raw, ok := strings.CutPrefix(line, prefix); ok {
 			value, err := strconv.ParseInt(raw, 10, 64)

@@ -57,6 +57,19 @@ bytes and duration; a cache hit alone does not prove a faster page load.
 Like the existing historical log-window cache, retained pattern windows may
 remain stale until TTL expiry after a late backfill or deletion.
 
+The e2e Compose stack used by CI and the local Grafana playground mounts a
+named volume at `/cache` for the patterns datasource and enables a 64 MiB
+logical L2 budget at `/cache/proxy-l2.bolt`. Its settled pattern windows survive
+container restarts and can be read back into a fresh L1. The main proxy and
+two fleet peers have separate named volumes and 128 MiB logical L2 budgets
+each. These are test-stack budgets, not production defaults. L2 records keep
+their normal window TTL (24 hours for historical windows by default), and
+LRU eviction may remove them sooner. A named volume does not turn cached data
+into permanent storage. `TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples`
+verifies a shifted Grafana request uses L2 after restarting the patterns proxy.
+The same test also checks that ordinary label values, metric and short/windowed log ranges,
+series and instant metrics return identical answers and read L2 after restart.
+
 ## Static Custom Patterns
 
 You can prepend static patterns to every `/loki/api/v1/patterns` response:
