@@ -271,7 +271,9 @@ func TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode(t *testing.T) {
 }
 
 // FuzzAlignQueryRangeToStep checks the alignment over arbitrary bounds and
-// steps: it never panics or modifies the caller's request; a moved request
+// steps: it never panics or modifies the caller's request; what the
+// middleware passes through unaligned (boundsOnStepGrid) is what alignment
+// leaves at the same instants; a moved request
 // is idempotent (moving it again changes nothing), each bound moves by less
 // than a step toward zero onto a multiple of the step; and wherever Loki's
 // decode reads the bounds as the proxy does, the result is Loki's.
@@ -297,9 +299,27 @@ func FuzzAlignQueryRangeToStep(f *testing.F) {
 		if req.FormValue("start") != start || req.FormValue("end") != end || requestStepAligned(req) {
 			t.Fatal("the caller's request was modified")
 		}
+		{
+			d, okD := stepWithoutAllocating(step)
+			want, okW := parsePositiveStepDuration(step)
+			if d != want || okD != okW {
+				t.Fatalf("step %q read as %v %v, want %v %v", step, d, okD, want, okW)
+			}
+		}
+		// The middleware's pass-through is exactly the requests alignment
+		// leaves at the same instants.
+		if ok && boundsOnStepGrid(req) {
+			for _, key := range []string{"start", "end"} {
+				was, _ := parseLokiTimeToUnixNano(req.FormValue(key))
+				if moved, _ := parseLokiTimeToUnixNano(got.FormValue(key)); moved != was {
+					t.Fatalf("passed %s %q through, alignment moves it to %q", key, req.FormValue(key), got.FormValue(key))
+				}
+			}
+		}
 		if !ok {
 			return
 		}
+		assertBoundsReplaced(t, req.URL.RawQuery, got.URL.RawQuery, got.FormValue("start"), got.FormValue("end"))
 		stepD, _ := parsePositiveStepDuration(step)
 		stepNs := stepD.Milliseconds() * int64(time.Millisecond)
 		rawStart, rawEnd, _ := lokiRangeBounds(req, now)

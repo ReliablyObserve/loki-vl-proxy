@@ -135,20 +135,40 @@ var (
 // Results are cached by query string to avoid repeated AST allocations for
 // identical queries (the common case in real workloads and benchmarks).
 func validateLogQLSyntax(query string) string {
-	if len(query) > validationCacheMaxQueryBytes {
-		return logql.ValidateLogQL(query)
+	return cachedQueryValidation(query).msg
+}
+
+// queryValidation is the validationCache entry of a raw query: Loki's error
+// for it, or "" and whether it is a metric (sample) expression, which
+// stepAlignMiddleware reads before the handler validates the same string.
+type queryValidation struct {
+	msg    string
+	sample bool
+}
+
+// cachedQueryValidation validates query once per distinct string: it parses
+// and checks the query on a miss and stores the result while the query is at
+// most validationCacheMaxQueryBytes long.
+func cachedQueryValidation(query string) queryValidation {
+	cacheable := len(query) <= validationCacheMaxQueryBytes
+	if cacheable {
+		if v, ok := validationCache.Load(query); ok {
+			if cached, ok := v.(queryValidation); ok {
+				return cached
+			}
+		}
 	}
-	if v, ok := validationCache.Load(query); ok {
-		return v.(string)
+	expr, msg := logql.ValidateLogQLExpr(query)
+	result := queryValidation{msg: msg, sample: msg == "" && isSampleExpr(expr)}
+	if cacheable {
+		storeValidationResult(query, result)
 	}
-	result := logql.ValidateLogQL(query)
-	storeValidationResult(query, result)
 	return result
 }
 
 // storeValidationResult adds a validation result while the cache is below
 // validationCacheMaxSize entries.
-func storeValidationResult(key, result string) {
+func storeValidationResult(key string, result any) {
 	if validationCacheSize.Load() < validationCacheMaxSize {
 		if _, loaded := validationCache.LoadOrStore(key, result); !loaded {
 			validationCacheSize.Add(1)

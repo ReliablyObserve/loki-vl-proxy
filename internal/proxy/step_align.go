@@ -4,11 +4,10 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // stepAlignedKey marks a query_range request whose bounds stepAlignMiddleware
@@ -54,11 +53,43 @@ func (p *Proxy) stepAlignMiddleware(endpoint string, next http.HandlerFunc) http
 		return next
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if aligned, ok := alignQueryRangeToStep(r, time.Now()); ok {
-			r = aligned
+		if !boundsOnStepGrid(r) {
+			if aligned, ok := alignQueryRangeToStep(r, time.Now()); ok {
+				r = aligned
+			}
 		}
 		next(w, r)
 	}
+}
+
+// boundsOnStepGrid reports whether the request carries a step and both a
+// start and an end that alignment would leave where they are: each decodes to
+// a multiple of the step, and the proxy's own parser reads it as the same
+// instant Loki does (lokiBoundUnixNano). Such a request goes on as it came,
+// without parsing its query or copying it, as on a build without alignment.
+// A bound that is missing is derived (end defaults to now) and is aligned.
+func boundsOnStepGrid(r *http.Request) bool {
+	step, ok := stepWithoutAllocating(r.FormValue("step"))
+	gridNs := step.Milliseconds() * int64(time.Millisecond)
+	if !ok || gridNs <= 0 {
+		return false
+	}
+	for _, key := range [...]string{"start", "end"} {
+		raw := strings.TrimSpace(r.FormValue(key))
+		if raw == "" {
+			return false
+		}
+		ns, ok := lokiBoundUnixNano(raw)
+		if !ok || ns%gridNs != 0 {
+			return false
+		}
+		if _, integer := integerBoundUnixNano(raw); !integer {
+			if read, ok := parseLokiTimeToUnixNano(raw); !ok || read != ns {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // alignQueryRangeToStep returns r with its start and end moved down to
@@ -95,7 +126,10 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	if strings.Contains(query, "$__") {
 		return r, false
 	}
-	if expr, err := logqlpkg.Parse(query); err != nil || !isSampleExpr(expr) {
+	// The handler validates the same query string through the same memo
+	// (validateQuery), so a query is parsed once across both, and a repeated
+	// query not at all.
+	if !cachedQueryValidation(query).sample {
 		return r, false
 	}
 	if exceedsLokiRangeResolution(r, now) || isQuerySplitResidual(r) {
@@ -105,21 +139,93 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	if !ok || end.Before(start) {
 		return r, false
 	}
-	alignedStart := start.UnixMilli() / stepMs * stepMs * int64(time.Millisecond)
-	alignedEnd := end.UnixMilli() / stepMs * stepMs * int64(time.Millisecond)
-	aligned := r.Clone(context.WithValue(r.Context(), stepAlignedKey{}, strings.TrimSpace(r.FormValue("end"))))
-	_ = aligned.ParseForm()
-	params := aligned.URL.Query()
-	for key, value := range map[string]int64{"start": alignedStart, "end": alignedEnd} {
-		encoded := encodeAlignedBound(value)
-		aligned.Form.Set(key, encoded)
-		if aligned.Method == http.MethodPost {
-			aligned.PostForm.Set(key, encoded)
-		}
-		params.Set(key, encoded)
+	alignedStart := encodeAlignedBound(start.UnixMilli() / stepMs * stepMs * int64(time.Millisecond))
+	alignedEnd := encodeAlignedBound(end.UnixMilli() / stepMs * stepMs * int64(time.Millisecond))
+	// A shallow copy, as the rest of the chain passes requests on: only the
+	// form, the URL and the context differ from r, and r's are not written.
+	aligned := r.WithContext(context.WithValue(r.Context(), stepAlignedKey{}, strings.TrimSpace(r.FormValue("end"))))
+	aligned.Form = withAlignedBounds(r.Form, alignedStart, alignedEnd)
+	if r.Method == http.MethodPost {
+		aligned.PostForm = withAlignedBounds(r.PostForm, alignedStart, alignedEnd)
 	}
-	aligned.URL.RawQuery = params.Encode()
+	u := *r.URL
+	u.RawQuery = rawQueryWithBounds(r.URL.RawQuery, alignedStart, alignedEnd)
+	aligned.URL = &u
 	return aligned, true
+}
+
+// withAlignedBounds is a copy of values with start and end replaced; the
+// other entries share their slices with values, which is not written.
+func withAlignedBounds(values url.Values, start, end string) url.Values {
+	out := make(url.Values, len(values)+2)
+	for key, value := range values {
+		out[key] = value
+	}
+	out["start"] = []string{start}
+	out["end"] = []string{end}
+	return out
+}
+
+// rawQueryWithBounds is rawQuery with the values of start and end replaced in
+// place and every other parameter left as the client wrote it, so a moved
+// request has the cache key of the same request sent on the grid. A bound
+// that is absent is appended. A query string that names start or end more
+// than once, or spells a key with escapes, is re-encoded whole instead.
+func rawQueryWithBounds(rawQuery, start, end string) string {
+	var b strings.Builder
+	b.Grow(len(rawQuery) + len(start) + len(end) + len("&start=&end="))
+	seenStart, seenEnd := false, false
+	for rest := rawQuery; rest != ""; {
+		var part string
+		part, rest, _ = strings.Cut(rest, "&")
+		if part == "" {
+			continue
+		}
+		key, _, _ := strings.Cut(part, "=")
+		if strings.ContainsAny(key, "%+;") {
+			return reencodeWithBounds(rawQuery, start, end)
+		}
+		if b.Len() > 0 {
+			b.WriteByte('&')
+		}
+		switch {
+		case key == "start" && !seenStart:
+			seenStart = true
+			b.WriteString("start=")
+			b.WriteString(url.QueryEscape(start))
+		case key == "end" && !seenEnd:
+			seenEnd = true
+			b.WriteString("end=")
+			b.WriteString(url.QueryEscape(end))
+		case key == "start" || key == "end":
+			return reencodeWithBounds(rawQuery, start, end)
+		default:
+			b.WriteString(part)
+		}
+	}
+	for _, missing := range [...]struct {
+		seen       bool
+		key, value string
+	}{{seenStart, "start", start}, {seenEnd, "end", end}} {
+		if !missing.seen {
+			if b.Len() > 0 {
+				b.WriteByte('&')
+			}
+			b.WriteString(missing.key)
+			b.WriteByte('=')
+			b.WriteString(url.QueryEscape(missing.value))
+		}
+	}
+	return b.String()
+}
+
+// reencodeWithBounds is rawQueryWithBounds for a query string it does not
+// rewrite in place: parsed, the bounds set, and encoded again.
+func reencodeWithBounds(rawQuery, start, end string) string {
+	params, _ := url.ParseQuery(rawQuery)
+	params.Set("start", start)
+	params.Set("end", end)
+	return params.Encode()
 }
 
 // lokiBoundUnixNano parses a start or end as Loki does where the proxy's own
@@ -131,6 +237,9 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 // (which the proxy reads as milliseconds), goes through
 // parseLokiTimeToUnixNano.
 func lokiBoundUnixNano(raw string) (int64, bool) {
+	if ns, ok := integerBoundUnixNano(raw); ok {
+		return ns, true
+	}
 	if strings.Contains(raw, ".") {
 		if seconds, err := strconv.ParseFloat(raw, 64); err == nil && math.Abs(seconds) < 1e11 {
 			whole, fraction := math.Modf(seconds)
@@ -141,6 +250,38 @@ func lokiBoundUnixNano(raw string) (int64, bool) {
 	return parseLokiTimeToUnixNano(raw)
 }
 
+// stepWithoutAllocating is parsePositiveStepDuration with a whole number of
+// seconds read directly: time.ParseDuration's error for a step without a unit
+// allocates. Up to nine digits, n seconds is exactly what the float path
+// computes.
+func stepWithoutAllocating(raw string) (time.Duration, bool) {
+	if raw != "" && len(raw) <= 9 && strings.Trim(raw, "0123456789") == "" {
+		n, _ := strconv.Atoi(raw)
+		return time.Duration(n) * time.Second, n > 0
+	}
+	return parsePositiveStepDuration(raw)
+}
+
+// integerBoundUnixNano reads an integer bound, the form Grafana sends, as
+// parseLokiTimeToUnixNano does (by its magnitude), without first trying the
+// RFC3339 layouts, whose failures allocate.
+func integerBoundUnixNano(raw string) (int64, bool) {
+	digits := strings.TrimPrefix(strings.TrimPrefix(raw, "-"), "+")
+	if digits == "" || len(digits) < len(raw)-1 {
+		return 0, false
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return normalizeLokiIntTimeToUnixNano(n), true
+}
+
 // encodeAlignedBound writes a moved bound as integer nanoseconds, the form
 // Grafana sends. The proxy reads an integer by its magnitude (seconds below
 // 1e11, then milliseconds, microseconds), so a time before 1973 written as
@@ -148,7 +289,7 @@ func lokiBoundUnixNano(raw string) (int64, bool) {
 // RFC3339 instead, which every parser reads exactly.
 func encodeAlignedBound(ns int64) string {
 	encoded := strconv.FormatInt(ns, 10)
-	if back, ok := parseLokiTimeToUnixNano(encoded); ok && back == ns {
+	if back, ok := integerBoundUnixNano(encoded); ok && back == ns {
 		return encoded
 	}
 	return time.Unix(0, ns).UTC().Format(time.RFC3339Nano)

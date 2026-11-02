@@ -970,7 +970,9 @@ func cachedSelectorValidation(kind, query string, validate func(string) string) 
 	}
 	key := "\x00" + kind + "\x00" + query
 	if v, ok := validationCache.Load(key); ok {
-		return v.(string)
+		if cached, ok := v.(string); ok {
+			return cached
+		}
 	}
 	result := validate(query)
 	storeValidationResult(key, result)

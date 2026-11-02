@@ -35,8 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request the same way, after the tenant limits and before the response cache,
   so every evaluation path, cache key and VictoriaLogs call of the request
   uses Loki's bounds: a refresh inside one step is the same request (answered
-  by the response cache, or by the extent cache from stored buckets). Bounds
-  are decoded as Loki decodes them first: a decimal number of seconds keeps
+  by the response cache, or by the extent cache from stored buckets). A
+  request whose bounds are already on the grid, and a log query, go on
+  unchanged, with no allocation added; a moved request is checked through the
+  handler's memoized query validation, so its query is not parsed twice, and
+  costs 11 allocations (1.2 KiB) more than before on a response-cache hit.
+  Bounds are decoded as Loki decodes them first: a decimal number of seconds keeps
   its fraction rounded to milliseconds (`pkg/loghttp/params.go:166-171`), so
   `1700000000.3` on a 100 ms grid stays at `.300`. A request that ends near
   now is still recomputed once its cached answer is older than

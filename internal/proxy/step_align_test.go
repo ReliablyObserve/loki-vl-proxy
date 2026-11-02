@@ -261,6 +261,154 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 	}
 }
 
+// A request alignment would leave where it is reaches the handler as it came:
+// the same *http.Request, unmarked, with no allocation in the middleware. A
+// bound off the grid, a missing bound, or an on-grid decimal the proxy reads
+// differently from Loki is moved as before, and the caller's request is not
+// written. A log query passes through unparsed once its validation is
+// memoized.
+// conformance: semantics/query-range-step-alignment
+func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
+	p := &Proxy{alignQueriesWithStep: true}
+	metric := `sum by (app) (count_over_time({app=~".+"}[5m]))`
+	for _, tc := range []struct {
+		name               string
+		query, start, end  string
+		step               string
+		post, passes, mark bool
+	}{
+		{"nanoseconds on the grid", metric, "1700000040000000000", "1700003640000000000", "60000ms", false, true, false},
+		{"seconds on the grid", metric, "1700000040", "1700003640", "60", false, true, false},
+		{"RFC3339 on the grid", metric, "2023-11-14T22:14:00Z", "2023-11-14T23:14:00Z", "1m", false, true, false},
+		{"POST on the grid", metric, "1700000040000000000", "1700003640000000000", "60s", true, true, false},
+		{"pre-epoch on the grid", metric, "-120", "60", "60", false, true, false},
+		{"Grafana shape: end off the grid", metric, "1700000040000000000", "1700003647000000000", "60000ms", false, false, true},
+		{"start off the grid", metric, "1700000053000000000", "1700003640000000000", "60000ms", false, false, true},
+		{"POST off the grid", metric, "1700000053000000000", "1700003647000000000", "60s", true, false, true},
+		{"no bounds: derived from now", metric, "", "", "60000ms", false, false, true},
+		{"sub-millisecond past the grid", metric, "1700000040000500000", "1700003640000000000", "60000ms", false, false, true},
+		// Loki rounds .9996 to the next whole second, on the grid; the
+		// proxy's parser reads .9996, so the bound is written again.
+		{"decimal Loki rounds onto the grid", metric, "1700000000.3", "1700000010.9996", "0.1", false, false, true},
+		{"log query off the grid", `{app="a"} |= "x"`, "1700000053000000000", "1700003647000000000", "60000ms", false, true, false},
+		{"no step", metric, "1700000053000000000", "1700003647000000000", "", false, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			form := url.Values{"query": {tc.query}, "start": {tc.start}, "end": {tc.end}, "step": {tc.step}}
+			for _, key := range []string{"start", "end", "step"} {
+				if form.Get(key) == "" {
+					form.Del(key)
+				}
+			}
+			newReq := func() *http.Request {
+				if tc.post {
+					req := httptest.NewRequest(http.MethodPost, "/loki/api/v1/query_range", strings.NewReader(form.Encode()))
+					req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+					return req
+				}
+				return httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
+			}
+			var seen *http.Request
+			h := p.stepAlignMiddleware("query_range", func(_ http.ResponseWriter, r *http.Request) { seen = r })
+			req := newReq()
+			rawQuery := req.URL.RawQuery
+			h(httptest.NewRecorder(), req)
+			if passes := seen == req; passes != tc.passes {
+				t.Fatalf("passed through = %v, want %v", passes, tc.passes)
+			}
+			if requestStepAligned(seen) != tc.mark {
+				t.Fatalf("marked aligned = %v, want %v", requestStepAligned(seen), tc.mark)
+			}
+			if req.FormValue("start") != tc.start || req.FormValue("end") != tc.end || req.URL.RawQuery != rawQuery || (tc.post && req.PostForm.Get("start") != tc.start) {
+				t.Fatal("the caller's request was modified")
+			}
+			if !tc.passes {
+				return
+			}
+			// What the middleware skips is exactly what alignment would leave:
+			// the same instants, read back by the proxy's parser.
+			if aligned, ok := alignQueryRangeToStep(newReq(), time.Now()); ok {
+				for _, key := range []string{"start", "end"} {
+					was, _ := parseLokiTimeToUnixNano(tc.start)
+					if key == "end" {
+						was, _ = parseLokiTimeToUnixNano(tc.end)
+					}
+					if now, _ := parseLokiTimeToUnixNano(aligned.FormValue(key)); now != was {
+						t.Fatalf("skipped %s %d, alignment gives %d", key, was, now)
+					}
+				}
+			}
+			warm := newReq()
+			h(httptest.NewRecorder(), warm) // memoizes the query's validation
+			if _, memoized := validationCache.Load(tc.query); !memoized && tc.step != "" && !boundsOnStepGrid(warm) {
+				// The bounded memo is full (other tests of the package filled
+				// it); the query is then validated on every request, as by
+				// the handler.
+				return
+			}
+			rec := httptest.NewRecorder()
+			if allocs := testing.AllocsPerRun(50, func() { h(rec, warm) }); allocs > 0 {
+				t.Fatalf("the middleware allocates %.0f times on a request it passes on", allocs)
+			}
+		})
+	}
+}
+
+// rawQueryWithBounds replaces start and end where the client wrote them and
+// keeps every other parameter byte for byte; whatever form the query string
+// takes, it decodes to the client's parameters with the two bounds set
+// (reencodeWithBounds, the generic form).
+// conformance: semantics/query-range-step-alignment
+func TestRawQueryWithBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+	}{
+		{"in place", "query=sum%28x%29&start=17&end=19&step=60", "query=sum%28x%29&start=10&end=20&step=60"},
+		{"order kept", "end=19&step=60&start=17", "end=20&step=60&start=10"},
+		{"absent bounds appended", "query=x&step=60", "query=x&step=60&start=10&end=20"},
+		{"empty", "", "start=10&end=20"},
+		{"empty pieces dropped", "&&start=17&&end=19&", "start=10&end=20"},
+		{"bare key", "start&end=19", "start=10&end=20"},
+		{"duplicate start re-encoded", "start=1&start=2&end=19", "end=20&start=10"},
+		{"escaped key re-encoded", "st%61rt=1&end=19", "end=20&start=10"},
+		{"plus in key re-encoded", "a+b=1&start=17&end=19", "a+b=1&end=20&start=10"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := rawQueryWithBounds(tc.raw, "10", "20")
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+			assertBoundsReplaced(t, tc.raw, got, "10", "20")
+		})
+	}
+	if got := rawQueryWithBounds("start=1&end=2", "1969-12-31T23:59:59.5Z", "20"); got != "start=1969-12-31T23%3A59%3A59.5Z&end=20" {
+		t.Fatalf("an RFC3339 bound is escaped: %q", got)
+	}
+}
+
+func assertBoundsReplaced(t testing.TB, raw, got, start, end string) {
+	t.Helper()
+	want, _ := url.ParseQuery(reencodeWithBounds(raw, start, end))
+	have, err := url.ParseQuery(got)
+	if _, rawErr := url.ParseQuery(raw); err != nil && rawErr == nil {
+		t.Fatalf("%q does not decode: %v", got, err)
+	}
+	if have.Encode() != want.Encode() {
+		t.Fatalf("%q decodes to %v, want %v", got, have, want)
+	}
+}
+
+// FuzzRawQueryWithBounds checks the in-place rewrite over arbitrary query
+// strings against the generic decode, set and encode.
+func FuzzRawQueryWithBounds(f *testing.F) {
+	for _, seed := range []string{"query=x&start=1&end=2&step=60", "", "start=1&start=2", "st%61rt=1", "a=%zz&start=1", "a;b=1&end=2", "start&end"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		assertBoundsReplaced(t, raw, rawQueryWithBounds(raw, "1700000040000000000", "1700003640000000000"), "1700000040000000000", "1700003640000000000")
+	})
+}
+
 // newAlignTestProxy builds a proxy over backendURL. caches turns on the
 // response cache (Tier0) and the stats extent cache; without them every
 // request is evaluated from VictoriaLogs' answer.
