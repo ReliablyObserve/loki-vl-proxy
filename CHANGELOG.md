@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.56.2] - 2026-11-01
-
 ### Fixed
 
 - Keep and drop `detected_level` independently of the stored `level` field
@@ -18,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing `detected_level` stream labels and both response encodings. Scoped
   response-cache versions prevent older local or peer entries from restoring
   pre-fix labels.
+
+## [2.56.2] - 2026-11-01
+
+### Fixed
 
 - Keep logfmt-parsed fields in ungrouped field-presence metrics. The burst
   coalescer no longer replaces `| logfmt | field!=""` with a stored-column
