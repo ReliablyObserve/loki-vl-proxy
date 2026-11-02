@@ -7,16 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.59.1] - 2026-11-02
-
 ### Fixed
 
-- Stop warning `label values index disk restore failed: decode label index
-  snapshot: unexpected end of JSON input` on every first start with
-  `-label-values-index-persist-path`. The startup writability check creates
-  the snapshot file empty; an empty file now means no snapshot yet, as it
-  already did for the patterns snapshot, and the index still warms from
-  peers as before.
 - **`/loki/api/v1/index/stats` without `start` (or `end`) counts Loki's default
   hour instead of all of VictoriaLogs' retention.** Loki reads index/stats as a
   range request (`pkg/querier/queryrange/codec.go:384-394`,
@@ -40,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Registry: `quality/index-stats-default-window`; Loki's estimate is recorded
   in `quality/index-stats-streams-differ` and
   `quality/index-stats-loki-chunk-accounting` (upstream).
+
+## [2.59.1] - 2026-11-02
+
+### Fixed
+
+- Stop warning `label values index disk restore failed: decode label index
+  snapshot: unexpected end of JSON input` on every first start with
+  `-label-values-index-persist-path`. The startup writability check creates
+  the snapshot file empty; an empty file now means no snapshot yet, as it
+  already did for the patterns snapshot, and the index still warms from
+  peers as before.
 
 ## [2.59.0] - 2026-11-02
 
