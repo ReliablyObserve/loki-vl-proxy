@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PROXY_DS, PROXY_INTERACT_DS, LOKI_DS, resolveDatasourceUid, runQuery, waitForGrafanaReady, installGrafanaGuards } from "./helpers";
+import { PROXY_DS, PROXY_INTERACT_DS, LOKI_DS, resolveDatasourceUid, runQuery, waitForExploreIdle, waitForGrafanaReady, installGrafanaGuards } from "./helpers";
 import { buildExploreUrl } from "./url-state";
 
 // Separate markers in one old cache bucket: a successful empty page or a stale
@@ -37,6 +37,9 @@ for (const datasource of [PROXY_DS, PROXY_INTERACT_DS, LOKI_DS]) {
         target.searchParams.set("panes", JSON.stringify(panes));
         await page.goto(target.pathname + target.search);
         await waitForGrafanaReady(page);
+        // Grafana 13.3 Explore kept the run button on "Cancel" after both requests
+        // had answered; wait for it to go idle and fail with that reason.
+        await waitForExploreIdle(page, 30_000);
         await expect(page.getByRole("button", { name: /run query/i }).first()).toBeVisible();
         await runQuery(page);
         const rows = page.locator('[data-testid="logRows"]').first();
