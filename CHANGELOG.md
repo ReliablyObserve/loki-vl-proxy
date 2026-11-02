@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.57.2] - 2026-11-02
+
 ### Fixed
 
 - Preserve stored level sources until Loki log entries derive `detected_level`
