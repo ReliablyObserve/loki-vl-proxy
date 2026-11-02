@@ -2700,7 +2700,7 @@ func (plan *orderedJSONMetricPlan) processWithStreamLabels(line string, base, st
 
 func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line string, base, streamLabels, rawFields map[string]string) (map[string]string, bool, error) {
 	labels := cloneStringMap(base)
-	bodyProjection := storedJSONBodyFieldProjection(line, rawFields, streamLabels)
+	bodyProjection, bodyProjectionReady := false, false
 	metadata := make(map[string]bool)
 	for name := range base {
 		if _, isStream := streamLabels[name]; !isStream {
@@ -2722,6 +2722,10 @@ func (plan *orderedJSONMetricPlan) processWithContext(ctx context.Context, line 
 				if stage.logfmt {
 					plan.parseLogfmt(line, collisions, labels, extracted)
 					continue
+				}
+				if !bodyProjectionReady {
+					bodyProjection = storedJSONBodyFieldProjection(line, rawFields, streamLabels)
+					bodyProjectionReady = true
 				}
 				if err := plan.parseJSON(line, collisions, streamLabels, bodyProjection, labels, extracted); err != nil {
 					if errors.Is(err, errOrderedJSONFilterRejected) {
