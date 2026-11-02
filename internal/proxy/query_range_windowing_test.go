@@ -277,6 +277,21 @@ func TestQueryRangeWindowCacheKey_IsolatesBackendBudgetAndDirection(t *testing.T
 	}
 }
 
+func TestQueryRangeWindowCacheKey_IsolatesRoutingReload(t *testing.T) {
+	p := newWindowingTestProxy(t, "http://127.0.0.1:1")
+	req := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query_range?query=%7Bapp%3D%22api%22%7D`, nil)
+	req.Header.Set("X-Scope-OrgID", "team-a")
+	window := queryRangeWindow{startNs: 1, endNs: 2}
+	key := func() string {
+		return p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", 100, window, newLogQueryShape(req.FormValue("query")), false, false)
+	}
+	before := key()
+	p.ReloadTenantMap(map[string]TenantMapping{"team-a": {AccountID: "7", ProjectID: "0"}})
+	if after := key(); after == before {
+		t.Fatal("tenant routing reload reused an old shared log fragment key")
+	}
+}
+
 func TestQueryRangeWindow_LimitAndDirection(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()

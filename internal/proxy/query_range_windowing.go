@@ -824,6 +824,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 		"query_range_window",
 		"budget-v1",
 		r.Header.Get("X-Scope-OrgID"),
+		"routing=" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID")),
 		logLineCacheKeyVersion,
 		logsqlQuery,
 		r.FormValue("direction"),

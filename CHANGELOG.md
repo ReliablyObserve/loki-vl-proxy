@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Reuse settled ordinary log `query_range` windows from bounded disk and
   peer tiers, including after a proxy restart. The window cache key retains
-  tenant and auth identity, parser shape, direction, row limits, and exact
-  aligned bounds; recent windows retain their configured short TTL.
+  tenant, auth and routing identity, parser shape, direction, row limits, and
+  exact aligned bounds; recent windows retain their configured short TTL.
 
 - Admit small completed instant, range and series replies to the Loki-layer
   disk and peer tiers, while retaining the existing exact-response and

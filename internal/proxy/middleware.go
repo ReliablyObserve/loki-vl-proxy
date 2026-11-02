@@ -645,6 +645,36 @@ func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Req
 	return age >= p.recentTailRefreshMaxStaleness
 }
 
+// compatCacheLookup checks the edge cache first, then the routing-scoped
+// shared cache for completed query and series replies. The same freshness
+// rule applies to both tiers, including replies recovered from disk or peers.
+func (p *Proxy) compatCacheLookup(endpoint string, r *http.Request, key string, ttl time.Duration) ([]byte, time.Duration, string, bool) {
+	value, remaining, age, ok := p.compatCache.GetWithAge(key)
+	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
+		return value, remaining, "", true
+	}
+	if p.cache == nil {
+		return nil, 0, "", false
+	}
+	switch endpoint {
+	case "query", "query_range", "series":
+	default:
+		return nil, 0, "", false
+	}
+	sharedKey := key + ":routing:" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
+	value, remaining, age, _, ok = p.cache.GetSharedWithAge(sharedKey)
+	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
+		return value, remaining, sharedKey, true
+	}
+	return nil, 0, sharedKey, false
+}
+
+func (p *Proxy) storeCompatSharedReply(key string, body []byte, ttl time.Duration) {
+	if key != "" && len(body) <= 128<<10 && p.cache != nil {
+		p.cache.SetWithTTL(key, body, ttl)
+	}
+}
+
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -667,20 +697,8 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		cached, remainingTTL, entryAge, ok := p.compatCache.GetWithAge(cacheKey)
-		if ok && p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
-			ok = false
-		}
-		// Exact read replies can recover from the bounded Loki cache after a
-		// restart. The routing scope fences disk and peer entries across tenant
-		// and field-mapping reloads, which clear only the in-memory edge cache.
-		sharedRead := (endpoint == "query" || endpoint == "query_range" || endpoint == "series") && p.cache != nil
-		sharedKey := ""
-		if !ok && sharedRead {
-			sharedKey = cacheKey + ":routing:" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
-			cached, remainingTTL, entryAge, _, ok = p.cache.GetSharedWithAge(sharedKey)
-		}
-		if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remainingTTL, entryAge) {
+		cached, remainingTTL, sharedKey, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
+		if ok {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			body := cached
@@ -741,9 +759,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			if captureAllowed {
 				body = append([]byte(nil), body...)
 				p.compatCache.SetWithTTL(cacheKey, body, ttl)
-				if sharedRead && len(body) <= 128<<10 {
-					p.cache.SetWithTTL(sharedKey, body, ttl)
-				}
+				p.storeCompatSharedReply(sharedKey, body, ttl)
 			}
 		}
 		capture.Release()

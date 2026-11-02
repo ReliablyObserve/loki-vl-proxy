@@ -47,9 +47,10 @@ func TestResponseCache_ReadRoutesUseDiskAfterRestart(t *testing.T) {
 				r := httptest.NewRequest(http.MethodGet, tc.target, nil)
 				r.Header.Set("X-Scope-OrgID", org)
 				endpoint := "query"
-				if tc.name == "series" {
+				switch tc.name {
+				case "series":
 					endpoint = "series"
-				} else if tc.name == "short_range" {
+				case "short_range":
 					endpoint = "query_range"
 				}
 				p.compatCacheMiddleware(endpoint, r.URL.Path, answer)(w, r)

@@ -16,9 +16,10 @@ the Loki layer's disk and peer tiers; larger replies remain subject to the
 existing bounded in-memory edge cache. The exact-response edge cache remains
 memory-only. Shared reply keys include the routing configuration fingerprint,
 so a tenant or field-mapping reload cannot reuse an older disk or peer answer.
-The fragment key also includes direction, row budget, aligned window bounds,
-parser shape and response profile, so a fragment fetched for a smaller limit
-cannot answer a larger request. The local e2e stack tests these read paths
+The fragment key also includes routing scope, direction, row budget, aligned
+window bounds, parser shape and response profile, so a fragment fetched for a
+smaller limit or before a tenant-map reload cannot answer a later request. The
+local e2e stack tests these read paths
 on one bounded disk volume: it restarts the patterns datasource and requires
 identical answers and L2 hits for a shifted pattern request, label values,
 metric range, short and windowed log ranges, series and instant metric. Live
