@@ -47,13 +47,14 @@ check_family_1x() {
 }
 
 check_family_2x() {
-  check "2.x keeps detected_level default URL columns for service-detail panels" \
+  local family="${1:-2}"
+  check "${family}.x keeps detected_level default URL columns for service-detail panels" \
     "src/Components/Table/constants.ts" \
     "DEFAULT_URL_COLUMNS_LEVELS = \\['detected_level', 'level'\\]"
-  check "2.x keeps field values breakdown scenes for service detail" \
+  check "${family}.x keeps field values breakdown scenes for service detail" \
     "src/Components/ServiceScene/Breakdowns/FieldValuesBreakdownScene.tsx" \
     "Run the field values breakdown query"
-  check "2.x keeps additional label tab wiring in service selection tabs" \
+  check "${family}.x keeps additional label tab wiring in service selection tabs" \
     "src/Components/ServiceSelectionScene/ServiceSelectionTabsScene.tsx" \
     "'Add label( tab)?'"
 }
@@ -70,7 +71,17 @@ case "${major_family}" in
     check_family_1x
     ;;
   2)
-    check_family_2x
+    check_family_2x 2
+    ;;
+  3)
+    # 3.x makes the same Loki calls as 2.x; the checks above are the shared contract.
+    check_family_2x 3
+    # The logs query footer arrived in 3.1.0.
+    if [[ "$(printf '3.1.0\n%s\n' "${TAG#v}" | sort -V | head -n 1)" == "3.1.0" ]]; then
+      check "3.1+ logs footer reads the total bytes processed stat from frame meta" \
+        "src/Components/ServiceScene/LogsQueryFooter.tsx" \
+        "Summary: total bytes processed"
+    fi
     ;;
   *)
     echo "FAIL unsupported Logs Drilldown family ${major_family}.x" >&2

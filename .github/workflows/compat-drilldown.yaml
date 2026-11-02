@@ -93,6 +93,8 @@ jobs:
       LOKI_IMAGE: grafana/loki:3.7.9
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
+      # The previous Grafana family cannot run Drilldown 3.x; its profile names the plugin version.
+      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@{0}', matrix.drilldown_plugin_version) || '' }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -154,6 +156,8 @@ jobs:
       LOKI_IMAGE: grafana/loki:3.7.9
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
+      # The previous Grafana family cannot run Drilldown 3.x; its profile names the plugin version.
+      GRAFANA_PLUGINS_PREINSTALL: ${{ matrix.drilldown_plugin_version && format('victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@{0}', matrix.drilldown_plugin_version) || '' }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
