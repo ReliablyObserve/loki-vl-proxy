@@ -195,6 +195,9 @@ func (p *Proxy) writeMultiTenantFailure(w http.ResponseWriter, failed *httptest.
 	code := multiTenantFailureStatus(failureStatus)
 	if code == failed.Code {
 		w.Header().Set("Content-Type", failed.Header().Get("Content-Type"))
+		if nosniff := failed.Header().Get("X-Content-Type-Options"); nosniff != "" {
+			w.Header().Set("X-Content-Type-Options", nosniff)
+		}
 		w.WriteHeader(code)
 		_, _ = w.Write(failed.Body.Bytes())
 		return

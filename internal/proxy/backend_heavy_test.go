@@ -407,7 +407,7 @@ func TestRawMetricRowPrecheck_RejectsBeforeFetchingRows(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"errorType":"bad_data"`) || !strings.Contains(rec.Body.String(), "manual range metric row limit exceeded (100)") || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
+	if rec.Code != http.StatusBadRequest || readErrorRec(t, rec).ErrorType != "bad_data" || !strings.Contains(rec.Body.String(), "manual range metric row limit exceeded (100)") || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
 		t.Fatalf("status %d body %s, want the row limit error naming its flag", rec.Code, rec.Body.String())
 	}
 	if counts.Load() != 1 || rawFetches.Load() != 0 {

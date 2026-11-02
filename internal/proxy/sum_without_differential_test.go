@@ -540,12 +540,8 @@ func TestInstantAggregationFailureIsRedacted(t *testing.T) {
 				if w.Code < 400 {
 					t.Fatalf("backend %d: status %d, want the failure kept: %s", backendStatus, w.Code, w.Body.String())
 				}
-				var body struct {
-					Status string `json:"status"`
-					Error  string `json:"error"`
-				}
-				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Status != "error" || body.Error == "" {
-					t.Fatalf("backend %d: not Loki's error format: %v %s", backendStatus, err, w.Body.String())
+				if body := readErrorRec(t, w); body.Error == "" {
+					t.Fatalf("backend %d: not Loki's error format: %s", backendStatus, w.Body.String())
 				}
 				if strings.Contains(w.Body.String(), "billing-secret-value") {
 					t.Fatalf("backend %d: the query echo reached the client: %s", backendStatus, w.Body.String())

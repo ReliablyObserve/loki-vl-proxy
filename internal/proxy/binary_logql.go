@@ -280,7 +280,7 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 		}
 		response := p.evaluateBinaryLogQLOperand(r, operand, resultType)
 		if response.status >= 400 {
-			w.Header().Set("Content-Type", "application/json")
+			setReplayContentType(w, response.status)
 			w.WriteHeader(response.status)
 			_, _ = w.Write(response.body.Bytes())
 			return

@@ -14,6 +14,7 @@ package e2e_compat
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -585,7 +586,7 @@ func TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields(t *testing.T
 // TestEdge_ValidationErrorIsJSON verifies that the proxy returns a Loki-compatible
 // JSON error body (not plain text) when a query fails LogQL validation.
 // Fix: validateQuery previously returned text/plain; now uses writeError for JSON shape.
-func TestEdge_ValidationErrorIsJSON(t *testing.T) {
+func TestEdge_ValidationErrorIsLokiText(t *testing.T) {
 	ensureDataIngested(t)
 
 	invalidQueries := []struct {
@@ -616,24 +617,16 @@ func TestEdge_ValidationErrorIsJSON(t *testing.T) {
 				t.Errorf("expected 400 for invalid query %q, got %d", tc.query, resp.StatusCode)
 			}
 
-			ct := resp.Header.Get("Content-Type")
-			if !strings.Contains(ct, "application/json") {
-				t.Errorf("expected Content-Type application/json for validation error, got %q", ct)
+			// Loki writes a rejected query as text/plain, the message alone.
+			if ct := resp.Header.Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+				t.Errorf("expected Content-Type text/plain; charset=utf-8 for validation error, got %q", ct)
 			}
-
-			var body map[string]interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-				t.Errorf("validation error body is not valid JSON for query %q: %v", tc.query, err)
-				return
+			text, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
 			}
-			if body["status"] != "error" {
-				t.Errorf("expected status=error in JSON body, got %v", body["status"])
-			}
-			if body["errorType"] != "bad_data" {
-				t.Errorf("expected errorType=bad_data in JSON body, got %v", body["errorType"])
-			}
-			if _, ok := body["error"].(string); !ok {
-				t.Errorf("expected non-empty error string in JSON body, got %v", body["error"])
+			if len(text) == 0 || text[0] == '{' {
+				t.Errorf("expected Loki's message as text for query %q, got %q", tc.query, text)
 			}
 		})
 	}

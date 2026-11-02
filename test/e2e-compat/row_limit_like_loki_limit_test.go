@@ -3,7 +3,6 @@
 package e2e_compat
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -23,8 +22,7 @@ import (
 // limit the stack Loki enforces with the same status. The proxy side is an
 // in-process proxy on the stack's VictoriaLogs with a row limit of 1, reading
 // a metric that always scans raw rows (rate_counter), on query_range and query.
-// The proxy keeps its JSON error envelope (loki/errors/status-400), so the
-// status, errorType and the absence of backend text are compared, and the text
+// The body is the message alone as text/plain, as Loki writes it; the text
 // must name the proxy's flag since Loki has none.
 // conformance: heavy-metric-fetch-bounds, limits/row-limit-error-names-flag, status-400
 func TestCompat_RowLimitAnswersLikeLokiLimit(t *testing.T) {
@@ -75,23 +73,13 @@ func TestCompat_RowLimitAnswersLikeLokiLimit(t *testing.T) {
 			if status != lokiStatus {
 				t.Fatalf("status %d, want Loki's %d for a query over a limit: %.300s", status, lokiStatus, body)
 			}
-			var envelope struct {
-				Status    string `json:"status"`
-				ErrorType string `json:"errorType"`
-				Error     string `json:"error"`
-				Message   string `json:"message"`
+			// Loki's WriteError: the message alone as text/plain, no envelope.
+			text := string(body)
+			if strings.HasPrefix(text, "{") || strings.HasSuffix(text, "\n") {
+				t.Fatalf("body is not the message alone: %.300s", body)
 			}
-			if err := json.Unmarshal(body, &envelope); err != nil {
-				t.Fatalf("body is not the proxy's error envelope: %v: %.300s", err, body)
-			}
-			if envelope.Status != "error" || envelope.ErrorType != "bad_data" {
-				t.Fatalf("envelope status %q errorType %q, want error and bad_data: %.300s", envelope.Status, envelope.ErrorType, body)
-			}
-			if !strings.HasPrefix(envelope.Error, "manual range metric row limit exceeded (1") || !strings.HasSuffix(envelope.Error, "; narrow the query or increase -manual-range-metric-row-limit") {
-				t.Fatalf("error %q does not name the row limit flag", envelope.Error)
-			}
-			if envelope.Message != "" && envelope.Message != envelope.Error {
-				t.Fatalf("message %q differs from error %q", envelope.Message, envelope.Error)
+			if !strings.HasPrefix(text, "manual range metric row limit exceeded (1") || !strings.HasSuffix(text, "; narrow the query or increase -manual-range-metric-row-limit") {
+				t.Fatalf("error %q does not name the row limit flag", text)
 			}
 			got := errLayerE2EClasses(status, body, nil, lokiStatus, "", false, true)
 			errLayerE2EVerdict(t, got, nil, status, body)

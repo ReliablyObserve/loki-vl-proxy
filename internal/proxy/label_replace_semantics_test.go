@@ -53,6 +53,10 @@ type lrAnswer struct {
 
 func decodeLR(t *testing.T, code int, body []byte) lrAnswer {
 	t.Helper()
+	if code >= 400 {
+		// An error answer is Loki's text, not a JSON envelope.
+		return lrAnswer{code: code, body: string(body)}
+	}
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -491,7 +495,7 @@ func TestLabelReplaceMalformedArguments(t *testing.T) {
 	} {
 		for _, endpoint := range []string{"query_range", "query"} {
 			a := lrAsk(t, p, endpoint, tc.query)
-			if a.code != http.StatusBadRequest || !strings.Contains(a.body, `"message":"`+tc.want+`"`) {
+			if a.code != http.StatusBadRequest || a.body != tc.want {
 				t.Errorf("%s %s: HTTP %d, want a 400 with %q\n%s", endpoint, tc.query, a.code, tc.want, a.body)
 			}
 		}

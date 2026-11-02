@@ -234,7 +234,7 @@ func TestServiceNameValues_Streams4xxNeverUsesRecentSample(t *testing.T) {
 			if rec.Code != tc.wantStatus {
 				t.Fatalf("got %d %s, want %d", rec.Code, rec.Body.String(), tc.wantStatus)
 			}
-			if tc.wantStatus == http.StatusBadRequest && !strings.Contains(rec.Body.String(), `"errorType":"bad_data"`) {
+			if tc.wantStatus == http.StatusBadRequest && readErrorRec(t, rec).ErrorType != "bad_data" {
 				t.Fatalf("want errorType bad_data, got %s", rec.Body.String())
 			}
 			mu.Lock()

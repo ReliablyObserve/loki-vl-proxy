@@ -121,14 +121,8 @@ func TestGrafanaStatsFailure_PreservesFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			p.writeGrafanaStatsFailure(w, tc.err)
-			var body struct {
-				Status, Error string
-				Warnings      []string
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-				t.Fatal(err)
-			}
-			if w.Code != tc.status || body.Status != "error" || body.Error != tc.text || len(body.Warnings) != 0 {
+			body := readErrorRec(t, w)
+			if w.Code != tc.status || body.Error != tc.text {
 				t.Fatalf("failure was hidden or misclassified: status=%d body=%s", w.Code, w.Body.String())
 			}
 			if strings.Contains(w.Body.String(), "private") || w.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {

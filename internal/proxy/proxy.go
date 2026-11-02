@@ -303,8 +303,10 @@ type Config struct {
 	// outside the Loki-compatible profile or with LabelValuesIndexedCache),
 	// "on" or "off" for limit/offset/search on the label endpoints.
 	LabelBrowseExtensions string
-	// DisableErrorMessageField drops the "message" copy of the error text
-	// from JSON error bodies (-error-response-message-field=false).
+	// DisableErrorMessageField is -error-response-message-field=false. It is
+	// ignored: error bodies are Loki's text/plain message, with no JSON
+	// envelope to carry a message field. It stays so configurations that set
+	// the flag keep starting.
 	DisableErrorMessageField bool
 
 	// Label translation

@@ -142,7 +142,7 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 }
 
 // TestWriteErr_EnvelopeCarriesOnlyLokiText checks the writer: Loki's status,
-// the envelope with the matching errorType, and nothing of the backend.
+// the text alone, and nothing of the backend.
 // conformance: semantics/error-layer-transport-text, semantics/error-layer-backend-text
 func TestWriteErr_EnvelopeCarriesOnlyLokiText(t *testing.T) {
 	p := &Proxy{errorMessageField: true}
@@ -151,9 +151,9 @@ func TestWriteErr_EnvelopeCarriesOnlyLokiText(t *testing.T) {
 	if got := p.writeErr(rec, context.Background(), err); got != http.StatusInternalServerError || rec.Code != got {
 		t.Fatalf("writeErr = %d, recorded %d, want 500", got, rec.Code)
 	}
-	var env struct{ Status, ErrorType, Error, Message string }
-	if json.Unmarshal(rec.Body.Bytes(), &env) != nil || env.Status != "error" || env.ErrorType != "internal" || env.Error != lokiErrInternal || env.Message != lokiErrInternal {
-		t.Fatalf("envelope = %s", rec.Body.String())
+	// Loki's WriteError: text/plain, nosniff and the text alone, no envelope.
+	if rec.Header().Get("Content-Type") != "text/plain; charset=utf-8" || rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Body.String() != lokiErrInternal {
+		t.Fatalf("headers = %v, body = %q", rec.Header(), rec.Body.String())
 	}
 }
 

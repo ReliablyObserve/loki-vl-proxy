@@ -3728,6 +3728,11 @@ func doGet(t *testing.T, backendURL, path string) map[string]interface{} {
 	mux.ServeHTTP(w, r)
 
 	var resp map[string]interface{}
+	if w.Code >= http.StatusBadRequest {
+		// An error answer is Loki's text, not a JSON envelope.
+		readErrorRec(t, w)
+		return map[string]interface{}{"status": "error", "error": w.Body.String()}
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to parse response from %s: %v\nbody: %s", path, err, w.Body.String())
 	}

@@ -1334,14 +1334,7 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 		t.Fatalf("expected no direct full-range fallback call, got %d", got)
 	}
 
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("failed to decode error response: %v body=%s", err, resp.Body.String())
-	}
-	if parsed["status"] != "error" {
-		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
-	}
-	if parsed["errorType"] != "internal" {
+	if parsed := readErrorRec(t, resp); parsed.ErrorType != "internal" {
 		t.Fatalf("expected Loki errorType=internal, body=%s", resp.Body.String())
 	}
 }

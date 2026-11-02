@@ -81,13 +81,7 @@ func TestLokiError_BackendDown_ReturnsUnavailable(t *testing.T) {
 	p.RegisterRoutes(mux)
 	mux.ServeHTTP(w, r)
 
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse: %v\nbody: %s", err, w.Body.String())
-	}
+	resp := readErrorRec(t, w)
 	// Loki answers a failed backend call with 500 (pkg/util/server/error.go:124-128).
 	if w.Code != http.StatusInternalServerError || resp.ErrorType != "internal" {
 		t.Errorf("backend down should return 500 errorType=internal, got %d %q", w.Code, resp.ErrorType)
@@ -127,14 +121,7 @@ func TestVLError_OOMBodyIsRewritten(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 	mux.ServeHTTP(w, r)
 
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-		Error     string `json:"error"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse error response: %v\nbody: %s", err, w.Body.String())
-	}
+	resp := readErrorRec(t, w)
 	if resp.Status != "error" {
 		t.Errorf("expected status=error, got %q", resp.Status)
 	}
@@ -355,12 +342,10 @@ func TestLokiError_QueryRangeResolutionLimit(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-			var resp struct {
-				Status    string `json:"status"`
-				ErrorType string `json:"errorType"`
-				Error     string `json:"error"`
+			resp := errBodyView{}
+			if w.Code >= http.StatusBadRequest {
+				resp = readErrorRec(t, w)
 			}
-			_ = json.Unmarshal(w.Body.Bytes(), &resp)
 			rejected := w.Code == http.StatusBadRequest && resp.Error == errLokiStepTooSmall
 			if rejected != tc.reject {
 				t.Fatalf("rejected=%v, want %v: %d %s", rejected, tc.reject, w.Code, w.Body.String())

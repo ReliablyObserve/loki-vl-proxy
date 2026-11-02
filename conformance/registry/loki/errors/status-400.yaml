@@ -31,10 +31,20 @@ loki_behaviour: |
   LogQL parse error, a limit the query exceeds, a pipeline error (a metric
   sample carrying `__error__`: `logqlmodel.PipelineError`, see
   semantics/pipeline-error-text-parity for the exact text), a blocked query
-  and an unsupported one (`serverutil.ClientHTTPStatusAndError`). The proxy
-  keeps its JSON envelope (`status`, `errorType: bad_data`, `error`) and
-  matches the message text where a case proves it; an unwrap conversion
-  error (semantics/unwrap-conversion-error) is answered as Loki writes it,
+  and an unsupported one (`serverutil.ClientHTTPStatusAndError`). The body is
+  the message alone, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options:
+  nosniff`, no JSON envelope and no trailing newline (`serverutil.WriteError`,
+  pkg/util/server/error.go:46-52; reached through the query frontend,
+  pkg/lokifrontend/frontend/transport/handler.go:141). The proxy writes the
+  same bytes on every query, metadata and tail-upgrade route
+  (semantics/error-layer-body-shape) and matches the message text where a
+  case proves it. Loki writes JSON only where its own handler does: the
+  ruler's Prometheus rules and alerts API (`{"status","data","errorType",
+  "error"}`, pkg/ruler/base/api.go:106-123) and format_query
+  (`{"status":"invalid-query","error"}`, pkg/loki/format_query_handler.go);
+  the compactor's delete API and the ruler's rule-group API use Go's
+  http.Error (text and a newline). An unwrap conversion error
+  (semantics/unwrap-conversion-error) is answered as Loki writes it,
   text/plain.
 precedence: []   # failure classes Loki evaluates before this one
 consumers: |
@@ -43,4 +53,5 @@ consumers: |
 cases:
   - semantics/pipeline-error-text-parity
   - semantics/unwrap-conversion-error
+  - semantics/error-layer-body-shape
   - limits/row-limit-error-names-flag

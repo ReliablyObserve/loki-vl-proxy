@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -81,7 +80,7 @@ func TestMetadataQueryValidation_RejectsLikeLoki(t *testing.T) {
 	// Loki's "0 matchers in group" (logql.MatchForSeriesRequest).
 	multi := url.Values{"start": {"1700000000"}, "end": {"1700003600"}, "match[]": {`{ }`, `{app="a"}`}}
 	w := doCompatProxyRequest(p, "/loki/api/v1/series?"+multi.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-	if !strings.Contains(w.Body.String(), `"error":"0 matchers in group: { }"`) || w.Code != http.StatusBadRequest {
+	if readErrorRec(t, w).Error != "0 matchers in group: { }" || w.Code != http.StatusBadRequest {
 		t.Fatalf("series {} next to another group: status=%d body=%s", w.Code, w.Body)
 	}
 
@@ -93,8 +92,7 @@ func TestMetadataQueryValidation_RejectsLikeLoki(t *testing.T) {
 		target := tc.path + "?" + params.Encode()
 		t.Run(target, func(t *testing.T) {
 			w := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
-			var body struct{ Status, ErrorType, Error string }
-			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != http.StatusBadRequest || body.ErrorType != "bad_data" || body.Error != tc.want {
+			if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || body.ErrorType != "bad_data" || body.Error != tc.want {
 				t.Fatalf("status=%d body=%s, want 400 bad_data %q", w.Code, w.Body, tc.want)
 			}
 		})
@@ -184,8 +182,7 @@ func TestMetadataQueryValidation_OversizedInputs(t *testing.T) {
 			req.Header.Set("X-Scope-OrgID", "0")
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
-			var got struct{ ErrorType, Error string }
-			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != tc.want {
+			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != tc.want {
 				t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, tc.want)
 			}
 		})
@@ -230,8 +227,8 @@ func TestMetadataQueryValidation_TruncatesEchoedQuery(t *testing.T) {
 	template := strings.Repeat("{{ .x }}", 2000) + "{{"
 	params := url.Values{"query": {`{app="a"} | label_format y="` + template + `"`}, "limit": {"10"}}
 	w := doCompatProxyRequest(p, "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
-	var got struct{ Error string }
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != http.StatusBadRequest {
+	got := readErrorRec(t, w)
+	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%.300s", w.Code, w.Body)
 	}
 	if len(got.Error) > maxEchoedErrorBytes+len("... (truncated)") || !strings.HasSuffix(got.Error, "... (truncated)") {

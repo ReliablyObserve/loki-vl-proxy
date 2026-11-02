@@ -144,20 +144,24 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		clientID := ClientID(r)
 
 		if !rl.AllowClient(clientID) {
-			w.Header().Set("Content-Type", "application/json")
+			// The message alone as text/plain, as Loki writes every error
+			// (pkg/util/server/error.go WriteError).
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "1")
 			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
 			w.Header().Set("X-RateLimit-Remaining", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"status":"error","error":"rate limit exceeded"}`))
+			w.Write([]byte("rate limit exceeded"))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Retry-After", "5")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"error","error":"too many concurrent queries"}`))
+			w.Write([]byte("too many concurrent queries"))
 			return
 		}
 		defer rl.ReleaseConcurrent()

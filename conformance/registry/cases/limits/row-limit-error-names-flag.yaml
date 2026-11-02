@@ -15,8 +15,8 @@ why: |
   Loki has no equivalent flag, so the text names the proxy's:
   `manual range metric row limit exceeded (N); narrow the query or increase
   -manual-range-metric-row-limit`. Every site builds that one error, and one
-  mapping in the error layer answers it 400 with errorType bad_data (the same
-  as the series limit), where two sites used to answer a bare
+  mapping in the error layer answers it 400 (the same as the series limit), as
+  text/plain with the message alone, like every Loki error, where two sites used to answer a bare
   `Internal Server Error` and the rest 500. Nothing of VictoriaLogs or Go is in
   the text. The read stops as the limit is hit: the proxy hangs up on
   VictoriaLogs and buffers no further row (the fetch also asks VictoriaLogs for
@@ -38,10 +38,10 @@ request:
     same error.
 compare:
   mode: exact
-  fields: [status, errorType, body]
+  fields: [status, headers, body]
   expect:
     status: 400
-    error_type: bad_data
+    content_type: text/plain; charset=utf-8
     body_contains:
       - manual range metric row limit exceeded
       - -manual-range-metric-row-limit

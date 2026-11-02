@@ -331,12 +331,7 @@ func TestDrilldownLongRangeFields_CancelAndErrorRecovery(t *testing.T) {
 			if rec.Code != wantStatus {
 				t.Fatalf("failed/cancelled query: got %d, want %d: %s", rec.Code, wantStatus, rec.Body.String())
 			}
-			var failure struct {
-				Status string `json:"status"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &failure); err != nil || failure.Status != "error" {
-				t.Fatalf("failed/cancelled query lacks error envelope: %s", rec.Body.String())
-			}
+			readErrorRec(t, rec)
 			failing.Store(false)
 			recovered := httptest.NewRecorder()
 			mux.ServeHTTP(recovered, longrangeFieldRequest(t.Context(), longrangeFieldShapes[0].query, start, end))

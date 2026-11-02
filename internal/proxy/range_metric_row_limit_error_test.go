@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -90,12 +89,9 @@ func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 				if rec.Code != http.StatusBadRequest {
 					t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body.String())
 				}
-				var body map[string]string
-				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-					t.Fatalf("body is not the JSON error envelope: %v: %s", err, rec.Body.String())
-				}
-				if body["status"] != "error" || body["errorType"] != "bad_data" || body["error"] != rowLimitErrorText || body["message"] != rowLimitErrorText {
-					t.Fatalf("body %v, want status error, errorType bad_data and %q as error and message", body, rowLimitErrorText)
+				// Loki's WriteError: text/plain, nosniff and the message alone.
+				if body := readErrorRec(t, rec); body.ErrorType != "bad_data" || body.Error != rowLimitErrorText {
+					t.Fatalf("body %q, want %q alone", rec.Body.String(), rowLimitErrorText)
 				}
 				// Nothing of VictoriaLogs, LogsQL or Go in what the client reads.
 				host := strings.TrimPrefix(srv.URL, "http://")

@@ -625,13 +625,7 @@ func TestHandlePatterns_InvalidQueryReturnsBadData(t *testing.T) {
 	if backendCalls != 0 {
 		t.Fatalf("expected no backend calls, got %d", backendCalls)
 	}
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	resp := readErrorRec(t, w)
 	if resp.Status != "error" || resp.ErrorType != "bad_data" {
 		t.Fatalf("expected bad_data error response, got %#v", resp)
 	}

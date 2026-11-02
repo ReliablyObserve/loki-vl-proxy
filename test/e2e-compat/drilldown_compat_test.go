@@ -790,8 +790,7 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			t.Fatalf("Loki fixture drifted: want 400, got %d %s", lokiStatus, lokiBody)
 		}
 		status, body := rejectedQueryGet(t, grafanaURL, "/api/datasources/proxy/uid/"+dsUID+"/loki/api/v1/query_range", params, "", nil)
-		var envelope struct{ Error string }
-		if status != http.StatusBadRequest || json.Unmarshal(body, &envelope) != nil || envelope.Error != lokiMsg {
+		if status != http.StatusBadRequest || string(body) != lokiMsg {
 			t.Fatalf("Explore datasource: %d %s, want Loki's 400 %q", status, body, lokiMsg)
 		}
 	})

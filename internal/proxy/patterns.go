@@ -1525,17 +1525,15 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Only POST allowed
 	if r.Method != http.MethodPost {
-		w.Header().Set("Content-Type", "application/json")
+		// Loki registers the delete route for PUT and POST only; gorilla/mux
+		// answers any other method 405 with no body (pkg/loki/modules.go:1936).
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "DELETE endpoint requires POST method",
-		})
 		return
 	}
 
 	// Safeguard 1: Require explicit confirmation header
 	if r.Header.Get("X-Delete-Confirmation") != "true" {
-		p.writeError(w, http.StatusBadRequest,
+		p.writeDeleteError(w, http.StatusBadRequest,
 			"delete requires X-Delete-Confirmation: true header for safety")
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
@@ -1544,13 +1542,13 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Safeguard 2: Require non-empty, non-wildcard query
 	query := r.FormValue("query")
 	if query == "" {
-		p.writeError(w, http.StatusBadRequest, "query parameter required for delete")
+		p.writeDeleteError(w, http.StatusBadRequest, "query parameter required for delete")
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
 	}
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "{}" || trimmed == "*" || trimmed == "" {
-		p.writeError(w, http.StatusBadRequest,
+		p.writeDeleteError(w, http.StatusBadRequest,
 			"wildcard delete rejected — query must target specific streams (e.g., {app=\"nginx\"})")
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
@@ -1560,7 +1558,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	startTS := r.FormValue("start")
 	endTS := r.FormValue("end")
 	if startTS == "" || endTS == "" {
-		p.writeError(w, http.StatusBadRequest,
+		p.writeDeleteError(w, http.StatusBadRequest,
 			"both start and end parameters required for delete")
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
@@ -1571,25 +1569,25 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	startNS, err1 := parseDeleteTimestamp(startTS)
 	endNS, err2 := parseDeleteTimestamp(endTS)
 	if err1 != nil {
-		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err1.Error())
+		p.writeDeleteError(w, http.StatusBadRequest, "invalid start timestamp: "+err1.Error())
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
 	}
 	if err2 != nil {
-		p.writeError(w, http.StatusBadRequest, "invalid end timestamp: "+err2.Error())
+		p.writeDeleteError(w, http.StatusBadRequest, "invalid end timestamp: "+err2.Error())
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
 	}
 	rangeDur := time.Duration(endNS - startNS)
 	if rangeDur > maxDeleteTimeRange {
-		p.writeError(w, http.StatusBadRequest,
+		p.writeDeleteError(w, http.StatusBadRequest,
 			fmt.Sprintf("delete time range too wide: %s exceeds maximum %s", // nosemgrep: go.lang.security.injection.tainted-sql-string.tainted-sql-string
 				rangeDur.Round(time.Hour), maxDeleteTimeRange))
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
 	}
 	if rangeDur < 0 {
-		p.writeError(w, http.StatusBadRequest, "end must be after start")
+		p.writeDeleteError(w, http.StatusBadRequest, "end must be after start")
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
 	}
@@ -1597,8 +1595,8 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Translate query
 	logsqlQuery, err := p.translateQueryWithContext(r.Context(), query) // nosemgrep: go.lang.security.injection.tainted-sql-string -- logsqlQuery is LogQL/LogsQL sent via HTTP params to VL, not SQL
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, "failed to translate query: "+err.Error())
-		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
+		status := p.writeErrShaped(w, r.Context(), err, writeLokiHTTPError)
+		p.metrics.RecordRequest("delete", status, time.Since(start))
 		return
 	}
 
@@ -1624,8 +1622,8 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/delete", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, "VL delete failed: "+err.Error())
-		p.metrics.RecordRequest("delete", http.StatusBadGateway, time.Since(start))
+		status := p.writeErrShaped(w, r.Context(), err, writeLokiHTTPError)
+		p.metrics.RecordRequest("delete", status, time.Since(start))
 		return
 	}
 	defer resp.Body.Close()
@@ -1633,8 +1631,8 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Propagate VL response
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
-		p.metrics.RecordRequest("delete", resp.StatusCode, time.Since(start))
+		status := p.writeErrShaped(w, r.Context(), p.redactedBackendStatusError("", resp.StatusCode, body), writeLokiHTTPError)
+		p.metrics.RecordRequest("delete", status, time.Since(start))
 		return
 	}
 
@@ -1650,6 +1648,12 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 	p.metrics.RecordRequest("delete", http.StatusNoContent, time.Since(start))
+}
+
+// writeDeleteError answers the delete API's own validation failures as Loki's
+// compactor does (pkg/compactor/deletion/request_handler.go: http.Error).
+func (p *Proxy) writeDeleteError(w http.ResponseWriter, code int, msg string) {
+	p.writeErrorShaped(w, code, msg, nil, writeLokiHTTPError)
 }
 
 // --- Error / JSON helpers ---

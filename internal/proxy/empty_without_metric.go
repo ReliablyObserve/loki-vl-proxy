@@ -13,7 +13,7 @@ func (p *Proxy) handleEmptySumWithout(w http.ResponseWriter, r *http.Request, qu
 	}
 	child := p.evaluateBinaryLogQLOperand(r, expr, "vector")
 	if child.status >= 400 {
-		w.Header().Set("Content-Type", "application/json")
+		setReplayContentType(w, child.status)
 		w.WriteHeader(child.status)
 		_, _ = w.Write(child.body.Bytes())
 		return true

@@ -110,7 +110,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		for k, v := range buf.header {
 			w.Header()[k] = v
 		}
-		w.Header().Set("Content-Type", "application/json")
+		setReplayContentType(w, code)
 		if code != http.StatusOK {
 			w.WriteHeader(code)
 		}
@@ -2468,7 +2468,7 @@ func writeTopKFiltered(dst http.ResponseWriter, buf *bufferedResponseWriter, k i
 	if code == 0 {
 		code = http.StatusOK
 	}
-	dst.Header().Set("Content-Type", "application/json")
+	setReplayContentType(dst, code)
 	if code != http.StatusOK {
 		dst.WriteHeader(code)
 	}

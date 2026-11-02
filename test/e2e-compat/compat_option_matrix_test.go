@@ -181,8 +181,7 @@ func assertMatrixCombo(t *testing.T, base string, c matrixCombo, lokiDottedErr s
 	status, body := rejectedQueryGet(t, base, "/loki/api/v1/query_range",
 		window(url.Values{"query": {`{service_name="structured-metadata-e2e"} | k8s.pod.name!=""`}, "limit": {"10"}}), "0", nil)
 	if c.rejectDotted() {
-		var env struct{ Error string }
-		if status != http.StatusBadRequest || json.Unmarshal(body, &env) != nil || env.Error != lokiDottedErr {
+		if status != http.StatusBadRequest || string(body) != lokiDottedErr {
 			t.Errorf("dotted name: %d %s, want Loki's 400 %q", status, body, lokiDottedErr)
 		}
 	} else if status != http.StatusOK {

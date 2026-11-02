@@ -162,7 +162,7 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 		body = sortSeriesByLabels(transforms.apply(body), !isRange && queryIsSortable(query))
 	}
 	copyBackendHeaders(w.Header(), buffered.Header())
-	w.Header().Set("Content-Type", "application/json")
+	setReplayContentType(w, buffered.code)
 	if buffered.code != 0 {
 		w.WriteHeader(buffered.code)
 	}

@@ -63,6 +63,18 @@ const (
 	leakCancelDeadline = "semantics/error-layer-cancel-deadline"
 	leakSilentSuccess  = "semantics/error-layer-silent-success"
 	leakLimitStatus    = "semantics/error-layer-proxy-limit-status"
+	leakBodyShape      = "semantics/error-layer-body-shape"
+)
+
+// Error body shapes: what Loki writes on a route.
+const (
+	// The empty shape is pkg/util/server/error.go WriteError, the query
+	// frontend's shape on every query, metadata and tail route.
+	// errShapeRuler: pkg/ruler/base/api.go respondError, the Prometheus JSON of
+	// the rules and alerts API.
+	errShapeRuler = "ruler"
+	// errShapeHTTPError: Go's http.Error, the legacy rule views and the delete API.
+	errShapeHTTPError = "httperr"
 )
 
 // errLayerModes are the backend failure modes, in report order.
@@ -88,6 +100,7 @@ type errLayerRoute struct {
 	path    string
 	params  url.Values
 	headers map[string]string
+	shape   string // the error body shape Loki writes on the route
 }
 
 func errLayerRoutes(now time.Time) []errLayerRoute {
@@ -122,8 +135,8 @@ func errLayerRoutes(now time.Time) []errLayerRoute {
 		{name: "index_volume_range_drilldown", path: "/loki/api/v1/index/volume_range", params: q("query", sel, "start", start, "end", end, "step", "60"), headers: drilldown},
 		{name: "patterns", path: "/loki/api/v1/patterns", params: q("query", sel, "start", start, "end", end, "step", "60")},
 		{name: "tail", path: "/loki/api/v1/tail", params: q("query", sel)},
-		{name: "rules", path: "/loki/api/v1/rules"},
-		{name: "alerts", path: "/prometheus/api/v1/alerts"},
+		{name: "rules", path: "/loki/api/v1/rules", shape: errShapeHTTPError},
+		{name: "alerts", path: "/prometheus/api/v1/alerts", shape: errShapeRuler},
 	}
 }
 
@@ -325,24 +338,53 @@ var (
 	errLayerInternalMarkers  = []string{"unexpected EOF", "invalid character", "scanning", "body exceeds configured limit", "context canceled", "deadline exceeded", "looking for beginning", "after top-level value", "chunked"}
 )
 
-// errLayerText is the client-visible error text: the JSON envelope's error
-// (and message) field, or the raw body, or the close frame text.
+// errLayerText is the client-visible error text: the ruler JSON's error field,
+// or the raw body, or the close frame text.
 func errLayerText(o errLayerOutcome) string {
 	if o.closeText != "" {
 		return o.closeText
 	}
-	var env struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
-	}
-	if json.Unmarshal([]byte(o.body), &env) == nil && env.Error != "" {
-		return env.Error
+	if strings.HasPrefix(o.body, `{"status":"error","data":null,`) {
+		var env struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(o.body), &env) == nil && env.Error != "" {
+			return env.Error
+		}
 	}
 	return strings.TrimSpace(o.body)
 }
 
+// errLayerBodyShapeProblem reports how an error answer differs from the body
+// shape Loki writes on the route: its Content-Type, its framing (the raw
+// message, the message and a newline, or the ruler's JSON in its key order) and
+// no JSON envelope where Loki writes text.
+func errLayerBodyShapeProblem(rt errLayerRoute, o errLayerOutcome) string {
+	if got := o.headers.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		return fmt.Sprintf("Content-Type %q, want text/plain; charset=utf-8", got)
+	}
+	switch rt.shape {
+	case errShapeRuler:
+		if !strings.HasPrefix(o.body, `{"status":"error","data":null,"errorType":"`) || !strings.HasSuffix(o.body, `"}`) || strings.Contains(o.body, "\n") {
+			return "body is not the ruler's {status,data,errorType,error} JSON"
+		}
+	case errShapeHTTPError:
+		if !strings.HasSuffix(o.body, "\n") || strings.HasPrefix(o.body, "{") {
+			return "body is not http.Error's text and newline"
+		}
+	default:
+		if o.headers.Get("X-Content-Type-Options") != "nosniff" {
+			return "no X-Content-Type-Options: nosniff"
+		}
+		if strings.HasPrefix(o.body, "{") || strings.HasSuffix(o.body, "\n") {
+			return "body is not the message alone"
+		}
+	}
+	return ""
+}
+
 // errLayerClasses returns the leak classes an outcome fails for a mode.
-func errLayerClasses(mode string, o errLayerOutcome, backendHost string) []string {
+func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHost string) []string {
 	classes := map[string]bool{}
 	wantStatus, wantText := errLayerExpect(mode)
 	status := o.status
@@ -369,14 +411,8 @@ func errLayerClasses(mode string, o errLayerOutcome, backendHost string) []strin
 			classes[leakFailureStatus] = true
 		}
 	}
-	if o.closeText == "" && status >= 400 && o.status != http.StatusSwitchingProtocols {
-		var env struct {
-			Status    string `json:"status"`
-			ErrorType string `json:"errorType"`
-		}
-		if json.Unmarshal([]byte(o.body), &env) != nil || env.Status != "error" || env.ErrorType != lokiErrorType(status) {
-			classes[leakFailureStatus] = true
-		}
+	if o.closeText == "" && status >= 400 && o.status != http.StatusSwitchingProtocols && errLayerBodyShapeProblem(rt, o) != "" {
+		classes[leakBodyShape] = true
 	}
 	visible := o.body + "\n" + o.closeText
 	for k, vs := range o.headers {
@@ -543,7 +579,7 @@ func TestErrorLayer_NoVictoriaLogsLeak(t *testing.T) {
 				mode := mode
 				t.Run(mode, func(t *testing.T) {
 					outcome, host := runErrLayerCell(t, rt, mode)
-					got := errLayerClasses(mode, outcome, host)
+					got := errLayerClasses(rt, mode, outcome, host)
 					key := rt.name + " " + mode
 					if len(got) > 0 {
 						recordMu.Lock()

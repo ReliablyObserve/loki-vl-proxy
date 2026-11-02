@@ -7,16 +7,14 @@ proves:
 consumer: explore
 why: |
   Loki answers a rejected query with its message as a text/plain body.
-  Grafana's Loki datasource (readLokiError / makeLokiError) displays the
-  "message" field of a JSON error body and falls back to the raw body. The
-  proxy's error envelope was {"status","errorType","error"}, so Explore
-  displayed the whole JSON object -
-  `{"error":"parse error at line 1, col 64: syntax error: unexpected .","errorType":"bad_data","status":"error"}`
-  - where Loki direct shows `parse error at line 1, col 64: syntax error:
-  unexpected .` (measured through /api/ds/query on Grafana 13.2.1). The
-  envelope now also carries "message" with the same text, so Grafana shows
-  Loki's message verbatim; API clients keep reading "error".
-  -error-response-message-field=false restores the previous body.
+  Grafana's Loki datasource (pkg/tsdb/loki/api.go readLokiError /
+  makeLokiError) displays the "message" field of a JSON error body and falls
+  back to the raw body, and wraps a non-2xx resource answer (Logs Drilldown)
+  as {"message": <that text>}. The proxy's error envelope used to be JSON, so
+  Explore displayed the whole object until a "message" field was added. The
+  error body is now Loki's own: the message alone as text/plain, which Grafana
+  shows verbatim on both paths. -error-response-message-field is deprecated
+  and ignored.
 request:
   method: POST
   path: /api/ds/query

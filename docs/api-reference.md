@@ -175,15 +175,28 @@ Tenant limits notes:
 
 ## Error Response Format
 
-All error responses from the proxy use the standard Loki JSON error envelope:
+Error responses are Loki's, byte for byte in shape (Loki v3.7.9). Every query, metadata and tail-upgrade route answers with the status, `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff` and the message alone, with no JSON envelope and no trailing newline (`pkg/util/server/error.go` `WriteError`):
 
-```json
-{"status": "error", "errorType": "<type>", "error": "<message>"}
+```text
+HTTP/1.1 400 Bad Request
+Content-Type: text/plain; charset=utf-8
+X-Content-Type-Options: nosniff
+
+the query time range exceeds the limit (query length: 800h0m0s, limit: 721h0m0s)
 ```
 
-`errorType` is derived from the HTTP status, following Loki's Prometheus-style API handler:
+Where Loki itself writes another shape, the proxy does the same:
 
-| HTTP Status | `errorType` | Typical causes |
+| Routes | Error body |
+|---|---|
+| `/prometheus/api/v1/rules`, `/prometheus/api/v1/alerts`, `/loki/api/v1/alerts`, `/api/prom/alerts` | the ruler's Prometheus JSON `{"status":"error","data":null,"errorType":"bad_data\|server_error","error":"<message>"}` with no `Content-Type` of its own (Go sniffs `text/plain`), `pkg/ruler/base/api.go` `respondError` |
+| `/loki/api/v1/rules`, `/api/prom/rules` and their namespace and group forms | Go's `http.Error`: `text/plain; charset=utf-8`, `nosniff`, the message and a newline |
+| `/loki/api/v1/delete` (with `-delete-api-enabled`) | the same `http.Error` shape; a method other than POST is a bodyless `405`, as Loki's router answers |
+| `/loki/api/v1/tail` after the upgrade | a close frame `1011` with the message, as Loki's `TailHandler` |
+
+The status codes below follow Loki's Prometheus-style API handler and are the statuses of the message above; there is no `errorType` field on the wire:
+
+| HTTP Status | Prometheus `errorType` (not sent) | Typical causes |
 |---|---|---|
 | 400 | `bad_data` | LogQL parse errors, unsupported constructs, invalid parameters, query-length violations (`query length X exceeds limit Y`), `line_format` / binary-expression evaluation limits, multi-tenant fanout above 64 tenants, a multi-tenant request whose query a tenant rejected |
 | 401, 403, 413 and other 4xx | `bad_data` | missing `X-Scope-OrgID` with `-auth.enabled` or `-require-tenant-header` (401), unknown tenant, or unmapped wildcard `X-Scope-OrgID: *` (and, with `-tenant-label`, an unmapped default alias or empty org) without `-tenant.allow-global` (403), merged multi-tenant response above 32 MiB (413) |
@@ -199,7 +212,7 @@ See [Fixed Execution Limits](configuration.md#fixed-execution-limits) for the li
 
 Errors answered through the proxy's error layer carry no backend text: not VictoriaLogs' message, status or LogsQL, not a transport error with the backend's host and port, not a Go decoder error. The routes that do not yet (the Logs Drilldown stats partial-results reply, the ruler's non-2xx answers passed through, native tail close frames after the stream started) are listed in `conformance/registry/error-layer-known-leaks.json`. The proxy's `request error` log line carries the full error as `upstream_error`, with VictoriaLogs' message redacted (potential secrets, label selectors, long quoted literals and long hex strings replaced, truncated to 500 characters; `-debug-log-raw-queries=true` disables this redaction).
 
-A few responses are produced before the Loki error writer and carry no `errorType`: per-client rate limiting (`429`, `{"status":"error","error":"rate limit exceeded"}`), the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), and blocked writes (`405`).
+A few responses are produced before the Loki error writer: per-client rate limiting (`429`, `rate limit exceeded`) and the `-max-concurrent` admission cap (`503`, `too many concurrent queries`), both as the message alone in `text/plain`, and blocked writes (`405`).
 
 ### Partial Results
 

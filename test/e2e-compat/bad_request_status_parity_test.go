@@ -3,7 +3,6 @@
 package e2e_compat
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -115,29 +114,17 @@ func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 			if proxyStatus != lokiStatus {
 				t.Fatalf("status: proxy %d, Loki %d; proxy body %s", proxyStatus, lokiStatus, proxyBody)
 			}
-			// Loki writes the message as text/plain; the proxy keeps the Prometheus
-			// error envelope, whose errorType for a 400 is bad_data.
-			var envelope struct {
-				Status    string `json:"status"`
-				ErrorType string `json:"errorType"`
-				Error     string `json:"error"`
-			}
-			if err := json.Unmarshal(proxyBody, &envelope); err != nil {
-				t.Fatalf("proxy error body is not JSON: %v %s", err, proxyBody)
-			}
-			if envelope.Status != "error" || envelope.ErrorType != "bad_data" || envelope.Error == "" {
-				t.Fatalf("proxy error envelope = %+v, want status=error errorType=bad_data", envelope)
+			// Loki writes the message alone as text/plain, and so does the proxy.
+			text := string(proxyBody)
+			if text == "" || strings.HasPrefix(text, "{") {
+				t.Fatalf("proxy error body %q, want Loki's message as text", proxyBody)
 			}
 			// A multi-tenant 400 must be the query's rejection, not a tenant or
 			// fanout error: the single-tenant error, with no VictoriaLogs text.
 			if strings.Contains(tc.orgID, "|") {
 				_, singleBody := rejectedQueryGet(t, proxyURL, tc.path, window(cloneQueryValues(tc.params)), "0", tc.headers)
-				var single struct {
-					Error string `json:"error"`
-				}
-				_ = json.Unmarshal(singleBody, &single)
-				if envelope.Error != single.Error || strings.Contains(envelope.Error, "cannot parse") {
-					t.Fatalf("multi-tenant error %q is not the single-tenant error %q, or carries VictoriaLogs text", envelope.Error, single.Error)
+				if text != string(singleBody) || strings.Contains(text, "cannot parse") {
+					t.Fatalf("multi-tenant error %q is not the single-tenant error %q, or carries VictoriaLogs text", text, singleBody)
 				}
 			}
 		})

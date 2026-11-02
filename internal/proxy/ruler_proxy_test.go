@@ -344,11 +344,10 @@ func TestRulerProxy_BackendErrorPropagates(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/rules", nil)
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d body=%s", w.Code, w.Body.String())
-	}
-	if got := w.Header().Get("Content-Type"); got == "" {
-		t.Fatal("expected backend content-type to be forwarded on error responses")
+	// A failed ruler backend is Loki's failed call: 500, the legacy rule views'
+	// http.Error text, and nothing of the backend (no 502, no body).
+	if w.Code != http.StatusInternalServerError || w.Body.String() != lokiErrInternal+"\n" || w.Header().Get("Content-Type") != "text/plain; charset=utf-8" {
+		t.Fatalf("got %d %q (%s), want 500 %q", w.Code, w.Body.String(), w.Header().Get("Content-Type"), lokiErrInternal+"\n")
 	}
 }
 

@@ -61,12 +61,8 @@ func TestCompat_OperatorsNotInLokiRejected(t *testing.T) {
 				}
 				for name, base := range lokiProfileProxies() {
 					status, body := rejectedQueryGet(t, base, path, params, "0", nil)
-					var envelope struct {
-						Status, ErrorType, Error string
-					}
-					if status != http.StatusBadRequest || json.Unmarshal(body, &envelope) != nil ||
-						envelope.Status != "error" || envelope.ErrorType != "bad_data" || envelope.Error != lokiMsg {
-						t.Errorf("%s proxy: %d %s, want 400 bad_data %q", name, status, body, lokiMsg)
+					if status != http.StatusBadRequest || string(body) != lokiMsg {
+						t.Errorf("%s proxy: %d %s, want 400 with Loki's text %q", name, status, body, lokiMsg)
 					}
 				}
 			})

@@ -80,7 +80,7 @@ func (p *Proxy) proxyBinaryAggregation(w http.ResponseWriter, r *http.Request, r
 	}
 	buf := p.binaryAggregationResponse(r, binary, chain, resultType, 0)
 	copyHeaders(w.Header(), buf.Header())
-	w.Header().Set("Content-Type", "application/json")
+	setReplayContentType(w, buf.code)
 	if buf.code != 0 {
 		w.WriteHeader(buf.code)
 	}

@@ -465,7 +465,7 @@ func run(
   auto - on outside the Loki-compatible profile or with -label-values-indexed-cache, off otherwise (default)
   on   - honour them
   off  - ignore them, as Loki does`)
-	errorResponseMessageField := fs.Bool("error-response-message-field", true, "Add a message field with the error text to JSON error bodies. Grafana's Loki datasource displays that field (Loki itself answers errors as text/plain); false restores the previous {status, errorType, error} body.")
+	errorResponseMessageField := fs.Bool("error-response-message-field", true, "Deprecated and ignored. Error bodies are Loki's own: text/plain with the message alone (and Prometheus JSON on the rules and alerts API), so there is no JSON envelope to add a message field to. The flag is still accepted so existing deployments start.")
 	labelsCacheWarm := fs.Bool("labels-cache-warm", true, "Warm the labels cache for the 1h/6h/24h/7d time-picker presets at startup and keep them warm in the background (every 75% of -labels-cache-ttl). Each refresh is a label-name scan of up to 7 days in VictoriaLogs; disable it on replicas that serve no interactive label pickers.")
 	warmupMaxJitter := fs.Duration("warmup-max-jitter", 0, "Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart.")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")

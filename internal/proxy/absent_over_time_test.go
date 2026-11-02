@@ -297,11 +297,7 @@ func TestAbsentOverTimeDoesNotInvertFailedPresence(t *testing.T) {
 			if res.Code != http.StatusInternalServerError || len(got) != 0 {
 				t.Fatalf("backend failure was inverted or misclassified: %d %s samples=%v", res.Code, res.Body, got)
 			}
-			var body struct {
-				Status, Error string
-				Warnings      []string
-			}
-			if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil || body.Status != "error" || body.Error != lokiErrInternal || len(body.Warnings) != 0 {
+			if body := readErrorRec(t, res); body.Error != lokiErrInternal {
 				t.Fatalf("expected sanitized Loki error, got %s", res.Body)
 			}
 			if res.Header().Get("Warning") != "" || res.Header().Get(drilldownPartialUpstreamStatusHeader) != "" {

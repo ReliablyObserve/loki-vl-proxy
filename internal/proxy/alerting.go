@@ -76,7 +76,7 @@ func (p *Proxy) writeEmptyRules(w http.ResponseWriter) {
 func (p *Proxy) writeEmptyLegacyRules(w http.ResponseWriter) {
 	data, err := yaml.Marshal(map[string][]legacyRuleGroup{})
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/yaml")
@@ -139,10 +139,21 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 
 // --- Backend request helpers ---
 
+// writeAlertingBackendStatus answers a ruler or alerts backend that replied
+// with an error status. Its body is vmalert's, so the client reads only the
+// status class in Loki's words (the ruler's JSON, or the legacy views' text).
+func (p *Proxy) writeAlertingBackendStatus(w http.ResponseWriter, status int, shape errorShape) {
+	code, text := http.StatusInternalServerError, lokiErrInternal
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		code, text = status, http.StatusText(status)
+	}
+	p.writeErrorShaped(w, code, text, fmt.Errorf("alerting backend replied %d", status), shape)
+}
+
 func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
 	resp, err := p.alertingBackendGet(p.withRequestScope(r), backend, path)
 	if err != nil {
-		p.writeErr(w, r.Context(), err)
+		p.writeErrShaped(w, r.Context(), err, writeLokiRulerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -151,8 +162,8 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	if confined {
 		if resp.StatusCode/100 != 2 {
 			// A backend error body is not attributable to the org; keep the
-			// status and say nothing else.
-			p.writeError(w, resp.StatusCode, "alerting backend error")
+			// status class and say nothing else.
+			p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiRulerError)
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
@@ -160,7 +171,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 			body, err = filterAlertingJSONForTenant(body, label, org)
 		}
 		if err != nil || len(body) > maxAlertingResponseBytes {
-			p.writeErr(w, r.Context(), errors.New("invalid alerting backend response"))
+			p.writeErrShaped(w, r.Context(), errors.New("invalid alerting backend response"), writeLokiRulerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -168,6 +179,10 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 		return
 	}
 
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiRulerError)
+		return
+	}
 	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
@@ -468,7 +483,7 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
 	if err != nil {
-		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.writeErrorShaped(w, http.StatusBadRequest, err.Error(), nil, writeLokiHTTPError)
 		return
 	}
 
@@ -482,25 +497,23 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.alertingBackendGetWithParams(p.withRequestScope(r), p.rulerBackend, "/api/v1/rules", params)
 	if err != nil {
-		p.writeErr(w, r.Context(), err)
+		p.writeErrShaped(w, r.Context(), err, writeLokiHTTPError)
 		return
 	}
 	defer resp.Body.Close()
 	label, org, confined := p.alertingTenantScope(r.Context())
 	if confined && resp.StatusCode/100 != 2 {
-		p.writeError(w, resp.StatusCode, "alerting backend error")
+		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiHTTPError)
 		return
 	}
 	if !confined && resp.StatusCode != http.StatusOK {
-		copyHeaders(w.Header(), resp.Header)
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiHTTPError)
 		return
 	}
 
 	var decoded alertingRulesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		p.writeErr(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err))
+		p.writeErrShaped(w, r.Context(), fmt.Errorf("invalid ruler backend response: %w", err), writeLokiHTTPError)
 		return
 	}
 
@@ -525,13 +538,13 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	if group != "" {
 		if len(decoded.Data.Groups) == 0 {
-			p.writeError(w, http.StatusNotFound, "no rule groups found")
+			p.writeErrorShaped(w, http.StatusNotFound, "no rule groups found", nil, writeLokiHTTPError)
 			return
 		}
 		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])
 		data, err := yaml.Marshal(out)
 		if err != nil {
-			p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+			p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/yaml")
@@ -545,7 +558,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := yaml.Marshal(formatted)
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/yaml")

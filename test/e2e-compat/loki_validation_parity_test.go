@@ -136,16 +136,9 @@ func TestCompat_LokiValidationParity(t *testing.T) {
 			if proxyStatus != lokiStatus {
 				t.Fatalf("status: proxy %d, Loki %d (%s); proxy body %s", proxyStatus, lokiStatus, lokiMsg, proxyBody)
 			}
-			var envelope struct {
-				Status    string `json:"status"`
-				ErrorType string `json:"errorType"`
-				Error     string `json:"error"`
-			}
-			if err := json.Unmarshal(proxyBody, &envelope); err != nil {
-				t.Fatalf("proxy error body is not JSON: %v %s", err, proxyBody)
-			}
-			if envelope.Status != "error" || envelope.ErrorType != "bad_data" || envelope.Error != lokiMsg {
-				t.Fatalf("proxy error = %+v, want bad_data with Loki's message %q", envelope, lokiMsg)
+			// Loki's body is the message alone as text/plain; so is the proxy's.
+			if string(proxyBody) != string(lokiBody) {
+				t.Fatalf("proxy error body %q, want Loki's %q", proxyBody, lokiBody)
 			}
 		})
 	}

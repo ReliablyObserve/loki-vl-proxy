@@ -1,0 +1,50 @@
+id: semantics/error-request-validation-parity
+title: Requests Loki rejects are answered 200, or with other wording, by the proxy (open)
+proves:
+  - loki_api_v1_query_range
+  - status-400
+consumer: any
+why: |
+  The error body shape is Loki's on every route (semantics/error-layer-body-shape).
+  A route-by-route capture against Loki v3.7.9 found requests Loki rejects
+  that the proxy does not, or rejects with different text. Measured on the
+  e2e data with the same request sent to both:
+  query_range accepts `step=0`, `end<=start`, `limit=abc` and
+  `direction=sideways` (Loki: 400 `zero or negative query resolution step
+  widths are not accepted. Try a positive integer`, `end timestamp must not
+  be before or equal to start time`, `strconv.Atoi: parsing "abc": invalid
+  syntax`, `invalid direction 'sideways'`); a malformed `start` is
+  `failed to parse the log query` on the metadata and range routes where Loki
+  says `could not parse 'start' parameter: strconv.ParseInt: ...`; a range
+  over max_query_length is accepted by index/volume, patterns and
+  detected_fields where Loki answers 400 (labels, series and
+  detected_labels already do); any HTTP method is served where Loki's router
+  answers 405 with no body; format_query echoes its query instead of
+  parsing it (Loki: 400 `{"status":"invalid-query","error":...}` as
+  application/json); the rules API accepts `type=xyz` (Loki: 400 `not
+  supported value "xyz"`); and tail with a bad `limit` answers the websocket
+  upgrader's `Bad Request` where Loki answers the parse text. The success
+  bodies of rules, alerts and buildinfo also differ from Loki's.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+    step: '0'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, headers, body]
+  expect: |
+    Loki's status, Content-Type and text.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/proxy request validation per route (query_range_steps, patterns, label_handlers, volume, tail, alerting) and routeHandler method checks'
+  loki: 'pkg/querier/queryrange/queryrangebase/query_range.go and pkg/loghttp/params.go parameter parsing; pkg/loki/modules.go Methods("GET","POST") routes'
+  proxy: '200 with data, or a different message'
+  planned_test: 'TestCompat_ErrorBodyLikeLoki shape rows become exact rows as each row is fixed (test/e2e-compat, group core)'

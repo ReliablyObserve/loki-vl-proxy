@@ -264,12 +264,10 @@ func recordedParserDifference(reference recordedParserCase, status int, body []b
 		if err := json.Unmarshal(reference.Response, &expected); err != nil {
 			return fmt.Errorf("invalid recorded error: %w", err)
 		}
-		var actual struct{ Status, ErrorType, Error string }
-		if err := json.Unmarshal(body, &actual); err != nil {
-			return fmt.Errorf("invalid proxy error envelope: %w", err)
-		}
-		if actual.Status != "error" || actual.ErrorType != "bad_data" || actual.Error == "" {
-			return fmt.Errorf("missing Loki-shaped bad_data error: %s", body)
+		// Loki writes the message alone as text/plain.
+		actual := errBodyView{Status: "error", ErrorType: "bad_data", Error: string(body)}
+		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) || actual.Error == "" {
+			return fmt.Errorf("missing Loki-shaped bad_data error text: %s", body)
 		}
 		if recordedParserDiagnostic(expected) != recordedParserDiagnostic(actual.Error) {
 			return fmt.Errorf("error diagnostic differs:\nLoki: %s\nproxy: %s", expected, actual.Error)
@@ -359,8 +357,8 @@ func TestOrderedJSONRecordedLokiContracts(t *testing.T) {
 			if record.Status == http.StatusBadRequest && json.Unmarshal(record.Response, &expectedError) == nil && strings.HasPrefix(expectedError, "parse error") {
 				// Keep the existing syntax-category contract. The owned open gap
 				// is visible, never counted as exact error-text compatibility.
-				var reply struct{ Status, ErrorType, Error string }
-				if err := json.Unmarshal(actual.Body.Bytes(), &reply); err != nil || actual.Code != 400 || reply.Status != "error" || reply.ErrorType != "bad_data" || !strings.HasPrefix(reply.Error, "parse error") {
+				reply := readErrorRec(t, actual)
+				if actual.Code != 400 || reply.Status != "error" || reply.ErrorType != "bad_data" || !strings.HasPrefix(reply.Error, "parse error") {
 					t.Fatalf("syntax-category contract: %v", difference)
 				}
 				t.Logf("comparison=status_category known_gap=semantics/parse-error-text-parity exact_error_text=%t Loki=%q proxy=%q", difference == nil, expectedError, reply.Error)
@@ -464,13 +462,9 @@ func TestOrderedJSONRecordedPipelineDiagnostic(t *testing.T) {
 		{"category_changed", strings.ReplaceAll(expected, "JSONParserErr", "SampleExtractionErr"), "bad_data", true},
 		{"guidance_removed", strings.Split(expected, "\nUse a label filter")[0], "bad_data", true},
 		{"guidance_changed", strings.Replace(expected, "skip all potential errors", "ignore everything", 1), "bad_data", true},
-		{"wrong_envelope_type", expected, "internal", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := json.Marshal(map[string]string{"status": "error", "errorType": tc.kind, "error": tc.message})
-			if err != nil {
-				t.Fatal(err)
-			}
+			body := []byte(tc.message) // Loki writes the message alone as text/plain
 			if err := recordedParserDifference(reference, 400, body); (err != nil) != tc.wantError {
 				t.Fatalf("diagnostic difference=%v, want error=%v", err, tc.wantError)
 			}

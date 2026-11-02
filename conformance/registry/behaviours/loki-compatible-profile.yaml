@@ -29,7 +29,8 @@ proxy: |
   detected_fields by Loki's sanitized label with the key in jsonPath;
   -label-browse-extensions (auto|on|off) ignores limit, offset and search/q on
   the label endpoints (auto keeps them with -label-values-indexed-cache);
-  -error-response-message-field adds the "message" Grafana displays. "auto"
+  -error-response-message-field is deprecated and ignored (error bodies are
+  Loki's text/plain message, which Grafana displays as it is). "auto"
   keeps the dotted names and the browse window in the hybrid and native
   metadata modes and with passthrough labels, which expose dotted names on
   purpose; every combination is documented in docs/configuration.md
