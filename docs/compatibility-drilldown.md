@@ -28,8 +28,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.2.3` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
-| `12.4.12` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
+| `13.3.0` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
+| `12.4.14` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
 | `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
 
