@@ -998,6 +998,7 @@ func tenantFromCacheKey(key string) string {
 		"detected_labels",
 		"detected_field_values",
 		"patterns",
+		"patterns_window",
 		"label_inventory":
 		return parts[1]
 	default:

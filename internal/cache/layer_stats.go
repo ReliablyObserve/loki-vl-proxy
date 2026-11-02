@@ -43,7 +43,7 @@ func LayerForKey(key string) Layer {
 	switch prefix {
 	case "vlinv-v1", "sfn", "afn", "query_range_window_has_hits":
 		return LayerVL
-	case "query_range", "query_range_window", "query", "series", "labels", "label_values", "index_stats", "volume", "volume_range", "detected_fields", "detected_labels", "detected_field_values", "detect_fields", "detect_labels", "patterns", "compat", "mt", "label_inventory":
+	case "query_range", "query_range_window", "query", "series", "labels", "label_values", "index_stats", "volume", "volume_range", "detected_fields", "detected_labels", "detected_field_values", "detect_fields", "detect_labels", "patterns", "patterns_window", "compat", "mt", "label_inventory":
 		return LayerLoki
 	case "__patterns_snapshot", "__label_values_index_snapshot":
 		if key == prefix+":v1" {

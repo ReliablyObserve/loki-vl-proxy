@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,32 @@ type patternFetchDiagnostics struct {
 	badRequest error
 }
 
+// patternWindowCacheValue is a Loki-layer mining result, not a raw VL response.
+// Keep the extraction stats so a cached capped sample still takes its normal
+// second pass and contributes to the same quality diagnostics.
+type patternWindowCacheValue struct {
+	Entries       []patternResultEntry `json:"entries"`
+	ScannedLines  int                  `json:"scanned_lines"`
+	ObservedLines int                  `json:"observed_lines"`
+	PatternCount  int                  `json:"pattern_count"`
+}
+
+func (v patternWindowCacheValue) stats() patternExtractionStats {
+	return patternExtractionStats{scannedLines: v.ScannedLines, observedLines: v.ObservedLines, patternCount: v.PatternCount}
+}
+
+func (p *Proxy) patternWindowCacheKey(r *http.Request, query, step string, patternLimit, limit int, startNs, endNs int64) string {
+	scope := p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
+	identity, _ := json.Marshal([]any{
+		scope,
+		p.fingerprintFromCtx(r.Context(), r),
+		p.backend.String(), query, normalizePatternCacheStep(step), patternLimit, limit, startNs, endNs,
+		p.detectedLevelCacheKey(), p.defaultMsgValue(),
+	})
+	digest := sha256.Sum256(identity)
+	return fmt.Sprintf("patterns_window:%s:v1:%x", scope, digest)
+}
+
 func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {
 	if limit > 0 {
 		d.sourceLinesRequested += limit
@@ -41,6 +68,19 @@ func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtra
 	d.sourceLinesObserved += stats.observedLines
 	d.minedPreMerge += stats.patternCount
 	if windowed && stats.hitLimit(limit) {
+		d.windowCapped++
+	}
+}
+
+func (d *patternFetchDiagnostics) recordWindowExtraction(limit int, stats patternExtractionStats, reused bool) {
+	if !reused {
+		d.recordExtraction(limit, stats, true)
+		return
+	}
+	// A reused result still participates in mining and capped-window decisions,
+	// but it did not request or scan source lines in this request.
+	d.minedPreMerge += stats.patternCount
+	if stats.hitLimit(limit) {
 		d.windowCapped++
 	}
 }
@@ -230,8 +270,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 				return nil, false
 			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
-			extracted, stats := extractLogPatternsStreamWithStats(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
+			extracted, stats, readErr := extractLogPatternsStreamWithStatus(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
 			diag.recordExtraction(requestedLimit, stats, false)
+			if readErr != nil {
+				p.log.Debug("patterns source read failed", "error", readErr)
+				return nil, false
+			}
 			if len(extracted) == 0 {
 				if stats.hitLimit(requestedLimit) {
 					diag.markLowCoverage()
@@ -398,14 +442,15 @@ func (p *Proxy) fetchPatternsFromWindows(
 	// raw log queries makes split subrequests align backward to prior step
 	// boundaries, which duplicates adjacent window buckets on deterministic data.
 	type windowResult struct {
-		window  queryRangeWindow
-		entries []patternResultEntry
-		stats   patternExtractionStats
+		window    queryRangeWindow
+		entries   []patternResultEntry
+		stats     patternExtractionStats
+		cacheable bool
 	}
 	results := make([]windowResult, 0, len(windows))
 	var mu sync.Mutex
 
-	fetchWindow := func(window queryRangeWindow, limit int) ([]patternResultEntry, patternExtractionStats, bool) {
+	fetchWindow := func(window queryRangeWindow, limit int, cacheable bool) ([]patternResultEntry, patternExtractionStats, bool, bool) {
 		params := cloneURLValues(baseParams)
 		params.Set("start", strconv.FormatInt(window.startNs, 10))
 		endNs := window.endNs
@@ -422,6 +467,31 @@ func (p *Proxy) fetchPatternsFromWindows(
 		}
 		params.Set("end", strconv.FormatInt(endNs, 10))
 		params.Set("limit", strconv.Itoa(limit))
+		// Pattern mining obeys the same settled/recent policy as log-window
+		// fragments. In particular the default recent TTL is zero, so late
+		// arrivals at the moving edge are fetched again.
+		cacheTTL := p.queryRangeWindowTTL(window.endNs)
+		if !cacheable {
+			p.observeInternalOperation(r.Context(), "patterns_window_cache", "edge", 0)
+		} else if cacheTTL <= 0 {
+			p.observeInternalOperation(r.Context(), "patterns_window_cache", "recent_disabled", 0)
+			cacheable = false
+		}
+		cacheKey := ""
+		if cacheable {
+			cacheKey = p.patternWindowCacheKey(r, logsqlQuery, stepParam, patternLimit, limit, window.startNs, endNs)
+			lookupStart := time.Now()
+			if cached, ok := p.cache.Get(cacheKey); ok {
+				var value patternWindowCacheValue
+				if json.Unmarshal(cached, &value) == nil && len(value.Entries) > 0 {
+					p.observeInternalOperation(r.Context(), "patterns_window_cache", "hit", time.Since(lookupStart))
+					return value.Entries, value.stats(), true, true
+				}
+				p.observeInternalOperation(r.Context(), "patterns_window_cache", "unreadable", time.Since(lookupStart))
+			} else {
+				p.observeInternalOperation(r.Context(), "patterns_window_cache", "miss", time.Since(lookupStart))
+			}
+		}
 		resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 		if err != nil {
 			p.log.Debug(
@@ -430,7 +500,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 				"end_ns", window.endNs,
 				"error", err,
 			)
-			return nil, patternExtractionStats{}, false
+			return nil, patternExtractionStats{}, false, false
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= http.StatusBadRequest {
@@ -446,21 +516,32 @@ func (p *Proxy) fetchPatternsFromWindows(
 				diag.badRequest = statusErr
 				mu.Unlock()
 			}
-			return nil, patternExtractionStats{}, false
+			return nil, patternExtractionStats{}, false, false
 		}
-		extracted, stats := extractLogPatternsStreamWithStats(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
+		extracted, stats, readErr := extractLogPatternsStreamWithStatus(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
+		if readErr != nil {
+			p.log.Debug("patterns window source read failed", "start_ns", window.startNs, "end_ns", window.endNs, "error", readErr)
+			return nil, stats, false, false
+		}
 		if len(extracted) == 0 {
-			return nil, stats, false
+			return nil, stats, false, false
 		}
 		entries := patternResultEntriesFromMaps(extracted)
 		if len(entries) == 0 {
-			return nil, stats, false
+			return nil, stats, false, false
 		}
-		return entries, stats, true
+		if cacheable && r.Context().Err() == nil {
+			value := patternWindowCacheValue{Entries: entries, ScannedLines: stats.scannedLines, ObservedLines: stats.observedLines, PatternCount: stats.patternCount}
+			if encoded, err := json.Marshal(value); err == nil {
+				p.cache.SetWithTTL(cacheKey, encoded, cacheTTL)
+			}
+		}
+		return entries, stats, true, false
 	}
 
-	for _, window := range windows {
+	for i, window := range windows {
 		window := window
+		cacheable := i > 0 && i < len(windows)-1
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -470,22 +551,27 @@ func (p *Proxy) fetchPatternsFromWindows(
 			case sem <- struct{}{}:
 			}
 			defer func() { <-sem }()
-			entries, stats, ok := fetchWindow(window, effectiveLimit)
+			entries, stats, ok, reused := fetchWindow(window, effectiveLimit, cacheable)
 
 			mu.Lock()
-			diag.recordExtraction(effectiveLimit, stats, true)
+			diag.recordWindowExtraction(effectiveLimit, stats, reused)
 			if ok {
 				diag.windowAccepted++
 				results = append(results, windowResult{
-					window:  window,
-					entries: entries,
-					stats:   stats,
+					window:    window,
+					entries:   entries,
+					stats:     stats,
+					cacheable: cacheable,
 				})
 			}
 			mu.Unlock()
 		}()
 	}
 	wg.Wait()
+	// Completion order depends on VL latency. Keep merging and second-pass
+	// selection stable across requests so the same settled windows reuse their
+	// cached widened samples on refresh. Newest-first is the request order.
+	sort.Slice(results, func(i, j int) bool { return results[i].window.startNs > results[j].window.startNs })
 
 	collected := make([]patternResultEntry, 0, len(results))
 	cappedResults := make([]windowResult, 0, len(results))
@@ -499,9 +585,16 @@ func (p *Proxy) fetchPatternsFromWindows(
 		rerunCount := min(len(cappedResults), maxSecondPassWindows)
 		diag.secondPassWindows += rerunCount
 		for i := 0; i < rerunCount; i++ {
-			result := cappedResults[i]
-			entries, stats, ok := fetchWindow(result.window, boostedLimit)
-			diag.recordExtraction(boostedLimit, stats, true)
+			// Spread the bounded second pass across the full range, including
+			// both edges. This avoids a tail-only sample and selects the same
+			// interior windows when Grafana moves start/end by one step.
+			index := 0
+			if rerunCount > 1 {
+				index = i * (len(cappedResults) - 1) / (rerunCount - 1)
+			}
+			result := cappedResults[index]
+			entries, stats, ok, reused := fetchWindow(result.window, boostedLimit, result.cacheable)
+			diag.recordWindowExtraction(boostedLimit, stats, reused)
 			if !ok || len(entries) == 0 {
 				continue
 			}

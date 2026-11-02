@@ -13,6 +13,15 @@ reference is available; an empty or partial response is not a successful speedup
 
 ## Distinguish response hits, fragments and exclusions
 
+For a slow Logs Drilldown page, check `/patterns` separately from `query_range`.
+A shifted Grafana `now-6h` range uses new absolute bounds, so the exact pattern
+response key misses even if the previous page load was warm. Settled aligned
+pattern source windows can be reused through the Loki layer; the moving edge
+and recent windows still read VL. Use
+`loki_vl_proxy_internal_operation_total{operation="patterns_window_cache"}`
+to distinguish `hit`, `miss`, `edge`, `recent_disabled` and `unreadable` before
+attributing a long page load to the general query cache.
+
 An exact response hit can return before evaluation-point lookups. A moved
 window cannot use that exact response; eligible requests reuse older settled
 points and evaluate missing ranges. The Loki-facing response/point cache and

@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still informs `detected_level`; dual-ingest tests compare default and
   categorized replies and Grafana volume queries with Loki.
 
+### Performance
+
+- Reuse settled source-window pattern mining results across shifted Logs
+  Drilldown ranges through the existing Loki-layer memory, disk and peer
+  cache. Moving edges and windows inside the configured query-range
+  freshness horizon retain the existing fetch policy, avoiding repeated
+  full-range VictoriaLogs scans without changing pattern samples. Incomplete
+  backend streams are excluded from pattern-window cache writes.
+
 ## [2.57.3] - 2026-11-02
 
 ### Fixed
