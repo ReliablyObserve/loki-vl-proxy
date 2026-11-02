@@ -26,8 +26,8 @@ import over2x  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "over-2x-replay.json")
 DEFAULTS = "loki-defaults"
-# The fixture keeps every mode of a shape: three more rows of those shapes are above 2× on both of the last two
-# runs and were never listed (the rule seeds them, as it would have listed them at the time).
+# The fixture keeps every mode of a shape: three more rows of those shapes were above 2× on two consecutive runs
+# and were never listed (the rule adds them, as it would have listed them at the time).
 EXTRA = (("json-detected-level", "DLV1 drilldown logs volume, json", "1h", "cold"),
          ("extracted-pushdown", "X1 json filter level_extracted, by level", "24h", "cold"),
          ("level-filter", "LF4 logs, detected_level regexp with unknown", "1h", "warm"))
@@ -83,7 +83,9 @@ class ReplayTest(unittest.TestCase):
         # The daily alerts on the frozen aligned lines: nothing leaves, and the list says it judged nothing.
         a = history.alerts(self.directory(), spec=self.spec, bounds=history.NO_BOUNDS)
         self.assertEqual(a["over_2x_removed"], [])
-        self.assertEqual(self.keys(a["over_2x"]), self.keys(self.fx["listed"]))
+        self.assertTrue(self.keys(self.fx["listed"]) <= self.keys(a["over_2x"]))  # every legacy row is still there
+        # the profile that ran is judged, and only it adds rows
+        self.assertEqual({r["profile"] for r in a["over_2x_added"]}, {DEFAULTS})
         self.assertEqual({r["set"] for r in a["over_2x_unjudged"]}, set(self.spec["sets"]))
         self.assertEqual({(r["profile"], r["last"], r["current"]) for r in a["over_2x_stale"]},
                          {("aligned", "2026-10-28", "2026-11-02")})
@@ -96,7 +98,7 @@ class ReplayTest(unittest.TestCase):
         gone = {}
         for until, expect in (("2026-10-29", set()), ("2026-10-30", {"passes_twice_leaves", "left_then_above_twice_relisted",
                                                                        "left_then_above_once_not_relisted"})):
-            rows, left = history.replay_over_2x(self.directory(until), self.spec, moved)
+            rows, left, _, _ = history.replay_over_2x(self.directory(until), self.spec, moved)
             gone[until] = {n for n in self.fx["rows"] if self.key(n) in self.keys(left)}
             self.assertEqual(gone[until], expect, until)
         self.assertEqual({r["left"] for r in left}, {"2026-10-30"})
@@ -120,6 +122,7 @@ class ReplayTest(unittest.TestCase):
                                                               "left_then_above_once_not_relisted")})
         self.assertEqual(self.keys(res["reseeded"]), {self.key("left_then_above_twice_relisted")})
         self.assertEqual(self.keys(res["seeded"]), extra)
+        self.assertEqual(self.keys(res["warnings"]), {self.key("left_then_above_once_not_relisted")})
         self.assertEqual(history.count_table(res["before"]), {("aligned", "cold"): 2, ("aligned", "warm"): 4})
         self.assertEqual(history.count_table(res["after"]), {(DEFAULTS, "cold"): 3, (DEFAULTS, "warm"): 4})
 
@@ -134,14 +137,65 @@ class ReplayTest(unittest.TestCase):
         self.assertIn(k, {(r["profile"], r["set"], r["shape"], r["range"], r["mode"]) for r in a["over_2x_new"]})
         self.assertNotIn(k, {over2x.key(r) for r in a["over_2x"]})
 
-    def test_a_row_above_2x_on_both_of_the_last_two_runs_is_seeded_when_not_listed(self):
+    def replay_empty(self, until="9999"):
+        """The daily rule from an empty list over the fixture's loki-defaults history."""
+        return history.replay_over_2x(self.directory(until, listed=False), self.spec, [])
+
+    def test_the_rule_adds_a_row_after_two_consecutive_runs_above_2x(self):
+        rows, left, added, pending = self.replay_empty()
+        got = {over2x.key(r): r for r in rows}
+        self.assertEqual(left, [])
+        # above on all five runs: added on the second (10-30), counted from the first
+        self.assertEqual(got[self.key("above_throughout_stays")]["since"], "2026-10-29")
+        day = {over2x.key(r): r["added"] for r in added}
+        self.assertEqual(day[self.key("above_throughout_stays")], "2026-10-30")
+        # within, within, above, above, above: added on 11-01, counted from 10-31
+        self.assertEqual(day[self.key("left_then_above_twice_relisted")], "2026-11-01")
+        self.assertEqual(got[self.key("left_then_above_twice_relisted")]["since"], "2026-10-31")
+        self.assertEqual(got[self.key("left_then_above_twice_relisted")]["profile"], DEFAULTS)
+        self.assertNotIn(self.key("passes_twice_leaves"), got)
+
+    def test_one_run_above_2x_stays_a_warning_and_is_not_added(self):
+        rows, _, added, pending = self.replay_empty()
+        spike = self.key("left_then_above_once_not_relisted")  # within on four runs, above on the newest only
+        self.assertNotIn(spike, {over2x.key(r) for r in rows})
+        self.assertIn(spike, {(r["profile"], r["set"], r["shape"], r["range"], r["mode"]) for r in pending})
+        self.assertIn("added if the next run agrees", [r["detail"] for r in pending if r["shape"] == spike[2]][0])
+        # above on 10-30, within on 10-31, above on 11-01 and 11-02: the first spike did not add it, the pair does
+        broken = self.key("interrupted_never_two_passes")
+        self.assertEqual({over2x.key(r): r["added"] for r in added}[broken], "2026-11-02")
+        self.assertEqual({over2x.key(r): r["since"] for r in rows}[broken], "2026-11-01")
+        # and a spike followed by a run within 2× is never added
         out = self.directory(listed=False)
-        over2x.write_baseline([], os.path.join(out, over2x.BASELINE_NAME))
-        seeded = history.seed_over_2x(out, self.spec, {})
-        self.assertEqual(set(seeded), {self.key(n) for n in ("above_throughout_stays", "left_then_above_twice_relisted",
-                                                              "interrupted_never_two_passes")} | {(DEFAULTS, *k) for k in EXTRA})
-        self.assertEqual(seeded[self.key("left_then_above_twice_relisted")]["since"], "2026-10-31")
-        self.assertEqual(seeded[self.key("above_throughout_stays")]["since"], "2026-10-29")
+        path = os.path.join(out, "json-filter-pushdown.loki-defaults.jsonl")
+        line = history.read(path)[-2]  # the 11-01 line, within 2×
+        with open(path, "a") as f:
+            f.write(json.dumps({**line, "date": "2026-11-03"}, separators=(",", ":")) + "\n")
+        rows, _, added, pending = history.replay_over_2x(out, self.spec, [])
+        self.assertNotIn(spike, {over2x.key(r) for r in rows})
+        self.assertNotIn(spike, {(r["profile"], r["set"], r["shape"], r["range"], r["mode"]) for r in pending})
+
+    def test_a_row_is_added_then_removed_then_added_again_by_the_same_rule(self):
+        cycle = self.key("within_once_pending")  # above on four runs, within on the newest
+        rows, left, added, pending = self.replay_empty()
+        self.assertEqual({over2x.key(r): r["added"] for r in added}[cycle], "2026-10-30")
+        self.assertIn(cycle, {over2x.key(r) for r in rows})
+        out = self.directory(listed=False)
+        over2x.write_baseline(rows, os.path.join(out, over2x.BASELINE_NAME))
+        path = os.path.join(out, "json-detected-level.loki-defaults.jsonl")
+        within, above = history.read(path)[-1], history.read(path)[-2]
+        days = [("2026-11-03", within), ("2026-11-04", above), ("2026-11-05", above)]
+        events = []
+        for date, line in days:
+            with open(path, "a") as f:
+                f.write(json.dumps({**line, "date": date}, separators=(",", ":")) + "\n")
+            a = history.alerts(out, spec=self.spec, bounds=history.NO_BOUNDS)
+            events.append((date, cycle in self.keys(a["over_2x_removed"]), cycle in self.keys(a["over_2x_added"]),
+                           cycle in {over2x.key(r) for r in a["over_2x"]}))
+            over2x.write_baseline(a["over_2x"], os.path.join(out, over2x.BASELINE_NAME))
+        # 11-03: second pass within 2× -> removed; 11-04: above once -> a warning, not listed; 11-05: above twice -> added
+        self.assertEqual(events, [("2026-11-03", True, False, False), ("2026-11-04", False, False, False),
+                                  ("2026-11-05", False, True, True)])
 
     def test_the_list_after_the_reseed_is_stable_under_the_daily_rule(self):
         out = self.directory()
@@ -172,12 +226,12 @@ class ReplayTest(unittest.TestCase):
         self.assertIn("| aligned | cold | 2 | 0 |", text)
         self.assertIn("| loki-defaults | warm | 0 | 4 |", text)
         self.assertIn("| total | | 6 | 7 |", text)
-        self.assertIn("Left the list: 3 rows (2026-10-30: 3); 1 of them are above 2× on both of the last two runs and are listed again; 3 loki-defaults rows", text)
+        self.assertIn("Left the list: 3 rows (2026-10-30: 3); 1 of them were above 2× on two consecutive runs again and are listed again; 3 loki-defaults rows", text)
         self.assertIn("| control | 0 | 0 | 1 | 0 |", text)
         self.assertIn("| extracted-pushdown | 0 | 1 | 1 | 1 |", text)
         self.assertIn("| control | topk rate by app | 24h | warm | 3.25× | 2026-10-30 | no |", text)
         self.assertIn("| extracted-pushdown | X1 json filter level_extracted, by level | 24h | warm | 2.63× | 2026-10-30 | yes |", text)
-        self.assertIn("1 more rows are above 2× on the newest run only and stay warnings.", text)
+        self.assertIn("1 more rows are above 2× on the newest run only and stay pending add.", text)
 
 
 if __name__ == "__main__":

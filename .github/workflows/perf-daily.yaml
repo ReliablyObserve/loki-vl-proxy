@@ -16,9 +16,10 @@ name: Perf daily
 # rows as good as Loki) at the top of the daily pull request and in the job
 # summary. A regression or a lost ratchet row turns the run red, which is the
 # notification; nothing else is opened or labelled. The above-2x Loki list
-# (bench/ab/history/over-2x-loki.json) is kept the same way: it only shrinks,
-# and a new row above 2x Loki is a warning at the top of the pull request and
-# an annotation, never a red run.
+# (bench/ab/history/over-2x-loki.json) is kept the same way: a row is added after
+# two consecutive full runs above 2x Loki and removed after two within 2x, and a
+# row above 2x on one run only is a warning at the top of the pull request and
+# an annotation (pending add), never a red run.
 #
 # Both Loki profiles run on the one seeded stack (bench/ab/README.md, "Like for
 # like"): loki-defaults for every shape, aligned for the range-metric shapes once
@@ -295,8 +296,8 @@ jobs:
                   shown += 1
           if shown > 10:
               print(f"{shown - 10} more in the job summary")
-          # Above 2x Loki rows the list does not hold: warnings, never a failure.
-          for r in a.get("over_2x_new", [])[:10]:
+          # Above 2x Loki: rows the list gained this run, and rows above 2x once (pending add): warnings, never a failure.
+          for r in (a.get("over_2x_added", []) + a.get("over_2x_new", []))[:10]:
               print(f"::warning title=above 2x Loki::{r['set']} / {r['shape']} / {r['range']} / {r['mode']}: {r['detail']} ({r['commits']})")
           sys.exit(1 if a["regressions"] or a["ratchet_lost"] else 0)
           PY

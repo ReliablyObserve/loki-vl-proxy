@@ -318,7 +318,7 @@ def perf_blocks(root=REGISTRY_ROOT, texts=None):
 def perf_problems(covered, over_2x_rows=(), shape_covers=None, root=REGISTRY_ROOT):
     """The conformance gate's check of the perf: blocks: every item an A/B shape covers has a valid one, no other
     item has one, and no locked item covers a row on the above-2× list (a locked row is within its bound; the
-    list only shrinks, so this holds on every daily run). covered: the ids bench/ab/shapes.json covers;
+    list gains a row only after two runs above 2×, and a locked row above its bound is a regression the daily run fails on). covered: the ids bench/ab/shapes.json covers;
     shape_covers: (set, shape) -> ids, for the list check."""
     blocks = perf_blocks(root)
     problems = []

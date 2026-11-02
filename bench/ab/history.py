@@ -44,9 +44,11 @@ as good as Loki (same result, 200, cold no slower than Loki's computed cold);
 the generator only adds to it, an owner removes a row by hand, and a row that
 stops being as good is a ratchet loss. Cold, never warm p50: Loki's warm is its results cache.
 alerts also keeps history/over-2x-loki.json, the rows above 2× Loki (over2x.py has
-the definition): a listed row is removed once two consecutive full lines measure
-it comparable and within 2×, its ratio is tightened when a line measures it
-lower, and a row above 2× that is not listed is reported (never added). Only a profile that ran is
+the definition), symmetrically: a row is added once two consecutive full lines measure
+it comparable and above 2×, and removed once two consecutive full lines measure
+it comparable and within 2×; its ratio is tightened when a line measures it
+lower. A row added takes the previous line's date as its `since`; a row above 2× on this line only is a
+warning (pending add), as a listed row within 2× on this line only is pending removal. Only a profile that ran is
 judged: when a set's newest full line of a profile is older than another profile's (the aligned profile
 needs a build with -align-queries-with-step and does not run without one) or has no like-for-like row,
 that profile is stale for the set, its listed rows are reported as not judged (over_2x_stale,
@@ -55,9 +57,9 @@ over_2x_unjudged) and nothing in its frozen lines is re-judged day after day.
   history.py over-2x-reseed [--dir bench/ab/history] [--write]
       The one-time move of the rows listed before the profiles existed (profile aligned, proxy_side
       unaligned) to the profile the daily run measures with that proxy side, loki-defaults: the daily
-      history is replayed day by day through alerts, so a row leaves on the day it had two consecutive
-      full runs within 2×, and the loki-defaults rows above 2× on both of the last two full runs are
-      listed. Prints the before and after counts; --write rewrites over-2x-loki.json.
+      history is replayed day by day through alerts: the list is what the daily rule (add after two
+      consecutive full runs above 2×, remove after two within 2×) makes of it. Prints the before and
+      after counts; --write rewrites over-2x-loki.json.
 
 alerts also applies the acceptance tiers (over2x.py: the registry's perf: blocks). A locked row above its
 bound is a regression: warm after one run (a p50 of seven), cold when the previous full line was above it
@@ -466,7 +468,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     spec = spec or load_spec()
     out = {"regressions": [], "improvements": [], "ratchet_lost": [], "ratchet_added": [], "loki_failed": [],
            "ratchet_unmeasured": 0, "ratchet_problem": "", "range": {},
-           "over_2x_new": [], "over_2x_removed": [], "over_2x_pending": [], "over_2x_stale": [],
+           "over_2x_new": [], "over_2x_added": [], "over_2x_removed": [], "over_2x_pending": [], "over_2x_stale": [],
            "over_2x_unjudged": [],
            "locked_pending": [], "lost_below": [], "between": [], "lockable": [], "distribution": {},
            "distribution_ratchet": [], "acceptance_problem": ""}
@@ -564,7 +566,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
                             "held for two runs", prev2))
             if out["over_2x_active"] and not out["over_2x_problem"] and (name, profile) not in stale:
-                over_2x(out, listed, profile, name, key, row, old, new)
+                over_2x(out, listed, profile, name, key, row, old, new, prev)
             acceptance(out, bounds, items, profile, name, key, row, old, (prev, prev2), alert)
             where = (name, *key)
             if not lfl or new.get("loki_restarted"):
@@ -582,7 +584,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                               "commit": new.get("commit") or ""})
     for k in ("regressions", "improvements", "ratchet_lost", "loki_failed"):
         out[k].sort(key=lambda a: (a["set"], a["shape"], a["range"], a["kind"]))
-    for k in ("over_2x_new", "over_2x_removed", "over_2x_pending"):
+    for k in ("over_2x_new", "over_2x_added", "over_2x_removed", "over_2x_pending"):
         out[k].sort(key=lambda a: (over2x.PROFILES.index(a.get("profile") or over2x.LEGACY_PROFILE), a["set"],
                                    a["shape"], a["range"], over2x.MODES.index(a["mode"])))
     # Ratchet rows whose set was measured (or no longer exists) but whose shape/range this run did not.
@@ -616,9 +618,11 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     return out
 
 
-def over_2x(out, listed, profile, name, key, row, old, new):
-    """One history row against the above-2× Loki list, cold and warm: a listed row within 2× on this line and
-    on the previous full line is removed, a lower ratio tightens it, an unlisted row above 2× is reported."""
+def over_2x(out, listed, profile, name, key, row, old, new, prev):
+    """One history row against the above-2× Loki list, cold and warm, symmetric: a listed row within 2× on this
+    line and on the previous full line is removed, an unlisted row above 2× on this line and on the previous
+    full line is added (since the previous line's date), a lower ratio tightens a listed row. A row above 2× on
+    this line only is reported as pending add, a listed row within 2× on this line only as pending removal."""
     for mode, pair in over2x.history_pairs(row).items():
         k, state = (profile, name, key[0], key[1], mode), over2x.judge(*pair)
         measured = over2x.ratio(*pair[:2])
@@ -627,8 +631,16 @@ def over_2x(out, listed, profile, name, key, row, old, new):
             else "")
         if k not in listed:
             if state == "above":
-                out["over_2x_new"].append({"profile": profile, "set": name, "shape": key[0], "range": key[1],
-                                           "mode": mode, "kind": "over_2x", "detail": detail, "commits": short(new.get("commit"))})
+                twice = bool(old) and over2x.judge(*over2x.history_pairs(old)[mode]) == "above"
+                item = {"profile": profile, "set": name, "shape": key[0], "range": key[1], "mode": mode, "kind": "over_2x",
+                        "detail": detail + (", and above 2× on the previous run too" if twice else "; added if the next run agrees"),
+                        "commits": short(new.get("commit"))}
+                if twice:
+                    listed[k] = {**over2x.entry(profile, name, key[0], key[1], mode, pair[0], pair[1]),
+                                 "since": prev["date"], "commit": prev.get("commit") or ""}
+                    out["over_2x_added"].append(item)
+                else:
+                    out["over_2x_new"].append(item)
             continue
         if state == "above" and measured is not None and measured < listed[k]["ratio"]:
             listed[k].update(ratio=measured, proxy_s=pair[0], loki_s=pair[1])
@@ -744,11 +756,12 @@ def full_lines(directory, spec, name, profile):
 
 
 def replay_over_2x(directory, spec, rows, profile=LOKI_DEFAULTS):
-    """(rows, left): the above-2× list rows after the daily history of `profile` is replayed day by day through
-    alerts() (the lines of each file up to that day, and the list as the day before left it), and the rows
-    that left, each with the date of the run that removed it. Nothing in `directory` is touched."""
+    """(rows, left, added, pending): the above-2× list rows after the daily history of `profile` is replayed
+    day by day through alerts() (the lines of each file up to that day, and the list as the day before left it),
+    the rows that left and the rows that were added, each with the date of the run that did it, and the rows
+    above 2× on the newest run only (pending add). Nothing in `directory` is touched."""
     days = sorted({e["date"] for name in spec["sets"] for e in full_lines(directory, spec, name, profile)})
-    left = []
+    left, added, pending = [], [], []
     with tempfile.TemporaryDirectory() as tmp:
         for day in days:
             for path in glob.glob(os.path.join(directory, "*.jsonl")):
@@ -758,39 +771,10 @@ def replay_over_2x(directory, spec, rows, profile=LOKI_DEFAULTS):
             over2x.write_baseline(rows, os.path.join(tmp, over2x.BASELINE_NAME))
             a = alerts(tmp, None, spec, bounds=NO_BOUNDS)
             left += [{**r, "left": day} for r in a["over_2x_removed"]]
+            added += [{**r, "added": day} for r in a["over_2x_added"]]
+            pending = a["over_2x_new"]
             rows = a["over_2x"]
-    return rows, left
-
-
-def seed_over_2x(directory, spec, listed, profile=LOKI_DEFAULTS, runs=2):
-    """The rows of `profile` above 2× on each of its last `runs` full lines (the rule that removes a row,
-    mirrored) that are not listed: key -> row, with `since` the date the unbroken streak above 2× began."""
-    out = {}
-    for name in spec["sets"]:
-        lines = full_lines(directory, spec, name, profile)
-        if len(lines) < runs:
-            continue
-        per_line = [line_pairs(name, e) for e in lines]
-        for k, pair in per_line[-1].items():
-            if k in listed or over2x.judge(*pair) != "above":
-                continue
-            streak = [lines[-1]]
-            for e, pairs in zip(reversed(lines[:-1]), reversed(per_line[:-1])):
-                if k not in pairs or over2x.judge(*pairs[k]) != "above":
-                    break
-                streak.append(e)
-            if len(streak) >= runs:
-                first = streak[-1]
-                out[k] = {**over2x.entry(profile, k[1], k[2], k[3], k[4], pair[0], pair[1]),
-                          "since": first["date"], "commit": first.get("commit") or ""}
-    return out
-
-
-def line_pairs(name, e):
-    """(profile, set, shape, range, mode) -> the pair over2x.history_pairs gives, for every row of a line."""
-    profile = profile_of(e)
-    return {(profile, name, *key, mode): pair for key, row in rows_of(e).items()
-            for mode, pair in over2x.history_pairs(row).items()}
+    return rows, left, added, pending
 
 
 def reseed_over_2x(directory=HISTORY, spec=None):
@@ -799,32 +783,30 @@ def reseed_over_2x(directory=HISTORY, spec=None):
     Those rows were measured with a proxy side that did not align queries with the step against the stack's
     Loki (profile aligned, proxy_side unaligned). Builds still have no -align-queries-with-step, so that
     profile has not run since 2026-10-28 and nothing judged them. loki-defaults is the profile with the same
-    proxy side, and the only one measured daily. The rows become loki-defaults rows (their `since` kept),
-    the daily history of that profile is replayed through alerts() so a row leaves on the day it had two
-    consecutive full runs within 2×, and the rows above 2× on both of the last two full runs that are not
-    listed are added. Returns {"rows", "before", "after", "left", "reseeded", "kept_legacy"}; nothing is
-    written."""
+    proxy side, and the only one measured daily. The rows become loki-defaults rows (their `since` kept) and
+    the daily history of that profile is replayed through alerts(): the list is what the daily rule (a row is
+    added after two consecutive full runs above 2×, removed after two within) makes of it, day by day.
+    Returns {"rows", "before", "after", "left", "reseeded", "seeded", "warnings"}; nothing is written."""
     spec = spec or load_spec()
     listed, problem = over2x.read_baseline(os.path.join(directory, over2x.BASELINE_NAME))
     if problem:
         raise ValueError(problem)
     legacy = {k: r for k, r in listed.items() if r.get("proxy_side") == "unaligned"}
+    if not legacy:
+        raise ValueError("no listed row is left from before the profiles existed (proxy_side unaligned): nothing to move")
     moved = {}
     for k, r in legacy.items():
         moved[(LOKI_DEFAULTS, *k[1:])] = {x: v for x, v in {**r, "profile": LOKI_DEFAULTS}.items() if x != "proxy_side"}
-    if not legacy:
-        raise ValueError("no listed row is left from before the profiles existed (proxy_side unaligned): nothing to move")
     start = {**{k: r for k, r in listed.items() if k not in legacy}, **{k: r for k, r in moved.items() if k not in listed}}
-    rows, left = replay_over_2x(directory, spec, list(start.values()))
+    rows, left, added, pending = replay_over_2x(directory, spec, list(start.values()))
     keyed = {over2x.key(r): r for r in rows}
-    seeded = seed_over_2x(directory, spec, keyed)
-    after = {**keyed, **seeded}
     left_keys = {over2x.key(r) for r in left}
-    return {"rows": list(after.values()), "before": list(listed.values()), "after": list(after.values()),
-            "left": left, "reseeded": [r for k, r in seeded.items() if k in left_keys],
-            "seeded": [r for k, r in seeded.items() if k not in left_keys and k not in moved],
-            # above 2× on the newest run only: a warning of the daily run, listed by nobody
-            "warnings": [r for k, r in seed_over_2x(directory, spec, after, runs=1).items()]}
+    # a row that left and was added again later is "reseeded"; one added that never was listed is "seeded"
+    again = [r for r in added if over2x.key(r) in left_keys and over2x.key(r) in keyed]
+    new = [r for r in added if over2x.key(r) not in left_keys and over2x.key(r) not in moved and over2x.key(r) in keyed]
+    return {"rows": rows, "before": list(listed.values()), "after": rows, "left": left,
+            "reseeded": [keyed[over2x.key(r)] for r in again], "seeded": [keyed[over2x.key(r)] for r in new],
+            "warnings": pending}
 
 
 def count_table(rows):
@@ -858,9 +840,10 @@ def render_reseed(result):
         by_day[r["left"]] = by_day.get(r["left"], 0) + 1
     again = {over2x.key(r) for r in result["reseeded"]}
     lines += ["", f"Left the list: {len(result['left'])} rows (" + ", ".join(f"{d}: {n}" for d, n in sorted(by_day.items())) +
-              f"); {len(result['reseeded'])} of them are above 2× on both of the last two runs and are listed again; "
-              f"{len(result['seeded'])} loki-defaults rows above 2× on both of the last two runs were not listed before; "
-              f"{len(result['warnings'])} more rows are above 2× on the newest run only and stay warnings.",
+              f"); {len(result['reseeded'])} of them were above 2× on two consecutive runs again and are listed again; "
+              f"{len(result['seeded'])} loki-defaults rows that were not listed before were added by the rule "
+              f"(above 2× on two consecutive runs); {len(result['warnings'])} more rows are above 2× on the newest "
+              f"run only and stay pending add.",
               "", f"<details><summary>The {len(result['left'])} rows that left</summary>", "",
               "| set | shape | range | mode | ratio listed | left on | listed again |", "|---|---|---|---|--:|---|---|"]
     for r in sorted(result["left"], key=lambda r: (r["left"], r["set"], r["shape"], r["range"], over2x.MODES.index(r["mode"]))):
@@ -901,8 +884,12 @@ def render_alerts(a, limit=None):
     cap = None if limit is None else 20
     over_2x = ["## ⚠️ Above 2× Loki", "",
                f"**{over2x.count_line(a.get('over_2x', []))}.** Any shape × range slower than 2× Loki (cold, warm or "
-               f"refresh) is a defect; the list is `bench/ab/history/{over2x.BASELINE_NAME}` and only shrinks.", "",
-               f"New this run, not listed (warning; never added automatically) ({len(a.get('over_2x_new', []))}):", "",
+               f"refresh) is a defect; the list is `bench/ab/history/{over2x.BASELINE_NAME}`, kept by the daily run: a row is "
+               "added after two consecutive full runs above 2× and removed after two within 2×.", "",
+               f"Added: above 2× on two consecutive runs ({len(a.get('over_2x_added', []))}):", "",
+               *over("over_2x_added", cap), "",
+               f"Above 2× once, not listed: added if the next run agrees (pending add; a warning) "
+               f"({len(a.get('over_2x_new', []))}):", "",
                *over("over_2x_new", cap), "",
                f"Removed: within 2× on two consecutive runs ({len(a.get('over_2x_removed', []))}):", "",
                *over("over_2x_removed", cap), "",
@@ -1005,7 +992,7 @@ def write_alerts(directory=HISTORY, sets=None, json_out="", markdown_out="", bod
     os.makedirs(directory, exist_ok=True)
     if not a["ratchet_problem"]:
         write_ratchet(a["ratchet"], directory)
-    # The list is seeded by over2x.py seed; alerts only ever shrinks or tightens an existing one.
+    # alerts adds a row after two consecutive runs above 2×, removes one after two within 2× and tightens a ratio.
     if a["over_2x_active"] and not a["over_2x_problem"]:
         over2x.write_baseline(a["over_2x"], os.path.join(directory, over2x.BASELINE_NAME))
     if json_out:

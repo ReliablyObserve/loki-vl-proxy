@@ -461,8 +461,8 @@ def over_2x(over):
     profiles = {p: sum(1 for r in rows if (r.get("profile") or LEGACY_PROFILE) == p) for p in PROFILE_RANK}
     out = ["## Above 2× Loki (must fix)", "",
            f"Rows the daily run measured above 2× Loki ({over.get('rule', '')}), from `{OVER_2X}`. A shape × range",
-           "slower than 2× Loki on any mode is a defect. The list only shrinks: the daily run removes a row after two",
-           "consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`. A row is",
+           "slower than 2× Loki on any mode is a defect. The daily run keeps the list: it adds a row after two consecutive",
+           "runs above 2× and removes one after two consecutive runs within 2×; a pull request that adds or worsens one is flagged by `perf-smoke`. A row is",
            "above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;",
            "rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.", "",
            f"{len(rows)} rows: " + ", ".join(f"{m} {n}" for m, n in modes.items()) + "; "
@@ -826,9 +826,9 @@ def render_quality_summary(q, target_is_docs=False):
     if over:
         out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list for the `{q['profile']}` profile** "
                    f"(more than 2× Loki and more than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
-                   f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row leaves the "
-                   f"list after two consecutive daily runs within 2×, so it can hold more rows than the day's "
-                   f"distribution above; a change that adds or worsens a row is flagged. {locked} of "
+                   f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row joins the "
+                   f"list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold "
+                   f"more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. {locked} of "
                    f"{len(q['blocks'])} covered registry items are locked at the 2× bound.")
     else:
         out.append(f"- No row is on the above-2× list for the `{q['profile']}` profile. {locked} of {len(q['blocks'])} covered registry items are "

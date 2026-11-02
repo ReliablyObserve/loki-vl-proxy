@@ -128,6 +128,38 @@ class AlertsTest(unittest.TestCase):
         new = alerts(self.dir)["over_2x_new"]
         self.assertEqual({r["profile"] for r in new}, {"aligned", "loki-defaults"})
 
+    def test_both_profiles_add_and_remove_rows_by_the_same_two_run_rule(self):
+        with open(os.path.join(self.dir, "over-2x-loki.json"), "w") as f:
+            json.dump({"rows": []}, f)
+        self.same_day()  # day 1: above 2× on one run: a warning (pending add) in each profile
+        a = alerts(self.dir)
+        self.assertEqual(({r["profile"] for r in a["over_2x_new"]}, a["over_2x_added"], a["over_2x"]),
+                         ({"aligned", "loki-defaults"}, [], []))
+        self.assertIn("added if the next run agrees", a["over_2x_new"][0]["detail"])
+        self.same_day()  # day 2: above 2× on two consecutive runs: added, cold and warm, in each profile
+        write(self.dir)
+        listed, _ = over2x.read_baseline(os.path.join(self.dir, "over-2x-loki.json"))
+        self.assertEqual({(k[0], k[4]) for k in listed}, {(p, m) for p in ("aligned", "loki-defaults") for m in ("cold", "warm")})
+        self.assertEqual({r["since"] for r in listed.values()}, {"2026-10-01"})  # counted from the first of the two runs
+        self.assertEqual({r["commit"] for r in listed.values()}, {"c1" * 12})
+        # the third run is within 2×: pending removal; the fourth: removed. Rows are never added by one run.
+        for day in (3, 4):
+            for profile in ("aligned", "loki-defaults"):
+                self.line(day, profile, timed(p50=0.5, loki_p50=0.4, cold=0.4))
+            a = write(self.dir)
+            self.assertEqual((len(a["over_2x_pending"]), len(a["over_2x_removed"])), (4, 0) if day == 3 else (0, 4))
+        self.assertEqual(over2x.read_baseline(os.path.join(self.dir, "over-2x-loki.json"))[0], {})
+
+    def test_a_single_run_above_2x_between_runs_within_2x_is_never_added(self):
+        with open(os.path.join(self.dir, "over-2x-loki.json"), "w") as f:
+            json.dump({"rows": []}, f)
+        for day, spike in ((1, False), (2, True), (3, False), (4, True), (5, False)):
+            for profile in ("aligned", "loki-defaults"):
+                self.line(day, profile, timed(p50=2.0, loki_p50=0.4, cold=2.0) if spike else timed(p50=0.5, loki_p50=0.4, cold=0.4))
+            a = write(self.dir)
+            self.assertEqual(a["over_2x"], [], day)
+            self.assertEqual(len(a["over_2x_new"]), 4 if spike else 0, day)
+
     def listed(self, *profiles):
         rows = [{"profile": p, "set": "control", "shape": SHAPE, "range": RANGE, "mode": m, "ratio": 5.0,
                  "proxy_s": 2.0, "loki_s": 0.4, "since": "2026-10-01"} for p in profiles for m in ("cold", "warm")]

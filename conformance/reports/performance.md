@@ -116,12 +116,12 @@ target) and 2 with one (accepted up to the bound).
 ## Above 2× Loki (must fix)
 
 Rows the daily run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range
-slower than 2× Loki on any mode is a defect. The list only shrinks: the daily run removes a row after two
-consecutive runs within 2×, and a pull request that adds or worsens one is flagged by `perf-smoke`. A row is
+slower than 2× Loki on any mode is a defect. The daily run keeps the list: it adds a row after two consecutive
+runs above 2× and removes one after two consecutive runs within 2×; a pull request that adds or worsens one is flagged by `perf-smoke`. A row is
 above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;
 rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.
 
-65 rows: cold 43, warm 22, refresh 0; aligned 0, loki-defaults 65.
+67 rows: cold 45, warm 22, refresh 0; aligned 0, loki-defaults 67.
 
 | profile | set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |
 |---|---|---|---|---|---|---|---|---|
@@ -132,7 +132,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 | loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 24h | cold | 10.62s | 3.48s | 3.05× | 2026-10-27 |
 | loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 24h | warm | 0.10s | 0.05s | 2.13× | 2026-10-31 |
 | loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 6h | cold | 2.95s | 0.94s | 3.14× | 2026-10-27 |
-| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 6h | warm | 0.10s | 0.04s | 2.36× | 2026-10-31 |
+| loki-defaults | extracted-pushdown | X1 json filter level_extracted, by level | 6h | warm | 0.10s | 0.04s | 2.28× | 2026-10-31 |
 | loki-defaults | extracted-suffix | E7 json count by level_extracted | 1h | cold | 0.26s | 0.05s | 5.59× | 2026-10-27 |
 | loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 1h | cold | 0.26s | 0.06s | 4.55× | 2026-10-27 |
 | loki-defaults | json-detected-level | DLV1 drilldown logs volume, json | 1h | warm | 0.32s | 0.01s | 35.11× | 2026-10-27 |
@@ -150,7 +150,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 | loki-defaults | json-detected-level | DLV3 plain json, detected_level | 24h | warm | 5.84s | 0.01s | 648.67× | 2026-10-27 |
 | loki-defaults | json-detected-level | DLV3 plain json, detected_level | 6h | cold | 2.35s | 0.24s | 9.97× | 2026-10-27 |
 | loki-defaults | json-detected-level | DLV3 plain json, detected_level | 6h | warm | 1.46s | 0.01s | 146.40× | 2026-10-27 |
-| loki-defaults | label-replace | L7 label_replace around a binary of two sums by level | 6h | warm | 0.07s | 0.01s | 5.31× | 2026-10-31 |
+| loki-defaults | label-replace | L7 label_replace around a binary of two sums by level | 6h | warm | 0.07s | 0.01s | 5.00× | 2026-10-31 |
 | loki-defaults | level-filter | LF1 logs, detected_level equals | 6h | cold | 0.29s | 0.12s | 2.53× | 2026-10-27 |
 | loki-defaults | level-filter | LF10 drilldown logs, level pill multi-select, json service | 6h | cold | 0.16s | 0.08s | 2.10× | 2026-10-27 |
 | loki-defaults | level-filter | LF12 drilldown logs volume by level, level pill | 24h | cold | 1.20s | 0.57s | 2.09× | 2026-10-27 |
@@ -175,14 +175,15 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 | loki-defaults | level-filter | LF5 logs, plain-text service, detected_level regexp | 24h | cold | 0.22s | 0.09s | 2.48× | 2026-10-27 |
 | loki-defaults | level-filter | LF5 logs, plain-text service, detected_level regexp | 6h | cold | 0.11s | 0.02s | 5.33× | 2026-10-27 |
 | loki-defaults | level-filter | LF9 drilldown logs, level pill, logfmt service | 6h | cold | 0.12s | 0.04s | 2.67× | 2026-10-31 |
+| loki-defaults | level-filter-stored | LS3 logs, level in the selector | 6h | cold | 0.10s | 0.04s | 2.49× | 2026-10-31 |
 | loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.74s | 0.12s | 6.08× | 2026-10-27 |
-| loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | warm | 0.08s | 0.01s | 7.36× | 2026-10-31 |
+| loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | warm | 0.08s | 0.01s | 6.83× | 2026-10-31 |
 | loki-defaults | metadata-inventory | drilldown landing volume | 24h | warm | 0.23s | 0.09s | 2.48× | 2026-10-27 |
 | loki-defaults | metric-latency-gap | DL3 drilldown logfmt field breakdown, level filter | 24h | warm | 2.87s | 0.45s | 6.40× | 2026-10-27 |
 | loki-defaults | pattern-line-filter-anchoring | A1 nginx include GET, log query | 24h | cold | 0.16s | 0.03s | 5.47× | 2026-10-27 |
 | loki-defaults | pattern-line-filter-anchoring | A2 nginx exclude GET, log query | 24h | cold | 0.25s | 0.06s | 4.36× | 2026-10-27 |
 | loki-defaults | pattern-line-filter-anchoring | A7 nginx exclude ends on a literal, log query | 24h | cold | 0.24s | 0.09s | 2.68× | 2026-11-01 |
-| loki-defaults | stage-field-exposure | SF1 logs, json extraction list | 3h | cold | 0.19s | 0.07s | 2.95× | 2026-10-31 |
+| loki-defaults | stage-field-exposure | SF1 logs, json extraction list | 3h | cold | 0.14s | 0.06s | 2.26× | 2026-10-31 |
 | loki-defaults | stage-field-exposure | SF1 logs, json extraction list | 6h | cold | 0.17s | 0.07s | 2.54× | 2026-10-31 |
 | loki-defaults | stage-field-exposure | SF2 logs, logfmt extraction list | 3h | cold | 0.12s | 0.05s | 2.37× | 2026-10-27 |
 | loki-defaults | stage-field-exposure | SF2 logs, logfmt extraction list | 6h | cold | 0.15s | 0.06s | 2.37× | 2026-10-27 |
@@ -190,6 +191,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 | loki-defaults | stage-field-exposure | SF4 logs, line_format without a parser | 6h | cold | 0.13s | 0.06s | 2.19× | 2026-10-31 |
 | loki-defaults | stage-field-exposure | SF5 logs, regexp capture | 3h | cold | 0.14s | 0.06s | 2.60× | 2026-10-27 |
 | loki-defaults | stage-field-exposure | SF5 logs, regexp capture | 6h | cold | 0.10s | 0.05s | 2.02× | 2026-10-27 |
+| loki-defaults | unwrap-gate | G8 bytes() of a number | 24h | cold | 0.41s | 0.20s | 2.01× | 2026-10-30 |
 
 ## Slower than Loki on first load
 
