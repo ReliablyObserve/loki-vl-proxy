@@ -92,7 +92,7 @@ func TestMetadataQueryValidation_RejectsLikeLoki(t *testing.T) {
 		target := tc.path + "?" + params.Encode()
 		t.Run(target, func(t *testing.T) {
 			w := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
-			if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || body.ErrorType != "bad_data" || body.Error != tc.want {
+			if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || body.Error != tc.want {
 				t.Fatalf("status=%d body=%s, want 400 bad_data %q", w.Code, w.Body, tc.want)
 			}
 		})
@@ -182,7 +182,7 @@ func TestMetadataQueryValidation_OversizedInputs(t *testing.T) {
 			req.Header.Set("X-Scope-OrgID", "0")
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
-			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != tc.want {
+			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.Error != tc.want {
 				t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, tc.want)
 			}
 		})

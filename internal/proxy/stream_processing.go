@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -2004,21 +2005,11 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		return lokiEmptyResultResponse(resultType)
 	}
 
-	// Check for VL error responses and translate to Loki error format.
+	// A VL error body with no writer to answer it (callers that have one
+	// check vlStatsErrorBody first): Loki's text, not VictoriaLogs' message.
 	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
-	if errMsg, ok := promResp["error"].(string); ok {
-		return lokiErrorResponse(errMsg)
-	}
-	if promResp["status"] == "error" {
-		errMsg := ""
-		if msg, ok := promResp["msg"].(string); ok {
-			errMsg = msg
-		} else if msg, ok := promResp["message"].(string); ok {
-			errMsg = msg
-		} else if msg, ok := promResp["error"].(string); ok {
-			errMsg = msg
-		}
-		return lokiErrorResponse(errMsg)
+	if _, isErr := vlStatsErrorBody(vlBody); isErr {
+		return lokiInternalErrorResponse()
 	}
 
 	// If VL already returned status/data format, pass through
@@ -2048,16 +2039,55 @@ func lokiEmptyResultResponse(resultType string) []byte {
 	return b
 }
 
-// lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>"}
-// directly as bytes. errMsg is JSON-escaped.
-func lokiErrorResponse(errMsg string) []byte {
-	// Fixed initial capacity — avoids integer overflow in size arithmetic.
-	// append grows the slice as needed when errMsg is larger than 128 bytes.
-	b := make([]byte, 0, 128)
-	b = append(b, `{"status":"error","errorType":"bad_request","error":`...)
-	b = appendJSONString(b, errMsg)
-	b = append(b, '}')
-	return b
+// vlStatsErrorBody reports whether a stats body that arrived with a success
+// status is VictoriaLogs' own error ({"error":"..."} or {"status":"error",...}),
+// and returns its message for the log line. A caller with a response writer
+// answers it through the error layer (writeErr) instead of wrapping it.
+func vlStatsErrorBody(body []byte) (string, bool) {
+	var promResp map[string]interface{}
+	if stdjson.Unmarshal(body, &promResp) != nil {
+		return "", false
+	}
+	if errMsg, ok := promResp["error"].(string); ok {
+		return errMsg, true
+	}
+	if promResp["status"] == "error" {
+		for _, key := range []string{"msg", "message", "error"} {
+			if msg, ok := promResp[key].(string); ok {
+				return msg, true
+			}
+		}
+		return "", true
+	}
+	return "", false
+}
+
+// writeVLStatsErrorBody answers a stats body that is VictoriaLogs' error under a
+// success status as Loki answers a failed call (500). The message is for the
+// log line only: it is never part of the error the layer maps, so it cannot be
+// mistaken for a proxy limit text.
+func (p *Proxy) writeVLStatsErrorBody(w http.ResponseWriter, ctx context.Context, msg string) {
+	status, _, text := lokiClientError(ctx, errVLStatsErrorBody)
+	p.writeErrorCause(w, status, text, fmt.Errorf("%w: %s", errVLStatsErrorBody, msg))
+}
+
+// wrapStatsOrFail wraps a stats body as a Loki response, or answers a body that
+// is VictoriaLogs' error under a success status through the error layer.
+func (p *Proxy) wrapStatsOrFail(w http.ResponseWriter, ctx context.Context, body []byte, resultType string) ([]byte, bool) {
+	if msg, isErr := vlStatsErrorBody(body); isErr {
+		p.writeVLStatsErrorBody(w, ctx, msg)
+		return nil, false
+	}
+	return wrapAsLokiResponse(body, resultType), true
+}
+
+var errVLStatsErrorBody = errors.New("backend answered a stats error body")
+
+// lokiInternalErrorResponse is the fallback body of wrapAsLokiResponse for a
+// VictoriaLogs error body with no response writer to answer it: Loki's text for
+// a failed call, never VictoriaLogs' message.
+func lokiInternalErrorResponse() []byte {
+	return []byte(`{"status":"error","errorType":"internal","error":"` + lokiErrInternal + `"}`)
 }
 
 // appendJSONString appends s as a JSON-encoded string to dst and returns the

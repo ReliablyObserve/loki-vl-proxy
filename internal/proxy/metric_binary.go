@@ -151,6 +151,8 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 // is asked again with VictoriaLogs ranking the values (rankedSingleFieldQuery),
 // so the second response holds at most limit+1 series; any other shape is read
 // whole and capped.
+//
+//nolint:gocyclo // dispatches the stats outcomes (upstream errors, series limit, Drilldown ranking, stats error body); the branching is inherent to the series-limit contract.
 func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *http.Request, logsqlQuery string, tumblingWindow time.Duration) {
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
@@ -270,7 +272,10 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	// not VictoriaLogs' label order, which would keep the count==1 noise floor
 	// of a churning field) with Loki's warning; every other client has already
 	// stopped reading with Loki's error.
-	out := wrapAsLokiResponse(body, "matrix")
+	out, ok := p.wrapStatsOrFail(w, ctx, body, "matrix")
+	if !ok {
+		return
+	}
 	if (read <= 0 || read > limit) && lokiResultSeriesCount(out) > limit {
 		if err := seriesLimitReached(ctx, limit); err != nil {
 			p.writeError(w, http.StatusBadRequest, err.Error())
@@ -1659,7 +1664,10 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		body = dropEmptyInputGuard(body)
 	}
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
-	body = wrapAsLokiResponse(body, "vector")
+	body, ok := p.wrapStatsOrFail(w, r.Context(), body, "vector")
+	if !ok {
+		return
+	}
 	if topK, topKDesc, topKGroup, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
 		body = applyTopKToVector(body, topK, topKDesc, topKGroup)
 	}

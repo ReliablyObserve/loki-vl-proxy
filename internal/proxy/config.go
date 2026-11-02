@@ -37,7 +37,6 @@ type HandlerConfig struct {
 	metadataFieldMode                     MetadataFieldMode
 	rejectDottedNames                     bool
 	labelBrowse                           bool
-	errorMessageField                     bool
 	streamFieldsMap                       map[string]bool
 	declaredLabelFields                   []string
 	registerInstrumentation               bool

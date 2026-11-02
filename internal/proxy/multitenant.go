@@ -190,7 +190,8 @@ func multiTenantFailureStatus(code int) int {
 }
 
 // writeMultiTenantFailure answers a multi-tenant request with the failure of
-// one tenant sub-request, in the proxy's JSON error envelope with Loki's status.
+// one tenant sub-request: Loki's status and the sub-request's error text as
+// Loki's query frontend writes it (see writeLokiErrorBody).
 func (p *Proxy) writeMultiTenantFailure(w http.ResponseWriter, failed *httptest.ResponseRecorder, failureStatus int) {
 	code := multiTenantFailureStatus(failureStatus)
 	if code == failed.Code {
@@ -202,15 +203,9 @@ func (p *Proxy) writeMultiTenantFailure(w http.ResponseWriter, failed *httptest.
 		_, _ = w.Write(failed.Body.Bytes())
 		return
 	}
-	msg := failed.Header().Get("X-Proxy-Upstream-Error")
+	msg := ""
 	if failed.Code >= http.StatusBadRequest {
-		msg = strings.TrimSpace(failed.Body.String())
-		var envelope struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(failed.Body.Bytes(), &envelope) == nil && envelope.Error != "" {
-			msg = envelope.Error
-		}
+		msg = strings.TrimSpace(failed.Body.String()) // the sub-request's error is Loki's text
 	}
 	if msg == "" {
 		msg = "multi-tenant sub-request failed"

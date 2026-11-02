@@ -101,11 +101,17 @@ func (p *Proxy) handleRules(w http.ResponseWriter, r *http.Request) {
 		p.writeEmptyLegacyRules(w)
 		return
 	}
+	// PrometheusRules rejects any other rule type before it asks the ruler
+	// (pkg/ruler/base/api.go:166-179).
+	if ruleType := strings.ToLower(r.URL.Query().Get("type")); ruleType != "" && ruleType != "alert" && ruleType != "record" {
+		p.writeErrorShaped(w, http.StatusBadRequest, fmt.Sprintf("not supported value %q", ruleType), nil, writeLokiRulerError)
+		return
+	}
 	if p.rulerBackend == nil {
 		p.writeEmptyRules(w)
 		return
 	}
-	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules")
+	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules", writeLokiRulerError)
 }
 
 func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +119,7 @@ func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		p.writeEmptyAlerts(w)
 		return
 	}
-	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts")
+	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts", writeLokiAlertsError)
 }
 
 // handleConfigStub returns a minimal config response.
@@ -141,19 +147,17 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 
 // writeAlertingBackendStatus answers a ruler or alerts backend that replied
 // with an error status. Its body is vmalert's, so the client reads only the
-// status class in Loki's words (the ruler's JSON, or the legacy views' text).
+// failure in Loki's words: 500 in the ruler's JSON or the legacy views' text.
 func (p *Proxy) writeAlertingBackendStatus(w http.ResponseWriter, status int, shape errorShape) {
-	code, text := http.StatusInternalServerError, lokiErrInternal
-	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
-		code, text = status, http.StatusText(status)
-	}
-	p.writeErrorShaped(w, code, text, fmt.Errorf("alerting backend replied %d", status), shape)
+	// Loki answers every GetRules error with respondServerError, 500
+	// (pkg/ruler/base/api.go:196-200, :301-305); a backend 4xx is no different.
+	p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, fmt.Errorf("alerting backend replied %d", status), shape)
 }
 
-func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
+func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string, shape errorShape) {
 	resp, err := p.alertingBackendGet(p.withRequestScope(r), backend, path)
 	if err != nil {
-		p.writeErrShaped(w, r.Context(), err, writeLokiRulerError)
+		p.writeErrShaped(w, r.Context(), err, shape)
 		return
 	}
 	defer resp.Body.Close()
@@ -163,7 +167,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 		if resp.StatusCode/100 != 2 {
 			// A backend error body is not attributable to the org; keep the
 			// status class and say nothing else.
-			p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiRulerError)
+			p.writeAlertingBackendStatus(w, resp.StatusCode, shape)
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxAlertingResponseBytes+1))
@@ -171,7 +175,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 			body, err = filterAlertingJSONForTenant(body, label, org)
 		}
 		if err != nil || len(body) > maxAlertingResponseBytes {
-			p.writeErrShaped(w, r.Context(), errors.New("invalid alerting backend response"), writeLokiRulerError)
+			p.writeErrShaped(w, r.Context(), errors.New("invalid alerting backend response"), shape)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -180,7 +184,7 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		p.writeAlertingBackendStatus(w, resp.StatusCode, writeLokiRulerError)
+		p.writeAlertingBackendStatus(w, resp.StatusCode, shape)
 		return
 	}
 	copyBackendHeaders(w.Header(), resp.Header)
@@ -483,7 +487,9 @@ func parseLegacyRulesPath(path string) (namespace, group string, err error) {
 func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
 	if err != nil {
-		p.writeErrorShaped(w, http.StatusBadRequest, err.Error(), nil, writeLokiHTTPError)
+		// Loki's parseRequest failures are respondServerError, a 500 in the
+		// ruler's JSON (pkg/ruler/base/api.go:523, :564).
+		p.writeErrorShaped(w, http.StatusInternalServerError, err.Error(), nil, writeLokiRulerError)
 		return
 	}
 
@@ -538,7 +544,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 
 	if group != "" {
 		if len(decoded.Data.Groups) == 0 {
-			p.writeErrorShaped(w, http.StatusNotFound, "no rule groups found", nil, writeLokiHTTPError)
+			p.writeErrorShaped(w, http.StatusNotFound, "group does not exist", nil, writeLokiHTTPError) // rulestore.ErrGroupNotFound, api.go:572
 			return
 		}
 		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])

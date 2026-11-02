@@ -332,20 +332,21 @@ func TestTenantLabelRouting_BackendErrorBodyIsNotPassedOn(t *testing.T) {
 	const secret = "rule-text-of-another-tenant"
 	for _, path := range []string{"/prometheus/api/v1/rules", "/loki/api/v1/rules", "/loki/api/v1/rules/ns1/g", "/loki/api/v1/alerts"} {
 		p := labelModeRulerProxy(t, http.StatusBadRequest, `{"error":"`+secret+`"}`, false)
-		// Loki's ruler answers rules and alerts in its Prometheus JSON and the
-		// legacy rule views as http.Error text; the backend's body is in neither.
-		want := `{"status":"error","data":null,"errorType":"bad_data","error":"Bad Request"}`
+		// Loki's ruler answers every read failure with respondServerError, 500,
+		// in its Prometheus JSON (the legacy rule views in http.Error text); the
+		// backend's own status and body are in neither.
+		want := `{"status":"error","data":null,"errorType":"server_error","error":"Internal Server Error"}`
 		if strings.HasPrefix(path, "/loki/api/v1/rules") {
-			want = "Bad Request\n"
+			want = "Internal Server Error\n"
 		}
 		rec := getAlerting(p, path, "A")
-		if rec.Code != http.StatusBadRequest || rec.Body.String() != want {
-			t.Fatalf("%s: %d %s, want %q", path, rec.Code, rec.Body.String(), want)
+		if rec.Code != http.StatusInternalServerError || rec.Body.String() != want {
+			t.Fatalf("%s: %d %s, want 500 %q", path, rec.Code, rec.Body.String(), want)
 		}
 		// The global view, which is not confined, hides the backend's body too.
 		pg := labelModeRulerProxy(t, http.StatusBadRequest, `{"error":"`+secret+`"}`, true)
-		if rec := getAlerting(pg, path, "*"); rec.Code != http.StatusBadRequest || rec.Body.String() != want {
-			t.Fatalf("%s (global): %d %s, want %q", path, rec.Code, rec.Body.String(), want)
+		if rec := getAlerting(pg, path, "*"); rec.Code != http.StatusInternalServerError || rec.Body.String() != want {
+			t.Fatalf("%s (global): %d %s, want 500 %q", path, rec.Code, rec.Body.String(), want)
 		}
 	}
 }

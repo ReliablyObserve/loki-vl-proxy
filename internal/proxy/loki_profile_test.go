@@ -369,7 +369,7 @@ func TestLokiProfile_DottedNamesReturnLokiParseError(t *testing.T) {
 			mux.ServeHTTP(w, req)
 			// Grafana's Loki datasource displays the body of a non-JSON error as
 			// it is, so the body must be Loki's text alone.
-			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != tc.want {
+			if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.Error != tc.want {
 				t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, tc.want)
 			}
 		})

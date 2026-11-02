@@ -145,7 +145,7 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 // the text alone, and nothing of the backend.
 // conformance: semantics/error-layer-transport-text, semantics/error-layer-backend-text
 func TestWriteErr_EnvelopeCarriesOnlyLokiText(t *testing.T) {
-	p := &Proxy{errorMessageField: true}
+	p := &Proxy{}
 	rec := httptest.NewRecorder()
 	err := &url.Error{Op: "Post", URL: "http://10.0.0.9:9428/select/logsql/query", Err: errors.New("dial tcp 10.0.0.9:9428: connect: connection refused")}
 	if got := p.writeErr(rec, context.Background(), err); got != http.StatusInternalServerError || rec.Code != got {

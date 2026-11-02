@@ -58,7 +58,7 @@ func TestHandleLabels_MapsCanceledContextTo499(t *testing.T) {
 	if rec.Code != 499 {
 		t.Fatalf("expected 499 for canceled request context, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if resp := readErrorRec(t, rec); resp.ErrorType != "canceled" || resp.Error != lokiErrClientCanceled {
+	if resp := readErrorRec(t, rec); rec.Code != 499 || resp.Error != lokiErrClientCanceled {
 		t.Fatalf("expected Loki's cancelled text, got %+v", resp)
 	}
 }
@@ -80,7 +80,7 @@ func TestHandleLabels_MapsUpstreamTimeoutTo504(t *testing.T) {
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("expected 504 for upstream timeout, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if resp := readErrorRec(t, rec); resp.ErrorType != "timeout" || resp.Error != lokiErrDeadlineExceeded {
+	if resp := readErrorRec(t, rec); rec.Code != http.StatusGatewayTimeout || resp.Error != lokiErrDeadlineExceeded {
 		t.Fatalf("expected Loki's deadline text, got %+v", resp)
 	}
 }

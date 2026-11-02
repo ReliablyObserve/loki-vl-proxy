@@ -53,7 +53,7 @@ func TestOuterFoldRetainsReadAndCancellationGuards(t *testing.T) {
 				}
 				return
 			}
-			if rec.Code < 400 || readErrorRec(t, rec).Status != "error" || strings.Contains(rec.Body.String(), `"result"`) {
+			if rec.Code < 400 || rec.Code < http.StatusBadRequest || strings.Contains(rec.Body.String(), `"result"`) {
 				t.Fatalf("%s guard returned partial success: HTTP %d %s", guard, rec.Code, rec.Body.String())
 			}
 		})

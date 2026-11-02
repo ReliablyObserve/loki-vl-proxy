@@ -1334,8 +1334,8 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 		t.Fatalf("expected no direct full-range fallback call, got %d", got)
 	}
 
-	if parsed := readErrorRec(t, resp); parsed.ErrorType != "internal" {
-		t.Fatalf("expected Loki errorType=internal, body=%s", resp.Body.String())
+	if readErrorRec(t, resp); resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected Loki's 500, body=%s", resp.Body.String())
 	}
 }
 

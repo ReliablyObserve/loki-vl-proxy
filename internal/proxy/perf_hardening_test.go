@@ -625,9 +625,8 @@ func TestHandlePatterns_InvalidQueryReturnsBadData(t *testing.T) {
 	if backendCalls != 0 {
 		t.Fatalf("expected no backend calls, got %d", backendCalls)
 	}
-	resp := readErrorRec(t, w)
-	if resp.Status != "error" || resp.ErrorType != "bad_data" {
-		t.Fatalf("expected bad_data error response, got %#v", resp)
+	if resp := readErrorRec(t, w); resp.Error == "" {
+		t.Fatalf("expected Loki's error text, got %#v", resp)
 	}
 }
 

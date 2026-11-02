@@ -55,7 +55,7 @@ func TestCountValues_RejectedLikeLoki(t *testing.T) {
 					if w.Code != http.StatusBadRequest {
 						t.Fatalf("status=%d body=%s", w.Code, w.Body)
 					}
-					if body := readErrorRec(t, w); body.ErrorType != "bad_data" || body.Error != tc.want {
+					if body := readErrorRec(t, w); w.Code != http.StatusBadRequest || body.Error != tc.want {
 						t.Fatalf("body=%s, want bad_data error %q", w.Body, tc.want)
 					}
 				})

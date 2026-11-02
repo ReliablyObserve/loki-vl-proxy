@@ -54,9 +54,6 @@ func assertLokiBadData(t *testing.T, w *httptest.ResponseRecorder) {
 		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
 	}
 	body := readErrorRec(t, w)
-	if body.ErrorType != "bad_data" {
-		t.Fatalf("envelope = %+v, want status=error errorType=bad_data", body)
-	}
 	if body.Error == "" {
 		t.Fatalf("expected a non-empty error message")
 	}

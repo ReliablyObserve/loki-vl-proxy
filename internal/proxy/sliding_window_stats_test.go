@@ -465,7 +465,7 @@ func TestSlidingWindowStats_RowLimitNamesFlag(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
-	if rec.Code != http.StatusBadRequest || readErrorRec(t, rec).ErrorType != "bad_data" || !strings.Contains(rec.Body.String(), "manual range metric row limit exceeded (20 stats rows in one bucket grid)") || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "manual range metric row limit exceeded (20 stats rows in one bucket grid)") || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") {
 		t.Fatalf("status %d body %s, want the row limit error naming its flag", rec.Code, rec.Body.String())
 	}
 }

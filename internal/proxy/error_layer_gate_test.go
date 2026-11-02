@@ -71,8 +71,11 @@ const (
 	// The empty shape is pkg/util/server/error.go WriteError, the query
 	// frontend's shape on every query, metadata and tail route.
 	// errShapeRuler: pkg/ruler/base/api.go respondError, the Prometheus JSON of
-	// the rules and alerts API.
+	// the rules API (no Content-Type, so Go sniffs text/plain; no nosniff).
 	errShapeRuler = "ruler"
+	// errShapeAlerts: the same JSON from PrometheusAlerts, which sets
+	// Content-Type: application/json first (api.go:286).
+	errShapeAlerts = "alerts"
 	// errShapeHTTPError: Go's http.Error, the legacy rule views and the delete API.
 	errShapeHTTPError = "httperr"
 )
@@ -136,7 +139,7 @@ func errLayerRoutes(now time.Time) []errLayerRoute {
 		{name: "patterns", path: "/loki/api/v1/patterns", params: q("query", sel, "start", start, "end", end, "step", "60")},
 		{name: "tail", path: "/loki/api/v1/tail", params: q("query", sel)},
 		{name: "rules", path: "/loki/api/v1/rules", shape: errShapeHTTPError},
-		{name: "alerts", path: "/prometheus/api/v1/alerts", shape: errShapeRuler},
+		{name: "alerts", path: "/prometheus/api/v1/alerts", shape: errShapeAlerts},
 	}
 }
 
@@ -356,21 +359,35 @@ func errLayerText(o errLayerOutcome) string {
 }
 
 // errLayerBodyShapeProblem reports how an error answer differs from the body
-// shape Loki writes on the route: its Content-Type, its framing (the raw
-// message, the message and a newline, or the ruler's JSON in its key order) and
-// no JSON envelope where Loki writes text.
+// shape Loki writes on the route: its Content-Type, whether it carries nosniff,
+// its framing (the raw message, the message and a newline, or the ruler's JSON
+// in its key order with an errorType that matches the status) and no JSON
+// envelope where Loki writes text.
 func errLayerBodyShapeProblem(rt errLayerRoute, o errLayerOutcome) string {
-	if got := o.headers.Get("Content-Type"); got != "text/plain; charset=utf-8" {
-		return fmt.Sprintf("Content-Type %q, want text/plain; charset=utf-8", got)
+	wantType := "text/plain; charset=utf-8"
+	if rt.shape == errShapeAlerts {
+		wantType = "application/json"
+	}
+	if got := o.headers.Get("Content-Type"); got != wantType {
+		return fmt.Sprintf("Content-Type %q, want %s", got, wantType)
 	}
 	switch rt.shape {
-	case errShapeRuler:
-		if !strings.HasPrefix(o.body, `{"status":"error","data":null,"errorType":"`) || !strings.HasSuffix(o.body, `"}`) || strings.Contains(o.body, "\n") {
-			return "body is not the ruler's {status,data,errorType,error} JSON"
+	case errShapeRuler, errShapeAlerts:
+		if o.headers.Get("X-Content-Type-Options") != "" {
+			return "X-Content-Type-Options on the ruler's JSON, which Loki does not send"
+		}
+		wantErrorType := "server_error"
+		if o.status == http.StatusBadRequest {
+			wantErrorType = "bad_data"
+		} else if o.status != http.StatusInternalServerError {
+			return fmt.Sprintf("status %d, but the ruler answers only 400 and 500", o.status)
+		}
+		if !strings.HasPrefix(o.body, `{"status":"error","data":null,"errorType":"`+wantErrorType+`","error":`) || !strings.HasSuffix(o.body, `"}`) || strings.Contains(o.body, "\n") {
+			return "body is not the ruler's {status,data,errorType,error} JSON with the errorType of its status"
 		}
 	case errShapeHTTPError:
-		if !strings.HasSuffix(o.body, "\n") || strings.HasPrefix(o.body, "{") {
-			return "body is not http.Error's text and newline"
+		if o.headers.Get("X-Content-Type-Options") != "nosniff" || !strings.HasSuffix(o.body, "\n") || strings.HasPrefix(o.body, "{") {
+			return "body is not http.Error's nosniff text and newline"
 		}
 	default:
 		if o.headers.Get("X-Content-Type-Options") != "nosniff" {
@@ -387,6 +404,21 @@ func errLayerBodyShapeProblem(rt errLayerRoute, o errLayerOutcome) string {
 func errLayerClasses(rt errLayerRoute, mode string, o errLayerOutcome, backendHost string) []string {
 	classes := map[string]bool{}
 	wantStatus, wantText := errLayerExpect(mode)
+	switch rt.shape {
+	case errShapeRuler, errShapeAlerts:
+		// The ruler answers every GetRules failure with respondServerError, a
+		// 500 (pkg/ruler/base/api.go:196-200, :301-305), whatever the cause.
+		wantStatus = http.StatusInternalServerError
+		if mode != "timeout" && mode != "client_cancel" {
+			wantText = ""
+		}
+	case errShapeHTTPError:
+		// A backend that answered an error status is a failed call, 500; a
+		// transport timeout or cancel keeps Loki's 504 and 499.
+		if mode != "timeout" && mode != "client_cancel" {
+			wantStatus, wantText = http.StatusInternalServerError, ""
+		}
+	}
 	status := o.status
 	if status == http.StatusSwitchingProtocols {
 		// An upgraded tail reports failures in its close frame: Loki closes with
@@ -523,7 +555,7 @@ func runErrLayerCell(t *testing.T, rt errLayerRoute, mode string) (errLayerOutco
 		req.Header.Set(k, v)
 	}
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	shippedChain(mux).ServeHTTP(w, req)
 	if backend.hits.Load() == 0 && mode != "conn_refused" {
 		// Only query calls count (errLayerQueryPath): a route answered without
 		// one never met the failure.

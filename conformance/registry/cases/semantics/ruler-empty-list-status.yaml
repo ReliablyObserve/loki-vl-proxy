@@ -1,0 +1,31 @@
+id: semantics/ruler-empty-list-status
+title: An empty legacy rule list is Loki's 404, the proxy answers an empty 200 (open)
+proves:
+  - loki_api_v1_rules
+consumer: any
+why: |
+  Loki's ListRules answers 404 `no rule groups found\n` when the tenant has no
+  rule groups (pkg/ruler/base/api.go:539-541, ErrNoRuleGroups :338-339). The
+  proxy answers an empty YAML object (`{}\n`, 200) for the namespace and
+  all-groups forms. A group that is asked for by name and does not exist is
+  already Loki's 404 `group does not exist\n` (api.go:572).
+request:
+  method: GET
+  path: /loki/api/v1/rules
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The tenant has no rule groups.
+compare:
+  mode: observed
+  fields: [status, headers, body]
+  expect: |
+    Loki's 404, text/plain, nosniff and `no rule groups found` with a newline.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/alerting.go handleLegacyRules and writeEmptyLegacyRules'
+  loki: 'pkg/ruler/base/api.go:539-541'
+  proxy: '200 {} (YAML)'
+  planned_test: 'TestCompat_ErrorBodyLikeLoki row for /loki/api/v1/rules once the answer matches'

@@ -90,7 +90,7 @@ func TestRangeMetricRowLimitErrorIsLokiShaped(t *testing.T) {
 					t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body.String())
 				}
 				// Loki's WriteError: text/plain, nosniff and the message alone.
-				if body := readErrorRec(t, rec); body.ErrorType != "bad_data" || body.Error != rowLimitErrorText {
+				if body := readErrorRec(t, rec); rec.Code != http.StatusBadRequest || body.Error != rowLimitErrorText {
 					t.Fatalf("body %q, want %q alone", rec.Body.String(), rowLimitErrorText)
 				}
 				// Nothing of VictoriaLogs, LogsQL or Go in what the client reads.

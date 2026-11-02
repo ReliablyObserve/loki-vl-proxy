@@ -4043,8 +4043,9 @@ func TestContract_WrapAsLokiResponse_VLError(t *testing.T) {
 	if resp["status"] != "error" {
 		t.Errorf("expected status=error, got %v", resp["status"])
 	}
-	if resp["error"] != "query syntax error at position 42" {
-		t.Errorf("expected error message preserved, got %v", resp["error"])
+	// VictoriaLogs' message never reaches a client: Loki's text for a failed call.
+	if resp["error"] != lokiErrInternal || strings.Contains(string(result), "syntax error") {
+		t.Errorf("expected Loki's text and none of VictoriaLogs', got %s", result)
 	}
 }
 
@@ -4059,8 +4060,8 @@ func TestContract_WrapAsLokiResponse_VLStatusError(t *testing.T) {
 	if resp["status"] != "error" {
 		t.Errorf("expected status=error, got %v", resp["status"])
 	}
-	if resp["error"] != "invalid LogsQL expression" {
-		t.Errorf("expected msg mapped to error field, got %v", resp["error"])
+	if resp["error"] != lokiErrInternal || strings.Contains(string(result), "LogsQL") {
+		t.Errorf("expected Loki's text and none of VictoriaLogs', got %s", result)
 	}
 }
 

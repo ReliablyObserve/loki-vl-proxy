@@ -265,7 +265,7 @@ func recordedParserDifference(reference recordedParserCase, status int, body []b
 			return fmt.Errorf("invalid recorded error: %w", err)
 		}
 		// Loki writes the message alone as text/plain.
-		actual := errBodyView{Status: "error", ErrorType: "bad_data", Error: string(body)}
+		actual := errBodyView{Error: string(body)}
 		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) || actual.Error == "" {
 			return fmt.Errorf("missing Loki-shaped bad_data error text: %s", body)
 		}
@@ -358,7 +358,7 @@ func TestOrderedJSONRecordedLokiContracts(t *testing.T) {
 				// Keep the existing syntax-category contract. The owned open gap
 				// is visible, never counted as exact error-text compatibility.
 				reply := readErrorRec(t, actual)
-				if actual.Code != 400 || reply.Status != "error" || reply.ErrorType != "bad_data" || !strings.HasPrefix(reply.Error, "parse error") {
+				if actual.Code != 400 || !strings.HasPrefix(reply.Error, "parse error") {
 					t.Fatalf("syntax-category contract: %v", difference)
 				}
 				t.Logf("comparison=status_category known_gap=semantics/parse-error-text-parity exact_error_text=%t Loki=%q proxy=%q", difference == nil, expectedError, reply.Error)

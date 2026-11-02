@@ -1523,11 +1523,13 @@ const (
 func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Only POST allowed
-	if r.Method != http.MethodPost {
-		// Loki registers the delete route for PUT and POST only; gorilla/mux
-		// answers any other method 405 with no body (pkg/loki/modules.go:1936).
-		w.WriteHeader(http.StatusMethodNotAllowed)
+	// Loki registers PUT and POST as the create request, GET as the list
+	// and DELETE as the cancel (pkg/loki/modules.go:1936-1938). The proxy
+	// implements the create only: it answers the other two with the bodyless
+	// 405 gorilla/mux gives an unregistered method. That difference from Loki
+	// is an open gap (semantics/error-request-validation-parity).
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		writeBodylessError(w, http.StatusMethodNotAllowed)
 		return
 	}
 

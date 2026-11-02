@@ -87,7 +87,7 @@ func TestUnknownLogQLNamesRejectedLikeLoki(t *testing.T) {
 			t.Run(endpoint+"/"+tc.query, func(t *testing.T) {
 				want := strings.Replace(identifier, "%d", strconv.Itoa(tc.col), 1)
 				w := serve(p, http.MethodGet, queryURL(endpoint, tc.query), nil)
-				if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.ErrorType != "bad_data" || got.Error != want {
+				if got := readErrorRec(t, w); w.Code != http.StatusBadRequest || got.Error != want {
 					t.Fatalf("status=%d body=%.300s, want 400 %q", w.Code, w.Body, want)
 				}
 			})

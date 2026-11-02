@@ -56,7 +56,7 @@ func TestHardening_MalformedDropKeepMatcherRejected(t *testing.T) {
 				t.Fatalf("expected %d for %q, got %d (body: %s)", tc.wantCode, tc.query, w.Code, w.Body.String())
 			}
 			body := w.Body.String()
-			if !strings.Contains(body, "parse error") || readErrorRec(t, w).ErrorType != "bad_data" {
+			if !strings.Contains(body, "parse error") || w.Code != http.StatusBadRequest {
 				t.Errorf("expected Loki-style parse error text in body, got: %s", body)
 			}
 		})

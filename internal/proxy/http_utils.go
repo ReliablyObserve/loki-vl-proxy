@@ -276,6 +276,16 @@ func writeLokiErrorBody(w http.ResponseWriter, code int, msg string) {
 	_, _ = io.WriteString(w, msg)
 }
 
+// writeBodylessError answers as gorilla/mux does for an unregistered method:
+// the status alone, with no body and no Content-Type or nosniff. The
+// middleware presets both headers, so they are removed (and not re-added at
+// write time).
+func writeBodylessError(w http.ResponseWriter, code int) {
+	w.Header().Del("Content-Type")
+	w.Header().Del("X-Content-Type-Options")
+	w.WriteHeader(code)
+}
+
 // setReplayContentType sets the Content-Type of a replayed buffered answer:
 // JSON for a result, Loki's error shape for a failure (the buffered body is the
 // error layer's text, which must not be relabelled as JSON).
@@ -299,14 +309,29 @@ func writeLokiHTTPError(w http.ResponseWriter, code int, msg string) {
 	_, _ = io.WriteString(w, msg+"\n")
 }
 
-// writeLokiRulerError answers a Prometheus-compatible rules or alerts request
-// as Loki's ruler does (pkg/ruler/base/api.go respondError, v3.7.9): the JSON
-// {"status","data","errorType","error"} in that order. Loki sets no
-// Content-Type there, so Go sniffs text/plain from the body.
+// writeLokiRulerError answers a Prometheus-compatible rules request as Loki's
+// ruler does (pkg/ruler/base/api.go respondError, v3.7.9 :106-123): the JSON
+// {"status","data","errorType","error"} in that order. PrometheusRules sets no
+// Content-Type (:150-285), so Go sniffs text/plain from the body. The ruler's
+// only failure classes are respondInvalidRequest (400, bad_data) and
+// respondServerError (500, server_error), so any other status is 500.
 func writeLokiRulerError(w http.ResponseWriter, code int, msg string) {
+	writeLokiRulerJSON(w, code, msg, "text/plain; charset=utf-8")
+}
+
+// writeLokiAlertsError is writeLokiRulerError for PrometheusAlerts, which sets
+// Content-Type: application/json before it asks for the rules
+// (pkg/ruler/base/api.go:286), so a failure after that keeps it.
+func writeLokiAlertsError(w http.ResponseWriter, code int, msg string) {
+	writeLokiRulerJSON(w, code, msg, "application/json")
+}
+
+func writeLokiRulerJSON(w http.ResponseWriter, code int, msg, contentType string) {
 	errorType := "server_error"
-	if code >= http.StatusBadRequest && code < http.StatusInternalServerError {
+	if code == http.StatusBadRequest {
 		errorType = "bad_data"
+	} else {
+		code = http.StatusInternalServerError
 	}
 	body, err := json.Marshal(struct {
 		Status    string      `json:"status"`
@@ -318,7 +343,10 @@ func writeLokiRulerError(w http.ResponseWriter, code int, msg string) {
 		writeLokiHTTPError(w, http.StatusInternalServerError, lokiErrInternal)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Loki's ruler writes no X-Content-Type-Options here; the middleware
+	// presets it, so it is removed (and not re-added at write time).
+	w.Header().Del("X-Content-Type-Options")
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(code)
 	_, _ = w.Write(body)
 }
@@ -1353,18 +1381,27 @@ type statusCapture struct {
 	http.ResponseWriter
 	code         int
 	bytesWritten int
+	wroteHeader  bool
 }
 
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
+	sc.wroteHeader = true
 	sc.ResponseWriter.WriteHeader(code)
 }
 
 func (sc *statusCapture) Write(b []byte) (int, error) {
-	if sc.ResponseWriter.Header().Get("Content-Type") == "" {
-		sc.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// The defaults belong to the implicit 200 of a first Write. After an
+	// explicit WriteHeader the headers are already sent, and a writer that
+	// removed them on purpose (Loki's ruler JSON carries no nosniff) must
+	// stay as it wrote them.
+	if !sc.wroteHeader {
+		if sc.ResponseWriter.Header().Get("Content-Type") == "" {
+			sc.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
+		sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
+		sc.wroteHeader = true
 	}
-	sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	n, err := sc.ResponseWriter.Write(b)
 	sc.bytesWritten += n
 	return n, err
