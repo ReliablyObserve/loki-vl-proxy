@@ -56,6 +56,13 @@ func (p *Proxy) precheckRawMetricRows(ctx context.Context, baseQuery string, fet
 	return nil
 }
 
+// manualRowLimitError is the error of a raw-row evaluator that read more rows
+// than -manual-range-metric-row-limit allows. Its text ends in the flag, which
+// is what lets the error layer (proxyLimitText) answer it to the client.
+func manualRowLimitError(limit int) error {
+	return fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", limit)
+}
+
 // seriesLimitMessagePrefix opens Loki's series limit message; writeError uses it
 // to name the proxy flag in the log without changing what the client reads.
 const seriesLimitMessagePrefix = "maximum number of series ("

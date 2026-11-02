@@ -24,3 +24,4 @@ cases:
   - semantics/error-layer-backend-failure-status
   - semantics/error-layer-internal-go-text
   - semantics/error-layer-silent-success
+  - limits/row-limit-error-names-flag

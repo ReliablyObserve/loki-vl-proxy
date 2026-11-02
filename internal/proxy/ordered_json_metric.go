@@ -3066,7 +3066,7 @@ func (p *Proxy) readOrderedJSONMetricRows(ctx context.Context, plan *orderedJSON
 		}
 		reader.rows++
 		if reader.rows > reader.limit {
-			return fmt.Errorf("manual range metric row limit exceeded (%d)", reader.limit)
+			return manualRowLimitError(reader.limit)
 		}
 		var row map[string]string
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {

@@ -1,0 +1,43 @@
+id: limits/row-limit-error-names-flag
+title: A raw-row metric read past the row limit answers a Loki-shaped error that names the flag
+proves:
+  - heavy-metric-fetch-bounds
+  - status-500
+consumer: any
+why: |
+  Both raw-row evaluators (the ordered JSON one behind `| json` metrics, and the
+  bare-parser one behind `| logfmt` and unwrap fallbacks) stop at
+  -manual-range-metric-row-limit rows. One of them answered the generic
+  `Internal Server Error` and the other left the flag out of its Go error text,
+  so an operator who hit the limit on a 24h Drilldown level breakdown was not
+  told what to raise. Every site now builds the error the limits registry
+  documents: 500, errorType internal, and the text
+  `manual range metric row limit exceeded (N); narrow the query or increase
+  -manual-range-metric-row-limit`, with nothing of VictoriaLogs or Go in it.
+  The read stops as the limit is hit: the proxy hangs up on VictoriaLogs and
+  buffers no further row (the fetch also asks VictoriaLogs for at most N+1
+  rows).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({env="production"} | json | __error__!="" [$__auto]))'
+    start: now-24h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The selector matches more lines than -manual-range-metric-row-limit and the
+    metric cannot be answered from VictoriaLogs stats buckets, so the raw-row
+    evaluator reads the lines. Instant queries (/loki/api/v1/query) answer the
+    same error.
+compare:
+  mode: exact
+  fields: [status, errorType, body]
+  expect:
+    status: 500
+    error_type: internal
+    body_contains:
+      - manual range metric row limit exceeded
+      - -manual-range-metric-row-limit
