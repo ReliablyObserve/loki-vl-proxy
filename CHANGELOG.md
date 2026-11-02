@@ -62,6 +62,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept Loki's label filter expressions: filters joined by a comma
+  (`| status>=500, method="GET"`), parenthesized groups
+  (`| (status_code < 500 and status_code > 200) or latency >= 250ms`), `and`,
+  `or` and filters written one after another. They answered 400, either with
+  `syntax error: unexpected |` or with a VictoriaLogs parse error, and a
+  comma-joined or juxtaposed pair of string filters (`a="1", b="2"`) was read
+  as one filter on `a` and answered 200 with the wrong lines. The proxy now
+  reads the expression with Loki's grammar and precedence (`and` binds tighter
+  than `or`; a comma or juxtaposition joins everything up to the end of its
+  group, so `a, b or c` is `a and (b or c)`), and sends VictoriaLogs one
+  `| filter` with every operator parenthesized. Metric queries keep the
+  filter in front of `| stats`. A malformed expression (`()`, an unbalanced
+  parenthesis, a dangling `and`, `or` or comma, a value where an operator
+  belongs) is rejected with Loki's message, line and column. A line filter
+  after a complete label filter (`| (a="1" or b="2") != "x"`) is a line filter
+  stage, a stage with several filters no longer replaces an earlier filter on
+  the same field, and a `json` alias is replaced inside each filter of a group.
+  **Breaking:** the value of every label filter, single or not, has the kind
+  Loki's grammar wants: a string after `=~` and `!~`; a string, number,
+  duration, bytes size or `ip("...")` after `=` and `!=`; a number, duration or
+  bytes size after `==`, `<`, `<=`, `>` and `>=`. A single filter with a wrongly
+  typed value (`| duration > "1s"`, `| ok=true`, `| a =~ 5`) now gets Loki's 400
+  with its line and column instead of being passed to VictoriaLogs; write
+  `| duration > 1s`. A label filter `| addr = ip("10.0.0.0/8")` is no longer
+  cut at its closing parenthesis.
+
 - **A `query_range` step under a second answers a point every step, with
   Loki's times.** Grafana sends `step=0.2` (`intervalMs` 200) for a short
   panel, and Loki answers a sample every 200 ms: its frontend keeps the step in

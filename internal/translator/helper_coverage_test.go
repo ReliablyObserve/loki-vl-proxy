@@ -6,18 +6,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
-func TestCoverage_SplitLogicalStageAndSanitizeHelpers(t *testing.T) {
-	parts, ops, ok := splitLogicalStage(`level="info and ready" and (status="200" or status="201")`)
-	if !ok {
-		t.Fatal("expected logical stage to split")
-	}
-	if len(parts) != 2 || len(ops) != 1 || ops[0] != "and" {
-		t.Fatalf("unexpected logical split parts=%#v ops=%#v", parts, ops)
-	}
-	if _, _, ok := splitLogicalStage(`and level="info"`); ok {
-		t.Fatal("expected malformed logical stage to fail splitting")
-	}
-
+func TestCoverage_SanitizeHelpers(t *testing.T) {
 	if got := sanitizeFieldIdentifier(" `k8s . pod..name` "); got != "k8s.pod.name" {
 		t.Fatalf("unexpected sanitized field identifier %q", got)
 	}

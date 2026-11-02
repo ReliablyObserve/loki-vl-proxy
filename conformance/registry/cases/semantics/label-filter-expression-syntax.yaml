@@ -9,6 +9,38 @@ why: |
   fails them: VictoriaLogs parse errors from the translated filter (`cannot
   parse ... probably, the whole string must be put into quotes`) or its own
   `syntax error: unexpected |`.
+
+  Two causes. The parser (internal/logql) required an identifier after `|`, so
+  a parenthesized filter was rejected with the generic `unexpected |`. The
+  translator (internal/translator) split a filter only at lowercase ` or ` and
+  ` and ` outside parentheses and handed everything else to the single-filter
+  translation, which read `a="1", b="2"` as the label a with the value `"1",
+  b="2"` (a 200 with the wrong lines), `(status>=500 or duration_ms>1000),
+  method="GET"` as a garbled field name (the VictoriaLogs parse error), and
+  `a="1" b="2"` the same way.
+
+  Loki's labelFilter rule (pkg/logql/syntax/syntax.y:302) gives AND and OR a
+  precedence (AND above OR, both left associative) and COMMA and the juxtaposed
+  `labelFilter labelFilter` none, so goyacc always shifts: the right operand of
+  a comma or of a juxtaposition is the rest of the group. `a, b or c` is `a and
+  (b or c)` and `a or b, c` is `a or (b and c)`. Both sides read the stage with
+  one grammar (translator.ParseLabelFilterExpr): the parser rejects with Loki's
+  token, expected-token list, line and column, and the translator emits every
+  binary node parenthesized, each filter translated like a stand-alone stage.
+  A metric query keeps the grouped filter in front of `| stats`. A stage with
+  several filters has no single field identity, so the latest-wins dedupe of
+  repeated Drilldown clicks leaves it alone, and a line filter (`!=`, `!~`)
+  after a complete label filter starts a line filter stage as in Loki.
+
+  Known, not changed here: a numeric comparison on a value that is not a
+  number keeps the line in Loki (it sets `__error__`) and drops it in
+  VictoriaLogs, for a single filter as for a group. The value of every label
+  filter has the kind Loki's grammar wants (syntax.y:328-356): a string after
+  =~ and !~; a string, number, duration, bytes size or ip("...") after = and
+  !=; a number, duration or bytes size after ==, <, <=, > and >=. A single
+  filter with a wrongly typed value (`duration > "1s"`, `ok=true`, `a =~ 5`)
+  used to pass to VictoriaLogs and is now Loki's 400 (Breaking, noted in the
+  CHANGELOG).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -29,10 +61,11 @@ gap:
   status: open
   impact: explore-visible
   effort: M
-  area: 'internal/logql parser (label filter grammar) + translator filter emission'
-  loki: 'pkg/logql/syntax/syntax.y labelFilter: labelFilter COMMA labelFilter, OPEN_PARENTHESIS labelFilter CLOSE_PARENTHESIS'
-  proxy: '400'
-  planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics)'
+  area: 'internal/translator/label_filter_expr.go (ParseLabelFilterExpr, LabelFilterExpr.translate); internal/translator/translator.go (translateLabelFilter, canonicalLabelFilterStage, extractPipelineStage); internal/logql/parser.go (parseLabelFilterStage, consumeRestOfStage)'
+  loki: 'pkg/logql/syntax/syntax.y:302 labelFilter: labelFilter COMMA labelFilter, OPEN_PARENTHESIS labelFilter CLOSE_PARENTHESIS, labelFilter labelFilter, AND and OR (precedence at :90-91); pkg/logql/log/label_filter.go BinaryLabelFilter'
+  proxy: 'one grammar for the parser (Loki-shaped 400) and the translator (every binary node parenthesized into one | filter pipe)'
+  planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics) and TestComplex_Logfmt_FilterAfterParse (test/e2e-compat, group otel-edge); neither has run yet: prepared without a stack; TestLabelFilterExpressionMatchesLokiGolden (internal/logql, 1036 expressions recorded from Loki v3.7.9), TestParseLogQuery_LabelFilterExpressionStages, TestValidateLogQL_LabelFilterExpressionContexts, TestValidateLogQL_LabelFilterExpressionErrorsInMetrics (internal/logql); TestParseLabelFilterExpr_Precedence, TestParseLabelFilterExpr_SyntaxErrors, TestTranslateLabelFilterExpression_LogsQL, TestTranslateLabelFilterExpression_PipelineContexts, TestLabelFilterExpression_ReferenceParserAgrees, TestLabelFilterExpression_EmittedLogsQLEvaluatesLikeLokiTree, TestLabelFilterExpression_CompoundStageHasNoSingleIdentity, TestLabelFilterExpression_JSONAliasRewrittenPerFilter (internal/translator); TestQueryRange_LabelFilterExpressionsReachVictoriaLogsAsOneFilter, TestQueryRange_LabelFilterExpressionMetricsTakeTheRouteOfASingleFilter, TestQueryRange_MalformedLabelFilterExpressionsAreRejectedLikeLoki (internal/proxy); FuzzLabelFilterExpression (internal/translator, CI fuzz smoke)'
+  note: 'Prepared without a stack: the e2e and the perf block (PR over Loki, cold, warm, refresh) have not run. The status stays open until the e2e has passed on the stack.'
   clusters:
     - 163be53e
     - 4e6094a0
@@ -45,3 +78,10 @@ gap:
     - e67ce23c
     - ed5ff2d9
     - f59a58b3
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

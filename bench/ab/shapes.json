@@ -3033,6 +3033,49 @@
      ]
     }
    ]
+  },
+  "label-filter-expression": {
+   "description": "Label filter expressions as Loki accepts them: a comma joins filters, parentheses group, and/or bind with Loki's precedence (semantics/label-filter-expression-syntax). Before the change every shape here answers 400 on main; the proof is that the branch answers like Loki and within the time bound. LF4 is the same filters as one stage without a group, a control for the grouped forms. Run with the control set.",
+   "ranges": [
+    "1h",
+    "3h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "LF1 count by level, group then comma",
+     "query": "sum by (level) (count_over_time({env=\"production\"} | json | (service_version=`0.96.0` or pipeline=`logs/loki`), level!=\"debug\" [1m]))",
+     "covers": [
+      "semantics/label-filter-expression-syntax",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF2 ungrouped count, comma-joined",
+     "query": "sum(count_over_time({env=\"production\"} | json | service_version=`0.96.0`, pipeline=`logs/loki` [1m]))",
+     "covers": [
+      "semantics/label-filter-expression-syntax",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF3 explore volume, group, drop",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | (service_version=`0.96.0` or pipeline=`logs/loki`) | drop __error__ [1m]))",
+     "covers": [
+      "semantics/label-filter-expression-syntax",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "LF4 explore volume, two stages (control)",
+     "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [1m]))",
+     "covers": [
+      "explore-logs-volume-json",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

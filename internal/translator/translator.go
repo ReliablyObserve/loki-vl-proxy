@@ -913,6 +913,12 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		// Determine the pipeline stage type
 		stage, rest := extractPipelineStage(remaining)
 		remaining = rest
+		if strings.HasPrefix(stage, "(") {
+			// A parenthesized single filter is that filter.
+			if expr, err := ParseLabelFilterExpr(stage); err == nil && expr.IsLeaf() {
+				stage = expr.Leaf
+			}
+		}
 		for _, label := range regexpCaptureLabels(stage) {
 			if label != "" {
 				captureLabels[label] = true
@@ -1308,8 +1314,16 @@ func isNoopPatternExpression(expr string) bool {
 // The fix lives in translatePipelineStage's assembly logic (the `wrap with
 // "| "` branch added alongside the `wrap with "| filter "` branch), not here.
 func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) string {
-	if chained, ok := translateLogicalLabelFilterChain(stage, labelFn, caps); ok {
-		return chained
+	if mayBeCompound(stage) {
+		if expr, err := ParseLabelFilterExpr(stage); err == nil {
+			if !expr.IsLeaf() {
+				if translated, ok := expr.translate(labelFn, caps); ok {
+					return translated
+				}
+			} else {
+				stage = expr.Leaf
+			}
+		}
 	}
 
 	if translated, ok := translateSingleLabelFilter(stage, labelFn, caps); ok {
@@ -1322,112 +1336,6 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.
 
 	// Unknown stage — pass through as-is with pipe (already a complete stage).
 	return "| " + stage
-}
-
-func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
-	parts, ops, ok := splitLogicalStage(stage)
-	if !ok || len(parts) < 2 {
-		return "", false
-	}
-
-	translated := make([]string, 0, len(parts))
-	for _, part := range parts {
-		item, ok := translateSingleLabelFilter(part, labelFn, caps)
-		if !ok {
-			return "", false
-		}
-		translated = append(translated, item)
-	}
-
-	var b strings.Builder
-	b.WriteString("(")
-	for i, item := range translated {
-		if i > 0 {
-			b.WriteByte(' ')
-			b.WriteString(ops[i-1])
-			b.WriteByte(' ')
-		}
-		b.WriteString(item)
-	}
-	b.WriteString(")")
-	return b.String(), true
-}
-
-func splitLogicalStage(stage string) ([]string, []string, bool) {
-	var (
-		parts   []string
-		ops     []string
-		start   int
-		depth   int
-		inQuote rune
-	)
-
-	flush := func(end int) bool {
-		part := strings.TrimSpace(stage[start:end])
-		if part == "" {
-			return false
-		}
-		parts = append(parts, part)
-		start = end
-		return true
-	}
-
-	for i := 0; i < len(stage); i++ {
-		ch := rune(stage[i])
-		if inQuote != 0 {
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == inQuote {
-				inQuote = 0
-			}
-			continue
-		}
-
-		switch ch {
-		case '"', '`':
-			inQuote = ch
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
-		}
-		if depth != 0 {
-			continue
-		}
-
-		if strings.HasPrefix(stage[i:], " or ") {
-			if !flush(i) {
-				return nil, nil, false
-			}
-			ops = append(ops, "or")
-			i += len(" or ") - 1
-			start = i + 1
-			continue
-		}
-		if strings.HasPrefix(stage[i:], " and ") {
-			if !flush(i) {
-				return nil, nil, false
-			}
-			ops = append(ops, "and")
-			i += len(" and ") - 1
-			start = i + 1
-			continue
-		}
-	}
-
-	last := strings.TrimSpace(stage[start:])
-	if last == "" {
-		return nil, nil, false
-	}
-	parts = append(parts, last)
-	if len(parts) != len(ops)+1 {
-		return nil, nil, false
-	}
-	return parts, ops, len(parts) > 1
 }
 
 // logqlSingleFilterOp maps a LogQL operator string to a FieldOp constant and
@@ -1827,6 +1735,12 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 }
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
+	if mayBeCompound(stage) {
+		if expr, err := ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
+			// Several filters have no single field identity to deduplicate on.
+			return "", "", false
+		}
+	}
 	if translated, ok := translateSingleLabelFilter(stage, labelFn, logsql.Capabilities{}); ok {
 		if fieldKey, op, ok := translatedFilterFieldOp(translated); ok {
 			// Drilldown include/exclude interactions emit equality/regex filters.
@@ -3469,6 +3383,7 @@ func findLastMatchingParen(s string) int {
 func extractPipelineStage(s string) (stage, rest string) {
 	// A pipeline stage goes until the next unquoted |
 	var inQuote rune
+	stuck := false
 	for i := 0; i < len(s); i++ {
 		c := rune(s[i])
 		if c == '\\' && inQuote == '"' && i+1 < len(s) {
@@ -3490,10 +3405,25 @@ func extractPipelineStage(s string) (stage, rest string) {
 		}
 		// !> (pattern negation) acts as a stage boundary without a preceding |.
 		// Stop here so the caller's loop can handle !> as its own operator. So do
-		// != and !~ right after a bare parser (`| json != "x"`), where they are a
-		// line filter and not a label filter.
-		if c == '!' && i+1 < len(s) && (s[i+1] == '>' || (s[i+1] == '=' || s[i+1] == '~') && isBareParserKeyword(strings.TrimSpace(s[:i]))) {
+		// != and !~ right after a bare parser (`| json != "x"`) or a complete label
+		// filter (`| (a="1" or b="2") != "x"`), where they are a line filter and
+		// not a label filter operator.
+		if c == '!' && i+1 < len(s) && s[i+1] == '>' {
 			return strings.TrimSpace(s[:i]), s[i:]
+		}
+		if c == '!' && i+1 < len(s) && (s[i+1] == '=' || s[i+1] == '~') && !stuck {
+			prefix := strings.TrimSpace(s[:i])
+			complete := isBareParserKeyword(prefix)
+			if !complete {
+				_, err := ParseLabelFilterExpr(prefix)
+				complete = err == nil
+				// A prefix that fails before its end fails the same way with
+				// anything appended: no later operator can follow a complete stage.
+				stuck = err != nil && err.Offset < len(prefix)
+			}
+			if complete {
+				return prefix, s[i:]
+			}
 		}
 	}
 	return strings.TrimSpace(s), ""
@@ -4640,6 +4570,11 @@ func resolveJSONBracketPath(orig string) string {
 // unpack_json (which preserves original names) can match it.
 // E.g., "http_code=\"200\"" with alias {"http_code":"status"} → "status=\"200\""
 func rewriteJSONAliasedFilter(stage string, aliases map[string]string) string {
+	if mayBeCompound(stage) {
+		if expr, err := ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
+			return expr.render(func(leaf string) string { return rewriteJSONAliasedFilter(leaf, aliases) })
+		}
+	}
 	for alias, orig := range aliases {
 		if strings.HasPrefix(stage, alias) {
 			after := stage[len(alias):]
