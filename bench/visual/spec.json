@@ -1278,7 +1278,6 @@
    "kind": "explore",
    "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | __error__!=\"\" [$__auto]))",
    "ranges": [
-    "1h",
     "6h"
    ],
    "fixes": [
@@ -1296,9 +1295,6 @@
    "id": "explore-json-count-by-detected-level",
    "kind": "explore",
    "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [$__auto]))",
-   "fixes": [
-    "semantics/json-detected-level-error-split"
-   ],
    "covers": [
     "semantics/json-detected-level-error-split",
     "semantics/json-metric-detected-level-derivation",
