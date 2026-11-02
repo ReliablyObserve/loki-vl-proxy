@@ -48,9 +48,13 @@ why: |
   ones it vouches for and reads the rest raw. The raw rows of either stay
   within -manual-range-metric-row-limit; past it the answer is the documented
   400 naming the flag. Their steps are kept as settled steps under their own
-  route, so a moved window evaluates only its new steps. Grouping by anything
-  but detected_level, a label filter, an instant query, a step wider than the
-  range or a window whose rows lack a stored level keep the row evaluator.
+  route, so a moved window evaluates only its new steps. A window whose rows
+  lack a stored level is read by the detected_level chain, as the non-split
+  pushdown reads it, its guard probes restricted to the lines the split counts
+  (the lines VictoriaLogs parses, or the lines without a brace for the error
+  count), and a line the chain reads differently keeps the row evaluator.
+  Grouping by anything but detected_level, a label filter, an instant query or
+  a step wider than the range keeps the row evaluator.
 
   Measured on the shared e2e stack (VictoriaLogs v1.52.0, generator data,
   353,000 lines in the last hour, 785,000 in 24h), main against this change,

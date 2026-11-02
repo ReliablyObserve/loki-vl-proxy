@@ -166,6 +166,18 @@ func riskRestriction(ctx context.Context) string {
 // sentinel into _msg already; a second splice keeps the verdict.
 var jsonValidOnlyRestriction = jsonValidityPipes(true) + " | filter " + jsonValidField + ":*"
 
+// jsonSplitRiskRestriction is the restriction of a split plan's probes: the
+// lines its stats count. A plan counting the lines Loki rejects counts the
+// lines without a brace (the lines read as raw rows derive their level in the
+// row evaluator, the lines VictoriaLogs vouches for are not counted); the
+// other modes count the lines VictoriaLogs parses.
+func jsonSplitRiskRestriction(split jsonSplitMode) string {
+	if split == jsonSplitErrors {
+		return " | filter -" + jsonObjectStartFilter
+	}
+	return jsonValidOnlyRestriction
+}
+
 // jsonLokiRejectHazardRisk reports whether a brace-opened line in [start, end]
 // matches jsonLokiRejectHazard, remembering windows found free of one like the
 // parse-risk probes do.

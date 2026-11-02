@@ -1229,13 +1229,16 @@ var errLevelNotStored = errors.New("rows without a stored level")
 // lines per bucket, and reads only those as raw rows; Loki's series limit
 // applies to its merged answer only.
 //
-// A split plan grouped by detected_level asks for the stored fields alone and
-// never for the chain: it is served only when the stored level fields decide
-// the level of every counted line exactly as Loki's ingest does
-// (storedLevelSeries). A window with a counted line they do not decide, a read
-// past the group guard, or a response too large to read leaves the query to
-// the row evaluator, which derives the level of every line itself; so do the
-// lines read as raw rows.
+// A `| json | __error__=""` split grouped by detected_level asks for the
+// stored fields alone and never for the chain: it is served only when the
+// stored level fields decide the level of every counted line exactly as
+// Loki's ingest does (storedLevelSeries). A window with a counted line they do
+// not decide, a read past the group guard, or a response too large to read
+// leaves the query to the row evaluator, which derives the level of every line
+// itself; so do the lines read as raw rows. The strict and error-count splits
+// (jsonSplitStrict, jsonSplitErrors), whose row evaluator reads every selected
+// line, ask the chain next, its guard probes restricted to the lines they
+// count (jsonSplitRiskRestriction).
 //
 // A plan reading detected_level first asks for the stored fields alone: the
 // buckets are grouped by the stored detected_level and level fields, and the
@@ -1276,7 +1279,7 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 	}
 	if plan.derivesLevel {
 		body, served, parseDisagreement, err = p.orderedJSONStatsBuckets(ctx, plan, start, end, step, true, instant)
-		if plan.validOnly && (errors.Is(err, errLevelNotStored) || errors.Is(err, errStatsGroupGuard)) {
+		if plan.split == jsonSplitValid && (errors.Is(err, errLevelNotStored) || errors.Is(err, errStatsGroupGuard)) {
 			return nil, false, false, nil
 		}
 		if !errors.Is(err, errLevelNotStored) && !errors.Is(err, errStatsGroupGuard) {
@@ -1793,7 +1796,7 @@ func splitPushdownKeys(unpack []string) (plain, allKeys, extracted, extractedKey
 // the stream holds.
 func (p *Proxy) pushdownParseRisk(ctx context.Context, plan *orderedJSONMetricPlan, base string, plain, extracted, extractedKeys []string, stored map[string]string, storedLevel bool, start, end time.Time) (bool, error) {
 	if plan.validOnly {
-		ctx = withRiskRestriction(ctx, jsonValidOnlyRestriction)
+		ctx = withRiskRestriction(ctx, jsonSplitRiskRestriction(plan.split))
 	}
 	type result struct {
 		risky bool

@@ -226,7 +226,15 @@ func TestJSONDetectedLevelSplitMatchesRawEvaluator(t *testing.T) {
 	for seed := int64(1); seed <= int64(seeds); seed++ {
 		rng := rand.New(rand.NewSource(seed))
 		hazards := seed%2 == 0
-		mixed := withStoredLevels(jsonSplitRows(rng, s0, 400, hazards))
+		bodyLevels := jsonSplitRows(rng, s0, 400, hazards)
+		mixed := withStoredLevels(bodyLevels)
+		// Half the streams without a stored level: the chain derives theirs.
+		partly := append([]pushdownRow(nil), bodyLevels...)
+		for i := range partly {
+			if i%2 == 0 {
+				partly[i] = mixed[i]
+			}
+		}
 		for _, tc := range jsonDetectedLevelSplitQueries {
 			plan, ok := compileOrderedJSONMetric(tc.query)
 			if !ok || plan.split != tc.split {
@@ -239,11 +247,15 @@ func TestJSONDetectedLevelSplitMatchesRawEvaluator(t *testing.T) {
 				if strings.Contains(tc.query, "detected_level") {
 					assertStoredLevelStats(t, fake, label)
 				}
+				fake = runDetectedLevelSplit(t, partly, tc.query, start, end, time.Minute, label+" (levels partly stored)")
+				assertBoundedRawReads(t, fake, label+" (levels partly stored)")
 				continue
 			}
 			fake := runDetectedLevelSplit(t, braceOnlyRows(t, mixed, false), tc.query, start, end, time.Minute, label+" (accepted lines)")
 			assertBoundedRawReads(t, fake, label)
 			assertStoredLevelStats(t, fake, label)
+			fake = runDetectedLevelSplit(t, braceOnlyRows(t, partly, false), tc.query, start, end, time.Minute, label+" (accepted lines, levels partly stored)")
+			assertBoundedRawReads(t, fake, label+" (accepted lines, levels partly stored)")
 			runDetectedLevelSplit(t, braceOnlyRows(t, mixed, true), tc.query, start, end, time.Minute, label+" (with rejected lines)")
 			runDetectedLevelSplit(t, mixed, tc.query, start, end, time.Minute, label+" (with unbraced lines)")
 		}

@@ -1277,6 +1277,10 @@
    "id": "explore-json-error-count-by-detected-level",
    "kind": "explore",
    "query": "sum by (detected_level) (count_over_time({env=\"production\"} | json | __error__!=\"\" [$__auto]))",
+   "ranges": [
+    "1h",
+    "6h"
+   ],
    "fixes": [
     "semantics/json-detected-level-error-split"
    ],
