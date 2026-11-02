@@ -10,6 +10,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 import history  # noqa: E402
+import over2x  # noqa: E402
 
 COUNTERS = {"cold": {"result": {"entriesFound": 0, "bytesReceived": 0}, "statsResult": {"entriesFound": 2}}}
 SHAPE, RANGE = "logs | json", "1h"
@@ -111,15 +112,69 @@ class AlertsTest(unittest.TestCase):
         self.profile_day("loki-defaults", row(), commit="d" * 12)
         self.assertEqual(len(alerts(self.dir)["ratchet_added"]), 1)  # the same row, like-for-like
 
+    def same_day(self, **kw):
+        """Both profiles ran on one date (a day the aligned profile ran: a build supported its flag)."""
+        self.n += 1
+        for profile in ("aligned", "loki-defaults"):
+            history.append(summary(f"2026-10-{self.n:02d}", timed(p50=2.0, loki_p50=0.4, cold=2.0), profile=profile, **kw),
+                           self.dir, f"c{self.n}" * 12, SPEC)
+
     def test_an_over_2x_row_is_listed_and_new_per_profile(self):
-        self.profile_day("aligned", timed(p50=2.0, loki_p50=0.4, cold=2.0))
-        self.profile_day("loki-defaults", timed(p50=2.0, loki_p50=0.4, cold=2.0))
+        self.same_day()
         new = alerts(self.dir)["over_2x_new"]
         self.assertEqual({(r["profile"], r["mode"]) for r in new}, set())  # no baseline file: nothing to compare with
         with open(os.path.join(self.dir, "over-2x-loki.json"), "w") as f:
             json.dump({"rows": []}, f)
         new = alerts(self.dir)["over_2x_new"]
         self.assertEqual({r["profile"] for r in new}, {"aligned", "loki-defaults"})
+
+    def listed(self, *profiles):
+        rows = [{"profile": p, "set": "control", "shape": SHAPE, "range": RANGE, "mode": m, "ratio": 5.0,
+                 "proxy_s": 2.0, "loki_s": 0.4, "since": "2026-10-01"} for p in profiles for m in ("cold", "warm")]
+        over2x.write_baseline(rows, os.path.join(self.dir, "over-2x-loki.json"))
+
+    def line(self, day, profile, *rows):
+        history.append(summary(f"2026-10-{day:02d}", *rows, profile=profile), self.dir, f"c{day}" * 12, SPEC)
+
+    def test_a_profile_that_stopped_running_judges_nothing_and_is_reported(self):
+        # The aligned profile ran on the 1st and the 2nd, within 2×, and stopped; loki-defaults goes on, above 2×.
+        # Judged every day, the frozen aligned lines would remove its rows on a run that did not happen.
+        self.listed("aligned", "loki-defaults")
+        for day in (1, 2):
+            self.line(day, "aligned", timed(p50=0.5, loki_p50=0.4, cold=0.4))
+        for day in (1, 2, 3, 4):
+            self.line(day, "loki-defaults", timed(p50=2.0, loki_p50=0.4, cold=2.0))
+        a = alerts(self.dir)
+        self.assertEqual([(r["profile"], r["last"], r["current"]) for r in a["over_2x_stale"]],
+                         [("aligned", "2026-10-02", "2026-10-04")])
+        self.assertEqual({(r["profile"], r["mode"]) for r in a["over_2x_unjudged"]}, {("aligned", "cold"), ("aligned", "warm")})
+        self.assertEqual({r["profile"] for r in a["over_2x"]}, {"aligned", "loki-defaults"})
+        self.assertEqual((a["over_2x_removed"], a["over_2x_pending"]), ([], []))
+        self.assertIn("Not judged: 2 listed aligned rows. The aligned profile did not run for 1 sets",
+                      history.render_alerts(a))
+
+    def test_the_profile_that_ran_is_judged_by_its_own_two_consecutive_runs(self):
+        self.listed("aligned", "loki-defaults")
+        for day in (1, 2):
+            self.line(day, "aligned", timed(p50=0.5, loki_p50=0.4, cold=0.4))
+            self.line(day, "loki-defaults", timed(p50=0.5, loki_p50=0.4, cold=0.4))
+        a = alerts(self.dir)
+        self.assertEqual(a["over_2x_stale"], [])  # both ran on the 2nd
+        self.assertEqual({(r["profile"], r["mode"]) for r in a["over_2x_removed"]},
+                         {(p, m) for p in ("aligned", "loki-defaults") for m in ("cold", "warm")})
+
+    def test_a_profile_with_no_like_for_like_row_is_stale_even_on_the_same_day(self):
+        self.listed("aligned")
+        self.n += 1
+        history.append(summary(f"2026-10-{self.n:02d}", timed(p50=2.0, loki_p50=0.4, cold=2.0), profile="aligned",
+                               not_like_for_like=["main"]), self.dir, "c" * 12, SPEC)
+        a = alerts(self.dir)
+        self.assertEqual([(r["profile"], r["why"]) for r in a["over_2x_stale"]], [("aligned", "no like-for-like row")])
+
+    def test_a_set_with_one_profile_is_never_stale(self):
+        self.listed("loki-defaults")
+        self.profile_day("loki-defaults", timed(p50=2.0, loki_p50=0.4, cold=2.0))
+        self.assertEqual(alerts(self.dir)["over_2x_stale"], [])
 
     def test_the_trend_gives_each_profile_a_section_and_marks_a_cache_served_cold(self):
         self.profile_day("aligned", row(), not_like_for_like=["main"])

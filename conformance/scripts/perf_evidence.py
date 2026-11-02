@@ -685,6 +685,9 @@ def quality_inputs():
         "summary": summarize(latest, spec["sets"]),
         "distribution": ((day or {}).get("profiles", {}).get(profile)),
         "targets": acceptance_file.get("targets", {}),
+        # The newest day each Loki profile has a full daily run (a profile that stopped running is behind `date`).
+        "profile_last": {p: max((d["date"] for d in acceptance_file["days"] if p in d.get("profiles", {})), default="")
+                         for p in PROFILE_RANK},
         "over": load_json(OVER_2X) if os.path.exists(OVER_2X) else {"rows": []},
         "blocks": over2x.read_bounds(spec=spec).get("blocks", {}),
         "stats": load_json(SUMMARY_JSON), "states": states, "differences": found,
@@ -728,6 +731,21 @@ def links(target_is_docs):
             ("coverage map", "conformance/reports/coverage-map.md"), ("Known Issues", "docs/KNOWN_ISSUES.md")]
 
 
+def other_profile_sentence(q, notes, others):
+    """Whether the Loki profile that is not shown ran on the day shown, and what that means for its rows."""
+    out = []
+    for p in others:
+        last = (q.get("profile_last") or {}).get(p, "")
+        if not last:
+            out.append(f"The `{p}` profile has no valid daily run yet.")
+        elif last == q["date"]:
+            out.append(f"The `{p}` profile ({notes[p]}) is measured too and is not shown here.")
+        else:
+            out.append(f"The `{p}` profile ({notes[p]}) did not run on {q['date']} (its newest daily run is {last}), "
+                       "so it is not shown, and no row is judged in it.")
+    return " ".join(out)
+
+
 def render_quality_summary(q, target_is_docs=False):
     """The section body (without the markers) from inputs read by quality_inputs()."""
     s, workloads = q["summary"], q["summary"]["workloads"]
@@ -735,7 +753,9 @@ def render_quality_summary(q, target_is_docs=False):
     drill, logs, metric = (workloads[w] for w in WORKLOADS[1:])
     dist = q["distribution"] or {}
     first, repeat = dist.get("cold"), dist.get("warm")
-    over = q["over"].get("rows", [])
+    all_over = q["over"].get("rows", [])
+    # The list holds rows of both Loki profiles; the sentence below states the one shown above.
+    over = [r for r in all_over if (r.get("profile") or LEGACY_PROFILE) == q["profile"]]
     over_modes = {m: sum(1 for r in over if r["mode"] == m) for m in over2x.MODES}
     commits = ", ".join(f"`{c[:10]}`" for c in q["commits"])
     notes = {p: re.split(r"\.\s", n)[0].rstrip(".") for p, n in over2x.PROFILE_NOTES.items()}
@@ -750,9 +770,9 @@ def render_quality_summary(q, target_is_docs=False):
               "count." if q["ranked_signature"] else ""),
            "",
            f"Loki profile shown: `{q['profile']}`, {notes[q['profile']]}. "
-           + (f"The stack's Loki settings differ from Loki's own defaults ({notes['loki-defaults'].split('(')[1].split(')')[0]}); "
-              f"the `loki-defaults` profile has no valid daily run yet." if q["profile"] == "aligned" else
-              f"The `aligned` profile ({notes['aligned']}) is measured too and is not shown here.") + " "
+           + (f"The stack's Loki settings differ from Loki's own defaults ({notes['loki-defaults'].split('(')[1].split(')')[0]}). "
+              if q["profile"] == "aligned" else "")
+           + other_profile_sentence(q, notes, other) + " "
            + SCOPE_SENTENCE, "",
            "**Where the proxy is better than Loki**", ""]
     out += [f"- First request: **{cold.get('faster', 0)} of {comparable}** comparable pairs are faster "
@@ -804,14 +824,14 @@ def render_quality_summary(q, target_is_docs=False):
                    + (f" and **{repeat['above']}** on a repeat" if repeat else "") + f" (the {q['date']} distribution).")
     locked = sum(1 for b in q["blocks"].values() if b["locked"] is True)
     if over:
-        out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list** (more than 2× Loki and more "
-                   f"than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
+        out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list for the `{q['profile']}` profile** "
+                   f"(more than 2× Loki and more than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
                    f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row leaves the "
                    f"list after two consecutive daily runs within 2×, so it can hold more rows than the day's "
                    f"distribution above; a change that adds or worsens a row is flagged. {locked} of "
                    f"{len(q['blocks'])} covered registry items are locked at the 2× bound.")
     else:
-        out.append(f"- No row is on the above-2× list. {locked} of {len(q['blocks'])} covered registry items are "
+        out.append(f"- No row is on the above-2× list for the `{q['profile']}` profile. {locked} of {len(q['blocks'])} covered registry items are "
                    f"locked at the 2× bound.")
     gaps = {m: sorted((r for r in over if r["mode"] == m), key=lambda r: r["loki_s"] - r["proxy_s"])[:limit]
             for m, limit in (("cold", 3), ("warm", 2))}

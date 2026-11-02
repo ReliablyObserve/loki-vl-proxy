@@ -46,7 +46,18 @@ stops being as good is a ratchet loss. Cold, never warm p50: Loki's warm is its 
 alerts also keeps history/over-2x-loki.json, the rows above 2× Loki (over2x.py has
 the definition): a listed row is removed once two consecutive full lines measure
 it comparable and within 2×, its ratio is tightened when a line measures it
-lower, and a row above 2× that is not listed is reported (never added).
+lower, and a row above 2× that is not listed is reported (never added). Only a profile that ran is
+judged: when a set's newest full line of a profile is older than another profile's (the aligned profile
+needs a build with -align-queries-with-step and does not run without one) or has no like-for-like row,
+that profile is stale for the set, its listed rows are reported as not judged (over_2x_stale,
+over_2x_unjudged) and nothing in its frozen lines is re-judged day after day.
+
+  history.py over-2x-reseed [--dir bench/ab/history] [--write]
+      The one-time move of the rows listed before the profiles existed (profile aligned, proxy_side
+      unaligned) to the profile the daily run measures with that proxy side, loki-defaults: the daily
+      history is replayed day by day through alerts, so a row leaves on the day it had two consecutive
+      full runs within 2×, and the loki-defaults rows above 2× on both of the last two full runs are
+      listed. Prints the before and after counts; --write rewrites over-2x-loki.json.
 
 alerts also applies the acceptance tiers (over2x.py: the registry's perf: blocks). A locked row above its
 bound is a regression: warm after one run (a p50 of seven), cold when the previous full line was above it
@@ -68,6 +79,7 @@ import glob
 import json
 import os
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HISTORY = os.path.join(HERE, "history")
@@ -416,6 +428,33 @@ def week_before(new, older):
     return next((e for e, _ in older if (day - datetime.date.fromisoformat(e["date"])).days >= 7), None)
 
 
+def profile_state(directory, spec, sets=None):
+    """(set, profile) -> {"last": date of the newest full valid line, "current": the newest such date over the
+    profiles of the set, "like_for_like": that line has a row of a build that ran the profile's setting,
+    "stale": the line is older than another profile's, or has no like-for-like row}. A profile that ran
+    this run is current; one whose file stopped growing (the aligned profile without a build that supports
+    -align-queries-with-step) is stale, and over_2x judges nothing in it."""
+    found = {}
+    for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
+        entries = read(path)
+        if not entries:
+            continue
+        name, profile = entries[-1]["set"], profile_of(entries[-1])
+        want = full_ranges(spec, name)
+        if want is None or (sets is not None and name not in sets):
+            continue
+        full = [e for e in entries if e.get("valid", True) and is_full(e, want)]
+        if full:
+            newest = full[-1]
+            lfl = any(r[newest["cols"].index("like_for_like")] is not False for r in newest["rows"]) \
+                if "like_for_like" in newest["cols"] else True
+            found[(name, profile)] = {"last": newest["date"], "like_for_like": lfl}
+    for (name, profile), v in found.items():
+        v["current"] = max(x["last"] for (n, _), x in found.items() if n == name)
+        v["stale"] = v["last"] < v["current"] or not v["like_for_like"]
+    return found
+
+
 def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     """Transitions between each set's newest line and the earlier full measurements, plus the ratchet.
 
@@ -427,7 +466,8 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     spec = spec or load_spec()
     out = {"regressions": [], "improvements": [], "ratchet_lost": [], "ratchet_added": [], "loki_failed": [],
            "ratchet_unmeasured": 0, "ratchet_problem": "", "range": {},
-           "over_2x_new": [], "over_2x_removed": [], "over_2x_pending": [],
+           "over_2x_new": [], "over_2x_removed": [], "over_2x_pending": [], "over_2x_stale": [],
+           "over_2x_unjudged": [],
            "locked_pending": [], "lost_below": [], "between": [], "lockable": [], "distribution": {},
            "distribution_ratchet": [], "acceptance_problem": ""}
     if bounds is None:
@@ -447,6 +487,13 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
     listed, out["over_2x_problem"] = over2x.read_baseline(baseline_path)
     listed = {k: dict(v) for k, v in listed.items()}
     added, measured, looked = [], set(), set()
+    states = profile_state(directory, spec, sets)
+    for (name, profile), v in sorted(states.items()):
+        if v["stale"]:
+            out["over_2x_stale"].append({"set": name, "profile": profile, "last": v["last"], "current": v["current"],
+                                         "why": "no like-for-like row" if not v["like_for_like"] else "did not run"})
+    stale = {(r["set"], r["profile"]) for r in out["over_2x_stale"]}
+    out["over_2x_unjudged"] = [r for k, r in sorted(listed.items()) if (k[1], k[0]) in stale]
     for path in sorted(glob.glob(os.path.join(directory, "*.jsonl"))):
         entries = read(path)
         name = entries[-1]["set"] if entries else ""
@@ -516,7 +563,7 @@ def alerts(directory=HISTORY, sets=None, spec=None, bounds=None):
                         out["regressions"].append(alert(
                             "slower", key, f"warm p50 {secs(old2['p50'])} → {secs(old['p50'])} → {secs(row['p50'])}, "
                             "held for two runs", prev2))
-            if out["over_2x_active"] and not out["over_2x_problem"]:
+            if out["over_2x_active"] and not out["over_2x_problem"] and (name, profile) not in stale:
                 over_2x(out, listed, profile, name, key, row, old, new)
             acceptance(out, bounds, items, profile, name, key, row, old, (prev, prev2), alert)
             where = (name, *key)
@@ -684,6 +731,144 @@ def acceptance_history(directory=HISTORY, spec=None):
             "days": out}
 
 
+LOKI_DEFAULTS = "loki-defaults"
+NO_BOUNDS = {"blocks": {}, "covers": {}}
+
+
+def full_lines(directory, spec, name, profile):
+    """The full valid lines of one set and profile, oldest first."""
+    want = full_ranges(spec, name)
+    if not want:
+        return []
+    return [e for e in read(os.path.join(directory, history_name(name, profile))) if e.get("valid", True) and is_full(e, want)]
+
+
+def replay_over_2x(directory, spec, rows, profile=LOKI_DEFAULTS):
+    """(rows, left): the above-2× list rows after the daily history of `profile` is replayed day by day through
+    alerts() (the lines of each file up to that day, and the list as the day before left it), and the rows
+    that left, each with the date of the run that removed it. Nothing in `directory` is touched."""
+    days = sorted({e["date"] for name in spec["sets"] for e in full_lines(directory, spec, name, profile)})
+    left = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for day in days:
+            for path in glob.glob(os.path.join(directory, "*.jsonl")):
+                lines = [e for e in read(path) if e["date"] <= day]
+                with open(os.path.join(tmp, os.path.basename(path)), "w") as f:
+                    f.writelines(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n" for e in lines)
+            over2x.write_baseline(rows, os.path.join(tmp, over2x.BASELINE_NAME))
+            a = alerts(tmp, None, spec, bounds=NO_BOUNDS)
+            left += [{**r, "left": day} for r in a["over_2x_removed"]]
+            rows = a["over_2x"]
+    return rows, left
+
+
+def seed_over_2x(directory, spec, listed, profile=LOKI_DEFAULTS, runs=2):
+    """The rows of `profile` above 2× on each of its last `runs` full lines (the rule that removes a row,
+    mirrored) that are not listed: key -> row, with `since` the date the unbroken streak above 2× began."""
+    out = {}
+    for name in spec["sets"]:
+        lines = full_lines(directory, spec, name, profile)
+        if len(lines) < runs:
+            continue
+        per_line = [line_pairs(name, e) for e in lines]
+        for k, pair in per_line[-1].items():
+            if k in listed or over2x.judge(*pair) != "above":
+                continue
+            streak = [lines[-1]]
+            for e, pairs in zip(reversed(lines[:-1]), reversed(per_line[:-1])):
+                if k not in pairs or over2x.judge(*pairs[k]) != "above":
+                    break
+                streak.append(e)
+            if len(streak) >= runs:
+                first = streak[-1]
+                out[k] = {**over2x.entry(profile, k[1], k[2], k[3], k[4], pair[0], pair[1]),
+                          "since": first["date"], "commit": first.get("commit") or ""}
+    return out
+
+
+def line_pairs(name, e):
+    """(profile, set, shape, range, mode) -> the pair over2x.history_pairs gives, for every row of a line."""
+    profile = profile_of(e)
+    return {(profile, name, *key, mode): pair for key, row in rows_of(e).items()
+            for mode, pair in over2x.history_pairs(row).items()}
+
+
+def reseed_over_2x(directory=HISTORY, spec=None):
+    """Move the rows listed before the profiles existed to the profile the daily run measures them in.
+
+    Those rows were measured with a proxy side that did not align queries with the step against the stack's
+    Loki (profile aligned, proxy_side unaligned). Builds still have no -align-queries-with-step, so that
+    profile has not run since 2026-10-28 and nothing judged them. loki-defaults is the profile with the same
+    proxy side, and the only one measured daily. The rows become loki-defaults rows (their `since` kept),
+    the daily history of that profile is replayed through alerts() so a row leaves on the day it had two
+    consecutive full runs within 2×, and the rows above 2× on both of the last two full runs that are not
+    listed are added. Returns {"rows", "before", "after", "left", "reseeded", "kept_legacy"}; nothing is
+    written."""
+    spec = spec or load_spec()
+    listed, problem = over2x.read_baseline(os.path.join(directory, over2x.BASELINE_NAME))
+    if problem:
+        raise ValueError(problem)
+    legacy = {k: r for k, r in listed.items() if r.get("proxy_side") == "unaligned"}
+    moved = {}
+    for k, r in legacy.items():
+        moved[(LOKI_DEFAULTS, *k[1:])] = {x: v for x, v in {**r, "profile": LOKI_DEFAULTS}.items() if x != "proxy_side"}
+    if not legacy:
+        raise ValueError("no listed row is left from before the profiles existed (proxy_side unaligned): nothing to move")
+    start = {**{k: r for k, r in listed.items() if k not in legacy}, **{k: r for k, r in moved.items() if k not in listed}}
+    rows, left = replay_over_2x(directory, spec, list(start.values()))
+    keyed = {over2x.key(r): r for r in rows}
+    seeded = seed_over_2x(directory, spec, keyed)
+    after = {**keyed, **seeded}
+    left_keys = {over2x.key(r) for r in left}
+    return {"rows": list(after.values()), "before": list(listed.values()), "after": list(after.values()),
+            "left": left, "reseeded": [r for k, r in seeded.items() if k in left_keys],
+            "seeded": [r for k, r in seeded.items() if k not in left_keys and k not in moved],
+            # above 2× on the newest run only: a warning of the daily run, listed by nobody
+            "warnings": [r for k, r in seed_over_2x(directory, spec, after, runs=1).items()]}
+
+
+def count_table(rows):
+    """'profile mode: n' per profile and mode, for the before and after of a reseed."""
+    out = {}
+    for r in rows:
+        k = (r.get("profile") or over2x.LEGACY_PROFILE, r["mode"])
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
+def render_reseed(result):
+    """The before and after of a reseed: per profile and mode, per set and mode, and who left and when."""
+    before, after = count_table(result["before"]), count_table(result["after"])
+    keys = sorted(set(before) | set(after), key=lambda k: (over2x.PROFILES.index(k[0]), over2x.MODES.index(k[1])))
+    lines = ["| profile | mode | before | after |", "|---|---|--:|--:|"]
+    lines += [f"| {p} | {m} | {before.get((p, m), 0)} | {after.get((p, m), 0)} |" for p, m in keys]
+    lines.append(f"| total | | {len(result['before'])} | {len(result['after'])} |")
+    per_set = {}
+    for side in ("before", "after"):
+        for r in result[side]:
+            per_set.setdefault(r["set"], {}).setdefault(f"{side}_{r['mode']}", 0)
+            per_set[r["set"]][f"{side}_{r['mode']}"] += 1
+    lines += ["", "| set | cold before | cold after | warm before | warm after |", "|---|--:|--:|--:|--:|"]
+    for name in sorted(per_set):
+        c = per_set[name]
+        lines.append(f"| {name} | {c.get('before_cold', 0)} | {c.get('after_cold', 0)} | {c.get('before_warm', 0)} | "
+                     f"{c.get('after_warm', 0)} |")
+    by_day = {}
+    for r in result["left"]:
+        by_day[r["left"]] = by_day.get(r["left"], 0) + 1
+    again = {over2x.key(r) for r in result["reseeded"]}
+    lines += ["", f"Left the list: {len(result['left'])} rows (" + ", ".join(f"{d}: {n}" for d, n in sorted(by_day.items())) +
+              f"); {len(result['reseeded'])} of them are above 2× on both of the last two runs and are listed again; "
+              f"{len(result['seeded'])} loki-defaults rows above 2× on both of the last two runs were not listed before; "
+              f"{len(result['warnings'])} more rows are above 2× on the newest run only and stay warnings.",
+              "", f"<details><summary>The {len(result['left'])} rows that left</summary>", "",
+              "| set | shape | range | mode | ratio listed | left on | listed again |", "|---|---|---|---|--:|---|---|"]
+    for r in sorted(result["left"], key=lambda r: (r["left"], r["set"], r["shape"], r["range"], over2x.MODES.index(r["mode"]))):
+        lines.append(f"| {r['set']} | {r['shape'].replace('|', chr(92) + '|')} | {r['range']} | {r['mode']} | {r['ratio']:.2f}× | "
+                     f"{r['left']} | {'yes' if over2x.key(r) in again else 'no'} |")
+    return "\n".join([*lines, "", "</details>"])
+
+
 PR_LIMIT = 50
 
 
@@ -723,6 +908,7 @@ def render_alerts(a, limit=None):
                *over("over_2x_removed", cap), "",
                f"Within 2× once, removed if the next run agrees ({len(a.get('over_2x_pending', []))}):", "",
                *over("over_2x_pending", cap), "",
+               *stale_lines(a),
                *([f"**{a['over_2x_problem']}**", ""] if a.get("over_2x_problem") else [])] if a.get("over_2x_active") else []
     accept = render_acceptance(a, cap)
     held = f"Held: {len(a['ratchet'])} rows ({len(a['ratchet_added'])} added by this run)"
@@ -737,6 +923,23 @@ def render_alerts(a, limit=None):
          *accept, "## Loki failed (informational)", "",
          "Rows where Loki did not answer 200: their results are not compared and they do not fail the run.", "",
          *items("loki_failed"), ""])
+
+
+def stale_lines(a):
+    """The listed rows nothing judged because their profile did not run (nothing when none is listed: a profile
+    without listed rows that did not run is in the JSON as over_2x_stale and needs no line every day)."""
+    counts = {}
+    for r in a.get("over_2x_unjudged", []):
+        p = r.get("profile") or over2x.LEGACY_PROFILE
+        counts[p] = counts.get(p, 0) + 1
+    out = []
+    for p, n in sorted(counts.items()):
+        mine = [r for r in a.get("over_2x_stale", []) if r["profile"] == p]
+        out += [f"**Not judged: {n} listed {p} rows. The {p} profile did not run for {len(mine)} sets "
+                f"(newest line {max(r['last'] for r in mine)}, the sets' newest {max(r['current'] for r in mine)}). A "
+                f"listed row of a profile that did not run is neither removed nor tightened; the profile is judged "
+                f"again from its next line.**", ""]
+    return out
 
 
 def render_acceptance(a, cap):
@@ -841,6 +1044,9 @@ def main():
     al.add_argument("--body", default="", help="markdown capped for a pull request body")
     ac = sub.add_parser("acceptance")
     ac.add_argument("--dir", default=HISTORY)
+    rs = sub.add_parser("over-2x-reseed")
+    rs.add_argument("--dir", default=HISTORY)
+    rs.add_argument("--write", action="store_true", help="rewrite over-2x-loki.json (default: print the result only)")
     args = ap.parse_args()
     if args.cmd == "append":
         for path in args.summaries:
@@ -849,6 +1055,12 @@ def main():
             print(f"{'appended to' if added else 'already recorded in'} {target}")
     elif args.cmd == "last-commit":
         print(last_commit(args.dir))
+    elif args.cmd == "over-2x-reseed":
+        result = reseed_over_2x(args.dir)
+        print(render_reseed(result))
+        if args.write:
+            over2x.write_baseline(result["rows"], os.path.join(args.dir, over2x.BASELINE_NAME))
+            print(f"wrote {os.path.join(args.dir, over2x.BASELINE_NAME)}")
     elif args.cmd == "acceptance":
         write_acceptance(args.dir)
         print(f"wrote {os.path.join(args.dir, ACCEPTANCE)}")

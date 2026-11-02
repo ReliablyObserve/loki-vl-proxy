@@ -493,7 +493,7 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per day, append-only (the first file also holds every line written before the profiles existed): date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
-| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the 165 rows listed before the profiles are `aligned`, `proxy_side: unaligned`: no proxy build aligned queries then; `loki-defaults` starts empty and is seeded from its first daily run, with the owner's approval); the run only removes from it (see "Above 2× Loki" below) |
+| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the rows listed before the profiles existed were measured with an unaligned proxy side and live in `loki-defaults`, the profile that measures that side; `aligned` is empty until a build supports `-align-queries-with-step` and its list is seeded); the run only removes from it (see "Above 2× Loki" below) |
 | `history/acceptance.json` | per day of the history and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
@@ -581,7 +581,21 @@ definition the pull request smoke, the daily run and `perf_evidence.py` share:
 
 `history/over-2x-loki.json` is the list of rows above 2× Loki, seeded from the
 daily results of 2026-10-27 (`over2x.py seed`): 165 rows, 55 cold and 110
-warm. Each daily run (`history.py alerts`, full measurements only) keeps it:
+warm, measured against the stack's Loki with an unaligned proxy side. The
+`aligned` profile needs a proxy build with `-align-queries-with-step`, none had
+one, so it stopped running after 2026-10-28 and its frozen lines judged nothing.
+`history.py over-2x-reseed --write` moved those rows to `loki-defaults` (same
+proxy side, measured daily), replayed the history of 2026-10-29 to 2026-11-02
+through the rule below, and listed the loki-defaults rows above 2× on both of
+the last two full runs: 165 rows became 65 (43 cold, 22 warm). Each daily run
+(`history.py alerts`, full measurements only) keeps it:
+
+- a row is judged by the history of its own profile, and only while that profile
+  runs: when a set's newest line of a profile is older than another profile's
+  (or has no like-for-like row), the profile is stale for the set, nothing in
+  its frozen lines is re-judged, and the alerts say how many listed rows were
+  not judged (`over_2x_stale`, `over_2x_unjudged`). When the align flag ships
+  the `aligned` profile starts running and keeps its own list;
 
 - a listed row is removed once two consecutive full runs measure it
   comparable and within 2× (a run where Loki failed, or its cache answered the

@@ -332,6 +332,8 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
     prof_info = profile_lines(meta, summaries) if any(s.get("profile") for s in summaries) else []
     if prof_info:
         lines += ["Loki profiles compared (like for like):", "", *prof_info, ""]
+    if baseline:  # the list this comparison read, by profile: a clean pull request still says which one it is
+        lines += [f"Compared with the {over2x.count_line(list(baseline.values()))}.", ""]
     moved = [x for x in rows if x[1]["verdict"] not in ("same", "n/a") or new_difference(x[1])]
     still = [x for x in rows if x not in moved]
     if moved:
