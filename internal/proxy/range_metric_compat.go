@@ -423,7 +423,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 			// LogQL stream selector + pipeline without the range window) for the drop-error
 			// check — hasDropErrorOnlyPostParserStage requires the pipeline without outer
 			// aggregation or range window brackets.
-			if !specOk || !queryUsesParserStages(spec.BaseQuery) || hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+			if !specOk || !queryUsesParserStages(spec.BaseQuery) || (hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) && !p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, parseOriginalByLabels(originalLogql))) {
 				return false
 			}
 			// Parser stage without drop-error — fall through to the manual path below.
@@ -440,6 +440,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// in the metric response (e.g. VL "level" → Loki "detected_level").
 	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
 	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
+	forceRawLevelRows := hasOrigSpec && p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
 	manualFunc := normalizeManualMetricFunction(spec, origSpec)
 	if manualFunc == "" {
@@ -451,14 +452,14 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
 	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
 	// can correctly identify the drop-error clause.
-	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) && !forceRawLevelRows {
 		return false
 	}
 	// Native step buckets answer sum, avg, max and min over time with unwrap
 	// for a range up to the step; a longer range merges its windows from
 	// anchored buckets (unwrapWindowBuckets).
 	unwrapSpec, grouped, unwrapWindows := p.unwrapWindowRoute(r, spec, origSpec, hasOrigSpec, manualFunc, originalLogql, step)
-	if !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
+	if !forceRawLevelRows && !unwrapWindows && !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -500,6 +501,17 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 // Drilldown requests too.
 func statsRangeIsTumbling(window, step time.Duration) bool {
 	return step > 0 && window > 0 && window == step
+}
+
+// A named parser does not expose an unlisted level from the line. VL's stats
+// routes group by its projected level column, so only row evaluation can tell
+// that value from a real stream label while retaining detected_level.
+func (p *Proxy) extractionListNeedsRawLevelRows(baseQuery string, groupBy []string) bool {
+	if !slices.Contains(groupBy, "level") {
+		return false
+	}
+	exposure := p.lineFieldExposure(baseQuery)
+	return exposure != nil && len(exposure.extractions) > 0 && !exposure.names["level"]
 }
 
 func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
@@ -690,6 +702,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	forceRawLevelRows := p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, spec.OrigGroupBy)
 
 	// Fast path: count_over_time / rate / bytes_over_time / bytes_rate with
 	// explicit groupBy — use VL's stats_query_range endpoint which returns
@@ -731,7 +744,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		fetchStart, sampleShift = startTS.Add(-step), step-origSpec.Window
 		bucket, bucketsOK = slidingStatsBucket(step, step)
 	}
-	if p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
+	if !forceRawLevelRows && p.slidingWindowStatsApplies(r.Context(), spec, field, startTS, endTS, step, origSpec.Window, bucket, bucketsOK) {
 		if !p.writeRankedRangeFromBuckets(w, r.Context(), spec, statsAggFunc, field, manualFunc, fetchStart, startTS, endTS, step, origSpec.Window, bucket, bucketsOK, sampleShift) {
 			p.writeSlidingStatsRoute(w, r.Context(), spec, manualFunc, field, startTS, endTS, step, origSpec.Window)
 		}
@@ -743,7 +756,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		// bounded by -manual-range-metric-row-limit, so it answers instead.
 		statsAggFunc, quantileCounts = "", false
 	}
-	if quantileCounts {
+	if quantileCounts && !forceRawLevelRows {
 		markQueryStepsRoute(r.Context(), "quantile")
 		p.writeQuantileHistogramRange(w, r.Context(), gated, quantile, fetchStart, startTS, endTS, step, origSpec.Window, bucket, sampleShift)
 		return true
@@ -753,7 +766,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// aggregate-all queries with a | filter field != "" pattern.
 	// extractCommonBase strips | json / | logfmt + the field filter so VL uses its
 	// pre-indexed column index (| json before count() if returns empty in VL).
-	if p.writeCoalescedManualMetric(w, r, spec, manualFunc, statsAggFunc, startTS, endTS, step, origSpec.Window, bucket, sampleShift) {
+	if !forceRawLevelRows && p.writeCoalescedManualMetric(w, r, spec, manualFunc, statsAggFunc, startTS, endTS, step, origSpec.Window, bucket, sampleShift) {
 		return true
 	}
 	// Anchored buckets hold every (t-range, t] window whatever range and step
@@ -773,6 +786,9 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			return p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, fetchStart, endTS, bucket, streamBuckets, true)
 		},
 	} {
+		if forceRawLevelRows {
+			break
+		}
 		series, ok, err := collect()
 		if err != nil {
 			p.writeErr(w, r.Context(), err)

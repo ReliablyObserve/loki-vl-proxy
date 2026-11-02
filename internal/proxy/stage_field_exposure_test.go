@@ -151,6 +151,27 @@ func TestBareParserMetric_ExtractionListHidesProjectedLevel(t *testing.T) {
 	}
 }
 
+func TestExtractionListMetricLevelUsesRawRows(t *testing.T) {
+	p := lineFieldsProxy(t, "http://127.0.0.1:1", "buffered")
+	for _, tc := range []struct {
+		name, query string
+		groupBy     []string
+		want        bool
+	}{
+		{"json unlisted level", `{app="projection"} | json msg="msg" | drop __error__`, []string{"level", "detected_level"}, true},
+		{"logfmt unlisted level", `{app="projection"} | logfmt op | drop __error__`, []string{"level", "detected_level"}, true},
+		{"listed level", `{app="projection"} | json level="level" | drop __error__`, []string{"level"}, false},
+		{"unrelated group", `{app="projection"} | json msg="msg" | drop __error__`, []string{"app"}, false},
+		{"bare parser", `{app="projection"} | json | drop __error__`, []string{"level"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := p.extractionListNeedsRawLevelRows(tc.query, tc.groupBy); got != tc.want {
+				t.Errorf("extractionListNeedsRawLevelRows(%q, %v) = %t, want %t", tc.query, tc.groupBy, got, tc.want)
+			}
+		})
+	}
+}
+
 type stageRow struct {
 	line   string
 	stream []string
