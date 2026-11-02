@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -128,6 +129,11 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 			return false, 0, nil
 		}
 		return false, 0, fmt.Errorf("read label index snapshot: %w", err)
+	}
+	// New creates the file empty when it checks the path is writable: no
+	// snapshot has been written yet.
+	if len(bytes.TrimSpace(data)) == 0 {
+		return false, 0, nil
 	}
 	var snapshot labelValuesIndexSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {

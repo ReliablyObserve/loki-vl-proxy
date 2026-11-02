@@ -302,6 +302,7 @@ type fleetCounters struct {
 	peerErrors   float64
 	wtPushes     float64 // write-through pushes to owner peers
 	wtErrors     float64
+	tierL1Hits   float64 // shared read path memory hits (a pushed copy on a cold replica)
 	tierL2Hits   float64 // shared read path disk hits
 	tierL3Hits   float64 // shared read path peer hits
 	windowHits   float64 // query_range window cache hits (any tier)
@@ -311,6 +312,11 @@ type fleetCounters struct {
 	// steps lookups of window-evaluated metrics (operation query_steps_cache):
 	// every step held, some held, none held, and answers stored.
 	stepsHit, stepsPartial, stepsMiss, stepsStored float64
+	// replyHits counts answers served whole from a cache
+	// (loki_vl_proxy_cache_hits_total). For query_range that is the exact
+	// reply cache in front of the handler (the handler's own response cache
+	// is skipped behind it): such a request never reaches the settled steps.
+	replyHits float64
 	// missedAll counts shared-read lookups that missed memory, disk and
 	// peers: 0 for a request means none of its answers was computed.
 	missedAll float64
@@ -370,6 +376,7 @@ func countersFrom(m promScrape) fleetCounters {
 		peerErrors:         m.sum("loki_vl_proxy_peer_cache_errors_total", nil),
 		wtPushes:           m.sum("loki_vl_proxy_peer_cache_write_through_pushes_total", nil),
 		wtErrors:           m.sum("loki_vl_proxy_peer_cache_write_through_errors_total", nil),
+		tierL1Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l1_memory"}),
 		tierL2Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l2_disk"}),
 		tierL3Hits:         m.sum("loki_vl_proxy_cache_tier_hits_total", map[string]string{"tier": "l3_peer"}),
 		windowHits:         m.sum("loki_vl_proxy_window_cache_hit_total", nil),
@@ -379,6 +386,7 @@ func countersFrom(m promScrape) fleetCounters {
 		stepsPartial:       stepsOp("partial"),
 		stepsMiss:          stepsOp("miss"),
 		stepsStored:        stepsOp("stored"),
+		replyHits:          m.sum("loki_vl_proxy_cache_hits_total", nil),
 		missedAll:          m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
 		peerFetchSeconds:   m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_sum", nil),
 		peerFetches:        m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_count", nil),
@@ -428,10 +436,11 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		peerHits: a.peerHits - b.peerHits, backupHits: a.backupHits - b.backupHits,
 		peerMisses: a.peerMisses - b.peerMisses, peerErrors: a.peerErrors - b.peerErrors,
 		wtPushes: a.wtPushes - b.wtPushes, wtErrors: a.wtErrors - b.wtErrors,
-		tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
+		tierL1Hits: a.tierL1Hits - b.tierL1Hits, tierL2Hits: a.tierL2Hits - b.tierL2Hits, tierL3Hits: a.tierL3Hits - b.tierL3Hits,
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
 		patternsPeer: a.patternsPeer - b.patternsPeer, missedAll: a.missedAll - b.missedAll,
 		stepsHit: a.stepsHit - b.stepsHit, stepsPartial: a.stepsPartial - b.stepsPartial, stepsMiss: a.stepsMiss - b.stepsMiss, stepsStored: a.stepsStored - b.stepsStored,
+		replyHits:        a.replyHits - b.replyHits,
 		peerFetchSeconds: a.peerFetchSeconds - b.peerFetchSeconds, peerFetches: a.peerFetches - b.peerFetches,
 		vlBackground: a.vlBackground - b.vlBackground, vlStatsBackground: a.vlStatsBackground - b.vlStatsBackground,
 		invMemory: a.invMemory - b.invMemory, invDisk: a.invDisk - b.invDisk, invPeer: a.invPeer - b.invPeer, invVL: a.invVL - b.invVL,
@@ -452,8 +461,8 @@ func (a fleetCounters) topLevelL2Hits() float64 { return a.tierL2Hits - a.invDis
 func (a fleetCounters) topLevelL3Hits() float64 { return a.tierL3Hits - a.invPeer }
 
 func (a fleetCounters) String() string {
-	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f steps(hit=%.0f partial=%.0f miss=%.0f stored=%.0f) missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
-		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.stepsHit, a.stepsPartial, a.stepsMiss, a.stepsStored, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
+	return fmt.Sprintf("vl_select=%.0f vl_stats=%.0f vl_time=%.3fs fleet_vl_select=%.0f fleet_vl_stats=%.0f peer_hits=%.0f backup_hits=%.0f peer_misses=%.0f peer_errors=%.0f wt_pushes=%.0f wt_errors=%.0f l1_hits=%.0f l2_hits=%.0f l3_hits=%.0f window_hits=%.0f window_misses=%.0f inventory_units(memory=%.0f disk=%.0f peer=%.0f vl=%.0f) stream_label_names_refreshes=%.0f steps(hit=%.0f partial=%.0f miss=%.0f stored=%.0f) reply_hits=%.0f missed_every_tier=%.0f peer_fetches=%.0f peer_fetch_time=%.3fs background_vl=%.0f fleet_vl_routes=%v",
+		a.vlSelect, a.vlStats, a.vlSeconds, a.fleetVLSelect, a.fleetVLStats, a.peerHits, a.backupHits, a.peerMisses, a.peerErrors, a.wtPushes, a.wtErrors, a.tierL1Hits, a.tierL2Hits, a.tierL3Hits, a.windowHits, a.windowMisses, a.invMemory, a.invDisk, a.invPeer, a.invVL, a.slnRefreshes, a.stepsHit, a.stepsPartial, a.stepsMiss, a.stepsStored, a.replyHits, a.missedAll, a.peerFetches, a.peerFetchSeconds, a.vlBackground, a.fleetVLRoutes)
 }
 
 // fleetDown holds the services the proof stopped or paused: they are left

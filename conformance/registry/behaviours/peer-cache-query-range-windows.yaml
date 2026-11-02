@@ -12,18 +12,20 @@ victorialogs: |
 
 proxy: |
   A query_range log query is split into windows (-query-range-split-interval).
-  A window is stored with SetLocalOnlyWithTTL (fetchQueryRangeWindow): memory
-  only, no disk, no push, and a replica that fetches it keeps it off its disk
-  too. It is read with Get: memory, then the key's replicas in ring order.
-  Fleet proof (TestFleetPeerCacheProof): sixteen windows computed on A, then
-  B, then C are read through the peer tier; after B restarts no window hit on
-  it comes from a disk and every one is a peer read (memory only by design);
-  after it lost its disk it reads windows from their replicas; with A stopped
-  or paused B and C answer the same; the rebuilt lines equal Loki's.
-  Not covered (open): windows never reach the disk tier, although
-  -query-range-history-cache-ttl keeps historical windows for 24h, and a
-  window computed by a replica that is not one of its key's replicas is not
-  shared.
+  A settled window is stored compressed with SetWithTTL (fetchQueryRangeWindow):
+  memory, the disk of each of the key's replicas and a write-through push to
+  its owner, keyed by tenant, auth and routing scope, parser shape,
+  direction, row limit and exact aligned bounds; recent windows keep their
+  short TTL. It is read with GetSharedWithTTL: memory, disk, then the key's
+  replicas in ring order.
+  Fleet proof (TestFleetPeerCacheProof): the windows of log queries computed
+  on A are reused by B and C, and every window hit on a replica that never
+  computed it is a pushed copy in its memory, a disk read or a peer read;
+  after B restarts it reuses windows from its disk or its peers; after it
+  lost its disk it reads windows from their replicas; with A stopped or
+  paused B and C answer the same; the rebuilt lines equal Loki's. A log
+  answer of 128 KiB or less is also kept whole as an exact reply
+  (peer-cache-query-replies) and is then answered before its windows.
 
 implementation:
   - internal/proxy/query_range_windowing.go

@@ -1,0 +1,36 @@
+id: peer-cache-query-replies
+kind: resource_control
+title: Completed query replies computed on one replica answer the same request on every replica
+
+loki: |
+  Loki's results cache is shared by every query frontend: a query_range,
+  instant or series answer computed once is served again whichever frontend
+  receives the same request (pkg/storage/chunk/cache/resultscache).
+
+victorialogs: |
+  VictoriaLogs keeps no answer a proxy replica can share: every request is
+  evaluated again.
+
+proxy: |
+  compatCacheMiddleware keeps a completed query, query_range or series reply
+  of 128 KiB or less in the per-replica edge cache and, under its key plus
+  the routing scope, in the shared cache with SetWithTTL
+  (storeCompatSharedReply): memory, the disk of each of the key's replicas
+  and a write-through push to its owner. compatCacheLookup reads the edge
+  cache, then the shared tiers (memory, disk, the key's replicas in ring
+  order) under the same near-now freshness rule. A reply found there answers
+  the request before the handler runs, so before the stats extent buckets,
+  the settled steps and the log query windows.
+  Fleet proof (TestFleetPeerCacheProof, e2e-fleet, 3 replicas): the
+  window-evaluated metrics computed on A are answered on B and C by one
+  reply hit each, with no stats_query_range call in the fleet and no
+  settled-steps lookup; after B restarts (memory lost, disk kept) it answers
+  them the same; after every replica lost its caches the rebuilt replies are
+  read the same way. The bucketed metric's reply is read on B and C with no
+  stats_query_range call and no lookup that missed every tier.
+  Not covered (open): instant and series replies have no fleet proof, and
+  the disk-lost and owner-down phases do not single out the reply tier.
+
+implementation:
+  - internal/proxy/middleware.go
+  - internal/cache/cache.go

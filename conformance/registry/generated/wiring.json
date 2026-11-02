@@ -496,6 +496,9 @@
     "peer-cache-query-range-windows": [
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
+    "peer-cache-query-replies": [
+      "test/e2e-fleet/peer_cache_proof_test.go"
+    ],
     "peer-cache-replication": [
       "internal/cache/peer_replication_test.go",
       "internal/proxy/patterns_persistence_test.go",
@@ -1259,7 +1262,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 365,
+  "registry_items": 366,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2615,6 +2618,7 @@
       "peer-cache-metadata",
       "peer-cache-patterns",
       "peer-cache-query-range-windows",
+      "peer-cache-query-replies",
       "peer-cache-replication",
       "peer-cache-stats-extent",
       "quality/query-range-settled-steps"
@@ -2713,5 +2717,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 209
+  "wired_items": 210
 }

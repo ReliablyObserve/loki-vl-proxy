@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,5 +58,41 @@ func TestNew_FailsFastOnUnwritableLabelValuesPersistPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "label-values index persistence path") {
 		t.Fatalf("expected label-values persistence path error, got: %v", err)
+	}
+}
+
+// New creates the label-values index snapshot file empty when it checks that
+// the path is writable, so a first start finds an empty file: that is no
+// snapshot yet, like a missing file, not a corrupt one.
+func TestLabelValuesIndexRestoreFromDisk_EmptyFileIsNoop(t *testing.T) {
+	for name, content := range map[string]string{"empty": "", "whitespace": " \n\t\n"} {
+		t.Run(name, func(t *testing.T) {
+			snapshotPath := filepath.Join(t.TempDir(), "cache", "label-values-index.json")
+			p, err := New(Config{
+				BackendURL:                      "http://unused",
+				Cache:                           cache.New(60*time.Second, 1000),
+				LogLevel:                        "error",
+				LabelValuesIndexedCache:         true,
+				LabelValuesIndexPersistPath:     snapshotPath,
+				LabelValuesIndexPersistInterval: time.Hour,
+			})
+			if err != nil {
+				t.Fatalf("create proxy: %v", err)
+			}
+			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+			if info, err := os.Stat(snapshotPath); err != nil || info.Size() != 0 {
+				t.Fatalf("New should leave an empty snapshot file at the persist path: info=%v err=%v", info, err)
+			}
+			if err := os.WriteFile(snapshotPath, []byte(content), 0o644); err != nil {
+				t.Fatalf("write snapshot: %v", err)
+			}
+			ok, savedAt, err := p.restoreLabelValuesIndexFromDisk()
+			if err != nil {
+				t.Fatalf("restore from a %s snapshot file returned an error: %v", name, err)
+			}
+			if ok || savedAt != 0 {
+				t.Fatalf("restore from a %s snapshot file should restore nothing, got ok=%v savedAt=%d", name, ok, savedAt)
+			}
+		})
 	}
 }
