@@ -1099,7 +1099,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.0}
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.2.5}
     container_name: e2e-grafana
     ports:
       - "3002:3000"

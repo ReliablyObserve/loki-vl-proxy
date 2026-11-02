@@ -45,5 +45,5 @@ gap:
   area: 'internal/proxy/stream_processing.go (stats envelope of log query_range answers)'
   loki: 'pkg/util/marshal/query.go:323-324 stats field; pkg/logqlmodel/stats/stats.pb.go:205-211 Summary.totalBytesProcessed'
   proxy: 'data.stats is {}'
-  planned_test: 'visual comparison of the Drilldown Logs footer (Loki vs proxy) in the Grafana 13.3.0 / Drilldown 3.1.0 window'
+  planned_test: 'visual comparison of the Drilldown Logs footer (Loki vs proxy) in the Grafana 13.2.5 / Drilldown 3.1.0 window'
   clusters: []

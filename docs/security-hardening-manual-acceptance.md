@@ -13,7 +13,7 @@ with the results. Automated checks on a proposed branch do not replace this pass
 
 From a clean checkout of the merged `main`, rebuild the E2E images and recreate
 the stack with its UI profile. Preserve volumes; no data reset is required.
-The review override pins Loki 3.7.9, Grafana 13.3.0 and Logs Drilldown 3.1.0,
+The review override pins Loki 3.7.9, Grafana 13.2.5 and Logs Drilldown 3.1.0,
 the current stable review baseline (verified on September 14, 2026; Loki
 moved from 3.7.7 to 3.7.9 on October 27, 2026). The original
 Compose defaults remain available for testing the older compatibility baseline.

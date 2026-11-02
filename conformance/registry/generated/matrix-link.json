@@ -38,7 +38,7 @@
   "versions": {
     "grafana": {
       "matrix": [],
-      "pinned": "13.3.0"
+      "pinned": "13.2.5"
     },
     "grafana_client_detection": {
       "matrix": [],
