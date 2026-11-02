@@ -74,7 +74,7 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | `grafana` (Grafana 13.3.0) | 3002 | UI with all datasources provisioned |
 | `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
 
-Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@2.6.0`.
+Grafana preinstalls `victoriametrics-logs-datasource@0.33.1` and `grafana-lokiexplore-app@3.1.0`.
 
 ## Dual-Write Pattern
 
@@ -236,6 +236,7 @@ Set environment variables before `docker compose up` to override image versions:
 | `LOKI_IMAGE` | `grafana/loki:3.7.9` |
 | `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.52.0` |
 | `GRAFANA_IMAGE` | `grafana/grafana:13.3.0` |
+| `GRAFANA_PLUGINS_PREINSTALL` | `victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (Grafana `12.x` needs `grafana-lokiexplore-app@2.6.0`; Drilldown `3.x` requires Grafana `>= 13.2`) |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |
 | `VMAUTH_IMAGE` | `victoriametrics/vmauth:v1.138.0` |
 | `VMALERT_IMAGE` | `victoriametrics/vmalert:v1.138.0` |

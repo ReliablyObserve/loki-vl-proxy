@@ -120,6 +120,7 @@
           "version": "12.4.14",
           "profile": "previous_smoke",
           "run_on_pr": true,
+          "drilldown_plugin_version": "2.6.0",
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
         }
       ],
@@ -204,15 +205,20 @@
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "2.6.0",
-      "pinned_commit": "e894c0eb6a6d3924b1cdba5aca4bcaccf51cab05",
+      "pinned_version": "3.1.0",
+      "pinned_commit": "3b8466c7e48ea4e9128e10015bf8fd5cc35d49cb",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
-        "current_family": "2.x",
-        "previous_family": "1.0.x"
+        "current_family": "3.x",
+        "previous_family": "2.x",
+        "additional_families": [
+          "1.0.x"
+        ]
       },
       "matrix_versions": [
+        "3.1.0",
+        "3.0.0",
         "2.6.0",
         "2.5.2",
         "2.5.1",
@@ -245,10 +251,27 @@
         "Service detail logs use a mixed parser selector: json + logfmt + drop __error__ stages",
         "detected_fields is post-processed by the app datasource wrapper to drop detected_level, level, and level_extracted",
         "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list",
-        "2.0.4 through 2.5.2 known issue (same ServiceScene.subscribeToLokiConfig code): patterns tab does not re-enable after switching from a datasource where pattern_ingester_enabled=false; workaround is to use the patterns-autodetect proxy variant as the Grafana default datasource",
+        "2.0.4 through 3.1.0 known issue (same ServiceScene.subscribeToLokiConfig code): patterns tab does not re-enable after switching from a datasource where pattern_ingester_enabled=false; workaround is to use the patterns-autodetect proxy variant as the Grafana default datasource",
         "2.2.0 moved the mixed json + logfmt + drop __error__ parser expression from LOG_STREAM_SELECTOR_EXPR into MIXED_FORMAT_EXPR"
       ],
       "capability_profiles": [
+        {
+          "profile": "drilldown-v3.1",
+          "version_range": ">= 3.1.0",
+          "capabilities": [
+            "detected_level_default_columns",
+            "service_detail_field_value_breakdowns",
+            "logs_query_footer_stats"
+          ]
+        },
+        {
+          "profile": "drilldown-v3",
+          "version_range": ">= 3.0.0 < 3.1.0",
+          "capabilities": [
+            "detected_level_default_columns",
+            "service_detail_field_value_breakdowns"
+          ]
+        },
         {
           "profile": "drilldown-v2",
           "version_range": ">= 2.0.0 < 3.0.0",
@@ -370,6 +393,18 @@
           "focus": [
             "mixed parser expression via MIXED_FORMAT_EXPR",
             "landing and service-page label/field filter inputs located by placeholder (e2e-ui drilldownLabelFilter / drilldownFieldFilter)",
+            "patterns tab initialization (same behaviour as 2.0.4)"
+          ]
+        },
+        {
+          "versions": [
+            "3.0.0",
+            "3.1.0"
+          ],
+          "focus": [
+            "same Loki HTTP calls as 2.6.0 (labels, detected_labels, detected_fields, patterns, index/volume, drilldown-limits, query_range)",
+            "Grafana floor moves to >= 13.1.0 (3.0.0) and >= 13.2.0 (3.1.0), so the previous-family Grafana profile keeps Drilldown 2.6.0 (drilldown_plugin_version)",
+            "3.1.0 logs footer reads frame meta.stats ('Summary: total bytes processed') from the query_range stats object",
             "patterns tab initialization (same behaviour as 2.0.4)"
           ]
         }

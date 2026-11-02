@@ -654,10 +654,10 @@ The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 - VictoriaLogs `v1.52.0`
 - vmalert `v1.138.0` and vmauth `v1.138.0`
 - VictoriaMetrics `v1.119.0` (remote-write target for vmalert recording rules and scrape store for the stack)
-- Grafana `13.3.0` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@2.6.0`
-- Logs Drilldown contract `2.6.0` from `grafana/logs-drilldown` commit `e894c0eb6a6d3924b1cdba5aca4bcaccf51cab05`
+- Grafana `13.3.0` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (overridable through `GRAFANA_PLUGINS_PREINSTALL`)
+- Logs Drilldown contract `3.1.0` from `grafana/logs-drilldown` commit `3b8466c7e48ea4e9128e10015bf8fd5cc35d49cb`
 
-`TestPinnedCompatibilityMatrixMatchesCompose` fails when the Loki, VictoriaLogs or Grafana image defaults in compose drift from the pinned versions in `compatibility-matrix.json`, so bump both together. The Grafana plugin pins are not checked by that test; keep `GF_PLUGINS_PREINSTALL` and `stack.logs_drilldown_contract.pinned_version` aligned by hand.
+`TestPinnedCompatibilityMatrixMatchesCompose` fails when the Loki, VictoriaLogs or Grafana image defaults in compose drift from the pinned versions in `compatibility-matrix.json`, so bump both together. The same test checks that compose preinstalls `grafana-lokiexplore-app@<stack.logs_drilldown_contract.pinned_version>` and that a runtime profile's `drilldown_plugin_version` is a tracked Drilldown version. The VictoriaLogs datasource pin is not checked; keep it aligned by hand.
 
 Field-surface defaults in the pinned stack:
 
@@ -684,21 +684,23 @@ Grafana runtime profiles from the manifest:
 
 - `13.3.0` (`full`) runs `TestDrilldownTrackScore` and `TestDrilldown_RuntimeFamilyContracts` on scheduled and manual compatibility checks
 - `13.3.0` (`current_smoke`) runs `TestGrafanaDatasourceCatalogAndHealth`, `TestDrilldown_GrafanaResourceContracts` and `TestDrilldown_RuntimeFamilyContracts` on pull requests
-- `12.4.14` (`previous_smoke`) runs the same smoke tests on pull requests against the previous family
+- `12.4.14` (`previous_smoke`) runs the same smoke tests on pull requests against the previous family, with Logs Drilldown `2.6.0` (`drilldown_plugin_version`) because Drilldown `3.x` requires Grafana `>= 13.1`
 
 The Grafana Loki datasource contract tracks `13.3.0`, `13.2.5`, `13.2.3`, `13.2.1`, `13.0.1`, `12.4.14`, `12.4.12`, `12.4.10`, `12.4.2` and `12.4.1`.
 
 Logs Drilldown family assertions are explicit in the contract matrix:
 
 - `1.0.x` checks service-selection volume buckets, detected-fields filtering, and labels-field parsing behavior
-- `2.x` checks detected-level default columns, field-values breakdown scenes, and additional label-tab wiring
+- `2.x` and `3.x` check detected-level default columns, field-values breakdown scenes, and additional label-tab wiring
+- `3.1.0` and later also check that the logs footer reads the `Summary: total bytes processed` frame stat
 
 The stack is version-parameterized through compose environment variables:
 
 ```bash
 LOKI_IMAGE=grafana/loki:3.6.10 \
 VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.49.0 \
-GRAFANA_IMAGE=grafana/grafana:12.4.2 \
+GRAFANA_IMAGE=grafana/grafana:12.4.14 \
+GRAFANA_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@2.6.0 \
 docker compose -f test/e2e-compat/docker-compose.yml up -d --build
 ```
 

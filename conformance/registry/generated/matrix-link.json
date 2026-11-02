@@ -19,7 +19,7 @@
       "workflow": "compat-loki.yaml"
     },
     {
-      "edge_cases": 3,
+      "edge_cases": 4,
       "runtime_matrix": false,
       "score_test": "TestDrilldownTrackScore",
       "track": "drilldown",
@@ -61,6 +61,8 @@
     },
     "logs_drilldown_contract": {
       "matrix": [
+        "3.1.0",
+        "3.0.0",
         "2.6.0",
         "2.5.2",
         "2.5.1",
@@ -88,7 +90,7 @@
         "1.0.35",
         "1.0.34"
       ],
-      "pinned": "2.6.0"
+      "pinned": "3.1.0"
     },
     "loki": {
       "matrix": [

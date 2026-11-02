@@ -58,6 +58,9 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 					Profile   string `json:"profile"`
 					RunOnPR   bool   `json:"run_on_pr"`
 					TestRegex string `json:"test_regex"`
+					// DrilldownPluginVersion overrides the compose plugin pin for a
+					// Grafana family the pinned Drilldown cannot run on.
+					DrilldownPluginVersion string `json:"drilldown_plugin_version"`
 				} `json:"runtime_profiles"`
 			} `json:"grafana"`
 			LogsDrilldownContract struct {
@@ -148,6 +151,9 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 
 	if matrix.Stack.LogsDrilldownContract.PinnedVersion == "" || matrix.Stack.LogsDrilldownContract.PinnedCommit == "" {
 		t.Fatalf("logs drilldown contract pin must include version and commit: %+v", matrix.Stack.LogsDrilldownContract)
+	}
+	if pin := "grafana-lokiexplore-app@" + matrix.Stack.LogsDrilldownContract.PinnedVersion; !strings.Contains(compose, pin) {
+		t.Fatalf("docker-compose.yml must preinstall the pinned Logs Drilldown plugin %q", pin)
 	}
 	if len(matrix.Stack.Loki.MatrixVersions) == 0 || len(matrix.Stack.VictoriaLogs.MatrixVersions) == 0 {
 		t.Fatalf("runtime matrices must not be empty")
@@ -243,6 +249,15 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 	for _, profile := range matrix.Stack.Grafana.RuntimeProfiles {
 		if profile.Version == "" || profile.Profile == "" || profile.TestRegex == "" {
 			t.Fatalf("grafana runtime profile must define version, profile, and test_regex: %+v", profile)
+		}
+		if profile.DrilldownPluginVersion != "" {
+			found := false
+			for _, version := range matrix.Stack.LogsDrilldownContract.MatrixVersions {
+				found = found || version == profile.DrilldownPluginVersion
+			}
+			if !found {
+				t.Fatalf("grafana runtime profile %q pins Drilldown %q, which is not in the Drilldown matrix versions", profile.Profile, profile.DrilldownPluginVersion)
+			}
 		}
 		switch profile.Profile {
 		case "full":
