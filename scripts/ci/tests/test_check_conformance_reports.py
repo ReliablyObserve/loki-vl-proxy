@@ -121,6 +121,49 @@ class ErrorLayerRatchetTest(unittest.TestCase):
         self.assertTrue(self.check(self.doc("labels vl500"), go_lines=extra))
 
 
+class ProfileDriftRatchetTest(unittest.TestCase):
+    """The known-drift list of the Grafana and Logs Drilldown profile labels may only shrink."""
+
+    def check(self, doc, base=None):
+        gate = load_gate()
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "drift.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(doc, handle)
+            return gate.profile_drift_problems(path, json.dumps(base) if base else None)
+
+    def doc(self, *ids):
+        return {"ceiling": len(ids), "drift": {i: {"reason": "why"} for i in ids}}
+
+    def test_a_consistent_list_passes(self):
+        self.assertEqual(self.check(self.doc("datasource:a", "runtime:b")), [])
+        self.assertEqual(self.check(self.doc()), [])
+
+    def test_ceiling_must_match_the_list(self):
+        doc = self.doc("datasource:a")
+        doc["ceiling"] = 2
+        self.assertTrue(self.check(doc))
+
+    def test_an_entry_needs_a_reason(self):
+        doc = self.doc("datasource:a")
+        doc["drift"]["datasource:a"]["reason"] = " "
+        self.assertTrue(self.check(doc))
+
+    def test_growth_against_the_base_fails_and_shrinking_passes(self):
+        self.assertTrue(self.check(self.doc("datasource:a", "drilldown:b"), base=self.doc("datasource:a")))
+        self.assertTrue(self.check(self.doc("drilldown:b"), base=self.doc("datasource:a")))
+        self.assertEqual(self.check(self.doc("datasource:a"), base=self.doc("datasource:a", "drilldown:b")), [])
+
+    def test_the_committed_list_is_consistent(self):
+        gate = load_gate()
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            self.assertEqual(gate.profile_drift_problems(), [])
+        finally:
+            os.chdir(cwd)
+
+
 class ExecutedCombinationEvidenceTest(unittest.TestCase):
     """Exercise the existing collector, including its gate and retained JSON."""
 
