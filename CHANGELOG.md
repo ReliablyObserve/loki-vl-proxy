@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/loki/api/v1/index/stats` without `start` (or `end`) counts Loki's default
+  hour instead of all of VictoriaLogs' retention.** Loki reads index/stats as a
+  range request (`pkg/querier/queryrange/codec.go:384-394`,
+  `pkg/loghttp/query.go:473-481`): `end` defaults to now and `start` to
+  min(end, now) minus `since`, one hour by default
+  (`pkg/loghttp/params.go:23`, `:91-120`). The proxy sent VictoriaLogs no time
+  bound for a missing parameter, so `{app="x"}` without `start` counted every
+  stream and line VictoriaLogs holds (6 streams and 9 lines in the unit
+  fixture where Loki counts 1 and 1) and scanned the whole retention to do it.
+  A missing bound now gets Loki's default (and `since` is honoured); given
+  bounds pass through unchanged, and the default lowers VictoriaLogs' load for
+  such requests. Streams and entries remain exact counts from VictoriaLogs:
+  Loki's own are estimates from chunk metadata (overlapping chunks pro rata by
+  time, `pkg/storage/stores/shipper/indexshipper/tsdb/index/chunk.go:262-267`;
+  store, ingester, split and results-cache answers summed,
+  `pkg/storage/stores/index/stats/stats.go:17-28`,
+  `pkg/storage/async_store.go:167-171`,
+  `pkg/querier/queryrange/index_stats_cache.go:34-48`), which equal the
+  proxy's when every chunk lies inside the window, is flushed and is read
+  once. `chunks` and `bytes` stay the stream count and 100 bytes per entry.
+  Registry: `quality/index-stats-default-window`; Loki's estimate is recorded
+  in `quality/index-stats-streams-differ` and
+  `quality/index-stats-loki-chunk-accounting` (upstream).
+
 ## [2.59.1] - 2026-11-02
 
 ### Fixed

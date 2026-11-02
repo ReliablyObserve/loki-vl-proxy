@@ -290,12 +290,34 @@ def qids(diffs):
     return [getattr(x, "qid", None) for x in diffs]
 
 
-def compare(left, right, lenient=False, explain=None, vs_loki=False):
+# Bodies of differing resource requests kept in compare.json: the run's artifact holds no raw captures.
+BODY_CHARS = 2000
+BODIES_PER_ROW = 12
+
+
+def bounded(body):
+    """A resource answer as JSON text of at most BODY_CHARS characters."""
+    text = json.dumps(body, sort_keys=True, default=str)
+    return text if len(text) <= BODY_CHARS else text[:BODY_CHARS] + f"... ({len(text)} characters)"
+
+
+def stats_numbers(body):
+    """An index/stats answer's four numbers, as compare.md lists them."""
+    if not isinstance(body, dict):
+        return str(body)[:80]
+    return ", ".join(f"{k} {body.get(k)}" for k in ("streams", "chunks", "entries", "bytes"))
+
+
+def compare(left, right, lenient=False, explain=None, vs_loki=False, raw=None, bodies=None):
     """(requests, identical, differences, series, one-sided, explained) of two sides' records.
 
     explain: (raw left, raw right) of the records, to ask explain_vs_loki why a difference is by design; such a
     difference goes to `explained` with its reason instead of the differences.
-    vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series."""
+    vs_loki: a topk or bottomk answer is compared by its ranked values per step (same_ranked), not its series.
+    raw: (raw left, raw right) when explain is not given, for bodies.
+    bodies: a list that gets {request, left, right} (bounded; index/stats also `numbers`) for every resource request
+    that differs, at most BODIES_PER_ROW."""
+    raw = explain or raw
     keys = sorted(set(left) | set(right), key=str)
     n = ok = missing = 0
     diffs, explained, series = [], [], 0
@@ -319,6 +341,11 @@ def compare(left, right, lenient=False, explain=None, vs_loki=False):
             if not why:
                 ok += 1
                 continue
+            if raw and bodies is not None and k[0] == "resource" and len(bodies) < BODIES_PER_ROW:
+                ba, bb = raw[0][k][i], raw[1][k][j]
+                bodies.append({"request": k[1], "left": bounded(ba), "right": bounded(bb),
+                               **({"numbers": f"{stats_numbers(ba)} vs {stats_numbers(bb)}"}
+                                  if "/resources/index/stats" in k[1] else {})})
             text = f"{k[0]} {str(k[2:] or k[1])[:90]}: {why}"
             reason = explain_vs_loki(k, explain[0][k][i], explain[1][k][j]) if explain and why != "capture body unreadable" else None
             if reason:
@@ -381,6 +408,10 @@ def _detected_labels(a, b):
 
 
 def _index_stats(a, b):
+    """Loki's bytes (uncompressed chunk KB, pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-174 and
+    pkg/logproto/extensions.go:119-123) and chunk count have no VictoriaLogs equivalent. Its streams and entries are
+    estimates too (chunks pro-rated by time, sources summed: registry quality/index-stats-loki-chunk-accounting), but
+    exact for the visual stack's flushed, uncached seed, so a difference there stays counted."""
     if {k: a.get(k) for k in ("streams", "entries")} != {k: b.get(k) for k in ("streams", "entries")}:
         return None
     return "bytes and chunks are Loki's chunk accounting, which VictoriaLogs has no equivalent of; streams and entries match"
@@ -520,12 +551,14 @@ def main():
         settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
         sl, l = records(os.path.join(d, "loki.json"), raw["loki"]) if has_loki else (True, {})
-        n, ok, diffs, series, miss, _ = compare(m, p)
+        mp_bodies, loki_bodies = [], []
+        n, ok, diffs, series, miss, _ = compare(m, p, raw=(raw["main"], raw["pr"]), bodies=mp_bodies)
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
         explained, lnondet = [], []
         if loki_ok:
             ln, lok, _, _, _, _ = compare(p, l, vs_loki=True)
-            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]), vs_loki=True)
+            _, lok2, ldiffs2, _, _, explained = compare(p, l, lenient=True, explain=(raw["pr"], raw["loki"]), vs_loki=True,
+                                                        bodies=loki_bodies)
             _, _, mdiffs, _, _, mexplained = compare(m, l, lenient=True, explain=(raw["main"], raw["loki"]), vs_loki=True)
             # A difference the base needs a by-design explanation for and the PR does not (the PR now answers like
             # Loki there) still counts against the base, so a fix towards Loki reads as improved.
@@ -546,7 +579,7 @@ def main():
         gated = [x for x in diffs if not nondeterministic(x) and not configuration(x)]
         rows.append(dict(page=page, range=rng, requests=n, series=series, main_vs_pr=f"{ok}/{n}" + (f", {miss} one-sided" if miss else ""), pr_vs_loki=vs,
                          settled=all((sm, sp, sl)), settle_s=settle, main_pr_diffs=gated, main_pr_qids=qids(gated), loki_qids=qids(ldiffs2) if loki_ok else [], main_pr_nondet=[x for x in diffs if nondeterministic(x)], main_pr_config=[x for x in diffs if configuration(x)], loki_diffs=ldiffs2 if loki_ok else [],
-                         loki_explained=explained, loki_nondet=lnondet,
+                         loki_explained=explained, loki_nondet=lnondet, main_pr_bodies=mp_bodies, loki_bodies=loki_bodies,
                          loki_compared=bool(loki_ok), loki_main_n=len(mdiffs), loki_new=[x for x in ldiffs2 if x not in set(mdiffs)] if loki_ok else [],
                          points_main=points(m), points_pr=points(p), points_loki=points(l), ui_main=ui_of(d, "main"), ui_pr=ui_of(d, "pr"), ui_loki=ui_of(d, "loki"),
                          # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer.
@@ -563,6 +596,8 @@ def main():
             md += ["", f"### {r['page']} {r['range']}"]
             md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- main vs PR (deployment configuration, not gated): {x}" for x in r.get("main_pr_config", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
             md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
+            md += [f"- {side} index/stats: {b['numbers']}" for side, key in (("main vs PR", "main_pr_bodies"), ("PR vs Loki", "loki_bodies"))
+                   for b in r.get(key, []) if "numbers" in b]
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
     print("\n".join(md[:200]))

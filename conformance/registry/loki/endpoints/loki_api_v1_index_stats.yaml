@@ -24,7 +24,13 @@ generated:
       []
 
 description: |
-  TODO: what this endpoint returns and the Loki behaviour a client depends on.
+  The streams, chunks, entries and bytes Loki's index holds for a label
+  selector over a window (a range window: a missing start is the hour before
+  end, pkg/loghttp/params.go:91-120). Only label matchers are accepted
+  (syntax.ParseMatchers: 400 "only label matchers are supported"). The numbers
+  are estimates from chunk metadata: overlapping chunks pro rata by time,
+  copies summed (quality/index-stats-loki-chunk-accounting); Grafana shows
+  `bytes` as the query-size estimate.
 context:
   consumers:
     - explore
@@ -45,5 +51,12 @@ victorialogs:
   native: []
   transformed: []
   vl_cannot: |
-    TODO: the VictoriaLogs limitation that forces proxy-side work, if any.
-edge_cases: []    # case ids under conformance/registry/cases/
+    VictoriaLogs has no chunks and no ingested-bytes accounting: one stats row
+    (`count() entries, count_uniq_hash(_stream_id) streams`) gives the window's
+    exact streams and lines; chunks is the stream count and bytes 100 per
+    entry (quality/index-stats-bytes-and-chunks).
+edge_cases:    # case ids under conformance/registry/cases/
+  - quality/index-stats-default-window
+  - quality/index-stats-streams-differ
+  - quality/index-stats-loki-chunk-accounting
+  - quality/index-stats-bytes-and-chunks

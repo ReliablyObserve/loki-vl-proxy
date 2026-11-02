@@ -1,16 +1,33 @@
 id: quality/index-stats-streams-differ
-title: index/stats stream counts differ from Loki in both directions (open)
+title: index/stats stream counts differ from Loki's where Loki's index estimate is not the window's count (upstream; equal for whole flushed chunks)
 proves:
   - loki_api_v1_index_stats
 consumer: drilldown
 why: |
-  Over the last hour Loki's /index/stats counted 7104 streams for
-  `{env="production"}` and the proxy 13510; over the Drilldown landing's 15
-  minutes Loki counted 7104 and the proxy 3365. Entries agree with Loki's own
-  count_over_time, but the recorded run did not cross-check streams against
-  Loki's /series, so it is not known which side is right; the runner now
-  checks /series and marks the difference as Loki's chunk accounting only when
-  /series agrees with the proxy.
+  Loki counts a stream in /index/stats when one of its chunks overlaps the
+  window: from the index, when the chunk's pro-rated entries are above zero
+  (pkg/storage/stores/shipper/indexshipper/tsdb/single_file_index.go:340-376,
+  tsdb/index/chunk.go:262-267), from an ingester, when an unflushed chunk
+  overlaps (pkg/ingester/instance.go:788-826). The answers of the store, the
+  ingesters and the 24h splits are summed, not deduplicated
+  (pkg/storage/stores/index/stats/stats.go:17-28, pkg/storage/async_store.go:167-171,
+  pkg/querier/queryrange/roundtrip.go:36), and the index-stats results cache,
+  on by default (roundtrip.go:66) for answers whose end is 10m old
+  (pkg/validation/limits.go:413), serves a window inside a cached one with the
+  cached stream count (pkg/querier/queryrange/index_stats_cache.go:34-48). A
+  single-binary Loki reads only its store (pkg/querier/querier.go:529-557, no
+  AsyncStore for target all: pkg/loki/modules.go:1078-1101), so unflushed
+  lines are not counted at all. The recorded run (Loki 7104 streams for both
+  the last hour and the last 15 minutes of `{env="production"}`, the proxy
+  13510 and 3365) shows the cached count reused for a shorter window.
+
+  The proxy counts the streams with a line in the window from VictoriaLogs
+  (count_uniq_hash(_stream_id)), which is Loki's count whenever every chunk
+  lies inside the window, is flushed and is read once: TestDrilldown_IndexStatsLikeLoki
+  checks that equality and, for a window that cuts the chunks, equality with
+  Loki's own /series and count_over_time. The visual stack turns Loki's
+  index-stats results cache off (bench/visual/docker-compose.visual.yml), where
+  it made the same window answer differently with the capture order.
 request:
   method: GET
   path: /loki/api/v1/index/stats
@@ -24,16 +41,16 @@ compare:
   mode: observed
   fields: [streams]
   expect: |
-    Loki's stream count (or Loki's /series count where Loki's stats double-
-    count).
+    Loki's stream count where every chunk lies inside the window, is flushed
+    and is read once; otherwise Loki's /series count for the window.
 gap:
-  status: open
+  status: upstream
   impact: drilldown-visible
   effort: S
-  area: 'internal/proxy/label_handlers.go handleIndexStats (stream counting per window)'
-  loki: 'pkg/storage index stats (streams from the index for the window)'
-  proxy: 'streams with lines in the window'
-  planned_test: 'bench/parity rerun with the /series cross-check, then TestCompat_IndexStatsStreams (test/e2e-compat, group drilldown)'
+  area: 'none (Loki index estimate); bench/visual/docker-compose.visual.yml (Loki results cache off)'
+  loki: 'pkg/storage/stores/shipper/indexshipper/tsdb/single_file_index.go:340-376 streams from chunk overlap; pkg/storage/stores/index/stats/stats.go:17-28 summed; pkg/querier/queryrange/index_stats_cache.go:34-48 cached count reused'
+  proxy: 'streams with a line in the window (exact)'
+  planned_test: 'TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown); bench/visual/tests/test_compare.py test_index_stats_bodies_name_both_sides_numbers'
   clusters:
     - 2a68e26c
     - aa98afb1

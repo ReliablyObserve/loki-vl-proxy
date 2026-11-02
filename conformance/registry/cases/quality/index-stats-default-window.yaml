@@ -1,0 +1,38 @@
+id: quality/index-stats-default-window
+title: index/stats without start reads Loki's default hour before end (or now), or `since` (fixed)
+proves:
+  - loki_api_v1_index_stats
+consumer: api
+why: |
+  Loki parses /index/stats like a range query (pkg/querier/queryrange/codec.go:384-394
+  ParseIndexStatsQuery -> pkg/loghttp/query.go:473-481 ParseRangeQuery): end
+  defaults to now and start to min(end, now) minus `since`, one hour by
+  default (pkg/loghttp/params.go:23, :91-120). The proxy sent VictoriaLogs no
+  start (or no end) when the request had none, so `{app="x"}` without start
+  counted every stream and line in VictoriaLogs' retention (in the unit fixture
+  6 streams and 9 lines where Loki counts 1 and 1) and read all of it.
+
+  Fixed: a missing start or end gets Loki's default before the stats query;
+  given values pass through unchanged.
+request:
+  method: GET
+  path: /loki/api/v1/index/stats
+  params:
+    query: '{env="production"}'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams, entries]
+  expect: |
+    The streams and lines of the hour before now, as Loki counts them.
+gap:
+  status: fixed
+  fixed_by: "#988"
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/label_handlers.go handleIndexStats; internal/proxy/proxy.go lokiRangeBounds'
+  loki: 'pkg/loghttp/params.go:91-120 determineBounds (default since 1h, params.go:23)'
+  proxy: 'Loki default window for a missing start or end'
+  planned_test: 'TestIndexStats_WindowLikeLoki, TestIndexStats_DifferentialVsLokiReference, FuzzIndexStatsWindowLikeLoki (internal/proxy, CI fuzz-smoke); TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown)'
+  clusters: []
