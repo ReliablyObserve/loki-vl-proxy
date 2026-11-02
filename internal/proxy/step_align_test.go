@@ -265,8 +265,7 @@ func TestStepAlignMiddleware_OnlyQueryRangeWithTheFlag(t *testing.T) {
 // the same *http.Request, unmarked, with no allocation in the middleware. A
 // bound off the grid, a missing bound, or an on-grid decimal the proxy reads
 // differently from Loki is moved as before, and the caller's request is not
-// written. A log query passes through unparsed once its validation is
-// memoized.
+// written. A log query passes through unparsed.
 // conformance: semantics/query-range-step-alignment
 func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 	p := &Proxy{alignQueriesWithStep: true}
@@ -340,17 +339,32 @@ func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 			}
 			warm := newReq()
 			h(httptest.NewRecorder(), warm) // memoizes the query's validation
-			if _, memoized := validationCache.Load(tc.query); !memoized && tc.step != "" && !boundsOnStepGrid(warm) {
-				// The bounded memo is full (other tests of the package filled
-				// it); the query is then validated on every request, as by
-				// the handler.
-				return
-			}
 			rec := httptest.NewRecorder()
 			if allocs := testing.AllocsPerRun(50, func() { h(rec, warm) }); allocs > 0 {
 				t.Fatalf("the middleware allocates %.0f times on a request it passes on", allocs)
 			}
 		})
+	}
+}
+
+// The middleware leaves a query that starts with a stream selector without a
+// lookup: no LogQL metric expression starts with one, and every such form,
+// infix operators included, is rejected or is a log query.
+// conformance: semantics/query-range-step-alignment
+func TestStepAlign_StreamSelectorPrefixIsNeverMetric(t *testing.T) {
+	for _, q := range []string{
+		`{a="b"}`, `{a="b"} |= "x"`, `{a="b"} | json`, ` {a="b"} | logfmt | level="info"`,
+		`{a="b"} + 1`, `{a="b"} > 0`, `{a="b"} or vector(0)`, `{a="b"} and {c="d"}`, `{a="b"} / {c="d"}`,
+		`{a="b"} |= "x" + 1`, `{a="b"}[5m]`, `{a="b"} | json | unwrap x [5m]`, `{a="b"} offset 5m`, `{a="b"} by (x)`,
+	} {
+		if cachedQueryValidation(q).sample {
+			t.Fatalf("%q validates as a metric expression", q)
+		}
+		form := url.Values{"query": {q}, "start": {"1700000053000000000"}, "end": {"1700003647000000000"}, "step": {"60s"}}
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
+		if _, ok := alignQueryRangeToStep(req, time.Unix(1700003700, 0)); ok {
+			t.Fatalf("%q was aligned", q)
+		}
 	}
 }
 
@@ -912,9 +926,10 @@ func subStepRefreshBench(b *testing.B, align, grafanaStart bool) {
 // A dashboard refreshing a 24h window every 13 s at step 60 s, the window
 // moving by less than a step each time: raw bounds without alignment (an API
 // client), a floored start with a raw end without alignment (Grafana's query
-// splitting), and raw bounds with -align-queries-with-step.
+// splitting), and both with -align-queries-with-step.
 func BenchmarkQueryRangeSubStepRefresh(b *testing.B) {
 	b.Run("unaligned/raw_bounds", func(b *testing.B) { subStepRefreshBench(b, false, false) })
 	b.Run("unaligned/grafana_start", func(b *testing.B) { subStepRefreshBench(b, false, true) })
 	b.Run("aligned/raw_bounds", func(b *testing.B) { subStepRefreshBench(b, true, false) })
+	b.Run("aligned/grafana_start", func(b *testing.B) { subStepRefreshBench(b, true, true) })
 }

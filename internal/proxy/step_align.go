@@ -126,6 +126,11 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	if strings.Contains(query, "$__") {
 		return r, false
 	}
+	// No metric expression starts with a stream selector: a log query is
+	// left without a lookup, which costs a parse once the memo is full.
+	if strings.HasPrefix(strings.TrimSpace(query), "{") {
+		return r, false
+	}
 	// The handler validates the same query string through the same memo
 	// (validateQuery), so a query is parsed once across both, and a repeated
 	// query not at all.
