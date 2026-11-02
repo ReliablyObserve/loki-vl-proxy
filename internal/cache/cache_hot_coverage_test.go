@@ -84,6 +84,7 @@ func TestTenantFromCacheKey_Variants(t *testing.T) {
 		{name: "internal key", key: "__meta:ignored", want: ""},
 		{name: "malformed key", key: "query_range:tenant-only", want: ""},
 		{name: "supported prefix", key: "patterns:tenant-a:selector", want: "tenant-a"},
+		{name: "pattern window scope", key: "patterns_window:scope-a:v1:digest", want: "scope-a"},
 		{name: "unsupported prefix", key: "custom:tenant-a:value", want: ""},
 	}
 
@@ -93,6 +94,27 @@ func TestTenantFromCacheKey_Variants(t *testing.T) {
 				t.Fatalf("tenantFromCacheKey(%q) = %q, want %q", tt.key, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPatternWindowCacheWritesDiskButLegacyPatternSnapshotDoesNot(t *testing.T) {
+	disk, err := NewDiskCache(DiskCacheConfig{Path: t.TempDir() + "/patterns.db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = disk.Close() }()
+	c := New(time.Hour, 100)
+	defer c.Close()
+	c.SetL2(disk)
+	windowKey := "patterns_window:scope-a:v1:digest"
+	c.SetWithTTL(windowKey, []byte("mined-window"), time.Hour)
+	c.SetWithTTL("patterns:tenant-a:selector", []byte("snapshot"), time.Hour)
+	disk.Flush()
+	if got, ok := disk.Get(windowKey); !ok || string(got) != "mined-window" {
+		t.Fatalf("pattern source window missing from L2: ok=%v value=%q", ok, got)
+	}
+	if _, ok := disk.Get("patterns:tenant-a:selector"); ok {
+		t.Fatal("legacy pattern snapshot unexpectedly stored in L2")
 	}
 }
 

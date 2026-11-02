@@ -23,7 +23,39 @@ Proxy behavior:
 - Patterns are derived from live query results, not from a static dictionary.
 - Optional global autodetect mode (`-patterns-autodetect-from-queries=true`) additionally warms pattern cache from successful `query` and `query_range` responses.
 - Maximum patterns returned per request are clamped to `1000`.
-- Pattern extraction prefers backend `query_range` first so Drilldown graphs use the selected time range buckets (not only recent tail windows), with `query` as fallback.
+- Pattern extraction reads VictoriaLogs raw logs in bounded, aligned windows
+  and mines samples for the requested step across the selected range.
+
+### Cache reuse on moving ranges
+
+An exact `/patterns` repeat uses the existing response cache. Autodetection
+from a prior `query` or `query_range` can also populate that same response key
+when its selector, range, step, tenant and forwarded authorization match.
+These query-derived results are samples; a limited log query is not proof that
+it covered all lines in a long selected range.
+
+When `start` and `end` move, the response key changes. The proxy also stores
+mined results for aligned source windows under `patterns_window:`
+keys in the existing **Loki semantic cache layer**. The first and last windows
+are fetched again because their bounds move. Interior windows use the same
+`-query-range-freshness`, `-query-range-recent-cache-ttl` and
+`-query-range-history-cache-ttl` rules as log-window fragments: by default,
+recent windows are not cached and settled windows use the history TTL. Keys
+include the backend/query, tenant and forwarded-auth scope, step, sample and
+pattern limits, exact source bounds and level derivation settings. Cache
+entries are bounded by the configured L1/L2/L3 cache budgets; they are not
+written into the separate pattern snapshot file.
+An incomplete VL stream is discarded instead of being persisted as a mined
+window. When samples hit the source-line limit, the bounded second pass picks
+stable windows across the range so a refresh can reuse settled samples.
+
+Inspect `loki_vl_proxy_internal_operation_total{operation="patterns_window_cache"}`
+with fixed outcomes `hit`, `miss`, `edge`, `recent_disabled` and `unreadable`.
+The existing `loki_vl_proxy_cache_layer_*{layer="loki"}` series report tier
+occupancy, bytes and evictions. Compare these with VL request counts, read
+bytes and duration; a cache hit alone does not prove a faster page load.
+Like the existing historical log-window cache, retained pattern windows may
+remain stale until TTL expiry after a late backfill or deletion.
 
 ## Static Custom Patterns
 

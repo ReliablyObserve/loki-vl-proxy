@@ -109,6 +109,34 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 			t.Fatalf("expected grouped pattern %q to keep contiguous sample buckets, max_gap=%ds step=%ds samples=%#v", entries[i].Pattern, maxGapSeconds, stepSeconds, entries[i].Samples)
 		}
 	}
+
+	// Exercise the same Grafana datasource resource call after a moving-window
+	// refresh. The first and last windows move; settled interior windows should
+	// come from the existing Loki-layer cache rather than rescanning VL.
+	hitsBefore := patternWindowCacheHits(t, patternsAutodetectProxyURL)
+	shifted, err := fetchPatternsViaGrafanaDatasource(dsUID, query, start.Add(cfg.step), end.Add(cfg.step), cfg.step, cfg.patternCount)
+	if err != nil || len(shifted) == 0 {
+		t.Fatalf("shifted long-range patterns failed: entries=%d err=%v", len(shifted), err)
+	}
+	hitsAfter := patternWindowCacheHits(t, patternsAutodetectProxyURL)
+	if hitsAfter <= hitsBefore {
+		t.Fatalf("shifted long-range patterns reused no settled source windows: hits before=%d after=%d", hitsBefore, hitsAfter)
+	}
+	t.Logf("shifted pattern source-window cache hits: %d", hitsAfter-hitsBefore)
+}
+
+func patternWindowCacheHits(t *testing.T, baseURL string) int64 {
+	t.Helper()
+	const prefix = `loki_vl_proxy_internal_operation_total{operation="patterns_window_cache",outcome="hit"} `
+	for _, line := range strings.Split(scrapeProxyMetrics(t, baseURL), "\n") {
+		if raw, ok := strings.CutPrefix(line, prefix); ok {
+			value, err := strconv.ParseInt(raw, 10, 64)
+			if err == nil {
+				return value
+			}
+		}
+	}
+	return 0
 }
 
 func TestDrilldown_LongRangeVolume_SplitQueriesStayDense(t *testing.T) {

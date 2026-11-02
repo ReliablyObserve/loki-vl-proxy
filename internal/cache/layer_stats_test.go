@@ -82,7 +82,8 @@ func TestLayerDiskQueueCommitRestart(t *testing.T) {
 func TestLayerClassifierAndExplicitRawKeys(t *testing.T) {
 	for key, want := range map[string]Layer{
 		"query-steps:v1:a": LayerLoki, "query_range_window:a": LayerLoki,
-		"detect_fields:tenant:q": LayerLoki, "detect_labels:tenant:q": LayerLoki,
+		"patterns_window:scope-a:v1:digest": LayerLoki,
+		"detect_fields:tenant:q":            LayerLoki, "detect_labels:tenant:q": LayerLoki,
 		"index_stats:tenant:q": LayerLoki, "mt:query:tenant:q": LayerLoki,
 		"__patterns_snapshot:v1": LayerLoki, "__label_values_index_snapshot:v1": LayerLoki,
 		"stats-extent:v1:a": LayerVL, "sfn:a": LayerVL, "afn:a": LayerVL,

@@ -536,6 +536,13 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int, levels l
 // message, timestamp, and level from each line, and feeds them to the pattern
 // miner. Uses fastjson to avoid map[string]interface{} allocation per line.
 func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats) {
+	patterns, stats, _ := extractLogPatternsStreamWithStatus(r, step, limit, levels)
+	return patterns, stats
+}
+
+// extractLogPatternsStreamWithStatus exposes scanner failures to callers that
+// persist a mined window. A partial transport read must not become a cache hit.
+func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats, error) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
 	stats := patternExtractionStats{}
@@ -593,9 +600,9 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, leve
 	if stats.observedLines > 0 {
 		patterns := buildPatternResponse(miner, limit)
 		stats.patternCount = len(patterns)
-		return patterns, stats
+		return patterns, stats, scanner.Err()
 	}
-	return nil, stats
+	return nil, stats, scanner.Err()
 }
 
 // patternMessageFromFJ extracts the log message from a fastjson value,
