@@ -328,11 +328,17 @@ func lokiServiceVolumes(rows []segRow, start, end time.Time, limit int) string {
 	if len(vols) > limit {
 		vols = vols[:limit]
 	}
+	// Loki stamps the sample at the end rounded up to the millisecond
+	// (pkg/util/conv.go RoundToMilliseconds).
+	endMs := end.UnixNano() / int64(time.Millisecond)
+	if end.UnixNano()%int64(time.Millisecond) != 0 {
+		endMs++
+	}
 	result := make([]map[string]interface{}, 0, len(vols))
 	for _, v := range vols {
 		result = append(result, map[string]interface{}{
 			"metric": map[string]string{"service_name": v.name},
-			"value":  []interface{}{float64(end.UnixNano()/int64(time.Millisecond)) / 1e3, strconv.FormatUint(v.bytes, 10)},
+			"value":  []interface{}{float64(endMs) / 1e3, strconv.FormatUint(v.bytes, 10)},
 		})
 	}
 	out, _ := json.Marshal(map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "vector", "result": result}})
