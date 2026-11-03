@@ -41,6 +41,30 @@ class CiRunTest(unittest.TestCase):
             ci_run.time.sleep = orig
             srv.shutdown()
 
+    def test_the_seed_fingerprint_counts_both_backends_and_tolerates_a_dead_one(self):
+        class Both(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = (b'{"c":"42"}\n' if "logsql" in self.path else
+                        json.dumps({"data": {"result": [{"value": [1, "17"]}]}}).encode())
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Both)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            port = srv.server_address[1]
+            state = {"end": 7200, "hours": 7, "loki_hours": 1.5}
+            self.assertEqual(ci_run.seed_fingerprint(state, port, port), {"end": 7200, "hours": 7, "vl_lines": 42, "loki_lines": 17})
+            dead = ci_run.seed_fingerprint(state, 1, 1)
+            self.assertEqual((dead["vl_lines"], dead["loki_lines"]), (None, None))
+        finally:
+            srv.shutdown()
+
     def test_differing_lists_the_captures_with_a_difference(self):
         with tempfile.TemporaryDirectory() as out:
             self.assertEqual(ci_run.differing(out), set())

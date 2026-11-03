@@ -77,6 +77,30 @@ def wait_loki_metric(loki_port, end, deadline_s=360):
     return None
 
 
+def seed_fingerprint(state, loki_port, vl_port):
+    """Line counts of the seeded window on VictoriaLogs and on Loki: the shards of one run must hold the same data
+    (merge.py compares them). None for a backend that does not answer; the comparison then skips it."""
+    end, hours = state["end"], state.get("hours", 7)
+    out = {"end": end, "hours": hours}
+    try:
+        lo, hi = (time.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", time.gmtime(x)) for x in (end - int(hours * 3600), end))
+        query = urllib.parse.urlencode({"query": f'_time:({lo}, {hi}] | stats count() c'})
+        with urllib.request.urlopen(f"http://127.0.0.1:{vl_port}/select/logsql/query?{query}", timeout=60) as resp:
+            out["vl_lines"] = int(json.loads(resp.read().decode().strip().splitlines()[0])["c"])
+    except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError):
+        out["vl_lines"] = None
+    try:
+        window = int(state.get("loki_hours", 1.5) * 3600)
+        query = urllib.parse.urlencode({"query": f'sum(count_over_time({{env="production"}}[{window}s]))', "time": end})
+        req = urllib.request.Request(f"http://127.0.0.1:{loki_port}/loki/api/v1/query?{query}", headers={"X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())["data"]["result"]
+        out["loki_lines"] = int(float(result[0]["value"][1])) if result else None
+    except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError):
+        out["loki_lines"] = None
+    return out
+
+
 def phase(meta, name, t0):
     meta.setdefault("phases_s", {})[name] = round(time.time() - t0)
 
@@ -142,6 +166,8 @@ def capture(a, out, plan, end, port, meta, loki_port):
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=HERE, log=log)
     t0 = time.time()
     meta["loki_metric_wait_s"] = wait_loki_metric(loki_port, end)
+    state = load_json(os.path.join(out, "state.json"))
+    meta["seed"] = seed_fingerprint(state, loki_port, state["ports"]["vl"])
     # The first drilldown load of a fresh Grafana is slow: load it once, unrecorded, before any capture.
     run(["npx", "playwright", "test"], cwd=HERE, env=dict(env, VP_WARMUP="1"), log=log, check=False)
     phase(meta, "warmup", t0)
@@ -184,6 +210,8 @@ def main():
     ap.add_argument("--loki-hours", type=float, default=1.5)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max-recapture", type=int, default=6, help="re-capture at most this many differing captures once")
+    ap.add_argument("--end", type=int, default=0, help="seed end (unix seconds); the shards of one run pass the same")
+    ap.add_argument("--shard", default="", help="'i/k': this run captures shard i of k (the plan is already that shard's; recorded in meta.json)")
     ap.add_argument("--keep-stack", action="store_true")
     a = ap.parse_args()
     out = os.path.abspath(a.out)
@@ -191,6 +219,8 @@ def main():
     plan = load_json(a.plan)
     dump_json(os.path.join(out, "plan.json"), plan)
     meta = {"base": git("rev-parse", a.base), "head": a.head_label or git("rev-parse", "HEAD"), "plan_captures": plan["captures"]}
+    if a.shard:
+        meta["shard"] = a.shard
     t_all = time.time()
     stack = [PY, os.path.join(HERE, "stack.py"), "--out", out, "--project", a.project, "--port-offset", str(a.port_offset)]
     ok = False
@@ -200,8 +230,8 @@ def main():
         t0 = time.time()
         for attempt in (1, 2):
             try:
-                run([*stack, "up", "--main-ref", a.base, "--hours", str(a.hours), "--loki-hours", str(a.loki_hours)],
-                    log=os.path.join(out, "stack.log"))
+                run([*stack, "up", "--main-ref", a.base, "--hours", str(a.hours), "--loki-hours", str(a.loki_hours),
+                     *(["--end", str(a.end)] if a.end else [])], log=os.path.join(out, "stack.log"))
                 break
             except subprocess.CalledProcessError:
                 if attempt == 2:
@@ -210,6 +240,7 @@ def main():
                 run([*stack, "down"], log=os.path.join(out, "stack.log"), check=False)
         phase(meta, "stack_up", t0)
         state = load_json(os.path.join(out, "state.json"))
+        meta["stack_up_phases_s"] = state.get("phases_s", {})
         capture(a, out, plan, state["end"], state["ports"]["grafana"], meta, state["ports"]["loki"])
         t0 = time.time()
         compare = [PY, os.path.join(HERE, "compare.py"), out]

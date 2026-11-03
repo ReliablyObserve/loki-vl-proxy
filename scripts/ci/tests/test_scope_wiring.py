@@ -268,11 +268,42 @@ class ScopeWiringTest(unittest.TestCase):
 
     def test_visual_smoke_requires_product_evidence(self):
         jobs = parse_jobs((WORKFLOWS / "visual-smoke.yaml").read_text())
-        capture = jobs["visual-smoke"]
-        self.assertIn("scope", capture["needs"])
-        self.assertIn("needs.scope.outputs.evidence == 'true'", capture["if"])
-        self.assertIn("plan.py --base", capture["body"])
+        # The required check name is the fan-in job; the plan and the shards sit behind the same evidence gate.
+        for name in ("visual-plan", "visual-smoke"):
+            with self.subTest(name):
+                self.assertIn("scope", jobs[name]["needs"])
+                self.assertIn("needs.scope.outputs.evidence == 'true'", jobs[name]["if"])
+        self.assertIn("plan.py --base", jobs["visual-plan"]["body"])
+        self.assertEqual(jobs["visual-smoke"]["needs"], ["scope", "visual-plan", "visual-shard"])
+        self.assertEqual(jobs["visual-shard"]["needs"], ["scope", "visual-plan"])
+        # A shard runs only for a plan that has captures, and never when the plan itself failed.
+        self.assertIn("needs.visual-plan.outputs.run == 'true'", jobs["visual-shard"]["if"])
+        self.assertIn("needs.visual-plan.result == 'success'", jobs["visual-shard"]["if"])
         self.assertIn("Core set montages", jobs["visual-comment"]["body"])
+
+    def test_visual_shards_are_one_stack_each_and_one_fan_in(self):
+        jobs = parse_jobs((WORKFLOWS / "visual-smoke.yaml").read_text())
+        shard, plan, fan_in = jobs["visual-shard"]["body"], jobs["visual-plan"]["body"], jobs["visual-smoke"]["body"]
+        # every shard gets the same seed end, its own share of one plan, and uploads under its own name
+        self.assertIn("SEED_END: ${{ needs.visual-plan.outputs.end }}", shard)
+        self.assertIn('--end "$SEED_END"', shard)
+        self.assertIn('shards.py --plan /tmp/visual-plan/plan.json --shard "$SHARD" --of "$SHARDS"', shard)
+        self.assertIn("name: visual-shard-${{ matrix.shard }}", shard)
+        self.assertIn("matrix: ${{ fromJSON(needs.visual-plan.outputs.matrix) }}", shard)
+        self.assertIn("fail-fast: false", shard)
+        self.assertIn("python3 bench/visual/shards.py --plan", plan)
+        # the fan-in joins them once: merge, then the same renderer and gate as a single job
+        self.assertIn('merge.py --plan /tmp/visual-plan/plan.json --of "$SHARDS"', fan_in)
+        self.assertIn("pattern: visual-shard-*", fan_in)
+        for artifact in ("visual-montage", "visual-quality-evidence", "visual-baseline-candidate"):
+            self.assertIn(f"name: {artifact}", fan_in)
+        self.assertNotIn("ci_run.py", fan_in)
+        self.assertNotIn("playwright", fan_in)
+        # the jobs that run the pull request's code hold a read-only token
+        for name in ("visual-plan", "visual-shard", "visual-smoke"):
+            self.assertIn("contents: read", jobs[name]["body"])
+            self.assertNotIn("contents: write", jobs[name]["body"])
+            self.assertNotIn("pull-requests: write", jobs[name]["body"])
 
     def test_ab_smoke_requires_product_evidence(self):
         jobs = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())
@@ -354,8 +385,8 @@ class ScopeWiringTest(unittest.TestCase):
     def test_the_visual_workflow_captures_every_page_on_a_baseline(self):
         text = (WORKFLOWS / "visual-smoke.yaml").read_text()
         jobs = parse_jobs(text)
-        body = jobs["visual-smoke"]["body"]
-        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}", body)
+        body = jobs["visual-plan"]["body"] + jobs["visual-smoke"]["body"]
+        self.assertIn("timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 45 || 25 }}", jobs["visual-shard"]["body"])
         self.assertIn('plan.py --all --base "$BASE" --out "$OUT/plan.json"', body)
         self.assertIn('plan.py --base "$BASE" --out "$OUT/plan.json"', body)
         self.assertIn("name: visual-baseline-candidate", body)
