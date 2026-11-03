@@ -122,6 +122,28 @@ captures (last: the generator writes into the streams the static windows read, a
 index/stats is an estimate from chunk metadata that moves while it writes). 24h and 7d stay out of PR CI
 (use the manual run).
 
+**Shards.** The workflow runs the capture in parallel jobs: `visual-plan` (the plan, the shard count and the
+one seed end), `visual-smoke-shard (N)` (one stack per shard, `ci_run.py --end <seed end> --shard N/K`), and
+the fan-in `visual-smoke`, which keeps the required check name (`merge.py`, then `visual_comment.py` and the
+gate exactly as before). `shards.py` splits the plan by page, never inside one: the gate reads across the
+ranges of a page (a query proven to answer like Loki at a short range excuses it at a range Loki does not
+hold), so a page's rows come from one capture run. The count is one shard per 12 captures, at most 8, so a
+plan of up to 12 captures (the core set plus a fix proof or two) stays one job: a stack costs about four
+minutes before its first capture and a capture about ten seconds, so a shard has to hold enough captures to
+pay for its stack. The seed is deterministic given its end (the generator is seeded by it), every shard gets
+the same `--end`, and each records the line counts of the seeded window (`meta.json` `seed`); `merge.py` fails
+the run when the shards disagree on them, on the commits, or when a shard ran a plan other than its share.
+`shards.py --verify` and `merge.py` check that every planned capture ran in exactly one shard; a shard that
+left nothing, or died, fails the run like a dead stack does (verdict exit 3, no partial pass). A recapture
+(a first-pass difference loaded again more patiently) happens inside the shard that captured the page, with
+the same cap per shard as the cap per run before. Locally, `ci_run.py` still runs a whole plan as one job:
+`python3 bench/visual/ci_run.py --plan plan.json ...`.
+
+`stack.py up` starts Grafana (image pull, plugin install) and the two proxy builds while the stores come up
+and seed, then waits for the pre-installed plugins to be listed before the warm-up: Grafana installs them in the
+background after its API answers, which made the first page of a run wait for a download. The phases of the
+bring-up are in `meta.json` (`stack_up_phases_s`) and, per shard, in the merged `meta.json` (`shards`).
+
 **Fix proof.** The regression tiers prove nothing broke elsewhere; a fix proof shows the exact
 case a PR fixes. A spec entry lists in `fixes` the registry case ids (`conformance/registry/cases/**`,
 the ones with a `gap:` block) whose behaviour its query reproduces. When a PR adds a case file, turns a

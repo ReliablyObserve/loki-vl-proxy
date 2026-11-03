@@ -20,6 +20,7 @@ Stack helpers come from bench/ab/stack.py; the proxies run with the flags of
 the e2e `loki-vl-proxy-patterns-autodetect` service (Loki-compatible labels, patterns on).
 """
 import argparse
+import concurrent.futures
 import http.server
 import threading
 import json
@@ -224,55 +225,14 @@ def seed_extraction_list_fixture(st, end):
             pass
 
 
-def up(a):
-    os.makedirs(a.out, exist_ok=True)
-    st = stack(a.project, a.overlay, a.no_level_label)
-    state = dict(project=a.project, ports=PORTS, pids={}, overlays=a.overlay)
-    sp = os.path.join(a.out, "state.json")
-    old = load_json(sp) if a.skip_seed and os.path.exists(sp) else {}
-    stop_proxies(old)  # a re-run replaces the proxies the earlier one started
+def start_grafana(a, trees_pr, out):
+    """Grafana (Docker) with the three datasources and the pinned plugins; returns once its API answers.
 
-    def save():
-        dump_json(sp, state)
-
-    save()
-    try:  # a stack that is already up (a retry after a slow Loki start) is reused
-        ab.wait_http(f"{st.vl}/health", 3, "VictoriaLogs")
-        ab.wait_http(f"{st.loki}/ready", 3, "Loki")
-    except RuntimeError:
-        st.up()
-    end = old.get("end") or int(time.time()) // 60 * 60
-    state["end"] = end
-    state["hours"], state["loki_hours"] = a.hours, a.loki_hours
-    builds = [("main", a.main_ref, os.path.join(a.out, "proxy-main.bin")), ("pr", None, os.path.join(a.out, "proxy-pr.bin"))]
-    ab.log("building both proxies")
-    trees = {n: ab.build(ref, out) for n, ref, out in builds}
-    state["trees"] = {k: v for k, v in trees.items() if v != ab.ROOT}
-    save()
-    # The Loki window starts on a 10-minute boundary: the count check compares 10-minute slices.
-    loki_start = -(-(end - int(a.loki_hours * 3600)) // 600) * 600
-    if a.skip_seed:
-        ab.log("reusing the data already seeded")
-    else:
-        if a.hours > a.loki_hours:
-            ab.log(f"seeding VictoriaLogs only: {a.hours}h .. {a.loki_hours}h before the end")
-            seed_vl_only(st, end - int(a.hours * 3600), loki_start, a.out)
-        seed_unknown_level_fixture(st, end)
-        seed_keep_metadata_fixture(st, end)
-        seed_detected_level_stage_fixture(st, end)
-        seed_bare_json_metric_fixture(st, end)
-        seed_extraction_list_fixture(st, end)
-        ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
-        st.seed(end - loki_start, end)
-    specs, procs = [], []
-    for name, port in (("main", PORTS["main"]), ("pr", PORTS["pr"])):
-        specs.append((name, os.path.join(a.out, f"proxy-{name}.bin"), trees[name], port))
-    ab.start_proxies(specs, a.out, st, SERVICE, procs)
-    state["pids"] = {p.name: p.proc.pid for p in procs}
-    save()
-    # Grafana
-    image, plugins, unsigned = plugins_and_image(trees["pr"])
-    gdir = os.path.join(os.path.abspath(a.out), "grafana")
+    It needs nothing of the stack but its own ports (the datasources are URLs, not connections), so `up` starts
+    it first and the image pull and the plugin install overlap the seed and the builds.
+    """
+    image, plugins, unsigned = plugins_and_image(trees_pr)
+    gdir = os.path.join(os.path.abspath(out), "grafana")
     os.makedirs(gdir, exist_ok=True)
     write_text(os.path.join(gdir, "datasources.yaml"), datasources())
     name = f"{a.project}-grafana"
@@ -285,10 +245,113 @@ def up(a):
        "-e", f"GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS={unsigned}",
        "-v", f"{gdir}/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro",
        image, stdout=subprocess.DEVNULL)
-    ab.wait_http(f"http://127.0.0.1:{PORTS['grafana']}/api/health", 240, "Grafana")
-    state["grafana"] = f"http://127.0.0.1:{PORTS['grafana']}"
+    base = f"http://127.0.0.1:{PORTS['grafana']}"
+    ab.wait_http(f"{base}/api/health", 240, "Grafana")
+    return base, plugin_ids(plugins)
+
+
+def plugin_ids(preinstall):
+    """Plugin ids of a GF_PLUGINS_PREINSTALL value (`id@version[@url]`, comma separated)."""
+    return [x.split("@")[0].strip() for x in preinstall.split(",") if x.strip()]
+
+
+def wait_plugins(base, ids, deadline_s=240):
+    """Wait until Grafana lists every pre-installed plugin.
+
+    Grafana installs GF_PLUGINS_PREINSTALL in the background after its API is healthy, so the first page that
+    needs the app waits for a download. Waiting here, after the seed, takes that wait out of the warm-up.
+    A plugin that does not appear is only reported: the warm-up and the captures then decide.
+    """
+    t0, missing = time.time(), list(ids)
+    while missing and time.time() - t0 < deadline_s:
+        for pid in list(missing):
+            try:
+                with urllib.request.urlopen(f"{base}/api/plugins/{pid}/settings", timeout=10):
+                    missing.remove(pid)
+            except (OSError, ValueError):
+                pass
+        if missing:
+            time.sleep(2)
+    if missing:
+        ab.log(f"plugins not installed after {deadline_s}s: {missing}")
+    return round(time.time() - t0, 1), missing
+
+
+def up(a):
+    os.makedirs(a.out, exist_ok=True)
+    st = stack(a.project, a.overlay, a.no_level_label)
+    state = dict(project=a.project, ports=PORTS, pids={}, overlays=a.overlay)
+    sp = os.path.join(a.out, "state.json")
+    old = load_json(sp) if a.skip_seed and os.path.exists(sp) else {}
+    stop_proxies(old)  # a re-run replaces the proxies the earlier one started
+    phases = state["phases_s"] = {}
+
+    def save():
+        dump_json(sp, state)
+
+    def timed(name, fn, *args):
+        t0 = time.time()
+        try:
+            return fn(*args)
+        finally:
+            phases[name] = round(time.time() - t0, 1)
+
     save()
-    ab.log(f"up. Grafana {state['grafana']}  end={end}  state={sp}")
+    # --end pins the seed end: the shards of one run seed the same data (the generator is seeded by the end).
+    end = a.end or old.get("end") or int(time.time()) // 60 * 60
+    state["end"] = end
+    state["hours"], state["loki_hours"] = a.hours, a.loki_hours
+    builds = [("main", a.main_ref, os.path.join(a.out, "proxy-main.bin")), ("pr", None, os.path.join(a.out, "proxy-pr.bin"))]
+
+    def build_all():
+        ab.log("building both proxies")
+        return {n: ab.build(ref, out) for n, ref, out in builds}
+
+    def bring_up_and_seed():
+        try:  # a stack that is already up (a retry after a slow Loki start) is reused
+            ab.wait_http(f"{st.vl}/health", 3, "VictoriaLogs")
+            ab.wait_http(f"{st.loki}/ready", 3, "Loki")
+        except RuntimeError:
+            timed("infra", st.up)
+        # The Loki window starts on a 10-minute boundary: the count check compares 10-minute slices.
+        loki_start = -(-(end - int(a.loki_hours * 3600)) // 600) * 600
+        if a.skip_seed:
+            ab.log("reusing the data already seeded")
+            return
+        if a.hours > a.loki_hours:
+            ab.log(f"seeding VictoriaLogs only: {a.hours}h .. {a.loki_hours}h before the end")
+            timed("seed_vl_only", seed_vl_only, st, end - int(a.hours * 3600), loki_start, a.out)
+        seed_unknown_level_fixture(st, end)
+        seed_keep_metadata_fixture(st, end)
+        seed_detected_level_stage_fixture(st, end)
+        seed_bare_json_metric_fixture(st, end)
+        seed_extraction_list_fixture(st, end)
+        ab.log(f"seeding Loki + VictoriaLogs: last {a.loki_hours}h")
+        timed("seed_loki", st.seed, end - loki_start, end)
+
+    # Grafana (image pull, start, plugin install), the two proxy builds and the infra + seed run side by side:
+    # none needs another's result until the proxies start, which needs the builds and the seed.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        grafana = pool.submit(timed, "grafana_up", start_grafana, a, ab.ROOT, a.out)
+        building = pool.submit(timed, "builds", build_all)
+        try:
+            bring_up_and_seed()
+        finally:
+            trees = building.result()  # also when the seed failed: the worktrees are recorded for `down`
+            state["trees"] = {k: v for k, v in trees.items() if v != ab.ROOT}
+            save()
+        specs, procs = [], []
+        for name, port in (("main", PORTS["main"]), ("pr", PORTS["pr"])):
+            specs.append((name, os.path.join(a.out, f"proxy-{name}.bin"), trees[name], port))
+        timed("proxies", ab.start_proxies, specs, a.out, st, SERVICE, procs)
+        state["pids"] = {p.name: p.proc.pid for p in procs}
+        save()
+        base, ids = grafana.result()
+    state["grafana"] = base
+    phases["plugins_wait"], missing = wait_plugins(base, ids)
+    state["plugins_missing"] = missing
+    save()
+    ab.log(f"up. Grafana {state['grafana']}  end={end}  state={sp}  phases={phases}")
 
 
 def port_owners(port):
@@ -358,6 +421,8 @@ def main():
                     help="seed rows whose level lives only in the line (the detected_level routes that read the body)")
     ap.add_argument("--main-ref", default="origin/main")
     ap.add_argument("--hours", type=float, default=24, help="VictoriaLogs history (hours)")
+    ap.add_argument("--end", type=int, default=0,
+                    help="seed end (unix seconds, a whole minute): pins the data, so several stacks of one run seed the same")
     ap.add_argument("--skip-seed", action="store_true", help="reuse the data and end of an earlier up (state.json)")
     ap.add_argument("--loki-hours", type=float, default=1.5, help="Loki history (hours); longer backfills stall Loki")
     a = ap.parse_args()
