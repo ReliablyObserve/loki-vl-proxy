@@ -66,6 +66,13 @@ are for the eye. A Grafana whose Loki plugin process dies under memory pressure
 repeats such a page load up to three times, and a request that still fails is
 listed by `compare.py` as one-sided.
 
+A response the browser cannot hand over (a very large answer: the 6h `sum by (span_id)` / `sum by (trace_id)`
+requests of `dd-fields`, answered 200 with no readable body) is recorded with `body_unavailable` (the reason) and
+`content_length`. `compare.py` keeps the request key of every such answer per side: where the base and the PR both
+lost the same request the row reports `unreadable_both`, leaves it uncompared and the gate only warns; a request the
+base read and the PR did not, or a PR page that never settled, still fails (`settled_pr` false). A page that settled on
+neither side with the same points and no difference also warns ("neither side settled") instead of failing the PR.
+
 Logs Drilldown (2.5.2) crashes a breakdown page with Grafana's "Plugin failed to
 load" when a breakdown query is answered before the page's first time-series
 panel module has loaded (the app's legend sync calls the panel's field-config

@@ -82,6 +82,45 @@ class CompareTest(unittest.TestCase):
         _, row = self.run_compare(capture([1, 2]), pr, capture([1, 2]))
         self.assertFalse(row["settled_pr"])  # the verdict must still reject missing PR evidence
 
+    def two_requests(self, readable_first=True, readable_second=True, settled=True, reason=None):
+        """A page with two big requests (as dd-fields 6h: sum by (span_id) and sum by (trace_id)) and one small one."""
+        cap = capture([1, 2], settled=settled)
+        for i, ok in enumerate((readable_first, readable_second)):
+            rec = json.loads(json.dumps(cap["records"][0]))
+            rec["request"]["queries"][0].update(refId=f"B{i}", expr=f"sum by (id{i}) (count_over_time(x[1m]))")
+            if not ok:
+                rec["response"] = None
+                if reason:
+                    rec["body_unavailable"] = reason
+                    rec["content_length"] = 52_000_000
+            cap["records"].append(rec)
+        return cap
+
+    def test_a_body_unreadable_on_both_sides_is_not_blamed_on_the_pr(self):
+        # The row of dd-fields 6h in runs 41658646164 and 41696033829: two 6h high-cardinality requests answer 200 with
+        # no body the browser can read, on the base and on the PR alike (equal points, equal settle times).
+        both = lambda: self.two_requests(False, False, reason="No resource with given identifier found")
+        code, row = self.run_compare(both(), both(), both(), rng="6h")
+        self.assertEqual(code, 0)
+        self.assertFalse(row["settled"])  # the capture is incomplete, and the table says so
+        self.assertTrue(row["settled_pr"])  # but the PR is not blamed for it
+        self.assertEqual((row["unreadable_main"], row["unreadable_pr"], row["unreadable_both"]), (2, 2, 2))
+        self.assertEqual(row["unreadable_why"], ["No resource with given identifier found"])
+        self.assertEqual(row["points_main"], row["points_pr"])
+        self.assertEqual(row["main_pr_diffs"], [])
+
+    def test_a_body_only_the_pr_lost_still_fails_the_pr(self):
+        code, row = self.run_compare(self.two_requests(True, False), self.two_requests(False, False), self.two_requests(), rng="6h")
+        self.assertEqual((row["unreadable_main"], row["unreadable_pr"], row["unreadable_both"]), (1, 2, 1))
+        self.assertFalse(row["settled_pr"])  # one request the base read and the PR did not
+        _, row = self.run_compare(self.two_requests(), self.two_requests(True, False), self.two_requests(), rng="6h")
+        self.assertFalse(row["settled_pr"])
+
+    def test_a_pr_that_never_settled_is_not_excused_by_unreadable_bodies(self):
+        both = lambda settled: self.two_requests(False, False, settled=settled)
+        _, row = self.run_compare(both(True), both(False), both(True), rng="6h")
+        self.assertFalse(row["settled_pr"])
+
     def test_value_difference_is_reported_and_exits_one(self):
         code, row = self.run_compare(capture([1, 2]), capture([1, 3]), capture([1, 2]))
         self.assertEqual(code, 1)

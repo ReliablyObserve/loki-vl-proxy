@@ -231,9 +231,21 @@ for (const p of spec.pages as PageSpec[]) {
           const rq = rs.request();
           if (!BACKEND.test(rq.url())) return;
           let body: any = null;
-          try { body = await rs.json(); } catch { try { body = await rs.text(); } catch { body = null; } }
+          let unavailable = "";
+          try { body = await rs.json(); } catch {
+            try { body = await rs.text(); } catch {
+              // Chrome drops the body of a very large answer from the inspector's buffer ("evicted"): ask for the raw bytes
+              // once more, and when they are gone too say so in the record instead of leaving a bare null.
+              try {
+                const raw = (await rs.body()).toString("utf8");
+                try { body = JSON.parse(raw); } catch { body = raw; }
+              } catch (e) { body = null; unavailable = String((e as Error)?.message ?? e).split("\n")[0].slice(0, 160) || "body unavailable"; }
+            }
+          }
+          const length = parseInt(rs.headers()["content-length"] || "", 10);
           records.push({ url: rq.url().replace(/^https?:\/\/[^/]+/, ""), method: rq.method(),
-            request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body });
+            request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
+            ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) });
         });
         const t0 = Date.now();
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
