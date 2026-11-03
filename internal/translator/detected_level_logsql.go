@@ -625,7 +625,9 @@ func (m detectedLevelMatcher) storedTextClause(field string, targets []string) s
 	known := quoteLevelRegexp("(?i)^(" + strings.Join(allDetectedLevelSpellings(), "|") + ")$")
 	switch {
 	case m.re != nil:
-		alts = append(alts, "("+f+":~"+quoteLevelRegexp("^(?:"+m.value+")$")+" !"+f+":~"+known+")")
+		// Loki's label filter regexp, simplified as Loki does
+		// (lokiLabelFilterPattern), over the whole stored word.
+		alts = append(alts, "("+f+":~"+quoteLevelRegexp(anchorLabelFilterPattern(lokiLabelFilterPattern(m.value)))+" !"+f+":~"+known+")")
 	case m.value != "" && !isKnownLevelSpelling(m.value):
 		alts = append(alts, f+":="+logsql.QuoteValue(m.value))
 	}
@@ -796,6 +798,10 @@ type DetectedLevelFilterPlan struct {
 	// Pipes is the chain followed by the final filter, starting with "| ", or
 	// "" when every row matches. It must run before any user parser stage.
 	Pipes string
+	// Match is the final filter on the derived value, and PrefilterPipe the
+	// metric form's prefilter pipe ("" for none): JoinDetectedLevelFilters
+	// builds one chain for several filters from them.
+	Match, PrefilterPipe string
 }
 
 // DetectedLevelFilterMode selects where BuildDetectedLevelFilter keeps the
@@ -870,22 +876,83 @@ func BuildDetectedLevelFilter(op, value string, existingFields []string, mode De
 		// proxy probes which level fields a window holds over the rows before
 		// it (DetectedLevelProbeBase), and the same probe then serves every
 		// filter and grouping on the selector.
-		pre := ""
 		if plan.Prefilter != "" {
-			pre = "| filter " + plan.Prefilter + " "
+			plan.PrefilterPipe = "| filter " + plan.Prefilter
 			plan.Prefilter = ""
 		}
-		plan.Pipes = pre + BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping, nil) +
-			" | filter (" + m.matchFilter(detectedLevelLabelName) + ") OR " + LevelWitnessField + ":*"
+		plan.Match = m.matchFilter(detectedLevelLabelName)
+		plan.Pipes = metricLevelFilterPipes([]string{plan.PrefilterPipe}, existingFields, []string{plan.Match})
 		return plan, nil
 	}
-	plan.Pipes = strings.TrimSuffix(BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup, nil), groupChainDelete) +
-		" | filter " + m.matchFilter("__dl") + levelChainEnd
+	plan.Match = m.matchFilter("__dl")
+	plan.Pipes = logsLevelFilterPipes(existingFields, []string{plan.Match})
 	return plan, nil
 }
 
+// metricLevelFilterPipes is the metric form: the prefilter pipes, the
+// grouping chain, and the matchers on detected_level, which let the witness
+// rows through.
+func metricLevelFilterPipes(prefilterPipes, existingFields, matches []string) string {
+	var pre strings.Builder
+	for _, p := range prefilterPipes {
+		if p != "" {
+			pre.WriteString(p + " ")
+		}
+	}
+	return pre.String() + BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping, nil) +
+		" | filter (" + andFilters(matches) + ") OR " + LevelWitnessField + ":*"
+}
+
+// logsLevelFilterPipes is the log form: the chain into __dl, the matchers on
+// it, and the delete of every scratch field.
+func logsLevelFilterPipes(existingFields, matches []string) string {
+	return strings.TrimSuffix(BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup, nil), groupChainDelete) +
+		" | filter " + andFilters(matches) + levelChainEnd
+}
+
+// andFilters joins filters with an implicit and; one stays as it is.
+func andFilters(filters []string) string {
+	if len(filters) == 1 {
+		return filters[0]
+	}
+	parts := make([]string, len(filters))
+	for i, f := range filters {
+		parts[i] = "(" + f + ")"
+	}
+	return strings.Join(parts, " ")
+}
+
+// JoinDetectedLevelFilters returns the pipes of consecutive detected_level
+// filters built for mode over existingFields: one chain and every matcher, so
+// the chain runs once (a stats query carries one chain, which the proxy
+// narrows, and the heuristics that skip the chain find one). Plans without
+// pipes (a filter every row passes) add nothing.
+func JoinDetectedLevelFilters(plans []DetectedLevelFilterPlan, existingFields []string, mode DetectedLevelFilterMode) string {
+	var kept []DetectedLevelFilterPlan
+	for _, p := range plans {
+		if p.Pipes != "" {
+			kept = append(kept, p)
+		}
+	}
+	switch len(kept) {
+	case 0:
+		return ""
+	case 1:
+		return kept[0].Pipes
+	}
+	matches := make([]string, len(kept))
+	pre := make([]string, len(kept))
+	for i, p := range kept {
+		matches[i], pre[i] = p.Match, p.PrefilterPipe
+	}
+	if mode == DetectedLevelFilterMetric {
+		return metricLevelFilterPipes(pre, existingFields, matches)
+	}
+	return logsLevelFilterPipes(existingFields, matches)
+}
+
 // DetectedLevelProbeBase returns the rows a probe of the level fields of base
-// may read: base without its last pipe when that is a filter pipe (a filter
+// may read: base without its trailing filter pipes (a filter
 // never adds a field, so the rows before it hold every field the rows after it
 // hold). The prefilter of a metric detected_level filter is such a pipe; the
 // probe of the selector alone then serves every filter on it.
@@ -902,7 +969,7 @@ func DetectedLevelProbeBase(base string) string {
 	if last < 0 || !strings.HasPrefix(base[last:], "| filter ") {
 		return base
 	}
-	return strings.TrimSpace(base[:last])
+	return DetectedLevelProbeBase(strings.TrimSpace(base[:last]))
 }
 
 // storedOnlyLevelFilter is the plan of DetectedLevelFilterStored: the rows a

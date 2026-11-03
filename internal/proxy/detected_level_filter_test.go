@@ -275,6 +275,8 @@ var dlFilterMatchers = []struct{ op, value string }{
 	{"=", "critical"}, {"=", "fatal"}, {"!=", "info"}, {"!=", "unknown"}, {"!=", ""}, {"=", ""},
 	{"=~", "info|error"}, {"=~", "unknown|error"}, {"=~", "warn|error"}, {"!~", "warn|error"}, {"!~", "info|debug"},
 	{"=~", "Notice|warn"}, {"=", "Notice"}, {"!=", "Notice"}, {"=", "WARN"}, {"=~", "unknown"},
+	// Loki's simplified label filter regexps: a substring check, every value.
+	{"=~", "otice.*"}, {"=~", ""}, {"!~", ""},
 }
 
 var dlFilterModes = []struct {
@@ -350,6 +352,54 @@ func TestDetectedLevelFilterAnswersLikeLoki(t *testing.T) {
 			}
 			checkDetectedLevelFilter(t, tc.name, tc.row)
 		})
+	}
+}
+
+// Two consecutive level filters share one chain and keep the rows both
+// matchers accept, in the log and metric forms.
+// conformance: severity/detected-level-filter-json-level, severity-detected-level-derivation
+func TestDetectedLevelFilterChainedAnswersLikeLoki(t *testing.T) {
+	rng := rand.New(rand.NewSource(1103))
+	pairs := [][2]struct{ op, value string }{
+		{{"!=", "debug"}, {"!=", "info"}},
+		{{"=~", "warn|error"}, {"!=", "warn"}},
+		{{"!=", "unknown"}, {"=~", "info|error"}},
+		{{"!=", ""}, {"=", "unknown"}},
+	}
+	for _, mode := range dlFilterModes[:2] {
+		for _, pair := range pairs {
+			var plans []translator.DetectedLevelFilterPlan
+			var pre []string
+			for _, m := range pair {
+				plan, err := translator.BuildDetectedLevelFilter(m.op, m.value, translator.DetectedLevelFieldNames, mode.mode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plans = append(plans, plan)
+				if plan.Prefilter != "" {
+					pre = append(pre, "("+plan.Prefilter+")")
+				}
+			}
+			joined := translator.DetectedLevelFilterPlan{
+				Prefilter: strings.Join(pre, " "),
+				Pipes:     translator.JoinDetectedLevelFilters(plans, translator.DetectedLevelFieldNames, mode.mode),
+			}
+			if strings.Count(joined.Pipes, translatorChainMarker) > 1 {
+				t.Fatalf("%s %v: the chain runs twice", mode.name, pair)
+			}
+			for i := 0; i < 300; i++ {
+				row := dlRandomRow(rng)
+				level := lokiRefLevel(row.stream, row.sm, row.line)
+				want := lokiRefMatches(pair[0].op, pair[0].value, level) && lokiRefMatches(pair[1].op, pair[1].value, level)
+				got := want
+				if joined.Pipes != "" || joined.Prefilter != "" {
+					got = planKeeps(t, joined, row.values())
+				}
+				if got != want {
+					t.Fatalf("%s %v: keeps %v, Loki's level %q gives %v\nrow %+v", mode.name, pair, got, level, want, row)
+				}
+			}
+		}
 	}
 }
 
@@ -680,4 +730,38 @@ func runDetectedLevelLogQuery(t *testing.T, p *Proxy, query string, start, end t
 		}
 	}
 	return got
+}
+
+// A bare metric over two level filters still names detected_level in its
+// series (one chain, so the heuristics that skip it see no parser), and a
+// log query over two level filters does not read as one that unpacks _msg.
+// conformance: severity/detected-level-filter-json-level, severity-detected-level-derivation
+func TestDetectedLevelChainedFiltersKeepTheirShape(t *testing.T) {
+	metric, err := translator.TranslateLogQLWithStreamFields(`count_over_time({app="x"} | detected_level!="debug" | detected_level!="info" [5m])`, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := addStatsByStreamClause(metric, nil); !strings.Contains(got, "| stats by (_stream, level, detected_level)") {
+		t.Fatalf("the series lose detected_level: %s", got[strings.LastIndex(got, "| stats"):])
+	}
+	logs, err := translator.TranslateLogQL(`{app="x"} | detected_level!="debug" | detected_level!="info"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unpacksMessage(logs) {
+		t.Fatalf("two level filters read as a query that unpacks _msg: %s", logs)
+	}
+}
+
+// The witness cannot ride a stats query whose rows a fields pipe (keep) has
+// narrowed: the pipe would drop it, and a flagged row would be counted with
+// no second request. Such a request keeps the full chain.
+// conformance: severity-detected-level-derivation
+func TestDetectedLevelWitnessRefusesAFieldsPipe(t *testing.T) {
+	if _, ok := withWitnessGroup(` | filter (detected_level:="error") OR __lw:* | fields _time, _msg, _stream, app | stats count()`); ok {
+		t.Fatal("the witness was added behind a fields pipe")
+	}
+	if got, ok := withWitnessGroup(` | filter (detected_level:="error") OR __lw:* | stats by (app) count()`); !ok || !strings.Contains(got, "by (app, __lw)") {
+		t.Fatalf("the witness was not added: %q %v", got, ok)
+	}
 }

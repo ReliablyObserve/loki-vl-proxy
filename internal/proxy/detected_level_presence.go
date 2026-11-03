@@ -333,7 +333,8 @@ func levelWitnessPipes(mask string) string {
 func withWitnessGroup(rest string) (string, bool) {
 	const stats = " | stats "
 	at := strings.Index(rest, stats)
-	if at < 0 || strings.Count(rest, stats) != 1 {
+	if at < 0 || strings.Count(rest, stats) != 1 || strings.Contains(rest[:at], " | fields ") {
+		// A fields pipe (keep) would drop the witness before the stats read it.
 		return "", false
 	}
 	tail := rest[at+len(stats):]

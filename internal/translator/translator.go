@@ -715,11 +715,19 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// parser error labels): a detected_level filter then reads Loki's
 	// ingest-time value from them (detectedLevelStageFilter).
 	levelInputsIntact := true
-	// pendingLevelPipes hold the pipes of such a filter until the next pipe
-	// stage: the line filters that follow it in the query stay filters of the
-	// query, which VictoriaLogs evaluates before every pipe (they commute
-	// with the level filter, which reads no label a line filter sets).
-	var pendingLevelPipes []string
+	// pendingLevel holds such filters until the next other pipe stage: the
+	// line filters that follow them stay filters of the query, which
+	// VictoriaLogs evaluates before every pipe (they commute with a level
+	// filter, which reads no label a line filter sets), and consecutive level
+	// filters share one chain.
+	var pendingLevel []DetectedLevelFilterPlan
+	levelMode := detectedLevelFilterMode(metric, caps)
+	flushLevel := func() {
+		if pipes := JoinDetectedLevelFilters(pendingLevel, detectedLevelKnownFields(nil), levelMode); pipes != "" {
+			parts = append(parts, pipes)
+		}
+		pendingLevel = nil
+	}
 	// afterKeyParser is set once a json or logfmt parser ran: label filters after
 	// it name sanitized keys (see parsedKeyVariants).
 	afterKeyParser := false
@@ -919,8 +927,6 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 
 		// Skip the pipe character for pipe stages
 		remaining = strings.TrimSpace(remaining[1:])
-		parts = append(parts, pendingLevelPipes...)
-		pendingLevelPipes = nil
 
 		// Determine the pipeline stage type
 		stage, rest := extractPipelineStage(remaining)
@@ -930,6 +936,14 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if expr, err := ParseLabelFilterExpr(stage); err == nil && expr.IsLeaf() {
 				stage = expr.Leaf
 			}
+		}
+		var levelPlan DetectedLevelFilterPlan
+		levelStage := false
+		if levelInputsIntact {
+			levelPlan, levelStage = detectedLevelStageFilter(stage, metric, levelMode)
+		}
+		if !levelStage {
+			flushLevel()
 		}
 		for _, label := range regexpCaptureLabels(stage) {
 			if label != "" {
@@ -1014,20 +1028,22 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return plain(label)
 			}
 		}
-		if levelInputsIntact {
-			if filter, ok := detectedLevelStageFilter(stage, metric, caps); ok {
-				for _, part := range filter {
-					switch {
-					case strings.HasPrefix(part, "|"):
-						pendingLevelPipes = append(pendingLevelPipes, part)
-					case len(parts) > 0 && strings.HasPrefix(strings.TrimSpace(parts[len(parts)-1]), "|"):
-						parts = append(parts, "| filter "+part) // a bare filter after a pipe is a pipe of its own
-					default:
-						parts = append(parts, part)
-					}
-				}
-				continue
+		if levelStage {
+			bare := levelPlan.Prefilter
+			if levelPlan.Never {
+				bare = matchNoRows
 			}
+			switch {
+			case bare == "":
+			case len(parts) > 0 && strings.HasPrefix(strings.TrimSpace(parts[len(parts)-1]), "|"):
+				parts = append(parts, "| filter "+bare) // a bare filter after a pipe is a pipe of its own
+			default:
+				parts = append(parts, bare)
+			}
+			if !levelPlan.Never {
+				pendingLevel = append(pendingLevel, levelPlan)
+			}
+			continue
 		}
 		levelInputsIntact = levelInputsIntact && (isLabelFilterStage(stage) || dropsOnlyErrorLabels(stage))
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
@@ -1131,7 +1147,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			detectedPresence = nextDetectedLevelPresence(detectedPresence, stage)
 		}
 	}
-	parts = append(parts, pendingLevelPipes...)
+	flushLevel()
 
 	if svCopied {
 		parts = append(parts, "| delete "+svScratch+"*")
@@ -3231,33 +3247,29 @@ const detectedLevelLabelName = "detected_level"
 // the proxy derives the label then. ok is
 // false for any other stage, for an invalid regexp, and for a log query's
 // matcher on the empty value, which keep their rendering.
-func detectedLevelStageFilter(stage string, metric bool, caps logsql.Capabilities) (parts []string, ok bool) {
+func detectedLevelStageFilter(stage string, metric bool, mode DetectedLevelFilterMode) (DetectedLevelFilterPlan, bool) {
 	op, value, ok := detectedLevelStageMatcher(stage)
 	if !ok || (!metric && value == "" && (op == "=" || op == "!=")) {
 		// A log query reads `=""` and `!=""` from the presence of the label
 		// (detectedLevelEmptyPresenceFilter), which drop and keep change.
-		return nil, false
-	}
-	mode := DetectedLevelFilterLogs
-	switch {
-	case caps.NoDetectedLevelBodyScan:
-		mode = DetectedLevelFilterStored
-	case metric:
-		mode = DetectedLevelFilterMetric
+		return DetectedLevelFilterPlan{}, false
 	}
 	plan, err := BuildDetectedLevelFilter(op, value, detectedLevelKnownFields(nil), mode)
 	if err != nil {
-		return nil, false
+		return DetectedLevelFilterPlan{}, false
 	}
-	if plan.Never {
-		return []string{matchNoRows}, true
+	return plan, true
+}
+
+// detectedLevelFilterMode is the form of a detected_level filter in a query.
+func detectedLevelFilterMode(metric bool, caps logsql.Capabilities) DetectedLevelFilterMode {
+	switch {
+	case caps.NoDetectedLevelBodyScan:
+		return DetectedLevelFilterStored
+	case metric:
+		return DetectedLevelFilterMetric
 	}
-	for _, part := range []string{plan.Prefilter, plan.Pipes} {
-		if part != "" {
-			parts = append(parts, part)
-		}
-	}
-	return parts, true
+	return DetectedLevelFilterLogs
 }
 
 // dropsOnlyErrorLabels reports whether stage is a drop of the parser error

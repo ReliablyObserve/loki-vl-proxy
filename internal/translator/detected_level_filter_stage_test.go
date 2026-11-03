@@ -88,6 +88,17 @@ func TestDetectedLevelFilterStageTranslation(t *testing.T) {
 			metric: true,
 			want:   []string{matchNoRows},
 		},
+		{
+			name:  "consecutive level filters share one chain",
+			logql: `{app="x"} | detected_level!="debug" | detected_level!="info"`,
+			want:  []string{logChain, ` | filter (-__dl:="debug") (-__dl:="info")`, levelChainEnd},
+		},
+		{
+			name:   "consecutive metric level filters share one chain",
+			logql:  `sum by (detected_level) (count_over_time({app="x"} | detected_level!="debug" | detected_level=~"info|warn" [5m]))`,
+			metric: true,
+			want:   []string{metricChain, ` | filter ((-detected_level:="debug") ((detected_level:="info" OR detected_level:="warn"))) OR __lw:*`},
+		},
 		// Outside the intact inputs the stage keeps its rendering.
 		{
 			name:  "after a parser",
