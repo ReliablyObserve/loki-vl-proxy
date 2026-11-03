@@ -216,6 +216,9 @@
     "quality/metadata-bounded-staleness | gap:owner-kept",
     "quality/query-range-extent-cache | compare:numeric",
     "quality/query-range-extent-cache | query",
+    "quality/query-range-extent-cache-large-answer | compare:numeric",
+    "quality/query-range-extent-cache-large-answer | perf",
+    "quality/query-range-extent-cache-large-answer | query",
     "quality/query-range-settled-steps | compare:numeric",
     "quality/query-range-settled-steps | gap:fixed",
     "quality/query-range-settled-steps | perf",
@@ -1047,6 +1050,9 @@
     "internal/proxy/stats_extent_cache_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_extent_cache_test.go | semantics/json-extracted-metric-pushdown",
     "internal/proxy/stats_extent_cache_test.go | tenant-numeric-routing",
+    "internal/proxy/stats_extent_large_answer_test.go | loki_api_v1_query_range",
+    "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
+    "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "internal/proxy/stats_extent_retention_test.go | quality/query-range-extent-cache",
     "internal/proxy/stddev_grouped_differential_test.go | metric-series-identity",
     "internal/proxy/stddev_grouped_differential_test.go | semantics/stddev-stdvar-grouped-values",
@@ -1390,6 +1396,9 @@
     "test/e2e-compat/metadata_scan_admission_test.go | loki_api_v1_labels",
     "test/e2e-compat/metric_range_extent_cache_test.go | loki_api_v1_query_range",
     "test/e2e-compat/metric_range_extent_cache_test.go | quality/query-range-extent-cache",
+    "test/e2e-compat/metric_range_extent_large_answer_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/metric_range_extent_large_answer_test.go | quality/query-range-extent-cache",
+    "test/e2e-compat/metric_range_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-compat/nested_vector_aggregation_test.go | loki_api_v1_query",
     "test/e2e-compat/nested_vector_aggregation_test.go | loki_api_v1_query_range",
     "test/e2e-compat/nested_vector_aggregation_test.go | metric-series-identity",
@@ -1558,6 +1567,8 @@
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-stats-extent",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
+    "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
+    "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/dotted-name-parse-error",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/grafana-shows-loki-error-text",
     "test/e2e-ui/tests/datasource.spec.ts | profiles/structured-metadata-keys-per-profile"
@@ -1566,13 +1577,13 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 35,
+      "drilldown": 36,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 285,
+      "go": 288,
       "playwright": 1
     },
     "page_kinds": {
@@ -1589,10 +1600,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 83,
+    "shape_covers_distinct": 84,
     "shapes_path_only": 8,
     "unwired_items": 86,
-    "wired_items": 222
+    "wired_items": 223
   },
   "gates": [
     "A/B shape selection",

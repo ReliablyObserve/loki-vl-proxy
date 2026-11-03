@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Keep a metric answer larger than one cache entry in the stats extent cache,
+  split by split. Each split is one cache entry, but the answer was kept only
+  when the whole of it fitted one entry (a tenth of `-cache-max-bytes`), so a
+  Logs Drilldown breakdown of a high-cardinality label or field over 24h (pod,
+  batch_id, a logfmt field with a level filter) was never kept and every
+  repeat read all its buckets from VictoriaLogs again. The copy is now kept
+  while each split fits one entry, within
+  `-backend-max-buffered-response-bytes`; a repeat moved back by a step reads
+  only the bucket it lacks and those newer than `-query-range-freshness`. A
+  request whose answer is not kept yet holds that one copy while it reads, so
+  it can buffer up to twice `-backend-max-buffered-response-bytes`.
+
 ## [2.65.0] - 2026-11-03
 
 ### Performance
