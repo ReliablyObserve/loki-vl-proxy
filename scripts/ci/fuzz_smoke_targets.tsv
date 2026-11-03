@@ -52,6 +52,7 @@ smoke	internal/translator	FuzzTranslateWithStreamFields	20s	60s	translate with s
 smoke	internal/translator	FuzzSelectorRegexpFilter	12s	-	selector and label-filter regexp anchoring
 smoke	internal/translator	FuzzBinaryExpressions	12s	-	binary expressions
 smoke	internal/translator	FuzzSanitizeLabelName	12s	-	sanitize label name
+smoke	internal/translator	FuzzLabelFilterExpression	12s	-	label filter expression
 smoke	internal/cache	FuzzHashRingGet	12s	-	hash ring get
 smoke	internal/cache	FuzzCacheGetSet	12s	-	cache get/set
 smoke	internal/rulesmigrate	FuzzConvertWithOptions	12s	-	rules migrate convert

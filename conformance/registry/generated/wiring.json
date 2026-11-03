@@ -304,6 +304,7 @@
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/label_filter_expression_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
@@ -351,6 +352,7 @@
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
+      "test/e2e-compat/label_filter_expression_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
@@ -864,6 +866,13 @@
       "internal/proxy/ordered_json_conditional_unpack_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go"
     ],
+    "semantics/label-filter-expression-syntax": [
+      "internal/logql/label_filter_expr_golden_test.go",
+      "internal/logql/label_filter_expr_test.go",
+      "internal/proxy/label_filter_expression_test.go",
+      "internal/translator/label_filter_expr_test.go",
+      "test/e2e-compat/label_filter_expression_test.go"
+    ],
     "semantics/label-inventory-exact-and-incremental": [
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
@@ -1341,6 +1350,12 @@
     "internal/logql/dotted_names_test.go": [
       "profiles/dotted-name-parse-error"
     ],
+    "internal/logql/label_filter_expr_golden_test.go": [
+      "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/label_filter_expr_test.go": [
+      "semantics/label-filter-expression-syntax"
+    ],
     "internal/logql/log_range_alternatives_test.go": [
       "semantics/line-filter-or-alternatives",
       "semantics/parenthesized-log-range"
@@ -1580,6 +1595,10 @@
     ],
     "internal/proxy/label_empty_run_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
+    ],
+    "internal/proxy/label_filter_expression_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/label-filter-expression-syntax"
     ],
     "internal/proxy/label_matcher_regexp_routes_test.go": [
       "loki_api_v1_detected_labels",
@@ -2185,6 +2204,9 @@
     "internal/translator/first_last_over_time_test.go": [
       "semantics/unwrap-first-last-under-aggregation"
     ],
+    "internal/translator/label_filter_expr_test.go": [
+      "semantics/label-filter-expression-syntax"
+    ],
     "internal/translator/label_format_rename_test.go": [
       "profiles/stage-field-exposure"
     ],
@@ -2421,6 +2443,10 @@
     "test/e2e-compat/keep_structured_metadata_test.go": [
       "loki_api_v1_query_range",
       "profiles/keep-structured-metadata-key"
+    ],
+    "test/e2e-compat/label_filter_expression_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/label-filter-expression-syntax"
     ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
@@ -2746,7 +2772,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 275,
+  "tests_with_markers": 281,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2802,7 +2828,6 @@
     "semantics/first-last-over-time-translation",
     "semantics/ip-filter-precision",
     "semantics/json-empty-value-label-series",
-    "semantics/label-filter-expression-syntax",
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/log-entries-differ-same-count",
@@ -2837,5 +2862,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 218
+  "wired_items": 219
 }

@@ -84397,6 +84397,7 @@
       "warm_p50": 0.037
     }
   ],
+  "semantics/label-filter-expression-syntax": [],
   "semantics/label-inventory-exact-and-incremental": [
     {
       "baseline": "release",

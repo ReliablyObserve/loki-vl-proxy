@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // ParseError is a query rejection whose message is already formatted the way
@@ -469,11 +471,21 @@ func (p *parser) parsePipelineStage() (Stage, error) {
 
 // parsePipeBody parses what comes after a bare `|`.
 func (p *parser) parsePipeBody() (Stage, error) {
+	if p.cur.Typ == TokLParen {
+		// A parenthesized label filter expression: `| (a="1" or b="2"), c>5`.
+		return p.parseLabelFilterStage(p.pos(), "", TokLParen)
+	}
 	if p.cur.Typ != TokIdent {
-		return nil, fmt.Errorf("logql: expected stage name after |, got %v", p.cur.Typ)
+		if p.cur.Typ == TokDuration {
+			// A literal, not a range: Loki names it by what it holds.
+			name := translator.LabelFilterWordName(p.cur.Val)
+			return nil, p.errorAt(p.pos(), name, "", zeroLineToken(name))
+		}
+		return nil, p.syntaxErrorAt("")
 	}
 
 	kw := p.cur.Val
+	stageStart := p.pos()
 
 	switch kw {
 	case "json":
@@ -561,10 +573,17 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	// Two consecutive identifiers (e.g. `| distinct method`) is invalid syntax —
 	// Loki rejects this with "syntax error: unexpected IDENTIFIER".
 	if p.cur.Typ == TokIdent {
-		return nil, fmt.Errorf("logql: parse error: unexpected identifier %q after %q in pipeline stage", p.cur.Val, kw)
+		return nil, p.syntaxErrorAt("")
 	}
-	raw := kw + p.consumeRestOfStage()
-	return &LabelFilterStage{Raw: raw}, nil
+	if strings.EqualFold(kw, "ip") && p.cur.Typ == TokLParen {
+		// ip("...") is a line filter operand (`|= ip("...")`) and a label filter
+		// value, not a stage: Loki's lexer reads the function name as the token.
+		return nil, p.errorAt(stageStart, "ip", "", false)
+	}
+	if isLabelFilterOperator(p.cur.Typ) || p.cur.Typ == TokError && p.cur.Val == "!" {
+		return p.parseLabelFilterStage(stageStart, kw, TokIdent)
+	}
+	return &LabelFilterStage{Raw: kw + p.consumeRestOfStage(TokIdent)}, nil
 }
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
@@ -795,18 +814,31 @@ func (p *parser) syntaxError(expecting string) error {
 // column of the offending token on line 1, or line 0 for the line-filter
 // operators and a range, whose lexer tokens carry no line.
 func (p *parser) syntaxErrorAt(expecting string) error {
-	msg := "syntax error: unexpected " + lokiTokenName(p.cur)
-	if expecting != "" {
-		msg += ", expecting " + expecting
-	}
 	pos := p.pos()
 	if p.cur.Typ == TokEOF {
 		pos = len(p.sc.src)
 	}
+	zeroLine := p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket)
+	return p.errorAt(pos, lokiTokenName(p.cur), expecting, zeroLine)
+}
+
+// errorAt reports Loki's "syntax error: unexpected <token>" for the token that
+// starts at byte offset pos of the input. zeroLine renders the line as 0, the
+// way Loki does for tokens its lexer reads with a lookahead.
+func (p *parser) errorAt(pos int, token, expecting string, zeroLine bool) error {
+	msg := "syntax error: unexpected " + token
+	if expecting != "" {
+		msg += ", expecting " + expecting
+	}
+	return p.errorMsgAt(pos, msg, zeroLine)
+}
+
+// errorMsgAt reports msg at the line and column of byte offset pos.
+func (p *parser) errorMsgAt(pos int, msg string, zeroLine bool) error {
 	before := p.sc.src[:pos]
 	line := 1 + strings.Count(before, "\n")
 	col := utf8.RuneCountInString(before[strings.LastIndexByte(before, '\n')+1:]) + 1
-	if p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket) {
+	if zeroLine {
 		line = 0
 	}
 	return newParseError(line, col, msg)
@@ -879,26 +911,78 @@ func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 // consumeRestOfStage reads tokens until the next pipeline operator, range
 // bracket, or EOF, returning them as a raw string. Used for label filter and
 // label_format stages whose expression grammar is complex and opaque to this
-// parser. Stops at [ and ) so that the outer range aggregation parser can
-// consume the [duration] and closing ) tokens.
-func (p *parser) consumeRestOfStage() string {
+// parser. Stops at [ and an unmatched ) so that the outer range aggregation
+// parser can consume the [duration] and closing ) tokens; a ) that closes a
+// ( of the stage belongs to it. prev is the type of the token that precedes
+// the first one read.
+func (p *parser) consumeRestOfStage(prev TokType) string {
 	var b strings.Builder
+	depth := 0
 	for {
 		switch p.cur.Typ {
-		case TokEOF, TokPipe, TokPipeEq, TokPipeTilde, TokPipeGt, TokBangGt,
-			TokLBracket, TokRParen:
+		case TokEOF, TokPipe, TokPipeEq, TokPipeTilde, TokPipeGt, TokBangGt, TokLBracket:
 			return b.String()
+		case TokLParen:
+			depth++
+		case TokRParen:
+			if depth == 0 {
+				return b.String()
+			}
+			depth--
 		case TokBangEq, TokBangTilde:
-			// When b is non-empty we've already consumed `label=value` —
-			// the `!=`/`!~` here starts a NEW line filter stage; stop.
-			// When b is empty the `!=`/`!~` IS the label filter operator
-			// (e.g. `status!=200`); continue consuming.
-			if b.Len() > 0 {
+			// After a complete filter (`label=value`) the `!=`/`!~` starts a NEW
+			// line filter stage; stop. After a label name it IS the label filter
+			// operator (e.g. `status!=200`, `a="1", status!=200`); continue.
+			switch prev {
+			case TokString, TokRawString, TokNumber, TokDuration, TokRParen:
 				return b.String()
 			}
 		}
+		prev = p.cur.Typ
 		appendStageToken(&b, p.advance())
 	}
+}
+
+// isLabelFilterOperator reports whether t is a comparison operator of a label
+// filter (`=`, `!=`, `=~`, `!~`, `==`, `<`, `<=`, `>`, `>=`).
+func isLabelFilterOperator(t TokType) bool {
+	switch t {
+	case TokEq, TokNeq, TokReMatch, TokReNotMatch, TokBangEq, TokBangTilde, TokEqEq, TokLt, TokLtEq, TokGt, TokGtEq:
+		return true
+	}
+	return false
+}
+
+// parseLabelFilterStage reads a label filter stage that starts at byte offset
+// start of the input with the identifier kw (empty when the stage opens with a
+// parenthesis); prev is the type of the token before the rest of it. It reads
+// the stage up to the next pipeline operator, range bracket or unmatched ) and
+// checks its syntax the way Loki's parser does.
+func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
+	raw := kw + p.consumeRestOfStage(prev)
+	text := p.sc.src[start:p.pos()]
+	if _, serr := translator.ParseLabelFilterExpr(text); serr != nil {
+		if serr.Offset >= len(text) {
+			// The stage ended too early: the token that ends it is the unexpected one.
+			return nil, p.syntaxErrorAt(serr.Expecting)
+		}
+		if serr.Message != "" {
+			return nil, p.errorMsgAt(start+serr.Offset, serr.Message, false)
+		}
+		return nil, p.errorAt(start+serr.Offset, serr.Token, serr.Expecting, zeroLineToken(serr.Token))
+	}
+	return &LabelFilterStage{Raw: raw}, nil
+}
+
+// zeroLineToken reports whether Loki prints line 0 for a parse error at this
+// token: its lexer reads multi-character operators, durations and bytes with
+// a lookahead that invalidates the scanner position.
+func zeroLineToken(name string) bool {
+	switch name {
+	case "DURATION", "BYTES", "RANGE", "=~", "!~", "!=", "==", ">=", "<=", "|=", "|~", "|>", "!>":
+		return true
+	}
+	return false
 }
 
 // appendStageToken appends a token's source rendering to b. It inserts a space

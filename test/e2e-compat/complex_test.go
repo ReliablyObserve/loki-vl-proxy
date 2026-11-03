@@ -7,7 +7,10 @@ package e2e_compat
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,36 +116,42 @@ func TestComplex_Logfmt_Parse(t *testing.T) {
 	compareQuery(t, "logfmt_parse", q)
 }
 
+// A label filter compares a duration with a duration: Loki's grammar takes a
+// NUMBER, DURATION or BYTES after `>` and rejects a string, so
+// `duration > "1s"` is a parse error there (and in the proxy, with Loki's text),
+// and the valid form is `duration > 1s`.
 func TestComplex_Logfmt_FilterAfterParse(t *testing.T) {
-	// Note: Loki and VL handle duration string comparison differently.
-	// Loki tries numeric parsing on "2.3s", fails, drops the line.
-	// VL does string comparison "2.3s" > "1s" → true (correct for strings).
-	// We verify the proxy returns a valid response and handles the pipe chain.
-	q := `{app="payment-service",level="warn"} | logfmt | duration > "1s"`
-	score := &CompatScore{}
+	end := time.Now()
+	start := end.Add(-10 * time.Minute)
 
-	proxyResult := queryProxy(t, q)
-	if checkStatus(proxyResult) {
-		score.pass("logfmt_filter", "proxy returns status=success")
-	} else {
-		score.fail("logfmt_filter", "proxy status not success")
-	}
+	t.Run("string after > is Loki's parse error", func(t *testing.T) {
+		query := `{app="payment-service",level="warn"} | logfmt | duration > "1s"`
+		const want = "parse error at line 1, col 60: syntax error: unexpected STRING"
+		lokiStatus, _, lokiBody := labelFilterLines(t, lokiURL, query, start, end)
+		proxyStatus, _, proxyBody := labelFilterLines(t, proxyURL, query, start, end)
+		if lokiStatus != http.StatusBadRequest || !strings.Contains(string(lokiBody), want) {
+			t.Fatalf("Loki drifted: want 400 %q, got %d %s", want, lokiStatus, lokiBody)
+		}
+		if proxyStatus != lokiStatus {
+			t.Fatalf("status: proxy %d (%s), Loki %d", proxyStatus, proxyBody, lokiStatus)
+		}
+		// Loki's body is the message alone as text/plain, and so is the proxy's.
+		if string(proxyBody) != string(lokiBody) {
+			t.Fatalf("proxy answers %q, Loki %q", proxyBody, lokiBody)
+		}
+	})
 
-	proxyData := extractMap(proxyResult, "data")
-	if proxyData != nil && proxyData["resultType"] == "streams" {
-		score.pass("logfmt_filter", "proxy returns resultType=streams")
-	} else {
-		score.fail("logfmt_filter", "wrong resultType")
-	}
-
-	// Proxy should return lines where duration > "1s" (string comparison)
-	proxyLines := countLogLines(proxyResult)
-	t.Logf("[logfmt_filter] Proxy=%d lines (VL string comparison of duration)", proxyLines)
-	if proxyLines >= 0 { // any valid result is OK — semantic difference with Loki is documented
-		score.pass("logfmt_filter", "proxy handled logfmt+filter pipeline")
-	}
-
-	score.report(t)
+	t.Run("duration after > keeps Loki's lines", func(t *testing.T) {
+		query := `{app="payment-service",level="warn"} | logfmt | duration > 1s`
+		lokiStatus, lokiLines, lokiBody := labelFilterLines(t, lokiURL, query, start, end)
+		proxyStatus, proxyLines, proxyBody := labelFilterLines(t, proxyURL, query, start, end)
+		if lokiStatus != http.StatusOK || len(lokiLines) == 0 {
+			t.Fatalf("Loki does not answer the fixture (status %d, %d lines): %s", lokiStatus, len(lokiLines), lokiBody)
+		}
+		if proxyStatus != http.StatusOK || !slices.Equal(proxyLines, lokiLines) {
+			t.Fatalf("proxy (status %d) answers %q, Loki %q\n%s", proxyStatus, proxyLines, lokiLines, proxyBody)
+		}
+	})
 }
 
 // =============================================================================

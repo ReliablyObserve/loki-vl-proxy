@@ -355,6 +355,7 @@
     "semantics/label-filter-before-parser-pushdown | query",
     "semantics/label-filter-expression-syntax | compare:observed",
     "semantics/label-filter-expression-syntax | gap:open",
+    "semantics/label-filter-expression-syntax | perf",
     "semantics/label-filter-expression-syntax | query",
     "semantics/label-inventory-exact-and-incremental | compare:exact",
     "semantics/label-inventory-exact-and-incremental | perf",
@@ -666,6 +667,8 @@
     "internal/config/registry_test.go | operator-configurable-limits",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
+    "internal/logql/label_filter_expr_golden_test.go | semantics/label-filter-expression-syntax",
+    "internal/logql/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/log_range_alternatives_test.go | semantics/line-filter-or-alternatives",
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
@@ -806,6 +809,8 @@
     "internal/proxy/instant_unwrap_sum_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
+    "internal/proxy/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
     "internal/proxy/label_matcher_regexp_routes_test.go | loki_api_v1_detected_labels",
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
     "internal/proxy/label_metadata_freshness_test.go | loki_api_v1_series",
@@ -1182,6 +1187,7 @@
     "internal/translator/extracted_suffix_test.go | loki_api_v1_query_range",
     "internal/translator/extracted_suffix_test.go | semantics/extracted-suffix-collision",
     "internal/translator/first_last_over_time_test.go | semantics/unwrap-first-last-under-aggregation",
+    "internal/translator/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
     "internal/translator/label_format_rename_test.go | profiles/stage-field-exposure",
     "internal/translator/label_matcher_anchoring_test.go | profiles/label-filter-regexp-anchoring",
     "internal/translator/label_matcher_anchoring_test.go | profiles/stream-selector-regexp-anchoring",
@@ -1321,6 +1327,8 @@
     "test/e2e-compat/keep_service_name_test.go | profiles/keep-removes-derived-service-name",
     "test/e2e-compat/keep_structured_metadata_test.go | loki_api_v1_query_range",
     "test/e2e-compat/keep_structured_metadata_test.go | profiles/keep-structured-metadata-key",
+    "test/e2e-compat/label_filter_expression_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
     "test/e2e-compat/label_freshness_e2e_test.go | quality/metadata-bounded-staleness",
     "test/e2e-compat/label_freshness_e2e_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "test/e2e-compat/label_matcher_regexp_anchoring_test.go | loki_api_v1_detected_labels",
@@ -1543,7 +1551,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 274,
+      "go": 280,
       "playwright": 1
     },
     "page_kinds": {
@@ -1560,10 +1568,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 79,
+    "shape_covers_distinct": 80,
     "shapes_path_only": 8,
-    "unwired_items": 87,
-    "wired_items": 218
+    "unwired_items": 86,
+    "wired_items": 219
   },
   "gates": [
     "A/B shape selection",
@@ -2071,6 +2079,10 @@
     "json-filter-pushdown/G field breakdown pipeline (drilldown)",
     "json-filter-pushdown/H field breakdown service_version (drilldown)",
     "json-filter-pushdown/I grafana volume of B",
+    "label-filter-expression/LF1 count by level, group then comma",
+    "label-filter-expression/LF2 ungrouped count, comma-joined",
+    "label-filter-expression/LF3 explore volume, group, drop",
+    "label-filter-expression/LF4 explore volume, two stages (control)",
     "label-matcher-anchoring/M1 multi-value variable, log query",
     "label-matcher-anchoring/M2 multi-value variable, count by app",
     "label-matcher-anchoring/M3 single-value variable, log query",
