@@ -89,13 +89,16 @@ func TestCompat_MetricRangeExtentCacheLargeAnswerMatchesLoki(t *testing.T) {
 
 	query := fmt.Sprintf(`sum by (batch_id) (count_over_time({probe=%q} | json batch_id="batch_id" | drop __error__, __error_details__ | batch_id!="" [1m]))`, probe)
 	from, to := s0, s0.Add(6*time.Hour)
-	// Both backends hold every line before any comparison. VictoriaLogs is
-	// asked through a query no cache holds (a filter every line passes,
-	// spelled differently each time), so no bucket is kept before it is whole.
+	// Both backends hold every line before any comparison. Each is asked
+	// through a query no cache holds (a filter every line passes, spelled
+	// differently each time): Loki's results cache keeps an hours-old split
+	// it answered while its ingester was still flushing, and would keep
+	// answering it, and the proxy must keep no bucket before it is whole.
+	// The compared query is first sent once both answer every series.
 	deadline := time.Now().Add(240 * time.Second)
 	for attempt := 0; ; attempt++ {
 		probeQuery := strings.Replace(query, "| json", fmt.Sprintf(`!= "absent-%d" | json`, attempt), 1)
-		loki, proxy := largeAnswerRange(t, lokiURL, query, from, to), largeAnswerRange(t, proxyUnderscoreURL, probeQuery, from, to)
+		loki, proxy := largeAnswerRange(t, lokiURL, probeQuery, from, to), largeAnswerRange(t, proxyUnderscoreURL, probeQuery, from, to)
 		if len(loki) == lines && len(proxy) == lines {
 			break
 		}
