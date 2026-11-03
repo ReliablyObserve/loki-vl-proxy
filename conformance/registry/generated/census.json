@@ -603,6 +603,9 @@
     "semantics/unwrap-sum-without-extracted-label-collision | compare:observed",
     "semantics/unwrap-sum-without-extracted-label-collision | gap:open",
     "semantics/unwrap-sum-without-extracted-label-collision | query",
+    "semantics/window-edge-float64-nanoseconds | compare:observed",
+    "semantics/window-edge-float64-nanoseconds | gap:documented",
+    "semantics/window-edge-float64-nanoseconds | query",
     "semantics/window-wider-than-step-raw-rows | compare:numeric",
     "semantics/window-wider-than-step-raw-rows | gap:open",
     "semantics/window-wider-than-step-raw-rows | query",
@@ -1531,7 +1534,7 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 36,
+      "api": 37,
       "drilldown": 32,
       "explore": 126,
       "grafana-datasource": 2,
@@ -1557,7 +1560,7 @@
     },
     "shape_covers_distinct": 79,
     "shapes_path_only": 8,
-    "unwired_items": 86,
+    "unwired_items": 87,
     "wired_items": 218
   },
   "gates": [

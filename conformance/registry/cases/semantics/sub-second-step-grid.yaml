@@ -69,7 +69,8 @@ why: |
   Fixed: the anchor is a multiple of 256 ns and the bounds carry its rest and
   the 128 ns of the read (windowPhaseFilter); a line within about 256 ns of an
   edge, not on it, is still told apart only by chance
-  (TestSubSecondStepLineOnTheWindowEdge, float64 emulation of the filter).
+  (TestSubSecondStepLineOnTheWindowEdge, float64 emulation of the filter). Documented as
+  semantics/window-edge-float64-nanoseconds.
 
   Known, not changed here: a window far wider than its step (a 5 minute
   window on a 20 ms step over 10 s) makes more buckets than one VictoriaLogs
