@@ -15,6 +15,8 @@ description: Release cadence, versioning policy, and how to follow loki-vl-proxy
 4. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
 5. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
 
+A breaking change (the `breaking-change` label, a `!:` subject or a `BREAKING CHANGE` footer) moves the minor version to the next multiple of ten and resets the patch: `2.62.3` becomes `2.70.0`, and `2.70.1` becomes `2.80.0`. Only an explicit `release:major` label bumps the major version.
+
 ## Skip Rules
 
 Release is skipped when the change-set since the latest tag is docs/metadata/CI only:

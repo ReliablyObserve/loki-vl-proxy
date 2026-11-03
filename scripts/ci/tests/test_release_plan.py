@@ -42,6 +42,16 @@ class ShippedChangesSinceTheTag(PlanCase):
         result = self.plan()
         self.assertEqual((result["should_release"], result["next_version"], result["bump"]), ("true", "2.63.0", "minor"))
 
+    def test_a_breaking_change_moves_the_minor_to_the_next_multiple_of_ten(self):
+        self.fix(1, "a", "- A.", labels=("breaking-change",))
+        self.fix(2, "b", "- B.", labels=("feature",))
+        result = self.release()
+        self.assertEqual((result["next_version"], result["bump"]), ("2.70.0", "breaking"))
+        self.fix(3, "c", "- C.", labels=("breaking-change",))
+        self.assertEqual(self.release()["next_version"], "2.80.0")
+        self.fix(4, "d", "- D.", labels=("release:major",))
+        self.assertEqual(self.plan()["next_version"], "3.0.0")
+
     def test_a_docs_only_trigger_still_releases_earlier_untagged_shipped_changes(self):
         self.fix(1, "a", "- A.")
         self.docs()
@@ -134,7 +144,7 @@ class BumpFromEveryShippingPullRequest(PlanCase):
 class LabelPrecedence(unittest.TestCase):
     # The order the bot has always applied; the first label present decides.
     ORDER = [("release:major", "major"), ("release:minor", "minor"), ("release:patch", "patch"),
-             ("breaking-change", "major"), ("feature", "minor"), ("bugfix", "patch"), ("performance", "patch")]
+             ("breaking-change", "breaking"), ("feature", "minor"), ("bugfix", "patch"), ("performance", "patch")]
 
     def test_every_label_alone(self):
         for label, bump in self.ORDER:
@@ -150,6 +160,13 @@ class LabelPrecedence(unittest.TestCase):
         self.assertEqual(release_plan.pr_bump(pr("release:patch", "feature"))[0], "patch")
         self.assertEqual(release_plan.pr_bump(pr("release:minor", "breaking-change"))[0], "minor")
         self.assertEqual(release_plan.pr_bump(pr("release:patch", "breaking-change", "feature"))[0], "patch")
+
+    def test_a_breaking_change_is_below_release_major_and_above_minor(self):
+        self.assertEqual(release_plan.pr_bump(pr("breaking-change"))[0], "breaking")
+        self.assertEqual(release_plan.pr_bump(pr("breaking-change", "size/XL", "scope/proxy"))[0], "breaking")
+        self.assertEqual(release_plan.pr_bump(pr("release:major", "breaking-change"))[0], "major")
+        for subject in ("feat!: drop a flag", "fix(api)!: change a status", "feat: x\n\nBREAKING CHANGE: y"):
+            self.assertEqual(release_plan.subject_bump(subject), "breaking", subject)
 
     def test_no_release_wins_over_everything(self):
         self.assertEqual(release_plan.pr_bump(pr("no-release", "release:major")), ("none", True))

@@ -43,7 +43,7 @@ except ImportError:  # run as a script: scripts/ci is sys.path[0]
 CHART = "charts/loki-vl-proxy/Chart.yaml"
 # What the metadata sync rewrites; a commit that touches only these ships nothing.
 METADATA_FILES = {"CHANGELOG.md", "README.md", "docs/observability.md", CHART}
-ORDER = {"none": 0, "patch": 1, "minor": 2, "major": 3}
+ORDER = {"none": 0, "patch": 1, "minor": 2, "breaking": 3, "major": 4}
 PR_SUFFIX = re.compile(r"\(#(\d+)\)$")
 
 
@@ -67,9 +67,11 @@ def pr_bump(pr):
         return "none", True
     # The order the bot has always applied: an explicit release:* label wins over
     # the labels the labeler adds from the title (feature, breaking-change).
+    # A breaking change moves the minor to the next multiple of ten (2.62.x ->
+    # 2.70.0); only an explicit release:major label bumps the major.
     bump = "none"
     for label, value in (("release:major", "major"), ("release:minor", "minor"), ("release:patch", "patch"),
-                         ("breaking-change", "major"), ("feature", "minor"), ("bugfix", "patch"),
+                         ("breaking-change", "breaking"), ("feature", "minor"), ("bugfix", "patch"),
                          ("performance", "patch")):
         if label in labels:
             bump = value
@@ -87,7 +89,7 @@ def pr_bump(pr):
 
 def subject_bump(subject):
     if re.search(r"BREAKING CHANGE|^feat.*!:|^fix.*!:", subject):
-        return "major"
+        return "breaking"
     if re.match(r"^feat(\(|:)", subject):
         return "minor"
     if re.match(r"^(fix|perf|refactor|revert)(\(|:)", subject):
@@ -193,6 +195,8 @@ def plan(repo, tip="HEAD", fetch_pr=None):
     maj, mnr, pat = changelog_release.version_tuple(latest_version)
     if bump == "major":
         maj, mnr, pat = maj + 1, 0, 0
+    elif bump == "breaking":
+        mnr, pat = (mnr // 10 + 1) * 10, 0
     elif bump == "minor":
         mnr, pat = mnr + 1, 0
     else:
