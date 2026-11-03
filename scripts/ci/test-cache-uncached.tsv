@@ -1,0 +1,10 @@
+# Packages whose tests always run (go test -count=1), one per line: directory, a tab, the reason.
+#
+# Every other package of the root module uses Go's test cache. Go replays a result while the test
+# binary, its flags, the environment variables the test read and the files it opened inside the
+# module are unchanged (test/testcache/cmd/normalize-mtimes keeps checkout times from changing the key).
+# A package whose tests depend on state the cache cannot see belongs here; test/testcache checks
+# that no package that reads such state is missing.
+cmd/proxy	exercises the host /proc and cgroup readers on Linux (runtime.GOOS branches), files outside the module
+internal/memlimit	stats /sys/fs/cgroup/memory.max and skips or asserts on what the host has, a file outside the module
+internal/metrics	reads /proc and /sys/fs/cgroup of the host on Linux, files outside the module
