@@ -255,7 +255,10 @@ jobs:
           GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "${TMP_BRANCH}"
           # A branch that cannot be moved is deleted and created again; that
           # closes its pull request, and the step below opens a new one.
-          if gh api "${REF}/heads/${BRANCH}" >/dev/null 2>&1; then
+          # The existence check reads git/ref (one exact ref): git/refs/heads/<name>
+          # also answers with the refs that only start with <name>, such as the
+          # temporary branch pushed above.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
             if ! gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${SHA}" -F force=true >/dev/null 2>&1; then
               echo "::warning::${BRANCH} could not be moved; deleting it and creating it again"
               gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
