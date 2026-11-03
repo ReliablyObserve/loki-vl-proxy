@@ -351,7 +351,7 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertEqual(WORKFLOW.count("scripts/ci/go_test_unit.sh"), 1)
 
     def test_every_downstream_job_still_needs_the_test_check(self):
-        for name in ("conformance", "tuple-contract", "fuzz-smoke", "race-stress-shard"):
+        for name in ("conformance", "tuple-contract", "fuzz-smoke-shard", "race-stress-shard"):
             self.assertRegex(self.job(name), r"needs: \[[^\]]*\btest\b[^\]]*\]", name)
 
 
