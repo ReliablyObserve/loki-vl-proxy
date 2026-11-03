@@ -614,7 +614,7 @@ jobs:
           # Generated against the current tip of main, from the entries the tag
           # shipped (scripts/ci/release_metadata.py), and committed through the
           # API, which signs it.
-          if ! python3 scripts/ci/release_metadata.py prepare --version "${VERSION}" --github-output "$GITHUB_OUTPUT"; then
+          if ! python3 scripts/ci/release_metadata.py prepare --version "${VERSION}" --github-output "$GITHUB_OUTPUT" --body-file "${RUNNER_TEMP}/metadata-body.md"; then
             echo "::warning::Unable to push the release metadata branch. Skipping metadata PR automation for this release."
             echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
@@ -648,14 +648,13 @@ jobs:
           }
           NUMBER="$(open_number)"
           if [ -z "${NUMBER}" ]; then
-            BODY="$(printf '%s\n' \
-              "Sync release metadata files for v${VERSION} after the automated release:" \
-              "" \
-              "- CHANGELOG materialization" \
-              "- Helm chart version and appVersion" \
-              "- README release badges")"
+            BODY_FILE="${RUNNER_TEMP}/metadata-body.md"
+            if [ ! -f "${BODY_FILE}" ]; then
+              printf 'Sync release metadata files for v%s after the automated release.\n' "${VERSION}" > "${BODY_FILE}"
+            fi
+            cat "${BODY_FILE}" >> "$GITHUB_STEP_SUMMARY"
             if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
-              --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then
+              --title "docs: sync release metadata for v${VERSION}" --body-file "${BODY_FILE}"; then
               echo "::warning::could not open the pull request from ${BRANCH}; open it by hand"
               exit 0
             fi

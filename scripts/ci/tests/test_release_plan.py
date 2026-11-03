@@ -131,6 +131,39 @@ class BumpFromEveryShippingPullRequest(PlanCase):
         self.assertEqual(self.plan()["bump"], "patch")
 
 
+class LabelPrecedence(unittest.TestCase):
+    # The order the bot has always applied; the first label present decides.
+    ORDER = [("release:major", "major"), ("release:minor", "minor"), ("release:patch", "patch"),
+             ("breaking-change", "major"), ("feature", "minor"), ("bugfix", "patch"), ("performance", "patch")]
+
+    def test_every_label_alone(self):
+        for label, bump in self.ORDER:
+            self.assertEqual(release_plan.pr_bump(pr(label))[0], bump, label)
+
+    def test_for_every_pair_the_earlier_label_wins(self):
+        for i, (first, first_bump) in enumerate(self.ORDER):
+            for second, _ in self.ORDER[i + 1 :]:
+                self.assertEqual(release_plan.pr_bump(pr(second, first))[0], first_bump, (first, second))
+
+    def test_an_explicit_release_label_caps_what_the_labeler_added(self):
+        # The labeler adds feature / breaking-change from the title.
+        self.assertEqual(release_plan.pr_bump(pr("release:patch", "feature"))[0], "patch")
+        self.assertEqual(release_plan.pr_bump(pr("release:minor", "breaking-change"))[0], "minor")
+        self.assertEqual(release_plan.pr_bump(pr("release:patch", "breaking-change", "feature"))[0], "patch")
+
+    def test_no_release_wins_over_everything(self):
+        self.assertEqual(release_plan.pr_bump(pr("no-release", "release:major")), ("none", True))
+
+    def test_the_size_rule_promotes_patch_to_minor_and_never_touches_major(self):
+        self.assertEqual(release_plan.pr_bump(pr("release:patch", "size/XL", "scope/proxy"))[0], "minor")
+        self.assertEqual(release_plan.pr_bump(pr("release:major", "size/XL", "scope/proxy"))[0], "major")
+        self.assertEqual(release_plan.pr_bump(pr("release:minor", files=30))[0], "minor")
+        self.assertEqual(release_plan.pr_bump(pr("size/XL", "scope/ci"))[0], "none")
+
+    def test_labels_are_matched_in_lower_case(self):
+        self.assertEqual(release_plan.pr_bump(pr("Release:Minor", "Bugfix"))[0], "minor")
+
+
 class ChartAhead(PlanCase):
     def test_a_chart_ahead_of_the_tag_is_a_release_request(self):
         r = self.repo
@@ -138,6 +171,15 @@ class ChartAhead(PlanCase):
         r.commit("chart: bump (#3)", files={"charts/loki-vl-proxy/Chart.yaml": 'apiVersion: v2\nversion: 3.0.0\nappVersion: "3.0.0"\n'})
         result = self.plan()
         self.assertEqual((result["next_version"], result["bump"]), ("3.0.0", "chart"))
+
+    def test_the_label_no_release_on_the_pull_request_that_moved_the_chart_withdraws_it(self):
+        r = self.repo
+        self.fix(1, "a", "- A.")
+        self.prs[3] = pr("no-release")
+        r.commit("chart: bump (#3)", files={"charts/loki-vl-proxy/Chart.yaml": 'apiVersion: v2\nversion: 3.0.0\nappVersion: "3.0.0"\n'})
+        result = self.plan()
+        self.assertEqual(result["should_release"], "false")
+        self.assertIn("no-release", result["reason"])
 
 
 if __name__ == "__main__":

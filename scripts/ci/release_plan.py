@@ -65,13 +65,15 @@ def pr_bump(pr):
     labels = {l.get("name", "").lower() for l in pr.get("labels", [])}
     if "no-release" in labels:
         return "none", True
+    # The order the bot has always applied: an explicit release:* label wins over
+    # the labels the labeler adds from the title (feature, breaking-change).
     bump = "none"
-    if "release:major" in labels or "breaking-change" in labels:
-        bump = "major"
-    elif "release:minor" in labels or "feature" in labels:
-        bump = "minor"
-    elif "release:patch" in labels or "bugfix" in labels or "performance" in labels:
-        bump = "patch"
+    for label, value in (("release:major", "major"), ("release:minor", "minor"), ("release:patch", "patch"),
+                         ("breaking-change", "major"), ("feature", "minor"), ("bugfix", "patch"),
+                         ("performance", "patch")):
+        if label in labels:
+            bump = value
+            break
     if bump != "major":
         files = int(pr.get("changed_files") or 0)
         churn = int(pr.get("additions") or 0) + int(pr.get("deletions") or 0)
@@ -148,6 +150,13 @@ def plan(repo, tip="HEAD", fetch_pr=None):
 
     if re.match(r"^\d+\.\d+\.\d+$", cur_chart) and latest:
         if changelog_release.version_tuple(cur_chart) > changelog_release.version_tuple(latest_version):
+            # The pull request that moved the chart ahead is the request; its
+            # no-release label withdraws it.
+            asked = (git(repo, "log", "-1", "--first-parent", "--format=%s", f"{latest}..{tip}", "--", CHART) or "").strip()
+            match = PR_SUFFIX.search(asked)
+            asked_pr = fetch_pr(int(match.group(1))) if match else None
+            if asked_pr is not None and pr_bump(asked_pr)[1]:
+                return no(f"the pull request that moved the chart to {cur_chart} is labelled no-release")
             out.update(should_release="true", next_version=cur_chart, bump="chart",
                        reason=f"chart version override {cur_chart} (latest tag is {latest_version})")
             return out

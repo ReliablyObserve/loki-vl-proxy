@@ -236,41 +236,35 @@ jobs:
           DATE="$(date -u +%Y-%m-%d)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # The branch is rebuilt from the main this run measured plus the bot's
-          # own files, and the remote branch is first set to that main through
-          # the API. A push then adds one commit that touches only those files.
-          # Force-pushing the new tip over the old one instead made git compare
-          # the two: when main had edited a workflow file since the old tip, the
-          # push counted as changing it, and a token without the workflow scope
-          # is refused ("refusing to allow a Personal Access Token to create or
-          # update workflow ... without workflow scope").
-          BASE="$(git rev-parse HEAD)"
+          # The bot's commit sits on the main this run measured and touches only
+          # the report files. It is pushed to a temporary branch (a new ref, so
+          # nothing is compared with an older tip), and the report branch is then
+          # moved once, straight to that commit. It is never pushed over its old
+          # tip, and never set to main's tip first: git compares an update with
+          # the old tip, and when main had edited a workflow file since, a token
+          # without the workflow scope was refused ("refusing to allow a Personal
+          # Access Token to create or update workflow ... without workflow scope").
           REF="repos/${GITHUB_REPOSITORY}/git/refs"
-          # Move the branch to BASE; a branch that cannot be moved is deleted and
-          # created again (which closes its pull request: the step below opens one).
-          set_branch() {
-            if gh api "${REF}/heads/${BRANCH}" >/dev/null 2>&1; then
-              if gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${BASE}" -F force=true >/dev/null 2>&1; then
-                return 0
-              fi
-              gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
-            fi
-            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${BASE}" >/dev/null
-          }
-          push_branch() {
-            # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
-            GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "$BRANCH"
-          }
-          set_branch
-          git checkout -B "$BRANCH"
+          TMP_BRANCH="${BRANCH}-next"
+          git checkout -B "$TMP_BRANCH"
           git add -- "${FILES[@]}"
           git commit -m "bench: daily performance report ${DATE}"
-          if ! push_branch; then
-            echo "::warning::the push over the moved branch was refused; deleting the branch and creating it again at ${BASE}"
-            gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
-            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${BASE}" >/dev/null
-            push_branch
+          SHA="$(git rev-parse HEAD)"
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "${TMP_BRANCH}"
+          # A branch that cannot be moved is deleted and created again; that
+          # closes its pull request, and the step below opens a new one.
+          if gh api "${REF}/heads/${BRANCH}" >/dev/null 2>&1; then
+            if ! gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${SHA}" -F force=true >/dev/null 2>&1; then
+              echo "::warning::${BRANCH} could not be moved; deleting it and creating it again"
+              gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
+              gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+            fi
+          else
+            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
           fi
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
           TITLE="bench: daily performance report ${DATE}"
           BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
             "$ALERTS" \

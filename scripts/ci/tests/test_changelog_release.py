@@ -86,6 +86,21 @@ class NewEntriesTests(unittest.TestCase):
         cur = "## [Unreleased]\n\n### Fixed\n\n- B.\n\n## [1.0.0] - x\n\n### Fixed\n\n- A.\n"
         self.assertEqual(keys(cr.new_entries(prev, cur)), ["- B."])
 
+    def test_an_identical_entry_written_again_after_the_previous_release_is_new(self):
+        # The previous release carried "- Same."; its metadata was merged (the
+        # entry sits under 1.0.1) and the same text was written again.
+        prev = "## [Unreleased]\n\n- Same.\n\n## [1.0.0] - x\n\n- Same.\n"
+        cur = "## [Unreleased]\n\n- Same.\n\n## [1.0.1] - x\n\n- Same.\n\n## [1.0.0] - x\n\n- Same.\n"
+        self.assertEqual(keys(cr.new_entries(prev, cur)), ["- Same."])
+        # not merged yet: the old copy is still in [Unreleased] and is not new
+        cur = "## [Unreleased]\n\n- Same.\n\n## [1.0.0] - x\n\n- Same.\n"
+        self.assertEqual(cr.new_entries(prev, cur), [])
+
+    def test_text_equal_to_an_older_released_entry_is_new_when_written_again(self):
+        prev = "## [Unreleased]\n\n## [1.0.0] - x\n\n- Same.\n"
+        cur = "## [Unreleased]\n\n- Same.\n\n## [1.0.0] - x\n\n- Same.\n"
+        self.assertEqual(keys(cr.new_entries(prev, cur)), ["- Same."])
+
     def test_an_entry_listed_twice_counts_twice(self):
         prev = "## [Unreleased]\n\n- Same.\n"
         cur = "## [Unreleased]\n\n- Same.\n\n- Same.\n"
@@ -128,8 +143,48 @@ class ApplyReleaseTests(unittest.TestCase):
         self.assertEqual(len(cr.unreleased_entries(result)), 3)
 
     def test_an_entry_a_release_already_holds_is_not_filed_twice(self):
+        # filed under a section added since the previous release (a sweep)
+        swept = CHANGELOG.replace("## [1.2.0]", "## [1.2.5] - x\n\n- Swept.\n\n## [1.2.0]")
+        entry = cr.parse_entries(["- Swept."], 0, 1)
+        self.assertEqual(cr.apply_release(swept, "1.3.0", "x", entry, since=(1, 2, 0)), swept)
+
+    def test_text_equal_to_an_entry_of_an_older_release_is_still_filed(self):
         old = cr.parse_entries(["- Old."], 0, 1)
-        self.assertEqual(cr.apply_release(CHANGELOG, "1.3.0", "x", old), CHANGELOG)
+        text = CHANGELOG.replace("- Fixed two.", "- Old.")
+        result = cr.apply_release(text, "1.3.0", "x", old, since=(1, 2, 0))
+        self.assertEqual(keys(cr.section_entries(result, "1.3.0")), ["- Old."])
+        self.assertEqual(len(cr.unreleased_entries(result)), 2)
+
+    def test_a_reworded_entry_moves_once_with_its_current_text_and_warns(self):
+        tagged = cr.parse_entries(["- Fixed two, as the tag had it."], 0, 1)
+        text = CHANGELOG.replace("- Fixed two.", "- Fixed two, as the tag has it now.")
+        warnings = []
+        result = cr.apply_release(text, "1.3.0", "x", tagged, warnings=warnings)
+        self.assertEqual(keys(cr.section_entries(result, "1.3.0")), ["- Fixed two, as the tag has it now."])
+        self.assertNotIn("Fixed two", "\n".join(e.key[0] for e in cr.unreleased_entries(result)))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("reworded or extended", warnings[0])
+
+    def test_a_sub_bullet_added_after_the_tag_does_not_file_the_entry_twice(self):
+        tagged = cr.parse_entries(["- Fixed two."], 0, 1)
+        text = CHANGELOG.replace("- Fixed two.", "- Fixed two.\n  - and a detail added later")
+        warnings = []
+        result = cr.apply_release(text, "1.3.0", "x", tagged, warnings=warnings)
+        self.assertEqual(cr.section_entries(result, "1.3.0")[0].lines, ("- Fixed two.", "  - and a detail added later"))
+        self.assertEqual(sum(1 for e in cr.unreleased_entries(result) if e.key[0] == "- Fixed two."), 0)
+        self.assertEqual(len(warnings), 1)
+
+    def test_an_entry_found_nowhere_is_filed_from_the_tag_text_and_reported(self):
+        gone = cr.parse_entries(["- Something entirely different and long enough to share nothing."], 0, 1)
+        warnings = []
+        result = cr.apply_release(CHANGELOG, "1.3.0", "x", gone, warnings=warnings)
+        self.assertEqual(len(cr.unreleased_entries(result)), 3)
+        self.assertIn("not in [Unreleased] any more", warnings[0])
+
+    def test_a_different_new_entry_is_not_taken_for_the_tagged_one(self):
+        tagged = cr.parse_entries(["- Added one."], 0, 1)
+        result = cr.apply_release(CHANGELOG, "1.3.0", "x", tagged)
+        self.assertEqual(sorted(e.key[0] for e in cr.unreleased_entries(result)), ["- Fixed one, with a second", "- Fixed two."])
 
     def test_emptying_unreleased_leaves_the_usual_empty_section(self):
         result = cr.apply_release(CHANGELOG, "1.3.0", "x", cr.unreleased_entries(CHANGELOG))

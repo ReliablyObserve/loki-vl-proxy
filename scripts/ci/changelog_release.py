@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import difflib
 import re
 import subprocess
 import sys
@@ -131,29 +132,52 @@ def unreleased_entries(text: str) -> list[Entry]:
     return section_entries(text, UNRELEASED)
 
 
-def released_keys(text: str) -> set[tuple[str, ...]]:
-    """Keys of every entry filed under a released (versioned) section."""
+def released_keys(text: str, newer_than: tuple[int, int, int] | None = None, names: set[str] | None = None,
+                  skip: str | None = None) -> Counter:
+    """Entry keys of the released (versioned) sections of text, counted.
+
+    `newer_than` keeps only sections of a later version, `names` only sections
+    with one of those names, `skip` leaves one section out.
+    """
     lines = text.split("\n")
-    keys: set[tuple[str, ...]] = set()
+    keys: Counter = Counter()
     for name, header, end in split_sections(lines):
-        if name != UNRELEASED:
-            keys.update(e.key for e in parse_entries(lines, header + 1, end))
+        if name == UNRELEASED or name == skip:
+            continue
+        if names is not None and name not in names:
+            continue
+        if newer_than is not None:
+            version = version_tuple(name)
+            if version is None or version <= newer_than:
+                continue
+        keys.update(e.key for e in parse_entries(lines, header + 1, end))
     return keys
 
 
 def new_entries(prev_text: str, cur_text: str) -> list[Entry]:
     """Entries of `[Unreleased]` in cur_text that the release before it did not carry.
 
-    An entry counts once for each time the previous `[Unreleased]` held it, and
-    never when a released section of cur_text already holds it.
+    The previous release carried what its `[Unreleased]` held. Those entries are
+    still in cur_text's `[Unreleased]` or, once the metadata was merged, moved
+    into a section added since: a moved entry is not new, and an identical entry
+    written again afterwards is. An entry also filed under a section added since
+    (a sweep or a hand repair) is not new either. Text equal to an entry of an
+    older release is new when it is written again.
     """
-    seen = Counter(e.key for e in unreleased_entries(prev_text))
-    filed = released_keys(cur_text)
+    prev_names = {n for n, _, _ in split_sections(prev_text.split("\n"))}
+    cur_names = {n for n, _, _ in split_sections(cur_text.split("\n")) if n != UNRELEASED} - prev_names
+    added = released_keys(cur_text, names=cur_names)
+    previous = Counter(e.key for e in unreleased_entries(prev_text))
+    moved = previous & added
+    seen = previous - moved
+    filed = added - moved
     out = []
     for entry in unreleased_entries(cur_text):
         if seen[entry.key] > 0:
             seen[entry.key] -= 1
-        elif entry.key not in filed:
+        elif filed[entry.key] > 0:
+            filed[entry.key] -= 1
+        else:
             out.append(entry)
     return out
 
@@ -197,41 +221,79 @@ def _cleanup_unreleased(body: list[str]) -> list[str]:
     return collapsed
 
 
-def apply_release(text: str, version: str, date: str, entries: list[Entry]) -> str:
+SAME_ENTRY_RATIO = 0.7
+
+
+def _same_entry(tag_entry: Entry, current: Entry) -> bool:
+    """A current entry that is the tag's entry reworded or extended since."""
+    if tag_entry.key[0] == current.key[0]:  # same first line: text was added under it
+        return True
+    ratio = difflib.SequenceMatcher(None, "\n".join(tag_entry.key), "\n".join(current.key)).ratio()
+    return ratio >= SAME_ENTRY_RATIO
+
+
+def apply_release(text: str, version: str, date: str, entries: list[Entry],
+                  since: tuple[int, int, int] | None = None, warnings: list[str] | None = None) -> str:
     """Move `entries` out of `[Unreleased]` into a new `## [version]` section.
 
-    Nothing changes when the section exists or there is nothing to move. The
-    result is checked: the new section holds exactly the entries, `[Unreleased]`
+    Nothing changes when the section exists or there is nothing to move. An entry
+    that is in `[Unreleased]` only reworded or extended since the tag moves with
+    its current text (never filed twice); one found nowhere is filed from the tag
+    text. Both are reported in `warnings`. Entries that a section newer than
+    `since` (the previous release) already holds are not filed again. The result
+    is checked: the new section holds exactly what was filed, `[Unreleased]`
     keeps every other entry, and each released section is byte-identical.
     """
+    warnings = warnings if warnings is not None else []
     lines = text.split("\n")
     if lines[-1] == "":
         lines.pop()
     sections = split_sections(lines)
     if any(name == version for name, _, _ in sections):
         return text
-    # An entry some released section already holds (a sweep, a hand repair) is
-    # not filed a second time.
-    filed = released_keys(text)
-    entries = [e for e in entries if e.key not in filed]
-    if not entries:
-        return text
     target = version_tuple(version)
     if target is None:
         raise ValueError(f"not a plain semver: {version!r}")
-
     unreleased = next(((h, e) for n, h, e in sections if n == UNRELEASED), None)
     if unreleased is None:
         raise ValueError("no [Unreleased] section")
     u_head, u_end = unreleased
 
-    # Take each wanted entry out of [Unreleased] once, by identity.
-    wanted = Counter(e.key for e in entries)
+    filed = released_keys(text, newer_than=since) if since is not None else Counter()
+    wanted = []
+    for entry in entries:
+        if filed[entry.key] > 0:
+            filed[entry.key] -= 1
+        else:
+            wanted.append(entry)
+    if not wanted:
+        return text
+
+    pool = parse_entries(lines, u_head + 1, u_end)
     drop: list[Entry] = []
-    for entry in parse_entries(lines, u_head + 1, u_end):
-        if wanted[entry.key] > 0:
-            wanted[entry.key] -= 1
-            drop.append(entry)
+    placed: list[Entry | None] = [None] * len(wanted)
+    for n, entry in enumerate(wanted):  # the same text, still there
+        hit = next((c for c in pool if c.key == entry.key), None)
+        if hit is not None:
+            pool.remove(hit)
+            drop.append(hit)
+            placed[n] = entry
+    for n, entry in enumerate(wanted):
+        if placed[n] is not None:
+            continue
+        hit = next((c for c in pool if _same_entry(entry, c)), None)
+        if hit is not None:
+            pool.remove(hit)
+            drop.append(hit)
+            placed[n] = hit
+            warnings.append(f"v{version}: `{entry.key[0][:80]}` was reworded or extended in [Unreleased] after the tag; "
+                            "it is filed with its current text")
+        else:
+            placed[n] = entry
+            warnings.append(f"v{version}: `{entry.key[0][:80]}` is not in [Unreleased] any more; "
+                            "it is filed from the tagged text")
+    moved = [e for e in placed if e is not None]
+
     removed = {i for e in drop for i in range(e.start, e.end)}
     body = [l for i, l in enumerate(lines[u_head + 1 : u_end], start=u_head + 1) if i not in removed]
     body = _cleanup_unreleased(body)
@@ -246,13 +308,13 @@ def apply_release(text: str, version: str, date: str, entries: list[Entry]) -> s
             break
     if insert_before < u_end:
         raise ValueError("[Unreleased] is not the newest section")
-    section = render_section(version, date, entries).rstrip("\n").split("\n")
+    section = render_section(version, date, moved).rstrip("\n").split("\n")
     tail = lines[insert_before:]
     if tail:
         section.append("")
     out = lines[:u_head] + new_unreleased + lines[u_end:insert_before] + section + tail
     result = "\n".join(out) + "\n"
-    _verify_move(text, result, version, entries, drop)
+    _verify_move(text, result, version, moved, drop)
     return result
 
 
@@ -337,9 +399,12 @@ def missing_releases(repo: str, text: str, version: str) -> list[tuple[str, str,
     return out
 
 
-def apply_missing(text: str, repo: str, version: str) -> str:
+def apply_missing(text: str, repo: str, version: str, warnings: list[str] | None = None) -> str:
+    tags = release_tags(repo)
     for ver, date, entries in missing_releases(repo, text, version):
-        text = apply_release(text, ver, date, entries)
+        prev = previous_tag(tags, ver)
+        since = version_tuple(prev) if prev else (0, 0, 0)
+        text = apply_release(text, ver, date, entries, since, warnings)
     return text
 
 
@@ -359,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     apply_p.add_argument("--repo", default=".")
     apply_p.add_argument("--changelog", default="CHANGELOG.md")
     apply_p.add_argument("--version", required=True)
+    apply_p.add_argument("--warnings-file", default="", help="write what needed a decision here, one line each")
     args = parser.parse_args(argv)
 
     if args.cmd == "notes":
@@ -375,7 +441,13 @@ def main(argv: list[str] | None = None) -> int:
     if not TAG_RE.match(f"v{args.version}") or f"v{args.version}" not in release_tags(args.repo):
         print(f"tag v{args.version} not found; the CHANGELOG move needs the tagged commit", file=sys.stderr)
         return 1
-    updated = apply_missing(text, args.repo, args.version)
+    warnings: list[str] = []
+    updated = apply_missing(text, args.repo, args.version, warnings)
+    for line in warnings:
+        print(f"::warning::{line}", file=sys.stderr)
+    if args.warnings_file:
+        with open(args.warnings_file, "w", encoding="utf-8") as fh:
+            fh.write("".join(f"{line}\n" for line in warnings))
     if updated != text:
         with open(args.changelog, "w", encoding="utf-8") as fh:
             fh.write(updated)

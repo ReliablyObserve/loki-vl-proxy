@@ -687,10 +687,13 @@ jobs:
           # through the API (a signed commit on top of it); the CHANGELOG move
           # carries exactly the entries this tag shipped, so entries merged since
           # stay in [Unreleased]. The script generates again when main moved
-          # while it ran, so the branch never starts from an old main.
+          # while it ran, so the branch never starts from an old main. It runs
+          # the scripts main has now, which are the ones this run started from
+          # or newer. Entries that were reworded after the tag are listed in the
+          # pull request body and in the job summary.
           if ! python3 scripts/ci/release_metadata.py prepare --version "${VERSION}" \
               --tests "${TEST_COUNT}" --coverage "${COVERAGE_PCT}" --lines "${CODE_LINES}" \
-              --github-output "$GITHUB_OUTPUT"; then
+              --github-output "$GITHUB_OUTPUT" --body-file "${RUNNER_TEMP}/metadata-body.md"; then
             echo "::warning::Unable to push the release metadata branch. Skipping metadata PR automation for this release."
             echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
@@ -724,14 +727,13 @@ jobs:
           }
           NUMBER="$(open_number)"
           if [ -z "${NUMBER}" ]; then
-            BODY="$(printf '%s\n' \
-              "Sync release metadata files for v${VERSION} after the automated release:" \
-              "" \
-              "- CHANGELOG materialization" \
-              "- Helm chart version and appVersion" \
-              "- README release badges")"
+            BODY_FILE="${RUNNER_TEMP}/metadata-body.md"
+            if [ ! -f "${BODY_FILE}" ]; then
+              printf 'Sync release metadata files for v%s after the automated release.\n' "${VERSION}" > "${BODY_FILE}"
+            fi
+            cat "${BODY_FILE}" >> "$GITHUB_STEP_SUMMARY"
             if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
-              --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then
+              --title "docs: sync release metadata for v${VERSION}" --body-file "${BODY_FILE}"; then
               echo "::warning::could not open the pull request from ${BRANCH}; open it by hand"
               exit 0
             fi
@@ -766,6 +768,11 @@ jobs:
   # script, and closes the superseded ones. A commit amended by hand on the
   # branch is replaced by the regenerated one when main has moved.
   refresh-metadata-pr:
+    # After the release job of this run (whatever it did), so the two never
+    # change the metadata branch at the same time. Runs of the workflow already
+    # queue one after another.
+    needs: [prepare-release, publish-release]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

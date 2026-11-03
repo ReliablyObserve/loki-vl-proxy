@@ -8,6 +8,7 @@ was in when its run started.
 """
 
 import unittest
+from pathlib import Path
 
 from scripts.ci import changelog_release as cr
 from scripts.ci import release_plan
@@ -148,6 +149,82 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual((result["should_release"], result["next_version"]), ("true", "2.63.0"))
         entries = cr.release_entries(replay.repo.path, "HEAD", "v2.62.0")
         self.assertEqual(sorted(e.key[0] for e in entries), sorted(f"- E{n}." for n in (1016, 1017, 1021, 1022, 995, 996)))
+
+
+REAL = Path(__file__).resolve().parents[3] / "CHANGELOG.md"
+
+
+class RealChangelogReplay(unittest.TestCase):
+    """The same day with the entries the CHANGELOG really holds for 2.62.1 to 2.64.0.
+
+    Each tag's section is read from the repository's CHANGELOG, handed to the
+    pull request it belongs to, and the sections the release logic files must
+    be the ones the tags say, line for line.
+    """
+
+    # real section -> head of its entry -> pull request (an entry is told by its first words)
+    ENTRIES = [
+        (1016, "2.62.1", "A metric `query_range` whose bounds fall outside"),
+        (1017, "2.62.2", "A line exactly on an evaluation time"),
+        (1021, "2.63.0", "The label cache merge dedupes"),
+        (1022, "2.63.0", "Step alignment leaves a bound after 2262"),
+        (995, "2.63.0", "Accept Loki's label filter expressions"),
+        (996, "2.63.1", "Answer `sum by (detected_level)`"),
+        (1032, "2.64.0", "List only Loki's fields"),
+    ]
+
+    def setUp(self):
+        self.text = REAL.read_text(encoding="utf-8")
+        self.repo = Repo()
+        self.addCleanup(self.repo.close)
+        self.labels = dict(LABELS)
+        self.labels[1032] = (("bugfix", "size/M", "scope/proxy"), 4, 90)
+
+    def real_entry(self, section, head):
+        entries = [e for e in cr.section_entries(self.text, section) if e.lines[0].replace("**", "").startswith("- " + head)]
+        self.assertEqual(len(entries), 1, (section, head))
+        return entries[0]
+
+    def test_the_sections_come_out_as_the_tags_say(self):
+        prs = {n: {"labels": [{"name": l} for l in lab], "changed_files": f, "additions": c, "deletions": 0}
+               for n, (lab, f, c) in self.labels.items()}
+        repo, pending, released = self.repo, [], []
+        runs_at = {1016, 1017, 995, 996, 1032}  # the others' runs were cancelled
+        for number, section, head in self.ENTRIES:
+            entry = self.real_entry(section, head)
+            repo.commit(f"fix: change (#{number})", files={SHIP.format(f"pr{number}"): "x"},
+                        entry="\n".join(entry.lines), category=entry.category)
+            if number == 1022:  # the metadata pull request of the earlier tags merges here
+                repo.merge_metadata(pending[-1])
+                pending = []
+            if number in runs_at:
+                result = release_plan.plan(repo.path, "HEAD", prs.get)
+                self.assertEqual(result["should_release"], "true", number)
+                repo.tag(f"v{result['next_version']}")
+                released.append((number, result["next_version"]))
+                pending.append(result["next_version"])
+        repo.merge_metadata(pending[-1])
+        self.assertEqual(released, [(1016, "2.62.1"), (1017, "2.62.2"), (995, "2.63.0"), (996, "2.64.0"), (1032, "2.64.1")])
+
+        mine = repo.read("CHANGELOG.md")
+        lines = mine.split("\n")
+        order = [n for n, _, _ in cr.split_sections(lines)]
+        self.assertEqual(order, ["Unreleased", "2.64.1", "2.64.0", "2.63.0", "2.62.2", "2.62.1", "2.62.0"])
+        self.assertEqual(cr.unreleased_entries(mine), [])
+        # tag by tag, the same entries as the real section; the two that the
+        # size rule numbers differently (#996, #1032) are compared under the real number
+        for mine_version, real_version in (("2.62.1", "2.62.1"), ("2.62.2", "2.62.2"), ("2.63.0", "2.63.0"),
+                                           ("2.64.0", "2.63.1"), ("2.64.1", "2.64.0")):
+            got = sorted(e.key for e in cr.section_entries(mine, mine_version))
+            want = sorted(e.key for e in cr.section_entries(self.text, real_version))
+            self.assertEqual(got, want, mine_version)
+        # and the one-entry sections byte for byte
+        for mine_version, real_version in (("2.62.1", "2.62.1"), ("2.62.2", "2.62.2"), ("2.64.0", "2.63.1"), ("2.64.1", "2.64.0")):
+            def body(text, version):
+                ls = text.split("\n")
+                h, e = next((h, e) for n, h, e in cr.split_sections(ls) if n == version)
+                return "\n".join(ls[h + 1 : e]).rstrip("\n")
+            self.assertEqual(body(mine, mine_version), body(self.text, real_version), mine_version)
 
 
 if __name__ == "__main__":

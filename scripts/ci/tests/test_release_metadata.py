@@ -45,18 +45,64 @@ print(commit)
 FAKE_WRAPPER = '#!/usr/bin/env bash\nexec python3 "$(dirname "$0")/commit.py" "$@"\n'
 
 FAKE_GH = r"""#!/usr/bin/env python3
-import json, os, sys
-d = os.environ["FAKE_DIR"]
+# A stand-in for gh: git refs of the local origin (BARE), and pull requests kept
+# in FAKE_DIR/prs.json. Deleting a branch closes its pull request, as GitHub does.
+import json, os, subprocess, sys
+d, bare = os.environ["FAKE_DIR"], os.environ["BARE"]
 a = sys.argv[1:]
-if a[:2] == ["pr", "list"]:
-    print(open(os.path.join(d, "prs.json")).read())
+path = os.path.join(d, "prs.json")
+prs = json.load(open(path)) if os.path.exists(path) else []
+def save(): json.dump(prs, open(path, "w"))
+def log(**kw):
+    with open(os.path.join(d, "gh.jsonl"), "a") as fh: fh.write(json.dumps(kw) + "\n")
+def git(*x, check=True):
+    return subprocess.run(["git", "-C", bare, *x], capture_output=True, text=True, check=check)
+def opt(name):
+    return next((x.split("=", 1)[1] for x in a if x.startswith(name + "=")), None)
+def flag(name): return a[a.index(name) + 1] if name in a else None
+def branch_of(route): return route.split("/heads/", 1)[1]
+if a[0] == "api":
+    route = next(x for x in a if x.startswith("repos/"))
+    method = flag("-X") or "GET"
+    if method == "GET":
+        sys.exit(0 if git("rev-parse", "-q", "--verify", "refs/heads/" + branch_of(route), check=False).returncode == 0 else 1)
+    if method == "PATCH":
+        log(op="patch", branch=branch_of(route), sha=opt("sha"))
+        if os.environ.get("FAIL_PATCH"): sys.exit("HTTP 422: refusing to update workflow")
+        git("update-ref", "refs/heads/" + branch_of(route), opt("sha"))
+    elif method == "POST":
+        ref = opt("ref"); log(op="post", branch=ref[len("refs/heads/"):], sha=opt("sha"))
+        git("update-ref", ref, opt("sha"))
+    elif method == "DELETE":
+        b = branch_of(route); log(op="delete", branch=b)
+        git("update-ref", "-d", "refs/heads/" + b, check=False)
+        for p in prs:
+            if p["headRefName"] == b and p["state"] == "OPEN": p["state"] = "CLOSED"
+        save()
+elif a[:2] == ["pr", "list"]:
+    print(json.dumps([p for p in prs if p["state"] == "OPEN"]))
+elif a[:2] == ["pr", "view"]:
+    print(json.dumps({"state": next(p["state"] for p in prs if str(p["number"]) == a[2])}))
 elif a[:2] == ["pr", "close"]:
-    with open(os.path.join(d, "closed.txt"), "a") as fh:
-        fh.write(a[2] + "\n")
+    with open(os.path.join(d, "closed.txt"), "a") as fh: fh.write(a[2] + "\n")
+    for p in prs:
+        if str(p["number"]) == a[2]: p["state"] = "CLOSED"
+    save()
+elif a[:2] == ["pr", "reopen"]:
+    for p in prs:
+        if str(p["number"]) == a[2]:
+            if git("rev-parse", "-q", "--verify", "refs/heads/" + p["headRefName"], check=False).returncode: sys.exit(1)
+            p["state"] = "OPEN"
+    log(op="reopen", number=a[2]); save()
+elif a[:2] == ["pr", "create"]:
+    prs.append({"number": 200 + len(prs), "headRefName": flag("--head"), "state": "OPEN",
+                "author": {"login": "szibis"}, "isCrossRepository": False})
+    log(op="create", branch=flag("--head")); save()
+elif a[:2] in (["pr", "merge"], ["pr", "edit"]):
+    log(op=a[1], number=a[2])
 else:
     sys.exit(1)
 """
-
 
 class MetadataCase(unittest.TestCase):
     def setUp(self):
@@ -87,7 +133,7 @@ class MetadataCase(unittest.TestCase):
             path.chmod(path.stat().st_mode | stat.S_IEXEC)
         (self.dir / "fake").mkdir()
         os.environ_backup = dict(os.environ)
-        patch = {"COMMIT_VIA_API": str(fake / "commit_via_api.sh"), "FAKE_DIR": str(self.dir / "fake"),
+        patch = {"COMMIT_VIA_API": str(fake / "commit_via_api.sh"), "FAKE_DIR": str(self.dir / "fake"), "BARE": str(self.bare),
                  "PATH": f"{fake}:{os.environ['PATH']}"}
         for k, v in patch.items():
             old = os.environ.get(k)
@@ -103,7 +149,7 @@ class MetadataCase(unittest.TestCase):
         return sh(str(self.work), "git", "show", f"origin/{branch}:{path}")
 
     def fetch_branch(self, branch):
-        sh(str(self.work), "git", "fetch", "-q", "origin", f"{branch}:refs/remotes/origin/{branch}")
+        sh(str(self.work), "git", "fetch", "-q", "origin", f"+{branch}:refs/remotes/origin/{branch}")
 
 
 class PrepareTests(MetadataCase):
@@ -160,6 +206,21 @@ class PrepareTests(MetadataCase):
         with self.assertRaises(RuntimeError):
             rm.prepare(str(self.work), "2.62.1", "o/r", "tok")
 
+    def test_an_entry_edited_after_the_tag_moves_once_and_the_pull_request_says_so(self):
+        main = self.main
+        main.write("CHANGELOG.md", main.read("CHANGELOG.md").replace("- A.", "- A.\n  - a detail added after the tag"))
+        main.commit("docs(changelog): detail")
+        sh(main.path, "git", "push", "-q", "origin", "main")
+        body = self.dir / "body.md"
+        rm.prepare(str(self.work), "2.62.1", "o/r", "tok", body_out=str(body))
+        branch = "release/metadata-v2.62.1"
+        self.fetch_branch(branch)
+        changelog = self.show(branch, "CHANGELOG.md")
+        self.assertEqual(changelog.count("- A.\n"), 1)
+        self.assertIn("a detail added after the tag", changelog.split("## [2.62.1]")[1].split("## [2.62.0]")[0])
+        self.assertNotIn("a detail added after the tag", changelog.split("## [2.62.1]")[0])
+        self.assertIn("reworded or extended", body.read_text())
+
     def test_nothing_to_do_when_main_already_has_the_release(self):
         main = self.main
         main.merge_metadata("2.62.1")
@@ -170,21 +231,34 @@ class PrepareTests(MetadataCase):
 
 
 class RefreshTests(MetadataCase):
-    def prs(self, *versions):
-        data = [{"number": 100 + i, "headRefName": f"release/metadata-v{v}"} for i, v in enumerate(versions)]
-        (self.dir / "fake" / "prs.json").write_text(json.dumps(data))
+    def prs(self, *versions, author="szibis", cross=False, state="OPEN"):
+        path = self.dir / "fake" / "prs.json"
+        data = json.loads(path.read_text()) if path.exists() else []
+        for v in versions:
+            data.append({"number": 100 + len(data), "headRefName": f"release/metadata-v{v}", "state": state,
+                         "author": {"login": author}, "isCrossRepository": cross})
+        path.write_text(json.dumps(data))
+
+    def state(self, number):
+        return {p["number"]: p["state"] for p in json.loads((self.dir / "fake" / "prs.json").read_text())}[number]
 
     def closed(self):
         path = self.dir / "fake" / "closed.txt"
         return path.read_text().split() if path.exists() else []
 
+    def ops(self):
+        path = self.dir / "fake" / "gh.jsonl"
+        return [json.loads(l) for l in path.read_text().splitlines()] if path.exists() else []
+
+    def main_moves_on(self, path="internal/proxy/c.go", entry="- C."):
+        self.main.commit("fix: c (#3)", files={path: "c"}, entry=entry)
+        sh(self.main.path, "git", "push", "-q", "origin", "main")
+
     def test_a_branch_behind_main_is_regenerated_and_older_pull_requests_close(self):
         self.prs("2.62.0", "2.62.1")
         rm.prepare(str(self.work), "2.62.1", "o/r", "tok", "7", "80", "1000")
         self.assertEqual(len(self.commits()), 1)
-        # main moves on after the branch was made
-        self.main.commit("fix: c (#3)", files={"internal/proxy/c.go": "c"}, entry="- C.")
-        sh(self.main.path, "git", "push", "-q", "origin", "main")
+        self.main_moves_on()  # a new [Unreleased] entry: the CHANGELOG the branch holds is stale
         rm.refresh(str(self.work), "o/r", "tok")
         self.assertEqual(self.closed(), ["100"])
         self.assertEqual(len(self.commits()), 2)
@@ -194,13 +268,56 @@ class RefreshTests(MetadataCase):
         self.assertEqual(changelog.split("## [2.62.1]")[1].count("- C."), 0)
         # the badge numbers from the release run survive the regeneration
         self.assertIn("7%20passed", self.show("release/metadata-v2.62.1", "README.md"))
+        self.assertEqual(self.state(101), "OPEN")
 
-    def test_a_branch_that_is_on_main_and_matches_is_left_alone(self):
+    def test_the_pull_request_branch_never_goes_through_the_tip_of_main(self):
         self.prs("2.62.1")
         rm.prepare(str(self.work), "2.62.1", "o/r", "tok", "7", "80", "1000")
+        self.main_moves_on()
+        rm.refresh(str(self.work), "o/r", "tok")
+        tips = {sh(str(self.bare), "git", "rev-parse", "main"), *[c["base"] for c in self.commits()]}
+        branch_ops = [o for o in self.ops() if o.get("branch", "").startswith("release/metadata-v")]
+        self.assertTrue(branch_ops)
+        for op in branch_ops:
+            self.assertNotIn(op.get("sha"), tips)
+        # the commit was built on a temporary branch, which is gone
+        self.assertEqual(sh(str(self.bare), "git", "branch", "--list", "release/metadata-tmp-*"), "")
+
+    def test_a_refused_move_recreates_the_branch_and_the_pull_request_stays_open(self):
+        self.prs("2.62.1")
+        rm.prepare(str(self.work), "2.62.1", "o/r", "tok", "7", "80", "1000")
+        self.main_moves_on()
+        os.environ["FAIL_PATCH"] = "1"
+        self.addCleanup(lambda: os.environ.pop("FAIL_PATCH", None))
+        rm.refresh(str(self.work), "o/r", "tok")
+        self.assertEqual(self.state(100), "OPEN")
+        self.assertIn("reopen", [o["op"] for o in self.ops()])
+        self.assertIn("merge", [o["op"] for o in self.ops()])  # auto-merge armed again
+        self.assertEqual(sh(str(self.bare), "git", "rev-parse", "release/metadata-v2.62.1"), self.commits()[-1]["commit"])
+
+    def test_a_pull_request_that_cannot_be_brought_back_fails_loudly(self):
+        self.prs("2.62.1")
+        rm.prepare(str(self.work), "2.62.1", "o/r", "tok", "7", "80", "1000")
+        self.main_moves_on()
+        os.environ["FAIL_PATCH"] = "1"
+        self.addCleanup(lambda: os.environ.pop("FAIL_PATCH", None))
+        # a gh that cannot reopen or create: the state stays closed
+        path = self.dir / "bin" / "gh"
+        path.write_text(path.read_text().replace('p["state"] = "OPEN"\n    log(op="reopen"', 'pass\n    log(op="reopen"')
+                        .replace('prs.append({"number": 200', 'sys.exit(1); prs.append({"number": 200'))
+        with self.assertRaises(RuntimeError):
+            rm.refresh(str(self.work), "o/r", "tok")
+
+    def test_a_branch_that_holds_what_main_needs_is_left_alone_even_when_main_moved(self):
+        # The owner re-signed the commit; main moved on in files the metadata does not touch.
+        self.prs("2.62.1")
+        rm.prepare(str(self.work), "2.62.1", "o/r", "tok", "7", "80", "1000")
+        self.main_moves_on(path="docs/other.md", entry=None)
+        (self.dir / "fake" / "gh.jsonl").unlink()
         rm.refresh(str(self.work), "o/r", "tok")
         self.assertEqual(len(self.commits()), 1)
         self.assertEqual(self.closed(), [])
+        self.assertEqual([o for o in self.ops() if o["op"] in ("patch", "delete", "reopen")], [])
 
     def test_a_pull_request_whose_content_main_already_has_is_closed(self):
         self.prs("2.62.1")
@@ -213,6 +330,19 @@ class RefreshTests(MetadataCase):
         rm.refresh(str(self.work), "o/r", "tok")
         self.assertEqual(self.closed(), ["100"])
         self.assertEqual(len(self.commits()), 1)
+
+    def test_only_pull_requests_of_the_bot_or_the_owner_from_this_repository_count(self):
+        self.prs("2.62.1", author="someone-else")
+        self.prs("2.62.1", cross=True)
+        self.assertEqual(rm.open_metadata_prs("o/r", "tok"), [])
+        self.prs("2.62.1", author="ReliablyObserve-Bot")
+        self.assertEqual([n for _, n, _ in rm.open_metadata_prs("o/r", "tok")], [102])
+
+    def test_older_pull_requests_stay_open_when_the_newest_cannot_be_regenerated(self):
+        self.prs("2.62.1", "2.99.0")  # v2.99.0 has no tag: the CHANGELOG move cannot be made
+        with self.assertRaises(RuntimeError):
+            rm.refresh(str(self.work), "o/r", "tok")
+        self.assertEqual(self.closed(), [])
 
     def test_no_open_pull_request_is_a_no_op(self):
         self.prs()

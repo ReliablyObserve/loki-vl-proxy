@@ -34,7 +34,8 @@ done
 # commits (not from [Unreleased] as it stands), so entries added after the tag
 # stay in [Unreleased]. RELEASE_DATE is not used: each section takes the date of
 # its tag's commit.
-python3 "$SCRIPT_DIR/changelog_release.py" apply --repo . --changelog "$CHANGELOG_FILE" --version "$VERSION"
+python3 "$SCRIPT_DIR/changelog_release.py" apply --repo . --changelog "$CHANGELOG_FILE" --version "$VERSION" \
+  ${RELEASE_WARNINGS_FILE:+--warnings-file "$RELEASE_WARNINGS_FILE"}
 
 # The chart moves forward only: a metadata branch for an older tag, merged after
 # a newer one, leaves the chart where it is.

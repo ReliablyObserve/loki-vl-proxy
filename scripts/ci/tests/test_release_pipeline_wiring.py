@@ -41,7 +41,6 @@ class AutoReleaseWiring(unittest.TestCase):
         auto = text("auto-release.yaml")
         job = auto[auto.index("  refresh-metadata-pr:") :]
         self.assertIn("release_metadata.py refresh", job)
-        self.assertNotIn("needs:", job)
         self.assertIn("contents: read", job)
 
     def test_the_manual_release_uses_the_same_metadata_script(self):
@@ -56,20 +55,27 @@ class AutoReleaseWiring(unittest.TestCase):
 
 
 class BotBranchWiring(unittest.TestCase):
-    def test_the_daily_report_branch_is_never_force_pushed(self):
-        # Force-pushing a rebuilt branch over its old tip counts every workflow
-        # file main changed in between as the bot's change; a token without the
-        # workflow scope is refused. The remote branch is reset to main through
-        # the API first and the push is a fast-forward of the bot's files.
+    def test_the_daily_report_branch_is_only_ever_moved_through_the_api(self):
+        # git compares a push over an old tip with that tip: when main edited a
+        # workflow file in between, a token without the workflow scope is refused.
+        # The commit goes to a new temporary ref by push, and the report branch is
+        # then moved once through the API, never pushed and never set to main's tip.
         perf = text("perf-daily.yaml")
         step = perf[perf.index("name: Open or update the daily report PR") :]
         step = step[: step.index("name: Arm auto-merge")]
-        self.assertNotIn("--force", step.replace("-F force=true", ""))
+        self.assertIn('push origin "${TMP_BRANCH}"', step)
+        self.assertNotIn('push origin "$BRANCH"', step)
         self.assertNotRegex(step, r"push [^\n]*(--force|-f )")
         self.assertIn("-X PATCH", step)
         self.assertIn("-X DELETE", step)  # a branch that cannot be moved is created again
-        self.assertLess(step.index("set_branch\n"), step.index("push_branch\n"))
-        self.assertIn("BASE=\"$(git rev-parse HEAD)\"", step)
+        self.assertNotIn("BASE=", step)
+        self.assertLess(step.index('push origin "${TMP_BRANCH}"'), step.index("-X PATCH"))
+
+    def test_the_metadata_refresh_waits_for_the_release_job_of_its_run(self):
+        auto = text("auto-release.yaml")
+        job = auto[auto.index("  refresh-metadata-pr:") :]
+        self.assertIn("needs: [prepare-release, publish-release]", job)
+        self.assertIn("!cancelled()", job)
 
     def test_release_workflows_never_force_push(self):
         for name in ("auto-release.yaml", "release.yaml", "perf-daily.yaml"):
