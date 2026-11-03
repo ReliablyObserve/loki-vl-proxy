@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.62.1] - 2026-11-03
+
 ### Fixed
 
 - **A metric `query_range` whose bounds fall outside int64 nanoseconds is no
