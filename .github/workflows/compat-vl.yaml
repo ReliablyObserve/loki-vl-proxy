@@ -29,21 +29,39 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       vl_versions: ${{ steps.matrix.outputs.vl_versions }}
+      pinned_loki_image: ${{ steps.matrix.outputs.pinned_loki_image }}
+      pinned_vl_image: ${{ steps.matrix.outputs.pinned_vl_image }}
+      pinned_grafana_image: ${{ steps.matrix.outputs.pinned_grafana_image }}
+      vl_image_repo: ${{ steps.matrix.outputs.vl_image_repo }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
       - id: matrix
-        run: echo "vl_versions=$(jq -c '.stack.victorialogs.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          m=test/e2e-compat/compatibility-matrix.json
+          vl_versions=$(jq -ce '.stack.victorialogs.matrix_versions' "$m")
+          pinned_loki_image=$(jq -er '.stack.loki | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_vl_image=$(jq -er '.stack.victorialogs | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          pinned_grafana_image=$(jq -er '.stack.grafana | select(.image_repo and .pinned_version) | "\(.image_repo):\(.pinned_version)"' "$m")
+          vl_image_repo=$(jq -er '.stack.victorialogs.image_repo | select(. != null)' "$m")
+          {
+            echo "vl_versions=$vl_versions"
+            echo "pinned_loki_image=$pinned_loki_image"
+            echo "pinned_vl_image=$pinned_vl_image"
+            echo "pinned_grafana_image=$pinned_grafana_image"
+            echo "vl_image_repo=$vl_image_repo"
+          } >> "$GITHUB_OUTPUT"
 
   vl-pinned:
     if: ${{ !cancelled() && github.event_name != 'schedule' && needs.vl-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
     needs: [vl-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.52.0
-      GRAFANA_IMAGE: grafana/grafana:13.2.5
+      LOKI_IMAGE: ${{ needs.vl-matrix-source.outputs.pinned_loki_image }}
+      VICTORIALOGS_IMAGE: ${{ needs.vl-matrix-source.outputs.pinned_vl_image }}
+      GRAFANA_IMAGE: ${{ needs.vl-matrix-source.outputs.pinned_grafana_image }}
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -92,8 +110,8 @@ jobs:
       matrix:
         vl_version: ${{ fromJson(needs.vl-matrix-source.outputs.vl_versions) }}
     env:
-      LOKI_IMAGE: grafana/loki:3.7.9
-      GRAFANA_IMAGE: grafana/grafana:13.2.5
+      LOKI_IMAGE: ${{ needs.vl-matrix-source.outputs.pinned_loki_image }}
+      GRAFANA_IMAGE: ${{ needs.vl-matrix-source.outputs.pinned_grafana_image }}
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -115,13 +133,13 @@ jobs:
       - name: Start matrix stack
         working-directory: test/e2e-compat
         env:
-          VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:${{ matrix.vl_version }}
+          VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.vl-matrix-source.outputs.vl_image_repo, matrix.vl_version) }}
         run: |
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run VictoriaLogs compatibility score
         env:
-          VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:${{ matrix.vl_version }}
+          VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.vl-matrix-source.outputs.vl_image_repo, matrix.vl_version) }}
         # The score plus the checks whose outcome depends on how the
         # VictoriaLogs version words or stores things: OTLP severity as
         # detected_level, the status of rejected queries (parse errors), and the
@@ -131,5 +149,5 @@ jobs:
         if: always()
         working-directory: test/e2e-compat
         env:
-          VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:${{ matrix.vl_version }}
+          VICTORIALOGS_IMAGE: ${{ format('{0}:{1}', needs.vl-matrix-source.outputs.vl_image_repo, matrix.vl_version) }}
         run: docker compose down -v

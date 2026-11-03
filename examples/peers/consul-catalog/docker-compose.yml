@@ -27,7 +27,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.53.0
+    image: victoriametrics/victoria-logs:v1.52.0
     command:
       - -retentionPeriod=7d
       - -storageDataPath=/vlogs

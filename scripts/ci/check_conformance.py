@@ -14,6 +14,8 @@ Fails when:
     2.0, target_ratio, modes, locked with locked_since, effort_exception with reason and follow_up), an
     item no shape covers has one, or a locked item covers a row on the above-2× list
     (bench/ab/history/over-2x-loki.json); see perf_acceptance_problems();
+  * an image or plugin pin in a compose file, a benchmark, a workflow or the dependabot ignore list differs from
+    test/e2e-compat/compatibility-matrix.json (scripts/ci/matrix_pins.py);
   * a bench/ab shape outside `control` covers no registry item that names code,
     so no change could select it for the per-PR A/B run (bench/ab/selection.py);
   * a bench/visual entry covers an unknown registry id, or (outside the core
@@ -56,7 +58,9 @@ import tempfile
 
 SCRIPTS = "conformance/scripts"
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from registry_io import load_json, perf_problems, scope_problems  # noqa: E402
+import matrix_pins  # noqa: E402
 SHAPES = "bench/ab/shapes.json"
 OVER_2X = "bench/ab/history/over-2x-loki.json"
 REPORTS = (
@@ -284,6 +288,14 @@ def main():
     print(flags.stdout.strip())
     if flags.returncode:
         failures.append("flag documentation")
+
+    pins = matrix_pins.problems()
+    for problem in pins:
+        print(f"matrix pins: {problem}")
+    if pins:
+        failures.append("matrix pins")
+    else:
+        print("matrix pins: every compose file, bench pin, workflow and the dependabot ignore list match the matrix")
 
     # A generated report must match what the generators produce right now.
     for script, target, docs_flag in REPORTS:
