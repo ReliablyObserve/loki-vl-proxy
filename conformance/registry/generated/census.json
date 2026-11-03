@@ -801,6 +801,7 @@
     "internal/proxy/instant_result_type_test.go | semantics/scalar-sample-time-units",
     "internal/proxy/instant_unwrap_sum_test.go | profiles/sanitized-json-key-grouping",
     "internal/proxy/instant_unwrap_sum_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_matcher_regexp_routes_test.go | loki_api_v1_detected_labels",
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
@@ -1538,7 +1539,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 273,
+      "go": 274,
       "playwright": 1
     },
     "page_kinds": {

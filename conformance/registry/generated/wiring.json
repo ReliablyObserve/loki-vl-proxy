@@ -234,6 +234,7 @@
     ],
     "loki_api_v1_labels": [
       "internal/proxy/backend_heavy_test.go",
+      "internal/proxy/label_cache_behavior_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/labels_alias_test.go",
       "internal/proxy/labels_post_form_cache_test.go",
@@ -1573,6 +1574,9 @@
       "profiles/sanitized-json-key-grouping",
       "semantics/non-sum-vector-aggregation-unreduced"
     ],
+    "internal/proxy/label_cache_behavior_test.go": [
+      "loki_api_v1_labels"
+    ],
     "internal/proxy/label_empty_run_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
@@ -2738,7 +2742,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 274,
+  "tests_with_markers": 275,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

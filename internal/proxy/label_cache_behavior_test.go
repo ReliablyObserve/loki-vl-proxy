@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -399,6 +400,44 @@ func TestHandleLabels_SecondRequestIsCacheHit(t *testing.T) {
 
 	if callsAfterSecond != callsAfterFirst {
 		t.Errorf("second request triggered %d extra VL call(s), expected 0 (cache hit)", callsAfterSecond-callsAfterFirst)
+	}
+}
+
+// The merged set is deduplicated and byte-sorted as the client reads it. The
+// cached answer is JSON, which writes each invalid UTF-8 byte as U+FFFD, so a raw
+// label and its replaced form are one entry, and a second merge of the same
+// labels changes nothing. (Loki's labels are valid UTF-8 and returned in
+// sort.Strings byte order.)
+// conformance: loki_api_v1_labels
+func TestMergeLabelsIntoCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels []string
+		want   []string
+	}{
+		{"fuzz_input_mixed_bytes", []string{"0", "\xff", "\xb30"}, []string{"0", "\ufffd", "\ufffd0"}},
+		{"two_invalid_bytes_are_two_replacements", []string{"a\xff\xfeb", "a\ufffd\ufffdb"}, []string{"a\ufffd\ufffdb"}},
+		{"valid_multibyte_keeps_byte_order", []string{"z", "\u00e9", "a", "\u4e2d"}, []string{"a", "z", "\u00e9", "\u4e2d"}},
+		{"duplicates_and_empty", []string{"b", "", "a", "b", ""}, []string{"", "a", "b"}},
+		{"truncated_sequence", []string{"\xe4\xb8", "\xe4\xb8\xad"}, []string{"\u4e2d", "\ufffd\ufffd"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _ := newBehaviorProxy(t, "http://127.0.0.1:1", 0)
+			for pass := 0; pass < 2; pass++ { // a second merge of the same labels is a no-op
+				p.mergeLabelsIntoCache("labels", "key", tc.labels, 5*time.Minute)
+				cached, _, _, ok := p.endpointReadCacheEntry("labels", "key")
+				if !ok {
+					t.Fatal("nothing cached")
+				}
+				var resp struct{ Data []string }
+				if err := json.Unmarshal(cached, &resp); err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(resp.Data, tc.want) || !sort.StringsAreSorted(resp.Data) {
+					t.Fatalf("pass %d: %q, want %q (sorted)", pass, resp.Data, tc.want)
+				}
+			}
+		})
 	}
 }
 
