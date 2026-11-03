@@ -11,6 +11,25 @@ why: |
   (docs/KNOWN_ISSUES.md). The differential run marks only a value difference
   of a matched series with this case: a missing or extra series or sample is
   an ordinary difference.
+
+  Root cause, measured on the Logs Drilldown landing volume of the e2e stack
+  (38 visual captures, 15m and 1h, 2026-11-03): the series and their order
+  match; the proxy's bytes divided by Loki's take two independent values.
+  Per service, at one index listing: 0.92-0.98 for services whose lines carry
+  little structured metadata (api-gateway 0.977), 0.42-0.53 for the OTel
+  services whose short lines carry many structured-metadata pairs
+  (checkout-svc, pricing-svc, inventory-svc, notification-svc 0.43,
+  otel-collector 0.52): Loki counts 8 bytes per pair per line
+  (pkg/chunkenc/unordered.go:169-170) and the chunk's symbol strings
+  (pkg/chunkenc/memchunk.go:824-838). Per run, every ratio is divided by 1, 2
+  or 3 (api-gateway 0.977, 0.488, 0.326; checkout-svc 0.43, 0.22, 0.14): Loki
+  sums a flushed chunk's whole KiB (pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-167,
+  rounded) once per TSDB index file that lists it until compaction, scaled by
+  the chunk's time overlap (tsdb/index/chunk.go:262-267). None of these is a
+  property of the stored lines: VictoriaLogs keeps no chunk sizes, symbol
+  tables or index files, and cannot tell structured metadata from other
+  fields, so the proxy keeps exact line bytes (sum_len(_msg)) rather than an
+  estimate that would still differ per run.
 request:
   method: GET
   path: /loki/api/v1/index/volume
@@ -31,7 +50,7 @@ gap:
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/volume.go; docs/KNOWN_ISSUES.md'
-  loki: 'pkg/storage volume index (chunk bytes incl. structured metadata)'
+  loki: 'pkg/chunkenc/unordered.go:169-170 and memchunk.go:824-838 (uncompressed size with structured metadata); pkg/storage/stores/shipper/indexshipper/tsdb/store.go:159-167 (whole KiB per chunk) and tsdb/index/chunk.go:262-267 (time share); pkg/ingester/instance.go:849-929 (unflushed chunks)'
   proxy: 'line bytes'
   planned_test: 'bench/parity diff rule (documented facet)'
   clusters: []
