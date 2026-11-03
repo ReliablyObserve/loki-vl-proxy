@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match. A filter after a parser, `drop`, `keep` or `label_format` stage is
   unchanged.
 
+## [2.67.0] - 2026-11-03
+
 ### Performance
 
 - Translate and relabel a large Logs Drilldown breakdown (range equal to the
