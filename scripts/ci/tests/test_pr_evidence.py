@@ -321,6 +321,16 @@ class EvidenceTests(unittest.TestCase):
         row = next(r for r in rows if r["name"] == "BenchmarkProxy_Series_CompatCacheHit" and r["cpu"] == 8)
         self.assertEqual((row["samples"], row["ns_per_op"], row["bytes_per_op"], row["allocs_per_op"]), (3, 2000, 30, 3))
 
+    def test_handler_bench_regex_selects_exactly_the_families_the_parser_reads(self):
+        regex = re.compile(self.m.handler_benchmark_regex())
+        for family in self.m.HANDLER_BENCHMARK_FAMILIES:
+            self.assertTrue(regex.match(f"BenchmarkProxy_{family}_CacheHit"), family)
+        for other in ("BenchmarkProxy_Labelsx_CacheHit", "BenchmarkProxy_Query_CacheHit", "BenchmarkTranslate", "BenchmarkStatsTranslation_Small"):
+            self.assertIsNone(regex.match(other), other)
+        # Filtered output still yields rows the parser accepts (>= 8 fields, three axes).
+        row = "BenchmarkProxy_Labels_CacheHit-8 100 1000 ns/op 20 B/op 2 allocs/op"
+        self.assertEqual(self.m.handler_benchmarks(row)[0]["samples"], 1)
+
     def test_handler_benchmarks_reject_invalid_samples(self):
         for value in ("NaN", "inf", "-1"):
             with self.subTest(value=value), self.assertRaises(ValueError):

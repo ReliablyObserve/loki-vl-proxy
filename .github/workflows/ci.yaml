@@ -609,9 +609,20 @@ jobs:
           go-version: "1.27.3"
           cache: true
 
+      # bench-results.txt is read only by the PR evidence report, which keeps the
+      # handler families listed in scripts/ci/pr_evidence.py. A pull request runs
+      # just those at a short benchtime; main, dispatch and a PR labelled ci-full
+      # run every benchmark in the package.
       - name: Run benchmarks
+        env:
+          FULL_BENCH: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci-full') }}
         run: |
-          go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3 -timeout=120s \
+          if [ "$FULL_BENCH" = "true" ]; then
+            bench_args=(-bench .)
+          else
+            bench_args=(-bench "$(python3 scripts/ci/pr_evidence.py --handler-bench-regex)" -benchtime=200ms)
+          fi
+          go test ./internal/proxy/ "${bench_args[@]}" -benchmem -run "^$" -count=3 -timeout=120s \
             | tee bench-results.txt
 
       - name: Run label/field scale benchmarks (regression guard)
