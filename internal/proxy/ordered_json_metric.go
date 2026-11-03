@@ -3341,3 +3341,5 @@ func buildOrderedJSONMetric(ctx context.Context, plan *orderedJSONMetricPlan, se
 	}
 	return body, nil
 }
+
+// visual-smoke timing probe: comment only.
