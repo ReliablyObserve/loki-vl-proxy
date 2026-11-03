@@ -73,3 +73,4 @@ smoke	internal/translator	FuzzParseDropConditions	12s	-	parse drop conditions
 smoke	internal/translator	FuzzParseDropKeepConsistency	12s	-	parse drop keep consistency
 smoke	internal/translator	FuzzRegexpMatcherEscaping	12s	-	regexp matcher escaping
 smoke	internal/translator	FuzzStoredLevelCopyFilter	12s	-	stored level copy filter
+smoke	internal/proxy	FuzzStripUnrestrictedLogfmtUnpacks	12s	-	detected_fields field_names query without logfmt token columns

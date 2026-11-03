@@ -253,6 +253,10 @@
     "semantics/detected-fields-extracted-suffix | compare:observed",
     "semantics/detected-fields-extracted-suffix | gap:open",
     "semantics/detected-fields-extracted-suffix | query",
+    "semantics/detected-fields-no-logfmt-token-fields | compare:subset",
+    "semantics/detected-fields-no-logfmt-token-fields | gap:fixed",
+    "semantics/detected-fields-no-logfmt-token-fields | perf",
+    "semantics/detected-fields-no-logfmt-token-fields | query",
     "semantics/detected-level-filter-before-parser-pushdown | compare:exact",
     "semantics/detected-level-filter-before-parser-pushdown | perf",
     "semantics/detected-level-filter-before-parser-pushdown | query",
@@ -739,6 +743,7 @@
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
     "internal/proxy/delete_route_test.go | semantics/delete-route-disabled-like-loki",
+    "internal/proxy/detected_fields_logfmt_tokens_test.go | semantics/detected-fields-no-logfmt-token-fields",
     "internal/proxy/detected_level_cache_scope_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/detected_level_keys_gate_test.go | severity-detected-level-derivation",
     "internal/proxy/detected_level_label_probes_test.go | semantics/json-metric-detected-level-derivation",
@@ -1250,6 +1255,8 @@
     "test/e2e-compat/compat_option_matrix_test.go | profiles/label-browse-params-ignored",
     "test/e2e-compat/compat_option_matrix_test.go | profiles/structured-metadata-keys-per-profile",
     "test/e2e-compat/count_values_test.go | semantics/count-values-unsupported",
+    "test/e2e-compat/detected_fields_logfmt_tokens_test.go | loki_api_v1_detected_fields",
+    "test/e2e-compat/detected_fields_logfmt_tokens_test.go | semantics/detected-fields-no-logfmt-token-fields",
     "test/e2e-compat/detected_level_corpus_test.go | severity-detected-level-derivation",
     "test/e2e-compat/detected_level_corpus_test.go | severity/normalisation-table",
     "test/e2e-compat/detected_level_keys_gate_test.go | semantics/json-metric-detected-level-derivation",
@@ -1552,13 +1559,13 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 33,
+      "drilldown": 34,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 281,
+      "go": 283,
       "playwright": 1
     },
     "page_kinds": {
@@ -1575,10 +1582,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 81,
+    "shape_covers_distinct": 82,
     "shapes_path_only": 8,
     "unwired_items": 86,
-    "wired_items": 220
+    "wired_items": 221
   },
   "gates": [
     "A/B shape selection",
@@ -2156,6 +2163,7 @@
     "metadata-freshness/labels ending now",
     "metadata-freshness/labels ending two days ago (control)",
     "metadata-inventory/drilldown detected fields",
+    "metadata-inventory/drilldown detected fields, level pill",
     "metadata-inventory/drilldown detected labels",
     "metadata-inventory/drilldown landing volume",
     "metadata-inventory/explore label values env",

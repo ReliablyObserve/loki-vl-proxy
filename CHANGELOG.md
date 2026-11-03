@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- List only Loki's fields in `/loki/api/v1/detected_fields` when the query
+  carries a `detected_level` pill or a field filter behind `| json | logfmt`
+  (the Logs Drilldown Fields tab with a level selected). The proxy added a
+  field for every word of JSON and plain-text lines (`_api_gateway`,
+  `key_500`, ...: 36 fields where Loki lists 15), each drawn as an empty
+  panel, because its VictoriaLogs `field_names` lookup ran `unpack_logfmt`
+  over those lines. The lookup now leaves that unpack out; it no longer
+  unpacks every row of the window in VictoriaLogs.
+
 ## [2.63.1] - 2026-11-03
 
 ### Performance

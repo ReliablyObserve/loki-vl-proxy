@@ -151,7 +151,11 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "drilldown-service-landing",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -167,7 +171,11 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "drilldown-service-landing",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -186,7 +194,11 @@
     "semantics/json-metric-detected-level-derivation",
     "parser-json",
     "loki_api_v1_detected_fields",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -206,7 +218,11 @@
     "parser-json",
     "loki_api_v1_detected_fields",
     "loki_api_v1_query_range",
-    "loki_api_v1_detected_field_name_values"
+    "loki_api_v1_detected_field_name_values",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -225,7 +241,11 @@
     "parser-json",
     "loki_api_v1_detected_fields",
     "loki_api_v1_query_range",
-    "loki_api_v1_detected_field_name_values"
+    "loki_api_v1_detected_field_name_values",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -279,7 +299,11 @@
     "drilldown-service-landing",
     "loki_api_v1_query_range",
     "loki_api_v1_label_name_values",
-    "limits/drilldown-breakdown-exact"
+    "limits/drilldown-breakdown-exact",
+    "semantics/detected-fields-no-logfmt-token-fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-no-logfmt-token-fields"
    ]
   },
   {
@@ -998,17 +1022,33 @@
    "id": "explore-json-extraction-list-level",
    "kind": "explore",
    "query": "{app=\"visual-extraction-list\",case=\"json\"} | json msg=\"msg\"",
-   "ranges": ["15m", "1h"],
-   "covers": ["profiles/json-extraction-list-exposes-only-listed", "loki_api_v1_query_range"],
-   "fixes": ["profiles/json-extraction-list-exposes-only-listed"]
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "profiles/json-extraction-list-exposes-only-listed",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/json-extraction-list-exposes-only-listed"
+   ]
   },
   {
    "id": "explore-logfmt-extraction-list-level",
    "kind": "explore",
    "query": "{app=\"visual-extraction-list\",case=\"logfmt\"} | logfmt op",
-   "ranges": ["15m", "1h"],
-   "covers": ["profiles/json-extraction-list-exposes-only-listed", "loki_api_v1_query_range"],
-   "fixes": ["profiles/json-extraction-list-exposes-only-listed"]
+   "ranges": [
+    "15m",
+    "1h"
+   ],
+   "covers": [
+    "profiles/json-extraction-list-exposes-only-listed",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "profiles/json-extraction-list-exposes-only-listed"
+   ]
   },
   {
    "id": "explore-plain-level-metric",

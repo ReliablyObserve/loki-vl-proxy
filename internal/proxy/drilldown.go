@@ -1853,7 +1853,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 		return nil, err
 	}
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
+	params.Set("query", stripUnrestrictedLogfmtUnpacks(logsqlQuery))
 	if start != "" {
 		params.Set("start", start)
 	}
@@ -1889,6 +1889,87 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 		out[item.Value] = item.Hits
 	}
 	return out, nil
+}
+
+// stripUnrestrictedLogfmtUnpacks removes every `| unpack_logfmt` pipe that has
+// no `fields (...)` list from a LogsQL query sent to field_names.
+//
+// VictoriaLogs' logfmt parser makes a field of every whitespace-separated
+// token, a token without '=' becoming a field with an empty value
+// (lib/logstorage/logfmt_parser.go), and field_names counts every column of a
+// block on every row once it is not the first pipe (pipe_field_names.go). On a
+// JSON or plain-text line each word then shows up as a field name with full
+// hits. Loki's logfmt parser drops a key without a value and rejects a key
+// holding a quote (pkg/logql/log/parser.go:423, logfmt/decode.go:78-81), so
+// none of those names is a Loki field. The scan of the sampled lines still runs
+// the query unchanged and finds the keys a logfmt line really holds; the
+// field_names lookup only needs VictoriaLogs' stored fields. A restricted
+// unpack (the detected_level derivation's `fields (...)` pipes) is kept.
+func stripUnrestrictedLogfmtUnpacks(query string) string {
+	if !strings.Contains(query, "unpack_logfmt") {
+		return query
+	}
+	head := translator.FirstTopLevelPipe(query)
+	if head < 0 {
+		return query
+	}
+	var b strings.Builder
+	b.WriteString(query[:head])
+	stripped := false
+	for rest := query[head:]; rest != ""; {
+		pipe := rest
+		if next := translator.FirstTopLevelPipe(rest[1:]); next >= 0 {
+			pipe = rest[:next+1]
+		}
+		rest = rest[len(pipe):]
+		if isUnrestrictedLogfmtUnpack(pipe) {
+			stripped = true
+			continue
+		}
+		b.WriteString(pipe)
+	}
+	if !stripped {
+		return query
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+var logsqlFieldsListRE = regexp.MustCompile(`(^|\s)fields\s*\(`)
+
+// isUnrestrictedLogfmtUnpack reports whether pipe (one `| ...` stage of a
+// LogsQL query) is an unpack_logfmt without a `fields (...)` list.
+func isUnrestrictedLogfmtUnpack(pipe string) bool {
+	body := strings.TrimSpace(strings.TrimPrefix(pipe, "|"))
+	if body != "unpack_logfmt" && !strings.HasPrefix(body, "unpack_logfmt ") && !strings.HasPrefix(body, "unpack_logfmt(") {
+		return false
+	}
+	return !logsqlFieldsListRE.MatchString(withoutQuotedText(body))
+}
+
+// withoutQuotedText blanks LogsQL's quoted strings ("...", `...`, '...') so a
+// keyword search does not match text inside a value or a field name.
+func withoutQuotedText(s string) string {
+	out := []byte(s)
+	var quote byte
+	for i := 0; i < len(out); i++ {
+		c := out[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote != '`' && i+1 < len(out) {
+				out[i], out[i+1] = ' ', ' '
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			out[i] = ' '
+		case c == '"' || c == '`' || c == '\'':
+			quote = c
+			out[i] = ' '
+		}
+	}
+	return string(out)
 }
 
 func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) (map[string]int64, error) {
