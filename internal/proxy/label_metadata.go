@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -1358,6 +1359,15 @@ func (b *labelWarmBackoff) succeeded(window time.Duration) {
 	delete(b.nextTry, window)
 }
 
+// jsonSafeLabel returns l as encoding/json would write it: each invalid UTF-8
+// byte becomes U+FFFD. A valid label is returned as it is.
+func jsonSafeLabel(l string) string {
+	if utf8.ValidString(l) {
+		return l
+	}
+	return string([]rune(l))
+}
+
 // mergeLabelsIntoCache unions newLabels with the current cached label set for
 // cacheKey and writes the result back with a fresh TTL. This ensures that new
 // labels discovered by user queries or background refreshes are additive:
@@ -1370,7 +1380,13 @@ func (p *Proxy) mergeLabelsIntoCache(endpoint, cacheKey string, newLabels []stri
 	}
 	merged := make(map[string]struct{}, len(newLabels))
 	for _, l := range newLabels {
-		merged[l] = struct{}{}
+		// The cached answer is JSON, which writes each invalid UTF-8 byte as
+		// U+FFFD. A raw label and the replaced form of the same label must be one
+		// entry, and the order must be the order of what is written, so labels
+		// are normalised the way the encoder would write them before they are
+		// deduplicated and sorted. (Loki's labels are protobuf strings, always
+		// valid UTF-8, and it returns them in sort.Strings byte order.)
+		merged[jsonSafeLabel(l)] = struct{}{}
 	}
 	if cached, _, _, ok := p.endpointReadCacheEntry(endpoint, cacheKey); ok {
 		var existing struct {

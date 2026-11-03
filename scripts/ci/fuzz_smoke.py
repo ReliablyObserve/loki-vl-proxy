@@ -25,7 +25,7 @@ REGISTRY = Path(__file__).with_name("fuzz_smoke_targets.tsv")
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yaml"
 SHARD_JOB = "fuzz-smoke-shard"
 # The unscheduled list may only shrink: lower this when a target moves to `smoke`.
-MAX_UNSCHEDULED = 2
+MAX_UNSCHEDULED = 1
 KEY_VERSION = "fuzz-smoke-key-v1"
 
 FUZZ_FUNC = re.compile(r"^func (Fuzz\w*)\(\s*\w+\s+\*testing\.F\s*\)", re.M)

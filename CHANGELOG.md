@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The label cache merge dedupes and sorts labels the way the client reads
+  them.** The cached `/labels` answer is JSON, which writes each invalid UTF-8
+  byte as U+FFFD, so a label with such bytes and its replaced form were two
+  entries in byte order and the answer came back unsorted (and with a repeated
+  name) after the second merge. Labels are now normalised before they are
+  deduplicated and byte-sorted, as `sort.Strings` orders Loki's valid UTF-8
+  labels. `FuzzMergeLabelsIntoCache`, which found it, now runs in the `fuzz-smoke`
+  job.
 - **A line exactly on an evaluation time is counted in its window when the
   window is shorter than the step.** For a range metric whose window is
   shorter than its step (`sum by (pod) (count_over_time(... [600ms]))` at
