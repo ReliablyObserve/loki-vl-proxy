@@ -132,8 +132,10 @@ func waitForEmptyWindowFixture(t *testing.T, app, selector string, fixtureEnd ti
 }
 
 // waitForFixtureOnBothBackends polls until Loki's instant count over
-// (rangeStart, rangeEnd] and VictoriaLogs' native count over [rangeStart, rangeEnd)
-// both equal lines. VictoriaLogs buffers freshly ingested rows per day partition
+// (rangeStart, rangeEnd] and VictoriaLogs' native count over the same window
+// both equal lines. VictoriaLogs' start is inclusive and its end exclusive, so
+// both are moved by a nanosecond: a fixture line at rangeEnd counts on both
+// sides, as it does in Loki. VictoriaLogs buffers freshly ingested rows per day partition
 // and makes them searchable only when that partition's buffer flushes (up to 1s
 // later, on a timer armed by the first rows that reached it), so a fixture that
 // spans a UTC midnight can be visible on one side of midnight but not the other
@@ -148,8 +150,8 @@ func waitForFixtureOnBothBackends(t *testing.T, vlFilter, selector string, range
 	vlParams := url.Values{
 		"query": {vlFilter + " | stats count() as n"},
 		"time":  {strconv.FormatInt(rangeEnd.Unix(), 10)},
-		"start": {strconv.FormatInt(rangeStart.Unix(), 10)},
-		"end":   {strconv.FormatInt(rangeEnd.Unix(), 10)},
+		"start": {rangeStart.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)},
+		"end":   {rangeEnd.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano)},
 	}
 	deadline := time.Now().Add(3 * time.Minute)
 	for {
