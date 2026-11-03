@@ -134,8 +134,14 @@ jobs:
       # ./internal/... part of it (its evidence check) instead of running the
       # unit tests a second time. The log shows the package lines as it runs and,
       # on a failure, the output of each failing test.
+      - name: probe the restored cache
+        run: |
+          echo "testexpire: $(cat "$(go env GOCACHE)/testexpire.txt" 2>/dev/null || echo none)"; date +%s%N
+          ls -la "$(go env GOCACHE)" | head -5
+
       - name: Unit tests
         env:
+          GODEBUG: gocachetest=1
           UNIT_FRESH: ${{ steps.mode.outputs.fresh == 'true' && '1' || '' }}
           UNIT_SHARD_DIR: shard-out
           COVERPROFILE: shard-out/coverage.out
