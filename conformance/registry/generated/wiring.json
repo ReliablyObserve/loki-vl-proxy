@@ -1313,7 +1313,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 378,
+  "registry_items": 379,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2825,6 +2825,7 @@
     "semantics/unwrap-quantile-sum-by-group-quantile",
     "semantics/unwrap-quantile-ungrouped-sum-field-parse",
     "semantics/unwrap-sum-by-per-series-function-extraction-list",
+    "semantics/window-edge-float64-nanoseconds",
     "semantics/window-wider-than-step-raw-rows",
     "service-name-derivation",
     "severity/detected-level-filter-json-level",
