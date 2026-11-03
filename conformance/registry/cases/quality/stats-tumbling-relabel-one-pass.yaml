@@ -1,0 +1,50 @@
+id: quality/stats-tumbling-relabel-one-pass
+title: A large range-equals-step answer is translated and relabelled in one pass, with the same series limit and answer
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - series-limits-and-partial-results
+consumer: drilldown
+why: |
+  Logs Drilldown breakdowns ask count_over_time with a range equal to the
+  step. The proxy fetches them one window early and relabels every bucket to
+  Loki's evaluation time. For a large answer (85,000-150,000 single-point
+  series over 24h) it translated the answer, wrote it whole, then validated,
+  parsed and rewrote the whole answer again for the relabel: a quarter of the
+  proxy's remaining time on these breakdowns.
+
+  The relabel now runs as each series is translated, so the translated answer
+  is never assembled or read again. The series limit is applied where it was:
+  on the translated answer, before the relabel. Loki counts series against
+  max_query_series and, for Logs Drilldown, keeps the series under it with
+  "maximum number of series (N) reached for a single query; returning partial
+  results" (pkg/querier/queryrange/limits.go:447-448 and 511-512, v3.7.9).
+  Whenever that limit could apply (the translated answer holds more series
+  than the limit), or the answer would not have taken the per-series paths,
+  the proxy uses the two passes as before. Answers are the two passes'
+  answers byte for byte, but for the order of a series' labels, which the
+  translation writes in map order on every path.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (batch_id) (count_over_time({env="production"} | json batch_id="[\"batch_id\"]" | drop __error__, __error_details__ | batch_id!="" [$__auto]))'
+    start: 'now-24h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series, values and partial-result warning as Loki, on the first
+    view and on a repeat.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

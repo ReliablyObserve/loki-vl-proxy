@@ -19,7 +19,7 @@ import (
 // moved back a step. The answer holds 15,000 single-point series, more than
 // the size the proxy transforms one series at a time, so it exercises the
 // per-series trim, translation and tumbling relabel of a large stats answer.
-// conformance: quality/stats-answer-transform-cost, loki_api_v1_query_range
+// conformance: quality/stats-answer-transform-cost, quality/stats-tumbling-relabel-one-pass, loki_api_v1_query_range
 func TestDrilldown_HighCardinalityFieldBreakdownMatchesLoki(t *testing.T) {
 	probe := fmt.Sprintf("hicard%d", time.Now().UnixNano())
 	s0 := time.Now().Add(-9 * time.Hour).Truncate(time.Hour)

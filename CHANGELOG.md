@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Translate and relabel a large Logs Drilldown breakdown (range equal to the
+  step) in one pass. The translated answer was written whole and then
+  validated, parsed and rewritten again to move each bucket to Loki's
+  evaluation time. A breakdown of 100,000 single-point series takes about a
+  quarter less proxy CPU; the series limit is applied where it was, and when
+  it could apply the two passes run as before.
+
 ## [2.66.0] - 2026-11-03
 
 ### Performance
