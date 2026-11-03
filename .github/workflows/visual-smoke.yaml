@@ -55,23 +55,23 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
 
-  visual-smoke:
-    name: visual-smoke
+  # The plan, once: which pages at which ranges, how many shards, and the one seed end every shard uses.
+  visual-plan:
+    name: visual-plan
     needs: [scope]
-    # Only runtime changes can produce a meaningful before/after Grafana proof.
-    # A forced CI/baseline label does not make a docs or CI-only diff measurable.
     if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
     runs-on: ubuntu-latest
-    # The planned pages of a change are a few captures; the baseline run captures every page.
-    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
+      base: ${{ steps.plan.outputs.base }}
       run: ${{ steps.plan.outputs.run }}
-      artifact-url: ${{ steps.montage.outputs.artifact-url }}
+      shards: ${{ steps.plan.outputs.shards }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      end: ${{ steps.plan.outputs.end }}
     env:
       OUT: /tmp/visual-smoke
-      PR_HEAD: ${{ github.event.pull_request.head.sha }}
       BASELINE: ${{ needs.scope.outputs.baseline }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -95,22 +95,74 @@ jobs:
           fi
           echo "run=$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["run"]).lower())' "$OUT/plan.json")" >> "$GITHUB_OUTPUT"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["captures"], "capture(s):", {k: v["ranges"] for k, v in d["entries"].items()} or "nothing to run")' "$OUT/plan.json"
+          # Every shard seeds the same data: the generator is seeded by the end, which is fixed here, once.
+          echo "end=$(( $(date +%s) / 60 * 60 ))" >> "$GITHUB_OUTPUT"
+          # One job per ~12 captures (bench/visual/shards.py says why); none when nothing is planned.
+          SHARDS="$(python3 bench/visual/shards.py --plan "$OUT/plan.json")"
+          echo "$SHARDS"
+          echo "shards=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["shards"])' "$SHARDS")" >> "$GITHUB_OUTPUT"
+          # The matrix must be valid even when the shard job is skipped.
+          echo "matrix=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(json.dumps(d["matrix"] if d["shards"] else {"shard": [0]}))' "$SHARDS")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          # Reruns share a run ID: replace the failed attempt's plan.
+          name: visual-plan
+          overwrite: true
+          path: ${{ env.OUT }}/plan.json
+
+  # One stack per shard: its own runner, the same images, the same seed end. A shard captures its share of the
+  # plan (bench/visual/shards.py: whole pages, so the gate still sees every range of a page together) and
+  # uploads what ci_run.py wrote; the fan-in job (visual-smoke) joins them.
+  visual-shard:
+    name: visual-smoke-shard (${{ matrix.shard }})
+    needs: [scope, visual-plan]
+    if: ${{ !cancelled() && needs.visual-plan.result == 'success' && needs.visual-plan.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    # A shard holds about a dozen captures; the baseline run's shards are the largest.
+    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 45 || 25 }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.visual-plan.outputs.matrix) }}
+    env:
+      OUT: /tmp/visual-smoke
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE: ${{ needs.visual-plan.outputs.base }}
+      SHARDS: ${{ needs.visual-plan.outputs.shards }}
+      SEED_END: ${{ needs.visual-plan.outputs.end }}
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The base build comes from a worktree of the merge commit's first parent.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: visual-plan
+          path: /tmp/visual-plan
+
+      - name: This shard's share of the plan
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          python3 bench/visual/shards.py --plan /tmp/visual-plan/plan.json --shard "$SHARD" --of "$SHARDS" --out "$OUT/plan-shard.json"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        if: steps.plan.outputs.run == 'true'
         with:
           go-version: "1.27.3"
           cache: true
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
-        if: steps.plan.outputs.run == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: bench/visual/package-lock.json
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
-        if: steps.plan.outputs.run == 'true'
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-ms-playwright-visual-${{ hashFiles('bench/visual/package-lock.json') }}
@@ -118,7 +170,6 @@ jobs:
             ${{ runner.os }}-ms-playwright-visual-
 
       - name: Install the capture tooling
-        if: steps.plan.outputs.run == 'true'
         working-directory: bench/visual
         run: |
           set -euo pipefail
@@ -133,17 +184,86 @@ jobs:
           fi
 
       - name: Capture and compare
-        if: steps.plan.outputs.run == 'true'
-        env:
-          BASE: ${{ steps.plan.outputs.base }}
         run: |
-          # A failure leaves error.json (or a missing capture): the verdict, not this step, decides.
-          python3 bench/visual/ci_run.py --base "$BASE" --plan "$OUT/plan.json" --out "$OUT" \
-            --head-label "$PR_HEAD" --project vs --workers 2 || true
+          # A failure leaves error.json (or a missing capture): the verdict of the fan-in job, not this step, decides.
+          python3 bench/visual/ci_run.py --base "$BASE" --plan "$OUT/plan-shard.json" --out "$OUT" \
+            --head-label "$PR_HEAD" --project vs --workers 2 --end "$SEED_END" --shard "${SHARD}/${SHARDS}" || true
+
+      - name: Upload this shard's captures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          # Reruns share a run ID: replace the failed attempt's shard.
+          name: visual-shard-${{ matrix.shard }}
+          overwrite: true
+          path: |
+            ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/first-pass/montage/
+            ${{ env.OUT }}/first-pass/compare.json
+            ${{ env.OUT }}/first-pass/pixeldiff.json
+            ${{ env.OUT }}/data/lvl-dd-logs-pill-multi-json/1h/*.json
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+  # The fan-in job and the required check: joins the shards, renders the summary and decides the gate.
+  visual-smoke:
+    name: visual-smoke
+    needs: [scope, visual-plan, visual-shard]
+    # Only runtime changes can produce a meaningful before/after Grafana proof.
+    # A forced CI/baseline label does not make a docs or CI-only diff measurable.
+    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ needs.visual-plan.outputs.run }}
+      artifact-url: ${{ steps.montage.outputs.artifact-url }}
+    env:
+      OUT: /tmp/visual-smoke
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASELINE: ${{ needs.scope.outputs.baseline }}
+      RUN: ${{ needs.visual-plan.outputs.run }}
+      SHARDS: ${{ needs.visual-plan.outputs.shards }}
+      BASE: ${{ needs.visual-plan.outputs.base }}
+    steps:
+      - name: Require the plan
+        if: needs.visual-plan.result != 'success'
+        run: |
+          echo "::error::the visual plan did not complete (${{ needs.visual-plan.result }}); see the visual-plan job"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: visual-plan
+          path: /tmp/visual-plan
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        if: env.RUN == 'true'
+        continue-on-error: true  # a shard that left nothing is named by merge.py
+        with:
+          pattern: visual-shard-*
+          path: /tmp/visual-shards
+
+      - name: Join the shards
+        if: env.RUN == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          # The whole plan, every shard's captures, and one check that each planned capture ran in exactly one shard.
+          python3 bench/visual/merge.py --plan /tmp/visual-plan/plan.json --of "$SHARDS" --shards /tmp/visual-shards --out "$OUT" \
+            --base "$BASE" --head "$PR_HEAD"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("shards:", [(s["index"], s["captures"], s.get("elapsed_s")) for s in d["shards"]])' "$OUT/meta.json"
 
       - name: Upload montages and results
         id: montage
-        if: always() && steps.plan.outputs.run == 'true'
+        if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           # Reruns share a run ID: replace the failed attempt so the publisher
@@ -160,7 +280,7 @@ jobs:
 
       - name: Upload the baseline candidate
         # Never committed or published: the montages and the comparison of a run that measured every page.
-        if: always() && steps.plan.outputs.run == 'true' && env.BASELINE == 'true'
+        if: always() && env.RUN == 'true' && env.BASELINE == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: visual-baseline-candidate
@@ -182,10 +302,11 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ARTIFACT_URL: ${{ steps.montage.outputs.artifact-url }}
-          BASE: ${{ steps.plan.outputs.base }}
           VISUAL_CHANGE_EXPECTED: ${{ contains(github.event.pull_request.labels.*.name, 'visual-change-expected') }}
         run: |
           set -euo pipefail
+          mkdir -p "$OUT"
+          [ -f "$OUT/plan.json" ] || cp /tmp/visual-plan/plan.json "$OUT/plan.json" 2>/dev/null || true
           [ -f "$OUT/meta.json" ] || printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$PR_HEAD" > "$OUT/meta.json"
           python3 bench/visual/visual_comment.py --out "$OUT" --mode artifact --repo "$REPO" --pr "$PR" --run-url "$RUN_URL" \
             --artifact-url "$ARTIFACT_URL" --md "$OUT/comment-summary.md" --verdict "$OUT/verdict.json" > /dev/null
@@ -195,7 +316,7 @@ jobs:
 
       # Upload the existing verdict only; no new captures or comparisons.
       - name: Upload compact quality evidence
-        if: always() && steps.plan.outputs.run == 'true'
+        if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: visual-quality-evidence
@@ -208,7 +329,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Fail on regression
-        if: steps.plan.outputs.run == 'true'
+        if: env.RUN == 'true'
         env:
           CODE: ${{ steps.verdict.outputs.exit }}
         run: |

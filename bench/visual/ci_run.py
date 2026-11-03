@@ -27,6 +27,7 @@ died, and the logs. visual_comment.py renders the comment and the verdict from t
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -77,6 +78,30 @@ def wait_loki_metric(loki_port, end, deadline_s=360):
     return None
 
 
+def seed_fingerprint(state, loki_port, vl_port):
+    """Line counts of the seeded window on VictoriaLogs and on Loki: the shards of one run must hold the same data
+    (merge.py compares them). None for a backend that does not answer; the comparison then skips it."""
+    end, hours = state["end"], state.get("hours", 7)
+    out = {"end": end, "hours": hours}
+    try:
+        lo, hi = (time.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", time.gmtime(x)) for x in (end - int(hours * 3600), end))
+        query = urllib.parse.urlencode({"query": f'_time:({lo}, {hi}] | stats count() c'})
+        with urllib.request.urlopen(f"http://127.0.0.1:{vl_port}/select/logsql/query?{query}", timeout=60) as resp:
+            out["vl_lines"] = int(json.loads(resp.read().decode().strip().splitlines()[0])["c"])
+    except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError):
+        out["vl_lines"] = None
+    try:
+        window = int(state.get("loki_hours", 1.5) * 3600)
+        query = urllib.parse.urlencode({"query": f'sum(count_over_time({{env="production"}}[{window}s]))', "time": end})
+        req = urllib.request.Request(f"http://127.0.0.1:{loki_port}/loki/api/v1/query?{query}", headers={"X-Scope-OrgID": "0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())["data"]["result"]
+        out["loki_lines"] = int(float(result[0]["value"][1])) if result else None
+    except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError):
+        out["loki_lines"] = None
+    return out
+
+
 def phase(meta, name, t0):
     meta.setdefault("phases_s", {})[name] = round(time.time() - t0)
 
@@ -101,11 +126,36 @@ def recapture_flips(first, second):
     return sorted(flipped), sorted(late)
 
 
+def keep_first_pass(out, again):
+    """Set aside the first-pass rows, scores and montages of the captures about to be loaded again.
+
+    A run split into shards cannot know alone whether the whole run may reload (see recapture): merge.py reads
+    these when the shards together found more differences than the cap and the run must stay as a single job
+    would have left it, first pass only.
+    """
+    first = os.path.join(out, "first-pass")
+    keep = {(p, r) for p, e in again.items() for r in e["ranges"]}
+    path = os.path.join(out, "compare.json")
+    os.makedirs(first, exist_ok=True)
+    dump_json(os.path.join(first, "compare.json"),
+              [r for r in (load_json(path) if os.path.exists(path) else []) if (r["page"], r["range"]) in keep])
+    for page, rng in keep:
+        src = os.path.join(out, "shots", page, rng)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(first, "shots", page, rng), dirs_exist_ok=True)
+    run([PY, os.path.join(HERE, "montage.py"), first], log=os.path.join(out, "montage.log"), check=False)
+
+
 def recapture(a, out, plan, end, port, meta):
     """Load again, once and more patiently, the static captures whose base-vs-PR data differed or never settled.
 
     A page that requests in waves can look settled between two waves on a busy host, and a half-loaded side
     differs from a fully loaded one. A difference that survives the second look is the one reported.
+
+    The cap (--max-recapture) is on the whole run: more differences than that are a real change, not a flake, and
+    nothing is loaded again. A shard sees its share only, so it records its count (`recapture_candidates`) and,
+    when it loads again because its own count is within the cap, keeps the first pass (keep_first_pass); merge.py
+    sums the counts and falls back to the first pass when the run as a whole is over the cap.
     """
     rows = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
     again, n = {}, 0
@@ -115,9 +165,12 @@ def recapture(a, out, plan, end, port, meta):
             # A difference Loki judged an improvement is expected (fix-proof captures differ by design): still
             # loaded again, not counted against the cap.
             n += 0 if classify(r) == "improved" else 1
+    meta["recapture_candidates"], meta["max_recapture"] = n, a.max_recapture
     if not again or n > a.max_recapture:
         meta["recaptured"] = []
         return False
+    if a.shard:
+        keep_first_pass(out, again)
     retry = os.path.join(out, "plan-recapture.json")
     dump_json(retry, {"entries": again})
     env = dict(capture_env(a, out, end, port), VP_PLAN=retry, VP_QUIET_MS="10000", VP_SETTLE_MS="150000")
@@ -142,6 +195,8 @@ def capture(a, out, plan, end, port, meta, loki_port):
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=HERE, log=log)
     t0 = time.time()
     meta["loki_metric_wait_s"] = wait_loki_metric(loki_port, end)
+    state = load_json(os.path.join(out, "state.json"))
+    meta["seed"] = seed_fingerprint(state, loki_port, state["ports"]["vl"])
     # The first drilldown load of a fresh Grafana is slow: load it once, unrecorded, before any capture.
     run(["npx", "playwright", "test"], cwd=HERE, env=dict(env, VP_WARMUP="1"), log=log, check=False)
     phase(meta, "warmup", t0)
@@ -184,6 +239,8 @@ def main():
     ap.add_argument("--loki-hours", type=float, default=1.5)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max-recapture", type=int, default=6, help="re-capture at most this many differing captures once")
+    ap.add_argument("--end", type=int, default=0, help="seed end (unix seconds); the shards of one run pass the same")
+    ap.add_argument("--shard", default="", help="'i/k': this run captures shard i of k (the plan is already that shard's; recorded in meta.json)")
     ap.add_argument("--keep-stack", action="store_true")
     a = ap.parse_args()
     out = os.path.abspath(a.out)
@@ -191,6 +248,8 @@ def main():
     plan = load_json(a.plan)
     dump_json(os.path.join(out, "plan.json"), plan)
     meta = {"base": git("rev-parse", a.base), "head": a.head_label or git("rev-parse", "HEAD"), "plan_captures": plan["captures"]}
+    if a.shard:
+        meta["shard"] = a.shard
     t_all = time.time()
     stack = [PY, os.path.join(HERE, "stack.py"), "--out", out, "--project", a.project, "--port-offset", str(a.port_offset)]
     ok = False
@@ -200,8 +259,8 @@ def main():
         t0 = time.time()
         for attempt in (1, 2):
             try:
-                run([*stack, "up", "--main-ref", a.base, "--hours", str(a.hours), "--loki-hours", str(a.loki_hours)],
-                    log=os.path.join(out, "stack.log"))
+                run([*stack, "up", "--main-ref", a.base, "--hours", str(a.hours), "--loki-hours", str(a.loki_hours),
+                     *(["--end", str(a.end)] if a.end else [])], log=os.path.join(out, "stack.log"))
                 break
             except subprocess.CalledProcessError:
                 if attempt == 2:
@@ -210,6 +269,7 @@ def main():
                 run([*stack, "down"], log=os.path.join(out, "stack.log"), check=False)
         phase(meta, "stack_up", t0)
         state = load_json(os.path.join(out, "state.json"))
+        meta["stack_up_phases_s"] = state.get("phases_s", {})
         capture(a, out, plan, state["end"], state["ports"]["grafana"], meta, state["ports"]["loki"])
         t0 = time.time()
         compare = [PY, os.path.join(HERE, "compare.py"), out]

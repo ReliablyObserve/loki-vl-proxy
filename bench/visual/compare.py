@@ -526,6 +526,22 @@ def compare_tail(d):
     return len(p), diffs, lk
 
 
+def render_md(rows):
+    """compare.md: the table and the detail of every capture that differs; a pure function of the rows,
+    so a run split into shards renders the same file from the merged rows (merge.py)."""
+    md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
+    for r in rows:
+        md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")
+    for r in rows:
+        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r.get("main_pr_config") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
+            md += ["", f"### {r['page']} {r['range']}"]
+            md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- main vs PR (deployment configuration, not gated): {x}" for x in r.get("main_pr_config", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
+            md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
+            md += [f"- {side} index/stats: {b['numbers']}" for side, key in (("main vs PR", "main_pr_bodies"), ("PR vs Loki", "loki_bodies"))
+                   for b in r.get(key, []) if "numbers" in b]
+    return md
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -588,16 +604,7 @@ def main():
                          settled_pr=bool(sp), errors_pr=[e for e in errors(p, allowed) if not has_loki or e not in errors(l, allowed)],
                          errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if has_loki else [],
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
-    md = ["| page | range | backend requests | main = PR (identical) | PR vs Loki (identical) | settled |", "|---|---|---|---|---|---|"]
-    for r in rows:
-        md.append(f"| {r['page']} | {r['range']} | {r['requests']} | {r['main_vs_pr']} | {r['pr_vs_loki']} | {'yes' if r['settled'] else 'NO'} |")
-    for r in rows:
-        if r["main_pr_diffs"] or r.get("main_pr_nondet") or r.get("main_pr_config") or r["loki_diffs"] or r.get("loki_explained") or r.get("loki_nondet"):
-            md += ["", f"### {r['page']} {r['range']}"]
-            md += [f"- main vs PR: {x}" for x in r["main_pr_diffs"][:8]] + [f"- main vs PR (history-dependent, not gated): {x}" for x in r.get("main_pr_nondet", [])[:4]] + [f"- main vs PR (deployment configuration, not gated): {x}" for x in r.get("main_pr_config", [])[:4]] + [f"- PR vs Loki: {x}" for x in r["loki_diffs"][:8]]
-            md += [f"- PR vs Loki (explained): {x}" for x in r.get("loki_explained", [])[:12]] + [f"- PR vs Loki (history-dependent, not counted): {x}" for x in r.get("loki_nondet", [])[:4]]
-            md += [f"- {side} index/stats: {b['numbers']}" for side, key in (("main vs PR", "main_pr_bodies"), ("PR vs Loki", "loki_bodies"))
-                   for b in r.get(key, []) if "numbers" in b]
+    md = render_md(rows)
     write_text(os.path.join(a.out, "compare.md"), "\n".join(md) + "\n")
     dump_json(os.path.join(a.out, "compare.json"), rows)
     print("\n".join(md[:200]))

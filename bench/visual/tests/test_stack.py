@@ -69,5 +69,42 @@ class StackFixtureTest(unittest.TestCase):
         self.assertEqual(entry["values"][0][0], str(6900 * 1_000_000_000 + 500_000_000))
 
 
+class PluginWaitTest(unittest.TestCase):
+    def test_plugin_ids_drop_versions_and_urls(self):
+        self.assertEqual(stack.plugin_ids("victoriametrics-logs-datasource@0.30.0, grafana-lokiexplore-app@2.0.4@https://x/y.zip"),
+                         ["victoriametrics-logs-datasource", "grafana-lokiexplore-app"])
+        self.assertEqual(stack.plugin_ids(""), [])
+
+    def test_wait_plugins_polls_until_every_plugin_answers(self):
+        answers = {"a": [OSError, OSError, None], "b": [None]}
+        seen = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        def get(url, timeout):
+            pid = url.split("/api/plugins/")[1].split("/")[0]
+            seen.append(pid)
+            outcome = answers[pid].pop(0) if len(answers[pid]) > 1 else answers[pid][0]
+            if outcome is OSError:
+                raise OSError("404")
+            return Response()
+
+        with patch.object(stack.urllib.request, "urlopen", side_effect=get), patch.object(stack.time, "sleep", lambda s: None):
+            _, missing = stack.wait_plugins("http://g", ["a", "b"], deadline_s=30)
+        self.assertEqual(missing, [])
+        self.assertEqual(seen.count("a"), 3)
+        self.assertEqual(seen.count("b"), 1)  # answered once, not asked again
+
+    def test_a_plugin_that_never_appears_is_reported_not_raised(self):
+        with patch.object(stack.urllib.request, "urlopen", side_effect=OSError("404")), patch.object(stack.time, "sleep", lambda s: None):
+            _, missing = stack.wait_plugins("http://g", ["a"], deadline_s=0)
+        self.assertEqual(missing, ["a"])
+
+
 if __name__ == "__main__":
     unittest.main()
