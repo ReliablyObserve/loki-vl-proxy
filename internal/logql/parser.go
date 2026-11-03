@@ -575,6 +575,11 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	if p.cur.Typ == TokIdent {
 		return nil, p.syntaxErrorAt("")
 	}
+	if strings.EqualFold(kw, "ip") && p.cur.Typ == TokLParen {
+		// ip("...") is a line filter operand (`|= ip("...")`) and a label filter
+		// value, not a stage: Loki's lexer reads the function name as the token.
+		return nil, p.errorAt(stageStart, "ip", "", false)
+	}
 	if isLabelFilterOperator(p.cur.Typ) || p.cur.Typ == TokError && p.cur.Val == "!" {
 		return p.parseLabelFilterStage(stageStart, kw, TokIdent)
 	}

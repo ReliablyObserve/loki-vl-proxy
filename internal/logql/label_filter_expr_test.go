@@ -71,6 +71,23 @@ func TestValidateLogQL_LabelFilterExpressionContexts(t *testing.T) {
 }
 
 // conformance: semantics/label-filter-expression-syntax
+func TestValidateLogQL_IPCallIsNotAStage(t *testing.T) {
+	// Loki answers `| ip("...")` with "unexpected ip" at the name (recorded from
+	// the e2e stack's Loki); the value forms stay valid.
+	for query, want := range map[string]string{
+		`{app="api-gateway"} | json | ip("not-a-valid-cidr")`: "parse error at line 1, col 30: syntax error: unexpected ip",
+		`{app="nginx"} | ip("10.0.0.0/8")`:                    "parse error at line 1, col 17: syntax error: unexpected ip",
+		`{app="a"} | json | addr = ip("10.0.0.0/8")`:          "",
+		`{app="a"} |= ip("10.0.0.0/8")`:                       "",
+		`{app="a"} | json | ip="x"`:                           "",
+	} {
+		if got := ValidateLogQL(query); got != want {
+			t.Errorf("%s\n  got  %q\n  want %q", query, got, want)
+		}
+	}
+}
+
+// conformance: semantics/label-filter-expression-syntax
 func TestValidateLogQL_LabelFilterExpressionErrorsInMetrics(t *testing.T) {
 	// Messages recorded from Loki v3.7.9.
 	cases := []struct{ query, want string }{
