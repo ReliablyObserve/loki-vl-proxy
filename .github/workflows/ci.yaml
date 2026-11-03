@@ -217,151 +217,90 @@ jobs:
       - name: Tuple contract gate (default 2-tuple + categorize-labels 3-tuple)
         run: go test ./internal/proxy -run '^TestTupleContract_' -count=1
 
-  fuzz-smoke:
+  # The fuzz targets are listed in scripts/ci/fuzz_smoke_targets.tsv and split into
+  # four parallel shards by row order. `fuzz-smoke` below keeps the original check
+  # name stable and fails unless every shard passed.
+  fuzz-smoke-shard:
+    name: fuzz-smoke-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
     needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        id: setup-go
         with:
           go-version: "1.27.3"
           cache: true
 
-      # --- internal/proxy ---
-      - name: Fuzz smoke (structured metadata normalization)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzNormalizeMetadataPairsFromJSON -fuzztime=12s
+      # Every Fuzz function in the tree is either a smoke row or an unscheduled
+      # row, a row names a function that exists, and the matrix above covers every
+      # smoke row exactly once.
+      - name: Check the fuzz target list
+        run: python3 scripts/ci/fuzz_smoke.py check
 
-      - name: Fuzz smoke (merged categorized stream contract)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzMergeLokiQueryResponsesStructuredMetadataContract -fuzztime=12s
+      # A pull request may skip a target whose inputs (its package, everything the
+      # package imports, go.mod and go.sum, the Go version and the corpus) are the
+      # same as in a run that passed. The ledger of those runs is restored from the
+      # newest cache of this shard; a miss, a stale ledger or a key that cannot be
+      # computed all mean the target runs. Main, `ci-full` pull requests and manual
+      # runs always run every target.
+      - name: Restore the green-run ledger
+        id: ledger
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: .fuzz-ledger
+          key: fuzz-green-v1-${{ matrix.shard }}of4-go${{ steps.setup-go.outputs.go-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            fuzz-green-v1-${{ matrix.shard }}of4-go${{ steps.setup-go.outputs.go-version }}-
 
-      - name: Fuzz smoke (parse Loki duration)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseLokiDuration -fuzztime=12s
+      - name: Fuzz smoke (shard ${{ matrix.shard }})
+        env:
+          ALLOW_SKIP: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci-full') }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          skip=()
+          if [ "$ALLOW_SKIP" = "true" ]; then skip=(--allow-skip); fi
+          python3 scripts/ci/fuzz_smoke.py run --shard "$SHARD" --of 4 "${skip[@]}" \
+            --ledger-in .fuzz-ledger/ledger.txt --ledger-out .fuzz-ledger/ledger.txt
 
-      - name: Fuzz smoke (parse timestamp)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseTimestamp -fuzztime=12s
+      # Only after every target of the shard passed (the step above fails
+      # otherwise), so the ledger holds green keys only.
+      - name: Save the green-run ledger
+        if: success()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a list of content keys of passed fuzz targets; nothing from this job is published
+        with:
+          path: .fuzz-ledger
+          key: ${{ steps.ledger.outputs.cache-primary-key }}
 
-      - name: Fuzz smoke (series key from metric)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzSeriesKeyFromMetric -fuzztime=20s -timeout=60s
-
-      - name: Fuzz smoke (parse value to float)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseValueToFloat -fuzztime=12s
-
-      - name: Fuzz smoke (Loki error type)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzLokiErrorType -fuzztime=12s
-
-      - name: Fuzz smoke (format VL step)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzFormatVLStep -fuzztime=12s
-
-      - name: Fuzz smoke (normalize metadata pairs)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzNormalizeMetadataPairs$' -fuzztime=12s
-
-      - name: Fuzz smoke (combine binary metric results scalar path)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzCombineBinaryMetricResultsScalarPath -fuzztime=12s
-
-      - name: Fuzz smoke (parse original range metric spec)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseOriginalRangeMetricSpec -fuzztime=12s
-
-      - name: Fuzz smoke (parse legacy rules path)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseLegacyRulesPath -fuzztime=20s
-
-      - name: Fuzz smoke (extract log patterns)
-        # Anchored regex: FuzzExtractLogPatternsFromWindowEntries shares the
-        # FuzzExtractLogPatterns prefix, so an unanchored match selects both
-        # and Go's fuzz runner refuses (multi-match error).
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatterns$' -fuzztime=12s
-
-      - name: Fuzz smoke (extract log patterns from window entries)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=12s
-
-      - name: Fuzz smoke (json error filter split predicate)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzJSONValidSplitPredicate$' -fuzztime=12s
-
-      - name: Fuzz smoke (stats series JSON compatibility)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzStatsJSONSeriesTransformDifferential$' -fuzztime=12s
-
-      - name: Fuzz smoke (owned stats extent encoding)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzStatsExtentOwnedEncoding$' -fuzztime=12s
-
-      - name: Fuzz smoke (Loki client error mapping)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzLokiClientError$' -fuzztime=12s
-
-      - name: Fuzz smoke (Loki error body shapes)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzErrorBodyShapes$' -fuzztime=12s
-
-      - name: Fuzz smoke (proxy lifecycle leaves no goroutines)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzProxyLifecycleNoGoroutineLeak$' -fuzztime=12s
-
-      - name: Fuzz smoke (topk and bottomk per step)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzTopKPerStep -fuzztime=20s -timeout=60s
-
-      - name: Fuzz smoke (settled steps parse, merge and write-back)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQueryStepsRoundTrip$' -fuzztime=12s
-
-      - name: Fuzz smoke (sliding sum without cut vs per-stream fold)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSlidingWithoutCut$' -fuzztime=12s
-
-      - name: Fuzz smoke (sliding quantile vs window sort)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzQuantileSlider$' -fuzztime=12s
-
-      - name: Fuzz smoke (quantile counts time sort)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSortQuantileSamples$' -fuzztime=12s
-
-      - name: Fuzz smoke (rate_counter one-sample proof vs Loki)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRateCounterOneSample$' -fuzztime=12s
-
-      - name: Fuzz smoke (fold an aggregation over a binary)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzFoldBinaryAggregation$' -fuzztime=12s
-
-      - name: Fuzz smoke (parser probe leaves a binary to its operands)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzParserProbeLeavesBinaries$' -fuzztime=12s
-
-      - name: Fuzz smoke (index/stats window like Loki)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzIndexStatsWindowLikeLoki$' -fuzztime=12s
-
-      - name: Fuzz smoke (query_range step alignment)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzAlignQueryRangeToStep$' -fuzztime=12s
-
-      - name: Fuzz smoke (query_range step alignment query string)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzRawQueryWithBounds$' -fuzztime=12s
-
-      - name: Fuzz smoke (sub-second step and timestamps like Loki)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzSubSecondStepAndTimestamps$' -fuzztime=12s
-
-      # --- internal/translator ---
-      - name: Fuzz smoke (translate LogQL)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s
-
-      - name: Fuzz smoke (parse binary metric expr)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzParseBinaryMetricExpr -fuzztime=12s
-
-      - name: Fuzz smoke (is scalar)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzIsScalar -fuzztime=12s
-
-      - name: Fuzz smoke (translate with stream fields)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateWithStreamFields -fuzztime=20s -timeout=60s
-
-      - name: Fuzz smoke (selector and label-filter regexp anchoring)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzSelectorRegexpFilter -fuzztime=12s
-
-      - name: Fuzz smoke (binary expressions)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzBinaryExpressions -fuzztime=12s
-
-      - name: Fuzz smoke (sanitize label name)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzSanitizeLabelName -fuzztime=12s
-
-      # --- internal/cache ---
-      - name: Fuzz smoke (hash ring get)
-        run: go test ./internal/cache -run '^$' -fuzz=FuzzHashRingGet -fuzztime=12s
-
-      - name: Fuzz smoke (cache get/set)
-        run: go test ./internal/cache -run '^$' -fuzz=FuzzCacheGetSet -fuzztime=12s
-
-      # --- internal/rulesmigrate ---
-      - name: Fuzz smoke (rules migrate convert)
-        run: go test ./internal/rulesmigrate -run '^$' -fuzz=FuzzConvertWithOptions -fuzztime=12s
+  fuzz-smoke:
+    # Aggregate gate keeping the original `fuzz-smoke` check name stable; fails
+    # unless every shard succeeded. The shards are skipped, and that is a pass,
+    # only when the scope job says no product path changed.
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [scope, fuzz-smoke-shard]
+    steps:
+      - name: Require all fuzz-smoke shards to pass
+        env:
+          SHARD_RESULT: ${{ needs.fuzz-smoke-shard.result }}
+          PRODUCT: ${{ needs.scope.outputs.product }}
+        run: |
+          if [ "$SHARD_RESULT" = "success" ]; then
+            exit 0
+          fi
+          if [ "$SHARD_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ]; then
+            echo "Skipped: no product path changed"
+            exit 0
+          fi
+          echo "fuzz-smoke shards: $SHARD_RESULT (scope product=$PRODUCT)"
+          exit 1
 
   race-stress-shard:
     # Dedicated race-detector gate for concurrency hot paths. Catches issues
@@ -1047,7 +986,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection
+        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection scripts.ci.tests.test_fuzz_smoke
 
       # bench/ is a separate Go module, so the root ./... of the test job does not
       # cover it. Its tests include the drift guard that keeps the benchmark Loki
