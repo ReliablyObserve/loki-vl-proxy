@@ -1038,6 +1038,7 @@
     "internal/proxy/stream_metadata_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_metadata_test.go | profiles/keep-removes-derived-service-name",
     "internal/proxy/stream_metadata_test.go | profiles/keep-structured-metadata-key",
+    "internal/proxy/sub_second_step_precision_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | window-bounds-and-step-alignment",
     "internal/proxy/sum_without_differential_test.go | limits/drilldown-partial-with-warning",
@@ -1541,7 +1542,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 273,
+      "go": 274,
       "playwright": 1
     },
     "page_kinds": {

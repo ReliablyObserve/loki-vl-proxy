@@ -1009,6 +1009,7 @@
       "test/e2e-compat/stddev_stdvar_grouped_test.go"
     ],
     "semantics/sub-second-step-grid": [
+      "internal/proxy/sub_second_step_precision_test.go",
       "internal/proxy/sub_second_step_test.go",
       "test/e2e-compat/sub_second_step_test.go"
     ],
@@ -1951,6 +1952,9 @@
       "profiles/keep-removes-derived-service-name",
       "profiles/keep-structured-metadata-key"
     ],
+    "internal/proxy/sub_second_step_precision_test.go": [
+      "semantics/sub-second-step-grid"
+    ],
     "internal/proxy/sub_second_step_test.go": [
       "semantics/sub-second-step-grid",
       "window-bounds-and-step-alignment"
@@ -2738,7 +2742,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 274,
+  "tests_with_markers": 275,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

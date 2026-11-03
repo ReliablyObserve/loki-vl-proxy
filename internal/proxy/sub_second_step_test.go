@@ -1003,7 +1003,8 @@ func TestExactVLDurationReadsBack(t *testing.T) {
 
 // FuzzSubSecondStepAndTimestamps: for any step and timestamp text, the step the
 // handler evaluates on is Loki's whole milliseconds and VictoriaLogs reads it
-// back exactly; the timestamp parsers read a float-seconds text as Loki does;
+// back exactly, up to what its float64 duration parser holds
+// (vlStepReadWithinFloat64); the timestamp parsers read a float-seconds text as Loki does;
 // the time written for a nanosecond is Loki's text, and VictoriaLogs reads the
 // time asked for back to the nanosecond.
 func FuzzSubSecondStepAndTimestamps(f *testing.F) {
@@ -1022,7 +1023,8 @@ func FuzzSubSecondStepAndTimestamps(f *testing.F) {
 			}
 			if wholeMs > 0 {
 				clone := withLokiStep(r, wholeMs)
-				if read, ok := vlDurationNs(formatVLStep(clone.FormValue("step"))); !ok || read != wholeMs*int64(time.Millisecond) {
+				read, ok := vlDurationNs(formatVLStep(clone.FormValue("step")))
+				if !ok || !vlStepReadWithinFloat64(read, wholeMs*int64(time.Millisecond)) {
 					t.Fatalf("step %q: VictoriaLogs reads %dns (%v), want %dms", step, read, ok, wholeMs)
 				}
 			}
