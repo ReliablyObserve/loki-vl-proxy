@@ -67315,6 +67315,184 @@
       "warm_p50": 0.004
     }
   ],
+  "quality/index-volume-settled-segments": [
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.021,
+      "date": "2026-11-03",
+      "label": "daily-metadata-inventory-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.088,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 1
+        }
+      },
+      "loki_warm_p50": 0.083,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "metadata-inventory",
+      "shape": "drilldown landing volume",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.021
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.412,
+      "date": "2026-11-03",
+      "label": "daily-metadata-inventory-loki-defaults",
+      "loki_cache_served": true,
+      "loki_cold": 0.149,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "volumeResult": {
+          "bytesReceived": 1500,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        }
+      },
+      "loki_warm_p50": 0.128,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "metadata-inventory",
+      "shape": "drilldown landing volume",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.415
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.106,
+      "date": "2026-11-03",
+      "label": "daily-metadata-inventory-loki-defaults",
+      "loki_cache_served": true,
+      "loki_cold": 0.221,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "volumeResult": {
+          "bytesReceived": 749,
+          "entriesFound": 1,
+          "entriesRequested": 2
+        }
+      },
+      "loki_warm_p50": 0.121,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "metadata-inventory",
+      "shape": "drilldown landing volume",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.109
+    },
+    {
+      "baseline": "main",
+      "baseline_status": "200",
+      "cold": 0.124,
+      "date": "2026-10-01",
+      "label": "backfilled-empty-buckets-metadata-inventory",
+      "loki_cache_served": false,
+      "loki_cold": 0.027,
+      "loki_warm_p50": 0.004,
+      "parity_vs_loki": "differs",
+      "profile": "aligned",
+      "range": "7d",
+      "set": "metadata-inventory",
+      "shape": "drilldown landing volume",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.105
+    }
+  ],
   "quality/query-range-extent-cache-large-answer": [
     {
       "baseline": "release",

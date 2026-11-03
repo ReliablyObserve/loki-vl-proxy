@@ -269,7 +269,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 | LS2 logs, level stream label regexp, all services | 6h | 0.29s | 0.09s | 0.08s | 0.12s | `severity-detected-level-derivation`, `severity-exposure-surfaces`, `severity/detected-level-filter-json-level` |
 | LS8 json count by level_extracted, collision | 1h | 0.49s | 0.04s | 0.06s | 0.01s | `parser-error-and-label-collision`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | LS8 json count by level_extracted, collision | 6h | 2.12s | 0.17s | 0.07s | 0.01s | `parser-error-and-label-collision`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
-| drilldown landing volume | 7d | 0.12s | 0.03s | 0.10s | 0.00s | `backend-admission-and-heavy-query-queueing` |
+| drilldown landing volume | 7d | 0.12s | 0.03s | 0.10s | 0.00s | `backend-admission-and-heavy-query-queueing`, `quality/index-volume-settled-segments` |
 | A1 nginx include GET, log query | 24h | 0.29s | 0.02s | 0.03s | 0.02s | `semantics/pattern-line-filter-anchoring` |
 | A2 nginx exclude GET, log query | 24h | 0.23s | 0.05s | 0.03s | 0.07s | `semantics/pattern-line-filter-anchoring` |
 | A5 drilldown exclude, volume by detected_level | 24h | 0.25s | 0.15s | 0.03s | 0.01s | `semantics/pattern-line-filter-anchoring` |
@@ -343,6 +343,7 @@ None measured.
 | `profiles/stream-selector-regexp-anchoring` | 4 × 2 ranges | 8 same | worst 0.06s / 0.02s (6h) | 0.01s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `profiles/structured-metadata-keys-per-profile` | 2 × 4 ranges | 8 same | worst 0.89s / 0.05s (24h) | 4.54s / 0.05s | differs | locked 2026-10-27 |
 | `profiles/structured-metadata-label-collision` | 8 × 3 ranges | 15 same | worst 0.79s / 0.07s (3h) | 0.09s † / 0.01s | same; 1 slower than Loki cold | not locked |
+| `quality/index-volume-settled-segments` | 1 × 4 ranges | 4 same | worst 0.41s / 0.41s (24h) | 0.15s † / 0.13s | differs; 1 slower than Loki cold | not locked |
 | `quality/query-range-extent-cache-large-answer` | 3 × 5 ranges | 14 same | worst **502** / **502** (7d) | 180.00s † / 41.84s | differs | not locked |
 | `quality/query-range-settled-steps` | 44 × 5 ranges | 8 faster, 4 fixed, 147 same, 1 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 9 slower than Loki cold | not locked |
 | `quality/stats-answer-transform-cost` | 3 × 5 ranges | 14 same | worst **502** / **502** (7d) | 180.00s † / 41.84s | differs | not locked |
