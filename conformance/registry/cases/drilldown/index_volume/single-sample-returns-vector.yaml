@@ -23,7 +23,7 @@ request:
     X-Query-Tags: Source=grafana-lokiexplore-app
 compare:
   mode: structural
-  fields: [status, data.resultType, data.result[].metric]
+  fields: [status, data.resultType, 'data.result[].metric']
   values:
     mode: numeric
     field: data.result[].value[1]

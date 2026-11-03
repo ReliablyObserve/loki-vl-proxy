@@ -12,7 +12,7 @@ why: |
 request:
   method: GET
   path: /loki/api/v1/labels
-  params:
+  params: {}
   headers:
     X-Scope-OrgID: "0"
 compare:

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "case.schema.json",
+  "title": "Conformance registry case",
+  "description": "One file under conformance/registry/cases/. Loaded by test/registry (go run ./test/registry/cmd/regload check). Only the keywords test/registry/schema.go supports are used here. A case file must be strict YAML: free text that holds a colon, a backtick, a bracket or an apostrophe is quoted, and a cluster id made of digits is a quoted string.",
+  "type": "object",
+  "required": ["id", "title", "proves", "consumer", "why", "request", "compare"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "The file's path under cases/ without .yaml.",
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+(/[a-z0-9_.-]+)+$"
+    },
+    "title": {"type": "string", "minLength": 1},
+    "proves": {
+      "description": "Registry item ids (loki/endpoints, behaviours, ...) the case demonstrates.",
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "consumer": {"type": "string", "enum": ["any", "api", "drilldown", "explore", "grafana-datasource", "operator"]},
+    "why": {"type": "string", "minLength": 1},
+    "request": {"$ref": "#/definitions/request"},
+    "compare": {"$ref": "#/definitions/compare"},
+    "gap": {"$ref": "#/definitions/gap"},
+    "applies_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "loki": {"type": "string", "minLength": 1},
+        "victorialogs": {"type": "string", "minLength": 1}
+      }
+    },
+    "perf": {"$ref": "#/definitions/perf"},
+    "loki_parity": {"type": "string", "minLength": 1},
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generator": {"type": "string"},
+        "size": {"type": "integer", "minimum": 1},
+        "dimensions": {"type": "object"}
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {"type": "object", "additionalProperties": {"type": "string"}},
+    "request": {
+      "description": "Either an HTTP request (method and path) or a scoped scenario (scope and entry).",
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {"required": ["method", "path"]},
+        {"required": ["scope", "entry"]}
+      ],
+      "properties": {
+        "method": {"type": "string", "enum": ["GET", "POST"]},
+        "path": {"type": "string", "pattern": "^/"},
+        "params": {"$ref": "#/definitions/stringMap"},
+        "headers": {"$ref": "#/definitions/stringMap"},
+        "precondition": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "entry": {"type": "string", "minLength": 1},
+        "setup": {"type": "string", "minLength": 1}
+      }
+    },
+    "compare": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": "string", "enum": ["exact", "numeric", "observed", "status", "structural", "subset"]},
+        "fields": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "expect": {"type": ["string", "object", "null"]},
+        "values": {"type": "object"},
+        "note": {"type": "string"}
+      }
+    },
+    "gap": {
+      "type": "object",
+      "required": ["status", "impact", "effort", "area", "loki", "proxy"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "enum": ["open", "documented", "upstream", "owner-kept", "fixed"]},
+        "impact": {"type": "string", "enum": ["api-only", "drilldown-visible", "edge", "explore-visible", "grafana-datasource"]},
+        "effort": {"type": "string", "enum": ["S", "M", "L"]},
+        "area": {"type": "string", "minLength": 1},
+        "loki": {"type": "string", "minLength": 1},
+        "proxy": {"type": "string", "minLength": 1},
+        "planned_test": {"type": "string", "minLength": 1},
+        "clusters": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{8}$"}},
+        "fixed_by": {"type": ["string", "array"]},
+        "note": {"type": "string"},
+        "visual": {"type": "string", "minLength": 1},
+        "visual_reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "perf": {
+      "description": "The performance acceptance block; its values are checked further by conformance/scripts/registry_io.py (perf_problems).",
+      "type": "object",
+      "required": ["max_ratio", "target_ratio", "modes", "locked", "locked_since", "effort_exception"],
+      "additionalProperties": false,
+      "properties": {
+        "max_ratio": {"type": "number", "minimum": 1, "maximum": 2},
+        "target_ratio": {"type": "number", "minimum": 0},
+        "modes": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["cold", "warm", "refresh"]}},
+        "locked": {"type": "boolean"},
+        "locked_since": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "effort_exception": {
+          "type": ["object", "null"],
+          "required": ["reason", "follow_up"],
+          "additionalProperties": false,
+          "properties": {
+            "reason": {"type": "string", "minLength": 1},
+            "follow_up": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

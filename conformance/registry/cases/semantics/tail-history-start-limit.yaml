@@ -1,5 +1,5 @@
 id: semantics/tail-history-start-limit
-title: Native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines (open)
+title: 'Native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines (open)'
 proves:
   - loki_api_v1_tail
 consumer: explore

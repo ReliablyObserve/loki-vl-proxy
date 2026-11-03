@@ -1,5 +1,5 @@
 id: semantics/proxy-rejects-valid-logql
-title: The proxy rejects LogQL Loki accepts: comments, negative and compound offsets, filters after a range, logfmt flags, ip() label filters (open)
+title: 'The proxy rejects LogQL Loki accepts: comments, negative and compound offsets, filters after a range, logfmt flags, ip() label filters (open)'
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -52,19 +52,19 @@ gap:
     - 306824bd
     - 3c3ebb3b
     - 4517a40b
-    - 46125976
+    - '46125976'
     - 461b1df0
     - 4a1aab68
     - 4dc99479
-    - 53933736
+    - '53933736'
     - 5a65069b
     - 5c22832f
     - 6553b1df
     - 72db0446
-    - 75526081
+    - '75526081'
     - 807c5ade
     - 815a3690
-    - 82240823
+    - '82240823'
     - 8275c76c
     - 852cb577
     - 892af37b

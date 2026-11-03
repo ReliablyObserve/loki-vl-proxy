@@ -4,6 +4,7 @@ Every read and write goes through a context manager so no handle is left open,
 and the scripts stay readable.
 """
 import json
+import subprocess
 
 
 def read_text(path, errors="strict"):
@@ -14,6 +15,17 @@ def read_text(path, errors="strict"):
 def load_json(path):
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_cases(root="conformance/registry"):
+    """Every registry case as {id, path, doc}, read by the one strict loader (test/registry, through
+    `go run ./test/registry/cmd/regload dump`): new tools read cases here instead of parsing case YAML with regular expressions.
+    Raises RuntimeError with the loader's problems when a case does not load strictly."""
+    result = subprocess.run(["go", "run", "./test/registry/cmd/regload", "dump", root],
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError("registry cases do not load strictly:\n" + result.stderr.strip())
+    return json.loads(result.stdout)
 
 
 def write_text(path, text):

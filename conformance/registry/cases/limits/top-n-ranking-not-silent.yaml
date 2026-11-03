@@ -29,7 +29,7 @@ request:
     few steps only.
 compare:
   mode: exact
-  fields: [status, data.resultType, data.result[].metric]
+  fields: [status, data.resultType, 'data.result[].metric']
   expect: |
     The series set equals Loki's for the same query, including the series that
     only leads in a few steps, and memory stays bounded: one compact record per

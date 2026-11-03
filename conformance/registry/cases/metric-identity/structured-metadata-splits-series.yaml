@@ -35,7 +35,7 @@ gap:
   planned_test: 'differential run cluster count (bench/parity)'
   clusters:
     - 02fdd315
-    - 05582624
+    - '05582624'
     - 13c8bdcd
     - 1bd439f7
     - 229e4f30
@@ -45,7 +45,7 @@ gap:
     - 4bfe0c95
     - 4c5d2b49
     - 4e3297e0
-    - 51011993
+    - '51011993'
     - 528f5b7e
     - 6069aa8c
     - 6a4fb9d0

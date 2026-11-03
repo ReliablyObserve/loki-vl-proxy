@@ -27,7 +27,7 @@ request:
     User-Agent: Grafana/13.2.1
 compare:
   mode: exact
-  fields: [status, data.resultType, data.result[].metric, data.result[].values]
+  fields: [status, data.resultType, 'data.result[].metric', 'data.result[].values']
   expect: |
     Every sample equals the window computed by brute force over the same rows.
     The leaving-lines grid is fetched before the arriving-lines grid, so

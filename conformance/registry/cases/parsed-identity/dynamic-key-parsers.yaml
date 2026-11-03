@@ -1,5 +1,5 @@
 id: parsed-identity/dynamic-key-parsers
-title: `| json` and `| logfmt` metric series keep the stream identity by default (owner-accepted deviation, opt-in flag)
+title: '`| json` and `| logfmt` metric series keep the stream identity by default (owner-accepted deviation, opt-in flag)'
 proves:
   - parsed-label-series-identity
 consumer: explore

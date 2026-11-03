@@ -1,5 +1,5 @@
 id: semantics/binary-ignoring-matching
-title: `+ ignoring(label)` between two sums joins the wrong series (open)
+title: '`+ ignoring(label)` between two sums joins the wrong series (open)'
 proves:
   - loki_api_v1_query_range
 consumer: explore
@@ -51,7 +51,7 @@ gap:
   area: 'translator and handleQueryRange/handleQuery: an outer aggregation over a binary expression (the binary evaluator itself matches Loki)'
   loki: 'pkg/logql/evaluator.go:791-1128 newBinOpStepEvaluator, matchingSignature, vectorBinop, resultMetric; pkg/logql/engine.go step loop'
   proxy: 'sum by (..) (A + ignoring(..) B) is translated from its first operand alone: a raw count, no join'
-  planned_test: 'TestCompat_BinaryIgnoringOuterSum (the row's shape, test/e2e-compat, group semantics) and TestCompat_BinaryIgnoringAbsentLabel (the join itself); TestBinaryMatchingDifferential, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryIgnoringMatchingEdgeTable, TestBinaryIgnoringThroughHandler (internal/proxy)'
+  planned_test: 'TestCompat_BinaryIgnoringOuterSum (the row''s shape, test/e2e-compat, group semantics) and TestCompat_BinaryIgnoringAbsentLabel (the join itself); TestBinaryMatchingDifferential, TestBinaryMatchingErrorTextAndStepOrder, TestBinaryIgnoringMatchingEdgeTable, TestBinaryIgnoringThroughHandler (internal/proxy)'
   clusters:
     - 354c7d83
     - 8fef8a78

@@ -1,5 +1,5 @@
 id: semantics/unpack-non-string-values
-title: `| unpack` extracts non-string JSON values that Loki ignores (open)
+title: '`| unpack` extracts non-string JSON values that Loki ignores (open)'
 proves:
   - loki_api_v1_query_range
 consumer: api
