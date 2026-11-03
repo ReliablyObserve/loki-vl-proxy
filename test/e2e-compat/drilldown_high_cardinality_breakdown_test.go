@@ -47,7 +47,7 @@ func TestDrilldown_HighCardinalityFieldBreakdownMatchesLoki(t *testing.T) {
 	}
 
 	query := fmt.Sprintf(`sum by (job_id) (count_over_time({probe=%q} | json job_id="job_id" | drop __error__, __error_details__ | job_id!="" [1m]))`, probe)
-	read := func(base string, start, end time.Time) map[string]map[string]string {
+	read := func(base, query string, start, end time.Time) map[string]map[string]string {
 		t.Helper()
 		params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
 		status, body, resp := doJSONGET(t, base+"/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0", "X-Query-Tags": "Source=grafana-lokiexplore-app"})
@@ -74,16 +74,27 @@ func TestDrilldown_HighCardinalityFieldBreakdownMatchesLoki(t *testing.T) {
 		return out
 	}
 	from, to := s0, s0.Add(time.Hour)
+	// Both backends hold every line before any comparison. Each is asked
+	// through a query no cache holds (a filter every line passes, spelled
+	// differently each time): Loki's results cache keeps an hours-old split
+	// it answered while its ingester was still flushing, and would keep
+	// answering it. The compared query is first sent once both answer every
+	// series.
 	deadline := time.Now().Add(240 * time.Second)
-	for len(read(lokiURL, from, to)) != lines {
+	for attempt := 0; ; attempt++ {
+		probeQuery := strings.Replace(query, "| json", fmt.Sprintf(`!= "absent-%d" | json`, attempt), 1)
+		loki, proxy := read(lokiURL, probeQuery, from, to), read(proxyURL, probeQuery, from, to)
+		if len(loki) == lines && len(proxy) == lines {
+			break
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("Loki does not answer the %d series yet", lines)
+			t.Fatalf("Loki answers %d, VictoriaLogs %d of %d series", len(loki), len(proxy), lines)
 		}
 		time.Sleep(2 * time.Second)
 	}
 	for back := 0; back <= 1; back++ {
 		start, end := from.Add(-time.Duration(back)*time.Minute), to.Add(-time.Duration(back)*time.Minute)
-		loki, proxy := read(lokiURL, start, end), read(proxyURL, start, end)
+		loki, proxy := read(lokiURL, query, start, end), read(proxyURL, query, start, end)
 		if len(loki) == 0 || len(proxy) != len(loki) {
 			t.Fatalf("window moved back %dm: proxy %d series, Loki %d", back, len(proxy), len(loki))
 		}
