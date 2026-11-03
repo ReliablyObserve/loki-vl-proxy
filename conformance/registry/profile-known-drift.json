@@ -1,0 +1,12 @@
+{
+  "about": "The Grafana runtime, Grafana datasource and Logs Drilldown profile labels the proxy emits (detectGrafanaClientProfile in internal/proxy/query_translation.go) compared with the capability_profiles of test/e2e-compat/compatibility-matrix.json. TestClientProfilesMatchMatrix fails on a drift that is not listed here and on a listed drift that is gone. The list may only shrink: a fix removes its entry and lowers the ceiling, and scripts/ci/check_conformance.py fails when the list or the ceiling grows against the base branch.",
+  "ceiling": 2,
+  "drift": {
+    "datasource:grafana-datasource-v13": {
+      "reason": "Grafana 13 and later is labelled grafana-datasource-v12: the code has a v12 case for every major from 12 on and none for 13, while the matrix defines grafana-datasource-v13 for >= 13.0.0."
+    },
+    "runtime:grafana-runtime-v13-plus": {
+      "reason": "Grafana 13 and later gets the same runtime family label as Grafana 12 (12.x+), so the matrix profiles grafana-runtime-v13-plus and grafana-runtime-v12-plus cannot be told apart in logs."
+    }
+  }
+}

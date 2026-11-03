@@ -37,7 +37,10 @@ Fails when:
   * the error-layer known-leak list (conformance/registry/error-layer-known-leaks.json) grew, names
     an unknown or fixed case, or disagrees with its ceiling; with test results: the error-layer gate
     (TestErrorLayer_NoVictoriaLogsLeak) did not run, failed, or skipped more cells than the list holds;
-    see error_layer_problems().
+    see error_layer_problems();
+  * the Grafana and Logs Drilldown profile known-drift list (conformance/registry/profile-known-drift.json) grew, or
+    disagrees with its ceiling or a missing reason; see profile_drift_problems(). The Go guard
+    TestClientProfilesMatchMatrix fails on drift that is not listed and on listed drift that is gone.
 
 Usage:
   python3 scripts/ci/check_conformance.py [--go-results unit.json ...]
@@ -178,6 +181,32 @@ def base_known_leaks(ref="origin/main", path=ERROR_LAYER_LEAKS):
     return shown.stdout if shown.returncode == 0 else None
 
 
+PROFILE_DRIFT = "conformance/registry/profile-known-drift.json"
+
+
+def profile_drift_problems(path=PROFILE_DRIFT, base_text=None):
+    """The ratchet of the Grafana and Logs Drilldown profile labels the proxy emits against the matrix's
+    capability_profiles. The list may only shrink: its entry count must equal `ceiling` (a fix lowers both), every
+    entry carries a reason, and it never holds an entry the base branch's list lacks (base_text, the file at the
+    base ref, when known)."""
+    problems = []
+    doc = load_json(path)
+    drift = doc.get("drift", {})
+    if len(drift) != doc.get("ceiling"):
+        problems.append(f"{path}: {len(drift)} listed drift(s) but ceiling {doc.get('ceiling')}; "
+                        "the list may not grow, and a fix lowers the ceiling with it")
+    for ident, entry in sorted(drift.items()):
+        if not str((entry or {}).get("reason", "")).strip():
+            problems.append(f"{path}: {ident} needs a reason")
+    if base_text:
+        base = json.loads(base_text).get("drift", {})
+        added = sorted(set(drift) - set(base))
+        if len(drift) > len(base) or added:
+            problems.append(f"{path}: the known-drift list grew against the base ({len(base)} -> {len(drift)}); "
+                            f"new: {', '.join(added[:10])}")
+    return problems
+
+
 def run(script, *args):
     return subprocess.run([sys.executable, os.path.join(SCRIPTS, script), *args],
                           capture_output=True, text=True)
@@ -284,6 +313,14 @@ def main():
     else:
         leaks = load_json(ERROR_LAYER_LEAKS).get("leaks", {})
         print(f"error layer: {len(leaks)} known leaking cell(s), the list may only shrink")
+
+    drift = profile_drift_problems(base_text=base_known_leaks(path=PROFILE_DRIFT))
+    for problem in drift:
+        print(f"profile drift: {problem}")
+    if drift:
+        failures.append("profile drift ratchet")
+    else:
+        print(f"profile drift: {len(load_json(PROFILE_DRIFT).get('drift', {}))} known drift(s), the list may only shrink")
 
     if args.go_results:
         evidence_args = []
