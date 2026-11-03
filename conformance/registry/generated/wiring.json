@@ -347,6 +347,7 @@
       "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_field_bounds_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go",
       "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
@@ -680,6 +681,10 @@
       "test/e2e-fleet/peer_cache_proof_test.go",
       "test/e2e-fleet/settled_steps_test.go"
     ],
+    "quality/stats-answer-transform-cost": [
+      "internal/proxy/stats_error_body_test.go",
+      "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go"
+    ],
     "quality/unwrap-query-range-extent-cache": [
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
@@ -783,6 +788,7 @@
     "semantics/error-layer-silent-success": [
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
+      "internal/proxy/stats_error_body_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-transport-text": [
@@ -1958,6 +1964,10 @@
       "profiles/parsed-fields-without-parser",
       "profiles/stage-field-exposure"
     ],
+    "internal/proxy/stats_error_body_test.go": [
+      "quality/stats-answer-transform-cost",
+      "semantics/error-layer-silent-success"
+    ],
     "internal/proxy/stats_extent_cache_test.go": [
       "backend-admission-and-heavy-query-queueing",
       "loki_api_v1_query_range",
@@ -2367,6 +2377,10 @@
       "limits/drilldown-breakdown-exact",
       "loki_api_v1_query_range",
       "parser-json"
+    ],
+    "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go": [
+      "loki_api_v1_query_range",
+      "quality/stats-answer-transform-cost"
     ],
     "test/e2e-compat/drilldown_longrange_fields_burst_test.go": [
       "limits/drilldown-breakdown-exact",

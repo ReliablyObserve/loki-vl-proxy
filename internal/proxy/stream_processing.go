@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/jsonparser"
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -2043,7 +2044,47 @@ func lokiEmptyResultResponse(resultType string) []byte {
 // status is VictoriaLogs' own error ({"error":"..."} or {"status":"error",...}),
 // and returns its message for the log line. A caller with a response writer
 // answers it through the error layer (writeErr) instead of wrapping it.
+//
+// A success answer can hold hundreds of thousands of series: only a body whose
+// top-level keys may make it an error is decoded (vlStatsBodyMayBeError), and
+// that decoding decides, so the answer is the decoding's for every body.
 func vlStatsErrorBody(body []byte) (string, bool) {
+	if !vlStatsBodyMayBeError(body) {
+		return "", false
+	}
+	return vlStatsErrorBodyDecoded(body)
+}
+
+// errStatsErrorScanStop ends vlStatsBodyMayBeError's walk of the top-level keys.
+var errStatsErrorScanStop = errors.New("stats error body candidate")
+
+// vlStatsBodyMayBeError walks the top-level keys of body, skipping their
+// values, and reports whether one may make it an error body: an "error" key, or
+// a "status" key whose value is the string "error" (or a string it cannot
+// read). It reports true for a body it cannot walk, so it never answers false
+// for a body vlStatsErrorBodyDecoded calls an error.
+func vlStatsBodyMayBeError(body []byte) bool {
+	may := false
+	err := jsonparser.ObjectEach(body, func(key, value []byte, kind jsonparser.ValueType, _ int) error {
+		switch string(key) {
+		case "error":
+			may = true
+		case "status":
+			if kind == jsonparser.String {
+				status, err := jsonparser.ParseString(value)
+				may = err != nil || status == "error"
+			}
+		}
+		if may {
+			return errStatsErrorScanStop
+		}
+		return nil
+	})
+	return may || err != nil
+}
+
+// vlStatsErrorBodyDecoded is vlStatsErrorBody's decision on the decoded body.
+func vlStatsErrorBodyDecoded(body []byte) (string, bool) {
 	var promResp map[string]interface{}
 	if stdjson.Unmarshal(body, &promResp) != nil {
 		return "", false

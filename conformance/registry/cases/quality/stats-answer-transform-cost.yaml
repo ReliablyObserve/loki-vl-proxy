@@ -1,0 +1,49 @@
+id: quality/stats-answer-transform-cost
+title: A large VictoriaLogs stats answer is checked and rewritten without decoding it whole, with the same answer
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - status-500
+consumer: drilldown
+why: |
+  Loki answers a Logs Drilldown breakdown of a high-cardinality label or
+  field over 24h (85,000-150,000 single-point series) in 0.2-0.5 s on a
+  repeat, from its results cache. The proxy spent 0.5-0.9 s of its own CPU
+  per such answer, with VictoriaLogs' work removed, in passes over the whole
+  answer that decided nothing:
+    - the check for VictoriaLogs' error under a success status decoded the
+      whole answer into a generic map to read two top-level keys;
+    - the passes that decide whether a series needs a rewrite went on
+      parsing every series after the first one that did, and the tumbling
+      relabel, which rewrites every series, ran that pass as well.
+
+  The error check now walks the top-level keys only and decodes the body when
+  a key may make it an error, so its answer is the decoding's for every body
+  (a differential fuzz holds it to the decoding). The deciding passes stop at
+  the first series that needs a rewrite and are skipped when every series is
+  rewritten; the rewrite parses and checks every series, so a series it
+  cannot read still sends the answer to the whole-tree path, as before.
+  Answers are byte for byte the same.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({env="production" ,pod != ""} [$__auto])) by (pod)'
+    start: 'now-24h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki, first view and repeat.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
