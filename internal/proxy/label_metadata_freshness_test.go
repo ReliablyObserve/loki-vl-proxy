@@ -81,12 +81,17 @@ func (f *freshnessVL) server(t *testing.T) *httptest.Server {
 
 func newFreshnessProxy(t *testing.T, vlURL string, freshness time.Duration) (*Proxy, *http.ServeMux) {
 	t.Helper()
+	return newFreshnessProxyStaleness(t, vlURL, freshness, 150*time.Millisecond)
+}
+
+func newFreshnessProxyStaleness(t *testing.T, vlURL string, freshness, maxStaleness time.Duration) (*Proxy, *http.ServeMux) {
+	t.Helper()
 	p, err := New(Config{
 		BackendURL:                    vlURL,
 		Cache:                         cache.New(60*time.Second, 10000),
 		LogLevel:                      "error",
 		MetadataCacheFreshness:        freshness,
-		RecentTailRefreshMaxStaleness: 150 * time.Millisecond,
+		RecentTailRefreshMaxStaleness: maxStaleness,
 		CompatCache:                   cache.New(60*time.Second, 100),
 		TenantMap: map[string]TenantMapping{
 			"a": {AccountID: "10", ProjectID: "0"},
@@ -221,9 +226,18 @@ func TestMetadataFreshness_LabelValuesNearNowIncludeNewValue(t *testing.T) {
 // conformance: semantics/metadata-answers-include-last-24h-like-loki
 func TestMetadataFreshness_ConcurrentNearNowRefetchesShareOnePass(t *testing.T) {
 	vl := &freshnessVL{delay: 100 * time.Millisecond}
-	_, mux := newFreshnessProxy(t, vl.server(t).URL, 24*time.Hour)
+	// Entry age is read on the cache clock, which the test moves explicitly. A
+	// max-staleness of seconds, not milliseconds, keeps the entry a refetch
+	// writes fresh for the whole burst however long the scheduler delays a
+	// goroutine; with a few hundred milliseconds a late goroutine finds the
+	// refetched entry already stale and starts another pass. The labels TTL of
+	// a 1h window is 5m, so each 30s step makes the entry stale (older than the
+	// 10s max-staleness, and under the TTL/2 clamp) without expiring it: the
+	// request takes the stale-hit refetch, not the miss path.
+	_, mux := newFreshnessProxyStaleness(t, vl.server(t).URL, 24*time.Hour, 10*time.Second)
 	_ = getMetadataList(t, mux, freshnessPath("/loki/api/v1/labels", time.Hour, 0))
-	time.Sleep(200 * time.Millisecond)
+	restore := cache.AdvanceClockForTesting(30 * time.Second) // older than max-staleness
+	defer restore()
 	vl.grow.Store(true)
 
 	before := vl.calls.Load()
@@ -233,7 +247,8 @@ func TestMetadataFreshness_ConcurrentNearNowRefetchesShareOnePass(t *testing.T) 
 		t.Fatal("the refetch made no backend call")
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	restoreAgain := cache.AdvanceClockForTesting(30 * time.Second) // stale again
+	defer restoreAgain()
 	before = vl.calls.Load()
 	var wg sync.WaitGroup
 	for i := 0; i < 12; i++ {

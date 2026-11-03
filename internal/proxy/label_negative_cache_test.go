@@ -116,8 +116,6 @@ func TestMultiTenantFanout_EmptyMergeOverwritesOwnerPeerCopy(t *testing.T) {
 	calls := new(atomic.Int64)
 	srv := countingEmptyVL(t, calls)
 
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/label/app/values?start=1703980800000000000&end=1704067200000000000", nil)
-	req.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
 	old := lokiLabelsResponse([]string{"old-list"})
 
 	ownerCache, ownerDisk := newDiskBackedCache(t)
@@ -148,13 +146,11 @@ func TestMultiTenantFanout_EmptyMergeOverwritesOwnerPeerCopy(t *testing.T) {
 	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
-	key, ok := p.multiTenantCacheKey(req, "label_values")
-	if !ok {
-		t.Fatal("request not multi-tenant cacheable")
-	}
-
-	// A two-member ring (production write-through minimum) in which the owner
-	// server owns the key.
+	// A two-member ring (production write-through minimum). The owner server's
+	// address comes from a random port, and a consistent-hash ring gives a given
+	// member only some of the keys, so the key is chosen from the ring: the
+	// first label name whose cache key the owner server owns. Both members are
+	// fixed, so the choice is deterministic for the address under test.
 	peerConfig := func(self, members string) cache.PeerConfig {
 		return cache.PeerConfig{
 			SelfAddr:           self,
@@ -165,20 +161,24 @@ func TestMultiTenantFanout_EmptyMergeOverwritesOwnerPeerCopy(t *testing.T) {
 			WriteThroughMinTTL: 30 * time.Second,
 		}
 	}
-	var requester *cache.PeerCache
-	var members string
-	for i := 0; i < 1024 && requester == nil; i++ {
-		self := fmt.Sprintf("127.0.0.1:%d", 20000+i)
-		members = self + "," + ownerAddr
-		candidate := cache.NewPeerCache(peerConfig(self, members))
-		if candidate.IsOwner(key) {
-			candidate.Close()
-			continue
+	members := "127.0.0.1:20000," + ownerAddr
+	requester := cache.NewPeerCache(peerConfig("127.0.0.1:20000", members))
+	var req *http.Request
+	var key string
+	for i := 0; i < 4096 && req == nil; i++ {
+		candidate := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/label/app%d/values?start=1703980800000000000&end=1704067200000000000", i), nil)
+		candidate.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+		k, ok := p.multiTenantCacheKey(candidate, "label_values")
+		if !ok {
+			t.Fatal("request not multi-tenant cacheable")
 		}
-		requester = candidate
+		if !requester.IsOwner(k) {
+			req, key = candidate, k
+		}
 	}
-	if requester == nil {
-		t.Fatal("no ring layout where the owner server owns the key")
+	if req == nil {
+		requester.Close()
+		t.Fatal("no label name whose cache key the owner server owns")
 	}
 	t.Cleanup(requester.Close)
 	owner := cache.NewPeerCache(peerConfig(ownerAddr, members))
