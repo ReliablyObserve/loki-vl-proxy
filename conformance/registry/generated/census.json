@@ -325,7 +325,6 @@
     "semantics/json-extracted-metric-pushdown | query",
     "semantics/json-filter-pushdown-translated-label | compare:exact",
     "semantics/json-filter-pushdown-translated-label | perf",
-    "semantics/json-filter-pushdown-translated-label | perf:locked",
     "semantics/json-filter-pushdown-translated-label | query",
     "semantics/json-filter-pushdown-underscore-label | compare:exact",
     "semantics/json-filter-pushdown-underscore-label | perf",

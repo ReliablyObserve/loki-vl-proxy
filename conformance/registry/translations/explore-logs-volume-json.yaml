@@ -111,9 +111,12 @@ performance:
     two-filter volume 1.1-1.4 s to 0.55 s at 1 h and 12 s to 1.4 s at 24 h
     on the shared stack; Loki cold 0.3-0.5 s at 1 h and 14-17 s at 24 h.
 perf:
+  # Unlocked: the aligned-profile row json-filter-pushdown / A explore volume, 2 filters, drop / 1h / cold is on the
+  # above-2x list (bench/ab/history/over-2x-loki.json) since the 2026-11-03 daily report, the first daily with the
+  # aligned profile measured like-for-like. The block locks again once that row leaves the list.
   max_ratio: 2.0
   target_ratio: 1.0
   modes: [cold, warm, refresh]
-  locked: true
-  locked_since: '2026-10-27'
+  locked: false
+  locked_since: null
   effort_exception: null
