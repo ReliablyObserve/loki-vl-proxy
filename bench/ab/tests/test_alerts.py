@@ -862,10 +862,15 @@ class AcceptanceReplayTest(unittest.TestCase):
         self.assertTrue(a["acceptance_active"])
         self.assertEqual([r for r in a["regressions"] if r["kind"] in ("locked", "distribution")], [])
         self.assertEqual(a["locked_pending"], [])
-        # The two rows of locked items between 1× and 2× (A explore volume, 6h and 24h cold) are listed, not failed.
+        # The two rows of locked items between 1× and 2× (A explore volume, 6h and 24h cold) were listed here while
+        # semantics/json-filter-pushdown-translated-label and explore-logs-volume-json were locked. They are unlocked
+        # since the 2026-11-03 daily report put the aligned 1h cold row of the same shape on the above-2× list, so no
+        # locked item covers a between-1×-and-2× row of the seed day any more; the rows are listed as unlocked ones.
         locked_between = sorted((r["shape"], r["range"]) for r in a["between"] if r["locked"])
-        self.assertEqual(locked_between, [("A explore volume, 2 filters, drop", "24h"),
-                                          ("A explore volume, 2 filters, drop", "6h")])
+        self.assertEqual(locked_between, [])
+        between = sorted((r["shape"], r["range"]) for r in a["between"])
+        self.assertIn(("A explore volume, 2 filters, drop", "24h"), between)
+        self.assertIn(("A explore volume, 2 filters, drop", "6h"), between)
 
     def test_committed_acceptance_record_is_current(self):
         with open(os.path.join(history.HISTORY, history.ACCEPTANCE)) as f:
