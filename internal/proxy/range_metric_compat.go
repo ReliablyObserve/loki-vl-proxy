@@ -2221,6 +2221,14 @@ func withoutDerivedLevelChain(query string) string {
 	return strings.TrimSpace(query[:start] + query[start+stop+len(derivedLevelChainEnd):])
 }
 
+// unpacksMessage reports whether query unpacks _msg into fields. The
+// detected_level chain does not count: its unpacks fill scratch fields that
+// it deletes again.
+func unpacksMessage(query string) bool {
+	query = withoutDerivedLevelChain(query)
+	return strings.Contains(query, "unpack_json") || strings.Contains(query, "unpack_logfmt")
+}
+
 func queryUsesParserStages(baseQuery string) bool {
 	baseQuery = translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery))
 	// The bytes() gate reads the value with an extract_regexp pipe: that is not a

@@ -565,7 +565,8 @@ func TestDetectedFields_LevelPillFieldNamesWithoutUnrestrictedUnpack(t *testing.
 			if unrestrictedUnpackLogfmtRE.MatchString(query) {
 				t.Errorf("field_names query keeps an unrestricted unpack_logfmt: %s", query)
 			}
-			if !strings.Contains(query, `level:="error"`) {
+			// The pill compares the derived detected_level (the chain's __dl).
+			if !strings.Contains(query, `| filter __dl:="error"`) {
 				t.Errorf("field_names query lost the level filter: %s", query)
 			}
 		case "/select/logsql/query":

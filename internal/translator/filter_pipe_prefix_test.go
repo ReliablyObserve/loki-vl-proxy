@@ -33,7 +33,6 @@ func TestTranslateLogQL_BareFilterAfterPipeGetsFilterPrefix(t *testing.T) {
 		{`{app="api"} | level="" | json`, `app:="api" -level:* | unpack_json`},
 		{`{app="api"} | logfmt | status>200 |= "y" | level="x"`, `app:="api" | unpack_logfmt | filter status:>200 ~"y" | filter level:="x"`},
 		{`{app="api"} | json | detected_level="error" |= "y"`, `app:="api" | unpack_json | filter level:="error" ~"y"`},
-		{`{env="production"} | detected_level="error" !> "level=error msg=<_>"`, `env:="production" | unpack_logfmt | filter level:="error" NOT ~"(?s)level=error msg=.+"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.logql, func(t *testing.T) {

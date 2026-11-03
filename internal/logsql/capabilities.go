@@ -34,6 +34,12 @@ const (
 type Capabilities struct {
 	DensePatternWindowing bool // v1.50+
 	PipeCoalesce          bool // v1.51+
+
+	// NoDetectedLevelBodyScan is no VictoriaLogs feature: the proxy sets it
+	// with -detected-level-body-scan=false, so a detected_level filter reads
+	// the stored level fields alone, as the proxy derives the label then.
+	// CapabilitiesFor leaves it false.
+	NoDetectedLevelBodyScan bool
 }
 
 // CapabilitiesFor returns the Capabilities for the given VictoriaLogs semver

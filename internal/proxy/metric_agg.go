@@ -619,7 +619,7 @@ func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 		group += ", " + quoteLogsQLIdent(label)
 	}
 	grouped := logsqlQuery[:statsStart] + "by (" + group + ") " + logsqlQuery[statsStart:]
-	if strings.Contains(logsqlQuery, "| unpack_json") {
+	if strings.Contains(withoutDerivedLevelChain(logsqlQuery), "| unpack_json") {
 		// The evaluators that answer a bare | json metric read its labels from
 		// the rows.
 		return grouped

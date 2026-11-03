@@ -78,11 +78,6 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:="nginx" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | filter NOT (__lvp_pf0_1:* __lvp_pf0_r:"") | delete __lvp_pf*`,
 		},
 		{
-			name:  "detected_level filter before pattern negation — drilldown patterns page",
-			logql: `{env="production"} | detected_level="error" !> "level=error msg=<_>"`,
-			want:  `env:="production" | unpack_logfmt | filter level:="error" NOT ~"(?s)level=error msg=.+"`,
-		},
-		{
 			name:  "pattern line filter with alternation",
 			logql: `{app="nginx"} |> "test <_> pattern" or "other <_> value"`,
 			want:  `app:="nginx" ((_msg:~"test " _msg:~" pattern") or (_msg:~"other " _msg:~" value")) ~"(?:(?s)test .+ pattern$)|(?:(?s)other .+ value$)" | extract "test <plain:__lvp_pf0_1> pattern<plain:__lvp_pf0_r>" from _msg | extract "other <plain:__lvp_pf1_1> value<plain:__lvp_pf1_r>" from _msg | filter (__lvp_pf0_1:* __lvp_pf0_r:"") or (__lvp_pf1_1:* __lvp_pf1_r:"") | delete __lvp_pf*`,

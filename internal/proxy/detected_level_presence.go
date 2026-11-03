@@ -250,7 +250,7 @@ func (p *Proxy) pruneLevelChain(ctx context.Context, path string, params url.Val
 	if !okFrom || !okTo {
 		return params, nil
 	}
-	base := strings.TrimSpace(query[:at])
+	base := translator.DetectedLevelProbeBase(strings.TrimSpace(query[:at]))
 	mask := p.detectedLevelMask(ctx, base, time.Unix(0, from), time.Unix(0, to))
 	if mask == "" {
 		return params, nil
@@ -310,7 +310,7 @@ func (p *Proxy) pruneBeforeSlot(ctx context.Context, params url.Values) context.
 
 // levelWitnessField is the field the witness pipes set to 1 on a row holding
 // what the pruned chain no longer reads; the stats group by it.
-const levelWitnessField = "__lw"
+const levelWitnessField = translator.LevelWitnessField
 
 // levelWitnessPipes returns the pipes flagging a row that holds a stored field
 // or a body key the mask left out, or "" when it left out nothing.
@@ -333,7 +333,8 @@ func levelWitnessPipes(mask string) string {
 func withWitnessGroup(rest string) (string, bool) {
 	const stats = " | stats "
 	at := strings.Index(rest, stats)
-	if at < 0 || strings.Count(rest, stats) != 1 {
+	if at < 0 || strings.Count(rest, stats) != 1 || strings.Contains(rest[:at], " | fields ") {
+		// A fields pipe (keep) would drop the witness before the stats read it.
 		return "", false
 	}
 	tail := rest[at+len(stats):]

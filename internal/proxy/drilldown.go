@@ -2089,7 +2089,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		}
 		// No values from native index — field may be inside JSON or logfmt _msg.
 		// Retry once with unpack pipes so VL extracts the field from _msg content.
-		if !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+		if !unpacksMessage(logsqlQuery) {
 			unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 			params.Set("query", unpackQuery)
 			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
@@ -2130,7 +2130,7 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if err != nil {
 		return nil, err
 	}
-	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
+	if unpacksMessage(logsqlQuery) {
 		return nil, nil
 	}
 	unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()

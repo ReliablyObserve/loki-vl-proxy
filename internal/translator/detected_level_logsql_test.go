@@ -113,7 +113,7 @@ func TestBuildStoredLevelFilterRejectsBadMatchers(t *testing.T) {
 	if _, err := BuildStoredLevelFilter("=~", "(", nil); err == nil {
 		t.Fatal("invalid regexp accepted")
 	}
-	if _, err := BuildDetectedLevelFilter(">", "1", nil); err == nil {
+	if _, err := BuildDetectedLevelFilter(">", "1", nil, DetectedLevelFilterLogs); err == nil {
 		t.Fatal("unsupported operator accepted")
 	}
 }
@@ -125,34 +125,62 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 		fields    []string
 		never     bool
 		prefilter string
-		filter    string
+		filter    string // the filter pipe of the log form, after the chain
 	}{
+		// Loki attaches a non-empty detected_level to every entry.
 		{name: "empty value matches nothing", op: "=", value: "", never: true},
 		{name: "not empty matches everything", op: "!=", value: ""},
+		// Loki normalises every known spelling at ingest.
 		{name: "non-canonical spelling matches nothing", op: "=", value: "WARN", never: true},
 		{name: "non-canonical spelling negated matches everything", op: "!=", value: "WARN"},
 		{
 			name: "canonical value with a stored level column", op: "=", value: "error", fields: []string{"level"},
-			prefilter: "((level:*) OR i(error) OR i(err))",
-			filter:    "| filter (level:~`(?i)^(error|err)$` OR (!(level:*) __dl:in(\"error\")))",
+			prefilter: "(level:(i(error) OR i(err)) OR (!(level:*) _msg:(i(error) OR i(err))))",
+			filter:    `| filter __dl:="error"`,
 		},
 		{
 			name: "canonical value without stored levels", op: "=", value: "warn",
-			prefilter: "(i(warn) OR i(wrn) OR i(warning))",
-			filter:    "| filter (__dl:in(\"warn\"))",
+			prefilter: "((_msg:(i(warn) OR i(wrn) OR i(warning))))",
+			filter:    `| filter __dl:="warn"`,
 		},
 		{
-			name: "negated regexp", op: "!~", value: "warn|info", fields: []string{"level"},
-			filter: "| filter !((level:~`(?i)^(info|inf|information|warn|wrn|warning)$` OR (level:~`^(?:warn|info)$` !level:~`(?i)^(trace|trc|debug|dbg|info|inf|information|warn|wrn|warning|error|err|critical|fatal)$`)) OR (!(level:*) __dl:in(\"info\", \"warn\")))",
+			name: "regexp of canonical values", op: "=~", value: "error|warn", fields: []string{"level"},
+			prefilter: "(level:(i(warn) OR i(wrn) OR i(warning) OR i(error) OR i(err)) OR (!(level:*) _msg:(i(warn) OR i(wrn) OR i(warning) OR i(error) OR i(err))))",
+			filter:    `| filter (__dl:="error" OR __dl:="warn")`,
 		},
 		{
-			name: "unknown cannot be prefiltered", op: "=~", value: "unk.*",
-			filter: "| filter (__dl:in(\"unknown\"))",
+			name: "negated regexp has no prefilter", op: "!~", value: "warn|info", fields: []string{"level"},
+			filter: `| filter -(__dl:="warn" OR __dl:="info")`,
+		},
+		{
+			name: "unknown keeps every row without a stored level", op: "=", value: "unknown", fields: []string{"level"},
+			prefilter: "(level:(i(unknown)) OR (!(level:*)))",
+			filter:    `| filter __dl:="unknown"`,
+		},
+		{
+			// Loki's simplified label filter regexp (lokiLabelFilterPattern).
+			name: "unknown without stored fields cannot be prefiltered", op: "=~", value: "unk.*",
+			filter: `| filter __dl:~"unk"`,
+		},
+		{
+			name: "a raw stored word is matched exactly", op: "=", value: "notice", fields: []string{"level", "lvl"},
+			prefilter: `(level:="notice" OR lvl:="notice")`,
+			filter:    `| filter __dl:="notice"`,
+		},
+		{
+			name: "a regexp whose words cannot be listed reads every stored row", op: "=~", value: "(?i)err.*", fields: []string{"level"},
+			prefilter: "(level:* OR (!(level:*) _msg:(i(error) OR i(err))))",
+			filter:    `| filter __dl:~"^(?-s:(?s:.*)(?i:ERR)(?s:.*))$"`,
+		},
+		{
+			name: "the OTLP number and the old severity name are read by the chain", op: "=", value: "fatal", fields: []string{"severity", "severity_number"},
+			prefilter: "(severity:(i(fatal)) OR severity_number:* OR (severity:* -severity_number:*) OR (!((severity:* OR severity_number:*) !(severity:=\"Unspecified\" -severity_number:*)) _msg:(i(fatal))))",
+			filter:    `| filter __dl:="fatal"`,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := BuildDetectedLevelFilter(tc.op, tc.value, tc.fields)
+			plan, err := BuildDetectedLevelFilter(tc.op, tc.value, tc.fields, DetectedLevelFilterLogs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,9 +193,22 @@ func TestBuildDetectedLevelFilterPlans(t *testing.T) {
 				}
 				return
 			}
-			chain := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup, nil)
-			if plan.Pipes != chain+" "+tc.filter {
+			chain := strings.TrimSuffix(BuildDetectedLevelChain(tc.fields, DetectedLevelChainGroup, nil), " | delete __dl_*, __j_*, __l_*")
+			if want := chain + " " + tc.filter + " | delete __dl, __dl_*, __j_*, __l_*"; plan.Pipes != want {
 				t.Fatalf("pipes tail = %q, want chain + %q", strings.TrimPrefix(plan.Pipes, chain), tc.filter)
+			}
+			metric, err := BuildDetectedLevelFilter(tc.op, tc.value, tc.fields, DetectedLevelFilterMetric)
+			if err != nil {
+				t.Fatal(err)
+			}
+			grouping := BuildDetectedLevelChain(tc.fields, DetectedLevelChainGrouping, nil)
+			wantMetric := grouping + " | filter (" + strings.ReplaceAll(strings.TrimPrefix(tc.filter, "| filter "), "__dl", "detected_level") + ") OR __lw:*"
+			if tc.prefilter != "" {
+				// A pipe of its own, which the presence probe leaves out.
+				wantMetric = "| filter " + tc.prefilter + " " + wantMetric
+			}
+			if metric.Pipes != wantMetric || metric.Prefilter != "" {
+				t.Fatalf("metric form = %q / %q, want the grouping chain + %q", metric.Prefilter, strings.TrimPrefix(metric.Pipes, grouping), strings.TrimPrefix(wantMetric, grouping))
 			}
 		})
 	}

@@ -170,12 +170,16 @@ func splitLogsQLPipes(query string) []string {
 // and its probes emit with VictoriaLogs semantics over a row's values:
 // `field:="v"`, `field:~"re"`, `field:*`, `field:*"text"*`, `field:"phrase"` and `field:word`
 // (a word delimited by non-word characters; letters, digits and underscores
-// are word characters), `-`/`!` negation, parentheses, implicit and, `or`.
+// are word characters), `i(word)` (the word in any case) and
+// `field:(...)` (the filters inside read field), `-`/`!` negation,
+// parentheses, implicit and, `or`.
 type fakeLogsQLFilter struct {
 	t    testing.TB
 	src  string
 	pos  int
 	vals map[string]string
+	// field is the field a filter without a name reads ("" means _msg).
+	field string
 }
 
 func (f *fakeLogsQLFilter) skipSpace() {
@@ -227,6 +231,21 @@ func (f *fakeLogsQLFilter) factor() bool {
 		}
 		f.pos++
 		return result
+	}
+	if f.peek("i(") {
+		// i(word): the word as a word of the field, in any case.
+		f.pos += len("i(")
+		word := f.quoted()
+		if !f.peek(")") {
+			f.t.Errorf("fake VL: expected ) closing i( at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		field := f.field
+		if field == "" {
+			field = "_msg"
+		}
+		return vlPhrasePos(strings.ToLower(f.vals[field]), strings.ToLower(word)) >= 0
 	}
 	return f.fieldFilter()
 }
@@ -326,6 +345,19 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	}
 	value := f.vals[name]
 	switch {
+	case strings.HasPrefix(f.src[f.pos:], "("):
+		// field:(filters): every filter inside without a name reads field.
+		f.pos++
+		outer := f.field
+		f.field = name
+		result := f.expr()
+		f.field = outer
+		if !f.peek(")") {
+			f.t.Errorf("fake VL: expected ) closing %s:( at %d in %q", name, f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return result
 	case strings.HasPrefix(f.src[f.pos:], `*"`):
 		// A substring filter, field:*"text"*.
 		f.pos++
@@ -375,6 +407,11 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		// ends with a word rune (getPhrasePos): a phrase of punctuation is a
 		// substring.
 		word := f.quoted()
+		if word == "" {
+			// field:"" matches an empty or missing field (VictoriaLogs'
+			// empty phrase filter), not every row.
+			return value == ""
+		}
 		isWordRune := func(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
 		before := ""
 		if first, _ := utf8.DecodeRuneInString(word); isWordRune(first) {
@@ -387,6 +424,10 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return vlPhrasePos(value, word) >= 0
 	}
 }
+
+// logsLevelFilterRE finds the filter on __dl of the log form of a
+// detected_level filter.
+var logsLevelFilterRE = regexp.MustCompile(`\| filter [-!(]*__dl:`)
 
 var fakeRegexps sync.Map
 
@@ -417,6 +458,9 @@ func fakeStatsFuncs(t testing.TB, statsPipe string) []fakeStatsFunc {
 	for rest != "" {
 		var fn fakeStatsFunc
 		switch {
+		case rest == "count()":
+			// An unnamed count, which VictoriaLogs names count(*).
+			return append(funcs, fakeStatsFunc{name: "count(*)"})
 		case strings.HasPrefix(rest, "count() "):
 			rest = strings.TrimPrefix(rest, "count() ")
 		case strings.HasPrefix(rest, "sum_len(_msg) "):
@@ -498,19 +542,34 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 	// the unpack and the copies after the level are run as VictoriaLogs runs
 	// them, the rest of the chain is emulated whole.
 	sharedChain := chainSharedUnpack(query) != ""
+	// The log form of a detected_level filter keeps the value in __dl, filters
+	// on it inside the chain and deletes it with the chain's scratch fields
+	// (translator.DetectedLevelFilterLogs).
+	logsFilter := logsLevelFilterRE.MatchString(query)
+	// The native stats route drops the chain's closing delete: the chain then
+	// ends with the pipe that writes detected_level.
+	chainEnd := "delete __dl, __dl_*, __j_*, __l_*"
+	if !strings.Contains(query, "| "+chainEnd) {
+		chainEnd = `format "<__dl>" as detected_level`
+	}
 	for _, pipe := range pipes[1:] {
 		runPipe := true
 		switch {
 		case inChain:
 			// The rest of translator.BuildDetectedLevelChain: its result is
-			// already in detected_level.
-			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
-			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
+			// already in detected_level (in __dl for the log filter form).
+			inChain = pipe != chainEnd
+			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe)) ||
+				logsFilter && (!inChain || strings.HasPrefix(pipe, "filter "))
 		case chainStart(pipe):
 			// The start of translator.BuildDetectedLevelChain; the chain is
 			// emulated whole by emulateDetectedLevelChainFor, for the fields and
 			// keys it was built from.
-			values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			if logsFilter {
+				values["__dl"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			} else {
+				values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			}
 			if chainStoredLevelDecides(values, chainPresence(query)) {
 				values["__dl_h"] = "1" // the rows a stored level decides, as the chain's marker pipes flag them
 			}
@@ -662,7 +721,7 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				}
 			}
 			values = kept
-		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "):
+		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "), strings.HasPrefix(pipe, "sort "):
 		default:
 			t.Errorf("fake VL: unsupported pipe %q", pipe)
 			return nil, false
@@ -1944,7 +2003,9 @@ func TestOrderedJSONDetectedLevelFilterBeforeParserWithoutBodyScan(t *testing.T)
 		rawRows  bool
 		unpacked string
 	}{
-		{`sum by (export_ms) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, false, "| unpack_logfmt | filter level:=\"info\""},
+		// The stored level fields alone decide, as the proxy derives the label
+		// without the body scan: a filter of the query, no pipe.
+		{`sum by (export_ms) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, false, "detected_level:\"\" level:~`(?i)^(info|inf|information)$`"},
 		{`sum by (export_ms, detected_level) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, true, ""},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
