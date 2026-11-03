@@ -311,6 +311,10 @@
     "semantics/ip-filter-precision | compare:observed",
     "semantics/ip-filter-precision | gap:documented",
     "semantics/ip-filter-precision | query",
+    "semantics/json-detected-level-error-split | compare:exact",
+    "semantics/json-detected-level-error-split | gap:fixed",
+    "semantics/json-detected-level-error-split | perf",
+    "semantics/json-detected-level-error-split | query",
     "semantics/json-empty-value-label-series | compare:exact",
     "semantics/json-empty-value-label-series | gap:open",
     "semantics/json-empty-value-label-series | query",
@@ -906,6 +910,9 @@
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-filter-pushdown-without-error-drop",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/json-label-spelling-probe",
     "internal/proxy/ordered_json_conditional_unpack_test.go | semantics/label-filter-before-parser-pushdown",
+    "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-detected-level-error-split",
+    "internal/proxy/ordered_json_detected_level_split_test.go | semantics/json-metric-detected-level-derivation",
+    "internal/proxy/ordered_json_detected_level_split_test.go | severity-detected-level-derivation",
     "internal/proxy/ordered_json_detected_level_test.go | semantics/detected-level-pipes-known-differences",
     "internal/proxy/ordered_json_detected_level_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/ordered_json_drilldown_test.go | parser-error-and-label-collision",
@@ -1545,18 +1552,18 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 32,
+      "drilldown": 33,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 280,
+      "go": 281,
       "playwright": 1
     },
     "page_kinds": {
       "drilldown": 18,
-      "explore": 114,
+      "explore": 116,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -1568,10 +1575,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 80,
+    "shape_covers_distinct": 81,
     "shapes_path_only": 8,
     "unwired_items": 86,
-    "wired_items": 219
+    "wired_items": 220
   },
   "gates": [
     "A/B shape selection",
@@ -1621,6 +1628,8 @@
     "explore-extracted-filter-metric",
     "explore-extracted-group-metric",
     "explore-extracted-metric",
+    "explore-json-count-by-detected-level",
+    "explore-json-error-count-by-detected-level",
     "explore-json-error-filter-metric",
     "explore-json-extraction-list-level",
     "explore-keep-derived-service-name",

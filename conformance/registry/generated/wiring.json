@@ -802,6 +802,9 @@
       "internal/proxy/instant_result_type_test.go",
       "test/e2e-compat/instant_result_type_test.go"
     ],
+    "semantics/json-detected-level-error-split": [
+      "internal/proxy/ordered_json_detected_level_split_test.go"
+    ],
     "semantics/json-error-filter-metric-split-pushdown": [
       "internal/proxy/ordered_json_recorded_test.go",
       "internal/proxy/ordered_json_valid_split_test.go",
@@ -852,6 +855,7 @@
       "internal/proxy/detected_level_presence_sweep_test.go",
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/detected_level_shared_unpack_test.go",
+      "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
       "internal/proxy/stored_level_series_limit_test.go",
       "test/e2e-compat/detected_level_keys_gate_test.go",
@@ -1205,6 +1209,7 @@
     "severity-detected-level-derivation": [
       "internal/proxy/detected_level_keys_gate_test.go",
       "internal/proxy/detected_level_test.go",
+      "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
@@ -1323,7 +1328,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 379,
+  "registry_items": 380,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1746,6 +1751,11 @@
       "semantics/json-filter-pushdown-without-error-drop",
       "semantics/json-label-spelling-probe",
       "semantics/label-filter-before-parser-pushdown"
+    ],
+    "internal/proxy/ordered_json_detected_level_split_test.go": [
+      "semantics/json-detected-level-error-split",
+      "semantics/json-metric-detected-level-derivation",
+      "severity-detected-level-derivation"
     ],
     "internal/proxy/ordered_json_detected_level_test.go": [
       "semantics/detected-level-pipes-known-differences",
@@ -2772,7 +2782,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 281,
+  "tests_with_markers": 282,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2862,5 +2872,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 219
+  "wired_items": 220
 }

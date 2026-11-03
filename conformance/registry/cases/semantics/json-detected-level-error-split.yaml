@@ -1,0 +1,101 @@
+id: semantics/json-detected-level-error-split
+title: '`sum by (detected_level)` over `| json` with the parser errors kept, or `| json | __error__!=""`, is answered from VictoriaLogs stats, reading only the doubtful lines raw (fixed)'
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown's logs volume of a JSON service (`sum by (detected_level)
+  (count_over_time({...} | json [$__auto]))`), the same count over `[1m]`, and
+  the count of the lines Loki's JSON parser rejects (`| json | __error__!=""`)
+  were answered by the row evaluator: every selected line was read from
+  VictoriaLogs (`<selector> | limit 1000001`) and parsed in the proxy. Neither
+  pipeline drops the parser errors and no label filter rejects the empty
+  value, so the stats pushdown declined them (raw_rows, reason ineligible).
+  Daily run 2026-11-02 (loki-defaults, cold): 0.57 s, 2.99 s and 12.0 s at
+  1h, 6h and 24h against Loki's 0.08 s, 0.23 s and 1.05 s for the Drilldown
+  volume; 2.09 s and 12.3 s against 0.31 s and 1.28 s for the error count,
+  which at 24h read 1,000,000 rows of the 2.2 million in the window (about
+  21 s) and answered 500 (`manual range metric row limit exceeded`) where
+  Loki answers 200 in 5.0 s.
+
+  Loki's answer, from v3.7.9's source: the grouping is detected_level alone,
+  so the parser hints require detected_level (parser_hints.go NewParserHint,
+  appendLabelHints). Loki's ingest gives every line detected_level as
+  structured metadata, so a body key of that name is renamed
+  detected_level_extracted (parser.go parseLabelValue: BaseHas or
+  HasInCategory(StructuredMetadataLabel)), the hint is never met and the
+  parser reads the whole line; it never changes a line's level. A line the
+  parser rejects keeps __error__ through the grouping
+  (labels.go GroupedLabels returns the full set when HasErr), and
+  RangeVectorEvaluator.Next (evaluator.go:722-735) fails the query with
+  logqlmodel.NewPipelineErr unless __error__ was requested. So `| json` with
+  the errors kept is the stored-level count of every line when no evaluated
+  line is rejected, and Loki's 400 pipeline error otherwise; `| json |
+  __error__!=""` (which requests __error__) counts the rejected lines by their
+  level.
+
+  Both are now the split of `| json | __error__=""`
+  (semantics/json-error-filter-metric-split-pushdown, one stats scan grouped
+  by the stored level fields, a raw read of only the brace lines VictoriaLogs
+  cannot vouch for): jsonSplitStrict counts the brace lines VictoriaLogs
+  vouches for, reads the others as raw rows, which fail the query with Loki's
+  error as the row evaluator does, and leaves the query to the row evaluator
+  (which answers Loki's error from the first such line,
+  unparsedLinePipelineError) when an evaluated window holds a line without a
+  brace (jsonUnparsedLineRisk, remembered per tenant and window like the
+  hazard probe); jsonSplitErrors counts the lines without a brace (Loki's
+  parser finds no object: ObjectEach fails) in VictoriaLogs, leaves out the
+  ones it vouches for and reads the rest raw. The raw rows of either stay
+  within -manual-range-metric-row-limit; past it the answer is the documented
+  400 naming the flag. Their steps are kept as settled steps under their own
+  route, so a moved window evaluates only its new steps. A window whose rows
+  lack a stored level is read by the detected_level chain, as the non-split
+  pushdown reads it, its guard probes restricted to the lines the split counts
+  (the lines VictoriaLogs parses, or the lines without a brace for the error
+  count), and a line the chain reads differently keeps the row evaluator.
+  Grouping by anything but detected_level, a label filter, an instant query or
+  a step wider than the range keeps the row evaluator.
+
+  Measured on the shared e2e stack (VictoriaLogs v1.52.0, generator data,
+  353,000 lines in the last hour, 785,000 in 24h), main against this change,
+  cold: Drilldown volume 1.03 s -> 0.15-0.23 s (1h) and 2.1 s -> 0.10 s (24h);
+  error count 2.55 s -> 0.15-0.19 s (1h) and 8.9 s -> 0.35 s (24h); plain
+  count 0.56 s -> 0.03-0.21 s (1h) and 2.2 s -> 0.04 s (24h); answers equal to
+  main's at 1h and 24h.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({env="production"} | json | __error__!="" [1m]))'
+    start: now-24h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values from one stats_query_range scan
+    over the stored level fields (two when the hazard probe finds a line) plus
+    raw reads limited to the brace lines VictoriaLogs cannot vouch for; the
+    strict count of a window holding a rejected line is Loki's 400 pipeline
+    error.
+gap:
+  status: fixed
+  fixed_by: 'perf/detected-level-native-count'
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy ordered_json_valid_split.go (jsonSplitStrict, jsonSplitErrors, jsonUnparsedLineRisk), ordered_json_metric.go pushdownLabelFilters and the split stats query'
+  loki: 'pkg/logql/log/parser.go:74-170 JSONParser.Process/parseLabelValue; pkg/logql/log/parser_hints.go:145-215 NewParserHint/appendLabelHints; pkg/logql/log/labels.go:664-688 GroupedLabels; pkg/logql/evaluator.go:722-735 RangeVectorEvaluator.Next'
+  proxy: 'every selected line read as a raw row; 500 at -manual-range-metric-row-limit on 24h'
+  planned_test: 'proxy TestJSONErrorSplitPredicateDifferential, FuzzJSONErrorSplitPredicate, TestJSONDetectedLevelSplitMatchesRawEvaluator, TestJSONDetectedLevelSplitEdgeTable, TestJSONDetectedLevelSplitEligibility, TestJSONUnparsedLineRiskPerTenant, TestJSONDetectedLevelSplitRawRowsStayWithinTheRowLimit, TestJSONDetectedLevelSplitOffGridBoundsAlign'
+  note: 'Bytes metrics take the split too but keep the whole-window evaluation on a moved window (settled steps hold count and rate only).'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

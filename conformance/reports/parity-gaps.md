@@ -172,6 +172,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/without-sliding-sum-folded-buckets` — sum without over count_over_time or bytes_over_time on a sliding window reads its buckets folded by VictoriaLogs, with Loki's series and ... | TBD-PR | 0 | 0 |
 | `severity/otlp-severity-before-vl-1.50` — OTLP rows stored by VictoriaLogs before v1.50 (one `severity` field, no severity_number) get detected_level "Unspecified" / "Info2" (fixed) | #666 | 0 | 0 |
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
+| `semantics/json-detected-level-error-split` — `sum by (detected_level)` over `\| json` with the parser errors kept, or `\| json \| __error__!=""`, is answered from VictoriaLogs stats,... | perf/detected-level-native-count | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |
 | `semantics/instant-result-type-missing` — An instant query answers its failure status and a resultType, like Loki (fixed) | #735 | 1 | 2 |
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
