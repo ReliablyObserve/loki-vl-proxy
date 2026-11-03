@@ -9,39 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- A `| detected_level <op> "<value>"` filter that no parser precedes now
-  selects the lines of Loki's ingest-time level. It compared a stored `level`
-  field after unpacking every line as logfmt, so a line's `level=` key
-  overrode the stream label Loki reads first, and a line with no level never
-  matched `unknown`. On a stream labelled `level=info` whose logfmt lines say
-  `level=error`, `detected_level!="info"` and `=~"error|warn"` returned those
-  lines (an `info` series in the logs volume), `detected_level="unknown"`
-  returned nothing where Loki returns the lines without a level, and the
-  per-service error rate and topk counted the stream. The filter now compares
-  the detected_level the proxy derives from the stored fields and the line,
-  the same value the responses show, with Loki's label filter semantics:
-  log rows no longer carry every logfmt key of their line, and a metric
-  computes the value once for the filter and a grouping by it. A
-  `detected_level!=""` metric now keeps the `unknown` lines. With
-  `-detected-level-body-scan=false` the stored level fields alone decide, as
-  the responses do. VictoriaLogs no longer unpacks every selected line for
-  the filter: a word prefilter keeps the derivation to the lines that can
-  match. A filter after a parser, `drop`, `keep` or `label_format` stage is
-  unchanged.
-
 - Stamp the last `/loki/api/v1/index/volume` and `index/volume_range` sample
   at the request end rounded up to the millisecond, as Loki does
   (`util.RoundToMilliseconds`). The proxy truncated the end, so an end with
   sub-millisecond nanoseconds was stamped one millisecond earlier than in Loki.
 
 ### Performance
-
-- Translate and relabel a large Logs Drilldown breakdown (range equal to the
-  step) in one pass. The translated answer was written whole and then
-  validated, parsed and rewritten again to move each bucket to Loki's
-  evaluation time. A breakdown of 100,000 single-point series takes about a
-  quarter less proxy CPU; the series limit is applied where it was, and when
-  it could apply the two passes run as before.
 
 - Answer a refreshed instant `/loki/api/v1/index/volume` (Logs Drilldown's
   landing page) from settled time segments instead of one VictoriaLogs call
@@ -62,6 +35,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_stats_cache_freshness`): the volume segments that end within it of now
   are read from VictoriaLogs on every request. `-metadata-inventory-parallelism`
   also bounds the segment reads in flight, and `0` turns the segments off.
+
+## [2.68.0] - 2026-11-03
+
+### Fixed
+
+- A `| detected_level <op> "<value>"` filter that no parser precedes now
+  selects the lines of Loki's ingest-time level. It compared a stored `level`
+  field after unpacking every line as logfmt, so a line's `level=` key
+  overrode the stream label Loki reads first, and a line with no level never
+  matched `unknown`. On a stream labelled `level=info` whose logfmt lines say
+  `level=error`, `detected_level!="info"` and `=~"error|warn"` returned those
+  lines (an `info` series in the logs volume), `detected_level="unknown"`
+  returned nothing where Loki returns the lines without a level, and the
+  per-service error rate and topk counted the stream. The filter now compares
+  the detected_level the proxy derives from the stored fields and the line,
+  the same value the responses show, with Loki's label filter semantics:
+  log rows no longer carry every logfmt key of their line, and a metric
+  computes the value once for the filter and a grouping by it. A
+  `detected_level!=""` metric now keeps the `unknown` lines. With
+  `-detected-level-body-scan=false` the stored level fields alone decide, as
+  the responses do. VictoriaLogs no longer unpacks every selected line for
+  the filter: a word prefilter keeps the derivation to the lines that can
+  match. A filter after a parser, `drop`, `keep` or `label_format` stage is
+  unchanged.
+
+## [2.67.0] - 2026-11-03
+
+### Performance
+
+- Translate and relabel a large Logs Drilldown breakdown (range equal to the
+  step) in one pass. The translated answer was written whole and then
+  validated, parsed and rewritten again to move each bucket to Loki's
+  evaluation time. A breakdown of 100,000 single-point series takes about a
+  quarter less proxy CPU; the series limit is applied where it was, and when
+  it could apply the two passes run as before.
 
 ## [2.66.0] - 2026-11-03
 
