@@ -1,6 +1,12 @@
 import unittest
 
-from scripts.ci.check_quality_gate import check_component_breakdown
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, relative_spread_pct
 
 
 class CheckQualityGateComponentTests(unittest.TestCase):
@@ -54,6 +60,114 @@ class CheckQualityGateComponentTests(unittest.TestCase):
             },
         )
         self.assertTrue(any("component volume_range" in failure for failure in failures))
+
+
+def throughput(base, head, **kw):
+    failures = []
+    note = check_samples_threshold(
+        failures, "High-concurrency throughput", base, head, "higher", 25.0,
+        absolute_threshold=2_000.0, min_base=5_000.0, **kw,
+    )
+    return failures, note
+
+
+class ThroughputAbabTests(unittest.TestCase):
+    """Series are runs of base and head that alternated on one machine (req/s)."""
+
+    # Seen in CI: the same code measured 324k and 645k on different runs.
+    NOISY_BASE = [645_000, 410_000, 520_000, 330_000, 590_000, 480_000, 360_000]
+
+    def test_identical_code_with_noisy_runs_passes(self):
+        # Medians 480k vs 336k: -30%, past the fixed 25%, but the runs themselves span 65%.
+        head = [336_000, 640_000, 300_000, 520_000, 330_000, 420_000, 345_000]
+        failures, note = throughput(self.NOISY_BASE, head)
+        self.assertEqual(failures, [])
+        self.assertIn("within the noise", note)
+
+    def test_the_same_series_on_both_sides_passes(self):
+        failures, note = throughput(self.NOISY_BASE, list(reversed(self.NOISY_BASE)))
+        self.assertEqual((failures, note), ([], ""))
+
+    def test_a_real_regression_with_steady_runs_fails(self):
+        base = [500_000, 510_000, 495_000, 505_000, 498_000]
+        head = [300_000, 310_000, 295_000, 305_000, 298_000]
+        failures, _ = throughput(base, head)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("regressed by -40", failures[0])
+
+    def test_a_regression_just_past_the_threshold_with_steady_runs_fails(self):
+        base = [500_000, 505_000, 495_000, 502_000, 498_000]
+        head = [345_000, 350_000, 340_000, 348_000, 346_000]  # -30.4%, spread 3%
+        failures, _ = throughput(base, head)
+        self.assertEqual(len(failures), 1)
+
+    def test_a_large_regression_is_caught_even_when_the_runs_are_noisy(self):
+        head = [110_000, 90_000, 130_000, 100_000, 120_000, 105_000, 125_000]  # about -77%
+        failures, _ = throughput(self.NOISY_BASE, head)
+        self.assertEqual(len(failures), 1)
+
+    def test_a_small_slowdown_under_the_threshold_passes(self):
+        base = [500_000, 510_000, 495_000, 505_000, 498_000]
+        head = [400_000, 410_000, 395_000, 405_000, 398_000]  # -20%
+        self.assertEqual(throughput(base, head), ([], ""))
+
+    def test_a_faster_head_passes(self):
+        self.assertEqual(throughput([300_000] * 5, [450_000] * 5), ([], ""))
+
+    def test_one_outlier_run_does_not_decide(self):
+        base = [500_000, 505_000, 495_000, 502_000, 498_000]
+        head = [499_000, 505_000, 100_000, 501_000, 497_000]  # one stall; the median is unchanged
+        self.assertEqual(throughput(base, head)[0], [])
+
+    def test_too_few_runs_are_not_compared(self):
+        failures, note = throughput([500_000, 500_000], [100_000, 100_000])
+        self.assertEqual(failures, [])
+        self.assertIn("not compared", note)
+
+    def test_a_base_below_the_minimum_is_not_compared(self):
+        self.assertEqual(throughput([3_000] * 5, [1_000] * 5), ([], ""))
+
+    def test_the_spread_is_range_over_median(self):
+        self.assertAlmostEqual(relative_spread_pct([90, 100, 110]), 20.0)
+        self.assertEqual(relative_spread_pct([0, 0, 0]), 0.0)
+
+    def run_gate(self, base_load, head_load):
+        def doc(load):
+            return {
+                "tests": {"count": 10, "coverage_pct": 80.0},
+                "compatibility": {
+                    track: {"pct": 100.0, "components": {c: {"passed": 1, "total": 1, "pct": 100.0} for c in components}}
+                    for track, components in REQUIRED_COMPONENTS.items()
+                },
+                "performance": {"mode": "full", "benchmarks": {}, "load": load},
+            }
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for name, load in (("base", base_load), ("head", head_load)):
+                path = Path(tmp) / f"{name}.json"
+                path.write_text(json.dumps(doc(load)))
+                paths.append(str(path))
+            return subprocess.run(
+                [sys.executable, str(Path(__file__).resolve().parents[1] / "check_quality_gate.py"), *paths],
+                capture_output=True, text=True,
+            )
+
+    def test_the_gate_uses_the_runs_when_both_sides_have_them(self):
+        steady = [500_000, 505_000, 495_000, 502_000, 498_000]
+        load = lambda runs: {"high_concurrency_req_per_s": sorted(runs)[len(runs) // 2],
+                             "high_concurrency_req_per_s_samples": runs,
+                             "high_concurrency_memory_growth_mb": 0}
+        slow = [300_000, 310_000, 295_000, 305_000, 298_000]
+        result = self.run_gate(load(steady), load(slow))
+        self.assertIn("High-concurrency throughput regressed", result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_the_gate_falls_back_to_the_single_values_without_runs(self):
+        result = self.run_gate(
+            {"high_concurrency_req_per_s": 500_000, "high_concurrency_memory_growth_mb": 0},
+            {"high_concurrency_req_per_s": 300_000, "high_concurrency_memory_growth_mb": 0},
+        )
+        self.assertIn("High-concurrency throughput regressed by -40.0%", result.stderr)
 
 
 if __name__ == "__main__":

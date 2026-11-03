@@ -329,7 +329,14 @@ done
 if [ "$PERF_MODE" = "full" ]; then
   log_step "running perf smoke in an isolated phase for stability"
   capture_or_default benchmarks "$BENCHMARKS_DEFAULT" 900 collect_benchmarks >"$benchmarks_file"
-  capture_or_default load "$LOAD_DEFAULT" 600 collect_load >"$load_file"
+  if [ "${QUALITY_SKIP_LOAD:-0}" = "1" ]; then
+    # The caller measures base and head together (scripts/ci/load_abab.py), which a
+    # run of one tree cannot do; it fills performance.load afterwards.
+    log_step "skipping the load test (QUALITY_SKIP_LOAD=1); load_abab.py measures it"
+    printf '%s\n' "$LOAD_DEFAULT" >"$load_file"
+  else
+    capture_or_default load "$LOAD_DEFAULT" 600 collect_load >"$load_file"
+  fi
 else
   log_step "skipping performance smoke collection (QUALITY_SKIP_PERF=1)"
   printf '%s\n' "$BENCHMARKS_DEFAULT" >"$benchmarks_file"

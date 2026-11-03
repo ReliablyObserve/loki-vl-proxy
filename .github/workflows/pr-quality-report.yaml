@@ -61,7 +61,7 @@ jobs:
           FILES="$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}")"
           RUN_PERF=false
           if echo "$FILES" | grep -E '^(cmd/|internal/|pkg/)' | grep -Eqv '(_test\.go$|/testdata/)' \
-            || echo "$FILES" | grep -Eq '^(go\.mod|go\.sum|Dockerfile|scripts/ci/(collect_quality_metrics\.sh|check_quality_gate\.py))$'; then
+            || echo "$FILES" | grep -Eq '^(go\.mod|go\.sum|Dockerfile|scripts/ci/(collect_quality_metrics\.sh|check_quality_gate\.py|load_abab\.py))$'; then
             RUN_PERF=true
           fi
           echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"
@@ -91,6 +91,8 @@ jobs:
           PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
           BASE_TESTS_CACHE_HIT: ${{ steps.base-tests.outputs.cache-hit }}
           QUALITY_SKIP_PERF: ${{ steps.perf-scope.outputs.run_perf == 'true' && '0' || '1' }}
+          # The load test is measured below with base and head alternating, not once per tree.
+          QUALITY_SKIP_LOAD: "1"
           QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head
         run: |
           set -euo pipefail
@@ -111,6 +113,14 @@ jobs:
               QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json \
               bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
           )
+          # The high-concurrency load test runs on both trees alternately (base, head,
+          # base, head, ...) so a slow or fast stretch of the runner hits both alike. One
+          # run per tree, minutes apart, differed by 28-34% on identical code.
+          if [ "$QUALITY_SKIP_PERF" = "0" ]; then
+            python3 "$WORKSPACE/scripts/ci/load_abab.py" \
+              --base-dir /tmp/loki-vl-proxy-base --head-dir "$WORKSPACE" \
+              --base-json /tmp/pr-base-quality.json --head-json /tmp/pr-head-quality.json
+          fi
           # Save them for the next run unless the collection fell back to zeros.
           if [ "$BASE_TESTS_CACHE_HIT" != "true" ] && jq -e '.tests.count > 0' /tmp/pr-base-quality.json >/dev/null; then
             jq -c '.tests' /tmp/pr-base-quality.json > /tmp/pr-base-tests.json

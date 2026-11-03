@@ -106,6 +106,7 @@ PRODUCT_OVERRIDES = [
     ("P3", (
         "scripts/ci/collect_quality_metrics.sh",
         "scripts/ci/check_quality_gate.py",
+        "scripts/ci/load_abab.py",
         "scripts/ci/render_pr_report.sh",
         "scripts/ci/check_conformance.py",
     )),
