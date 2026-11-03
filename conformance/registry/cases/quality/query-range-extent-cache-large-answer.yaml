@@ -1,0 +1,55 @@
+id: quality/query-range-extent-cache-large-answer
+title: A metric answer larger than one cache entry is kept split by split, so a moved window reads only the buckets it lacks
+pending: true
+proves:
+  - data-probing-and-freshness
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Loki keeps a metric range as extents per split
+  (-querier.split-queries-by-interval, 1h) and answers a moved window from
+  them, computing only what they do not cover
+  (pkg/storage/chunk/cache/resultscache/cache.go:104 Do, :181 handleHit,
+  :333 partition, :404 filterRecentExtents, v3.7.9). How large the whole
+  answer is does not matter: each split is its own extent.
+
+  The proxy's extent cache stores a stats_query_range answer one split per
+  cache entry, but it kept a copy of the answer only while the whole answer
+  fitted one entry (a tenth of -cache-max-bytes). Logs Drilldown breakdowns
+  of high-cardinality labels and fields (pod, batch_id, logfmt job_id) over
+  24h answer 85,000-150,000 series, a VictoriaLogs answer over the 6.4 MB entry of the
+  benchmark proxy's 64 MiB cache: none was ever kept, and every repeat read
+  all 1,441 buckets from VictoriaLogs again (0.2 s for pod, 0.34 s for
+  batch_id, 3.3 s for the logfmt breakdown with a level filter, per request).
+
+  The copy is now kept while each split of the answer can fit one entry,
+  bounded by -backend-max-buffered-response-bytes, the bound of the caller's
+  own read of the same answer; the cache still refuses a split over one
+  entry by itself. A missing range read for a moved window is bounded the
+  same way. The answer rebuilt from the splits is byte for byte the uncached
+  proxy's.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (batch_id) (count_over_time({env="production"} | json batch_id="[\"batch_id\"]" | drop __error__, __error_details__ | batch_id!="" [$__auto]))'
+    start: 'now-24h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki for the first window and for the
+    window moved back a step at a time, as when the Drilldown page is opened
+    again; the moved windows are answered from kept buckets.
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

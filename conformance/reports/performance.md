@@ -343,6 +343,7 @@ None measured.
 | `profiles/stream-selector-regexp-anchoring` | 4 × 2 ranges | 8 same | worst 0.06s / 0.02s (6h) | 0.01s / 0.01s | same; 1 slower than Loki cold | not locked |
 | `profiles/structured-metadata-keys-per-profile` | 2 × 4 ranges | 8 same | worst 0.89s / 0.05s (24h) | 4.54s / 0.05s | differs | locked 2026-10-27 |
 | `profiles/structured-metadata-label-collision` | 8 × 3 ranges | 15 same | worst 0.79s / 0.07s (3h) | 0.09s † / 0.01s | same; 1 slower than Loki cold | not locked |
+| `quality/query-range-extent-cache-large-answer` | 3 × 5 ranges | 14 same | worst **502** / **502** (7d) | 180.00s † / 41.84s | differs | not locked |
 | `quality/query-range-settled-steps` | 44 × 5 ranges | 8 faster, 4 fixed, 147 same, 1 slower | worst 13.13s / 13.44s (7d) | 0.01s / 0.00s | differs; 9 slower than Loki cold | not locked |
 | `quality/stats-answer-transform-cost` | 3 × 5 ranges | 14 same | worst **502** / **502** (7d) | 180.00s † / 41.84s | differs | not locked |
 | `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.40s / 0.02s (24h) | 4.43s / 0.07s | same | locked 2026-10-27 |

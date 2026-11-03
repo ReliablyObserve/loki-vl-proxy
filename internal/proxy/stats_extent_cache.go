@@ -135,7 +135,6 @@ func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Val
 // VictoriaLogs calls for the missing ones, and stores what it read.
 func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, lastStored int64) (*http.Response, string, error) {
 	fetchCtx := context.WithValue(ctx, statsExtentFetchKey{}, true)
-	limit := int64(p.cache.MaxEntrySizeBytes())
 	chunks := p.loadStatsExtentChunks(req, lastStored)
 	var covered [][2]int64
 	for _, c := range chunks {
@@ -149,7 +148,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 	}
 	if len(gaps) == 1 && gaps[0] == [2]int64{req.first, req.last} {
 		// Nothing stored: the call as it came, kept off the request path.
-		return p.statsExtentMiss(fetchCtx, req, lastStored, chunks, limit)
+		return p.statsExtentMiss(fetchCtx, req, lastStored, chunks, p.statsExtentReadLimit(req, req.first, req.last))
 	}
 	fragments := make([]*statsExtentFragment, len(gaps))
 	errs := make([]error, len(gaps))
@@ -165,7 +164,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 		fetchCtx = context.WithValue(fetchCtx, statsExtentHeavyKey{}, true)
 		for i, gap := range gaps {
 			// The first read that fails or cannot be used decides the answer.
-			if fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, limit); fragments[i] == nil {
+			if fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, p.statsExtentReadLimit(req, gap[0], gap[1])); fragments[i] == nil {
 				break
 			}
 		}
@@ -175,7 +174,7 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, limit)
+				fragments[i], resps[i], errs[i] = p.statsExtentFetch(fetchCtx, req, gap, p.statsExtentReadLimit(req, gap[0], gap[1]))
 			}()
 		}
 		wg.Wait()
@@ -224,6 +223,25 @@ func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, 
 		outcome = "hit"
 	}
 	return statsExtentResponse(body), outcome, nil
+}
+
+// statsExtentReadLimit bounds the copy the cache keeps of a read of buckets
+// [first, last]. The read is stored one split per cache entry, and the cache
+// refuses an entry over its entry size by itself, so a read is worth keeping
+// while each of its splits can fit one entry: an answer larger than one entry
+// is kept split by split. The copy never exceeds
+// -backend-max-buffered-response-bytes, the bound of the caller's own read of
+// the same answer (the settled steps keep their copy under the same bound).
+func (p *Proxy) statsExtentReadLimit(req *statsExtentRequest, first, last int64) int64 {
+	entry := int64(p.cache.MaxEntrySizeBytes())
+	limit := int64(p.limits().BufferedBackendBodyBytes)
+	if limit <= 0 {
+		limit = math.MaxInt64
+	}
+	if splits := statsExtentFloorDiv(last, req.chunk) - statsExtentFloorDiv(first, req.chunk) + 1; entry > 0 && splits <= limit/entry {
+		limit = entry * splits
+	}
+	return limit
 }
 
 // statsExtentMiss sends the call unchanged and hands its answer on as it
