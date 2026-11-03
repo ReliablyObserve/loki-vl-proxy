@@ -360,6 +360,7 @@ None measured.
 | `semantics/json-metric-detected-level-derivation` | 11 × 3 ranges | 33 same | worst **400** / **400** (24h) | 5.27s / 0.04s | differs; 10 slower than Loki cold | not locked |
 | `semantics/label-browser-latency-cold-and-refresh` | 8 × 4 ranges | 32 same | worst 0.69s / 0.00s (24h) | 0.07s † / 0.08s | same | locked 2026-10-27 |
 | `semantics/label-filter-before-parser-pushdown` | 2 × 4 ranges | 8 same | worst 1.38s / 0.05s (24h) | 4.57s / 0.05s | same | locked 2026-10-27 |
+| `semantics/label-filter-expression-syntax` | — | not measured | | | | not locked |
 | `semantics/label-inventory-exact-and-incremental` | 12 × 4 ranges | 48 same | worst 0.69s / 0.00s (24h) | 0.07s † / 0.08s | differs | locked 2026-10-27 |
 | `semantics/label-replace-instant-vector` | 1 × 1 ranges | 1 same | worst 0.01s / 0.00s (instant) | 0.01s / 0.01s | same | not locked |
 | `semantics/label-replace-new-label` | 6 × 4 ranges | 12 same | worst 0.92s / 0.04s (24h) | 4.37s / 0.06s | differs | not locked |
