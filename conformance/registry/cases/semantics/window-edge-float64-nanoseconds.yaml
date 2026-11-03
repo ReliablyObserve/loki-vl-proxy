@@ -1,0 +1,53 @@
+id: semantics/window-edge-float64-nanoseconds
+title: a line within about 256 ns of a window edge, not on it, may fall on the wrong side when the window is shorter than the step (documented)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki compares integer nanoseconds: a sample at t belongs to the window
+  (t-range, t] (pkg/logql/range_vector.go:102-189).
+
+  When a range is shorter than its step the proxy keeps the lines inside the
+  windows with a filter on the line's phase past the window start, evaluated by
+  VictoriaLogs `math` (windowPhaseFilter, internal/proxy/range_metric_compat.go).
+  VictoriaLogs `math` is float64: a time near 1.8e18 ns is read as the nearest
+  multiple of 256 ns, up to 128 ns off. The anchor is a multiple of 256 ns and
+  the bounds carry the anchor's rest and the read error, so a line exactly on an
+  edge is classified as in Loki (semantics/sub-second-step-grid,
+  TestSubSecondStepLineOnTheWindowEdge), but a line within about 256 ns of an
+  edge, not on it, is told apart only by chance: it may be counted in the
+  neighbouring window or in none. Timestamps with nanosecond digits that land
+  that close to an edge are rare; times on a millisecond or a second are exact.
+
+  An exact answer needs integer arithmetic on `_time`, which `math` does not
+  have. The integer route is the bucket route (`stats by (_time:N offset M)`),
+  and its bucket must be as wide as gcd(step, window) for the buckets to hold
+  every window edge: 3 ms for a 999 ms step and a 600 ms window, about 133,000
+  buckets over 400 steps, above heavyQueryBucketThreshold. The phase filter
+  exists to avoid that cost, so the difference stays documented.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (pod) (count_over_time({app="api-gateway"}[600ms]))'
+    start: '1793671800000000000'
+    end: '1793672200000000000'
+    step: '0.999'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data.result]
+  expect: |
+    Loki's windows for lines on a window edge; lines within about 256 ns of an
+    edge may differ.
+gap:
+  status: documented
+  impact: edge
+  effort: L
+  area: 'internal/proxy/range_metric_compat.go windowPhaseFilter'
+  loki: 'pkg/logql/range_vector.go:102-189'
+  proxy: 'float64 phase filter with a 256 ns anchor and 128 ns tolerance'
+  planned_test: 'TestSubSecondStepLineOnTheWindowEdge (internal/proxy)'
+  clusters: []

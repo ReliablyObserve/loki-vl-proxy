@@ -45,7 +45,7 @@ func TestWithWindowPhaseFilterPlacement(t *testing.T) {
 }
 
 var (
-	phaseMathRE = regexp.MustCompile(` \| math \(\(_time - -?\d+\) % \d+\) as __lvp_window_phase \| filter __lvp_window_phase:>0 __lvp_window_phase:<=\d+`)
+	phaseMathRE = regexp.MustCompile(` \| math \(\(_time - -?\d+\) % \d+\) as __lvp_window_phase \| filter __lvp_window_phase:>\d+ __lvp_window_phase:<=\d+`)
 	pipeNameRE  = regexp.MustCompile(`^\s*([a-z_]+)`)
 )
 

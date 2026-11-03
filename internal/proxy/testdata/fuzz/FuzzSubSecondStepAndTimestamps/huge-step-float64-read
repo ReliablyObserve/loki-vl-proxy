@@ -1,0 +1,4 @@
+go test fuzz v1
+string("7000000001")
+string("0")
+int64(1793653187704000057)

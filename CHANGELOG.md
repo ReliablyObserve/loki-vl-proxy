@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deduplicated and byte-sorted, as `sort.Strings` orders Loki's valid UTF-8
   labels. `FuzzMergeLabelsIntoCache`, which found it, now runs in the `fuzz-smoke`
   job.
+- **A line exactly on an evaluation time is counted in its window when the
+  window is shorter than the step.** For a range metric whose window is
+  shorter than its step (`sum by (pod) (count_over_time(... [600ms]))` at
+  `step=0.999`) the proxy keeps the lines inside a window with a filter on the
+  line's phase past the window start, evaluated by VictoriaLogs in float64. A
+  time near 1.8e18 ns is a multiple of 256 ns there, so a line on a window edge
+  (any time on a whole millisecond, with a window and a step in milliseconds)
+  was read up to 128 ns off and fell on either side by the luck of its digits:
+  the line at 1793671902.630 on the step time 1793671902.630 read as phase
+  600000064 against a window of 600000000, was dropped, and the answer had 8
+  samples where Loki has 9 (`TestCompat_SubSecondStep`, which failed in CI for
+  that hour's fixture). Whole-second times are exact in float64, which hid it.
+  The filter's anchor is now a multiple of 256 ns, so the subtraction is exact,
+  and its bounds carry what the anchor gave up and the 128 ns of the read: a
+  line on an edge is classified as in Loki; a line within about 256 ns of an
+  edge, not on it, may still fall on either side, as it could before.
+  Registry: `semantics/sub-second-step-grid`.
 
 - **A metric `query_range` whose bounds fall outside int64 nanoseconds is no
   longer moved to the other end of time by step alignment.** With an end near
