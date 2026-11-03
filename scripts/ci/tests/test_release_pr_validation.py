@@ -154,9 +154,22 @@ class ScopeCheckTests(unittest.TestCase):
 
     def test_wrong_chart_version_fails(self):
         proc = self.metadata(contents=self.metadata_contents(**{
-            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.3"\n'}))
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.2\nappVersion: "1.2.2"\n'}))
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("Chart.yaml version", proc.stdout)
+
+    def test_chart_ahead_of_the_branch_version_passes(self):
+        # The metadata for an older tag, merged after a newer one, keeps the chart
+        # on the newer version.
+        proc = self.metadata(contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.4"\n'}))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_chart_app_version_must_match_the_chart_version(self):
+        proc = self.metadata(contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.3"\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Chart.yaml appVersion", proc.stdout)
 
     def test_missing_changelog_section_fails(self):
         proc = self.metadata(contents=self.metadata_contents(**{"CHANGELOG.md": "## [Unreleased]\n## [1.2.30] - x\n"}))

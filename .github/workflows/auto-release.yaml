@@ -1,20 +1,20 @@
 name: Auto Release
 
 on:
+  # Every push to main runs it, whatever it touched: the run decides from what
+  # changed since the latest tag, not from the pushed commit, so a docs-only or
+  # CHANGELOG-only push still releases earlier shipped changes that no release
+  # run picked up.
   push:
     branches: [main]
-    paths-ignore:
-      - "CHANGELOG.md"
-      - "docs/observability.md"
-      - "README.md"
   workflow_dispatch:
 
-# Releases queue; they never cancel each other. Merging a second pull request
-# while a release is still running used to cancel that run, so a tag could be
-# cut with no metadata pull request behind it, or a merge could get no release
-# at all, and CHANGELOG sections then drifted from what each tag contained.
-# Runs now stack in merge order and each cuts its own version from the
-# [Unreleased] section as it stood at its own commit.
+# GitHub keeps one pending run per concurrency group: when a third push arrives
+# while a release runs and a second run waits, the second is cancelled. That is
+# safe because a run never looks at the commit that started it. It re-reads main
+# and its tags when it starts, takes every releasable change since the latest
+# tag (scripts/ci/release_plan.py) and tags the main it validated, so the
+# surviving run releases what the cancelled one would have.
 concurrency:
   group: auto-release-${{ github.ref }}
   cancel-in-progress: false
@@ -65,197 +65,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "v0.0.0")
-          # Tag names reach later jobs as outputs and are used in git and shell
-          # commands there; refuse anything that is not plain vMAJOR.MINOR.PATCH.
-          SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
-          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
-          if ! [[ "${LATEST_TAG}" =~ ${SEMVER_TAG_RE} ]]; then
-            echo "::error::latest release tag '${LATEST_TAG}' is not vMAJOR.MINOR.PATCH"
-            exit 1
-          fi
-          LATEST_VERSION="${LATEST_TAG#v}"
-          CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
-          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Latest tag: $LATEST_TAG"
-
-          COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-          FILES_CHANGED=$(git -c core.quotepath=false diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git -c core.quotepath=false diff --name-only HEAD~1)
-
-          if echo "${HEAD_COMMIT_MSG:-}" | grep -qE '^docs: sync release metadata for v[0-9]'; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping metadata sync commit"
-            exit 0
-          fi
-
-          # Release only when something that ships changed since the last tag:
-          # the binary, image, chart, dashboards or alert rules. Bench, tests,
-          # the conformance registry, scripts, workflows, compose files,
-          # examples, docs and the website never cut a release. An empty list
-          # or any error counts as shipping, so the checks below stay the
-          # deciding gate in that case.
-          #
-          # The metadata sync that follows every release rewrites the chart
-          # version only. While the chart still carries the released version,
-          # that edit says nothing about what changed since the tag. A chart
-          # ahead of the tag is a deliberate release request, handled below.
-          SCOPE_FILES="${FILES_CHANGED}"
-          CHART_EDITS=$(git diff -U0 "${LATEST_TAG}..HEAD" -- charts/loki-vl-proxy/Chart.yaml 2>/dev/null \
-            | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) ' | grep -vE '^[+-](version|appVersion):' || true)
-          if [ "${CHART_VERSION}" = "${LATEST_VERSION}" ] && [ -z "${CHART_EDITS}" ]; then
-            SCOPE_FILES=$(printf '%s\n' "${FILES_CHANGED}" | grep -vx 'charts/loki-vl-proxy/Chart.yaml' || true)
-          fi
-          if [ -n "${FILES_CHANGED}" ] && [ -z "${SCOPE_FILES}" ]; then
-            SHIPS="false"
-          else
-            SHIPS=$(printf '%s\n' "${SCOPE_FILES}" | python3 scripts/ci/change_scope.py --files-from - --ships \
-              | sed -n 's/^ships=//p' || true)
-            SHIPS="${SHIPS:-true}"
-          fi
-
-          if [ "${SHIPS}" = "false" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Nothing that ships changed since ${LATEST_TAG}; skipping release"
-            exit 0
-          fi
-
-          UNRELEASED_LINES=$(awk '/^## \[Unreleased\]/{f=1; next} /^## \[/{if(f) exit} f && /^[[:space:]]*[^[:space:]]/' CHANGELOG.md | wc -l | tr -d ' ')
-          if [ "${UNRELEASED_LINES}" -eq 0 ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "CHANGELOG [Unreleased] section is empty; skipping release (add changelog entries to enable)"
-            exit 0
-          fi
-
-          if echo "${CHART_VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            MAX_VERSION="$(printf '%s\n%s\n' "${LATEST_VERSION}" "${CHART_VERSION}" | sort -V | tail -1)"
-            if [ "${MAX_VERSION}" = "${CHART_VERSION}" ] && [ "${CHART_VERSION}" != "${LATEST_VERSION}" ]; then
-              echo "should_release=true" >> "$GITHUB_OUTPUT"
-              echo "next_version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
-              echo "Chart version override detected: ${CHART_VERSION} (latest tag is ${LATEST_VERSION})"
-              exit 0
-            fi
-          fi
-
-          BUMP="none"
-          PR_LABELS=""
-          PR_LABELS_LOWER=""
-          PR_TITLE=""
-          PR_CHANGED_FILES=0
-          PR_ADDITIONS=0
-          PR_DELETIONS=0
-          PR_TOTAL_CHURN=0
-          # The squash-merge subject ends with "(#N)"; the body may name other PRs.
-          PR_NUMBER="$(printf '%s\n' "${HEAD_COMMIT_MSG:-}" | head -1 | grep -oE '\(#[0-9]+\)$' | tr -dc '0-9' || true)"
-
-          if [ -n "${PR_NUMBER}" ]; then
-            PR_JSON="$(curl -fsSL \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" || true)"
-            if [ -n "$PR_JSON" ]; then
-              PR_LABELS="$(echo "$PR_JSON" | jq -r '.labels[]?.name' || true)"
-              PR_LABELS_LOWER="$(echo "$PR_LABELS" | tr '[:upper:]' '[:lower:]')"
-              PR_TITLE="$(echo "$PR_JSON" | jq -r '.title // ""' || true)"
-              PR_CHANGED_FILES="$(echo "$PR_JSON" | jq -r '.changed_files // 0' || echo 0)"
-              PR_ADDITIONS="$(echo "$PR_JSON" | jq -r '.additions // 0' || echo 0)"
-              PR_DELETIONS="$(echo "$PR_JSON" | jq -r '.deletions // 0' || echo 0)"
-              PR_TOTAL_CHURN=$((PR_ADDITIONS + PR_DELETIONS))
-              echo "PR #${PR_NUMBER} labels: ${PR_LABELS:-<none>}"
-              echo "PR #${PR_NUMBER} title: ${PR_TITLE:-<none>}"
-              echo "PR #${PR_NUMBER} changed_files=${PR_CHANGED_FILES} additions=${PR_ADDITIONS} deletions=${PR_DELETIONS} churn=${PR_TOTAL_CHURN}"
-
-              if echo "$PR_LABELS_LOWER" | grep -qE '^no-release$'; then
-                echo "should_release=false" >> "$GITHUB_OUTPUT"
-                echo "PR has no-release label; skipping release"
-                exit 0
-              fi
-
-              if echo "$PR_LABELS_LOWER" | grep -qE '^release:major$'; then
-                BUMP="major"
-              elif echo "$PR_LABELS_LOWER" | grep -qE '^release:minor$'; then
-                BUMP="minor"
-              elif echo "$PR_LABELS_LOWER" | grep -qE '^release:patch$'; then
-                BUMP="patch"
-              elif echo "$PR_LABELS_LOWER" | grep -qE '^(breaking-change)$'; then
-                BUMP="major"
-              elif echo "$PR_LABELS_LOWER" | grep -qE '^(feature)$'; then
-                BUMP="minor"
-              elif echo "$PR_LABELS_LOWER" | grep -qE '^(bugfix|performance)$'; then
-                BUMP="patch"
-              fi
-
-              # Size- and scope-aware automatic promotion:
-              # large runtime-impacting PRs should bump at least minor.
-              if [ "$BUMP" != "major" ]; then
-                XL_SIZE="false"
-                RUNTIME_SCOPE="false"
-                LARGE_DIFF="false"
-
-                if echo "$PR_LABELS_LOWER" | grep -qE '^size/(xl|xxl)$'; then
-                  XL_SIZE="true"
-                fi
-
-                if echo "$PR_LABELS_LOWER" | grep -qE '^scope/(proxy|cache|translator|cli|helm|api)$'; then
-                  RUNTIME_SCOPE="true"
-                fi
-
-                if [ "${PR_CHANGED_FILES}" -ge 20 ] || [ "${PR_TOTAL_CHURN}" -ge 1200 ]; then
-                  LARGE_DIFF="true"
-                fi
-
-                if { [ "${XL_SIZE}" = "true" ] && [ "${RUNTIME_SCOPE}" = "true" ]; } || [ "${LARGE_DIFF}" = "true" ]; then
-                  if [ "$BUMP" = "none" ] || [ "$BUMP" = "patch" ]; then
-                    BUMP="minor"
-                    echo "Auto-promoted bump to minor based on PR size/scope heuristic"
-                  fi
-                fi
-              fi
-            fi
-          fi
-
-          if [ "$BUMP" = "none" ]; then
-            if echo "$COMMITS" | grep -qE 'BREAKING CHANGE|^feat.*!:|^fix.*!:'; then
-              BUMP="major"
-            elif echo "$COMMITS" | grep -qE '^feat(\(|:)'; then
-              BUMP="minor"
-            elif echo "$COMMITS" | grep -qE '^(fix|perf|refactor|revert)(\(|:)'; then
-              BUMP="patch"
-            fi
-          fi
-
-          if [ "$BUMP" = "none" ]; then
-            BUMP="patch"
-            echo "No explicit release signal found; defaulting to patch bump for non-doc/ci changes"
-          fi
-
-          CURRENT="${LATEST_TAG#v}"
-          IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
-          case "$BUMP" in
-            major) MAJ=$((MAJ+1)); MIN=0; PAT=0 ;;
-            minor) MIN=$((MIN+1)); PAT=0 ;;
-            patch) PAT=$((PAT+1)) ;;
-          esac
-
-          # Releases queue rather than cancel, so an earlier run may already have
-          # cut this version while this one waited. Re-reading the tags above
-          # normally moves LATEST_TAG past it; this is the belt-and-braces check
-          # that two runs can never publish the same tag.
-          if git rev-parse -q --verify "refs/tags/v${MAJ}.${MIN}.${PAT}" >/dev/null; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "v${MAJ}.${MIN}.${PAT} already exists; an earlier queued run cut it. Skipping."
-            exit 0
-          fi
-
-          if ! [[ "${MAJ}.${MIN}.${PAT}" =~ ${SEMVER_RE} ]]; then
-            echo "::error::computed version '${MAJ}.${MIN}.${PAT}' is not MAJOR.MINOR.PATCH"
-            exit 1
-          fi
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "next_version=${MAJ}.${MIN}.${PAT}" >> "$GITHUB_OUTPUT"
-          echo "Bump: $BUMP -> v${MAJ}.${MIN}.${PAT}"
+          # Everything since the latest tag counts: shipped paths, the new
+          # [Unreleased] entries and the labels of every shipping pull request
+          # merged since. The commit that started this run is not special.
+          python3 scripts/ci/release_plan.py plan --repo . --tip HEAD --github-repo "${REPO}" --github-output "$GITHUB_OUTPUT"
 
   validate-release:
     needs: prepare-release
@@ -282,16 +97,15 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
 
-      - name: Verify unreleased changelog section exists
+      - name: Verify the release has changelog entries
+        env:
+          RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
+          LATEST_TAG: ${{ needs.prepare-release.outputs.latest_tag }}
+          NEXT_VERSION: ${{ needs.prepare-release.outputs.next_version }}
         run: |
           set -euo pipefail
-          chmod +x scripts/ci/extract_changelog_section.sh
-          scripts/ci/extract_changelog_section.sh Unreleased CHANGELOG.md > /tmp/release-section.md
-          test -s /tmp/release-section.md
-          if ! grep -qE '^(### |- )' /tmp/release-section.md; then
-            echo "Unreleased changelog section is empty"
-            exit 1
-          fi
+          python3 scripts/ci/changelog_release.py notes --repo . --rev "${RELEASE_SHA}" --prev-tag "${LATEST_TAG}" --version "${NEXT_VERSION}" > "${RUNNER_TEMP}/release-section.md"
+          grep -qE '^(### |- )' "${RUNNER_TEMP}/release-section.md"
 
       - name: Run release validation tests
         run: go test ./... -count=1
@@ -389,13 +203,11 @@ jobs:
           VERSION="${NEXT_VERSION}"
           TAG="v${VERSION}"
           PREV_TAG="${LATEST_TAG}"
-          chmod +x scripts/ci/extract_changelog_section.sh
-          chmod +x scripts/ci/materialize_unreleased.sh
           NOTES_FILE="$(mktemp)"
           SECTION_FILE="$(mktemp)"
-          scripts/ci/materialize_unreleased.sh "${VERSION}" "$(date +%Y-%m-%d)" CHANGELOG.md
-          scripts/ci/extract_changelog_section.sh "${VERSION}" CHANGELOG.md > "$SECTION_FILE"
-          git checkout -- CHANGELOG.md
+          # The notes are the entries this release added to [Unreleased] since
+          # the previous tag, read from the tagged commit.
+          python3 scripts/ci/changelog_release.py notes --repo . --rev "${RELEASE_SHA}" --prev-tag "${PREV_TAG}" --version "${VERSION}" > "$SECTION_FILE"
           cat "$SECTION_FILE" > "$NOTES_FILE"
           {
             echo "tag=${TAG}"
@@ -861,7 +673,7 @@ jobs:
       - name: Prepare release metadata branch
         id: metadata
         env:
-          METADATA_PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
           TEST_COUNT: ${{ needs.validate-release.outputs.test_count }}
           COVERAGE_PCT: ${{ needs.validate-release.outputs.coverage_pct }}
@@ -871,39 +683,18 @@ jobs:
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
             echo "::warning::RELEASE_PR_TOKEN is not configured. The metadata branch is pushed with the job token and no pull request is opened for it."
           fi
-          chmod +x scripts/ci/sync_release_metadata.sh
-          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" . "${GITHUB_REPOSITORY}"
-
-          CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
-          CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
-          if [ "${CHART_VERSION}" != "${VERSION}" ] || [ "${CHART_APP_VERSION}" != "${VERSION}" ]; then
-            echo "::error::Chart.yaml version/appVersion mismatch after metadata sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}"
-            exit 1
-          fi
-
-          if git diff --quiet --exit-code -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml; then
-            echo "release metadata already synced"
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          BRANCH="release/metadata-v${VERSION}"
-          echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
-
-          # The commit is made through GitHub's API (createCommitOnBranch), which
-          # signs it: the metadata PR then passes the signed-commit rule like any
-          # other PR, with no admin bypass. A local git commit here is unsigned.
-          FILES="$(git diff --name-only -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml)"
-          chmod +x scripts/ci/commit_via_api.sh
-          # shellcheck disable=SC2086 # FILES is a newline-separated list of fixed repo paths
-          if ! METADATA_SHA="$(GH_TOKEN="${METADATA_PUSH_TOKEN}" scripts/ci/commit_via_api.sh "${GITHUB_REPOSITORY}" "${BRANCH}" "$(git rev-parse HEAD)" "docs: sync release metadata for v${VERSION}" ${FILES})"; then
-            echo "::warning::Unable to push release metadata branch ${BRANCH}. Skipping metadata PR automation for this release."
+          # The files are generated against the current tip of main and committed
+          # through the API (a signed commit on top of it); the CHANGELOG move
+          # carries exactly the entries this tag shipped, so entries merged since
+          # stay in [Unreleased]. The script generates again when main moved
+          # while it ran, so the branch never starts from an old main.
+          if ! python3 scripts/ci/release_metadata.py prepare --version "${VERSION}" \
+              --tests "${TEST_COUNT}" --coverage "${COVERAGE_PCT}" --lines "${CODE_LINES}" \
+              --github-output "$GITHUB_OUTPUT"; then
+            echo "::warning::Unable to push the release metadata branch. Skipping metadata PR automation for this release."
             echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          echo "release metadata commit ${METADATA_SHA} on ${BRANCH} (signed by GitHub)"
 
       - name: Open the release metadata pull request and arm auto-merge
         if: steps.metadata.outputs.has_changes == 'true'
@@ -958,3 +749,41 @@ jobs:
             echo "::warning::could not arm auto-merge on pull request #${NUMBER}; enable it by hand"
             echo "Release metadata v${VERSION}: pull request #${NUMBER} is open, auto-merge could not be armed." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Close superseded release metadata pull requests
+        if: steps.metadata.outputs.has_changes == 'true' && env.HAS_RELEASE_PR_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          # The newest metadata branch files every release section main lacks,
+          # so an older open one has nothing left to add.
+          python3 scripts/ci/release_metadata.py refresh || echo "::warning::could not refresh the release metadata pull requests"
+
+  # A release metadata pull request is generated against the main it was made
+  # from. Any later push to main can leave it behind, and merging a branch that
+  # is behind would 3-way merge CHANGELOG lines. This job regenerates the open
+  # pull request on every push to main, from the current main, with the same
+  # script, and closes the superseded ones. A commit amended by hand on the
+  # branch is replaced by the regenerated one when main has moved.
+  refresh-metadata-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 0
+          ref: main
+          persist-credentials: false
+
+      - name: Regenerate the open release metadata pull request from main
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "RELEASE_PR_TOKEN is not configured; nothing to refresh"
+            exit 0
+          fi
+          python3 scripts/ci/release_metadata.py refresh

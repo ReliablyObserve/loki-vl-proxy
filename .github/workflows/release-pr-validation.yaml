@@ -138,11 +138,14 @@ jobs:
           read_head charts/loki-vl-proxy/Chart.yaml chart
           read_head CHANGELOG.md changelog
           read_head docs/observability.md observability
-          if ! grep -Fxq "version: ${version}" "${dir}/chart"; then
-            fail "Chart.yaml version is not ${version}"
+          # The chart moves forward only: when main already carries a newer
+          # release, the metadata for this one leaves the chart on that version.
+          chart_version="$(sed -n 's/^version: //p' "${dir}/chart" | head -n 1)"
+          if ! [[ "${chart_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ "$(printf '%s\n%s\n' "${version}" "${chart_version}" | sort -V | tail -n 1)" != "${chart_version}" ]; then
+            fail "Chart.yaml version is not ${version} or newer"
           fi
-          if ! grep -Fxq "appVersion: \"${version}\"" "${dir}/chart"; then
-            fail "Chart.yaml appVersion is not \"${version}\""
+          if ! grep -Fxq "appVersion: \"${chart_version}\"" "${dir}/chart"; then
+            fail "Chart.yaml appVersion is not \"${chart_version}\""
           fi
           if ! awk -v h="## [${version}]" 'index($0, h) == 1 { found = 1 } END { exit !found }' "${dir}/changelog"; then
             fail "CHANGELOG.md has no ## [${version}] section"
