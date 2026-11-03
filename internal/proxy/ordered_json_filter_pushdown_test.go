@@ -407,6 +407,11 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		// ends with a word rune (getPhrasePos): a phrase of punctuation is a
 		// substring.
 		word := f.quoted()
+		if word == "" {
+			// field:"" matches an empty or missing field (VictoriaLogs'
+			// empty phrase filter), not every row.
+			return value == ""
+		}
 		isWordRune := func(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
 		before := ""
 		if first, _ := utf8.DecodeRuneInString(word); isWordRune(first) {
@@ -419,6 +424,10 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return vlPhrasePos(value, word) >= 0
 	}
 }
+
+// logsLevelFilterRE finds the filter on __dl of the log form of a
+// detected_level filter.
+var logsLevelFilterRE = regexp.MustCompile(`\| filter [-!(]*__dl:`)
 
 var fakeRegexps sync.Map
 
@@ -449,6 +458,9 @@ func fakeStatsFuncs(t testing.TB, statsPipe string) []fakeStatsFunc {
 	for rest != "" {
 		var fn fakeStatsFunc
 		switch {
+		case rest == "count()":
+			// An unnamed count, which VictoriaLogs names count(*).
+			return append(funcs, fakeStatsFunc{name: "count(*)"})
 		case strings.HasPrefix(rest, "count() "):
 			rest = strings.TrimPrefix(rest, "count() ")
 		case strings.HasPrefix(rest, "sum_len(_msg) "):
@@ -530,19 +542,34 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 	// the unpack and the copies after the level are run as VictoriaLogs runs
 	// them, the rest of the chain is emulated whole.
 	sharedChain := chainSharedUnpack(query) != ""
+	// The log form of a detected_level filter keeps the value in __dl, filters
+	// on it inside the chain and deletes it with the chain's scratch fields
+	// (translator.DetectedLevelFilterLogs).
+	logsFilter := logsLevelFilterRE.MatchString(query)
+	// The native stats route drops the chain's closing delete: the chain then
+	// ends with the pipe that writes detected_level.
+	chainEnd := "delete __dl, __dl_*, __j_*, __l_*"
+	if !strings.Contains(query, "| "+chainEnd) {
+		chainEnd = `format "<__dl>" as detected_level`
+	}
 	for _, pipe := range pipes[1:] {
 		runPipe := true
 		switch {
 		case inChain:
 			// The rest of translator.BuildDetectedLevelChain: its result is
-			// already in detected_level.
-			inChain = pipe != "delete __dl, __dl_*, __j_*, __l_*"
-			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe))
+			// already in detected_level (in __dl for the log filter form).
+			inChain = pipe != chainEnd
+			runPipe = sharedChain && (!inChain || strings.HasPrefix(pipe, "unpack_json") || chainSharedCopy(pipe)) ||
+				logsFilter && (!inChain || strings.HasPrefix(pipe, "filter "))
 		case chainStart(pipe):
 			// The start of translator.BuildDetectedLevelChain; the chain is
 			// emulated whole by emulateDetectedLevelChainFor, for the fields and
 			// keys it was built from.
-			values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			if logsFilter {
+				values["__dl"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			} else {
+				values["detected_level"] = emulateDetectedLevelChainFor(values, chainPresence(query))
+			}
 			if chainStoredLevelDecides(values, chainPresence(query)) {
 				values["__dl_h"] = "1" // the rows a stored level decides, as the chain's marker pipes flag them
 			}
@@ -694,7 +721,7 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				}
 			}
 			values = kept
-		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "):
+		case strings.HasPrefix(pipe, "stats "), strings.HasPrefix(pipe, "limit "), strings.HasPrefix(pipe, "sort "):
 		default:
 			t.Errorf("fake VL: unsupported pipe %q", pipe)
 			return nil, false

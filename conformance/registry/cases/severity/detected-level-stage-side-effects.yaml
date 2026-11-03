@@ -9,9 +9,11 @@ why: |
   `| drop detected_level`, `| drop level`, and presence filters
   `| detected_level!=""` / `| detected_level=""` across stored level
   fields, stream labels, and ordinary or categorize-labels responses.
-  Exact value filters and later `label_format detected_level=...` stage
-  ordering remain open. In particular, value filters cannot yet use the
-  same per-entry derived value that the response path exposes, and a
+  An exact value filter that no parser, line rewrite or label stage
+  precedes compares the same per-entry derived value the response path
+  exposes (severity/detected-level-filter-json-level). Value filters after
+  a drop, keep or label_format stage, and later
+  `label_format detected_level=...` stage ordering, remain open: a
   label_format target may be classified as a parsed label instead of
   Loki's structured metadata.
 request:
@@ -36,7 +38,7 @@ gap:
   effort: S
   area: 'internal/proxy/detected_level.go, internal/translator/translator.go, internal/proxy/loki_profile.go (derived value filters and stage ordering)'
   loki: 'pkg/logql/log/keep_labels.go, drop_labels.go (detected_level is ordinary structured metadata)'
-  proxy: 'bare keep/drop and presence filters corrected; exact-value derived filters and later label_format ordering remain open'
+  proxy: 'bare keep/drop, presence filters and value filters before any stage corrected; value filters after drop/keep/label_format and later label_format ordering remain open'
   planned_test: 'TestCompat_DetectedLevelKeepDrop and TestCompat_DetectedLevelPresenceFilters (test/e2e-compat core); extend the live Loki comparison for exact-value filters and label_format ordering when fixed'
   note: 'The remaining value-filter and label_format differences reproduce with the existing dual-ingest fixture; they are not asserted as passing.'
   clusters:

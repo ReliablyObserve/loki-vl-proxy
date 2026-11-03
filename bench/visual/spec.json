@@ -362,6 +362,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -416,6 +419,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -471,6 +477,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -484,6 +493,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -497,6 +509,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -730,6 +745,9 @@
     "severity/detected-level-filter-json-level",
     "range_function-rate",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -1702,6 +1720,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
@@ -1715,6 +1736,9 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "severity/detected-level-filter-json-level"
    ]
   },
   {
