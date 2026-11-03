@@ -85,8 +85,11 @@ func TestDrilldown_IndexVolumeSegmentsMatchLokiOnRepeat(t *testing.T) {
 	byService := func(labels map[string]string) []string {
 		return []string{volumeBytesName(map[string]string{"service_name": labels["app"]}, false)}
 	}
+	// A repeat that seals a new minute reads that minute too (partial); both
+	// outcomes mean the kept segments answered.
 	segmentsCached := func() int64 {
-		return proxyMetricValue(t, proxyURL, `loki_vl_proxy_internal_operation_total{operation="volume_segments",outcome="cached"} `)
+		return proxyMetricValue(t, proxyURL, `loki_vl_proxy_internal_operation_total{operation="volume_segments",outcome="cached"} `) +
+			proxyMetricValue(t, proxyURL, `loki_vl_proxy_internal_operation_total{operation="volume_segments",outcome="partial"} `)
 	}
 	ask := func(round int, start, end time.Time) {
 		t.Helper()

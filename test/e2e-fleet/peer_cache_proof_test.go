@@ -384,10 +384,9 @@ func movedVolume(fx fleetFixture, by time.Duration) proofRequest {
 	return volumeRequest(fx, fmt.Sprintf(`{fleet_probe=%q}`, fx.probe), fx.start.Add(by), "base_all_moved_"+by.String())
 }
 
-// vlVolumeCalls counts the fleet's VictoriaLogs stats calls of one request.
-func vlVolumeCalls(d fleetCounters) float64 {
-	return d.fleetVLRoutes["/select/logsql/stats_query"] + d.fleetVLRoutes["/select/logsql/stats_query_range"]
-}
+// volumeRead counts a replica's segment reads of one request that went to
+// VictoriaLogs: some or every kept segment missing, or the whole window.
+func volumeRead(d fleetCounters) float64 { return d.volPartial + d.volScanned + d.volWhole }
 
 // requireVolumeLikeVL requires that a volume answer holds, per service, the
 // line bytes VictoriaLogs itself sums over the request's window
@@ -434,8 +433,8 @@ func requireVolumeLikeVL(t *testing.T, label string, req proofRequest, answer st
 
 // requireMovedVolume reads a moved volume no replica has answered: its
 // answer must equal VictoriaLogs' own sums, it is never a reply hit, and
-// unless mayEvaluate every segment comes from a cache tier (no VictoriaLogs
-// stats call in the fleet).
+// unless mayEvaluate every segment comes from a cache tier (the request's
+// volume_segments outcome is cached: memory, disk or a peer held each one).
 func requireMovedVolume(t *testing.T, rep replica, req proofRequest, where string, mayEvaluate bool) fleetCounters {
 	t.Helper()
 	body, d, _ := ask(t, rep, req)
@@ -444,8 +443,8 @@ func requireMovedVolume(t *testing.T, rep replica, req proofRequest, where strin
 	if d.replyHits != 0 {
 		t.Errorf("%s: %.0f reply hits for a window no replica answered (%s)", label, d.replyHits, d)
 	}
-	if !mayEvaluate && vlVolumeCalls(d) != 0 {
-		t.Errorf("%s caused %.0f VictoriaLogs stats calls in the fleet; every segment of the window was kept (%s)", label, vlVolumeCalls(d), d)
+	if !mayEvaluate && (d.volCached != 1 || volumeRead(d) != 0) {
+		t.Errorf("%s: volume_segments outcomes cached %.0f, partial %.0f, scanned %.0f, whole window %.0f; every segment of the window was kept (%s)", label, d.volCached, d.volPartial, d.volScanned, d.volWhole, d)
 	}
 	return d
 }
@@ -655,8 +654,8 @@ func requireBackupServes(t *testing.T, rep replica, req proofRequest, d fleetCou
 			t.Errorf("%s on %s: %.0f VictoriaLogs calls although the patterns have a backup replica (%s)", req, rep.name, d.fleetVLSelect, d)
 		}
 	case "volume_segments":
-		if vlVolumeCalls(d) != 0 {
-			t.Errorf("%s on %s: %.0f VictoriaLogs stats calls although every volume segment has a backup replica (%s)", req, rep.name, vlVolumeCalls(d), d)
+		if volumeRead(d) != 0 {
+			t.Errorf("%s on %s read volume segments from VictoriaLogs although every segment has a backup replica (%s)", req, rep.name, d)
 		}
 	}
 	if checkInventory && d.invVL != 0 {
@@ -752,17 +751,18 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		})
 		proofRun(t, "volume_segments", func(t *testing.T) {
 			d, _ := warm(t, a, base.volume, first)
-			if vlVolumeCalls(d) == 0 {
-				t.Fatalf("A answered %s without a VictoriaLogs stats call (%s)", base.volume[0], d)
+			if d.volScanned < 1 {
+				t.Fatalf("A answered %s without reading volume segments (scanned %.0f, whole window %.0f): the segment path was not taken (%s)", base.volume[0], d.volScanned, d.volWhole, d)
 			}
 			for _, req := range base.volume {
 				requireVolumeLikeVL(t, req.String()+" on A", req, first[req.path])
 			}
-			// B and C read A's replies, or sum A's segments: no stats call.
+			// B and C read A's replies, or sum A's segments: nothing is read
+			// from VictoriaLogs.
 			for _, req := range base.volume {
 				for _, rep := range []replica{b, c} {
-					if d, _ := askSame(t, rep, req, first[req.path]); vlVolumeCalls(d) != 0 {
-						t.Errorf("%s on %s caused %.0f VictoriaLogs stats calls; A kept its reply and segments (%s)", req, rep.name, vlVolumeCalls(d), d)
+					if d, _ := askSame(t, rep, req, first[req.path]); volumeRead(d) != 0 {
+						t.Errorf("%s on %s read volume segments from VictoriaLogs; A kept its reply and segments (%s)", req, rep.name, d)
 					}
 				}
 			}

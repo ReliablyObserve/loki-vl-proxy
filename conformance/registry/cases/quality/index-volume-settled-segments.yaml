@@ -43,8 +43,10 @@ why: |
   VictoriaLogs limits itself (a target made of one stored field: VictoriaLogs
   breaks ties in its own order), windows under 10 minutes, queries that are
   not row-local, a rejected optimised query, a segment over the cache entry
-  size and a response over -backend-max-buffered-response-bytes keep the
-  single whole-window call. volume_range is unchanged.
+  size, a response over -backend-max-buffered-response-bytes and segment rows
+  of one request beyond that same bound keep the single whole-window call.
+  Rows are summed as they are read (one row per group is kept) and cached
+  segments are looked up side by side. volume_range is unchanged.
 
   Measured with a recording fake VictoriaLogs (BenchmarkVolumeLandingRepeat,
   24h landing volume moved by a second per request): whole-window path 1

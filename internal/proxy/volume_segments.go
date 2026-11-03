@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	fj "github.com/valyala/fastjson"
@@ -46,8 +47,11 @@ import (
 // VictoriaLogs would limit (plan.pushLimit: it keeps its own top N, with its
 // own tie order), short windows and queries that are not row-local keep the
 // single whole-window call. A rejected optimised query, a response or segment
-// over its size limit, or an unexpected bucket also sends the whole request to
+// over its size limit, segment rows beyond -backend-max-buffered-response-bytes
+// for the request, or an unexpected bucket also sends the whole request to
 // that call: segment rows are never mixed with rows of another query form.
+// Rows are folded into one sum as they are read, so a request holds one row
+// per group plus the segments in flight.
 
 const (
 	// volumeSegmentKeyVersion versions the segment cache keys.
@@ -59,12 +63,18 @@ const (
 
 var (
 	// errVolumeSegmentTooLarge is a segment whose rows exceed the read cache's
-	// entry size: the request is answered by one whole-window call.
+	// entry size, or segment rows of one request beyond the bytes one
+	// whole-window answer may have: the request is answered by one
+	// whole-window call, and so are its kind's for an hour.
 	errVolumeSegmentTooLarge = errors.New("volume segment exceeds the cache entry size")
 	// errVolumeSegmentBucket is a stats_query_range bucket that is not one of
 	// the requested segments.
 	errVolumeSegmentBucket = errors.New("volume segment fill returned an unexpected bucket")
 )
+
+// volumeSegmentLookupParallelism bounds the cache lookups of one request
+// that run side by side.
+const volumeSegmentLookupParallelism = 16
 
 // volumeSegmentFJPool parses segment answers and cached segments; every
 // string kept from a parse is a copy.
@@ -154,38 +164,60 @@ func (p *Proxy) computeVolumeSegmented(ctx context.Context, req volumeRequest, l
 	if _, oversize := p.cache.Get(base + ":oversize"); oversize {
 		return nil, false, nil
 	}
-	parts := make([][]volumeSegmentRow, len(segs))
-	var missing []int
-	reused := 0
+	// Every segment's rows are folded into one sum as soon as they are read,
+	// within the bytes one whole-window answer may have.
+	merge := newVolumeSegmentMerge(int64(p.limits().BufferedBackendBodyBytes))
+	// The kept segments are looked up side by side: a miss may ask the disk
+	// tier and a peer.
+	cached := make([]bool, len(segs))
+	var lookups errgroup.Group
+	lookups.SetLimit(volumeSegmentLookupParallelism)
 	for i, seg := range segs {
-		if seg.level >= 0 {
-			if rows, ok := p.loadVolumeSegment(volumeSegmentKey(base, seg)); ok {
-				parts[i] = rows
-				reused++
-				continue
-			}
+		if seg.level < 0 {
+			continue
 		}
-		missing = append(missing, i)
-	}
-	scanned := 0
-	var group errgroup.Group
-	group.SetLimit(p.metadataInventoryParallelism)
-	for _, job := range volumeSegmentJobs(segs, missing) {
-		if segs[job[0]].level >= 0 {
-			scanned += len(job)
-		}
-		group.Go(func() error {
-			rows, err := p.fillVolumeSegments(ctx, logsqlQuery, plan, statsQuery, base, segs, job)
-			if err != nil {
-				return err
+		lookups.Go(func() error {
+			rows, ok := p.loadVolumeSegment(volumeSegmentKey(base, seg))
+			if !ok {
+				return nil
 			}
-			for i, idx := range job {
-				parts[idx] = rows[i]
-			}
-			return nil
+			cached[i] = true
+			return merge.add(rows)
 		})
 	}
-	if err := group.Wait(); err != nil {
+	err := lookups.Wait()
+	var missing []int
+	reused, scanned := 0, 0
+	for i := range segs {
+		if cached[i] {
+			reused++
+		} else {
+			missing = append(missing, i)
+		}
+	}
+	if err == nil {
+		var group errgroup.Group
+		group.SetLimit(p.metadataInventoryParallelism)
+		for _, job := range volumeSegmentJobs(segs, missing) {
+			if segs[job[0]].level >= 0 {
+				scanned += len(job)
+			}
+			group.Go(func() error {
+				rows, err := p.fillVolumeSegments(ctx, logsqlQuery, plan, statsQuery, base, segs, job)
+				if err != nil {
+					return err
+				}
+				for _, r := range rows {
+					if err := merge.add(r); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
+		err = group.Wait()
+	}
+	if err != nil {
 		if ctx.Err() == nil && (isUpstreamQueryRejected(err) || errors.Is(err, errBodyTooLarge) || errors.Is(err, errVolumeSegmentTooLarge) || errors.Is(err, errVolumeSegmentBucket)) {
 			if errors.Is(err, errVolumeSegmentTooLarge) {
 				// Remembered for an hour, so later requests of the same kind
@@ -198,7 +230,7 @@ func (p *Proxy) computeVolumeSegmented(ctx context.Context, req volumeRequest, l
 		return nil, true, err
 	}
 	p.observeInternalOperation(ctx, "volume_segments", inventoryOutcome(scanned, 0, reused), time.Since(started))
-	return p.mergeVolumeSegments(req, plan, parts), true, nil
+	return p.volumeSegmentsAnswer(req, plan, merge.rows), true, nil
 }
 
 // volumeSegmentJobs groups the missing segments into VictoriaLogs calls: an
@@ -438,26 +470,61 @@ func (p *Proxy) storeVolumeSegment(key string, rows []volumeSegmentRow, ttl time
 	return nil
 }
 
-// mergeVolumeSegments sums the rows of every segment per row and answers like
-// the whole-window path: the same naming, limit and order.
-func (p *Proxy) mergeVolumeSegments(req volumeRequest, plan volumePlan, parts [][]volumeSegmentRow) map[string]interface{} {
-	index := map[string]int{}
-	var merged []volumeSegmentRow
-	var key []byte
-	for _, part := range parts {
-		for _, row := range part {
-			key = key[:0]
-			for _, s := range row.kv { // length-prefixed: no value can fake a boundary
-				key = append(binary.AppendUvarint(key, uint64(len(s))), s...)
-			}
-			if i, ok := index[string(key)]; ok {
-				merged[i].bytes += row.bytes
-				continue
-			}
-			index[string(key)] = len(merged)
-			merged = append(merged, row)
+// volumeSegmentMerge sums segment rows per row as they arrive. The rows read
+// for one request may hold at most budget bytes (strings plus a word per
+// string and per row): past it the request is answered by one whole-window
+// call, which -backend-max-buffered-response-bytes bounds the same way.
+type volumeSegmentMerge struct {
+	mu     sync.Mutex
+	index  map[string]int
+	rows   []volumeSegmentRow
+	key    []byte
+	size   int64
+	budget int64
+}
+
+func newVolumeSegmentMerge(budget int64) *volumeSegmentMerge {
+	return &volumeSegmentMerge{index: map[string]int{}, budget: budget}
+}
+
+func (m *volumeSegmentMerge) add(rows []volumeSegmentRow) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, row := range rows {
+		m.size += 8
+		for _, s := range row.kv {
+			m.size += int64(len(s)) + 8
 		}
+		if m.budget > 0 && m.size > m.budget {
+			return errVolumeSegmentTooLarge
+		}
+		m.key = m.key[:0]
+		for _, s := range row.kv { // length-prefixed: no value can fake a boundary
+			m.key = append(binary.AppendUvarint(m.key, uint64(len(s))), s...)
+		}
+		if i, ok := m.index[string(m.key)]; ok {
+			m.rows[i].bytes += row.bytes
+			continue
+		}
+		m.index[string(m.key)] = len(m.rows)
+		m.rows = append(m.rows, row)
 	}
+	return nil
+}
+
+// mergeVolumeSegments sums the rows of every segment per row and answers like
+// the whole-window path.
+func (p *Proxy) mergeVolumeSegments(req volumeRequest, plan volumePlan, parts [][]volumeSegmentRow) map[string]interface{} {
+	merge := newVolumeSegmentMerge(0)
+	for _, part := range parts {
+		_ = merge.add(part)
+	}
+	return p.volumeSegmentsAnswer(req, plan, merge.rows)
+}
+
+// volumeSegmentsAnswer names, limits and orders summed rows with the
+// whole-window path's code.
+func (p *Proxy) volumeSegmentsAnswer(req volumeRequest, plan volumePlan, merged []volumeSegmentRow) map[string]interface{} {
 	buckets := map[int64]map[string]uint64{}
 	metrics := map[string]map[string]string{}
 	ms := volumeBucketMillis(req, 0)

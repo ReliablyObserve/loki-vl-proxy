@@ -262,12 +262,20 @@ func newSegProxy(t testing.TB, backend string, inventory int, freshness time.Dur
 	return p
 }
 
+// drilldownHeaders are the headers Logs Drilldown's landing volume carries.
+var drilldownHeaders = map[string]string{"X-Query-Tags": "Source=grafana-lokiexplore-app", "User-Agent": "Grafana/13.2.1"}
+
 // segVolume asks the proxy for an instant volume and returns the raw answer.
-func segVolume(t testing.TB, p *Proxy, org string, params url.Values) string {
+func segVolume(t testing.TB, p *Proxy, org string, params url.Values, headers ...map[string]string) string {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/volume?"+params.Encode(), nil)
 	if org != "" {
 		r.Header.Set("X-Scope-OrgID", org)
+	}
+	for _, h := range headers {
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
 	}
 	w := httptest.NewRecorder()
 	p.handleVolume(w, r)
@@ -405,9 +413,9 @@ func TestVolumeSegmentsRepeatReadsOnlyTheEdges(t *testing.T) {
 	start := end.Add(-24 * time.Hour)
 	for i := 0; i < 4; i++ {
 		params := segWindow(landingParams(), start, end)
-		got := segVolume(t, seg, "", params)
+		got := segVolume(t, seg, "", params, drilldownHeaders)
 		segCalls := vl.take()
-		want := segVolume(t, whole, "", params)
+		want := segVolume(t, whole, "", params, drilldownHeaders)
 		wholeCalls := vl.take()
 		if got != want {
 			t.Fatalf("request %d: segmented answer differs from the whole-window answer\n got: %s\nwant: %s", i, got, want)
@@ -638,10 +646,16 @@ func segWith(params url.Values, key, value string) url.Values {
 	return out
 }
 
-func segVolumeStatus(t testing.TB, p *Proxy, params url.Values) (int, string) {
+func segVolumeStatus(t testing.TB, p *Proxy, params url.Values, headers ...map[string]string) (int, string) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	p.handleVolume(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/volume?"+params.Encode(), nil))
+	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/volume?"+params.Encode(), nil)
+	for _, h := range headers {
+		for k, v := range h {
+			r.Header.Set(k, v)
+		}
+	}
+	p.handleVolume(w, r)
 	return w.Code, w.Body.String()
 }
 
@@ -707,16 +721,61 @@ func TestVolumeSegmentsFallBackToTheWholeWindow(t *testing.T) {
 		}
 	})
 
+	t.Run("segment rows beyond the request's byte budget answer whole", func(t *testing.T) {
+		vl := newSegVL(t)
+		// 50 services over 8 aligned hours: about 2.3 KB of rows per hour
+		// segment, 18 KB for the window, against a 4 KB whole-window answer.
+		from := time.Now().Add(-30 * time.Hour).Truncate(time.Hour)
+		for i := 0; i < 2000; i++ {
+			vl.add("", segRow{ts: from.Add(time.Duration(i) * (8 * time.Hour / 2000)).UnixNano(), labels: map[string]string{"service_name": fmt.Sprintf("service-%02d", i%50)}, size: 7 + i%5})
+		}
+		shared := cache.New(time.Minute, 100000)
+		build := func(budget int) *Proxy {
+			p, err := New(Config{BackendURL: vl.URL, Cache: shared, LogLevel: "error", MaxStatsCacheFreshness: DefaultMaxStatsCacheFreshness,
+				ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: budget}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return p
+		}
+		filler, small := build(0), build(10000)
+		segVolume(t, filler, "", segWindow(landingParams(), from, from.Add(8*time.Hour)))
+		vl.take()
+		whole := newSegProxy(t, vl.URL, -1, DefaultMaxStatsCacheFreshness)
+		for i := 0; i < 2; i++ {
+			moved := segWindow(segWith(landingParams(), "limit", strconv.Itoa(4000+i)), from, from.Add(8*time.Hour))
+			got := segVolume(t, small, "", moved)
+			calls := vl.take()
+			if want := segVolume(t, whole, "", moved); got != want {
+				t.Fatalf("request %d: %s, whole-window %s", i, got, want)
+			}
+			vl.take()
+			if len(calls) != 1 || calls[0].path != "/select/logsql/stats_query" || calls[0].end-calls[0].start != int64(8*time.Hour) {
+				t.Fatalf("request %d: want one whole-window stats_query, got %+v", i, calls)
+			}
+		}
+	})
+
 	t.Run("a failing VictoriaLogs answers like the whole-window path", func(t *testing.T) {
 		vl := newSegVL(t)
 		vl.add("", rows...)
 		vl.fail = func(segCall) (int, string) { return http.StatusServiceUnavailable, "storage unavailable" }
 		seg := newSegProxy(t, vl.URL, 0, DefaultMaxStatsCacheFreshness)
 		whole := newSegProxy(t, vl.URL, -1, DefaultMaxStatsCacheFreshness)
-		gotCode, got := segVolumeStatus(t, seg, params)
-		wantCode, want := segVolumeStatus(t, whole, params)
-		if gotCode != wantCode || got != want {
-			t.Fatalf("segmented %d %s, whole-window %d %s", gotCode, got, wantCode, want)
+		// As Logs Drilldown sends it, and as any other client does.
+		for _, headers := range []map[string]string{drilldownHeaders, nil} {
+			gotCode, got := segVolumeStatus(t, seg, params, headers)
+			wantCode, want := segVolumeStatus(t, whole, params, headers)
+			if gotCode != wantCode || got != want || gotCode == http.StatusOK {
+				t.Fatalf("headers %v: segmented %d %s, whole-window %d %s", headers, gotCode, got, wantCode, want)
+			}
+		}
+		// A failed read keeps nothing: once VictoriaLogs answers, the
+		// segments hold its rows.
+		vl.fail = nil
+		vl.add("", rows...)
+		if got, want := segVolume(t, seg, "", params, drilldownHeaders), segVolume(t, whole, "", params, drilldownHeaders); got != want {
+			t.Fatalf("after recovery: segmented %s, whole-window %s", got, want)
 		}
 	})
 }
