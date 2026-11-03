@@ -483,7 +483,7 @@ type ssResult struct {
 // VictoriaLogs.
 func (s ssScenario) run(t *testing.T, version string) ssResult {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+	emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version, floatPhase: true}
 	strict := &strictVL{t: t, next: emu.handler(), emu: emu}
 	if times := s.times(); len(times) > 0 {
 		strict.lastEvalNs = times[len(times)-1]
@@ -608,7 +608,10 @@ func ssRows(rnd *rand.Rand, s ssScenario, stepNs, lo, hi int64) []emuRow {
 			if rnd.Intn(2) == 0 {
 				edge -= int64(s.window)
 			}
-			ts = edge + int64(rnd.Intn(3)-1)
+			// On the edge or a millisecond either side: VictoriaLogs reads a time
+			// as float64, so a line a few nanoseconds off an edge is not told apart
+			// from one on it (windowPhaseFilter).
+			ts = edge + int64(rnd.Intn(3)-1)*int64(time.Millisecond)
 		}
 		rows = append(rows, emuRow{ts: ts, stream: streams[rnd.Intn(2)], value: values[rnd.Intn(len(values))]})
 	}
@@ -718,13 +721,14 @@ func TestSubSecondStepDifferential(t *testing.T) {
 func ssEdgeRows(s ssScenario, from, to int64) []emuRow {
 	values := []float64{0, 0.5, 1, 2.25, 3, 100.125, 7}
 	var rows []emuRow
+	from -= from % int64(time.Millisecond) // lines on the millisecond, as Loki's clients write them
 	for ts, i := from, 0; ts <= to; ts, i = ts+37*int64(time.Millisecond), i+1 {
 		rows = append(rows, emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), value: values[i%len(values)]})
 	}
 	for _, t := range []int64{s.startNs(), s.endNs()} {
 		for _, edge := range []int64{t, t - int64(s.window)} {
 			for d := int64(-1); d <= 1; d++ {
-				rows = append(rows, emuRow{ts: edge + d, stream: `{app="uw",pod="a"}`, value: 3})
+				rows = append(rows, emuRow{ts: edge + d*int64(time.Millisecond), stream: `{app="uw",pod="a"}`, value: 3})
 			}
 		}
 	}
@@ -1087,5 +1091,66 @@ func TestRestampInstantVectorBodies(t *testing.T) {
 	out := string(restampInstantVector([]byte(in.String()), ns))
 	if got := strings.Count(out, `"value":[1793653199.583,`); got != samples || strings.Contains(out, "5830002") {
 		t.Fatalf("restamped %d of %d samples", got, samples)
+	}
+}
+
+// windowPhaseKeeps evaluates the filter windowPhaseFilter writes for a line at
+// ts. With float false it is the ideal arithmetic the filter stands for: the
+// phase past the window start, exact in integers, kept when 0 < phase <= window
+// (the anchor's multiple-of-256 remainder and the 128 ns of tolerance are taken
+// out again). With float true it is what VictoriaLogs runs: math in float64,
+// which reads a time near 1.8e18 ns as the nearest multiple of 256 and takes
+// the remainder with math.Mod.
+func windowPhaseKeeps(ts, anchor, step, lower, upper int64, float bool) bool {
+	if float {
+		phase := math.Mod(float64(ts)-float64(anchor), float64(step))
+		return phase > float64(lower) && phase <= float64(upper)
+	}
+	rest, window := lower-128, upper-lower
+	phase := (ts - anchor - rest) % step
+	if phase < 0 {
+		phase += step
+	}
+	return phase > 0 && phase <= window
+}
+
+// A line exactly on an evaluation time is in that window ((t-window, t]), and
+// one exactly window earlier is not, however the time falls in float64. The CI
+// case of TestCompat_SubSecondStep: step 0.999 and a 600 ms window, aligned
+// from 1793671800000 ms, a line at 1793671902630 ms, which is a step time.
+// VictoriaLogs read it as phase 600000064 ns and the window filter dropped it,
+// so the proxy answered 8 samples where Loki answered 9. Lines sit on every
+// step time, on every window start, and a millisecond either side of both.
+//
+// conformance: semantics/sub-second-step-grid, window-bounds-and-step-alignment
+func TestSubSecondStepLineOnTheWindowEdge(t *testing.T) {
+	const stepMs, windowMs = 999, 600
+	startMs := int64(1793671800000)
+	for _, version := range []string{"", "v1.49.0", "v1.53.0"} {
+		for _, shiftMs := range []int64{0, 1, 3, 111, 998} { // the grid moves with the hour of the fixture
+			for _, kind := range ssKinds {
+				s := ssScenario{kind: kind, step: "0.999", window: windowMs * time.Millisecond, align: true}
+				first := (startMs + shiftMs) / stepMs * stepMs
+				s.startText = strconv.FormatInt(first*int64(time.Millisecond), 10)
+				s.endText = strconv.FormatInt((first+400*stepMs)*int64(time.Millisecond), 10)
+				for k := int64(0); k <= 400; k++ {
+					at := (first + k*stepMs) * int64(time.Millisecond)
+					for _, off := range []int64{0, -windowMs, 1, -1, -windowMs + 1, -windowMs - 1} {
+						// A line dropped from a window and one let in from the edge
+						// below must not cancel: they differ in series and value.
+						pod, value := "a", 100.0
+						switch off {
+						case 0:
+							value = 1
+						case -windowMs:
+							pod, value = "b", 10
+						}
+						s.rows = append(s.rows, emuRow{ts: at + off*int64(time.Millisecond), stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: value})
+					}
+				}
+				sort.Slice(s.rows, func(i, j int) bool { return s.rows[i].ts < s.rows[j].ts })
+				s.check(t, version)
+			}
+		}
 	}
 }

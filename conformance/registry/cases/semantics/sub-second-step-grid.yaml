@@ -60,6 +60,18 @@ why: |
   VictoriaLogs gets exact fractional-second start/end/time and an instant
   stats answer carries Loki's evaluation time.
 
+  Window shorter than the step: the proxy keeps the lines inside the windows
+  with a phase filter that VictoriaLogs evaluates in float64, which reads a
+  time near 1.8e18 ns as a multiple of 256 ns. A line exactly on an edge (every
+  millisecond time is one for millisecond windows and steps) was classified by
+  the luck of its digits; the CI run of TestCompat_SubSecondStep dropped the
+  line at 1793671902.630 (phase 600000064 against a window of 600000000).
+  Fixed: the anchor is a multiple of 256 ns and the bounds carry its rest and
+  the 128 ns of the read (windowPhaseFilter); a line within about 256 ns of an
+  edge, not on it, is still told apart only by chance
+  (TestSubSecondStepLineOnTheWindowEdge, float64 emulation of the filter). Documented as
+  semantics/window-edge-float64-nanoseconds.
+
   Known, not changed here: a window far wider than its step (a 5 minute
   window on a 20 ms step over 10 s) makes more buckets than one VictoriaLogs
   call is given (heavyQueryBucketThreshold) and the bounded raw-sample
@@ -98,7 +110,7 @@ gap:
   area: 'internal/proxy/proxy.go handleQueryRange (lokiWholeMillisecondStep, withLokiStep); internal/proxy/time_utils.go lokiSampleSeconds, nanosToVLTimestamp, exactVLDuration, lokiFloatSecondsToNanos, restampInstantVector; internal/proxy/range_metric_compat.go encodeWindowMatrix, buildHitsRangeMetricMatrix, buildManualRangeMetricVector'
   loki: 'pkg/loghttp/params.go:122-129, :163-203; pkg/loghttp/query.go:473-515; pkg/querier/queryrange/codec.go:2265-2284; pkg/logql/range_vector.go:42-89, :189-204; pkg/util/marshal/query.go; pkg/querier/queryrange/splitters.go:308-319; pkg/util/server/recovery.go'
   proxy: 'the step in whole milliseconds, Loki''s time text on every route, exact steps and times to VictoriaLogs'
-  planned_test: 'TestSubSecondStepDifferential, TestSubSecondStepEdgeTable, TestSubSecondStepGrafanaShapes, TestSubMillisecondStepIsLokisInternalError, TestLokiSampleSecondsIsModelTimeText, TestNanosToVLTimestampKeepsTheFraction, TestTimestampParsersReadLokisInstant, TestWholeMillisecondStepIsLokisStep, TestExactVLDurationReadsBack, FuzzSubSecondStepAndTimestamps (internal/proxy, CI fuzz-smoke); TestCompat_SubSecondStep (test/e2e-compat, group core)'
+  planned_test: 'TestSubSecondStepDifferential, TestSubSecondStepEdgeTable, TestSubSecondStepGrafanaShapes, TestSubSecondStepLineOnTheWindowEdge, TestSubMillisecondStepIsLokisInternalError, TestLokiSampleSecondsIsModelTimeText, TestNanosToVLTimestampKeepsTheFraction, TestTimestampParsersReadLokisInstant, TestWholeMillisecondStepIsLokisStep, TestExactVLDurationReadsBack, FuzzSubSecondStepAndTimestamps (internal/proxy, CI fuzz-smoke); TestCompat_SubSecondStep (test/e2e-compat, group core)'
   clusters: []
 perf:
   max_ratio: 2.0

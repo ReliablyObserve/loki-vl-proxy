@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -1727,7 +1728,7 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 	// window-phase filter right after the filters, ahead of the derivation pipes.
 	if !strings.HasPrefix(statsQuery, `(service_name:="argocd" OR `) ||
 		!strings.Contains(statsQuery, `) * | math ((_time - `) ||
-		!strings.Contains(statsQuery, ` as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=5000000000 | format "<service.name>" as service_name keep_original_fields`) ||
+		!regexp.MustCompile(` as __lvp_window_phase \| filter __lvp_window_phase:>\d+ __lvp_window_phase:<=\d+ \| format "<service.name>" as service_name keep_original_fields`).MatchString(statsQuery) ||
 		!strings.Contains(statsQuery, `as service_name keep_original_fields |`) ||
 		!strings.Contains(statsQuery, `| stats by (service_name) count()`) {
 		t.Fatalf("expected derived service_name matchers, got %q", statsQuery)

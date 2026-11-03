@@ -66,6 +66,9 @@ type vlEmulator struct {
 	rows    []emuRow
 	field   string // the unwrapped label
 	version string // "" answers no version
+	// floatPhase evaluates the window filter in float64 as VictoriaLogs does
+	// (windowPhaseKeeps); otherwise as the ideal integer arithmetic.
+	floatPhase bool
 	// deriveLevel is Loki's detected_level of a row (its stored level field and
 	// line), applied where the translator's detected_level pipe chain is.
 	deriveLevel func(level, msg string) string
@@ -235,7 +238,7 @@ var (
 
 	emuStreamLabelRE = regexp.MustCompile(`(\w+)="([^"]*)"`)
 	emuPhaseMathRE   = regexp.MustCompile(`^math \(\(_time - (\d+)\) % (\d+)\) as __lvp_window_phase$`)
-	emuPhaseFilterRE = regexp.MustCompile(`^filter __lvp_window_phase:>0 __lvp_window_phase:<=(\d+)$`)
+	emuPhaseFilterRE = regexp.MustCompile(`^filter __lvp_window_phase:>(\d+) __lvp_window_phase:<=(\d+)$`)
 )
 
 // serveStats runs the stats pipes of the query over the rows the request
@@ -276,7 +279,7 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 	// The pipes before the first stats pipe select rows: the unwrap gate and
 	// parsers keep every generated row (all values are numbers), and the window
 	// phase filter of a window shorter than the step keeps the lines inside one.
-	var phaseAnchor, phaseStep, phaseWindow int64
+	var phaseAnchor, phaseStep, phaseLower, phaseUpper int64
 	// fieldOps are the pipes before the first stats pipe that change fields, in
 	// order: the translator's detected_level chain ends by writing the field (the
 	// emulator applies Loki's rule to the row instead of running its pipes), and
@@ -300,17 +303,14 @@ func (e *vlEmulator) serveStats(w http.ResponseWriter, r *http.Request) {
 			phaseStep, _ = strconv.ParseInt(m[2], 10, 64)
 		}
 		if m := emuPhaseFilterRE.FindStringSubmatch(pipe); m != nil {
-			phaseWindow, _ = strconv.ParseInt(m[1], 10, 64)
+			phaseLower, _ = strconv.ParseInt(m[1], 10, 64)
+			phaseUpper, _ = strconv.ParseInt(m[2], 10, 64)
 		}
 	}
 	var recs []emuRec
 	for _, row := range e.selectRows(r) {
 		if phaseStep > 0 {
-			phase := (row.ts - phaseAnchor) % phaseStep
-			if phase < 0 {
-				phase += phaseStep
-			}
-			if phase <= 0 || phase > phaseWindow {
+			if !windowPhaseKeeps(row.ts, phaseAnchor, phaseStep, phaseLower, phaseUpper, e.floatPhase) {
 				continue
 			}
 		}

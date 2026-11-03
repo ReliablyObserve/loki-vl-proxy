@@ -25,7 +25,7 @@ type tumblingLine struct {
 
 var (
 	fakeInFilterRE    = regexp.MustCompile(`\| filter \(?([A-Za-z_]+):in\(([^)]*)\)( or ([A-Za-z_]+):"")?\)?`)
-	fakeWindowPhaseRE = regexp.MustCompile(`\| math \(\(_time - (-?\d+)\) % (\d+)\) as __lvp_window_phase \| filter __lvp_window_phase:>0 __lvp_window_phase:<=(\d+)`)
+	fakeWindowPhaseRE = regexp.MustCompile(`\| math \(\(_time - (-?\d+)\) % (\d+)\) as __lvp_window_phase \| filter __lvp_window_phase:>(\d+) __lvp_window_phase:<=(\d+)`)
 	tumblingStatsByRE = regexp.MustCompile(`\| stats (?:by \(([^)]*)\) )?(count\(\)|sum_len\(_msg\))( as [A-Za-z_]+)?`)
 	tumblingMathRE    = regexp.MustCompile(`\| math __lvp_inner/(\d+) as __lvp_rate \| stats (?:by \(([^)]*)\) )?sum\(__lvp_rate\)`)
 	// The ranked single-field breakdown: `| filter f:in(<base> | stats by (f)
@@ -92,13 +92,13 @@ func fakeWindowPhaseKeep(t testing.TB, q string, ts int64) bool {
 	}
 	anchor, err1 := strconv.ParseInt(m[1], 10, 64)
 	step, err2 := strconv.ParseInt(m[2], 10, 64)
-	window, err3 := strconv.ParseInt(m[3], 10, 64)
-	if err1 != nil || err2 != nil || err3 != nil || step <= 0 {
+	lower, err3 := strconv.ParseInt(m[3], 10, 64)
+	upper, err4 := strconv.ParseInt(m[4], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || step <= 0 {
 		t.Errorf("fake VL: bad window phase filter in %q", q)
 		return false
 	}
-	phase := (ts - anchor) % step
-	return phase > 0 && phase <= window
+	return windowPhaseKeeps(ts, anchor, step, lower, upper, false)
 }
 
 // fakeInFilterKeep applies a `| filter f:in(...)` pipe (optionally
