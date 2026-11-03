@@ -19,7 +19,9 @@
 #   UNIT_SHARD=rest              every other package, the uncached ones included
 #   UNIT_SHARD unset             everything in one job, as before (local runs)
 #   UNIT_SHARDS                  number of internal/proxy shards (default 4)
-#   UNIT_FRESH=1                 -count=1 on every run: no replay (main, dispatch, ci-full)
+#   UNIT_FRESH=1                 expire every stored test result first (`go clean -testcache`), then run
+#                                normally: every test executes and its result is stored for later pull
+#                                requests (main, dispatch, ci-full). Not -count=1, which stores nothing.
 #   UNIT_SHARD_DIR               where a proxy shard writes all-tests.txt and its assigned tests
 #
 # Writes the `go test -json` events of the runs to stdout, one after the other,
@@ -38,8 +40,11 @@ module="$(go list -m)"
 proxy="$module/internal/proxy"
 shard="${UNIT_SHARD:-}"
 shards="${UNIT_SHARDS:-4}"
-fresh=()
-[ "${UNIT_FRESH:-}" = "1" ] && fresh=(-count=1)
+# Fresh: forget every stored result (the compiled packages stay), so each test runs once and its
+# result is stored for the next pull request. -count=1 would run it too but store nothing.
+if [ "${UNIT_FRESH:-}" = "1" ]; then
+  go clean -testcache || exit 2
+fi
 
 if [ -n "$shard" ] && [ "$shard" != "rest" ]; then
   # One share of internal/proxy's tests. The list comes from the same race build the run
@@ -58,7 +63,7 @@ if [ -n "$shard" ] && [ "$shard" != "rest" ]; then
   run="$(scripts/ci/test_shards.py regex --shards "$shards" --shard "$shard" --list "$tmp/list.txt")" || exit 2
   echo "go_test_unit: internal/proxy shard $shard of $shards: $(wc -l < "$dir/assigned.txt" | tr -d ' ') of $(wc -l < "$dir/all-tests.txt" | tr -d ' ') tests" >&2
   status=0
-  go test ./internal/proxy/ ${fresh[@]+"${fresh[@]}"} -race -timeout=50m -run "$run" -coverprofile="$COVERPROFILE" -json "$@" || status=$?
+  go test ./internal/proxy/ -race -timeout=50m -run "$run" -coverprofile="$COVERPROFILE" -json "$@" || status=$?
   exit "$status"
 fi
 
@@ -83,7 +88,7 @@ fi
 status=0
 # The small uncached set first: it takes seconds and its failures show early.
 go test "${uncached[@]}" -count=1 -race -timeout=50m -coverprofile="$tmp/uncached.out" -json "$@" || status=$?
-go test "${cached[@]}" ${fresh[@]+"${fresh[@]}"} -race -timeout=50m -coverprofile="$tmp/cached.out" -json "$@" || status=$?
+go test "${cached[@]}" -race -timeout=50m -coverprofile="$tmp/cached.out" -json "$@" || status=$?
 
 # One "mode:" line, then the blocks of both runs (the sets of packages are disjoint).
 : > "$COVERPROFILE"

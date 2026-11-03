@@ -199,6 +199,7 @@ class MergeShardsTest(unittest.TestCase):
 GO_STUB = """\
 #!/bin/bash
 echo "go $*" >> "$STUB_LOG"
+if [ "$1" = "clean" ]; then exit 0; fi
 if [ "$1" = "list" ] && [ "$2" = "-m" ]; then echo stub/mod; exit 0; fi
 if [ "$1" = "list" ]; then
   for p in cmd/proxy internal/cache internal/memlimit internal/metrics internal/proxy; do echo "stub/mod/$p"; done
@@ -259,12 +260,24 @@ class RunnerShardTest(unittest.TestCase):
             seen += assigned
         self.assertEqual(sorted(seen), sorted(listed))
 
-    def test_fresh_adds_count_one_to_every_run(self):
-        _, calls, _ = self.run_script(1, fresh=True)
-        self.assertTrue(all(" -count=1 " in c for c in calls), calls)
-        _, calls, _ = self.run_script("rest", fresh=True)
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(all(" -count=1 " in c for c in calls), calls)
+    def test_fresh_expires_stored_results_then_runs_normally_so_they_are_stored(self):
+        for shard in (1, "rest"):
+            _, calls, _ = self.run_script(shard, fresh=True)
+            everything = self.log.read_text().splitlines()
+            self.assertIn("go clean -testcache", everything)
+            # before the first test run, and it is the only thing that forgets results
+            self.assertLess(everything.index("go clean -testcache"),
+                            min(i for i, c in enumerate(everything) if c.startswith("go test")))
+            # -count=1 would run the tests but store nothing: only the always-uncached packages keep it
+            counted = [c for c in calls if " -count=1 " in c]
+            if shard == 1:
+                self.assertEqual(counted, [], calls)
+            else:
+                self.assertEqual(len(counted), 1, calls)
+                self.assertIn("cmd/proxy", counted[0])
+                self.assertNotIn("internal/cache", counted[0])
+        self.run_script(1, fresh=False)
+        self.assertNotIn("go clean -testcache", self.log.read_text())
 
     def test_rest_runs_every_package_but_internal_proxy(self):
         done, calls, _ = self.run_script("rest")

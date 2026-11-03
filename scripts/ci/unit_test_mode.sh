@@ -3,7 +3,9 @@
 #
 # Prints "fresh=true" or "fresh=false" (the lines of $GITHUB_OUTPUT). A pull request replays: a
 # package whose test binary, flags, environment and opened files are unchanged returns its cached
-# result. Everything else runs every test again (-count=1): a push to main, a scheduled or manual
+# result. Everything else runs every test again: the stored results are expired first
+# (`go clean -testcache`) and the run stores new ones, so the next pull request can replay them
+# (-count=1 would run the tests but store nothing). That is a push to main, a scheduled or manual
 # run, a pull request carrying the ci-full label, and any case where the answer is in doubt
 # (no pull request number, labels that cannot be read).
 #

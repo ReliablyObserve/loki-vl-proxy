@@ -65,7 +65,8 @@ jobs:
           cache: false
 
       # A pull request replays unchanged packages from the Go test cache; main,
-      # a manual run and the ci-full label run every test again (-count=1).
+      # a manual run and the ci-full label expire the stored results first and run
+      # every test again, storing new results for the pull requests that follow.
       - name: Choose cached or fresh test runs
         id: mode
         env:
@@ -185,7 +186,7 @@ jobs:
           {
             echo "### Go test cache (shard ${UNIT_SHARD})"
             echo
-            echo "- run: $([ "$FRESH" = true ] && echo 'fresh (-count=1, no replay)' || echo 'cached (unchanged packages replay)')"
+            echo "- run: $([ "$FRESH" = true ] && echo 'fresh (stored results expired, every test runs and is stored again)' || echo 'cached (unchanged packages replay)')"
             echo "- restored from: \`${RESTORED_FROM:-nothing (cold)}\`"
             echo "- packages replayed from the cache: $(grep -c '(cached)' <<<"$pkgs" || true) of $(grep -c . <<<"$pkgs" || true)"
             echo "- GOCACHE size: $(du -sh "$GOCACHE_DIR" | cut -f1)"
@@ -193,13 +194,10 @@ jobs:
 
       - name: Cache package coverage guard
         if: matrix.shard == 'rest'
-        env:
-          FRESH: ${{ steps.mode.outputs.fresh }}
         run: |
           set -euo pipefail
-          count=()
-          if [ "$FRESH" = true ]; then count=(-count=1); fi
-          go test ./internal/cache ${count[@]+"${count[@]}"} -coverprofile=shard-out/coverage-cache.out >/dev/null
+          # In a fresh run the stored results were expired before the unit tests ran.
+          go test ./internal/cache -coverprofile=shard-out/coverage-cache.out >/dev/null
           cache_cov="$(go tool cover -func=shard-out/coverage-cache.out | awk 'END {gsub("%","",$3); print $3}')"
           echo "internal/cache coverage: ${cache_cov}%"
           awk -v cov="${cache_cov}" 'BEGIN {
