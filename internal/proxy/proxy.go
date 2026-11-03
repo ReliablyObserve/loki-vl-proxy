@@ -492,6 +492,12 @@ type Config struct {
 	// written in the window are listed as Loki lists them. 0 disables.
 	MetadataCacheFreshness time.Duration
 
+	// MaxStatsCacheFreshness is Loki's max_stats_cache_freshness: the
+	// segments of an instant /index/volume that end within it of now are read
+	// from VictoriaLogs on every request; older segments are kept in the read
+	// cache. 0 keeps every segment but the newest minute.
+	MaxStatsCacheFreshness time.Duration
+
 	// MetadataMaxStaleness (-metadata-max-staleness) bounds how old an answer
 	// a near-now /labels or /label/{name}/values request may get while its
 	// edge refresh runs in the background: measured from the start of the
@@ -758,6 +764,7 @@ type Proxy struct {
 	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
 	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
+	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
 	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// drilldownScanTimeout caps the time a single detected_fields /
 	// detected_field_values request will spend scanning logs with a parser
@@ -1378,6 +1385,7 @@ func New(cfg Config) (*Proxy, error) {
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
+		maxStatsCacheFreshness:                max(cfg.MaxStatsCacheFreshness, 0),
 		metadataMaxStaleness:                  max(cfg.MetadataMaxStaleness, 0),
 		metadataEdgeRefreshBudget:             max(cfg.MetadataEdgeRefreshBudget, 0),
 		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,

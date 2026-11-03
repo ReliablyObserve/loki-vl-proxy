@@ -251,6 +251,7 @@ type proxyRuntimeConfig struct {
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
 	metadataCacheFreshness              time.Duration
+	maxStatsCacheFreshness              time.Duration
 	metadataMaxStaleness                time.Duration
 	metadataEdgeRefreshBudget           time.Duration
 	drilldownScanTimeout                time.Duration
@@ -449,6 +450,7 @@ func run(
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
 	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
+	maxStatsCacheFreshness := fs.Duration("max-stats-cache-freshness", proxy.DefaultMaxStatsCacheFreshness, "Loki max_stats_cache_freshness, applied to all tenants. An instant /index/volume over at least 10 minutes is summed from UTC-aligned day, hour, 5-minute and minute segments kept in the read cache (memory, disk and peers), so a window moved by seconds reads only its edges from VictoriaLogs; segments that end within this window of now are read from VictoriaLogs on every request, like Loki, which does not cache a volume ending within it. 0 caches every segment but the newest minute. -metadata-inventory-parallelism=0 turns the segments off.")
 	metadataMaxStaleness := fs.Duration("metadata-max-staleness", 10*time.Second, "Longest a near-now /labels or /label/{name}/values answer may lag VictoriaLogs while its edge refresh runs in the background, measured from the start of the VictoriaLogs read behind it. A request ending within -max-metadata-cache-freshness of now whose cached answer is older than -recent-tail-refresh-max-staleness waits -metadata-edge-refresh-budget for the refresh, then gets the last answer if this replica read it within this bound (marked X-Proxy-Stale-Response); past it, the request waits for VictoriaLogs. Loki reads its index and never lags; 0 keeps that exactness at the cost of waiting for VictoriaLogs under load.")
 	metadataEdgeRefreshBudget := fs.Duration("metadata-edge-refresh-budget", 100*time.Millisecond, "How long a near-now /labels or /label/{name}/values request waits for its edge refresh from VictoriaLogs before it is answered from the last answer within -metadata-max-staleness. An idle VictoriaLogs answers the edge in 5-40 ms (exact answers); under heavy load it took 0.35-2.6 s (bounded-stale answers). 0 answers from the last answer at once whenever one is within the bound.")
 	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
@@ -564,7 +566,7 @@ func run(
 	backendMinConcurrentMetadataScans := fs.Int("backend-min-concurrent-metadata-scans", proxy.DefaultBackendMinConcurrentMetadataScans, "Floor of the adaptive limit on concurrent long-range VictoriaLogs metadata scans per replica: latency and failure feedback never shrink the limit below it, and below it a replica may start a scan while others' long work uses up to a quarter of VictoriaLogs' select slots. VictoriaLogs' full select slots, memory headroom and a silent /metrics still hold scans back. Must be <= -backend-max-concurrent-metadata-scans; 0 uses the default")
 	backendMetadataScanMemoryHeadroom := fs.Float64("backend-metadata-scan-memory-headroom", proxy.DefaultBackendMetadataScanMemoryHeadroom, "Fraction of the memory available to VictoriaLogs (vm_available_memory_bytes on its /metrics) that long-range metadata scans must leave free: a scan is admitted only while the memory VictoriaLogs has in use, plus the estimated cost of in-flight scans, of the selects it runs for others and of this one, stays below 1 minus this fraction. Costs are learned per endpoint, range and tenant from the memory growth while scans ran; a listing never measured runs alone. 0 disables the memory gate (latency and failure feedback remain)")
 	backendMetadataScanLatencyTolerance := fs.Float64("backend-metadata-scan-latency-tolerance", proxy.DefaultBackendMetadataScanLatencyTolerance, "How many times its no-load duration (per row when the rows are known) a long-range metadata scan that ran beside others may take before the adaptive limit shrinks by 20%. Must be >= 1; 0 uses the default")
-	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight. 0 turns the inventory off, making every listing one VictoriaLogs call over the whole range")
+	metadataInventoryParallelism := fs.Int("metadata-inventory-parallelism", proxy.DefaultMetadataInventoryParallelism, "Label names and values (/labels, /label/{name}/values, detected field names) are listed from a time-bucketed inventory: day, hour, 5-minute and minute buckets cached in the read cache (memory, disk and peers) and merged, so a window moved by seconds reads only its edges from VictoriaLogs. This is how many bucket listings one request may have in flight, and how many segment reads an instant /index/volume may have in flight (-max-stats-cache-freshness). 0 turns the inventory and the volume segments off, making every listing and volume one VictoriaLogs call over the whole range")
 	backendHeavyQueryMinRange := fs.Duration("backend-heavy-query-min-range", proxy.DefaultBackendHeavyQueryMinRange, "Time range from which VictoriaLogs stats, hits and unbounded raw calls count as heavy for -backend-max-concurrent-heavy-queries, and metadata listings count as long-range for -backend-max-concurrent-metadata-scans. Must be > 0")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
@@ -1028,6 +1030,7 @@ func run(
 			debugLogRawQueries:                  *debugLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
 			metadataCacheFreshness:              *metadataCacheFreshness,
+			maxStatsCacheFreshness:              *maxStatsCacheFreshness,
 			metadataMaxStaleness:                *metadataMaxStaleness,
 			metadataEdgeRefreshBudget:           *metadataEdgeRefreshBudget,
 			drilldownScanTimeout:                *drilldownScanTimeout,
@@ -2253,6 +2256,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
 		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
+		MaxStatsCacheFreshness:              cfg.maxStatsCacheFreshness,
 		MetadataMaxStaleness:                cfg.metadataMaxStaleness,
 		MetadataEdgeRefreshBudget:           cfg.metadataEdgeRefreshBudget,
 		DrilldownScanTimeout:                cfg.drilldownScanTimeout,
@@ -2321,6 +2325,9 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	}
 	if cfg.backendMetadataScanMemoryHeadroom < 0 || cfg.backendMetadataScanMemoryHeadroom >= 1 {
 		return fmt.Errorf("invalid -backend-metadata-scan-memory-headroom: %g (must be >= 0 and < 1; 0 disables the memory gate)", cfg.backendMetadataScanMemoryHeadroom)
+	}
+	if cfg.maxStatsCacheFreshness < 0 {
+		return fmt.Errorf("invalid -max-stats-cache-freshness: %s (must be >= 0)", cfg.maxStatsCacheFreshness)
 	}
 	if cfg.metadataInventoryParallelism < 0 {
 		return fmt.Errorf("invalid -metadata-inventory-parallelism: %d (must be >= 0; 0 turns the inventory off)", cfg.metadataInventoryParallelism)

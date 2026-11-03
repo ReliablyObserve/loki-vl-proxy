@@ -439,6 +439,9 @@ func (p *Proxy) computeVolume(ctx context.Context, req volumeRequest) (map[strin
 		return nil, err
 	}
 	plan := p.planVolume(ctx, req, logsqlQuery)
+	if result, handled, err := p.computeVolumeSegmented(ctx, req, logsqlQuery, plan); handled {
+		return result, err
+	}
 	optimisedQuery := volumeStatsQuery(req, logsqlQuery, plan, true)
 	body, err := p.fetchVolumeStats(ctx, req, optimisedQuery)
 	if err != nil {
@@ -471,6 +474,12 @@ func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQu
 		params.Set("start", strconv.FormatInt(req.startNs, 10))
 		params.Set("end", strconv.FormatInt(req.endNs, 10))
 	}
+	return p.postVolumeStats(ctx, path, params)
+}
+
+// postVolumeStats sends a volume stats request to VictoriaLogs and returns
+// its buffered body, or a redacted error for a failed status.
+func (p *Proxy) postVolumeStats(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	resp, err := p.vlPost(ctx, path, params)
 	if err != nil {
 		return nil, err
@@ -667,6 +676,12 @@ func (p *Proxy) volumeResponse(req volumeRequest, plan volumePlan, body []byte) 
 		}
 	}
 
+	return volumeResult(req, buckets, metrics)
+}
+
+// volumeResult renders the Loki answer from the volume of every name per
+// bucket (Loki ms timestamp -> name -> bytes) and the metric of each name.
+func volumeResult(req volumeRequest, buckets map[int64]map[string]uint64, metrics map[string]map[string]string) map[string]interface{} {
 	// Each bucket keeps its top `limit` volumes (seriesvolume.MapToVolumeResponse).
 	seriesByName := map[string]*volumeSeries{}
 	for ms, bucket := range buckets {

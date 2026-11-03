@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,7 +75,7 @@ var peerTimeout = func() time.Duration {
 const ownerDownSlack = time.Second
 
 type proofRequest struct {
-	layer string // stats_extent, query_range_window, metadata, patterns
+	layer string // stats_extent, query_range_window, metadata, patterns, volume_segments
 	name  string
 	path  string
 }
@@ -142,6 +144,18 @@ func metadataRequests(fx fleetFixture, name, selector string) []proofRequest {
 	}
 }
 
+// volumeRequest is Logs Drilldown's landing volume (an instant /index/volume
+// by service_name, which the proxy derives from app) over [from, fx.end):
+// the proxy sums it from the hour segments it keeps in the read cache
+// (quality/index-volume-settled-segments).
+func volumeRequest(fx fleetFixture, selector string, from time.Time, name string) proofRequest {
+	v := fleetRange(from, fx.end)
+	v.Set("query", selector)
+	v.Set("targetLabels", "service_name")
+	v.Set("limit", "5000")
+	return proofRequest{layer: "volume_segments", name: name, path: "/loki/api/v1/index/volume?" + v.Encode()}
+}
+
 func patternsRequest(fx fleetFixture, name, selector string) proofRequest {
 	v := fleetRange(fx.start, fx.end)
 	v.Set("query", selector)
@@ -159,6 +173,8 @@ type proofSet struct {
 	// steps are window-evaluated metrics (a range longer than the step):
 	// the steps they settle are kept per evaluation time (query_steps_cache).
 	steps []proofRequest
+	// volume are instant volumes summed from kept segments (volume_segments).
+	volume []proofRequest
 }
 
 func (s proofSet) all() []proofRequest {
@@ -166,6 +182,7 @@ func (s proofSet) all() []proofRequest {
 	out = append(out, s.steps...)
 	out = append(out, s.windows...)
 	out = append(out, s.metadata...)
+	out = append(out, s.volume...)
 	return append(out, s.patterns...)
 }
 
@@ -177,6 +194,7 @@ func selectorSet(fx fleetFixture, tag, by string, names [2]string, selectors [2]
 		metadata: append(metadataRequests(fx, tag+"_"+names[0], selectors[0]), metadataRequests(fx, tag+"_"+names[1], selectors[1])...),
 		patterns: []proofRequest{patternsRequest(fx, tag+"_"+names[0], selectors[0]), patternsRequest(fx, tag+"_"+names[1], selectors[1])},
 		steps:    stepsRequests(fx, fx.start, tag, stepsMinutes[tag]),
+		volume:   []proofRequest{volumeRequest(fx, selectors[0], fx.start, tag+"_"+names[0]), volumeRequest(fx, selectors[1], fx.start, tag+"_"+names[1])},
 	}
 }
 
@@ -357,6 +375,79 @@ func requireRepliesRead(t *testing.T, reqs []proofRequest, want answers, where s
 // reply is kept for them anywhere. Every caller uses its own offset.
 func movedMetric(fx fleetFixture, by time.Duration) []proofRequest {
 	return []proofRequest{metricRequest(fx, "app", fx.start.Add(by), "base_count_by_app_moved_"+by.String())}
+}
+
+// movedVolume is the base volume over [fx.start+by, fx.end): by is whole
+// hours, so every segment of it is one a whole-window answer kept, under a
+// key no replica has answered.
+func movedVolume(fx fleetFixture, by time.Duration) proofRequest {
+	return volumeRequest(fx, fmt.Sprintf(`{fleet_probe=%q}`, fx.probe), fx.start.Add(by), "base_all_moved_"+by.String())
+}
+
+// vlVolumeCalls counts the fleet's VictoriaLogs stats calls of one request.
+func vlVolumeCalls(d fleetCounters) float64 {
+	return d.fleetVLRoutes["/select/logsql/stats_query"] + d.fleetVLRoutes["/select/logsql/stats_query_range"]
+}
+
+// requireVolumeLikeVL requires that a volume answer holds, per service, the
+// line bytes VictoriaLogs itself sums over the request's window
+// (sum_len(_msg) by app; the fixture's service_name is its app).
+func requireVolumeLikeVL(t *testing.T, label string, req proofRequest, answer string) {
+	t.Helper()
+	params, err := url.ParseQuery(req.path[strings.Index(req.path, "?")+1:])
+	if err != nil {
+		t.Fatalf("%s: %v", label, err)
+	}
+	vl := url.Values{
+		"query": {params.Get("query") + " | stats by (app) sum_len(_msg) as b"},
+		"start": {params.Get("start")},
+		"end":   {params.Get("end")},
+	}
+	var truth, got struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(fleetGet(t, fleetVLURL, "/select/logsql/stats_query?"+vl.Encode()), &truth); err != nil {
+		t.Fatalf("%s: VictoriaLogs stats: %v", label, err)
+	}
+	if err := json.Unmarshal([]byte(answer), &got); err != nil {
+		t.Fatalf("%s: %v: %.400s", label, err, answer)
+	}
+	want, have := map[string]string{}, map[string]string{}
+	for _, r := range truth.Data.Result {
+		want[r.Metric["app"]] = fmt.Sprint(r.Value[1])
+	}
+	for _, r := range got.Data.Result {
+		have[r.Metric["service_name"]] = fmt.Sprint(r.Value[1])
+	}
+	if len(want) == 0 {
+		t.Fatalf("%s: VictoriaLogs holds no line in the window; nothing would be compared", label)
+	}
+	if !reflect.DeepEqual(have, want) {
+		t.Errorf("%s: volume per service %v, VictoriaLogs' line bytes per app %v", label, have, want)
+	}
+}
+
+// requireMovedVolume reads a moved volume no replica has answered: its
+// answer must equal VictoriaLogs' own sums, it is never a reply hit, and
+// unless mayEvaluate every segment comes from a cache tier (no VictoriaLogs
+// stats call in the fleet).
+func requireMovedVolume(t *testing.T, rep replica, req proofRequest, where string, mayEvaluate bool) fleetCounters {
+	t.Helper()
+	body, d, _ := ask(t, rep, req)
+	label := fmt.Sprintf("%s on %s %s", req, rep.name, where)
+	requireVolumeLikeVL(t, label, req, body)
+	if d.replyHits != 0 {
+		t.Errorf("%s: %.0f reply hits for a window no replica answered (%s)", label, d.replyHits, d)
+	}
+	if !mayEvaluate && vlVolumeCalls(d) != 0 {
+		t.Errorf("%s caused %.0f VictoriaLogs stats calls in the fleet; every segment of the window was kept (%s)", label, vlVolumeCalls(d), d)
+	}
+	return d
 }
 
 func movedSteps(fx fleetFixture, by time.Duration) []proofRequest {
@@ -563,6 +654,10 @@ func requireBackupServes(t *testing.T, rep replica, req proofRequest, d fleetCou
 		if d.fleetVLSelect != 0 {
 			t.Errorf("%s on %s: %.0f VictoriaLogs calls although the patterns have a backup replica (%s)", req, rep.name, d.fleetVLSelect, d)
 		}
+	case "volume_segments":
+		if vlVolumeCalls(d) != 0 {
+			t.Errorf("%s on %s: %.0f VictoriaLogs stats calls although every volume segment has a backup replica (%s)", req, rep.name, vlVolumeCalls(d), d)
+		}
 	}
 	if checkInventory && d.invVL != 0 {
 		t.Errorf("%s on %s read %.0f inventory units from VictoriaLogs although every sealed unit has a backup replica (%s)", req, rep.name, d.invVL, d)
@@ -585,7 +680,7 @@ const (
 	labelValuesSnapshotKey = "__label_values_index_snapshot:v1"
 )
 
-// conformance: quality/query-range-settled-steps, peer-cache-stats-extent, peer-cache-query-replies, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery, peer-cache-replication
+// conformance: quality/index-volume-settled-segments, quality/query-range-settled-steps, peer-cache-stats-extent, peer-cache-query-replies, peer-cache-metadata, peer-cache-query-range-windows, peer-cache-patterns, peer-cache-label-values-index, peer-cache-fleet-recovery, peer-cache-replication
 func TestFleetPeerCacheProof(t *testing.T) {
 	for _, addr := range proxyAddrs {
 		waitProxyReady(t, addr)
@@ -654,6 +749,34 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Errorf("no replica read a settled step from a peer (%s)", total)
 			}
 			readAgain(t, fleetReplicas(), base.steps, first)
+		})
+		proofRun(t, "volume_segments", func(t *testing.T) {
+			d, _ := warm(t, a, base.volume, first)
+			if vlVolumeCalls(d) == 0 {
+				t.Fatalf("A answered %s without a VictoriaLogs stats call (%s)", base.volume[0], d)
+			}
+			for _, req := range base.volume {
+				requireVolumeLikeVL(t, req.String()+" on A", req, first[req.path])
+			}
+			// B and C read A's replies, or sum A's segments: no stats call.
+			for _, req := range base.volume {
+				for _, rep := range []replica{b, c} {
+					if d, _ := askSame(t, rep, req, first[req.path]); vlVolumeCalls(d) != 0 {
+						t.Errorf("%s on %s caused %.0f VictoriaLogs stats calls; A kept its reply and segments (%s)", req, rep.name, vlVolumeCalls(d), d)
+					}
+				}
+			}
+			// Then each reads its own moved window, which only the segments
+			// A kept can answer.
+			peerReads := 0.0
+			for idx, by := range map[int]time.Duration{replicaB: time.Hour, replicaC: 2 * time.Hour} {
+				d := requireMovedVolume(t, fleetReplica(idx), movedVolume(fx, by), "after A kept the segments", false)
+				peerReads += d.peerHits
+			}
+			if peerReads < 1 && replicationFactor < 2 {
+				t.Errorf("no replica read a volume segment kept on A from a peer through a moved window")
+			}
+			readAgain(t, fleetReplicas(), base.volume, first)
 		})
 		proofRun(t, "patterns", func(t *testing.T) {
 			warm(t, a, base.patterns, first)
@@ -731,6 +854,10 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			if fromDisk < 1 {
 				t.Errorf("B served no metadata answer from its own disk after a restart (%s)", total)
 			}
+		})
+		proofRun(t, "volume_segments", func(t *testing.T) {
+			// The segments B owned are on its disk, the others on their owners.
+			requireMovedVolume(t, b, movedVolume(fx, 3*time.Hour), "after a restart", false)
 		})
 		proofRun(t, "query_range_window_disk_or_peer", func(t *testing.T) {
 			// A restart clears L1; settled windows on B's disk or its peers
@@ -834,6 +961,17 @@ func TestFleetPeerCacheProof(t *testing.T) {
 				t.Errorf("B without a disk read no window from its peers (%s)", total)
 			}
 		})
+		proofRun(t, "volume_segments", func(t *testing.T) {
+			// Segments owned by A or C come from them. The ones B owned are
+			// lost with its disk: with one copy per key B's moved window reads
+			// them again from VictoriaLogs once; with a backup replica they
+			// come from the backup. Moved windows inside it then cost no
+			// VictoriaLogs call on A or C.
+			requireMovedVolume(t, b, movedVolume(fx, 4*time.Hour), "without a disk", replicationFactor < 2)
+			for idx, by := range map[int]time.Duration{replicaA: 5 * time.Hour, replicaC: 6 * time.Hour} {
+				requireMovedVolume(t, fleetReplica(idx), movedVolume(fx, by), "after B refilled", false)
+			}
+		})
 		readAgain(t, []replica{b}, base.all(), first)
 		res := phase.stop()
 		stopped = true
@@ -883,6 +1021,9 @@ func TestFleetPeerCacheProof(t *testing.T) {
 		for idx, by := range map[int]time.Duration{replicaB: 90 * time.Minute, replicaC: 100 * time.Minute} {
 			requireMovedRead(t, fleetReplica(idx), movedMetric(fx, by), base.metric, rebuilt, fx.start.Add(by), "after the rebuild", false)
 			requireMovedRead(t, fleetReplica(idx), movedSteps(fx, by), base.steps, rebuilt, fx.start.Add(by), "after the rebuild", false)
+		}
+		for idx, by := range map[int]time.Duration{replicaB: time.Hour, replicaC: 2 * time.Hour} {
+			requireMovedVolume(t, fleetReplica(idx), movedVolume(fx, by), "after the rebuild", false)
 		}
 		compareWithLoki(t, fx, base, rebuilt)
 	})
@@ -961,6 +1102,32 @@ func compareWithLoki(t *testing.T, fx fleetFixture, base proofSet, rebuilt answe
 		}
 		if !reflect.DeepEqual(loki, proxy) {
 			t.Errorf("%s: rebuilt lines differ from Loki: Loki %d lines, proxy %d", req, len(loki), len(proxy))
+		}
+	}
+	// Volume values are line bytes on the proxy and chunk-size estimates on
+	// Loki (profiles/volume-bytes-accounting): the series must match.
+	for _, req := range base.volume {
+		names := func(label string, body []byte) []string {
+			var resp struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string `json:"metric"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				t.Fatalf("%s: %v", label, err)
+			}
+			var out []string
+			for _, r := range resp.Data.Result {
+				out = append(out, fmt.Sprint(r.Metric))
+			}
+			sort.Strings(out)
+			return out
+		}
+		loki, proxy := names("Loki "+req.String(), fleetGet(t, fleetLokiURL, req.path)), names("proxy "+req.String(), []byte(rebuilt[req.path]))
+		if len(loki) == 0 || !reflect.DeepEqual(loki, proxy) {
+			t.Errorf("%s: rebuilt volume series %v, Loki %v", req, proxy, loki)
 		}
 	}
 	compared := 0

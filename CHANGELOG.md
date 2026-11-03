@@ -43,6 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quarter less proxy CPU; the series limit is applied where it was, and when
   it could apply the two passes run as before.
 
+- Answer a refreshed instant `/loki/api/v1/index/volume` (Logs Drilldown's
+  landing page) from settled time segments instead of one VictoriaLogs call
+  over the whole window. The volume is summed per VictoriaLogs stats row from
+  UTC-aligned day, hour, 5-minute and minute segments kept in the read cache
+  (memory, disk and the owner peer, per tenant and auth scope), then named,
+  limited and ordered as before, so the answer is the one a whole-window call
+  gives. A window moved by seconds reads only its moved start and the last
+  `-max-stats-cache-freshness` from VictoriaLogs: about 13 minutes instead of
+  24 hours for a 24h window. Missing segments of one size that follow each
+  other are read by one `stats_query_range` call, so a cold 24h window is about
+  seven calls over the same 24 hours. Requests whose limit VictoriaLogs applies
+  itself, windows under 10 minutes, queries that are not row-local, a segment
+  larger than the cache entry size, and segment rows of one request beyond
+  `-backend-max-buffered-response-bytes` keep the single whole-window call;
+  `volume_range` is unchanged.
+- New flag `-max-stats-cache-freshness` (default `10m`, Loki's
+  `max_stats_cache_freshness`): the volume segments that end within it of now
+  are read from VictoriaLogs on every request. `-metadata-inventory-parallelism`
+  also bounds the segment reads in flight, and `0` turns the segments off.
+
 ## [2.66.0] - 2026-11-03
 
 ### Performance
