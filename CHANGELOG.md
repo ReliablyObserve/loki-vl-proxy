@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Answer `sum by (detected_level)` over `| json` with the parser errors kept
+  (Logs Drilldown's JSON logs volume) and over `| json | __error__!=""` from
+  VictoriaLogs stats instead of reading every selected line. Only the brace
+  lines VictoriaLogs cannot vouch for are read as raw rows; a line Loki's
+  parser rejects still answers Loki's pipeline error, and the raw rows stay
+  within `-manual-range-metric-row-limit` (the documented 400 naming the flag
+  past it). The error count over 24h, which answered 500 at the row limit,
+  answers 200, and the Drilldown volume's first view drops from seconds to
+  tenths of a second at 1h and 24h.
+
+## [2.63.0] - 2026-11-03
+
 ### Fixed
 
 - Accept Loki's label filter expressions: filters joined by a comma
@@ -35,22 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `| duration > 1s`. A label filter `| addr = ip("10.0.0.0/8")` is no longer
   cut at its closing parenthesis.
 
-### Performance
-
-- Answer `sum by (detected_level)` over `| json` with the parser errors kept
-  (Logs Drilldown's JSON logs volume) and over `| json | __error__!=""` from
-  VictoriaLogs stats instead of reading every selected line. Only the brace
-  lines VictoriaLogs cannot vouch for are read as raw rows; a line Loki's
-  parser rejects still answers Loki's pipeline error, and the raw rows stay
-  within `-manual-range-metric-row-limit` (the documented 400 naming the flag
-  past it). The error count over 24h, which answered 500 at the row limit,
-  answers 200, and the Drilldown volume's first view drops from seconds to
-  tenths of a second at 1h and 24h.
-
-## [2.62.1] - 2026-11-03
-
-### Fixed
-
 - **Step alignment leaves a bound after 2262-04-11 or before 1677-09-21
   where it is, instead of wrapping it to the other end of time.** Loki reads
   such a bound as a `time.Time` (`pkg/loghttp/params.go` `parseTimestamp`, for
@@ -61,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alignment then moved the wrapped bound, for example to 1678 with a one-year
   step. Such a bound now leaves the request unaligned. Found by
   `FuzzAlignQueryRangeToStep`.
+
 - **The label cache merge dedupes and sorts labels the way the client reads
   them.** The cached `/labels` answer is JSON, which writes each invalid UTF-8
   byte as U+FFFD, so a label with such bytes and its replaced form were two
@@ -69,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deduplicated and byte-sorted, as `sort.Strings` orders Loki's valid UTF-8
   labels. `FuzzMergeLabelsIntoCache`, which found it, now runs in the `fuzz-smoke`
   job.
+
+## [2.62.2] - 2026-11-03
+
+### Fixed
+
 - **A line exactly on an evaluation time is counted in its window when the
   window is shorter than the step.** For a range metric whose window is
   shorter than its step (`sum by (pod) (count_over_time(... [600ms]))` at
@@ -86,6 +90,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line on an edge is classified as in Loki; a line within about 256 ns of an
   edge, not on it, may still fall on either side, as it could before.
   Registry: `semantics/sub-second-step-grid`.
+
+## [2.62.1] - 2026-11-03
+
+### Fixed
 
 - **A metric `query_range` whose bounds fall outside int64 nanoseconds is no
   longer moved to the other end of time by step alignment.** With an end near
