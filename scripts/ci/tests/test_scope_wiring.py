@@ -356,6 +356,9 @@ class ScopeWiringTest(unittest.TestCase):
             self.assertIn(f"name: {artifact}", fan_in)
         self.assertNotIn("ci_run.py", fan_in)
         self.assertNotIn("playwright", fan_in)
+        # a shard whose stack did not complete is red itself, so a re-run of failed jobs repeats it
+        self.assertIn('if [ -f "$OUT/error.json" ]', shard)
+        self.assertIn("Fail the shard when its stack did not complete", shard)
         # the jobs that run the pull request's code hold a read-only token
         for name in ("visual-plan", "visual-shard", "visual-smoke"):
             self.assertIn("contents: read", jobs[name]["body"])
