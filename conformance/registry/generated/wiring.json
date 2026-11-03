@@ -320,6 +320,7 @@
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/stats_extent_large_answer_test.go",
       "internal/proxy/step_align_diff_test.go",
       "internal/proxy/step_align_test.go",
       "internal/proxy/stream_metadata_test.go",
@@ -360,6 +361,7 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
+      "test/e2e-compat/metric_range_extent_large_answer_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/ordered_json_result_cache_test.go",
@@ -663,11 +665,19 @@
       "internal/proxy/manual_metric_encoding_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
       "internal/proxy/stats_extent_cache_test.go",
+      "internal/proxy/stats_extent_large_answer_test.go",
       "internal/proxy/stats_extent_retention_test.go",
       "internal/proxy/step_align_test.go",
       "internal/proxy/unwrap_extent_cache_test.go",
       "internal/proxy/unwrap_over_time_window_test.go",
-      "test/e2e-compat/metric_range_extent_cache_test.go"
+      "test/e2e-compat/metric_range_extent_cache_test.go",
+      "test/e2e-compat/metric_range_extent_large_answer_test.go",
+      "test/e2e-fleet/stats_extent_large_answer_test.go"
+    ],
+    "quality/query-range-extent-cache-large-answer": [
+      "internal/proxy/stats_extent_large_answer_test.go",
+      "test/e2e-compat/metric_range_extent_large_answer_test.go",
+      "test/e2e-fleet/stats_extent_large_answer_test.go"
     ],
     "quality/query-range-settled-steps": [
       "internal/proxy/ordered_json_steps_cache_test.go",
@@ -1339,7 +1349,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 382,
+  "registry_items": 383,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1975,6 +1985,11 @@
       "semantics/json-extracted-metric-pushdown",
       "tenant-numeric-routing"
     ],
+    "internal/proxy/stats_extent_large_answer_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-extent-cache",
+      "quality/query-range-extent-cache-large-answer"
+    ],
     "internal/proxy/stats_extent_retention_test.go": [
       "quality/query-range-extent-cache"
     ],
@@ -2546,6 +2561,11 @@
       "loki_api_v1_query_range",
       "quality/query-range-extent-cache"
     ],
+    "test/e2e-compat/metric_range_extent_large_answer_test.go": [
+      "loki_api_v1_query_range",
+      "quality/query-range-extent-cache",
+      "quality/query-range-extent-cache-large-answer"
+    ],
     "test/e2e-compat/nested_vector_aggregation_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2802,13 +2822,17 @@
     "test/e2e-fleet/settled_steps_test.go": [
       "quality/query-range-settled-steps"
     ],
+    "test/e2e-fleet/stats_extent_large_answer_test.go": [
+      "quality/query-range-extent-cache",
+      "quality/query-range-extent-cache-large-answer"
+    ],
     "test/e2e-ui/tests/datasource.spec.ts": [
       "profiles/dotted-name-parse-error",
       "profiles/grafana-shows-loki-error-text",
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 286,
+  "tests_with_markers": 289,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2898,5 +2922,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 222
+  "wired_items": 223
 }
