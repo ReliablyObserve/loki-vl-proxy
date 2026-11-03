@@ -569,6 +569,22 @@
      ]
     },
     {
+     "name": "drilldown detected fields, level pill",
+     "path": "/loki/api/v1/detected_fields",
+     "query": "{service_name=\"api-gateway\"} | detected_level=\"error\"    | json  | logfmt | drop __error__, __error_details__ ",
+     "params": {
+      "limit": "1000"
+     },
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-no-logfmt-token-fields"
+     ]
+    },
+    {
      "name": "refresh labels (label browser)",
      "path": "/loki/api/v1/labels",
      "shift": {

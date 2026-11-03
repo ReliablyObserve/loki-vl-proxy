@@ -198,6 +198,7 @@
     "loki_api_v1_detected_fields": [
       "internal/proxy/drilldown_compat_test.go",
       "internal/proxy/stage_field_exposure_test.go",
+      "test/e2e-compat/detected_fields_logfmt_tokens_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
     ],
@@ -730,6 +731,10 @@
     ],
     "semantics/delete-route-disabled-like-loki": [
       "internal/proxy/delete_route_test.go"
+    ],
+    "semantics/detected-fields-no-logfmt-token-fields": [
+      "internal/proxy/detected_fields_logfmt_tokens_test.go",
+      "test/e2e-compat/detected_fields_logfmt_tokens_test.go"
     ],
     "semantics/detected-level-filter-before-parser-pushdown": [
       "internal/proxy/ordered_json_filter_pushdown_test.go"
@@ -1328,7 +1333,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 380,
+  "registry_items": 381,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1472,6 +1477,9 @@
     "internal/proxy/delete_route_test.go": [
       "loki_api_v1_delete",
       "semantics/delete-route-disabled-like-loki"
+    ],
+    "internal/proxy/detected_fields_logfmt_tokens_test.go": [
+      "semantics/detected-fields-no-logfmt-token-fields"
     ],
     "internal/proxy/detected_level_cache_scope_test.go": [
       "semantics/json-metric-detected-level-derivation"
@@ -2320,6 +2328,10 @@
     "test/e2e-compat/count_values_test.go": [
       "semantics/count-values-unsupported"
     ],
+    "test/e2e-compat/detected_fields_logfmt_tokens_test.go": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-no-logfmt-token-fields"
+    ],
     "test/e2e-compat/detected_level_corpus_test.go": [
       "severity-detected-level-derivation",
       "severity/normalisation-table"
@@ -2782,7 +2794,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 282,
+  "tests_with_markers": 284,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2872,5 +2884,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 220
+  "wired_items": 221
 }

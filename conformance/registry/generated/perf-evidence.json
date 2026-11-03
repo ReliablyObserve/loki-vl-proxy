@@ -75673,6 +75673,7 @@
       "warm_p50": 0.051
     }
   ],
+  "semantics/detected-fields-no-logfmt-token-fields": [],
   "semantics/detected-level-filter-before-parser-pushdown": [
     {
       "baseline": "release",

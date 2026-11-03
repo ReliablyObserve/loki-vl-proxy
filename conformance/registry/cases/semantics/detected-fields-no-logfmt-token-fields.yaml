@@ -1,0 +1,85 @@
+id: semantics/detected-fields-no-logfmt-token-fields
+title: detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed)
+pending: true
+proves:
+  - loki_api_v1_detected_fields
+  - severity-detected-level-derivation
+  - parser-json
+consumer: drilldown
+why: |
+  The Logs Drilldown Fields tab of a JSON service with a level pill sends
+  `{service_name="api-gateway"} | detected_level="error" | json | logfmt |
+  drop __error__, __error_details__` to /detected_fields. Loki listed the 15
+  fields of the lines; the proxy listed 36, adding a field for every word of
+  the JSON lines (`_api_gateway`, `_duration_ms`, `key_500`, `_us_east_1`,
+  ...), and Drilldown drew an empty panel for each of them. The OTel
+  collector's warn pill added `_logs_loki`, `_traces_otlp`, `flushed`,
+  `key_1`.. in the same way, and a plain-text service listed each word of its
+  lines.
+
+  Loki v3.7.9 builds the list from the sampled lines only
+  (pkg/querier/queryrange/detected_fields.go:282-363 parseDetectedFields):
+  their structured metadata, the labels the query's own parsers extracted,
+  and a json re-parse of the line, logfmt when json fails (parseEntry,
+  :387-460). Its logfmt parser skips a key without a value
+  (pkg/logql/log/parser.go:423) and rejects a key holding a quote
+  (pkg/logql/log/logfmt/decode.go:78-81), so `| logfmt` over a JSON or
+  plain-text line extracts nothing from it.
+
+  The proxy adds the fields VictoriaLogs' field_names reports for the same
+  query. A level pill translates to `| unpack_logfmt | filter level:=...`,
+  and a field filter behind the parsers keeps the query's `| logfmt`. The
+  VictoriaLogs logfmt parser makes a field of every whitespace-separated
+  token, a token without '=' becoming a field with an empty value
+  (lib/logstorage/logfmt_parser.go parse), and field_names counts every
+  column of a block on every row once it is not the first pipe
+  (lib/logstorage/pipe_field_names.go writeBlock), so each word of a line
+  written with spaces passed the proxy's hit threshold and became a field.
+
+  Fixed: the field_names request leaves out every unpack_logfmt pipe without
+  a fields list (stripUnrestrictedLogfmtUnpacks); the filters stay, the
+  detected_level derivation's restricted unpacks stay, and the scan of the
+  sampled lines still runs the query unchanged, so the keys of logfmt lines
+  are still found there. VictoriaLogs no longer unpacks every row of the
+  window for the lookup.
+
+  Known, not changed here: Loki's `<key>_extracted` names
+  (semantics/detected-fields-extracted-suffix; service fields by the owner
+  decision in profiles/detected-fields-no-extracted-suffix); a JSON line
+  holding `k=v` text inside a string value, which Loki's logfmt stage reads
+  as a key k and the proxy does not (as without a pill); a non-JSON line
+  starting with `{`, which the proxy's scan reads as JSON and so does not
+  parse as logfmt; the proxy's lenient reading of malformed logfmt quoting.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="api-gateway"} | detected_level="error"    | json  | logfmt | drop __error__, __error_details__ '
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: subset
+  fields: [fields.label]
+  expect: |
+    Loki's field labels, leaving out its <key>_extracted names, for JSON,
+    OTel, logfmt and plain-text services, with and without a level pill
+    (=, =~, !=) and with a field filter behind `| json | logfmt` (= and !=).
+gap:
+  status: fixed
+  fixed_by: "#1032"
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/drilldown.go fetchNativeFieldNamesForCandidate (stripUnrestrictedLogfmtUnpacks)'
+  loki: 'pkg/querier/queryrange/detected_fields.go:282-460; pkg/logql/log/parser.go:379-447; pkg/logql/log/logfmt/decode.go:43-140'
+  proxy: 'field_names runs the query without unpack_logfmt pipes that read every key; the sampled-line scan is unchanged'
+  planned_test: 'TestDetectedFields_NoLogfmtTokenFields_EdgeTable, TestDetectedFieldValues_LevelPillKeepsLineKeys, TestDetectedFields_LevelPillFieldNamesWithoutUnrestrictedUnpack, TestDetectedFields_DifferentialAgainstLokiReference, TestStripUnrestrictedLogfmtUnpacks_Table, FuzzStripUnrestrictedLogfmtUnpacks (internal/proxy, CI fuzz-smoke); TestCompat_DetectedFieldsNoLogfmtTokenFields (test/e2e-compat, group core)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
