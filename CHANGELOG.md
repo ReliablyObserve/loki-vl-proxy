@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `query_range` step under a second answers a point every step, with
+  Loki's times.** Grafana sends `step=0.2` (`intervalMs` 200) for a short
+  panel, and Loki answers a sample every 200 ms: its frontend keeps the step in
+  whole milliseconds (`pkg/querier/queryrange/codec.go:2265-2284`,
+  `Milliseconds()`, a truncation), the engine evaluates at start, start+step, ...
+  up to and including end and stamps each sample with the millisecond it
+  truncates to (`pkg/logql/range_vector.go:189-204`), and the response prints it
+  as seconds with a millisecond fraction (`model.Time.String`,
+  `pkg/util/marshal/query.go`). The proxy's manual window evaluator wrote
+  `float64(t.Unix())` and its bucket route `tNS/1e9` as integers, so five
+  samples shared `1793653352`, and the other routes printed `ns/1e9` floats such
+  as `1793653191.6499999` for `.65`. Every route now writes the time Loki
+  prints, so a whole-second step with a start off the second (`187.704`,
+  `188.704`) is exact as well; an answer that used to carry whole seconds for
+  such a request now carries the milliseconds.
+  The same request read the other inputs short of Loki's:
+  - the step is truncated to whole milliseconds once, at the entry of
+    `query_range` and after the 11,000-point check that Loki runs on the step as
+    sent, so a step of `0.2005` or `1.003` (which Loki reads as 1002 ms, because
+    `1.003 * 1e9` truncates) buckets and evaluates on Loki's grid;
+  - a step of `1.003s` reached VictoriaLogs as float seconds, which it reads as
+    1002999999 ns and buckets a nanosecond off; steps are sent as exact counts
+    (`volume_range` too);
+  - a float-seconds `start`, `end` or `time` (`1793653187.704`) was read as
+    `int64(v * 1e9)`, which lands up to 256 ns below the millisecond and prints
+    `.703`; Loki rounds the fraction to the millisecond, and so do all three
+    parsers now;
+  - the `time` of an instant stats call, and the `start` and `end` of a stats
+    range, were floored to the second, which moved an instant evaluation, or the
+    end of a read in steps under a second, up to a second early; fractions are
+    now sent as exact decimal digits, which VictoriaLogs v1.49.0 and v1.53.0 read
+    exactly, and the instant sample carries Loki's time instead of
+    VictoriaLogs' `float64(ns)/1e9`.
+
+  A step that is positive but under a millisecond answers Loki's 500
+  (`error while processing request: runtime error: integer divide by zero`: its
+  metric splitter takes the range modulo the step it kept, 0).
+  Registry: `semantics/sub-second-step-grid`.
+
 ## [2.61.0] - 2026-11-02
 
 ### Added

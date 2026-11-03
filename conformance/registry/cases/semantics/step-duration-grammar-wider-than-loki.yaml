@@ -1,0 +1,37 @@
+id: semantics/step-duration-grammar-wider-than-loki
+title: the proxy accepts step durations Loki rejects (`1.5s`, `500us`, `1h30m5.5s`) where Loki answers 400 (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki v3.7.9 reads a step as float seconds, else with the Prometheus
+  model.ParseDuration (pkg/loghttp/params.go:191-203): whole-number units from
+  ms up to y, in descending order, no fractions and no us or ns. `1.5s` and
+  `500us` are 400 `cannot parse "<step>" to a valid duration`. The proxy reads
+  steps with Go's time.ParseDuration first (parsePositiveStepDuration), so it
+  answers them. Grafana does not send these forms; an API client could.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({app="api-gateway"}[1m]))'
+    start: '1800000000'
+    end: '1800000600'
+    step: '1.5s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, errorType, message]
+  expect: |
+    HTTP 400 `cannot parse "1.5s" to a valid duration`, as Loki.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/time_utils.go parsePositiveStepDuration (shared with window parsing)'
+  loki: 'pkg/loghttp/params.go:191-203; prometheus/common model.ParseDuration'
+  proxy: 'accepts Go duration syntax for a step'
+  planned_test: 'step grammar table against lokiStep in internal/proxy; TestCompat_ step status parity (test/e2e-compat)'
+  clusters: []

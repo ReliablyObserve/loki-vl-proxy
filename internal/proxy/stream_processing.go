@@ -2379,6 +2379,11 @@ func formatVLStep(step string) string {
 	// If it's already a duration string (contains letter), pass through
 	for _, ch := range step {
 		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') {
+			// A decimal in front of the unit ("1.003s") is read by VictoriaLogs as
+			// float*unit truncated (1002999999 ns); write the exact count instead.
+			if d, ok := parsePositiveStepDuration(step); ok && strings.Contains(step, ".") {
+				return exactVLDuration(d)
+			}
 			return step
 		}
 	}

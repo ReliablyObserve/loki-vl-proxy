@@ -119,7 +119,7 @@ func parseInstantVectorTime(timeParam string) int64 {
 	}
 	if f, err := strconv.ParseFloat(timeParam, 64); err == nil {
 		if f < 1_000_000_000_000 {
-			return int64(f * float64(time.Second))
+			return lokiFloatSecondsToNanos(f)
 		}
 		return int64(f)
 	}

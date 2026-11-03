@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,9 +34,14 @@ func TestNanosToVLTimestamp(t *testing.T) {
 			want:  "1",
 		},
 		{
-			name:  "sub-second nanoseconds truncate to seconds",
-			nanos: 500 * int64(time.Millisecond),
-			want:  "0",
+			name:  "sub-second nanoseconds keep their fraction as exact decimal digits",
+			nanos: 1_793_653_187*int64(time.Second) + 704*int64(time.Millisecond),
+			want:  "1793653187.704",
+		},
+		{
+			name:  "a nanosecond past a second keeps all nine digits",
+			nanos: 1_793_653_187*int64(time.Second) + 1,
+			want:  "1793653187.000000001",
 		},
 		{
 			name:  "large modern timestamp stays in valid seconds range",
@@ -59,7 +65,7 @@ func TestNanosToVLTimestampNotNanoseconds(t *testing.T) {
 	typicalNow := time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC).UnixNano()
 	got := nanosToVLTimestamp(typicalNow)
 	// A nanosecond timestamp would be 19 digits; a second timestamp is 10 digits.
-	if len(got) > 12 {
+	if whole, _, _ := strings.Cut(got, "."); len(whole) > 12 {
 		t.Errorf("nanosToVLTimestamp returned %q — looks like nanoseconds, expected seconds (<=12 digits)", got)
 	}
 }
@@ -105,8 +111,8 @@ func TestFormatVLStatsTimestamp(t *testing.T) {
 			if tc.want != "" && got != tc.want {
 				t.Errorf("formatVLStatsTimestamp(%q) = %q, want %q", tc.raw, got, tc.want)
 			}
-			if len(got) > tc.wantMax {
-				t.Errorf("formatVLStatsTimestamp(%q) = %q — looks like nanoseconds (>%d digits)", tc.raw, got, tc.wantMax)
+			if whole, _, _ := strings.Cut(got, "."); len(whole) > tc.wantMax {
+				t.Errorf("formatVLStatsTimestamp(%q) = %q — looks like nanoseconds (>%d digits before the fraction)", tc.raw, got, tc.wantMax)
 			}
 		})
 	}
@@ -123,8 +129,9 @@ func TestFormatVLStatsTimestampNeverNanoseconds(t *testing.T) {
 	}
 	for _, raw := range inputs {
 		got := formatVLStatsTimestamp(raw)
-		if len(got) > 12 {
-			t.Errorf("formatVLStatsTimestamp(%q) = %q — must be ≤12 digits (seconds)", raw, got)
+		// Seconds, with the fraction as decimal digits when it is not a whole second.
+		if whole, _, _ := strings.Cut(got, "."); len(whole) > 12 {
+			t.Errorf("formatVLStatsTimestamp(%q) = %q — must be ≤12 digits (seconds) before the fraction", raw, got)
 		}
 	}
 }

@@ -2531,7 +2531,7 @@ func encodeWindowMatrix(ctx context.Context, keys []string, metric func(key stri
 				perSeries[key] = dst
 			}
 
-			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(v, 'f', -1, 64)})
+			dst.points = append(dst.points, []any{lokiSampleSeconds(t.UnixNano()), strconv.FormatFloat(v, 'f', -1, 64)})
 		}
 	}
 
@@ -2659,7 +2659,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 				points = append(points, ',')
 			}
 			points = append(points, '[')
-			points = strconv.AppendInt(points, tNS/int64(time.Second), 10)
+			points = strconv.AppendFloat(points, lokiSampleSeconds(tNS), 'f', -1, 64)
 			points = append(points, ',', '"')
 			mark := len(points)
 			points = strconv.AppendFloat(points, value, 'f', -1, 64)
@@ -2770,7 +2770,7 @@ func encodeWindowVector(ctx context.Context, keys []string, metric func(key stri
 		if err := checkBinaryOutputLabels(ctx, labels); err != nil {
 			return nil, err
 		}
-		results[key] = &binaryMatchedSeries{labels: labels, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(v, 'f', -1, 64)}}}
+		results[key] = &binaryMatchedSeries{labels: labels, points: [][]any{{lokiSampleSeconds(evalTime.UnixNano()), strconv.FormatFloat(v, 'f', -1, 64)}}}
 	}
 
 	return encodeBinarySeriesContext(ctx, results, "vector", executionLimitsFrom(ctx).BufferedBackendBodyBytes)

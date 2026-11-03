@@ -286,9 +286,11 @@ func TestStepAlignMiddleware_OnGridRequestsPassThrough(t *testing.T) {
 		{"POST off the grid", metric, "1700000053000000000", "1700003647000000000", "60s", true, false, true},
 		{"no bounds: derived from now", metric, "", "", "60000ms", false, false, true},
 		{"sub-millisecond past the grid", metric, "1700000040000500000", "1700003640000000000", "60000ms", false, false, true},
-		// Loki rounds .9996 to the next whole second, on the grid; the
-		// proxy's parser reads .9996, so the bound is written again.
-		{"decimal Loki rounds onto the grid", metric, "1700000000.3", "1700000010.9996", "0.1", false, false, true},
+		// Loki rounds .9996 to the next whole second, on the grid, and the
+		// proxy's parser rounds the fraction to the millisecond the same way
+		// (lokiFloatSecondsToNanos), so the request is on the grid and passes
+		// through. It used to read .9996 as sent and write the bound again.
+		{"decimal Loki rounds onto the grid", metric, "1700000000.3", "1700000010.9996", "100ms", false, true, false},
 		{"log query off the grid", `{app="a"} |= "x"`, "1700000053000000000", "1700003647000000000", "60000ms", false, true, false},
 		{"no step", metric, "1700000053000000000", "1700003647000000000", "", false, true, false},
 	} {

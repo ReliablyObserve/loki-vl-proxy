@@ -1205,7 +1205,7 @@ func normalizeLokiNumericTimeToUnixNano(v float64) int64 {
 	abs := math.Abs(v)
 	switch {
 	case abs < 1e11:
-		return int64(v * float64(time.Second))
+		return lokiFloatSecondsToNanos(v)
 	case abs < 1e14:
 		return int64(v * float64(time.Millisecond))
 	case abs < 1e17:

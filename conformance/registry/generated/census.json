@@ -483,6 +483,16 @@
     "semantics/stddev-stdvar-parsed-label-series-identity | compare:observed",
     "semantics/stddev-stdvar-parsed-label-series-identity | gap:open",
     "semantics/stddev-stdvar-parsed-label-series-identity | query",
+    "semantics/step-duration-grammar-wider-than-loki | compare:observed",
+    "semantics/step-duration-grammar-wider-than-loki | gap:open",
+    "semantics/step-duration-grammar-wider-than-loki | query",
+    "semantics/step-nonpositive-or-unparsable-is-400 | compare:observed",
+    "semantics/step-nonpositive-or-unparsable-is-400 | gap:open",
+    "semantics/step-nonpositive-or-unparsable-is-400 | query",
+    "semantics/sub-second-step-grid | compare:numeric",
+    "semantics/sub-second-step-grid | gap:fixed",
+    "semantics/sub-second-step-grid | perf",
+    "semantics/sub-second-step-grid | query",
     "semantics/tail-history-start-limit | compare:observed",
     "semantics/tail-history-start-limit | gap:open",
     "semantics/tail-history-start-limit | query",
@@ -593,6 +603,9 @@
     "semantics/unwrap-sum-without-extracted-label-collision | compare:observed",
     "semantics/unwrap-sum-without-extracted-label-collision | gap:open",
     "semantics/unwrap-sum-without-extracted-label-collision | query",
+    "semantics/window-wider-than-step-raw-rows | compare:numeric",
+    "semantics/window-wider-than-step-raw-rows | gap:open",
+    "semantics/window-wider-than-step-raw-rows | query",
     "semantics/without-comparison-inside-ignored | compare:observed",
     "semantics/without-comparison-inside-ignored | gap:fixed",
     "semantics/without-comparison-inside-ignored | query",
@@ -1022,6 +1035,8 @@
     "internal/proxy/stream_metadata_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_metadata_test.go | profiles/keep-removes-derived-service-name",
     "internal/proxy/stream_metadata_test.go | profiles/keep-structured-metadata-key",
+    "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
+    "internal/proxy/sub_second_step_test.go | window-bounds-and-step-alignment",
     "internal/proxy/sum_without_differential_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/sum_without_differential_test.go | limits/series-limit-error",
     "internal/proxy/sum_without_differential_test.go | loki_api_v1_query",
@@ -1421,6 +1436,10 @@
     "test/e2e-compat/stddev_stdvar_grouped_test.go | metric-series-identity",
     "test/e2e-compat/stddev_stdvar_grouped_test.go | semantics/stddev-stdvar-grouped-values",
     "test/e2e-compat/stddev_stdvar_grouped_test.go | window-bounds-and-step-alignment",
+    "test/e2e-compat/sub_second_step_test.go | loki_api_v1_query",
+    "test/e2e-compat/sub_second_step_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/sub_second_step_test.go | semantics/sub-second-step-grid",
+    "test/e2e-compat/sub_second_step_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/tail_pipeline_test.go | loki_api_v1_tail",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_alerts",
     "test/e2e-compat/tenant_label_isolation_test.go | prometheus_api_v1_rules",
@@ -1512,14 +1531,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 34,
+      "api": 36,
       "drilldown": 32,
-      "explore": 124,
+      "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 271,
+      "go": 273,
       "playwright": 1
     },
     "page_kinds": {
@@ -1536,10 +1555,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 78,
+    "shape_covers_distinct": 79,
     "shapes_path_only": 8,
-    "unwired_items": 83,
-    "wired_items": 217
+    "unwired_items": 86,
+    "wired_items": 218
   },
   "gates": [
     "A/B shape selection",
@@ -2193,6 +2212,9 @@
     "stage-field-exposure/SF7 logs, filter on a line key without a parser",
     "stage-field-exposure/SF8 volume, json extraction list",
     "stage-field-exposure/SF9 volume, logfmt label_format rename",
+    "sub-second-step/SS1 count_over_time 5s window on a 200ms step",
+    "sub-second-step/SS2 json duration_ms avg by service, 5m window on a 200ms step",
+    "sub-second-step/SS3 rate by service, 1s window on a 200ms step",
     "unwrap-conversion-error/E1 json duration_ms sum by service",
     "unwrap-conversion-error/E2 json duration_ms p95 by service",
     "unwrap-conversion-error/E3 logfmt latency_ms rate, production",

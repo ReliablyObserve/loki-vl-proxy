@@ -134,8 +134,10 @@ func TestDrilldownLongRangeFields_DurationAverage(t *testing.T) {
 func longrangeFieldFixture(start time.Time, span time.Duration) []tumblingLine {
 	var lines []tumblingLine
 	// Sparse, but enough distinct series and points to exceed the 64 KiB pooled
-	// response size. Version stays low-cardinality in the concurrent mix.
-	for i := range 288 {
+	// response size with Loki's evaluation times (millisecond fractions without
+	// the float noise a division by 1e9 adds). Version stays low-cardinality in
+	// the concurrent mix.
+	for i := range 320 {
 		id := fmt.Sprintf("%032x", i+1)
 		labels := map[string]string{"env": "production", "trace_id": id, "span_id": id,
 			"request_id": id, "user_id": id, "total": id, "version": fmt.Sprint(i % 3)}

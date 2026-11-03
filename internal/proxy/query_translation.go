@@ -1657,7 +1657,7 @@ func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, en
 			if len(window) == 0 {
 				continue // no samples in window — match Loki's absent-point behaviour
 			}
-			values = append(values, []interface{}{float64(eval) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
+			values = append(values, []interface{}{lokiSampleSeconds(int64(eval)), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
 		}
 		result = append(result, lokiMatrixResult{Metric: seriesItem.metric, Values: values})
 	}
@@ -1683,7 +1683,7 @@ func buildBareParserMetricVector(series []bareParserMetricSeries, evalNanos int6
 		}
 		result = append(result, lokiVectorResult{
 			Metric: seriesItem.metric,
-			Value:  []interface{}{float64(evalNanos) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))},
+			Value:  []interface{}{lokiSampleSeconds(evalNanos), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))},
 		})
 	}
 	return map[string]interface{}{
