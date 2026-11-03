@@ -24,7 +24,7 @@ class AutoReleaseWiring(unittest.TestCase):
     def test_the_decision_notes_and_metadata_come_from_the_scripts_with_tests(self):
         auto = text("auto-release.yaml")
         self.assertIn("scripts/ci/release_plan.py plan", auto)
-        self.assertEqual(auto.count("scripts/ci/changelog_release.py notes"), 2)  # validate and publish
+        self.assertEqual(auto.count("scripts/ci/changelog_release.py notes"), 2)  # prepare and publish
         self.assertIn("scripts/ci/release_metadata.py prepare", auto)
         self.assertIn("scripts/ci/release_metadata.py refresh", auto)
         self.assertNotIn("materialize_unreleased", auto)

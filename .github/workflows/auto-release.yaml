@@ -72,6 +72,18 @@ jobs:
           # merged since. The commit that started this run is not special.
           python3 scripts/ci/release_plan.py plan --repo . --tip HEAD --github-repo "${REPO}" --github-output "$GITHUB_OUTPUT"
 
+      # Checked here, on the main this job re-read, not in validate-release: that
+      # job checks out the commit by its SHA and runs only the Go tests and lint.
+      - name: Verify the release has changelog entries
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          LATEST_TAG: ${{ steps.check.outputs.latest_tag }}
+          NEXT_VERSION: ${{ steps.check.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/changelog_release.py notes --repo . --rev HEAD --prev-tag "${LATEST_TAG}" --version "${NEXT_VERSION}" > "${RUNNER_TEMP}/release-section.md"
+          grep -qE '^(### |- )' "${RUNNER_TEMP}/release-section.md"
+
   validate-release:
     needs: prepare-release
     if: needs.prepare-release.outputs.should_release == 'true'
@@ -98,16 +110,6 @@ jobs:
 
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
-
-      - name: Verify the release has changelog entries
-        env:
-          RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
-          LATEST_TAG: ${{ needs.prepare-release.outputs.latest_tag }}
-          NEXT_VERSION: ${{ needs.prepare-release.outputs.next_version }}
-        run: |
-          set -euo pipefail
-          python3 scripts/ci/changelog_release.py notes --repo . --rev "${RELEASE_SHA}" --prev-tag "${LATEST_TAG}" --version "${NEXT_VERSION}" > "${RUNNER_TEMP}/release-section.md"
-          grep -qE '^(### |- )' "${RUNNER_TEMP}/release-section.md"
 
       - name: Run release validation tests
         run: go test ./... -count=1
