@@ -572,3 +572,5 @@ Three lookup tiers: bounded L1 in-memory, optional L2 on-disk (bbolt with LRU ca
 
 ### Metrics (`internal/metrics/`)
 Prometheus text exposition at `/metrics` (served only with `-server.register-instrumentation=true`, optionally on a dedicated `-metrics-listen` address) plus OTLP push. Route-aware downstream and upstream request metrics, tenant/client breakdowns, cache and windowing metrics, peer-cache state, circuit-breaker state, and prefixed process/runtime health.
+
+<!-- ci proof: documentation only. -->
