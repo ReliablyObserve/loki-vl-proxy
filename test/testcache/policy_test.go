@@ -325,7 +325,7 @@ echo "{\"Action\":\"pass\",\"Package\":\"p\",\"Test\":\"T_$name\"}"
 exit 0
 `
 
-// The workflow restores and saves the Go cache with a key on the Go version, OS/arch, go.sum and the
+// The workflow restores and saves the Go cache (per shard) with a key on the Go version, OS/arch, go.sum and the
 // workflow file, normalises checkout times first and no longer forces every package to rerun.
 func TestWorkflowWiring(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(repoRoot, ciYAML))
@@ -341,14 +341,17 @@ func TestWorkflowWiring(t *testing.T) {
 		}
 		return m[1]
 	}
-	test := job("test")
+	test := job("test-shard")
 	if !strings.Contains(test, "scripts/ci/go_test_unit.sh") {
-		t.Error("the test job must run the unit tests through scripts/ci/go_test_unit.sh")
+		t.Error("the test-shard job must run the unit tests through scripts/ci/go_test_unit.sh")
 	}
 	if strings.Contains(test, "go test ./... -count=1") {
-		t.Error("the test job must not force every package to rerun")
+		t.Error("the test-shard job must not force every package to rerun")
 	}
-	for _, name := range []string{"test", "race-stress-shard"} {
+	if !strings.Contains(test, "scripts/ci/unit_test_mode.sh") || !strings.Contains(test, "UNIT_FRESH") {
+		t.Error("the test-shard job must choose between cached and fresh runs with scripts/ci/unit_test_mode.sh")
+	}
+	for _, name := range []string{"test-shard", "race-stress-shard"} {
 		j := job(name)
 		for _, want := range []string{"actions/cache/restore@", "actions/cache/save@", "cache-primary-key", "restore-keys:", "cache: false",
 			"cmd/normalize-mtimes"} {
