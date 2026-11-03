@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.62.0] - 2026-11-03
+
 ### Fixed
 
 - **A `query_range` step under a second answers a point every step, with
