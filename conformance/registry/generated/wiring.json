@@ -31,6 +31,9 @@
     "data-probing-and-freshness": [
       "internal/proxy/ordered_json_result_cache_test.go"
     ],
+    "drilldown/index_volume/end-millisecond-rounding": [
+      "internal/proxy/volume_test.go"
+    ],
     "drilldown/index_volume/single-sample-returns-vector": [
       "internal/proxy/volume_test.go"
     ],
@@ -1365,7 +1368,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 384,
+  "registry_items": 385,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2218,6 +2221,7 @@
       "window-bounds-and-step-alignment"
     ],
     "internal/proxy/volume_test.go": [
+      "drilldown/index_volume/end-millisecond-rounding",
       "drilldown/index_volume/single-sample-returns-vector",
       "loki_api_v1_index_volume",
       "status-400"
@@ -2957,5 +2961,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 225
+  "wired_items": 226
 }
