@@ -12,10 +12,13 @@ why: |
   An exact value filter that no parser, line rewrite or label stage
   precedes compares the same per-entry derived value the response path
   exposes (severity/detected-level-filter-json-level). Value filters after
-  a drop, keep or label_format stage, and later
-  `label_format detected_level=...` stage ordering, remain open: a
-  label_format target may be classified as a parsed label instead of
-  Loki's structured metadata.
+  a parser, drop, keep or label_format stage, and later
+  `label_format detected_level=...` stage ordering, remain open: after
+  `| logfmt` or `| json` the filter still reads the parsed level key
+  (`{service_name="worker-service"} | logfmt | detected_level="error"`
+  keeps lines Loki labels info, whose logfmt `level` becomes
+  `level_extracted`), and a label_format target may be classified as a
+  parsed label instead of Loki's structured metadata.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -38,7 +41,7 @@ gap:
   effort: S
   area: 'internal/proxy/detected_level.go, internal/translator/translator.go, internal/proxy/loki_profile.go (derived value filters and stage ordering)'
   loki: 'pkg/logql/log/keep_labels.go, drop_labels.go (detected_level is ordinary structured metadata)'
-  proxy: 'bare keep/drop, presence filters and value filters before any stage corrected; value filters after drop/keep/label_format and later label_format ordering remain open'
+  proxy: 'bare keep/drop, presence filters and value filters before any stage corrected; value filters after a parser, drop, keep or label_format and later label_format ordering remain open'
   planned_test: 'TestCompat_DetectedLevelKeepDrop and TestCompat_DetectedLevelPresenceFilters (test/e2e-compat core); extend the live Loki comparison for exact-value filters and label_format ordering when fixed'
   note: 'The remaining value-filter and label_format differences reproduce with the existing dual-ingest fixture; they are not asserted as passing.'
   clusters:
