@@ -33,6 +33,10 @@
       }
     },
     "perf": {"$ref": "#/definitions/perf"},
+    "pending": {
+      "description": "A new row the owner has not reviewed yet; it stays true until the review.",
+      "type": "boolean"
+    },
     "loki_parity": {"type": "string", "minLength": 1},
     "corpus": {
       "type": "object",

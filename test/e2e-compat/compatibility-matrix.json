@@ -259,6 +259,7 @@
         {
           "profile": "drilldown-v3.1",
           "version_range": ">= 3.1.0",
+          "wire_profile": "drilldown-v2",
           "capabilities": [
             "detected_level_default_columns",
             "service_detail_field_value_breakdowns",
@@ -268,6 +269,7 @@
         {
           "profile": "drilldown-v3",
           "version_range": ">= 3.0.0 < 3.1.0",
+          "wire_profile": "drilldown-v2",
           "capabilities": [
             "detected_level_default_columns",
             "service_detail_field_value_breakdowns"
@@ -295,7 +297,8 @@
         "source_tag_key": "Source",
         "source_tag_value": "grafana-lokiexplore-app",
         "runtime_version_source": "User-Agent: Grafana/<version>",
-        "app_semver_exposed_on_wire": false
+        "app_semver_exposed_on_wire": false,
+        "wire_profile_note": "wire_profile names the profile a request from that Logs Drilldown version is labelled with: the proxy sees the Grafana runtime, not the app version, and Drilldown 3.x makes the same Loki calls as 2.x (scripts/compat/check-drilldown-contracts.sh). The profile that points at a wire profile must keep every capability of it and may add some the request does not show, such as logs_query_footer_stats (TestClientProfilesMatchMatrix)."
       }
     },
     "grafana_client_detection": {

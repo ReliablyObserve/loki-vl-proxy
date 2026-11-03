@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-30 of 78 items are locked; 5 carry an effort exception.
+28 of 78 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -83,10 +83,10 @@ Loki with its own defaults, preferred when both ran); a locked row's bound holds
 
 | Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |
 |---|---|---|---|---|---|---|---|---|---|
-| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 137 | yes | **no** |
-| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 246 | **no** | **no** |
-| loki-defaults | cold | 501 | 274 (54.7%) | 161 | 18 | 48 | 137 | yes | **no** |
-| loki-defaults | warm | 659 | 91 (13.8%) | 549 | 5 | 14 | 246 | **no** | **no** |
+| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 127 | yes | **no** |
+| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 232 | **no** | **no** |
+| loki-defaults | cold | 501 | 274 (54.7%) | 161 | 18 | 48 | 127 | yes | **no** |
+| loki-defaults | warm | 659 | 91 (13.8%) | 549 | 5 | 14 | 232 | **no** | **no** |
 
 ### Between 1× and 2× Loki
 
@@ -97,9 +97,9 @@ target) and 4 with one (accepted up to the bound).
 |---|---|---|---|---|---|---|---|
 | DB1 label breakdown pod | 24h | warm | 1.10s | 0.78s | 1.42× | — | **flagged: none** |
 | DB4 json field breakdown batch_id | 6h | warm | 0.16s | 0.11s | 1.49× | — | **flagged: none** |
-| A explore volume, 2 filters, drop | 1h | cold | 0.53s | 0.28s | 1.91× | `semantics/json-filter-pushdown-translated-label`, `explore-logs-volume-json` | **flagged: none** |
-| A explore volume, 2 filters, drop | 24h | cold | 8.20s | 4.21s | 1.95× | `semantics/json-filter-pushdown-translated-label`, `explore-logs-volume-json` | **flagged: none** |
-| A explore volume, 2 filters, drop | 6h | cold | 1.45s | 1.16s | 1.25× | `semantics/json-filter-pushdown-translated-label`, `explore-logs-volume-json` | **flagged: none** |
+| A explore volume, 2 filters, drop | 1h | cold | 0.53s | 0.28s | 1.91× | — | **flagged: none** |
+| A explore volume, 2 filters, drop | 24h | cold | 8.20s | 4.21s | 1.95× | — | **flagged: none** |
+| A explore volume, 2 filters, drop | 6h | cold | 1.45s | 1.16s | 1.25× | — | **flagged: none** |
 | F field breakdown service_version (explore) | 1h | cold | 0.48s | 0.26s | 1.88× | — | **flagged: none** |
 | F field breakdown service_version (explore) | 24h | cold | 7.82s | 4.47s | 1.75× | — | **flagged: none** |
 | F field breakdown service_version (explore) | 6h | cold | 1.37s | 1.02s | 1.35× | — | **flagged: none** |
@@ -314,7 +314,7 @@ None measured.
 | `backend-admission-and-heavy-query-queueing` | 7 × 4 ranges | 28 same | worst 0.69s / 0.00s (24h) | 0.07s † / 0.08s | differs; 1 slower than Loki cold | not locked |
 | `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.01s / 0.00s (7d) | 0.01s † / 0.00s | differs | locked 2026-10-27 |
 | `drilldown-service-landing` | 7 × 5 ranges | 21 same | worst 4.71s / 0.04s (24h) | 4.03s / 0.04s | differs; 6 slower than Loki cold | not locked |
-| `explore-logs-volume-json` | 8 × 5 ranges | 28 same | worst 8.20s / 0.06s (24h) | 4.21s / 0.09s | differs; 3 slower than Loki cold | locked 2026-10-27 |
+| `explore-logs-volume-json` | 8 × 5 ranges | 28 same | worst 8.20s / 0.06s (24h) | 4.21s / 0.09s | differs; 3 slower than Loki cold | not locked |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 32 same | worst 0.69s / 0.00s (24h) | 0.07s † / 0.08s | same | locked 2026-10-27 |
 | `limits/drilldown-breakdown-exact` | 4 × 5 ranges | 20 same | worst **502** / **502** (7d) | 180.00s † / 41.84s | differs | not locked |
 | `limits/metadata-scan-adaptive-limit` | 4 × 4 ranges | 16 same | worst 0.00s / 0.04s (6h) | 0.20s † / 0.10s | same | locked 2026-10-27 |
@@ -352,7 +352,7 @@ None measured.
 | `semantics/extracted-suffix-collision` | 16 × 5 ranges | 35 same, 1 slower | worst 19.85s / 0.10s (24h) | 5.12s / 0.04s | same; 6 slower than Loki cold | not locked |
 | `semantics/json-error-filter-metric-split-pushdown` | 5 × 3 ranges | 15 same | worst 3.41s / 0.04s (24h) | 4.89s / 0.06s | same | locked 2026-10-27 |
 | `semantics/json-extracted-metric-pushdown` | 6 × 3 ranges | 16 same, 1 slower | worst 19.85s / 0.10s (24h) | 5.12s / 0.04s | same; 5 slower than Loki cold | not locked |
-| `semantics/json-filter-pushdown-translated-label` | 1 × 4 ranges | 4 same | worst 8.20s / 0.06s (24h) | 4.21s / 0.09s | differs; 3 slower than Loki cold | locked 2026-10-27 |
+| `semantics/json-filter-pushdown-translated-label` | 1 × 4 ranges | 4 same | worst 8.20s / 0.06s (24h) | 4.21s / 0.09s | differs; 3 slower than Loki cold | not locked |
 | `semantics/json-filter-pushdown-underscore-label` | 3 × 4 ranges | 12 same | worst 8.20s / 0.06s (24h) | 4.21s / 0.09s | differs; 6 slower than Loki cold | not locked |
 | `semantics/json-filter-pushdown-ungrouped-sum` | 1 × 4 ranges | 4 same | worst 0.71s / 0.05s (24h) | 4.08s / 0.07s | same | locked 2026-10-27 |
 | `semantics/json-filter-pushdown-without-error-drop` | 3 × 5 ranges | 9 same | worst 0.73s / 0.07s (24h) | 4.38s / 0.10s | differs | locked 2026-10-27 |

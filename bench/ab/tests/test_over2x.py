@@ -752,7 +752,10 @@ class AcceptanceReplayTest(unittest.TestCase):
         locked = {i for i, blk in b["blocks"].items() if blk["locked"] is True}
         later_locked = {i for i, blk in over2x.read_bounds()["blocks"].items()
                         if blk["locked"] is True and blk["locked_since"] > SEED}
-        self.assertEqual(len(locked), 29)
+        # 29 locked at the seed; two are unlocked since the 2026-11-03 daily report (semantics/json-filter-pushdown-
+        # translated-label, explore-logs-volume-json: the aligned A explore volume 1h cold row is above 2×).
+        self.assertEqual(len(locked), 27)
+        unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json"}
         state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
         for set_name, r in seed_lines():
             for mode, pair in over2x.history_pairs(r).items():
@@ -762,7 +765,8 @@ class AcceptanceReplayTest(unittest.TestCase):
                         state[item][st] += 1
         self.assertEqual({i: v["above"] for i, v in state.items() if i in locked and v["above"]}, {})
         self.assertEqual([i for i, v in state.items()
-                          if i not in locked and i not in later_locked and v["within"] and not v["above"]], [])
+                          if i not in locked and i not in later_locked and i not in unlocked_since
+                           and v["within"] and not v["above"]], [])
 
 
 class ProfileGateTest(unittest.TestCase):

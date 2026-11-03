@@ -43,9 +43,12 @@ compare:
     counts; the stats query carries the `format if` pipe and no raw-row
     fetch happens.
 perf:
+  # Unlocked: the aligned-profile row json-filter-pushdown / A explore volume, 2 filters, drop / 1h / cold is on the
+  # above-2x list (bench/ab/history/over-2x-loki.json) since the 2026-11-03 daily report, the first daily with the
+  # aligned profile measured like-for-like. The block locks again once that row leaves the list.
   max_ratio: 2.0
   target_ratio: 1.0
   modes: [cold, warm, refresh]
-  locked: true
-  locked_since: '2026-10-27'
+  locked: false
+  locked_since: null
   effort_exception: null
