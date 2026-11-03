@@ -670,9 +670,6 @@
     "severity-exposure-surfaces",
     "operator-drop",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "severity/detected-level-stage-side-effects"
    ]
   },
   {
@@ -686,9 +683,6 @@
     "severity/detected-level-stage-side-effects",
     "severity-exposure-surfaces",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "severity/detected-level-stage-side-effects"
    ]
   },
   {
