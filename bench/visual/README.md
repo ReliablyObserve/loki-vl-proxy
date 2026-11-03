@@ -142,6 +142,12 @@ again) is on the whole run, so each shard records its count and keeps the first 
 nothing as recaptured, flipped or late, which is what a single job leaves. Locally, `ci_run.py` still runs a whole plan as one job:
 `python3 bench/visual/ci_run.py --plan plan.json ...`.
 
+`stack.py up` starts each proxy up to three times: every port of the stack (33xxx) is in the kernel's
+ephemeral range, so a proxy can lose its listener port to an outgoing connection of the seed or the builds between the free-port
+check and the bind (it logs "proxy listening", then exits 1). The PIDs of the proxies are recorded even when a start fails, so
+`down` stops them before the whole bring-up is retried. A shard whose stack still does not come up uploads its `error.json`, fails the
+fan-in (verdict exit 3) and is red itself, so "Re-run failed jobs" repeats the shard.
+
 `stack.py up` starts Grafana (image pull, plugin install) and the two proxy builds while the stores come up
 and seed, then waits for the pre-installed plugins to be listed before the warm-up: Grafana installs them in the
 background after its API answers, which made the first page of a run wait for a download. The phases of the

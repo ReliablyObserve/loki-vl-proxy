@@ -43,6 +43,7 @@ from vio import dump_json, load_json, write_text  # noqa: E402
 SERVICE = "loki-vl-proxy-patterns-autodetect"
 # Loki keeps the flushed seed in its ingesters too (see the file).
 LOKI_OVERLAY = "bench/visual/docker-compose.visual.yml"
+PROXY_TRIES = 3
 PORTS = dict(loki=33101, vl=33428, main=33200, pr=33202, grafana=33002)
 
 
@@ -279,6 +280,32 @@ def wait_plugins(base, ids, deadline_s=240):
     return round(time.time() - t0, 1), missing
 
 
+def start_proxies(specs, out, st, procs, tries=PROXY_TRIES):
+    """Start the proxies one by one, each up to `tries` times.
+
+    Every port of the stack (33xxx) lies in the kernel's ephemeral range, so the listener of a proxy can lose its
+    port to an outgoing connection of the seed, the builds or Grafana between the free-port check and the bind:
+    the proxy then logs "proxy listening" and exits 1, which killed a shard's whole bring-up. A proxy that did not
+    come up is stopped and started again; one that still does not after `tries` fails the stack, as before.
+    A proxy of the last attempt stays in `procs` (it is stopped with the others).
+    """
+    supported = {name: ab.probe_align_support(binary) for name, binary, _, _ in specs}
+    for spec in specs:
+        for attempt in range(1, tries + 1):
+            before = len(procs)
+            try:
+                ab.start_proxies([spec], out, st, SERVICE, procs, supported=supported)
+                break
+            except RuntimeError as e:
+                if attempt == tries:
+                    raise
+                for p in procs[before:]:
+                    p.stop()
+                del procs[before:]
+                ab.log(f"proxy {spec[0]} did not start ({e}); starting it again ({attempt}/{tries})")
+                time.sleep(2 * attempt)
+
+
 def up(a):
     os.makedirs(a.out, exist_ok=True)
     st = stack(a.project, a.overlay, a.no_level_label)
@@ -345,9 +372,13 @@ def up(a):
         specs, procs = [], []
         for name, port in (("main", PORTS["main"]), ("pr", PORTS["pr"])):
             specs.append((name, os.path.join(a.out, f"proxy-{name}.bin"), trees[name], port))
-        timed("proxies", ab.start_proxies, specs, a.out, st, SERVICE, procs)
-        state["pids"] = {p.name: p.proc.pid for p in procs}
-        save()
+        try:
+            timed("proxies", start_proxies, specs, a.out, st, procs)
+        finally:
+            # Also when a start failed: `down` stops only the PIDs recorded here, and a proxy left running holds its
+            # port against the retry of the whole bring-up ("port is taken: a stale process would answer").
+            state["pids"] = {p.name: p.proc.pid for p in procs if p.proc is not None}
+            save()
         base, ids = grafana.result()
     state["grafana"] = base
     phases["plugins_wait"], missing = wait_plugins(base, ids)

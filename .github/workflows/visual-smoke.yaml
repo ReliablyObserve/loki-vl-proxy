@@ -210,6 +210,17 @@ jobs:
             ${{ env.OUT }}/*.log
           if-no-files-found: ignore
 
+      # The fan-in job decides the gate, and a shard that could not come up fails it. This step makes the shard
+      # itself red as well, so "Re-run failed jobs" repeats that shard (its artifact is replaced) and the fan-in,
+      # instead of only the fan-in over the same missing captures.
+      - name: Fail the shard when its stack did not complete
+        if: always()
+        run: |
+          if [ -f "$OUT/error.json" ]; then
+            echo "::error::shard ${SHARD}/${SHARDS} did not complete: $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("error", "unknown"))' "$OUT/error.json")"
+            exit 1
+          fi
+
   # The fan-in job and the required check: joins the shards, renders the summary and decides the gate.
   visual-smoke:
     name: visual-smoke

@@ -106,5 +106,43 @@ class PluginWaitTest(unittest.TestCase):
         self.assertEqual(missing, ["a"])
 
 
+class StartProxiesTest(unittest.TestCase):
+    SPECS = [("main", "/bin/main", "/tree", 33200), ("pr", "/bin/pr", "/tree", 33202)]
+
+    def run_with(self, outcomes):
+        """start_proxies with ab.start_proxies replaced: `outcomes` per call is None (started) or an error."""
+        calls, procs = [], []
+
+        def fake(specs, out, st, service, proxies, supported=None):
+            calls.append(specs[0][0])
+            proxy = type("P", (), {"name": specs[0][0], "stopped": False, "stop": lambda self: setattr(self, "stopped", True)})()
+            proxies.append(proxy)
+            outcome = outcomes.pop(0)
+            if outcome:
+                raise RuntimeError(outcome)
+
+        with patch.object(stack.ab, "probe_align_support", return_value=True), patch.object(stack.ab, "start_proxies", side_effect=fake), \
+                patch.object(stack.time, "sleep", lambda s: None):
+            error = None
+            try:
+                stack.start_proxies(self.SPECS, "/out", None, procs)
+            except RuntimeError as e:
+                error = e
+        return calls, procs, error
+
+    def test_a_proxy_that_lost_its_port_is_started_again(self):
+        calls, procs, error = self.run_with([None, "proxy 'pr' exited with 1", None])
+        self.assertIsNone(error)
+        self.assertEqual(calls, ["main", "pr", "pr"])
+        self.assertEqual([p.name for p in procs], ["main", "pr"])  # the dead attempt is not kept
+        self.assertFalse(any(p.stopped for p in procs))
+
+    def test_a_proxy_that_never_starts_fails_the_stack_and_stays_listed_for_teardown(self):
+        calls, procs, error = self.run_with([None, "exit 1", "exit 1", "exit 1"])
+        self.assertIsNotNone(error)
+        self.assertEqual(calls, ["main", "pr", "pr", "pr"])
+        self.assertEqual([p.name for p in procs], ["main", "pr"])  # main and the last pr: `down` stops both
+
+
 if __name__ == "__main__":
     unittest.main()
