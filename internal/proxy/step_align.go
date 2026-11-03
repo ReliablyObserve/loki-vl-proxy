@@ -139,8 +139,18 @@ func alignQueryRangeToStep(r *http.Request, now time.Time) (*http.Request, bool)
 	if !ok || end.Before(start) {
 		return r, false
 	}
-	alignedStart := encodeAlignedBound(start.UnixMilli() / stepMs * stepMs * int64(time.Millisecond))
-	alignedEnd := encodeAlignedBound(end.UnixMilli() / stepMs * stepMs * int64(time.Millisecond))
+	alignedStartMs := start.UnixMilli() / stepMs * stepMs
+	alignedEndMs := end.UnixMilli() / stepMs * stepMs
+	// Loki aligns on time.Time in milliseconds; the proxy writes the moved
+	// bounds as int64 nanoseconds, which hold 1677-09-21 to 2262-04-11 only.
+	// A bound outside that (an end near either limit, or the start Loki
+	// derives an hour before such an end) would wrap to the other end of the
+	// range, so the request goes on as it came.
+	if !millisFitNanos(alignedStartMs) || !millisFitNanos(alignedEndMs) {
+		return r, false
+	}
+	alignedStart := encodeAlignedBound(alignedStartMs * int64(time.Millisecond))
+	alignedEnd := encodeAlignedBound(alignedEndMs * int64(time.Millisecond))
 	// A shallow copy, as the rest of the chain passes requests on: only the
 	// form, the URL and the context differ from r, and r's are not written.
 	aligned := r.WithContext(context.WithValue(r.Context(), stepAlignedKey{}, strings.TrimSpace(r.FormValue("end"))))
@@ -277,6 +287,12 @@ func integerBoundUnixNano(raw string) (int64, bool) {
 		return 0, false
 	}
 	return normalizeLokiIntTimeToUnixNano(n), true
+}
+
+// millisFitNanos reports whether ms milliseconds can be written as int64
+// nanoseconds without overflowing.
+func millisFitNanos(ms int64) bool {
+	return ms >= math.MinInt64/int64(time.Millisecond) && ms <= math.MaxInt64/int64(time.Millisecond)
 }
 
 // encodeAlignedBound writes a moved bound as integer nanoseconds, the form

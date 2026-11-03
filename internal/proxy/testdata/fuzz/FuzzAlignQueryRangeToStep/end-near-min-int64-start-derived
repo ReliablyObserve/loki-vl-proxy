@@ -1,0 +1,4 @@
+go test fuzz v1
+string("")
+string("-9223372036854775000")
+string("1")
