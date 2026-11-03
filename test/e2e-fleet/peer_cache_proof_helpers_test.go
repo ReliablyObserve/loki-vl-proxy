@@ -312,6 +312,10 @@ type fleetCounters struct {
 	// steps lookups of window-evaluated metrics (operation query_steps_cache):
 	// every step held, some held, none held, and answers stored.
 	stepsHit, stepsPartial, stepsMiss, stepsStored float64
+	// volCached, volPartial, volScanned and volWhole count how instant
+	// volumes were answered (operation volume_segments): every kept segment
+	// held, some held, none held, and the whole-window call instead.
+	volCached, volPartial, volScanned, volWhole float64
 	// replyHits counts answers served whole from a cache
 	// (loki_vl_proxy_cache_hits_total). For query_range that is the exact
 	// reply cache in front of the handler (the handler's own response cache
@@ -363,6 +367,9 @@ func countersFrom(m promScrape) fleetCounters {
 	stepsOp := func(outcome string) float64 {
 		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "query_steps_cache", "outcome": outcome})
 	}
+	volOp := func(outcome string) float64 {
+		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "volume_segments", "outcome": outcome})
+	}
 	inv := func(source string) float64 {
 		return m.sum("loki_vl_proxy_internal_operation_total", map[string]string{"operation": "metadata_stream_inventory_unit", "outcome": source})
 	}
@@ -386,6 +393,10 @@ func countersFrom(m promScrape) fleetCounters {
 		stepsPartial:       stepsOp("partial"),
 		stepsMiss:          stepsOp("miss"),
 		stepsStored:        stepsOp("stored"),
+		volCached:          volOp("cached"),
+		volPartial:         volOp("partial"),
+		volScanned:         volOp("scanned"),
+		volWhole:           volOp("whole_window"),
 		replyHits:          m.sum("loki_vl_proxy_cache_hits_total", nil),
 		missedAll:          m.sum("loki_vl_proxy_cache_backend_fallthrough_total", nil),
 		peerFetchSeconds:   m.sum("loki_vl_proxy_peer_cache_fetch_duration_seconds_sum", nil),
@@ -440,6 +451,7 @@ func (a fleetCounters) minus(b fleetCounters) fleetCounters {
 		windowHits: a.windowHits - b.windowHits, windowMisses: a.windowMisses - b.windowMisses,
 		patternsPeer: a.patternsPeer - b.patternsPeer, missedAll: a.missedAll - b.missedAll,
 		stepsHit: a.stepsHit - b.stepsHit, stepsPartial: a.stepsPartial - b.stepsPartial, stepsMiss: a.stepsMiss - b.stepsMiss, stepsStored: a.stepsStored - b.stepsStored,
+		volCached: a.volCached - b.volCached, volPartial: a.volPartial - b.volPartial, volScanned: a.volScanned - b.volScanned, volWhole: a.volWhole - b.volWhole,
 		replyHits:        a.replyHits - b.replyHits,
 		peerFetchSeconds: a.peerFetchSeconds - b.peerFetchSeconds, peerFetches: a.peerFetches - b.peerFetches,
 		vlBackground: a.vlBackground - b.vlBackground, vlStatsBackground: a.vlStatsBackground - b.vlStatsBackground,

@@ -220,8 +220,10 @@
       "test/e2e-compat/line_fields_parity_test.go"
     ],
     "loki_api_v1_index_volume": [
+      "internal/proxy/volume_segments_test.go",
       "internal/proxy/volume_test.go",
       "test/e2e-compat/drilldown_volume_bytes_test.go",
+      "test/e2e-compat/drilldown_volume_segments_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go"
     ],
     "loki_api_v1_label": [
@@ -657,6 +659,11 @@
     ],
     "quality/index-stats-streams-differ": [
       "test/e2e-compat/index_stats_like_loki_test.go"
+    ],
+    "quality/index-volume-settled-segments": [
+      "internal/proxy/volume_segments_test.go",
+      "test/e2e-compat/drilldown_volume_segments_test.go",
+      "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "quality/label-cache-warm": [
       "internal/proxy/labels_cache_warm_test.go",
@@ -1368,7 +1375,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 385,
+  "registry_items": 386,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2220,6 +2227,10 @@
       "semantics/non-sum-vector-aggregation-unreduced",
       "window-bounds-and-step-alignment"
     ],
+    "internal/proxy/volume_segments_test.go": [
+      "loki_api_v1_index_volume",
+      "quality/index-volume-settled-segments"
+    ],
     "internal/proxy/volume_test.go": [
       "drilldown/index_volume/end-millisecond-rounding",
       "drilldown/index_volume/single-sample-returns-vector",
@@ -2446,6 +2457,10 @@
     ],
     "test/e2e-compat/drilldown_volume_bytes_test.go": [
       "loki_api_v1_index_volume"
+    ],
+    "test/e2e-compat/drilldown_volume_segments_test.go": [
+      "loki_api_v1_index_volume",
+      "quality/index-volume-settled-segments"
     ],
     "test/e2e-compat/error_body_like_loki_test.go": [
       "semantics/error-layer-body-shape",
@@ -2857,6 +2872,7 @@
       "peer-cache-query-replies",
       "peer-cache-replication",
       "peer-cache-stats-extent",
+      "quality/index-volume-settled-segments",
       "quality/query-range-settled-steps"
     ],
     "test/e2e-fleet/settled_steps_test.go": [
@@ -2872,7 +2888,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 293,
+  "tests_with_markers": 295,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2961,5 +2977,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 226
+  "wired_items": 227
 }

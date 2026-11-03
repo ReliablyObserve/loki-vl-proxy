@@ -165,4 +165,5 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `semantics/unwrap-gate-parsefloat-divergences` | 3 | 0.41s (G8 bytes() of a number, 24h) | 0.21s | 0.02s | 0.01s | — |
 | `semantics/unwrap-duration-seconds` | 1 | 0.40s (D1 logfmt ttl duration_seconds rate by service, 24h) | 0.23s | 0.03s | 0.01s | — |
 | `backend-admission-and-heavy-query-queueing` | 1 | 0.12s (drilldown landing volume, 7d) | 0.03s | 0.10s | 0.00s | — |
+| `quality/index-volume-settled-segments` | 1 | 0.12s (drilldown landing volume, 7d) | 0.03s | 0.10s | 0.00s | — |
 | `profiles/stream-selector-regexp-anchoring` | 1 | 0.06s (M1 multi-value variable, log query, 6h) | 0.01s | 0.02s | 0.01s | — |

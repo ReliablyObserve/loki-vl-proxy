@@ -71,6 +71,7 @@ smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
 smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
+smoke	internal/proxy	FuzzVolumeSegmentsMergeLikeOneWindow	12s	-	volume segments merge like one window
 smoke	internal/translator	FuzzKeywordGateIsASupersetOfTheRegexp	12s	-	keyword gate is a superset of the regexp
 smoke	internal/translator	FuzzParseDropConditions	12s	-	parse drop conditions
 smoke	internal/translator	FuzzParseDropKeepConsistency	12s	-	parse drop keep consistency

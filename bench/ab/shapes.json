@@ -536,7 +536,8 @@
      },
      "covers": [
       "loki_api_v1_index_volume",
-      "backend-admission-and-heavy-query-queueing"
+      "backend-admission-and-heavy-query-queueing",
+      "quality/index-volume-settled-segments"
      ]
     },
     {

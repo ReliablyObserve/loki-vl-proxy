@@ -433,8 +433,11 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 	})
 
 	t.Run("volume_derived_labels_rejection_falls_back_to_stream_stats", func(t *testing.T) {
-		vl := newFallbackBackend(t, func(r *http.Request, call int) (int, string) {
-			if r.URL.Path == "/select/logsql/stats_query" && call == 1 {
+		// VictoriaLogs rejects the derived form wherever it is asked: the
+		// settled segments (quality/index-volume-settled-segments) and the
+		// whole window alike.
+		vl := newFallbackBackend(t, func(r *http.Request, _ int) (int, string) {
+			if strings.HasPrefix(r.URL.Path, "/select/logsql/stats_query") && strings.Contains(r.Form.Get("query"), " as service_name ") {
 				return http.StatusBadRequest, vlBodyParsePattern
 			}
 			return 0, ""
@@ -443,8 +446,9 @@ func TestUpstreamBadRequest_OptimisedPathRejectionFallsBack(t *testing.T) {
 		w := httptest.NewRecorder()
 		p.handleVolume(w, httptest.NewRequest(http.MethodGet,
 			badRequestURL("/loki/api/v1/index/volume", map[string]string{"query": `{app="billing"}`, "targetLabels": "service_name"}), nil))
-		if w.Code != http.StatusOK || len(vl.calls) != 2 || !strings.Contains(vl.calls[1], "| stats by (_stream) sum_len(_msg) as _b") {
-			t.Fatalf("want the derived stats call then the plain _stream bytes fallback with 200, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
+		last := vl.calls[len(vl.calls)-1]
+		if w.Code != http.StatusOK || !strings.HasPrefix(last, "/select/logsql/stats_query ") || !strings.Contains(last, "| stats by (_stream) sum_len(_msg) as _b") {
+			t.Fatalf("want the derived stats calls then the plain _stream bytes fallback with 200, got %d calls=%v body=%s", w.Code, vl.calls, w.Body.String())
 		}
 		for _, call := range vl.calls {
 			if strings.HasPrefix(call, "/select/logsql/hits ") {

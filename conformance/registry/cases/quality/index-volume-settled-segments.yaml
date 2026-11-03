@@ -1,0 +1,96 @@
+id: quality/index-volume-settled-segments
+title: An instant /index/volume moved by a refresh reads only its edges from VictoriaLogs, with the answer of one whole-window call (fixed)
+pending: true
+proves:
+  - loki_api_v1_index_volume
+  - backend-admission-and-heavy-query-queueing
+consumer: drilldown
+why: |
+  Logs Drilldown's landing page asks /loki/api/v1/index/volume for
+  `{service_name=~".+"}` (targetLabels=service_name, limit=5000) over the
+  dashboard range, and every refresh asks again for a window moved by a few
+  seconds. The proxy kept only the exact reply, keyed by the exact window, so
+  every refresh was a cache miss and one VictoriaLogs stats_query over the
+  whole window: 0.30 s at 24h on the e2e stack (daily run 2026-11-03,
+  metadata-inventory set, warm p50 0.31 s with loki-defaults and 0.42 s
+  aligned, against Loki's 0.09 s served from its volume results cache).
+
+  Loki's answer, from v3.7.9's source: a volume is split by time and the
+  splits are summed per series name before the limit is applied once
+  (pkg/storage/stores/index/seriesvolume/volume.go:57-98 Merge and
+  MapToVolumeResponse: volumes summed per name, ordered by volume then name,
+  the first `limit` kept; pkg/querier/queryrange/volume.go:104-211
+  ToPrometheusResponse and toPrometheusData for the vector and its order).
+  Loki keeps settled volume splits in its results cache, except a request
+  that ends within max_stats_cache_freshness of now (default 10m,
+  pkg/validation/limits.go:413; pkg/querier/queryrange/volume_cache.go:85-96
+  shouldCacheVolume).
+
+  The proxy now sums an instant volume per VictoriaLogs stats row
+  (sum_len(_msg) by the plan's grouping fields, additive over disjoint
+  windows; VictoriaLogs reads `end` as exclusive since v1.36.0) from
+  UTC-aligned day, hour, 5-minute and minute segments
+  (planInventorySegments). Segments that ended before now minus
+  -max-stats-cache-freshness (Loki's max_stats_cache_freshness, default 10m)
+  are kept in the shared read cache (memory, disk and the owner peer) under
+  the tenant, routing scope, auth scope and the rendered stats query; the
+  edges, including everything newer than the freshness window, are read on
+  every request. The rows are summed, then named, limited and ordered by the
+  unchanged code, so the answer is the whole-window call's. Missing
+  same-level segments that follow each other are read by one
+  stats_query_range whose step is the level, so a cold 24h window is about
+  seven calls over the same 24h instead of one. Requests whose rows
+  VictoriaLogs limits itself (a target made of one stored field: VictoriaLogs
+  breaks ties in its own order), windows under 10 minutes, queries that are
+  not row-local, a rejected optimised query, a segment over the cache entry
+  size, a response over -backend-max-buffered-response-bytes and segment rows
+  of one request beyond that same bound keep the single whole-window call.
+  Rows are summed as they are read (one row per group is kept) and cached
+  segments are looked up side by side. volume_range is unchanged.
+
+  Measured with a recording fake VictoriaLogs (BenchmarkVolumeLandingRepeat,
+  24h landing volume moved by a second per request): whole-window path 1
+  call reading 86,400 s of range per request; segments 2 calls (the moved
+  start and the last ~10 minutes) reading 766 s per request. Cold 24h: 7
+  calls reading 24h in total (TestVolumeSegmentsRepeatReadsOnlyTheEdges).
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{service_name=~".+"}'
+    targetLabels: service_name
+    limit: "5000"
+    start: now-24h
+    end: now
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+  precondition: |
+    The same request answered once, then asked again with start and end
+    moved by a few seconds (a Grafana refresh).
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    The answer of one whole-window stats_query over the same window (series,
+    bytes, order, timestamp, resultType); the moved request reads only the
+    moved start and the last -max-stats-cache-freshness from VictoriaLogs.
+gap:
+  status: fixed
+  fixed_by: 'perf/segmented-volume-cache'
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/volume_segments.go (computeVolumeSegmented, fillVolumeSegments, mergeVolumeSegments); internal/proxy/volume.go computeVolume'
+  loki: 'pkg/storage/stores/index/seriesvolume/volume.go:57-98 Merge/MapToVolumeResponse; pkg/querier/queryrange/volume.go:104-211; pkg/querier/queryrange/volume_cache.go:85-96 shouldCacheVolume; pkg/validation/limits.go:413'
+  proxy: 'every moved window one whole-window VictoriaLogs stats_query (0.30 s at 24h)'
+  planned_test: 'proxy TestVolumeSegmentsRepeatReadsOnlyTheEdges, TestVolumeSegmentsMatchWholeWindowOverRandomWindows, TestVolumeSegmentsEdgeTable, TestVolumeSegmentsFallBackToTheWholeWindow, FuzzVolumeSegmentsMergeLikeOneWindow, BenchmarkVolumeLandingRepeat; e2e TestDrilldown_IndexVolumeSegmentsMatchLokiOnRepeat; fleet TestFleetPeerCacheProof volume layer'
+  clusters: []
+  visual: none
+  visual_reason: 'a latency change: every answer is the whole-window call''s, proven by the segments-on/off differential over random windows, shapes and limits; the refresh time is measured by the A/B refresh pass of the drilldown landing volume shape'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

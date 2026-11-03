@@ -84,7 +84,21 @@
       "alert": "none",
       "loki_parity": "",
       "per_tenant": false,
-      "sizing": "4: VictoriaLogs already spreads one query over its cores, so more buys little on a cold window (three concurrent 7-day scans took 1.8x as long as one on the e2e stack) while a warm window needs only its two edges. Lower it to 1-2 for a small VictoriaLogs; the day bucket scans of a long listing also take -backend-max-concurrent-metadata-scans slots, each only while its own call runs. 0 turns the inventory off: every listing is one VictoriaLogs call over the whole range, as before."
+      "sizing": "4: VictoriaLogs already spreads one query over its cores, so more buys little on a cold window (three concurrent 7-day scans took 1.8x as long as one on the e2e stack) while a warm window needs only its two edges. Lower it to 1-2 for a small VictoriaLogs; the day bucket scans of a long listing also take -backend-max-concurrent-metadata-scans slots, each only while its own call runs. 0 turns the inventory off: every listing is one VictoriaLogs call over the whole range, as before. The same bound applies to the segment reads of an instant /index/volume (see -max-stats-cache-freshness), and 0 turns those off too."
+    },
+    {
+      "flag": "max-stats-cache-freshness",
+      "helm_value": "extraArgs.max-stats-cache-freshness",
+      "type": "Duration",
+      "default": "10 * time.Minute",
+      "unit": "duration",
+      "bounds": "which part of an instant /index/volume is read from VictoriaLogs on every request: a volume over at least 10 minutes whose stats query is row-local and not limited by VictoriaLogs is summed per VictoriaLogs stats row from UTC-aligned day, hour, 5-minute and minute segments (at most 1000 per request); segments that end before now minus this duration are kept in the read cache (memory, disk and the owner peer, re-read on the metadata inventory's age schedule over the labels TTL) and the edges, including everything newer, are read live. Missing segments of one level that follow each other are read by one stats_query_range call; at most -metadata-inventory-parallelism reads run at once. The answer is the answer of one whole-window call: rows are summed, then named, limited and ordered as before",
+      "error": "none; a failed read fails the request as the whole-window call would, and a segment larger than the cache entry size, segment rows of one request beyond -backend-max-buffered-response-bytes, a response over it or a rejected optimised query answers the request with one whole-window call",
+      "metric": "loki_vl_proxy_internal_operation_total{operation=\"volume_segments\"} (outcome cached, partial, scanned or whole_window)",
+      "alert": "none",
+      "loki_parity": "max_stats_cache_freshness (default 10m, pkg/validation/limits.go:413): Loki does not cache a volume whose end falls within it of now (pkg/querier/queryrange/volume_cache.go:85-96)",
+      "per_tenant": false,
+      "sizing": "10m, Loki's default: a Logs Drilldown refresh reads the last 10 minutes and the few seconds the window start moved from VictoriaLogs, and the rest of a 24h window from the cache. Raise it to read more of the recent past live (rows that arrive later than the freshness window show up when their segment is re-read: within the labels TTL for the last hour, up to an hour for older segments); lower it, down to 0 (every segment but the newest minute is kept), to read less."
     },
     {
       "flag": "peer-replication-factor",
