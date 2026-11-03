@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import statistics
 import sys
 
 REQUIRED_COMPONENTS = {
@@ -81,6 +82,60 @@ def check_threshold(
         failures.append(
             f"{label} regressed by {fmt_pct(delta)} (base={base}, head={head})"
         )
+
+
+def relative_spread_pct(samples):
+    """(max - min) / median in percent: how far one side's own repeated runs differ."""
+    median = statistics.median(samples)
+    if median <= 0:
+        return 0.0
+    return (max(samples) - min(samples)) / median * 100.0
+
+
+def check_samples_threshold(
+    failures,
+    label,
+    base_samples,
+    head_samples,
+    better,
+    threshold,
+    absolute_threshold=0.0,
+    min_base=0.0,
+    min_samples=3,
+):
+    """Compare the medians of base and head runs that alternated on one machine (ABAB).
+
+    A single run of a short load test varies by tens of percent from one run to the next on a
+    shared runner, so a fixed percentage on one run per side fails pull requests on noise. Here the
+    percentage is a floor: the median must also move by more than the spread the runs show among
+    themselves (the larger of the two sides' range over its median). A series that noisy cannot
+    prove a regression smaller than its own range; one that is steady still proves a small one.
+    Returns "" when decided, otherwise a note for the report.
+    """
+    if len(base_samples) < min_samples or len(head_samples) < min_samples:
+        return f"{label}: only {len(base_samples)} base and {len(head_samples)} head runs, not compared"
+    base = statistics.median(base_samples)
+    head = statistics.median(head_samples)
+    if base < min_base:
+        return ""
+    delta = pct_delta(base, head)
+    if delta is None:
+        return ""
+    noise = max(relative_spread_pct(base_samples), relative_spread_pct(head_samples))
+    effective = max(threshold, noise)
+    regressed = (better == "higher" and delta <= -effective) or (better == "lower" and delta >= effective)
+    if regressed and abs(head - base) >= absolute_threshold:
+        failures.append(
+            f"{label} regressed by {fmt_pct(delta)} (median of {len(head_samples)} runs: base={base:g}, head={head:g}; "
+            f"the runs differ among themselves by up to {noise:.1f}%, so the threshold is {effective:.1f}%)"
+        )
+        return ""
+    if (better == "higher" and delta <= -threshold) or (better == "lower" and delta >= threshold):
+        return (
+            f"{label}: median moved {fmt_pct(delta)} but the runs differ among themselves by up to {noise:.1f}%, "
+            f"so it is within the noise (threshold {effective:.1f}%)"
+        )
+    return ""
 
 
 def check_component_breakdown(failures, track_key, track_label, base_track, head_track):
@@ -362,16 +417,35 @@ def main():
             min_base=min_base,
         )
 
-    check_threshold(
-        failures,
-        "High-concurrency throughput",
-        float(base["performance"]["load"]["high_concurrency_req_per_s"]),
-        float(head["performance"]["load"]["high_concurrency_req_per_s"]),
-        "higher",
-        25.0,
-        absolute_threshold=2_000.0,
-        min_base=5_000.0,
-    )
+    base_load = base["performance"]["load"]
+    head_load = head["performance"]["load"]
+    base_runs = base_load.get("high_concurrency_req_per_s_samples") or []
+    head_runs = head_load.get("high_concurrency_req_per_s_samples") or []
+    if base_runs and head_runs:
+        # Measured with base and head alternating on one machine (load_abab.py).
+        note = check_samples_threshold(
+            failures,
+            "High-concurrency throughput",
+            [float(v) for v in base_runs],
+            [float(v) for v in head_runs],
+            "higher",
+            25.0,
+            absolute_threshold=2_000.0,
+            min_base=5_000.0,
+        )
+        if note:
+            print(f"Note: {note}", file=sys.stderr)
+    else:
+        check_threshold(
+            failures,
+            "High-concurrency throughput",
+            float(base_load["high_concurrency_req_per_s"]),
+            float(head_load["high_concurrency_req_per_s"]),
+            "higher",
+            25.0,
+            absolute_threshold=2_000.0,
+            min_base=5_000.0,
+        )
     check_threshold(
         failures,
         "High-concurrency memory growth",

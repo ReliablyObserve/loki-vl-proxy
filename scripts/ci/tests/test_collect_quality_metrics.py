@@ -227,6 +227,18 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertIn("QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base", self.TEXT)
         self.assertIn("name: pr-quality-diagnostics", self.TEXT)
 
+    def test_the_load_test_is_skipped_in_the_collection_and_run_for_both_trees_together(self):
+        collect = self.TEXT.index("Collect base and PR quality snapshots")
+        self.assertEqual(self.TEXT.count('QUALITY_SKIP_LOAD: "1"'), 1)
+        abab = self.TEXT.index("scripts/ci/load_abab.py")
+        self.assertGreater(abab, self.TEXT.index("QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json"))
+        self.assertLess(abab, self.TEXT.index("pr_evidence.py --provenance"))
+        self.assertIn("--base-dir /tmp/loki-vl-proxy-base --head-dir \"$WORKSPACE\"", self.TEXT)
+        self.assertGreater(abab, collect)
+
+    def test_a_change_to_the_load_measurement_runs_the_perf_smoke(self):
+        self.assertIn("check_quality_gate\\.py|load_abab\\.py", self.TEXT)
+
 
 if __name__ == "__main__":
     unittest.main()
