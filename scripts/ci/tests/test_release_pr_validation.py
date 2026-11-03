@@ -23,6 +23,8 @@ if route.endswith("/files"):
     path = "files.json"
 elif route.endswith("/commits"):
     path = "commits.json"
+elif "/git/matching-refs/" in route:
+    path = "tags.json"
 elif "/contents/" in route:
     path = "contents/" + route.split("/contents/", 1)[1].split("?", 1)[0]
 else:
@@ -83,7 +85,7 @@ def commits(*verified):
 
 @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
 class ScopeCheckTests(unittest.TestCase):
-    def run_check(self, pr_json, files_json=None, commits_json=None, contents=None, number="7"):
+    def run_check(self, pr_json, files_json=None, commits_json=None, contents=None, number="7", tags=("1.2.3",)):
         script = check_script()
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -92,6 +94,7 @@ class ScopeCheckTests(unittest.TestCase):
             gh.write_text(FAKE_GH)
             gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
             (tmp / "pr.json").write_text(json.dumps(pr_json))
+            (tmp / "tags.json").write_text(json.dumps([{"ref": f"refs/tags/v{t}"} for t in tags]))
             if files_json is not None:
                 (tmp / "files.json").write_text(json.dumps(files_json))
             if commits_json is not None:
@@ -121,12 +124,13 @@ class ScopeCheckTests(unittest.TestCase):
         base.update(overrides)
         return base
 
-    def metadata(self, names=META_FILES, signed=(True,), author="reliablyobserve-bot", contents=None, **kw):
+    def metadata(self, names=META_FILES, signed=(True,), author="reliablyobserve-bot", contents=None, tags=("1.2.3",), **kw):
         return self.run_check(
             pr("release/metadata-v1.2.3", author=author),
             files(*names, **kw),
             commits(*signed),
             contents if contents is not None else self.metadata_contents(),
+            tags=tags,
         )
 
     def test_good_metadata_pull_request_passes(self):
@@ -154,9 +158,33 @@ class ScopeCheckTests(unittest.TestCase):
 
     def test_wrong_chart_version_fails(self):
         proc = self.metadata(contents=self.metadata_contents(**{
-            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.3"\n'}))
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.2\nappVersion: "1.2.2"\n'}))
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("Chart.yaml version", proc.stdout)
+
+    def test_chart_on_the_newest_release_passes_for_an_older_branch_version(self):
+        # The metadata for an older tag, merged after a newer one, keeps the chart
+        # on the newest release.
+        proc = self.metadata(tags=("1.2.3", "1.2.4"), contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.4"\n'}))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_chart_ahead_of_every_release_fails(self):
+        proc = self.metadata(tags=("1.2.3",), contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 9.9.9\nappVersion: "9.9.9"\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("newest release", proc.stdout)
+
+    def test_chart_between_the_branch_version_and_the_newest_release_fails(self):
+        proc = self.metadata(tags=("1.2.3", "1.2.5"), contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.4"\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_chart_app_version_must_match_the_chart_version(self):
+        proc = self.metadata(tags=("1.2.3", "1.2.4"), contents=self.metadata_contents(**{
+            "charts/loki-vl-proxy/Chart.yaml": 'version: 1.2.4\nappVersion: "1.2.3"\n'}))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Chart.yaml appVersion", proc.stdout)
 
     def test_missing_changelog_section_fails(self):
         proc = self.metadata(contents=self.metadata_contents(**{"CHANGELOG.md": "## [Unreleased]\n## [1.2.30] - x\n"}))

@@ -605,56 +605,20 @@ jobs:
         id: metadata
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
-          # Run git against github.com with the token that a credential helper
-          # reads from the environment for this one command. The token is never
-          # put in a URL or in the git config, and the checkout above did not
-          # keep one.
-          git_as() {
-            # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
-            GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' "$@"
-          }
           if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
             echo "::warning::RELEASE_PR_TOKEN is not configured. The metadata branch is pushed with the job token and no pull request is opened for it."
           fi
-          git_as fetch origin main
-          git checkout -B main origin/main
-
-          chmod +x scripts/ci/sync_release_metadata.sh
-          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "" "" "" .
-
-          CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
-          CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
-          if [ "${CHART_VERSION}" != "${VERSION}" ] || [ "${CHART_APP_VERSION}" != "${VERSION}" ]; then
-            echo "::error::Chart.yaml version/appVersion mismatch after metadata sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}"
-            exit 1
-          fi
-
-          if git diff --quiet --exit-code -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml; then
-            echo "release metadata already synced"
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          BRANCH="release/metadata-v${VERSION}"
-          echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
-
-          # The commit is made through GitHub's API (createCommitOnBranch), which
-          # signs it: the metadata PR then passes the signed-commit rule like any
-          # other PR, with no admin bypass. A local git commit here is unsigned.
-          FILES="$(git diff --name-only -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml)"
-          chmod +x scripts/ci/commit_via_api.sh
-          # shellcheck disable=SC2086 # FILES is a newline-separated list of fixed repo paths
-          if ! METADATA_SHA="$(GH_TOKEN="${PUSH_TOKEN}" scripts/ci/commit_via_api.sh "${GITHUB_REPOSITORY}" "${BRANCH}" "$(git rev-parse HEAD)" "docs: sync release metadata for v${VERSION}" ${FILES})"; then
-            echo "::warning::Unable to push release metadata branch ${BRANCH}. Skipping metadata PR automation for this release."
+          # Generated against the current tip of main, from the entries the tag
+          # shipped (scripts/ci/release_metadata.py), and committed through the
+          # API, which signs it.
+          if ! python3 scripts/ci/release_metadata.py prepare --version "${VERSION}" --github-output "$GITHUB_OUTPUT" --body-file "${RUNNER_TEMP}/metadata-body.md"; then
+            echo "::warning::Unable to push the release metadata branch. Skipping metadata PR automation for this release."
             echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          echo "release metadata commit ${METADATA_SHA} on ${BRANCH} (signed by GitHub)"
 
       - name: Open the release metadata pull request and arm auto-merge
         if: steps.metadata.outputs.has_changes == 'true'
@@ -684,14 +648,13 @@ jobs:
           }
           NUMBER="$(open_number)"
           if [ -z "${NUMBER}" ]; then
-            BODY="$(printf '%s\n' \
-              "Sync release metadata files for v${VERSION} after the automated release:" \
-              "" \
-              "- CHANGELOG materialization" \
-              "- Helm chart version and appVersion" \
-              "- README release badges")"
+            BODY_FILE="${RUNNER_TEMP}/metadata-body.md"
+            if [ ! -f "${BODY_FILE}" ]; then
+              printf 'Sync release metadata files for v%s after the automated release.\n' "${VERSION}" > "${BODY_FILE}"
+            fi
+            cat "${BODY_FILE}" >> "$GITHUB_STEP_SUMMARY"
             if ! gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
-              --title "docs: sync release metadata for v${VERSION}" --body "${BODY}"; then
+              --title "docs: sync release metadata for v${VERSION}" --body-file "${BODY_FILE}"; then
               echo "::warning::could not open the pull request from ${BRANCH}; open it by hand"
               exit 0
             fi

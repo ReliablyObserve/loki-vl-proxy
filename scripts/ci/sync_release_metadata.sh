@@ -7,6 +7,7 @@ if [ "$#" -lt 3 ] || [ "$#" -gt 7 ]; then
 fi
 
 VERSION="${1#v}"
+# shellcheck disable=SC2034 # kept for callers; each CHANGELOG section takes its tag commit's date
 RELEASE_DATE="$2"
 TEST_COUNT="$3"
 COVERAGE_PCT="${4:-}"
@@ -28,9 +29,19 @@ for path in "$CHANGELOG_FILE" "$CHART_FILE" "$README_FILE"; do
   fi
 done
 
-"$SCRIPT_DIR/materialize_unreleased.sh" "$VERSION" "$RELEASE_DATE" "$CHANGELOG_FILE"
+# File the tagged release's entries, and those of every tag newer than the
+# newest section, under their own sections. The entries come from the tagged
+# commits (not from [Unreleased] as it stands), so entries added after the tag
+# stay in [Unreleased]. RELEASE_DATE is not used: each section takes the date of
+# its tag's commit.
+python3 "$SCRIPT_DIR/changelog_release.py" apply --repo . --changelog "$CHANGELOG_FILE" --version "$VERSION" \
+  ${RELEASE_WARNINGS_FILE:+--warnings-file "$RELEASE_WARNINGS_FILE"}
 
-awk -v version="$VERSION" '
+# The chart moves forward only: a metadata branch for an older tag, merged after
+# a newer one, leaves the chart where it is.
+CURRENT_CHART="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' "$CHART_FILE")"
+CHART_TARGET="$(printf '%s\n%s\n' "$CURRENT_CHART" "$VERSION" | sort -V | tail -1)"
+awk -v version="$CHART_TARGET" '
   /^version:/ { print "version: " version; next }
   /^appVersion:/ { print "appVersion: \"" version "\""; next }
   { print }
@@ -39,8 +50,8 @@ mv "$CHART_FILE.tmp" "$CHART_FILE"
 
 CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' "$CHART_FILE")"
 CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' "$CHART_FILE")"
-if [ "$CHART_VERSION" != "$VERSION" ] || [ "$CHART_APP_VERSION" != "$VERSION" ]; then
-  echo "chart metadata mismatch after sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}" >&2
+if [ "$CHART_VERSION" != "$CHART_TARGET" ] || [ "$CHART_APP_VERSION" != "$CHART_TARGET" ]; then
+  echo "chart metadata mismatch after sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${CHART_TARGET}" >&2
   exit 1
 fi
 
