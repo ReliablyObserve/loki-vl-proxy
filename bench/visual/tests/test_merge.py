@@ -151,6 +151,63 @@ class MergeTest(unittest.TestCase):
         write_shards(sd, self.plan, 2, self.rows, {}, meta_of={1: {"head": "c" * 40}})
         self.assertTrue(any("different head commits" in p for p in merge.merge(self.plan, 2, sd, out)))
 
+    def reloaded(self, per_shard, cap=6):
+        """Two shards, each of which found `per_shard` differing captures in its first pass and loaded them again
+        (the second look matched: the final rows are clean). Returns (out, first-pass rows, final rows)."""
+        plan = self.plan
+        parts = shards.split(plan, 2)
+        pages = [[p for p in list(sp["entries"]) if sp["entries"][p]["ranges"] != ["live"]][:per_shard] for sp in parts]
+        differing = {(p, "1h") for ps in pages for p in ps}
+        first = [row(r["page"], r["range"], diffs=["query x: value differs"] if (r["page"], r["range"]) in differing else ())
+                 for r in self.rows]
+        final = [row(r["page"], r["range"]) for r in self.rows]
+        sd, out = os.path.join(self.tmp, "sd"), os.path.join(self.tmp, "od")
+        meta_of = {}
+        for i, ps in enumerate(pages):
+            names = [f"{p} 1h" for p in ps]
+            meta_of[i] = {"recapture_candidates": len(ps), "max_recapture": cap, "recaptured": names, "flipped": names, "late_requests": []}
+        write_shards(sd, plan, 2, final, {}, meta_of=meta_of)
+        for i, ps in enumerate(pages):
+            fp = os.path.join(sd, f"{merge.PREFIX}{i}", "first-pass")
+            os.makedirs(os.path.join(fp, "montage"))
+            dump_json(os.path.join(fp, "compare.json"), [r for r in first if (r["page"], r["range"]) in {(p, "1h") for p in ps}])
+            dump_json(os.path.join(fp, "pixeldiff.json"), {f"{p}-1h": 0.5 for p in ps})
+            for p in ps:
+                with open(os.path.join(fp, "montage", f"{p}-1h.png"), "wb") as f:
+                    f.write(b"first")
+        self.assertIsNone(merge.merge(plan, 2, sd, out, "b" * 40, "h" * 40))
+        return out, first, final
+
+    def test_within_the_cap_every_shard_reloaded_as_a_single_job_would(self):
+        out, first, final = self.reloaded(per_shard=3)  # 6 in all: at the cap of 6
+        self.assertEqual(load_json(os.path.join(out, "compare.json")), final)
+        meta = load_json(os.path.join(out, "meta.json"))
+        self.assertEqual(len(meta["recaptured"]), 6)
+        self.assertEqual(len(meta["flipped"]), 6)
+        self.assertFalse(meta["recapture_over_cap"])
+
+    def test_over_the_cap_the_run_stays_as_a_single_job_leaves_it_first_pass_only(self):
+        # Two shards of 4 differences each are within a shard's cap of 6 and over the run's: a single job
+        # would have loaded nothing again, so the first pass stands and nothing is recaptured or flipped.
+        out, first, _ = self.reloaded(per_shard=4)
+        self.assertEqual(load_json(os.path.join(out, "compare.json")), first)
+        meta = load_json(os.path.join(out, "meta.json"))
+        self.assertEqual(meta["recaptured"], [])
+        self.assertNotIn("flipped", meta)
+        self.assertNotIn("late_requests", meta)
+        self.assertTrue(meta["recapture_over_cap"])
+        pixel = load_json(os.path.join(out, "pixeldiff.json"))
+        n = sum(1 for r in first if r["main_pr_diffs"])
+        self.assertGreater(n, 6)
+        self.assertEqual(sum(1 for v in pixel.values() if v == 0.5), n)
+        kept = [x for x in os.listdir(os.path.join(out, "montage"))
+                if open(os.path.join(out, "montage", x), "rb").read() == b"first"]
+        self.assertEqual(len(kept), n)
+        # the gate sees the first pass: the planted differences are in the verdict, none excused by a flip
+        _, verdict = self.render(out)
+        self.assertEqual(verdict["exit"], 1)
+        self.assertGreaterEqual(len(verdict["failures"]), 7)
+
     def test_the_montages_and_logs_of_every_shard_are_kept(self):
         out, _ = self.merged(3)
         names = sorted(os.listdir(os.path.join(out, "montage")))

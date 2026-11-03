@@ -135,8 +135,11 @@ the same `--end`, and each records the line counts of the seeded window (`meta.j
 the run when the shards disagree on them, on the commits, or when a shard ran a plan other than its share.
 `shards.py --verify` and `merge.py` check that every planned capture ran in exactly one shard; a shard that
 left nothing, or died, fails the run like a dead stack does (verdict exit 3, no partial pass). A recapture
-(a first-pass difference loaded again more patiently) happens inside the shard that captured the page, with
-the same cap per shard as the cap per run before. Locally, `ci_run.py` still runs a whole plan as one job:
+(a first-pass difference loaded again more patiently) happens inside the shard that captured the page. The cap
+on it (`--max-recapture`, 6: more differences than that are a real change, not a flake, and nothing is loaded
+again) is on the whole run, so each shard records its count and keeps the first pass of what it loads again
+(`first-pass/`); `merge.py` sums the counts and, when the run is over the cap, uses the first pass and reports
+nothing as recaptured, flipped or late, which is what a single job leaves. Locally, `ci_run.py` still runs a whole plan as one job:
 `python3 bench/visual/ci_run.py --plan plan.json ...`.
 
 `stack.py up` starts Grafana (image pull, plugin install) and the two proxy builds while the stores come up
