@@ -25,7 +25,7 @@ REGISTRY = Path(__file__).with_name("fuzz_smoke_targets.tsv")
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yaml"
 SHARD_JOB = "fuzz-smoke-shard"
 # The unscheduled list may only shrink: lower this when a target moves to `smoke`.
-MAX_UNSCHEDULED = 16
+MAX_UNSCHEDULED = 2
 KEY_VERSION = "fuzz-smoke-key-v1"
 
 FUZZ_FUNC = re.compile(r"^func (Fuzz\w*)\(\s*\w+\s+\*testing\.F\s*\)", re.M)
@@ -119,6 +119,9 @@ def check(targets, tree, shards):
     for package, name in sorted(tree - set(seen)):
         problems.append(f"{package} {name}: in the tree but not in {REGISTRY.name}; add it as `smoke` (or, to leave it a seed-corpus test, `unscheduled`)")
     unscheduled = [t for t in targets if t.status == "unscheduled"]
+    for t in unscheduled:
+        if not t.description.strip() or t.description == "-":
+            problems.append(f"{t.package} {t.name}: an unscheduled row needs the reason in its description")
     if len(unscheduled) > MAX_UNSCHEDULED:
         problems.append(f"{len(unscheduled)} unscheduled targets, the list may only shrink (cap {MAX_UNSCHEDULED}): make the new target `smoke`")
     if shards < 1:

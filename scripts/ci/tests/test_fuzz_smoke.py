@@ -39,6 +39,10 @@ class RegistryTest(unittest.TestCase):
         tree = {(t.package, t.name) for t in rows}
         self.assertTrue(any("may only shrink" in p for p in fs.check(rows, tree, 1)))
 
+    def test_an_unscheduled_row_must_say_why(self):
+        row = fs.Target("unscheduled", "p", "FuzzA", "-", "-", "-")
+        self.assertTrue(any("needs the reason" in p for p in fs.check([row], {("p", "FuzzA")}, 1)))
+
     def test_shards_partition_the_smoke_targets_and_differ_by_at_most_one(self):
         rows = [target(f"Fuzz{i}") for i in range(42)] + [target("FuzzU", status="unscheduled", fuzztime="-")]
         for shards in range(1, 9):

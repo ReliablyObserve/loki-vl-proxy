@@ -9,8 +9,10 @@
 # Columns (tab separated): status, package, target, fuzztime, timeout ("-" = Go's
 # default), description.
 #   smoke        run on every CI run.
-#   unscheduled  exists in the tree and runs only as a seed-corpus test; not fuzzed in
-#                CI. This list may only shrink (the script caps it).
+#   unscheduled  exists in the tree but is not fuzzed by this job, for the reason in the
+#                description (it runs as a seed-corpus test in `go test`). This list
+#                may only shrink (the script caps it); fix the reason and make the row
+#                `smoke`.
 smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
 smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
 smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
@@ -53,19 +55,19 @@ smoke	internal/translator	FuzzSanitizeLabelName	12s	-	sanitize label name
 smoke	internal/cache	FuzzHashRingGet	12s	-	hash ring get
 smoke	internal/cache	FuzzCacheGetSet	12s	-	cache get/set
 smoke	internal/rulesmigrate	FuzzConvertWithOptions	12s	-	rules migrate convert
-unscheduled	internal/cache	FuzzDiskRecordDecode	-	-	seed corpus only
-unscheduled	internal/cache	FuzzPeerCapacitySequences	-	-	seed corpus only
-unscheduled	internal/cache	FuzzPeerTTLMillisCompatibility	-	-	seed corpus only
-unscheduled	internal/logql	FuzzDottedNameError	-	-	seed corpus only
-unscheduled	internal/logql	FuzzParse	-	-	seed corpus only
-unscheduled	internal/logsql	FuzzCapabilitiesFor	-	-	seed corpus only
-unscheduled	internal/logsql	FuzzFieldFilterString	-	-	seed corpus only
-unscheduled	internal/logsql	FuzzParseRoundTrip	-	-	seed corpus only
-unscheduled	internal/logsql	FuzzQueryString	-	-	seed corpus only
-unscheduled	internal/proxy	FuzzMergeLabelsIntoCache	-	-	seed corpus only
-unscheduled	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	-	-	seed corpus only
-unscheduled	internal/translator	FuzzKeywordGateIsASupersetOfTheRegexp	-	-	seed corpus only
-unscheduled	internal/translator	FuzzParseDropConditions	-	-	seed corpus only
-unscheduled	internal/translator	FuzzParseDropKeepConsistency	-	-	seed corpus only
-unscheduled	internal/translator	FuzzRegexpMatcherEscaping	-	-	seed corpus only
-unscheduled	internal/translator	FuzzStoredLevelCopyFilter	-	-	seed corpus only
+smoke	internal/cache	FuzzDiskRecordDecode	12s	-	disk record decode
+unscheduled	internal/cache	FuzzPeerCapacitySequences	-	-	fuzzed by the e2e-fleet job (15s), not here
+smoke	internal/cache	FuzzPeerTTLMillisCompatibility	12s	-	peer t t l millis compatibility
+smoke	internal/logql	FuzzDottedNameError	12s	-	dotted name error
+smoke	internal/logql	FuzzParse	12s	-	parse
+smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
+smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
+smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
+smoke	internal/logsql	FuzzQueryString	12s	-	query string
+unscheduled	internal/proxy	FuzzMergeLabelsIntoCache	-	-	fails today: merged labels are not sorted for invalid UTF-8 label names (input "0", "\xff", "\xb30")
+smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
+smoke	internal/translator	FuzzKeywordGateIsASupersetOfTheRegexp	12s	-	keyword gate is a superset of the regexp
+smoke	internal/translator	FuzzParseDropConditions	12s	-	parse drop conditions
+smoke	internal/translator	FuzzParseDropKeepConsistency	12s	-	parse drop keep consistency
+smoke	internal/translator	FuzzRegexpMatcherEscaping	12s	-	regexp matcher escaping
+smoke	internal/translator	FuzzStoredLevelCopyFilter	12s	-	stored level copy filter
