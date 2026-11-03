@@ -27,6 +27,7 @@ died, and the logs. visual_comment.py renders the comment and the verdict from t
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -125,11 +126,36 @@ def recapture_flips(first, second):
     return sorted(flipped), sorted(late)
 
 
+def keep_first_pass(out, again):
+    """Set aside the first-pass rows, scores and montages of the captures about to be loaded again.
+
+    A run split into shards cannot know alone whether the whole run may reload (see recapture): merge.py reads
+    these when the shards together found more differences than the cap and the run must stay as a single job
+    would have left it, first pass only.
+    """
+    first = os.path.join(out, "first-pass")
+    keep = {(p, r) for p, e in again.items() for r in e["ranges"]}
+    path = os.path.join(out, "compare.json")
+    os.makedirs(first, exist_ok=True)
+    dump_json(os.path.join(first, "compare.json"),
+              [r for r in (load_json(path) if os.path.exists(path) else []) if (r["page"], r["range"]) in keep])
+    for page, rng in keep:
+        src = os.path.join(out, "shots", page, rng)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(first, "shots", page, rng), dirs_exist_ok=True)
+    run([PY, os.path.join(HERE, "montage.py"), first], log=os.path.join(out, "montage.log"), check=False)
+
+
 def recapture(a, out, plan, end, port, meta):
     """Load again, once and more patiently, the static captures whose base-vs-PR data differed or never settled.
 
     A page that requests in waves can look settled between two waves on a busy host, and a half-loaded side
     differs from a fully loaded one. A difference that survives the second look is the one reported.
+
+    The cap (--max-recapture) is on the whole run: more differences than that are a real change, not a flake, and
+    nothing is loaded again. A shard sees its share only, so it records its count (`recapture_candidates`) and,
+    when it loads again because its own count is within the cap, keeps the first pass (keep_first_pass); merge.py
+    sums the counts and falls back to the first pass when the run as a whole is over the cap.
     """
     rows = load_json(os.path.join(out, "compare.json")) if os.path.exists(os.path.join(out, "compare.json")) else []
     again, n = {}, 0
@@ -139,9 +165,12 @@ def recapture(a, out, plan, end, port, meta):
             # A difference Loki judged an improvement is expected (fix-proof captures differ by design): still
             # loaded again, not counted against the cap.
             n += 0 if classify(r) == "improved" else 1
+    meta["recapture_candidates"], meta["max_recapture"] = n, a.max_recapture
     if not again or n > a.max_recapture:
         meta["recaptured"] = []
         return False
+    if a.shard:
+        keep_first_pass(out, again)
     retry = os.path.join(out, "plan-recapture.json")
     dump_json(retry, {"entries": again})
     env = dict(capture_env(a, out, end, port), VP_PLAN=retry, VP_QUIET_MS="10000", VP_SETTLE_MS="150000")

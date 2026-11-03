@@ -16,6 +16,12 @@ the comment and the gate from it exactly as before:
   error.json     written when the run cannot be trusted: a shard died or left no result, the shard plans are not
                  an exact split of the plan, the shards were built from different commits or seeded different data
 
+One decision is made over the whole run and not by a shard: the cap on how many differing captures may be loaded
+again (ci_run.recapture). A shard loads its own differences again when its count is within the cap and keeps the
+first pass of them aside (first-pass/); the shards' counts are summed here, and when the run as a whole is over the
+cap the first pass of those captures is used and nothing counts as recaptured, flipped or late: the run a single job
+leaves when it finds more differences than it will reload.
+
 Every row is a pure function of the capture of one page, and a page is never divided over shards (shards.py), so the
 rows, and with them the verdict, are those of a single job over the same captures.
 """
@@ -51,8 +57,7 @@ def merge(plan, k, shards_dir, out, base="", head=""):
     expected = split(plan, k)
     problems = verify(plan, expected)
     dirs = [os.path.join(shards_dir, f"{PREFIX}{i}") for i in range(k)]
-    metas, rows, pixels, recaptured, flipped, late = [], [], {}, [], set(), set()
-    has_flipped = False
+    metas, shard_rows, pixels, montages = [], [], {}, {}
     for i, d in enumerate(dirs):
         if not os.path.isdir(d):
             problems.append(f"shard {i} left no result")
@@ -65,29 +70,47 @@ def merge(plan, k, shards_dir, out, base="", head=""):
         err = read(os.path.join(d, "error.json"), None)
         if err:
             problems.append(f"shard {i}: {err.get('error', 'unknown')}"[:300])
-        rows += read(os.path.join(d, "compare.json"), [])
+        shard_rows.append((i, read(os.path.join(d, "compare.json"), [])))
         pixels.update(read(os.path.join(d, "pixeldiff.json"), {}))
-        recaptured += meta.get("recaptured") or []
-        if "flipped" in meta:
-            has_flipped = True
-        flipped.update(meta.get("flipped") or [])
-        late.update(meta.get("late_requests") or [])
         for png in sorted(glob.glob(os.path.join(d, "montage", "*.png"))):
-            target = os.path.join(out, "montage", os.path.basename(png))
-            if os.path.exists(target):
+            if os.path.basename(png) in montages:
                 problems.append(f"montage {os.path.basename(png)} comes from two shards")
                 continue
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copyfile(png, target)
+            montages[os.path.basename(png)] = png
         kept = os.path.join(d, KEPT_DATA)
         if os.path.isdir(kept):
             shutil.copytree(kept, os.path.join(out, KEPT_DATA), dirs_exist_ok=True)
         for log in sorted(glob.glob(os.path.join(d, "*.log"))):
             shutil.copyfile(log, os.path.join(out, f"shard-{i}-{os.path.basename(log)}"))
+    # The cap on reloading, over the run (see the docstring): over it, the first pass of what a shard reloaded stands.
+    cap = max([m.get("max_recapture", 0) for m in metas if m] or [0])
+    over = sum(m.get("recapture_candidates", 0) for m in metas if m) > cap
+    rows, recaptured, flipped, late, has_flipped = [], [], set(), set(), False
+    for i, shard in shard_rows:
+        meta, d = metas[i], dirs[i]
+        if over and meta.get("recaptured"):
+            first = {(r["page"], r["range"]): r for r in read(os.path.join(d, "first-pass", "compare.json"), [])}
+            if not first:
+                problems.append(f"shard {i} reloaded captures but kept no first pass")
+            shard = [first.get((r["page"], r["range"]), r) for r in shard]
+            first_px = read(os.path.join(d, "first-pass", "pixeldiff.json"), {})
+            pixels.update(first_px)
+            for png in glob.glob(os.path.join(d, "first-pass", "montage", "*.png")):
+                montages[os.path.basename(png)] = png
+        else:
+            recaptured += meta.get("recaptured") or []
+            has_flipped = has_flipped or "flipped" in meta
+            flipped.update(meta.get("flipped") or [])
+            late.update(meta.get("late_requests") or [])
+        rows += shard
+    for name, png in sorted(montages.items()):
+        os.makedirs(os.path.join(out, "montage"), exist_ok=True)
+        shutil.copyfile(png, os.path.join(out, "montage", name))
     for key in ("base", "head"):
         if len({m.get(key) for m in metas if m}) > 1:
             problems.append(f"the shards were built from different {key} commits")
-    for key in ("end", "hours", "vl_lines", "loki_lines"):
+    # loki_lines is reported, not gated: the seed already waited for Loki to count what VictoriaLogs counts.
+    for key in ("end", "hours", "vl_lines"):
         values = {(m.get("seed") or {}).get(key) for m in metas if m} - {None}
         if len(values) > 1:
             problems.append(f"the shards seeded different data ({key}: {sorted(values)})")
@@ -95,7 +118,7 @@ def merge(plan, k, shards_dir, out, base="", head=""):
     # "page range", in the order of the rows (ci_run.py lists them as the rows come)
     recaptured.sort(key=lambda x: row_order(dict(zip(("page", "range"), x.rsplit(" ", 1)))))
     live = [m for m in metas if m]
-    meta = {"base": next((m["base"] for m in live if "base" in m), base), "head": next((m["head"] for m in live if "head" in m), head),
+    meta = {"recapture_over_cap": over, "base": next((m["base"] for m in live if "base" in m), base), "head": next((m["head"] for m in live if "head" in m), head),
             "plan_captures": plan["captures"], "recaptured": recaptured,
             "shards": [{"index": i, "captures": expected[i]["captures"], "elapsed_s": m.get("elapsed_s"), "phases_s": m.get("phases_s"),
                         "stack_up_phases_s": m.get("stack_up_phases_s"), "seed": m.get("seed")} for i, m in enumerate(metas)]}

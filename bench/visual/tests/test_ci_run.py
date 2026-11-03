@@ -65,6 +65,24 @@ class CiRunTest(unittest.TestCase):
         finally:
             srv.shutdown()
 
+    def test_the_first_pass_of_a_capture_loaded_again_is_kept_apart(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as out:
+            for page in ("again", "once"):
+                for name in ("main", "pr", "loki"):
+                    d = os.path.join(out, "shots", page, "1h")
+                    os.makedirs(d, exist_ok=True)
+                    Image.new("RGB", (40, 30), (200, 10, 10) if name == "pr" else (10, 10, 200)).save(os.path.join(d, f"{name}.png"))
+            with open(os.path.join(out, "compare.json"), "w", encoding="utf-8") as f:
+                json.dump([{"page": "again", "range": "1h", "main_pr_diffs": ["x"]}, {"page": "once", "range": "1h", "main_pr_diffs": []}], f)
+            ci_run.keep_first_pass(out, {"again": {"kind": "explore", "ranges": ["1h"]}})
+            first = os.path.join(out, "first-pass")
+            with open(os.path.join(first, "compare.json"), encoding="utf-8") as f:
+                self.assertEqual([r["page"] for r in json.load(f)], ["again"])
+            self.assertEqual(os.listdir(os.path.join(first, "montage")), ["again-1h.png"])
+            with open(os.path.join(first, "pixeldiff.json"), encoding="utf-8") as f:
+                self.assertEqual(list(json.load(f)), ["again-1h"])
+
     def test_differing_lists_the_captures_with_a_difference(self):
         with tempfile.TemporaryDirectory() as out:
             self.assertEqual(ci_run.differing(out), set())

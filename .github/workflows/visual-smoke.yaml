@@ -198,6 +198,9 @@ jobs:
           overwrite: true
           path: |
             ${{ env.OUT }}/montage/
+            ${{ env.OUT }}/first-pass/montage/
+            ${{ env.OUT }}/first-pass/compare.json
+            ${{ env.OUT }}/first-pass/pixeldiff.json
             ${{ env.OUT }}/data/lvl-dd-logs-pill-multi-json/1h/*.json
             ${{ env.OUT }}/*.json
             ${{ env.OUT }}/*.md
