@@ -309,14 +309,21 @@ def api_test_job(kind, name):
             or kind == "drilldown" and (name == "drilldown-pinned-runtime" or name.startswith("drilldown-grafana-pr-matrix (")))
 
 
+HANDLER_BENCHMARK_FAMILIES = ("QueryRange", "Labels", "Series", "DetectedFields", "DetectedFieldValues",
+                              "MultiTenantQueryRange", "MultiTenantLabels", "LabelKeys", "LabelValues", "Patterns")
+
+
+def handler_benchmark_regex():
+    """`go test -bench` pattern selecting exactly the families handler_benchmarks reads."""
+    return "^BenchmarkProxy_(" + "|".join(HANDLER_BENCHMARK_FAMILIES) + ")_"
+
+
 def handler_benchmarks(text):
     """Read existing Go benchmark output, keeping CPU variants separate."""
-    families = ("QueryRange", "Labels", "Series", "DetectedFields", "DetectedFieldValues",
-                "MultiTenantQueryRange", "MultiTenantLabels", "LabelKeys", "LabelValues", "Patterns")
     groups = {}
     for line in text.splitlines():
         parts = line.split()
-        if not parts or not any(parts[0].startswith("BenchmarkProxy_" + family + "_") for family in families):
+        if not parts or not any(parts[0].startswith("BenchmarkProxy_" + family + "_") for family in HANDLER_BENCHMARK_FAMILIES):
             continue
         if len(line) > 2048 or len(parts) < 8 or len(parts) % 2 or not parts[1].isdigit() or int(parts[1]) <= 0:
             raise ValueError("malformed handler benchmark")
@@ -555,6 +562,7 @@ def publish(api, pr, evidence, output, dry_run=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provenance")
+    parser.add_argument("--handler-bench-regex", action="store_true", help="print the go test -bench pattern for the families the report reads")
     parser.add_argument("--summarize-tests")
     parser.add_argument("--coverage-profile")
     parser.add_argument("--coverage-percent", type=float)
@@ -563,6 +571,9 @@ def main():
     parser.add_argument("--out", default="pr-quality-report.md")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.handler_bench_regex:
+        print(handler_benchmark_regex())
+        return
     if args.provenance:
         provenance(args.provenance)
         return
