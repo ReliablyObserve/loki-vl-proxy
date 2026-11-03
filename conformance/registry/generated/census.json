@@ -208,6 +208,10 @@
     "quality/index-stats-streams-differ | compare:observed",
     "quality/index-stats-streams-differ | gap:upstream",
     "quality/index-stats-streams-differ | query",
+    "quality/index-volume-settled-segments | compare:exact",
+    "quality/index-volume-settled-segments | gap:fixed",
+    "quality/index-volume-settled-segments | perf",
+    "quality/index-volume-settled-segments | query",
     "quality/label-cache-aged-labels-kept | compare:observed",
     "quality/label-cache-aged-labels-kept | gap:open",
     "quality/label-cache-warm | compare:status",
@@ -1188,6 +1192,8 @@
     "internal/proxy/vector_agg_series_differential_test.go | metric-series-identity",
     "internal/proxy/vector_agg_series_differential_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/volume_segments_test.go | loki_api_v1_index_volume",
+    "internal/proxy/volume_segments_test.go | quality/index-volume-settled-segments",
     "internal/proxy/volume_test.go | drilldown/index_volume/end-millisecond-rounding",
     "internal/proxy/volume_test.go | drilldown/index_volume/single-sample-returns-vector",
     "internal/proxy/volume_test.go | loki_api_v1_index_volume",
@@ -1315,6 +1321,8 @@
     "test/e2e-compat/drilldown_longrange_fields_burst_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go | limits/drilldown-breakdown-exact",
     "test/e2e-compat/drilldown_volume_bytes_test.go | loki_api_v1_index_volume",
+    "test/e2e-compat/drilldown_volume_segments_test.go | loki_api_v1_index_volume",
+    "test/e2e-compat/drilldown_volume_segments_test.go | quality/index-volume-settled-segments",
     "test/e2e-compat/error_body_like_loki_test.go | semantics/error-layer-body-shape",
     "test/e2e-compat/error_body_like_loki_test.go | status-400",
     "test/e2e-compat/error_body_like_loki_test.go | status-404",
@@ -1584,6 +1592,7 @@
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-query-replies",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-replication",
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-stats-extent",
+    "test/e2e-fleet/peer_cache_proof_test.go | quality/index-volume-settled-segments",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
@@ -1596,13 +1605,13 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 38,
+      "drilldown": 39,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 292,
+      "go": 294,
       "playwright": 1
     },
     "page_kinds": {
@@ -1619,10 +1628,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 85,
+    "shape_covers_distinct": 86,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 226
+    "wired_items": 227
   },
   "gates": [
     "A/B shape selection",
