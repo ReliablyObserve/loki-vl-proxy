@@ -51,6 +51,63 @@ def fold(title, lines):
     return [f"<details><summary>{title}</summary>", "", *lines, "", "</details>", ""]
 
 
+# Cell texts that carry no value. A table row whose data cells (all but the first) are all of
+# these says nothing; a table without such a row is not rendered.
+NO_VALUE = {"", "unavailable", "n/a", "—", "-", "not recorded"}
+UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+SHOWING_ROWS = re.compile(r"^Showing (\d+)/(\d+) rows\.$")
+
+
+def table_cells(line):
+    return [part.strip() for part in UNESCAPED_PIPE.split(line.strip())[1:-1]]
+
+
+def empty_cell(text):
+    """True for a cell that is only no-value words, alone or joined as "a / b" or "a → b"."""
+    return all(part.strip() in NO_VALUE for part in re.split(r" / | → ", text))
+
+
+def has_value(row):
+    return any(not empty_cell(c) for c in table_cells(row)[1:])
+
+
+def prune(lines):
+    """Drop the table rows that hold no value and the tables left without a row.
+
+    Returns (lines, rows kept): the rows of every table that still has a row. A "Showing N/N rows."
+    line follows its table; it is corrected to the rows kept, or dropped with the table.
+    """
+    out, kept, i = [], 0, 0
+    while i < len(lines):
+        if not lines[i].startswith("|"):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].startswith("|"):
+            j += 1
+        header, body = lines[i:i + 2], lines[i + 2:j]
+        rows = [row for row in body if has_value(row)]
+        note = j + 1 if j + 1 < len(lines) and lines[j] == "" else j
+        showing = SHOWING_ROWS.match(lines[note]) if note < len(lines) else None
+        if rows:
+            out += header + rows
+            kept += len(rows)
+            if showing and len(rows) != len(body):
+                lines = lines[:note] + [f"Showing {len(rows)}/{len(rows)} rows with a value."] + lines[note + 1:]
+        elif showing:
+            j = note + 1  # the count belongs to the dropped table
+        i = j
+    cleaned = []
+    for line in out:
+        if line == "" and (not cleaned or cleaned[-1] == ""):
+            continue
+        cleaned.append(line)
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+    return cleaned, kept
+
+
 def data(sources, name):
     source = sources.get(name, {})
     if source.get("state") != "completed" or source.get("conclusion") == "skipped":
@@ -398,6 +455,17 @@ def render(base, head, evidence):
     if context:
         lines += ["Base " + cell(context.get("base", "unavailable")) + " → PR " + cell(context.get("head", "unavailable")) + "; tested merge " + cell(context.get("merge", "unavailable")) + ".", ""]
     focus, urgent = [], []
+    omitted = []
+
+    def section(title, body, reason, prose=False):
+        """A folded section, or nothing when it has no value: then its title and reason are listed once at the end."""
+        if not prose:
+            body, kept = prune(body)
+            if not kept:
+                omitted.append(f"{title} ({reason})")
+                return []
+        return fold(title, body)
+
     comparison = analyze(base, head)
     for signal in comparison["signals"]:
         target = focus if any(word in signal for word in (" new passing (", " recovered (", "inventory trend")) else urgent
@@ -512,18 +580,18 @@ def render(base, head, evidence):
     if sources:
         names = [key for key in ("quality", "ci", "perf", "visual") if key in sources]
         names += sorted(set(sources) - set(names))
-        lines += fold("Evidence sources and revision status", table(["Source", "State", "Result", "Link", "Notes"], [[cell(key), cell(sources[key].get("state", "unavailable")), cell(sources[key].get("conclusion") or "pending / unavailable"), link(sources[key]), cell(sources[key].get("note", ""))] for key in names]) + ["", "Pending, stale, unavailable and skipped sources contribute no measurements."])
-    lines += fold("Coverage and tests", test_details(base, head, ci))
+        lines += section("Evidence sources and revision status", table(["Source", "State", "Result", "Link", "Notes"], [[cell(key), cell(sources[key].get("state", "unavailable")), cell(sources[key].get("conclusion") or "pending / unavailable"), link(sources[key]), cell(sources[key].get("note", ""))] for key in names]) + ["", "Pending, stale, unavailable and skipped sources contribute no measurements."], "no source reported")
+    lines += section("Coverage and tests", test_details(base, head, ci), "test count and coverage were not collected")
     if semantics.get("state") == "available":
         details = query_semantics_details(base, head)
         if semantics_run:
             details += ["", *table(["Live pinned Loki result", "Passed", "Failed", "Skipped"],
                                     [["Matrix cases", *(fmt(semantics_run.get(k)) for k in ("passed", "failed", "skipped"))]]),
                         "", "Failing case IDs: " + (", ".join(cell(x) for x in semantics_run.get("failed_cases", [])[:8]) or "none") + "."]
-        lines += fold("Query semantics catalog: base versus PR", details)
+        lines += section("Query semantics catalog: base versus PR", details, "no catalog counts")
     if conformance:
-        lines += fold("Recorded conformance contracts and subtests", conformance_details(conformance))
-    lines += fold("API contract coverage and regression changes", comparison["details"])
+        lines += section("Recorded conformance contracts and subtests", conformance_details(conformance), "no conformance outcomes")
+    lines += section("API contract coverage and regression changes", comparison["details"], "no test outcomes, coverage or declared inventory in either snapshot")
     if scopes:
         scope_rows = []
         for name, scope in sorted(scopes, key=lambda item: (item[1].get("failed", 0) == 0, item[1].get("state") == "available", item[0], str(item[1].get("name")))):
@@ -535,18 +603,20 @@ def render(base, head, evidence):
                                fmt(scope.get("top_level_passed")) + " / " + fmt(scope.get("subtests_passed")) if scope.get("kind") == "Go" else "—",
                                " / ".join(fmt(scope.get(key)) for key in ("flaky", "interrupted", "not_run")) if scope.get("kind") == "Playwright" else "not recorded",
                                versions or cell(scope.get("note", ""))])
-        lines += fold("Broader API and Grafana execution scopes", ["Existing CI job logs, verified against the tested revision. Candidate only: these scopes have no paired base run here. Go counts include top-level cases and subtests; repeated identities count once and a failed repeat stays failed. Playwright invocations remain separate. Do not sum profiles as independent API coverage. Failed jobs can contain only partial observed populations.", "",
-                      *table(["CI source / scope", "Evidence", "Passing", "Failing", "Skipped", "Go pass parent / child", "Flaky / interrupted / not run", "Logged stack / note"], scope_rows[:20]), "", f"Showing {min(20, len(scopes))}/{len(scopes)} scopes; source links are above."])
+        lines += section("Broader API and Grafana execution scopes", ["Existing CI job logs, verified against the tested revision. Candidate only: these scopes have no paired base run here. Go counts include top-level cases and subtests; repeated identities count once and a failed repeat stays failed. Playwright invocations remain separate. Do not sum profiles as independent API coverage. Failed jobs can contain only partial observed populations.", "",
+                      *table(["CI source / scope", "Evidence", "Passing", "Failing", "Skipped", "Go pass parent / child", "Flaky / interrupted / not run", "Logged stack / note"], scope_rows[:20]), "", f"Showing {min(20, len(scopes))}/{len(scopes)} scopes; source links are above."], "no scope reported outcomes")
     if verdict:
-        lines += fold("Real workload A/B: base, PR and Loki", perf_details(perf))
+        lines += section("Real workload A/B: base, PR and Loki", perf_details(perf), "no A/B rows")
     if vv:
-        lines += fold("Visual proofs and regressions", ["Failures: " + (", ".join(cell(x) for x in vv.get("failures", [])[:8]) or "none"), "Missing captures: " + (", ".join(cell(x) for x in vv.get("missing", [])[:8]) or "none"), "See the linked Visual smoke source for main / PR / Loki montages, targeted fixes and general controls. Pixel changes alone are warnings, not compatibility proof."])
+        lines += section("Visual proofs and regressions", ["Failures: " + (", ".join(cell(x) for x in vv.get("failures", [])[:8]) or "none"), "Missing captures: " + (", ".join(cell(x) for x in vv.get("missing", [])[:8]) or "none"), "See the linked Visual smoke source for main / PR / Loki montages, targeted fixes and general controls. Pixel changes alone are warnings, not compatibility proof."], "", prose=True)
     fleet = fleet_details(ci)
     if fleet:
-        lines += fold("Distributed cache: candidate only", fleet)
-    lines += fold("Synthetic handler microbenchmarks", bench_details(base, head, ci))
+        lines += section("Distributed cache: candidate only", fleet, "no cache measurements")
+    lines += section("Synthetic handler microbenchmarks", bench_details(base, head, ci), "skipped: no performance-sensitive paths changed" if mapping(head.get("performance")).get("mode") == "skipped" else "no paired base/PR measurements")
     if jobs:
-        lines += fold("CI regression checks", table(["Source / check", "State", "Result"], [[cell(name) + " / " + cell(j.get("name")), cell(j.get("status")), cell(j.get("conclusion") or "unavailable")] for name, j in jobs[:60]]) + ["", f"Showing {min(60, len(jobs))}/{len(jobs)} checks; failed and pending checks first. Full job lists remain in the linked runs."])
+        lines += section("CI regression checks", table(["Source / check", "State", "Result"], [[cell(name) + " / " + cell(j.get("name")), cell(j.get("status")), cell(j.get("conclusion") or "unavailable")] for name, j in jobs[:60]]) + ["", f"Showing {min(60, len(jobs))}/{len(jobs)} checks; failed and pending checks first. Full job lists remain in the linked runs."], "no checks reported")
+    if omitted:
+        lines += ["No data (sections omitted): " + "; ".join(omitted) + ".", ""]
     lines += ["Required checks decide merge safety. This report summarizes selected evidence; rendering starts no tests or heavy workloads.", ""]
     return "\n".join(lines)
 

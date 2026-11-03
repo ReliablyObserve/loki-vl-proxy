@@ -1,11 +1,14 @@
 """Exercise the public renderer CLI with measured and missing evidence."""
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "scripts" / "ci"))
+import pr_quality_report  # noqa: E402
 
 
 def snapshot(count=10, coverage=85):
@@ -200,7 +203,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| Coverage | unavailable | 85% | n/a |", report)
 
     def test_smoke_is_scoped_and_synthetic_costs_collapsed(self):
-        report = self.render()
+        head = snapshot()
+        head["tests"]["outcomes"] = {"api\tTestQuery": "pass"}
+        report = self.render(head=head)
         self.assertIn("API contract coverage and regression changes", report)
         self.assertIn("not full runtime compatibility", report)
         self.assertIn("<details><summary>Synthetic handler microbenchmarks", report)
@@ -383,7 +388,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| 1 | 4 / 0 | 1 / 2 | 3 / 1 |", report)
         self.assertIn(r"stats\_query\_range=3", report)
         self.assertIn("VL-facing cache occupancy is unmeasured", report)
-        self.assertIn("Loki-layer logical RAM", report)
+        # The proof carries no resource samples: that table has no value in any row, so it is not rendered.
+        self.assertNotIn("Loki-layer logical RAM", report)
 
     def test_huge_numeric_is_unavailable_not_overflow(self):
         base, head = snapshot(), snapshot()
@@ -403,6 +409,89 @@ class ReportTests(unittest.TestCase):
         self.assertIn("faster: loki-defaults / drilldown / better-shape / 6h; base 1000 ms → PR 200 ms", before_details)
         latency = report.split("Real workload A/B")[1]
         self.assertLess(latency.index("slow-shape"), latency.index("unchanged0"))
+
+
+class EmptySectionTests(unittest.TestCase):
+    """A section or table with no value is not rendered; what has data stays as it was."""
+
+    render = ReportTests.render
+
+    def test_prune_drops_rows_without_a_value_and_tables_without_rows(self):
+        lines = ["intro", "", "| Signal | Base | PR |", "|---|---|---|", "| a | unavailable | unavailable |",
+                 "| b | n/a | — |", "| c | 1 | unavailable |", "", "Showing 3/3 rows.", "",
+                 "| X | Y |", "|---|---|", "| p | unavailable |", "", "Showing 1/1 rows.", "", "tail"]
+        out, kept = pr_quality_report.prune(lines)
+        self.assertEqual(kept, 1)
+        self.assertEqual(out, ["intro", "", "| Signal | Base | PR |", "|---|---|---|", "| c | 1 | unavailable |", "",
+                               "Showing 1/1 rows with a value.", "", "tail"])
+
+    def test_prune_keeps_a_table_with_every_row_valued_untouched(self):
+        lines = ["| A | B |", "|---|---|", "| x | 1 |", "| y | 2 |", "", "Showing 2/2 rows."]
+        self.assertEqual(pr_quality_report.prune(lines), (lines, 2))
+
+    def test_prune_removes_a_header_only_table(self):
+        self.assertEqual(pr_quality_report.prune(["| A | B |", "|---|---|"]), ([], 0))
+
+    def test_escaped_pipes_do_not_split_a_cell(self):
+        self.assertEqual(pr_quality_report.table_cells(r"| a\|b | 1 |"), [r"a\|b", "1"])
+
+    def test_empty_report_has_no_empty_table_and_one_no_data_line(self):
+        report = self.render(base=snapshot(0, 0), head=snapshot(0, 0))
+        self.assertNotIn("| unavailable | unavailable |", report)
+        self.assertNotIn("Showing 0/", report)
+        self.assertNotIn("Test count", report)
+        self.assertNotIn("<summary>API contract coverage", report)
+        self.assertNotIn("<summary>Coverage and tests", report)
+        self.assertEqual(report.count("No data (sections omitted):"), 1)
+        line = next(x for x in report.splitlines() if x.startswith("No data"))
+        for title in ("Coverage and tests", "API contract coverage and regression changes"):
+            self.assertIn(title, line)
+        self.assertLess(len(line), 600)
+
+    def test_every_rendered_table_has_a_row_with_a_value(self):
+        for base, head in ((snapshot(0, 0), snapshot(0, 0)), (snapshot(0, 0), snapshot()), (snapshot(), snapshot())):
+            report = self.render(base=base, head=head)
+            lines = report.splitlines()
+            for index, line in enumerate(lines):
+                if line.startswith("|---"):
+                    rows = []
+                    for row in lines[index + 1:]:
+                        if not row.startswith("|"):
+                            break
+                        rows.append(row)
+                    self.assertTrue(any(pr_quality_report.has_value(row) for row in rows), "\n".join(lines[index - 1:index + 3]))
+
+    def test_partial_data_keeps_the_valued_side_and_row(self):
+        report = self.render(base=snapshot(0, 0), head=snapshot())
+        self.assertIn("| Test count | unavailable | 10 | n/a |", report)
+        self.assertIn("<summary>Coverage and tests", report)
+        self.assertIn("API contract coverage", report.split("No data", 1)[1])
+
+    def test_full_data_report_keeps_all_its_sections_and_has_no_no_data_line_for_them(self):
+        head = snapshot()
+        head["tests"]["outcomes"] = {"api\tTestQuery": "pass", "api\tTestQuery/edge": "pass"}
+        base = snapshot()
+        base["tests"]["outcomes"] = {"api\tTestQuery": "pass"}
+        report = self.render(base=base, head=head)
+        for title in ("Coverage and tests", "API contract coverage and regression changes", "Synthetic handler microbenchmarks"):
+            self.assertIn(f"<summary>{title}</summary>", report)
+        if "No data" in report:
+            self.assertNotIn("Coverage and tests", report.split("No data", 1)[1])
+
+    def test_skipped_perf_is_listed_once_with_its_reason(self):
+        head = snapshot()
+        head["performance"] = {"mode": "skipped", "benchmarks": {}}
+        report = self.render(head=head)
+        self.assertNotIn("<summary>Synthetic handler microbenchmarks", report)
+        self.assertIn("Synthetic handler microbenchmarks (skipped: no performance-sensitive paths changed)", report)
+
+    def test_a_scope_row_with_only_a_note_is_kept_and_an_all_unavailable_one_is_not(self):
+        scopes = [{"name": "ghost", "kind": "Go", "state": "unavailable"},
+                  {"name": "broken", "kind": "Go", "state": "unavailable", "note": "job log truncated"}]
+        evidence = {"sources": {"loki": {"state": "completed", "conclusion": "success", "test_scopes": scopes}}}
+        report = self.render(evidence=evidence)
+        self.assertIn("job log truncated", report)
+        self.assertNotIn("loki / ghost", report)
 
 
 if __name__ == "__main__":
