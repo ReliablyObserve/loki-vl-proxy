@@ -66,7 +66,10 @@ class CiRunTest(unittest.TestCase):
             srv.shutdown()
 
     def test_the_first_pass_of_a_capture_loaded_again_is_kept_apart(self):
-        from PIL import Image
+        try:
+            from PIL import Image
+        except ImportError:  # the montage step needs Pillow (bench/visual/requirements.txt); the lint job has none
+            self.skipTest("Pillow is not installed")
         with tempfile.TemporaryDirectory() as out:
             for page in ("again", "once"):
                 for name in ("main", "pr", "loki"):
