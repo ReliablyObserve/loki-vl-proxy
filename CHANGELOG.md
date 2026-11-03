@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.66.0] - 2026-11-03
+
 ### Performance
 
 - Keep a metric answer larger than one cache entry in the stats extent cache,
