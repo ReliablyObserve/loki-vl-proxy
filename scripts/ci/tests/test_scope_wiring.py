@@ -29,7 +29,6 @@ import re
 import unittest
 from pathlib import Path
 
-from scripts.ci import change_scope
 from scripts.ci.change_scope import (
     ALL_CI,
     ALL_JOBS,
@@ -286,7 +285,7 @@ class ScopeWiringTest(unittest.TestCase):
     def test_the_registry_and_ci_yaml_list_the_same_jobs(self):
         self.assertEqual(set(self.jobs), set(CI_JOBS) | set(ALWAYS_ON_CI))
         self.assertEqual(ALL_CI, {"ci/" + name for name in CI_JOBS})
-        self.assertTrue(ALL_CI <= ALL_JOBS)
+        self.assertLessEqual(ALL_CI, ALL_JOBS)
 
     def test_a_job_that_follows_test_for_ordering_accepts_a_skipped_test_only(self):
         # Selecting fuzz-smoke must not run the unit tests; a failed or cancelled test still stops it.

@@ -954,7 +954,6 @@ def main(argv=None):
     paths = []
     note = ""
     reasons = []
-    forced = args.force_product
     flags = dict(ALL_TRUE)
     try:
         if args.files_from:

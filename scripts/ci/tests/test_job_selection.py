@@ -29,7 +29,6 @@ from scripts.ci.change_scope import (
     WORKFLOW_JOBS,
     ci_closure,
     ci_workflow_jobs,
-    classify,
     format_jobs,
     glob_match,
     mapped_jobs,
