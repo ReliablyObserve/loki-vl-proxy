@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.64.0] - 2026-11-03
+
 ### Fixed
 
 - List only Loki's fields in `/loki/api/v1/detected_fields` when the query
