@@ -244,9 +244,19 @@ jobs:
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        id: setup-go
         with:
           go-version: "1.27.3"
           cache: false
+
+      - name: Locate the Go module cache
+        id: gopaths
+        run: echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] downloaded modules, verified against go.sum; nothing from this job is published
+        with:
+          path: ${{ steps.gopaths.outputs.mod }}
+          key: gomod-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
 
       - name: Download the shard results
         continue-on-error: true

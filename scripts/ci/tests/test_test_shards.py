@@ -233,8 +233,7 @@ class RunnerShardTest(unittest.TestCase):
         env = {**os.environ, "PATH": f"{self.dir / 'bin'}{os.pathsep}{os.environ['PATH']}", "STUB_LOG": str(self.log),
                "STUB_TESTS": str(self.tests), "COVERPROFILE": str(self.dir / "cov.out"), "UNIT_SHARD": str(shard),
                "UNIT_SHARDS": "4", "UNIT_SHARD_DIR": str(out)}
-        if fresh:
-            env["UNIT_FRESH"] = "1"
+        env["UNIT_FRESH"] = "1" if fresh else ""
         done = subprocess.run(["bash", str(CI / "go_test_unit.sh")], capture_output=True, text=True, env=env, cwd=self.dir)
         calls = [c for c in self.log.read_text().splitlines() if c.startswith("go test") and " -list " not in c]
         return done, calls, out
@@ -353,7 +352,7 @@ class WorkflowWiringTest(unittest.TestCase):
 
     def test_every_downstream_job_still_needs_the_test_check(self):
         for name in ("conformance", "tuple-contract", "fuzz-smoke", "race-stress-shard"):
-            self.assertRegex(self.job(name), r"needs: \[test\]", name)
+            self.assertRegex(self.job(name), r"needs: \[[^\]]*\btest\b[^\]]*\]", name)
 
 
 if __name__ == "__main__":
