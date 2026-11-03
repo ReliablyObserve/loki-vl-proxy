@@ -33,7 +33,7 @@ gap:
   area: 'internal/proxy/alerting.go writeAlertingBackendStatus and the legacy rule views'
   loki: 'pkg/ruler/base/api.go:534, :546, :575 http.Error(err, 400)'
   proxy: '500 Internal Server Error'
-  owner_decision: |
+  note: |
     2026-11-02: keep 500. The rule source is a remote backend, so Loki's
     directory-read 400 would mislead. The alerting flow as a whole is later,
     separate work.

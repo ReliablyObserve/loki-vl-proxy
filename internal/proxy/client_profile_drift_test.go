@@ -26,6 +26,10 @@ const (
 type matrixProfile struct {
 	Profile      string `json:"profile"`
 	VersionRange string `json:"version_range"`
+	// WireProfile names the profile a client of this profile is labelled with when the request cannot tell them
+	// apart (the Logs Drilldown app version is not on the wire). Empty: the profile is its own.
+	WireProfile  string   `json:"wire_profile"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type clientProfileMatrix struct {
@@ -166,19 +170,48 @@ func clientProfileDrift(m clientProfileMatrix) (map[string]string, error) {
 		}
 	}
 
-	// Logs Drilldown profiles: ranges are Drilldown app versions, which are not on the wire, so the sets of names
-	// must agree: the matrix defines no profile that is never emitted, and the proxy emits none the matrix lacks.
+	// Logs Drilldown profiles: ranges are Drilldown app versions, which are not on the wire, so names are compared,
+	// not ranges. The proxy can only label what a request shows, so a matrix profile may name the profile it is
+	// indistinguishable from (wire_profile). The profile pointing at it must extend it: keep every capability, and
+	// may add some the request does not show. The profiles the proxy can tell apart are then the wire profiles: the
+	// matrix defines none that is never emitted, and the proxy emits none the matrix lacks.
 	emitted := map[string]bool{}
 	for _, v := range probes {
 		if got, _, _ := emittedClientProfiles(fmt.Sprintf("%d.%d.%d", v[0], v[1], v[2])); got != "" {
 			emitted[got] = true
 		}
 	}
+	byName := map[string]matrixProfile{}
+	for _, prof := range m.Stack.Drilldown.CapabilityProfiles {
+		byName[prof.Profile] = prof
+	}
 	defined := map[string]bool{}
 	for _, prof := range m.Stack.Drilldown.CapabilityProfiles {
-		defined[prof.Profile] = true
-		if !emitted[prof.Profile] {
-			drift["drilldown:"+prof.Profile] = "the matrix defines this Logs Drilldown profile but the proxy never emits it"
+		wire := prof.Profile
+		if prof.WireProfile != "" && prof.WireProfile != prof.Profile {
+			wire = prof.WireProfile
+			target, known := byName[wire]
+			switch {
+			case !known:
+				drift["drilldown:wire-profile:"+prof.Profile] = "wire_profile " + wire + " is not a profile of the matrix"
+				continue
+			case target.WireProfile != "" && target.WireProfile != target.Profile:
+				drift["drilldown:wire-profile:"+prof.Profile] = "wire_profile " + wire + " itself points at " + target.WireProfile
+				continue
+			}
+			have := map[string]bool{}
+			for _, c := range prof.Capabilities {
+				have[c] = true
+			}
+			for _, c := range target.Capabilities {
+				if !have[c] {
+					drift["drilldown:wire-profile:"+prof.Profile] = fmt.Sprintf("%s lacks capability %s of its wire profile %s", prof.Profile, c, wire)
+				}
+			}
+		}
+		defined[wire] = true
+		if !emitted[wire] {
+			drift["drilldown:"+wire] = "the matrix defines this Logs Drilldown profile but the proxy never emits it"
 		}
 	}
 	for name := range emitted {
@@ -281,13 +314,24 @@ func TestClientProfileDriftIsDetected(t *testing.T) {
 	var clean clientProfileMatrix
 	clean.Stack.Datasource.MatrixVersions = []string{"12.4.12", "11.6.6"}
 	clean.Stack.Datasource.CapabilityProfiles = []matrixProfile{
-		{"grafana-datasource-v12", ">= 12.0.0"}, {"grafana-datasource-v11", ">= 11.0.0 < 12.0.0"}}
+		{Profile: "grafana-datasource-v12", VersionRange: ">= 12.0.0"}, {Profile: "grafana-datasource-v11", VersionRange: ">= 11.0.0 < 12.0.0"}}
 	clean.Stack.Drilldown.CapabilityProfiles = []matrixProfile{
-		{"drilldown-v2", ">= 2.0.0 < 3.0.0"}, {"drilldown-v1", ">= 1.0.34 < 2.0.0"}}
+		{Profile: "drilldown-v2", VersionRange: ">= 2.0.0 < 3.0.0"}, {Profile: "drilldown-v1", VersionRange: ">= 1.0.34 < 2.0.0"}}
 	clean.Stack.Grafana.CapabilityProfiles = []matrixProfile{
-		{"grafana-runtime-v12-plus", ">= 12.0.0"}, {"grafana-runtime-v11", ">= 11.0.0 < 12.0.0"}}
+		{Profile: "grafana-runtime-v12-plus", VersionRange: ">= 12.0.0"}, {Profile: "grafana-runtime-v11", VersionRange: ">= 11.0.0 < 12.0.0"}}
 	if drift, err := clientProfileDrift(clean); err != nil || len(drift) != 0 {
 		t.Fatalf("a matrix that agrees with the labels reported drift %v (err %v)", drift, err)
+	}
+
+	// A profile the request cannot tell from another (Drilldown 3 from 2) is not drift when it extends that profile.
+	wired := clean
+	wired.Stack.Drilldown.CapabilityProfiles = []matrixProfile{
+		{Profile: "drilldown-v3.1", VersionRange: ">= 3.1.0", WireProfile: "drilldown-v2", Capabilities: []string{"a", "b", "footer"}},
+		{Profile: "drilldown-v3", VersionRange: ">= 3.0.0 < 3.1.0", WireProfile: "drilldown-v2", Capabilities: []string{"a", "b"}},
+		{Profile: "drilldown-v2", VersionRange: ">= 2.0.0 < 3.0.0", Capabilities: []string{"a", "b"}},
+		{Profile: "drilldown-v1", VersionRange: ">= 1.0.34 < 2.0.0", Capabilities: []string{"legacy"}}}
+	if drift, err := clientProfileDrift(wired); err != nil || len(drift) != 0 {
+		t.Fatalf("profiles that extend a wire profile reported drift %v (err %v)", drift, err)
 	}
 
 	for name, tc := range map[string]struct {
@@ -295,24 +339,33 @@ func TestClientProfileDriftIsDetected(t *testing.T) {
 		want string
 	}{
 		"Grafana 13 datasource profile": {func(m *clientProfileMatrix) {
-			m.Stack.Datasource.CapabilityProfiles = []matrixProfile{{"grafana-datasource-v13", ">= 13.0.0"},
-				{"grafana-datasource-v12", ">= 12.0.0 < 13.0.0"}, {"grafana-datasource-v11", ">= 11.0.0 < 12.0.0"}}
+			m.Stack.Datasource.CapabilityProfiles = []matrixProfile{{Profile: "grafana-datasource-v13", VersionRange: ">= 13.0.0"},
+				{Profile: "grafana-datasource-v12", VersionRange: ">= 12.0.0 < 13.0.0"}, {Profile: "grafana-datasource-v11", VersionRange: ">= 11.0.0 < 12.0.0"}}
 		}, "datasource:grafana-datasource-v13"},
 		"Logs Drilldown 3 profile": {func(m *clientProfileMatrix) {
-			m.Stack.Drilldown.CapabilityProfiles = append([]matrixProfile{{"drilldown-v3", ">= 3.0.0 < 4.0.0"}}, m.Stack.Drilldown.CapabilityProfiles...)
+			m.Stack.Drilldown.CapabilityProfiles = append([]matrixProfile{{Profile: "drilldown-v3", VersionRange: ">= 3.0.0 < 4.0.0"}}, m.Stack.Drilldown.CapabilityProfiles...)
 		}, "drilldown:drilldown-v3"},
 		"Logs Drilldown 3.1 profile": {func(m *clientProfileMatrix) {
-			m.Stack.Drilldown.CapabilityProfiles = append([]matrixProfile{{"drilldown-v3.1", ">= 3.1.0"}}, m.Stack.Drilldown.CapabilityProfiles...)
+			m.Stack.Drilldown.CapabilityProfiles = append([]matrixProfile{{Profile: "drilldown-v3.1", VersionRange: ">= 3.1.0"}}, m.Stack.Drilldown.CapabilityProfiles...)
 		}, "drilldown:drilldown-v3.1"},
 		"Grafana 13 runtime profile": {func(m *clientProfileMatrix) {
-			m.Stack.Grafana.CapabilityProfiles = []matrixProfile{{"grafana-runtime-v13-plus", ">= 13.0.0"},
-				{"grafana-runtime-v12-plus", ">= 12.0.0 < 13.0.0"}, {"grafana-runtime-v11", ">= 11.0.0 < 12.0.0"}}
+			m.Stack.Grafana.CapabilityProfiles = []matrixProfile{{Profile: "grafana-runtime-v13-plus", VersionRange: ">= 13.0.0"},
+				{Profile: "grafana-runtime-v12-plus", VersionRange: ">= 12.0.0 < 13.0.0"}, {Profile: "grafana-runtime-v11", VersionRange: ">= 11.0.0 < 12.0.0"}}
 		}, "runtime:grafana-runtime-v13-plus"},
 		"a profile the proxy emits is missing from the matrix": {func(m *clientProfileMatrix) {
 			m.Stack.Drilldown.CapabilityProfiles = m.Stack.Drilldown.CapabilityProfiles[:1]
 		}, "drilldown:emits-unknown:drilldown-v1"},
+		"a wire profile that is not in the matrix": {func(m *clientProfileMatrix) {
+			m.Stack.Drilldown.CapabilityProfiles = append([]matrixProfile{{Profile: "drilldown-v3", VersionRange: ">= 3.0.0", WireProfile: "drilldown-v9"}}, m.Stack.Drilldown.CapabilityProfiles...)
+		}, "drilldown:wire-profile:drilldown-v3"},
+		"a wire profile that drops a capability": {func(m *clientProfileMatrix) {
+			m.Stack.Drilldown.CapabilityProfiles = []matrixProfile{
+				{Profile: "drilldown-v3", VersionRange: ">= 3.0.0", WireProfile: "drilldown-v2", Capabilities: []string{"b"}},
+				{Profile: "drilldown-v2", VersionRange: ">= 2.0.0 < 3.0.0", Capabilities: []string{"a", "b"}},
+				{Profile: "drilldown-v1", VersionRange: ">= 1.0.34 < 2.0.0"}}
+		}, "drilldown:wire-profile:drilldown-v3"},
 		"a datasource profile that moved its lower bound": {func(m *clientProfileMatrix) {
-			m.Stack.Datasource.CapabilityProfiles = []matrixProfile{{"grafana-datasource-v12", ">= 12.0.0"}, {"grafana-datasource-v11", ">= 10.0.0 < 12.0.0"}}
+			m.Stack.Datasource.CapabilityProfiles = []matrixProfile{{Profile: "grafana-datasource-v12", VersionRange: ">= 12.0.0"}, {Profile: "grafana-datasource-v11", VersionRange: ">= 10.0.0 < 12.0.0"}}
 		}, "datasource:grafana-datasource-v11"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -334,7 +387,7 @@ func TestClientProfileDriftIsDetected(t *testing.T) {
 		t.Fatalf("an empty matrix is not an error: %v", err)
 	}
 	var bad clientProfileMatrix
-	bad.Stack.Datasource.CapabilityProfiles = []matrixProfile{{"x", "13.0.0"}}
+	bad.Stack.Datasource.CapabilityProfiles = []matrixProfile{{Profile: "x", VersionRange: "13.0.0"}}
 	if _, err := clientProfileDrift(bad); err == nil {
 		t.Fatal("an unreadable version_range must be an error")
 	}
@@ -394,7 +447,7 @@ func TestDrilldownContractScriptFamiliesMatchMatrix(t *testing.T) {
 
 func TestScriptFamilyDriftIsDetected(t *testing.T) {
 	script := "x\ncase \"${major_family}\" in\n  1)\n    a\n    ;;\n  2)\n    b\n    ;;\n  *)\n    exit 1\n    ;;\nesac\n"
-	profiles := []matrixProfile{{"drilldown-v2", ">= 2.0.0 < 3.0.0"}, {"drilldown-v1", ">= 1.0.34 < 2.0.0"}}
+	profiles := []matrixProfile{{Profile: "drilldown-v2", VersionRange: ">= 2.0.0 < 3.0.0"}, {Profile: "drilldown-v1", VersionRange: ">= 1.0.34 < 2.0.0"}}
 	if drift := scriptFamilyDrift(script, []string{"2.6.0", "1.0.41"}, profiles); len(drift) != 0 {
 		t.Fatalf("agreeing script and matrix reported %v", drift)
 	}
@@ -405,7 +458,7 @@ func TestScriptFamilyDriftIsDetected(t *testing.T) {
 	}{
 		"a family without an arm":     {[]string{"3.1.0", "2.6.0", "1.0.41"}, profiles, "matrix runs Logs Drilldown 3.x but the script has no arm"},
 		"an arm for a dropped family": {[]string{"2.6.0"}, profiles[:1], "arm for Logs Drilldown 1.x but the matrix runs none"},
-		"a profile without versions":  {[]string{"2.6.0", "1.0.41"}, append([]matrixProfile{{"drilldown-v3", ">= 3.0.0"}}, profiles...), "drilldown-v3 starts at 3.x"},
+		"a profile without versions":  {[]string{"2.6.0", "1.0.41"}, append([]matrixProfile{{Profile: "drilldown-v3", VersionRange: ">= 3.0.0"}}, profiles...), "drilldown-v3 starts at 3.x"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if drift := strings.Join(scriptFamilyDrift(script, tc.versions, tc.profiles), "; "); !strings.Contains(drift, tc.want) {
