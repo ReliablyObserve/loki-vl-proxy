@@ -223,7 +223,6 @@ jobs:
   fuzz-smoke-shard:
     name: fuzz-smoke-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: [test]
     strategy:
       fail-fast: false
       matrix:
