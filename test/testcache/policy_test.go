@@ -255,7 +255,9 @@ func TestRunnerSplitsCachedAndUncachedPackages(t *testing.T) {
 			script, _ := filepath.Abs(filepath.Join(repoRoot, "scripts/ci/go_test_unit.sh"))
 			cmd := exec.Command("bash", script)
 			cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(stub)+string(os.PathListSeparator)+os.Getenv("PATH"),
-				"STUB_LOG="+log, "STUB_FAIL="+failing, "COVERPROFILE="+profile)
+				"STUB_LOG="+log, "STUB_FAIL="+failing, "COVERPROFILE="+profile,
+				// The CI shards set these for the job; this test is about the unsharded cached/uncached split.
+				"UNIT_SHARD=", "UNIT_SHARDS=", "UNIT_FRESH=", "UNIT_SHARD_DIR=")
 			out, err := cmd.Output()
 			if (failing != "") != (err != nil) {
 				t.Fatalf("failing=%q but err=%v", failing, err)
