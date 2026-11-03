@@ -31,6 +31,7 @@ smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split p
 smoke	internal/proxy	FuzzJSONErrorSplitPredicate	12s	-	json parser error count split predicate
 smoke	internal/proxy	FuzzStatsJSONSeriesTransformDifferential	12s	-	stats series JSON compatibility
 smoke	internal/proxy	FuzzVLStatsErrorBodyDifferential	12s	-	stats error body check against the decoding
+smoke	internal/proxy	FuzzStatsFoldRelabelDifferential	12s	-	one-pass stats translation and tumbling relabel
 smoke	internal/proxy	FuzzStatsExtentOwnedEncoding	12s	-	owned stats extent encoding
 smoke	internal/proxy	FuzzStatsExtentLargeAnswerSplits	12s	-	stats extent answers larger than one cache entry
 smoke	internal/proxy	FuzzLokiClientError	12s	-	Loki client error mapping

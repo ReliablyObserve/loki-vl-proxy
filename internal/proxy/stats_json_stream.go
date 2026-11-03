@@ -435,3 +435,154 @@ func (p *Proxy) translateStatsQRMetricFJ(metricVal *fj.Value, levelGrouping leve
 	}
 	return syntheticLabels, changed
 }
+
+// statsTumblingRelabelKey carries a range == step answer's relabel
+// (*statsTumblingRelabel) to the stats call that answers it.
+type statsTumblingRelabelKey struct{}
+
+// statsTumblingRelabel is the relabel the caller applies to the written
+// answer; done reports that the answer was written relabelled already.
+type statsTumblingRelabel struct {
+	keep    func(int64) bool
+	relabel func(int64) int64
+	done    bool
+}
+
+// trimTranslateRelabelStatsQRBySeries is trimAndTranslateStatsQRBySeries
+// followed by trimStatsQRBySeries(translated, relabelKeep, relabel) in one
+// pass: each series is translated, and the translated series is relabelled
+// as the second pass reads it from the translated answer, so the translated
+// answer is never assembled, validated or parsed again. It also reports the
+// size and the series count the translated answer would have had, which
+// decide whether the two passes would have taken these paths (the caller's
+// series limit and the relabel's per-series path). It reports false for an
+// answer it does not rewrite exactly as the two passes do: not a single
+// non-empty data.result, an error key, nothing to translate, a translated
+// answer with no series, or a translated series the second pass cannot read.
+func (p *Proxy) trimTranslateRelabelStatsQRBySeries(body []byte, keep func(int64) bool, originalQuery string, relabelKeep func(int64) bool, relabel func(int64) int64) (out []byte, translatedSize, translatedSeries int, ok bool) {
+	envelope, supported := parseStatsJSONEnvelope(body)
+	// Without a resultType the translated answer is re-encoded when it is
+	// wrapped (wrapAsLokiResponse), which the relabel then reads.
+	if !supported || len(envelope.slots) != 1 || !envelope.slots[0].inData || envelope.value.Get("error") != nil || envelope.value.Get("data", "resultType") == nil {
+		return nil, 0, 0, false
+	}
+	slot := envelope.slots[0]
+	parser := statsTranslateFJPool.Get()
+	largest := 0
+	defer func() { releaseFJParser(&statsTranslateFJPool, parser, largest) }()
+	grouping := requestedLevelGrouping(originalQuery)
+	translated, synthetic := make(map[string]string, 8), make(map[string]string, 8)
+	needsRebuild := false
+	if !eachStatsJSONSeriesUntil(slot.raw, parser, &largest, func(item *fj.Value) bool {
+		_, changed := p.translateStatsQRMetricFJ(item.Get("metric"), grouping, translated, synthetic)
+		needsRebuild = changed || statsJSONSeriesNeedsTrim(item, keep)
+		return !needsRebuild
+	}) || !needsRebuild {
+		return nil, 0, 0, false
+	}
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer releaseFJMarshalScratch(scratch)
+
+	// The translated answer's envelope, as trimAndTranslateStatsQRBySeries
+	// writes it around its series, and the relabel's, as trimStatsQRBySeries
+	// writes it from the translated envelope.
+	var head, tail bytes.Buffer
+	head.WriteString(`{"status":"success","data":{`)
+	if resultType := envelope.value.Get("data", "resultType"); resultType != nil {
+		head.WriteString(`"resultType":`)
+		marshalFJ(&head, resultType, scratch)
+		head.WriteByte(',')
+	}
+	head.WriteString(`"result":`)
+	if stats := envelope.value.Get("data", "stats"); stats != nil {
+		tail.WriteString(`,"stats":`)
+		marshalFJ(&tail, stats, scratch)
+	}
+	tail.WriteString(`}}`)
+	translatedMeta := append(append(append([]byte(nil), head.Bytes()...), `[]`...), tail.Bytes()...)
+	var meta fj.Parser
+	metaValue, err := meta.ParseBytes(translatedMeta)
+	if err != nil {
+		return nil, 0, 0, false
+	}
+
+	relabelParser := statsQRFJPool.Get()
+	relabelLargest := 0
+	defer func() { releaseFJParser(&statsQRFJPool, relabelParser, relabelLargest) }()
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer releaseJSONBuffer(buf)
+	buf.Grow(len(body))
+	buf.WriteByte('{')
+	if status := metaValue.Get("status"); status != nil {
+		buf.WriteString(`"status":`)
+		marshalFJ(buf, status, scratch)
+		buf.WriteByte(',')
+	}
+	buf.WriteString(`"data":{`)
+	if resultType := metaValue.Get("data", "resultType"); resultType != nil {
+		buf.WriteString(`"resultType":`)
+		marshalFJ(buf, resultType, scratch)
+		buf.WriteByte(',')
+	}
+	buf.WriteString(`"result":[`)
+
+	seriesBuf := jsonBufPool.Get().(*bytes.Buffer)
+	defer releaseJSONBuffer(seriesBuf)
+	relabelBuf := jsonBufPool.Get().(*bytes.Buffer)
+	defer releaseJSONBuffer(relabelBuf)
+	readable, written := true, false
+	if !eachStatsJSONSeries(slot.raw, parser, &largest, func(item *fj.Value) {
+		if !readable {
+			return
+		}
+		metric, changed := p.translateStatsQRMetricFJ(item.Get("metric"), grouping, translated, synthetic)
+		result := trimTranslateResult{valsTrim: statsJSONSeriesNeedsTrim(item, keep)}
+		if changed {
+			result.metric = metric
+		}
+		seriesBuf.Reset()
+		one := [1]*fj.Value{item}
+		results := [1]trimTranslateResult{result}
+		writeTrimmedTranslatedStatsFJ(seriesBuf, one[:], results[:], keep, scratch)
+		if seriesBuf.Len() <= 2 {
+			return // not part of the translated answer
+		}
+		series := seriesBuf.Bytes()[1 : seriesBuf.Len()-1]
+		if translatedSeries > 0 {
+			translatedSize++ // the comma between series
+		}
+		translatedSeries++
+		translatedSize += len(series)
+		// The second pass reads this series from the translated answer.
+		if len(series) > relabelLargest {
+			relabelLargest = len(series)
+		}
+		value, err := relabelParser.ParseBytes(series)
+		if err != nil || value.Type() != fj.TypeObject {
+			readable = false
+			return
+		}
+		relabelBuf.Reset()
+		relabelOne := [1]*fj.Value{value}
+		writeFilteredStatsQRSeriesFJ(relabelBuf, relabelOne[:], relabelKeep, relabel, scratch)
+		if relabelBuf.Len() <= 2 {
+			return
+		}
+		if written {
+			buf.WriteByte(',')
+		}
+		written = true
+		buf.Write(relabelBuf.Bytes()[1 : relabelBuf.Len()-1])
+	}) || !readable || translatedSeries == 0 {
+		return nil, 0, 0, false
+	}
+	buf.WriteByte(']')
+	if stats := metaValue.Get("data", "stats"); stats != nil {
+		buf.WriteString(`,"stats":`)
+		marshalFJ(buf, stats, scratch)
+	}
+	buf.WriteString(`}}`)
+	translatedSize += head.Len() + 2 + tail.Len()
+	return bytes.Clone(buf.Bytes()), translatedSize, translatedSeries, true
+}

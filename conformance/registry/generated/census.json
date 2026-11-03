@@ -226,6 +226,9 @@
     "quality/stats-answer-transform-cost | compare:numeric",
     "quality/stats-answer-transform-cost | perf",
     "quality/stats-answer-transform-cost | query",
+    "quality/stats-tumbling-relabel-one-pass | compare:numeric",
+    "quality/stats-tumbling-relabel-one-pass | perf",
+    "quality/stats-tumbling-relabel-one-pass | query",
     "quality/stats-volume-freshness | compare:observed",
     "quality/stats-volume-freshness | gap:open",
     "quality/stats-volume-freshness | query",
@@ -1054,6 +1057,8 @@
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "internal/proxy/stats_extent_retention_test.go | quality/query-range-extent-cache",
+    "internal/proxy/stats_fold_relabel_test.go | quality/stats-tumbling-relabel-one-pass",
+    "internal/proxy/stats_fold_relabel_test.go | series-limits-and-partial-results",
     "internal/proxy/stddev_grouped_differential_test.go | metric-series-identity",
     "internal/proxy/stddev_grouped_differential_test.go | semantics/stddev-stdvar-grouped-values",
     "internal/proxy/stddev_grouped_differential_test.go | window-bounds-and-step-alignment",
@@ -1292,6 +1297,7 @@
     "test/e2e-compat/drilldown_field_breakdown_test.go | parser-json",
     "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go | quality/stats-answer-transform-cost",
+    "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go | quality/stats-tumbling-relabel-one-pass",
     "test/e2e-compat/drilldown_longrange_fields_burst_test.go | limits/drilldown-breakdown-exact",
     "test/e2e-compat/drilldown_longrange_fields_burst_test.go | loki_api_v1_query_range",
     "test/e2e-compat/drilldown_ranked_breakdown_vl_test.go | limits/drilldown-breakdown-exact",
@@ -1577,13 +1583,13 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 36,
+      "drilldown": 37,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 288,
+      "go": 289,
       "playwright": 1
     },
     "page_kinds": {
@@ -1600,10 +1606,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 84,
+    "shape_covers_distinct": 85,
     "shapes_path_only": 8,
     "unwired_items": 86,
-    "wired_items": 223
+    "wired_items": 224
   },
   "gates": [
     "A/B shape selection",

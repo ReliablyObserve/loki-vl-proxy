@@ -92,6 +92,10 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 			window := origSpec.Window.Nanoseconds()
 			shiftedR.Form.Set("end", strconv.FormatInt(origStartNs+(endNs-origStartNs)/window*window, 10))
 		}
+		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+		relabel := &statsTumblingRelabel{}
+		relabel.keep, relabel.relabel = snappedTumblingRelabel(origStartNs, endNs, origSpec.Window.Nanoseconds())
+		shiftedR = shiftedR.WithContext(context.WithValue(shiftedR.Context(), statsTumblingRelabelKey{}, relabel))
 		p.proxyStatsQueryRangeDirectAnchored(buf, shiftedR, query, origSpec.Window)
 		code := buf.code
 		if code == 0 {
@@ -99,8 +103,9 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		}
 		body := buf.body
 		if code == http.StatusOK {
-			endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
-			body = relabelSnappedTumblingStatsQueryRange(body, origStartNs, endNs, origSpec.Window.Nanoseconds())
+			if !relabel.done {
+				body = relabelSnappedTumblingStatsQueryRange(body, origStartNs, endNs, origSpec.Window.Nanoseconds())
+			}
 			if hasTopK {
 				body = applyTopKToMatrix(body, topK, topKDesc, topKGroup)
 			}
@@ -267,6 +272,22 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
 		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	}
+	// A range == step answer is relabelled by the caller after this answer is
+	// written (relabelSnappedTumblingStatsQueryRange). For a large answer both
+	// rewrites run in one pass over its series, when the result is the same
+	// bytes: the series limit below would not apply to the translated answer,
+	// and the relabel would take its per-series path.
+	if relabel, _ := ctx.Value(statsTumblingRelabelKey{}).(*statsTumblingRelabel); relabel != nil && foldTumblingRelabel && len(body) > maxPooledStatsParserInputSize {
+		started := time.Now()
+		folded, translatedSize, translatedSeries, ok := p.trimTranslateRelabelStatsQRBySeries(body, keepFn, r.FormValue("query"), relabel.keep, relabel.relabel)
+		if ok && translatedSize > maxPooledStatsParserInputSize && (read > 0 && read <= limit || translatedSeries <= limit) {
+			p.observeInternalOperation(ctx, "trim_translate_stats_qr", "folded", time.Since(started))
+			relabel.done = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(folded)
+			return
+		}
+	}
 	body = p.trimAndTranslateStatsQRFJ(ctx, body, keepFn, r.FormValue("query"))
 	// Over the limit, Logs Drilldown keeps the busiest series (by total count,
 	// not VictoriaLogs' label order, which would keep the count==1 noise floor
@@ -286,6 +307,10 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
 }
+
+// foldTumblingRelabel lets a large range == step answer be translated and
+// relabelled in one pass; tests turn it off to compare with the two passes.
+var foldTumblingRelabel = true
 
 // drilldownOverLimitTTL is how long a Logs Drilldown breakdown seen over the
 // series limit is ranked by VictoriaLogs straight away.
@@ -946,8 +971,15 @@ func relabelTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs int64)
 // start at nanosecond precision), so an unsnapped label can fall just outside
 // [startNs, endNs] and drop the first or last sample.
 func relabelSnappedTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs int64) []byte {
+	keep, relabel := snappedTumblingRelabel(startNs, endNs, windowNs)
+	return trimStatsQRByTimeFJShifted(body, keep, relabel)
+}
+
+// snappedTumblingRelabel is relabelSnappedTumblingStatsQueryRange's rewrite:
+// the relabel of every point and the points it keeps.
+func snappedTumblingRelabel(startNs, endNs, windowNs int64) (keep func(int64) bool, relabel func(int64) int64) {
 	anchor := time.Unix(0, startNs-windowNs)
-	return relabelStatsQueryRange(body, startNs, endNs, func(tsNs int64) int64 {
+	return relabelStatsQueryRangeKeep(startNs, endNs, func(tsNs int64) int64 {
 		return snapSlidingBucketNanos(tsNs, anchor, time.Duration(windowNs)) + windowNs
 	})
 }
@@ -956,10 +988,17 @@ func relabelSnappedTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs
 // only points whose new timestamp lies in [startNs, endNs]. endNs <= 0
 // disables the upper bound.
 func relabelStatsQueryRange(body []byte, startNs, endNs int64, relabel func(int64) int64) []byte {
-	return trimStatsQRByTimeFJShifted(body, func(tsNs int64) bool {
+	keep, relabel := relabelStatsQueryRangeKeep(startNs, endNs, relabel)
+	return trimStatsQRByTimeFJShifted(body, keep, relabel)
+}
+
+// relabelStatsQueryRangeKeep is relabelStatsQueryRange's keep: the points
+// whose relabelled timestamp lies in [startNs, endNs].
+func relabelStatsQueryRangeKeep(startNs, endNs int64, relabel func(int64) int64) (func(int64) bool, func(int64) int64) {
+	return func(tsNs int64) bool {
 		ts := relabel(tsNs)
 		return ts >= startNs && (endNs <= 0 || ts <= endNs)
-	}, relabel)
+	}, relabel
 }
 
 // trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
