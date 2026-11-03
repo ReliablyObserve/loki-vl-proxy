@@ -124,7 +124,6 @@ def plan(repo, tip="HEAD", fetch_pr=None):
         out["reason"] = reason
         return out
 
-    base = latest or ""
     rng = f"{latest}..{tip}" if latest else tip
     names = git(repo, "diff", "--name-only", latest, tip) if latest else git(repo, "ls-tree", "-r", "--name-only", tip)
     files = [f for f in (names or "").split("\n") if f]

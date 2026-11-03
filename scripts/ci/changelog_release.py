@@ -353,7 +353,7 @@ def git(repo: str, *args: str, check: bool = True) -> str:
 def release_tags(repo: str) -> list[str]:
     """Plain vMAJOR.MINOR.PATCH tags, oldest first."""
     tags = [t for t in git(repo, "tag", "--list").split() if TAG_RE.match(t)]
-    return sorted(tags, key=lambda t: version_tuple(t))  # type: ignore[arg-type,return-value]
+    return sorted(tags, key=version_tuple)  # type: ignore[arg-type,return-value]
 
 
 def previous_tag(tags: list[str], version: str) -> str | None:
