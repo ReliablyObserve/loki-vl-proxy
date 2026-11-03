@@ -14,6 +14,7 @@
 #
 # Env: EVENT_NAME, REPO, PR_NUMBER, GH_TOKEN (read by gh).
 set -u
+EVENT_NAME=pull_request; PR_NUMBER=1; gh() { echo ci-labels-none; }  # probe only
 
 reason=""
 if [ "${EVENT_NAME:-}" != "pull_request" ]; then
