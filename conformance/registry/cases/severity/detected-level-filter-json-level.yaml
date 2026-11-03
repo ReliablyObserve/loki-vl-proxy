@@ -1,5 +1,5 @@
 id: severity/detected-level-filter-json-level
-title: '`| detected_level=` filters select different lines than Loki (JSON-level lines, stream level precedence) (open)'
+title: '`| detected_level=` filters select different lines than Loki (JSON-level lines, stream level precedence) (fixed)'
 proves:
   - severity-detected-level-derivation
   - loki_api_v1_query_range
@@ -47,7 +47,8 @@ compare:
   expect: |
     Every warn line, as Loki selects.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1037'
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/translator.go detectedLevelStageFilter, internal/translator/detected_level_logsql.go BuildDetectedLevelFilter'

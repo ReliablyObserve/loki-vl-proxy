@@ -650,7 +650,7 @@
     "semantics/without-sliding-sum-folded-buckets | perf:locked",
     "semantics/without-sliding-sum-folded-buckets | query",
     "severity/detected-level-filter-json-level | compare:observed",
-    "severity/detected-level-filter-json-level | gap:open",
+    "severity/detected-level-filter-json-level | gap:fixed",
     "severity/detected-level-filter-json-level | perf",
     "severity/detected-level-filter-json-level | query",
     "severity/detected-level-stage-side-effects | compare:observed",
