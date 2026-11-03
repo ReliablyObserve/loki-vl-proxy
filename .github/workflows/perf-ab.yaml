@@ -45,16 +45,16 @@ jobs:
   perf-smoke:
     name: perf-smoke
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/perf-smoke,')) }}
     runs-on: ubuntu-latest
     # The smoke selects a handful of shapes; the baseline run measures all of them.
-    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 90 || 30 }}
+    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 90 || 30 }}
     permissions:
       contents: read
       pull-requests: write
     env:
       OUT: /tmp/ab-smoke
-      BASELINE: ${{ needs.scope.outputs.baseline }}
+      BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:

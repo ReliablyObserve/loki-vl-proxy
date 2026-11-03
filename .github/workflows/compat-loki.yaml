@@ -55,7 +55,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   loki-pinned:
-    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.loki-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.loki-matrix-source.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',compat-loki/loki-pinned,')) }}
     needs: [loki-matrix-source, scope]
     runs-on: ubuntu-latest
     env:

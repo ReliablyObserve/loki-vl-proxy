@@ -24,6 +24,17 @@ jobs:
   # gate written out below, so a change that only touches a stack config runs
   # the stack without the unit tests. Jobs that depend on `test` otherwise skip
   # with it.
+  #
+  # A forced run (the ci-full label, a push to main) of a change that only
+  # touches mapped infra paths reports every lane "false" and `jobs`, the
+  # "ci/<job>" ids it still has to run (scripts/ci/change_scope.py: JOB_MAP, and
+  # the job blocks of this file). Every job below that the list can select reads
+  # it next to its lane gate. The jobs that follow `test` only for ordering
+  # (tuple-contract, the fuzz and race shards, docker, stress-tests,
+  # memory-leak-tests and the stack jobs) accept a skipped `test`, so selecting
+  # one of them does not run the unit tests; the jobs that read what `test` or
+  # `image` produce (conformance, the stack jobs and `test` itself) are selected
+  # together with it.
   scope:
     permissions:
       contents: read
@@ -38,7 +49,7 @@ jobs:
   test-shard:
     name: test-shard (${{ matrix.shard }})
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/test-shard,')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -234,7 +245,7 @@ jobs:
   # the scope job says no product path changed.
   test:
     needs: [scope, test-shard]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/test,')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -313,7 +324,8 @@ jobs:
 
   tuple-contract:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-contract,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -333,7 +345,8 @@ jobs:
   fuzz-smoke-shard:
     name: fuzz-smoke-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/fuzz-smoke-shard,')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -392,7 +405,7 @@ jobs:
   fuzz-smoke:
     # Aggregate gate keeping the original `fuzz-smoke` check name stable; fails
     # unless every shard succeeded. The shards are skipped, and that is a pass,
-    # only when the scope job says no product path changed.
+    # only when the scope job says no product path changed and the shards were not selected.
     if: always()
     runs-on: ubuntu-latest
     needs: [scope, fuzz-smoke-shard]
@@ -401,15 +414,16 @@ jobs:
         env:
           SHARD_RESULT: ${{ needs.fuzz-smoke-shard.result }}
           PRODUCT: ${{ needs.scope.outputs.product }}
+          SELECTED: ${{ contains(format(',{0},', needs.scope.outputs.jobs), ',ci/fuzz-smoke-shard,') }}
         run: |
           if [ "$SHARD_RESULT" = "success" ]; then
             exit 0
           fi
-          if [ "$SHARD_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ]; then
+          if [ "$SHARD_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ] && [ "$SELECTED" != "true" ]; then
             echo "Skipped: no product path changed"
             exit 0
           fi
-          echo "fuzz-smoke shards: $SHARD_RESULT (scope product=$PRODUCT)"
+          echo "fuzz-smoke shards: $SHARD_RESULT (scope product=$PRODUCT selected=$SELECTED)"
           exit 1
 
   race-stress-shard:
@@ -426,7 +440,8 @@ jobs:
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/race-stress-shard,')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -534,8 +549,9 @@ jobs:
     # Aggregate gate keeping the original `race-stress` check name stable for
     # branch protection; fails unless every shard succeeded.
     # The shards are skipped, and that is a pass, only when the scope job says
-    # no product path changed. A skipped shard on a product pull request (for
-    # example because `test` failed) or an empty scope output fails the gate.
+    # no product path changed and the shards were not selected. A skipped shard
+    # on a product pull request (for example because `test` failed), a selected
+    # one or an empty scope output fails the gate.
     if: always()
     runs-on: ubuntu-latest
     needs: [scope, race-stress-shard]
@@ -544,15 +560,16 @@ jobs:
         env:
           SHARD_RESULT: ${{ needs.race-stress-shard.result }}
           PRODUCT: ${{ needs.scope.outputs.product }}
+          SELECTED: ${{ contains(format(',{0},', needs.scope.outputs.jobs), ',ci/race-stress-shard,') }}
         run: |
           if [ "$SHARD_RESULT" = "success" ]; then
             exit 0
           fi
-          if [ "$SHARD_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ]; then
+          if [ "$SHARD_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ] && [ "$SELECTED" != "true" ]; then
             echo "Skipped: no product path changed"
             exit 0
           fi
-          echo "race-stress shards: $SHARD_RESULT (scope product=$PRODUCT)"
+          echo "race-stress shards: $SHARD_RESULT (scope product=$PRODUCT selected=$SELECTED)"
           exit 1
 
   # Builds the proxy image once for the jobs that run a stack (tuple-smoke,
@@ -561,7 +578,7 @@ jobs:
   # wait for `test`, so the image is ready when they start.
   image:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.stack != 'false' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/image,')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -589,7 +606,7 @@ jobs:
   tuple-smoke:
     runs-on: ubuntu-latest
     needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-smoke,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
       PROXY_URL: http://127.0.0.1:13100
@@ -646,7 +663,7 @@ jobs:
 
   bench:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.product != 'false' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/bench,')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -992,7 +1009,8 @@ jobs:
     # Downstream of `test`: its unit results feed the evidence check, so this job
     # does not run the unit tests again (only the few that differ under -race). Like every job that needs `test` it is
     # skipped when `test` fails or is skipped.
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/conformance,') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -1048,9 +1066,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Visual-proof harness unit tests (plan, gate and comment, publish)
-        run: python3 -m unittest discover -s bench/visual/tests
-
       - name: Differential parity harness unit tests (corpus, diff, clusters)
         run: python3 -m unittest discover -s bench/parity/tests
 
@@ -1096,7 +1111,7 @@ jobs:
         run: ./scripts/ci/sync_observability_assets.sh --check
 
       - name: Unit tests (quality gate policy)
-        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection scripts.ci.tests.test_fuzz_smoke
+        run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_collect_quality_metrics scripts.ci.tests.test_pr_evidence scripts.ci.tests.test_pr_quality_report scripts.ci.tests.test_quality_scope scripts.ci.tests.test_quality_comparison scripts.ci.tests.test_check_changelog_pr scripts.ci.tests.test_commit_via_api scripts.ci.tests.test_workflow_pins scripts.ci.tests.test_tool_pins scripts.ci.tests.test_release_pr_validation scripts.ci.tests.test_change_scope scripts.ci.tests.test_scope_wiring scripts.ci.tests.test_job_selection scripts.ci.tests.test_go_toolchain_pins scripts.ci.tests.test_race_sensitive_tests scripts.ci.tests.test_collect_release_assets scripts.ci.tests.test_scan_release_image scripts.ci.tests.test_cancel_conflicted_pr_runs scripts.ci.tests.test_conformance_scope scripts.ci.tests.test_check_conformance_reports scripts.ci.tests.test_matrix_pins scripts.ci.tests.test_dashboard_cache_tiers scripts.ci.tests.test_e2e_selection scripts.ci.tests.test_fuzz_smoke
 
       # bench/ is a separate Go module, so the root ./... of the test job does not
       # cover it. Its tests include the drift guard that keeps the benchmark Loki
@@ -1112,6 +1127,11 @@ jobs:
       - name: A/B harness unit tests (selection, PR comment, history)
         run: python3 -m unittest discover -s bench/ab/tests
 
+      # Like the A/B harness: a change to bench/visual runs the visual-smoke workflow, not the Go jobs
+      # that used to carry these tests, so they run here on every pull request.
+      - name: Visual-proof harness unit tests (plan, gate and comment, publish)
+        run: python3 -m unittest discover -s bench/visual/tests
+
       - name: Drilldown memory proof harness unit tests
         run: python3 -m unittest discover -s bench/drilldown-memory -p 'test_*.py'
 
@@ -1126,7 +1146,8 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/docker,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -1142,7 +1163,7 @@ jobs:
   e2e-compat-group:
     runs-on: ubuntu-latest
     needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-compat-group,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ci
     strategy:
@@ -1232,9 +1253,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [scope, e2e-compat-group]
     # The groups are skipped, and that is a pass, only when the scope job says
-    # no stack path changed (and so no product path either). A skipped group on
-    # a product or stack pull request (for example because `test` failed) or an
-    # empty scope output fails the gate.
+    # no stack path changed (and so no product path either) and the groups were
+    # not selected. A skipped group on a product or stack pull request (for
+    # example because `test` failed), a selected one or an empty scope output
+    # fails the gate.
     if: always()
     steps:
       - name: Aggregate grouped compat result
@@ -1242,21 +1264,22 @@ jobs:
           GROUP_RESULT: ${{ needs.e2e-compat-group.result }}
           PRODUCT: ${{ needs.scope.outputs.product }}
           STACK: ${{ needs.scope.outputs.stack }}
+          SELECTED: ${{ contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-compat-group,') }}
         run: |
           if [ "$GROUP_RESULT" = "success" ]; then
             exit 0
           fi
-          if [ "$GROUP_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ] && [ "$STACK" = "false" ]; then
+          if [ "$GROUP_RESULT" = "skipped" ] && [ "$PRODUCT" = "false" ] && [ "$STACK" = "false" ] && [ "$SELECTED" != "true" ]; then
             echo "Skipped: no stack or product path changed"
             exit 0
           fi
-          echo "One or more grouped e2e-compat checks did not pass: $GROUP_RESULT (scope product=$PRODUCT stack=$STACK)"
+          echo "One or more grouped e2e-compat checks did not pass: $GROUP_RESULT (scope product=$PRODUCT stack=$STACK selected=$SELECTED)"
           exit 1
 
   e2e-fleet:
     runs-on: ubuntu-latest
     needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-fleet,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
@@ -1341,7 +1364,7 @@ jobs:
   e2e-ui:
     runs-on: ubuntu-latest
     needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.scope.outputs.product == 'false' && needs.scope.outputs.stack == 'true')) }}
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-ui,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ui
     strategy:
@@ -1473,7 +1496,8 @@ jobs:
 
   stress-tests:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/stress-tests,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -1499,7 +1523,8 @@ jobs:
 
   memory-leak-tests:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [scope, test]
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/memory-leak-tests,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:

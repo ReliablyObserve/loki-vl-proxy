@@ -25,7 +25,7 @@ jobs:
 
   e2e-pipeline:
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.stack != 'false' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',e2e-pipeline/e2e-pipeline,')) }}
     runs-on: ubuntu-latest
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-pipeline

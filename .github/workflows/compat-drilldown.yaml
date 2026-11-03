@@ -67,7 +67,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   drilldown-pinned-runtime:
-    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',compat-drilldown/drilldown-pinned-runtime,')) }}
     needs: [drilldown-matrix-source, scope]
     runs-on: ubuntu-latest
     env:
@@ -106,7 +106,7 @@ jobs:
         run: docker compose down -v
 
   drilldown-grafana-pr-matrix:
-    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && needs.scope.outputs.stack != 'false' }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && needs.drilldown-matrix-source.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',compat-drilldown/drilldown-grafana-pr-matrix,')) }}
     needs: [drilldown-matrix-source, scope]
     runs-on: ubuntu-latest
     strategy:
