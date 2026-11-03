@@ -141,6 +141,33 @@ func eachStatsJSONSeries(raw []byte, parser *fj.Parser, largest *int, visit func
 	return err == nil && supported
 }
 
+// eachStatsJSONSeriesUntil is eachStatsJSONSeries for a pass that may stop
+// early: once visit returns false no further series is parsed or checked, and
+// it reports true. A caller that stops reads every series again in a pass that
+// checks them all.
+func eachStatsJSONSeriesUntil(raw []byte, parser *fj.Parser, largest *int, visit func(*fj.Value) bool) bool {
+	supported, done := true, false
+	_, err := jsonparser.ArrayEach(raw, func(series []byte, kind jsonparser.ValueType, _ int, parseErr error) {
+		if !supported || done {
+			return
+		}
+		if kind != jsonparser.Object || parseErr != nil {
+			supported = false
+			return
+		}
+		if len(series) > *largest {
+			*largest = len(series)
+		}
+		value, err := parser.ParseBytes(series)
+		if err != nil {
+			supported = false
+			return
+		}
+		done = !visit(value)
+	})
+	return done || err == nil && supported
+}
+
 func statsJSONSeriesNeedsTrim(item *fj.Value, keep func(int64) bool) bool {
 	if keep == nil {
 		return false
@@ -174,13 +201,18 @@ func trimStatsQRBySeries(body []byte, keep func(int64) bool, relabel func(int64)
 	parser := statsQRFJPool.Get()
 	largest := 0
 	defer func() { releaseFJParser(&statsQRFJPool, parser, largest) }()
+	// The detection pass parses every series only to learn whether one needs a
+	// rewrite: a relabel rewrites them all, and the rewrite below parses and
+	// checks every series the same way, so it is skipped then.
 	needsTrim := relabel != nil
-	if !eachStatsJSONSeries(selected.raw, parser, &largest, func(item *fj.Value) {
-		if !needsTrim && statsJSONSeriesNeedsTrim(item, keep) {
-			needsTrim = true
+	if !needsTrim {
+		if !eachStatsJSONSeries(selected.raw, parser, &largest, func(item *fj.Value) {
+			if !needsTrim && statsJSONSeriesNeedsTrim(item, keep) {
+				needsTrim = true
+			}
+		}) {
+			return nil, false
 		}
-	}) {
-		return nil, false
 	}
 	if !needsTrim {
 		return body, true
@@ -262,14 +294,18 @@ func (p *Proxy) trimAndTranslateStatsQRBySeries(body []byte, keep func(int64) bo
 	defer func() { releaseFJParser(&statsTranslateFJPool, parser, largest) }()
 	grouping := requestedLevelGrouping(originalQuery)
 	translated, synthetic := make(map[string]string, 8), make(map[string]string, 8)
+	// The detection pass stops at the first series that needs a rebuild: the
+	// rebuild below parses and checks every series the same way, so a series
+	// it would reject is still rejected.
 	needsRebuild := false
 	for _, slot := range envelope.slots {
-		if !eachStatsJSONSeries(slot.raw, parser, &largest, func(item *fj.Value) {
-			if needsRebuild {
-				return
-			}
+		if needsRebuild {
+			break
+		}
+		if !eachStatsJSONSeriesUntil(slot.raw, parser, &largest, func(item *fj.Value) bool {
 			_, changed := p.translateStatsQRMetricFJ(item.Get("metric"), grouping, translated, synthetic)
 			needsRebuild = changed || statsJSONSeriesNeedsTrim(item, keep)
+			return !needsRebuild
 		}) {
 			return nil, "", false
 		}

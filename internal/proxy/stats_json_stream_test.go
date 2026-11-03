@@ -191,6 +191,11 @@ func FuzzStatsJSONSeriesTransformDifferential(f *testing.F) {
 		`{"results":[{"metric":{"level":"error"},"values":[]}]}`,
 		`{"results":[],"data":{"result":[]}}`,
 		`{broken`,
+		// The detection pass stops at the first series that needs a rewrite:
+		// a later series the rewrite cannot read, in this slot or the next.
+		`{"data":{"resultType":"matrix","result":[{"metric":{"__name__":"count(*)","app":"a"},"values":[[1700000000,"1"]]},{"metric":{"app":"b"},"values":[[1700000000,"1"]]},7]}}`,
+		`{"results":[{"metric":{"service.name":"api"},"values":[[1700000000,"1"]]}],"data":{"result":[{"metric":{"app":"b"},"values":[[1700000000,"1"]]},{"metric":`,
+		`{"data":{"result":[{"metric":{"app":"a"},"values":[[1700000000,"1"]]},{"metric":{"app":"b"},"values":[[1699999999,"1"]]},{"metric":{"level":"x"},"values":[[1700000000,"1"]],"bad":[}]}}`,
 	} {
 		f.Add([]byte(body))
 	}

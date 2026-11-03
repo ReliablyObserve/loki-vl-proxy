@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Check and rewrite large VictoriaLogs stats answers without decoding them
+  whole. The check for VictoriaLogs' error under a success status decoded the
+  whole answer into a generic map, and the passes deciding whether a series
+  needs a rewrite parsed every series after the first that did. A Logs
+  Drilldown breakdown of 100,000 single-point series takes about 40% less
+  proxy CPU, on the first view and on repeats; answers are unchanged.
+
 ## [2.64.0] - 2026-11-03
 
 ### Fixed

@@ -380,7 +380,7 @@
      "headers": {
       "X-Query-Tags": "Source=grafana-lokiexplore-app"
      },
-     "covers": [
+     "covers": ["quality/stats-answer-transform-cost", 
       "severity-detected-level-derivation",
       "parser-logfmt",
       "loki_api_v1_query_range"
@@ -414,7 +414,7 @@
      "headers": {
       "X-Query-Tags": "Source=grafana-lokiexplore-app"
      },
-     "covers": [
+     "covers": ["quality/stats-answer-transform-cost", 
       "limits/drilldown-breakdown-exact",
       "series-limits-and-partial-results",
       "loki_api_v1_query_range"
@@ -451,7 +451,7 @@
      "headers": {
       "X-Query-Tags": "Source=grafana-lokiexplore-app"
      },
-     "covers": [
+     "covers": ["quality/stats-answer-transform-cost", 
       "limits/drilldown-breakdown-exact",
       "series-limits-and-partial-results",
       "loki_api_v1_query_range",
