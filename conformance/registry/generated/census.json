@@ -1551,7 +1551,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 279,
+      "go": 280,
       "playwright": 1
     },
     "page_kinds": {
