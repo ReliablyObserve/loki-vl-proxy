@@ -1,7 +1,9 @@
 // Command normalize-mtimes gives every tracked file of a checkout a modification time derived from its
 // content, so Go's test cache can replay results across checkouts. See package testcache.
 //
-//	normalize-mtimes [repo-root]
+//	normalize-mtimes
+//
+// It works on the current directory, which must be the repository root.
 package main
 
 import (
@@ -15,13 +17,9 @@ import (
 )
 
 func main() {
-	root := "."
-	if len(os.Args) > 1 {
-		root = os.Args[1]
-	}
+	const root = "."
 	start := time.Now()
-	cmd := exec.Command("git", "-C", root, "ls-files", "-z")
-	out, err := cmd.Output()
+	out, err := exec.Command("git", "ls-files", "-z").Output()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "normalize-mtimes: git ls-files:", err)
 		os.Exit(2)
