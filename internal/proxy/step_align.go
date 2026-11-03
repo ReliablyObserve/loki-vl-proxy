@@ -245,16 +245,32 @@ func reencodeWithBounds(rawQuery, start, end string) string {
 // milliseconds (pkg/loghttp/params.go:166-171 parseTimestamp) by
 // lokiFloatSecondsToNanos, the one reader of that form. Everything else goes
 // through parseLokiTimeToUnixNano.
+//
+// ok is false for a bound in either form that int64 nanoseconds cannot hold
+// (before 1677-09-21 or after 2262-04-11): Loki keeps such a bound as a
+// time.Time, the proxy's readers would wrap it to the other end of the range.
 func lokiBoundUnixNano(raw string) (int64, bool) {
-	if ns, ok := integerBoundUnixNano(raw); ok {
-		return ns, true
+	if isIntegerBound(raw) {
+		return integerBoundUnixNano(raw)
 	}
 	if strings.Contains(raw, ".") {
 		if seconds, err := strconv.ParseFloat(raw, 64); err == nil && math.Abs(seconds) < 1e11 {
+			if !lokiFloatSecondsFitNanos(seconds) {
+				return 0, false
+			}
 			return lokiFloatSecondsToNanos(seconds), true
 		}
 	}
 	return parseLokiTimeToUnixNano(raw)
+}
+
+// lokiFloatSecondsFitNanos reports whether lokiFloatSecondsToNanos(seconds)
+// is the instant Loki reads, within int64 nanoseconds.
+func lokiFloatSecondsFitNanos(seconds float64) bool {
+	whole, fraction := math.Modf(seconds)
+	fraction = math.Round(fraction*1000) / 1000
+	t := time.Unix(int64(whole), int64(fraction*float64(time.Second)))
+	return !t.Before(time.Unix(0, math.MinInt64)) && !t.After(time.Unix(0, math.MaxInt64))
 }
 
 // stepWithoutAllocating is parsePositiveStepDuration with a whole number of
@@ -272,21 +288,53 @@ func stepWithoutAllocating(raw string) (time.Duration, bool) {
 // integerBoundUnixNano reads an integer bound, the form Grafana sends, as
 // parseLokiTimeToUnixNano does (by its magnitude), without first trying the
 // RFC3339 layouts, whose failures allocate.
+//
+// ok is false when the integer read by its magnitude (seconds, milliseconds,
+// microseconds) is outside int64 nanoseconds: normalizeLokiIntTimeToUnixNano
+// would wrap it.
 func integerBoundUnixNano(raw string) (int64, bool) {
-	digits := strings.TrimPrefix(strings.TrimPrefix(raw, "-"), "+")
-	if digits == "" || len(digits) < len(raw)-1 {
+	if !isIntegerBound(raw) {
 		return 0, false
-	}
-	for i := 0; i < len(digits); i++ {
-		if digits[i] < '0' || digits[i] > '9' {
-			return 0, false
-		}
 	}
 	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, false
 	}
+	if n == math.MinInt64 {
+		return 0, false // its absolute value overflows, so its magnitude cannot be read
+	}
+	abs := n
+	if abs < 0 {
+		abs = -abs
+	}
+	unit := int64(1)
+	switch {
+	case abs < 1e11:
+		unit = int64(time.Second)
+	case abs < 1e14:
+		unit = int64(time.Millisecond)
+	case abs < 1e17:
+		unit = int64(time.Microsecond)
+	}
+	if abs > math.MaxInt64/unit {
+		return 0, false
+	}
 	return normalizeLokiIntTimeToUnixNano(n), true
+}
+
+// isIntegerBound reports whether raw is a decimal integer with an optional
+// sign.
+func isIntegerBound(raw string) bool {
+	digits := strings.TrimPrefix(strings.TrimPrefix(raw, "-"), "+")
+	if digits == "" || len(digits) < len(raw)-1 {
+		return false
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // millisFitNanos reports whether ms milliseconds can be written as int64

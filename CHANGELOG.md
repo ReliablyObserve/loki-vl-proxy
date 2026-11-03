@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Step alignment leaves a bound after 2262-04-11 or before 1677-09-21
+  where it is, instead of wrapping it to the other end of time.** Loki reads
+  such a bound as a `time.Time` (`pkg/loghttp/params.go` `parseTimestamp`, for
+  example `9223372036.855` seconds is 2262-04-11T23:47:16.855Z) and aligns it in
+  milliseconds (`pkg/querier/queryrange/queryrangebase/step_align.go`). The
+  proxy reads bounds as int64 nanoseconds. A decimal of seconds, or an integer
+  of seconds, milliseconds or microseconds, past that range overflowed. The
+  alignment then moved the wrapped bound, for example to 1678 with a one-year
+  step. Such a bound now leaves the request unaligned. Found by
+  `FuzzAlignQueryRangeToStep`.
+
 - **A metric `query_range` whose bounds fall outside int64 nanoseconds is no
   longer moved to the other end of time by step alignment.** With an end near
   1677-09-21 (for example `-9223372036854775000`) and no start, Loki derives

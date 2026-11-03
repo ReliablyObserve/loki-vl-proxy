@@ -169,6 +169,14 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 		// that start, so the request goes on as it came instead of wrapping
 		// to 2262.
 		{name: "derived start before the int64 nanosecond range", params: url.Values{"query": {metric}, "end": {"-9223372036854775000"}, "step": {"1"}}},
+		// Bounds after 2262-04-11 or before 1677-09-21: Loki keeps them as a
+		// time.Time; the proxy's readers would wrap them to the other end of
+		// the int64 nanosecond range, so alignment leaves the request.
+		{name: "decimal seconds after the int64 nanosecond range", params: url.Values{"query": {metric}, "start": {"9223372036.855"}, "step": {"31536000"}}},
+		{name: "integer seconds after the int64 nanosecond range", params: url.Values{"query": {metric}, "start": {"9223372037"}, "end": {"9223372038"}, "step": {"60"}}},
+		{name: "integer milliseconds after the int64 nanosecond range", params: url.Values{"query": {metric}, "start": {"1700000000000"}, "end": {"9223372036855"}, "step": {"31536000"}}},
+		{name: "integer seconds before the int64 nanosecond range", params: url.Values{"query": {metric}, "start": {"-9223372037"}, "end": {"0"}, "step": {"31536000"}}},
+		{name: "the minimum int64", params: url.Values{"query": {metric}, "start": {"-9223372036854775808"}, "end": {"0"}, "step": {"31536000"}}},
 		{name: "unparsable query", params: url.Values{"query": {`sum(count_over_time({app="a"}[5m])`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
 		{name: "unresolved Grafana token", params: url.Values{"query": {`sum(count_over_time({app="a"}[$__auto]))`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
 		{
