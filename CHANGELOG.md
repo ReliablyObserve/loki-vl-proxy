@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A metric `query_range` whose bounds fall outside int64 nanoseconds is no
+  longer moved to the other end of time by step alignment.** With an end near
+  1677-09-21 (for example `-9223372036854775000`) and no start, Loki derives
+  the start an hour before the end (`pkg/loghttp/params.go:91-120`) and aligns
+  it on `time.Time` in milliseconds
+  (`pkg/querier/queryrange/queryrangebase/step_align.go`); it applies no
+  bound-range check (`pkg/loghttp/query.go` `ParseRangeQuery`) and answers. The
+  proxy wrote the aligned start as int64 nanoseconds, which overflowed and
+  wrapped to 2262. Such a request now goes on unaligned and is answered with
+  Loki's empty matrix. Found by `FuzzAlignQueryRangeToStep`.
+
 ## [2.62.0] - 2026-11-03
 
 ### Fixed

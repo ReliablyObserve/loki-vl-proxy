@@ -163,6 +163,12 @@ func TestAlignQueryRangeToStep_LokiStepAlignMiddleware(t *testing.T) {
 		{name: "step under a millisecond", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000000)}, "step": {"0.0001"}}},
 		{name: "over 11,000 points: Loki answers 400 first", params: url.Values{"query": {metric}, "start": {ns(1700000000)}, "end": {ns(1700000000 + 11001)}, "step": {"1"}}},
 		{name: "start after end", params: url.Values{"query": {metric}, "start": {ns(1700003600)}, "end": {ns(1700000000)}, "step": {"137"}}},
+		// Loki reads the end as nanoseconds (1677-09-21) and derives the
+		// start an hour earlier, before the first instant int64 nanoseconds
+		// hold; it aligns on time.Time and answers. The proxy cannot write
+		// that start, so the request goes on as it came instead of wrapping
+		// to 2262.
+		{name: "derived start before the int64 nanosecond range", params: url.Values{"query": {metric}, "end": {"-9223372036854775000"}, "step": {"1"}}},
 		{name: "unparsable query", params: url.Values{"query": {`sum(count_over_time({app="a"}[5m])`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
 		{name: "unresolved Grafana token", params: url.Values{"query": {`sum(count_over_time({app="a"}[$__auto]))`}, "start": {ns(1700000000)}, "end": {ns(1700003600)}, "step": {"137"}}},
 		{
