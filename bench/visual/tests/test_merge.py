@@ -1,5 +1,4 @@
 """merge.py: the shards join into the run a single job would have produced, and a broken run is reported, not hidden."""
-import json
 import os
 import shutil
 import sys
@@ -200,8 +199,11 @@ class MergeTest(unittest.TestCase):
         n = sum(1 for r in first if r["main_pr_diffs"])
         self.assertGreater(n, 6)
         self.assertEqual(sum(1 for v in pixel.values() if v == 0.5), n)
-        kept = [x for x in os.listdir(os.path.join(out, "montage"))
-                if open(os.path.join(out, "montage", x), "rb").read() == b"first"]
+        kept = []
+        for x in os.listdir(os.path.join(out, "montage")):
+            with open(os.path.join(out, "montage", x), "rb") as f:
+                if f.read() == b"first":
+                    kept.append(x)
         self.assertEqual(len(kept), n)
         # the gate sees the first pass: the planted differences are in the verdict, none excused by a flip
         _, verdict = self.render(out)

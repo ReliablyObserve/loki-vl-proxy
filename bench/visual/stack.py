@@ -268,8 +268,10 @@ def wait_plugins(base, ids, deadline_s=240):
             try:
                 with urllib.request.urlopen(f"{base}/api/plugins/{pid}/settings", timeout=10):
                     missing.remove(pid)
-            except (OSError, ValueError):
-                pass
+            except OSError:
+                # urllib's URLError and HTTPError (404 while the plugin is still installing) and timeouts are
+                # OSErrors: the plugin is not listed yet, so it stays in `missing` and the next sweep asks again.
+                continue
         if missing:
             time.sleep(2)
     if missing:
