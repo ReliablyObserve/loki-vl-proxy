@@ -1566,13 +1566,13 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 34,
+      "drilldown": 35,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 283,
+      "go": 285,
       "playwright": 1
     },
     "page_kinds": {
@@ -1589,10 +1589,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 82,
+    "shape_covers_distinct": 83,
     "shapes_path_only": 8,
     "unwired_items": 86,
-    "wired_items": 221
+    "wired_items": 222
   },
   "gates": [
     "A/B shape selection",
