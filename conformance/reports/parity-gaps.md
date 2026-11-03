@@ -177,6 +177,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |
 | `semantics/instant-result-type-missing` — An instant query answers its failure status and a resultType, like Loki (fixed) | #735 | 1 | 2 |
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
+| `drilldown/index_volume/end-millisecond-rounding` — The last index volume sample is stamped at the end rounded up to the millisecond (fixed) | #1048 | 0 | 0 |
 | `quality/index-stats-default-window` — index/stats without start reads Loki's default hour before end (or now), or `since` (fixed) | #988 | 0 | 0 |
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/count-values-unsupported` — count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed) | #860 | 0 | 0 |

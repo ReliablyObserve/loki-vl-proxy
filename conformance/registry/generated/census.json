@@ -9,6 +9,9 @@
     "drilldown/detected-labels-sampled-cardinality | compare:observed",
     "drilldown/detected-labels-sampled-cardinality | gap:documented",
     "drilldown/detected-labels-sampled-cardinality | query",
+    "drilldown/index_volume/end-millisecond-rounding | compare:structural",
+    "drilldown/index_volume/end-millisecond-rounding | gap:fixed",
+    "drilldown/index_volume/end-millisecond-rounding | query",
     "drilldown/index_volume/single-sample-returns-vector | applies_to",
     "drilldown/index_volume/single-sample-returns-vector | compare:structural",
     "drilldown/index_volume/single-sample-returns-vector | query",
@@ -1185,6 +1188,7 @@
     "internal/proxy/vector_agg_series_differential_test.go | metric-series-identity",
     "internal/proxy/vector_agg_series_differential_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
+    "internal/proxy/volume_test.go | drilldown/index_volume/end-millisecond-rounding",
     "internal/proxy/volume_test.go | drilldown/index_volume/single-sample-returns-vector",
     "internal/proxy/volume_test.go | loki_api_v1_index_volume",
     "internal/proxy/volume_test.go | status-400",
@@ -1592,7 +1596,7 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 37,
+      "drilldown": 38,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
@@ -1618,7 +1622,7 @@
     "shape_covers_distinct": 85,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 225
+    "wired_items": 226
   },
   "gates": [
     "A/B shape selection",

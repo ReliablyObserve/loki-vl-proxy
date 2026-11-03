@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // volumeVL is a fake VictoriaLogs that records every call and answers stats
@@ -156,6 +158,79 @@ func TestVolume_RangeStampsBucketEndsLikeLoki(t *testing.T) {
 	if resp.Data.ResultType != "matrix" || len(resp.Data.Result) != 1 || !reflect.DeepEqual(resp.Data.Result[0].Values, want) {
 		t.Fatalf("got %+v, want values %v", resp, want)
 	}
+}
+
+// Loki stamps the last sample at the request end rounded up to the
+// millisecond (v3.7.9 pkg/querier/queryrange/codec.go VolumeOp and
+// VolumeRangeOp, pkg/util/conv.go RoundToMilliseconds): the start is
+// truncated, the end goes to the next millisecond unless it is whole.
+// conformance: loki_api_v1_index_volume, drilldown/index_volume/end-millisecond-rounding
+func TestVolume_LastSampleIsTheEndRoundedUpToTheMillisecond(t *testing.T) {
+	for _, tc := range []struct {
+		end  string
+		want float64
+	}{
+		{"1789451580000000000", 1789451580.0},
+		{"1789451580000000001", 1789451580.001},
+		{"1789451580805999999", 1789451580.806},
+		{"1789451580805000000", 1789451580.805},
+		{"1789451580805000001", 1789451580.806},
+		{"1789451580999999999", 1789451581.0},
+		{"1789451580", 1789451580.0},
+	} {
+		for _, rangeQuery := range []bool{false, true} {
+			vl := newVolumeVL(t, func(string, string) (int, string) {
+				if rangeQuery {
+					return http.StatusOK, `{"status":"success","data":{"resultType":"matrix","result":[` +
+						`{"metric":{"__name__":"_b","app":"a"},"values":[[1789450000,"42"]]}]}}`
+				}
+				return http.StatusOK, `{"status":"success","data":{"resultType":"vector","result":[` +
+					`{"metric":{"__name__":"_b","app":"a"},"value":[1,"42"]}]}}`
+			})
+			p := newTestProxy(t, vl.URL)
+			params := volumeParams("query", `{app="a"}`, "start", "1789450500", "end", tc.end)
+			if rangeQuery {
+				params.Set("step", "2000")
+			}
+			code, resp := serveVolumeTest(t, p, rangeQuery, params)
+			if code != http.StatusOK || resp.Data.ResultType != "vector" || len(resp.Data.Result) != 1 {
+				t.Fatalf("end %s range=%v: got %d %+v", tc.end, rangeQuery, code, resp)
+			}
+			if got := resp.Data.Result[0].Value; !reflect.DeepEqual(got, []interface{}{tc.want, "42"}) {
+				t.Fatalf("end %s range=%v: value %v, want [%v 42]", tc.end, rangeQuery, got, tc.want)
+			}
+		}
+	}
+}
+
+// The last sample's timestamp is Loki's through: the end rounded up to the
+// millisecond (pkg/util/conv.go RoundToMilliseconds, written out here).
+// conformance: drilldown/index_volume/end-millisecond-rounding
+func FuzzVolumeEndMillisecondsLikeLoki(f *testing.F) {
+	for _, ns := range []int64{0, 1, 999_999, 1_000_000, 1_000_001, 1789451580805999999, 1789451580999999999} {
+		f.Add(ns, int64(0))
+		f.Add(ns, int64(time.Hour))
+	}
+	f.Fuzz(func(t *testing.T, endNs, stepNs int64) {
+		if endNs < 0 || stepNs < 0 || endNs > math.MaxInt64-int64(time.Millisecond) {
+			t.Skip()
+		}
+		// Volume steps are whole seconds (Loki's step parameter, at least 1s).
+		stepNs = stepNs % int64(30*24*time.Hour) / int64(time.Second) * int64(time.Second)
+		through := endNs / int64(time.Millisecond)
+		if int64(time.Unix(0, endNs).Nanosecond())%int64(time.Millisecond) != 0 {
+			through++
+		}
+		req := volumeRequest{startNs: 0, endNs: endNs, stepNs: stepNs}
+		// The bucket that holds the end is stamped with the end, as in Loki.
+		bucketStart := float64(0)
+		if stepNs > 0 {
+			bucketStart = float64(endNs/stepNs*stepNs/int64(time.Millisecond)) / 1e3
+		}
+		if got := volumeBucketMillis(req, bucketStart); got != through {
+			t.Fatalf("end %d step %d: stamped %d ms, Loki %d ms", endNs, stepNs, got, through)
+		}
+	})
 }
 
 // conformance: loki_api_v1_index_volume, drilldown/index_volume/single-sample-returns-vector
