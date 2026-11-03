@@ -883,15 +883,34 @@ var maxStatsBucketResponseBytes int64 = 64 << 20
 // the evaluation windows (t-window, t], t = start+k*step, of a range metric
 // whose window is shorter than its step. The phase of a line is its distance
 // past the window start preceding it, modulo the step: a line is in a window
-// when 0 < phase <= window. VictoriaLogs evaluates math in float64, so a line
-// within a few hundred nanoseconds of a window edge may fall on either side.
-// The anchor is the window start modulo the step, the same phase for every
-// line: the query text, and with it the stats extent cache key, is the same
-// for every start on one step grid, as a refresh moved by whole steps is.
+// when 0 < phase <= window.
+//
+// VictoriaLogs evaluates math in float64, and a time near 1.8e18 ns is a
+// multiple of 256 ns there: the line's _time is read up to 128 ns off, so a
+// line exactly on a window edge (any time on a millisecond is an edge for a
+// window and a step in milliseconds) fell on either side by the luck of its
+// digits: a line at exactly t with a 600 ms window read as phase 600000064
+// and was dropped. The anchor is therefore a multiple of 256 ns, which keeps
+// the subtraction exact, and the bounds carry what the anchor gave up and the
+// 128 ns the read can be off: a line on an edge is classified as it is in
+// Loki, and a line within about 256 ns of an edge, not on it, may fall on
+// either side. The anchor is the window start modulo the step, the same phase
+// for every line: the query text, and with it the stats extent cache key, is
+// the same for every start on one step grid, as a refresh moved by whole
+// steps is.
 func windowPhaseFilter(start time.Time, step, window time.Duration) string {
+	const quantum, readError int64 = 256, 128
 	anchor := ((start.Add(-window).UnixNano())%int64(step) + int64(step)) % int64(step)
+	rest := anchor % quantum
+	anchor -= rest
+	lower := rest + readError
+	upper := int64(window) + rest + readError
+	if upper >= int64(step) {
+		upper = int64(step) - 1
+	}
 	return " | math ((_time - " + strconv.FormatInt(anchor, 10) + ") % " + strconv.FormatInt(int64(step), 10) +
-		") as __lvp_window_phase | filter __lvp_window_phase:>0 __lvp_window_phase:<=" + strconv.FormatInt(int64(window), 10)
+		") as __lvp_window_phase | filter __lvp_window_phase:>" + strconv.FormatInt(lower, 10) +
+		" __lvp_window_phase:<=" + strconv.FormatInt(upper, 10)
 }
 
 // withWindowPhaseFilter puts windowPhaseFilter at the head of query's pipeline,

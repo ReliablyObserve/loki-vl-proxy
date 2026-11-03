@@ -64,7 +64,7 @@ smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip
 smoke	internal/logsql	FuzzQueryString	12s	-	query string
-unscheduled	internal/proxy	FuzzMergeLabelsIntoCache	-	-	fails today: merged labels are not sorted for invalid UTF-8 label names (input "0", "\xff", "\xb30")
+smoke	internal/proxy	FuzzMergeLabelsIntoCache	12s	-	label merge is sorted and deduplicated
 smoke	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	12s	-	twice gate is a superset of the key patterns
 smoke	internal/translator	FuzzKeywordGateIsASupersetOfTheRegexp	12s	-	keyword gate is a superset of the regexp
 smoke	internal/translator	FuzzParseDropConditions	12s	-	parse drop conditions

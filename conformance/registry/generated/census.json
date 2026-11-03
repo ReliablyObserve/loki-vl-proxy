@@ -603,6 +603,9 @@
     "semantics/unwrap-sum-without-extracted-label-collision | compare:observed",
     "semantics/unwrap-sum-without-extracted-label-collision | gap:open",
     "semantics/unwrap-sum-without-extracted-label-collision | query",
+    "semantics/window-edge-float64-nanoseconds | compare:observed",
+    "semantics/window-edge-float64-nanoseconds | gap:documented",
+    "semantics/window-edge-float64-nanoseconds | query",
     "semantics/window-wider-than-step-raw-rows | compare:numeric",
     "semantics/window-wider-than-step-raw-rows | gap:open",
     "semantics/window-wider-than-step-raw-rows | query",
@@ -801,6 +804,7 @@
     "internal/proxy/instant_result_type_test.go | semantics/scalar-sample-time-units",
     "internal/proxy/instant_unwrap_sum_test.go | profiles/sanitized-json-key-grouping",
     "internal/proxy/instant_unwrap_sum_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_matcher_regexp_routes_test.go | loki_api_v1_detected_labels",
     "internal/proxy/label_matcher_regexp_routes_test.go | profiles/stream-selector-regexp-anchoring",
@@ -1035,6 +1039,7 @@
     "internal/proxy/stream_metadata_test.go | loki_api_v1_query_range",
     "internal/proxy/stream_metadata_test.go | profiles/keep-removes-derived-service-name",
     "internal/proxy/stream_metadata_test.go | profiles/keep-structured-metadata-key",
+    "internal/proxy/sub_second_step_precision_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | semantics/sub-second-step-grid",
     "internal/proxy/sub_second_step_test.go | window-bounds-and-step-alignment",
     "internal/proxy/sum_without_differential_test.go | limits/drilldown-partial-with-warning",
@@ -1531,14 +1536,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 36,
+      "api": 37,
       "drilldown": 32,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 273,
+      "go": 274,
       "playwright": 1
     },
     "page_kinds": {
@@ -1557,7 +1562,7 @@
     },
     "shape_covers_distinct": 79,
     "shapes_path_only": 8,
-    "unwired_items": 86,
+    "unwired_items": 87,
     "wired_items": 218
   },
   "gates": [
