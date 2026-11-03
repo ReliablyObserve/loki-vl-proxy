@@ -83,6 +83,9 @@ func TestVLStatsErrorBodyDoesNotDecodeSuccessAnswers(t *testing.T) {
 	}
 	b.WriteString(`]}}`)
 	body := b.Bytes()
+	if raceDetectorEnabled {
+		t.Skip("the race detector's shadow allocations are not the check's")
+	}
 	allocs := testing.AllocsPerRun(5, func() {
 		if _, isErr := vlStatsErrorBody(body); isErr {
 			t.Fatal("a success answer is no error")
