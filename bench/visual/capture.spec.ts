@@ -9,7 +9,7 @@
 //
 // Windows are absolute (end = the seed end), so all datasources see the same
 // window and the data is static.
-import { test, Page } from "@playwright/test";
+import { test, Page, Request, Response } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -187,6 +187,47 @@ if (process.env.VP_WARMUP === "1") {
   });
 }
 
+// Waits for every read still running; a read that outlasts the limit is left out of the page's record, not waited on forever.
+async function drain(reading: Set<Promise<void>>, limitMs = 30_000) {
+  const t0 = Date.now();
+  while (reading.size && Date.now() - t0 < limitMs) {
+    await Promise.race([Promise.allSettled([...reading]), new Promise((res) => setTimeout(res, limitMs - (Date.now() - t0)))]);
+  }
+}
+
+const cancelled = (rq: Request) => /ERR_ABORTED/.test(rq.failure()?.errorText || "");
+const abortedRecord = (rq: Request) => ({ url: rq.url().replace(/^https?:\/\/[^/]+/, ""), method: rq.method(),
+  request: rq.postDataJSON?.() ?? null, status: 0, response: null, aborted: rq.failure()?.errorText });
+
+// A backend answer as the capture records it. The `response` event fires when the headers arrive; the body is
+// read once the request has finished. A request the page cancelled (Chrome: net::ERR_ABORTED; Logs Drilldown does this
+// to the volume panel's detected_level query on some level-pill pages) has no answer to record, but it is not
+// nothing either: it is recorded as `aborted`, whether the cancel came before or after the headers, so that
+// whether it left a record does not depend on which of the two happened first. compare.py reads it as "cancelled
+// by the page".
+async function recordAnswer(rs: Response, records: any[], over: (rq: Request) => Promise<void>) {
+  const rq = rs.request();
+  const url = rq.url().replace(/^https?:\/\/[^/]+/, "");
+  await over(rq);
+  if (cancelled(rq)) { records.push(abortedRecord(rq)); return; }
+  let body: any = null;
+  let unavailable = "";
+  try { body = await rs.json(); } catch {
+    try { body = await rs.text(); } catch {
+      // Chrome drops the body of a very large answer from the inspector's buffer ("evicted"): ask for the raw bytes
+      // once more, and when they are gone too say so in the record instead of leaving a bare null.
+      try {
+        const raw = (await rs.body()).toString("utf8");
+        try { body = JSON.parse(raw); } catch { body = raw; }
+      } catch (e) { body = null; unavailable = String((e as Error)?.message ?? e).split("\n")[0].slice(0, 160) || "body unavailable"; }
+    }
+  }
+  const length = parseInt(rs.headers()["content-length"] || "", 10);
+  records.push({ url, method: rq.method(),
+    request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
+    ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) });
+}
+
 for (const p of spec.pages as PageSpec[]) {
   if (process.env.VP_WARMUP === "1") break;
   if (pagesOnly && !pagesOnly.has(p.id)) continue;
@@ -227,25 +268,22 @@ for (const p of spec.pages as PageSpec[]) {
         page.on("requestfinished", (rq) => {
           if (BACKEND.test(rq.url())) { pending.n--; pending.last = Date.now(); }
         });
-        page.on("response", async (rs) => {
-          const rq = rs.request();
-          if (!BACKEND.test(rq.url())) return;
-          let body: any = null;
-          let unavailable = "";
-          try { body = await rs.json(); } catch {
-            try { body = await rs.text(); } catch {
-              // Chrome drops the body of a very large answer from the inspector's buffer ("evicted"): ask for the raw bytes
-              // once more, and when they are gone too say so in the record instead of leaving a bare null.
-              try {
-                const raw = (await rs.body()).toString("utf8");
-                try { body = JSON.parse(raw); } catch { body = raw; }
-              } catch (e) { body = null; unavailable = String((e as Error)?.message ?? e).split("\n")[0].slice(0, 160) || "body unavailable"; }
-            }
-          }
-          const length = parseInt(rs.headers()["content-length"] || "", 10);
-          records.push({ url: rq.url().replace(/^https?:\/\/[^/]+/, ""), method: rq.method(),
-            request: rq.postDataJSON?.() ?? null, status: rs.status(), response: body,
-            ...(body === null ? { body_unavailable: unavailable || "empty body", ...(length ? { content_length: length } : {}) } : {}) });
+        // Every answer is read by a handler of its own; the page is only recorded once all of them are done.
+        // Playwright's response.finished() does not resolve for a request cancelled after its headers arrived, so the end
+        // of every request (finished or failed) is taken from the page's own events.
+        const ends = new Map<Request, () => void>();
+        const ended = new Map<Request, Promise<void>>();
+        const over = (rq: Request) => ended.get(rq) ?? Promise.resolve();
+        page.on("request", (rq) => { if (BACKEND.test(rq.url())) ended.set(rq, new Promise<void>((res) => ends.set(rq, res))); });
+        const end = (rq: Request) => ends.get(rq)?.();
+        page.on("requestfinished", end);
+        page.on("requestfailed", end);
+        const reading = new Set<Promise<void>>();
+        const track = (work: Promise<void>) => { const job = work.finally(() => reading.delete(job)); reading.add(job); };
+        page.on("response", (rs) => { if (BACKEND.test(rs.request().url())) track(recordAnswer(rs, records, over)); });
+        // A request cancelled before its headers arrived never gets a `response` event.
+        page.on("requestfailed", (rq) => {
+          if (BACKEND.test(rq.url())) track(rq.response().then((rs) => { if (!rs && cancelled(rq)) records.push(abortedRecord(rq)); }));
         });
         const t0 = Date.now();
         await page.goto(url(p, ds.uid, r), { waitUntil: "commit" });
@@ -259,6 +297,8 @@ for (const p of spec.pages as PageSpec[]) {
           await openLogContext(page);
         }
         const ok = await settle(page, pending);
+        // settle() counts requests, not the reads of their bodies: wait for every read before the page is recorded.
+        await drain(reading);
         const unavailable = records.some((x) => x.status === 500 && /plugin\.(unavailable|connectionUnavailable)/.test(JSON.stringify(x.response)));
         // A 200 whose body could not be read is not a successful data capture.
         // Retry that and any page with requests still in flight; another 200

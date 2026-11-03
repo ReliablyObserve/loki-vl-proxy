@@ -121,6 +121,52 @@ class CompareTest(unittest.TestCase):
         _, row = self.run_compare(both(True), both(False), both(True), rng="6h")
         self.assertFalse(row["settled_pr"])
 
+    @staticmethod
+    def cancelled(cap):
+        """The request as capture.spec.ts records one the page cancelled (net::ERR_ABORTED): no status, no body."""
+        rec = cap["records"][0]
+        rec.update(status=0, response=None, aborted="net::ERR_ABORTED")
+        return cap
+
+    def test_a_request_the_page_cancelled_on_one_side_is_reported_not_gated(self):
+        # The volume panel's query of the Drilldown level-pill pages (runs 41724504757, 41721299647): the page cancels
+        # it on any datasource, Loki direct included; whether the answer or the cancel comes first is a race of the page.
+        for main, pr in ((capture([1, 2]), self.cancelled(capture([1, 2]))), (self.cancelled(capture([1, 2])), capture([1, 2]))):
+            code, row = self.run_compare(main, pr, capture([1, 2]))
+            self.assertEqual((code, row["main_pr_diffs"]), (0, []))
+            self.assertTrue(any("request cancelled by the page" in d for d in row["main_pr_nondet"]), row["main_pr_nondet"])
+            self.assertTrue(row["settled"] and row["settled_pr"])  # a cancel is not an unfinished page nor an unreadable body
+            self.assertEqual((row["unreadable_main"], row["unreadable_pr"]), (0, 0))
+
+    def test_a_request_the_page_cancelled_on_both_sides_is_equal(self):
+        code, row = self.run_compare(self.cancelled(capture([1, 2])), self.cancelled(capture([1, 2])), self.cancelled(capture([1, 2])))
+        self.assertEqual((code, row["main_pr_diffs"], row["main_pr_nondet"], row["loki_diffs"], row["loki_nondet"]), (0, [], [], [], []))
+        self.assertEqual(row["main_vs_pr"], "1/1")
+
+    def test_a_cancelled_request_the_base_never_made_is_still_a_difference(self):
+        base = capture([1, 2])
+        base["records"] = []
+        code, row = self.run_compare(base, self.cancelled(capture([1, 2])), capture([1, 2]))
+        self.assertEqual(code, 1)
+        self.assertTrue(any("request only on one side" in d for d in row["main_pr_diffs"]))
+
+    def test_a_request_cancelled_against_loki_is_history_dependent_not_a_difference(self):
+        _, row = self.run_compare(capture([1, 2]), capture([1, 2]), self.cancelled(capture([1, 2])))
+        self.assertEqual(row["loki_diffs"], [])
+        self.assertTrue(any("request cancelled by the page" in d for d in row["loki_nondet"]), row["loki_nondet"])
+
+    def test_a_value_difference_is_not_hidden_by_a_cancelled_request(self):
+        def page(first, second, cancel_first=False):
+            cap = capture(first)
+            other = capture(second)
+            other["records"][0]["request"]["queries"][0]["expr"] = "sum(y)"
+            cap["records"].append(other["records"][0])
+            return self.cancelled(cap) if cancel_first else cap
+        code, row = self.run_compare(page([1, 2], [5, 6]), page([1, 2], [5, 7], cancel_first=True), page([1, 2], [5, 6]))
+        self.assertEqual(code, 1)
+        self.assertTrue(any("sum(y)" in d for d in row["main_pr_diffs"]), row["main_pr_diffs"])
+        self.assertTrue(any("request cancelled by the page" in d for d in row["main_pr_nondet"]))
+
     def test_value_difference_is_reported_and_exits_one(self):
         code, row = self.run_compare(capture([1, 2]), capture([1, 3]), capture([1, 2]))
         self.assertEqual(code, 1)
