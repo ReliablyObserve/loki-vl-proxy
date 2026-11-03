@@ -87,19 +87,29 @@ def frames_of(resp):
     return out
 
 
-def records(path, raw=None):
-    """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order."""
+def records(path, raw=None, gaps=None):
+    """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order.
+
+    gaps, when given, is filled with how the capture ended: `settled` (Playwright saw the page go quiet), `keys` (the
+    requests whose 200 answer had no readable body) and `reasons` (why, from capture.spec.ts). The returned `settled`
+    is false for either; gaps lets the caller tell an unfinished page from a body the browser could not hand over.
+    """
     d = load_json(path)
     recs = defaultdict(list)
     unreadable = False
+    keys, reasons = set(), []
     for r in d["records"]:
         missing_body = r["status"] == 200 and r["response"] is None
         unreadable |= missing_body
+        if missing_body and r.get("body_unavailable"):
+            reasons.append(str(r["body_unavailable"])[:160])
         if "/api/ds/query" in r["url"]:
             for q in (r["request"] or {}).get("queries", []):
                 sq = {**q, "refId": stable_ref(q.get("refId"))}
                 key = ("query", sq.get("refId"), q.get("expr"), q.get("queryType"), r["request"].get("from"), r["request"].get("to"),
                        digest(strip(sq)))
+                if missing_body:
+                    keys.add(key)
                 recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
                                  frames_of(r["response"]) if r["status"] == 200 else
                                  {("status", str(r["status"])): ("error", r["status"])})
@@ -115,9 +125,13 @@ def records(path, raw=None):
                 body = sorted(p.get("pattern", "") for p in body.get("data", []))
             lists = [body.get(k) for k in ("data", "fields", "detectedLabels")] if isinstance(body, dict) else [body]
             rows = next((len(x) for x in lists if isinstance(x, list)), 0)
+            if missing_body:
+                keys.add(key)
             recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
                              {"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)}
                              if r["status"] == 200 else {("status", ""): ("error", r["status"])})
+    if gaps is not None:
+        gaps.update(settled=bool(d.get("settled", False)), keys=keys, reasons=sorted(set(reasons)))
     return d.get("settled", False) and not unreadable, recs
 
 
@@ -562,11 +576,17 @@ def main():
                              settled_pr=True, errors_pr=[], errors_main=[], loki_missing=False))
             continue
         raw = {n: defaultdict(list) for n in ("main", "pr", "loki")}
-        sm, m = records(os.path.join(d, "main.json"), raw["main"])
-        sp, p = records(os.path.join(d, "pr.json"), raw["pr"])
+        gap = {"main": {}, "pr": {}, "loki": {}}
+        sm, m = records(os.path.join(d, "main.json"), raw["main"], gap["main"])
+        sp, p = records(os.path.join(d, "pr.json"), raw["pr"], gap["pr"])
         settle = {n: round(load_json(os.path.join(d, f"{n}.json")).get("settle_ms", 0) / 1000, 1) for n in ("main", "pr")}
         has_loki = os.path.exists(os.path.join(d, "loki.json"))
-        sl, l = records(os.path.join(d, "loki.json"), raw["loki"]) if has_loki else (True, {})
+        sl, l = records(os.path.join(d, "loki.json"), raw["loki"], gap["loki"]) if has_loki else (True, {})
+        # A body the browser could not hand over (a very large answer) is a gap of the capture, not of the build. The PR
+        # side is blamed for it only where the base read that request: a request unreadable on both sides is reported
+        # (unreadable_both) and left uncompared; the PR still fails when it never settled or lost a body the base had.
+        unreadable_only_pr = gap["pr"]["keys"] - gap["main"]["keys"]
+        sp_judged = gap["pr"]["settled"] and not unreadable_only_pr
         mp_bodies, loki_bodies = [], []
         n, ok, diffs, series, miss, _ = compare(m, p, raw=(raw["main"], raw["pr"]), bodies=mp_bodies)
         loki_ok = has_loki and spec["ranges"][rng] <= a.loki_seconds
@@ -601,7 +621,9 @@ def main():
                          # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer.
                          # An error the PR answers exactly as Loki answers it (a query Loki rejects) is Loki's answer, at any
                          # range Loki was captured: an error does not depend on how much history Loki holds.
-                         settled_pr=bool(sp), errors_pr=[e for e in errors(p, allowed) if not has_loki or e not in errors(l, allowed)],
+                         settled_pr=bool(sp_judged), settled_main=bool(sm), unreadable_main=len(gap["main"]["keys"]), unreadable_pr=len(gap["pr"]["keys"]),
+                         unreadable_both=len(gap["pr"]["keys"] & gap["main"]["keys"]), unreadable_why=sorted(set(gap["main"]["reasons"] + gap["pr"]["reasons"]))[:3],
+                         errors_pr=[e for e in errors(p, allowed) if not has_loki or e not in errors(l, allowed)],
                          errors_main=errors(m, allowed), errors_loki=errors(l, allowed) if has_loki else [],
                          loki_missing=bool(not has_loki and spec["ranges"][rng] <= a.loki_seconds)))
     md = render_md(rows)

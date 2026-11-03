@@ -787,6 +787,52 @@ class GateTest(unittest.TestCase):
         self.assertEqual(v["exit"], 0)
         self.assertIn("a side did not settle", text)
 
+    def dd_fields_6h(self, **kw):
+        """The dd-fields 6h row of runs 41658646164 and 41696033829 as compare.py now writes it: 18 requests, two of them
+        6h high-cardinality answers the browser could not read, identical points, 9.6 s settle on both sides."""
+        base = dict(page="dd-fields", rng="6h", requests=18, series=12474, main_vs_pr="16/18", pr_vs_loki="n/a (Loki holds 1.5h)",
+                    settled=False, settled_pr=True, settled_main=False, loki_compared=False, points_main=172131, points_pr=172131,
+                    points_loki=70875, unreadable_main=2, unreadable_pr=2, unreadable_both=2,
+                    unreadable_why=["No resource with given identifier found"],
+                    main_pr_nondet=["query ('sum by (span_id) (count_over_time({service_name=\"otel-collector\"} | span_id!=\"\"): "
+                                    "capture body unreadable"])
+        base.update(kw)
+        return row(**base)
+
+    def test_unreadable_on_both_sides_is_a_warning_row_the_gate_passes(self):
+        text, v = comment.render([self.dd_fields_6h()], {}, plan(("dd-fields", "6h")), META, ARGS)
+        self.assertEqual(v["exit"], 0)
+        self.assertEqual(v["failures"], [])
+        self.assertEqual(v["warnings"], 1)
+        self.assertIn("unavailable to the capture on both sides", text)
+        self.assertIn("No resource with given identifier found", text)
+
+    def test_the_old_row_of_those_runs_failed_and_a_pr_only_loss_still_fails(self):
+        # compare.json before this change: the row carries no per-side evidence, the PR side is unsettled -> fail
+        _, v = comment.render([self.dd_fields_6h(settled_pr=False, settled_main=None, unreadable_both=0)], {},
+                              plan(("dd-fields", "6h")), META, ARGS)
+        self.assertEqual(v["exit"], 1)
+        self.assertEqual(v["failures"], ["dd-fields 6h: the PR side never settled"])
+        # a body the base read and the PR did not: compare.py leaves settled_pr false and unreadable_both below the PR's count
+        _, v = comment.render([self.dd_fields_6h(settled_pr=False, settled_main=True, unreadable_main=1, unreadable_both=1)], {},
+                              plan(("dd-fields", "6h")), META, ARGS)
+        self.assertEqual(v["exit"], 1)
+
+    def test_neither_side_settling_with_the_same_data_warns_and_one_side_alone_fails(self):
+        both = self.dd_fields_6h(settled_pr=False, settled_main=False, unreadable_both=0, unreadable_main=0, unreadable_pr=0)
+        text, v = comment.render([both], {}, plan(("dd-fields", "6h")), META, ARGS)
+        self.assertEqual(v["exit"], 0)
+        self.assertIn("neither side settled, with the same data on both", text)
+        # the base settled, the PR did not
+        _, v = comment.render([self.dd_fields_6h(settled_pr=False, settled_main=True, unreadable_both=0)], {},
+                              plan(("dd-fields", "6h")), META, ARGS)
+        self.assertEqual(v["exit"], 1)
+        # neither settled, but the data differs (points or a gated difference)
+        for kw in ({"points_pr": 5}, {"main_pr_diffs": ["query x: value differs"]}):
+            _, v = comment.render([self.dd_fields_6h(settled_pr=False, settled_main=False, unreadable_both=0, **kw)], {},
+                                  plan(("dd-fields", "6h")), META, ARGS)
+            self.assertEqual(v["exit"], 1, kw)
+
     def test_difference_that_flipped_on_recapture_fails(self):
         meta = {**META, "flipped": ["explore-a 1h"]}
         text, v = comment.render([row()], {}, plan(("explore-a", "1h")), meta, ARGS)

@@ -272,7 +272,14 @@ def assess(row, pixel, expected=False, flipped=(), proven=None, resources=None, 
     if row.get("errors_pr"):
         fails.append(f"{len(row['errors_pr'])} error answer(s) on the PR side: {row['errors_pr'][0][:120]}")
     if not row.get("settled_pr", True):
-        fails.append("the PR side never settled")
+        if row.get("settled_main") is False and row.get("points_main", 0) == row.get("points_pr", 0) and not row.get("main_pr_diffs"):
+            # The same capture limit on both builds, with the same data: not the PR's doing.
+            warns.append("neither side settled, with the same data on both: not blamed on the PR")
+        else:
+            fails.append("the PR side never settled")
+    if row.get("unreadable_both"):
+        why = f" ({esc(row['unreadable_why'][0], 80)})" if row.get("unreadable_why") else ""
+        warns.append(f"{row['unreadable_both']} response body(ies) unavailable to the capture on both sides{why}: not compared")
     if row.get("loki_missing"):
         warns.append("Loki was not captured for this range (no comparison with Loki)")
     if row.get("points_main", 0) == 0 and row.get("points_pr", 0) == 0 and row["range"] != "live":
