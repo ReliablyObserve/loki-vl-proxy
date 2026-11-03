@@ -176,9 +176,32 @@ export async function typeQuery(page: Page, query: string) {
 }
 
 /**
+ * Wait until the Explore toolbar is idle. While a query is in flight the run
+ * button reads "Cancel" (clicking it cancels the queries), so it is never
+ * clicked as the run action. Playwright's isVisible() ignores its timeout and
+ * answers at once, so waiting needs an explicit poll. On Grafana 13.3 the
+ * auto-run from the URL can still be in flight when the page is ready, and
+ * short single-chunk ranges (1 s absolute, now-5m) stayed on "Cancel" for
+ * seconds after the data rendered.
+ */
+export async function waitForExploreIdle(page: Page, timeoutMs = 20_000) {
+  const cancel = page.getByRole("button", { name: /^cancel$/i });
+  try {
+    await expect
+      .poll(() => cancel.first().isVisible(), { timeout: timeoutMs })
+      .toBe(false);
+  } catch {
+    throw new Error(
+      `Explore stayed in its loading state (run button reads "Cancel") for ${timeoutMs} ms`
+    );
+  }
+}
+
+/**
  * Click the Run Query button in Explore.
  */
 export async function runQuery(page: Page) {
+  await waitForExploreIdle(page);
   await clickExploreToolbarAction(page, /run query/i);
   await waitForGrafanaReady(page);
   await page.waitForTimeout(1000);

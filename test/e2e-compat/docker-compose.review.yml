@@ -5,6 +5,6 @@ services:
   loki:
     image: grafana/loki:3.7.9
   grafana:
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.5
     environment:
-      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.32.0,grafana-lokiexplore-app@2.6.0
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0

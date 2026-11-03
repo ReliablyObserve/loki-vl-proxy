@@ -29,14 +29,21 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 
 | Grafana runtime version | Coverage path | Focus |
 |---|---|---|
-| `13.2.3` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19 |
+| `13.3.0` | tracked, not gated | newest release; known upstream issue below |
+| `13.2.5` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19 |
+| `13.2.3` | datasource contract matrix | previous pinned runtime |
 | `13.2.1` | datasource contract matrix | previous pinned runtime |
 | `13.0.1` | datasource contract matrix | previous current-family pin |
-| `12.4.12` | PR smoke + scheduled/manual matrix | previous-family datasource contract drift detection |
+| `12.4.14` | PR smoke + scheduled/manual matrix | previous-family datasource contract drift detection |
+| `12.4.12` | datasource contract matrix | previous previous-family smoke pin |
 | `12.4.10` | datasource contract matrix | previous previous-family smoke pin |
 | `12.4.2` | datasource contract matrix | previous-family datasource contract coverage |
 | `12.4.1` | Scheduled and manual matrix | previous-family datasource contract coverage |
 | `11.6.6` | Scheduled and manual matrix | lts-family datasource contract coverage |
+
+### Grafana 13.3.0: known upstream issue
+
+Grafana 13.3.0 is tracked but not gated. Its Explore keeps the run button on `Cancel` (the loading state) after a query on a short, single-chunk range (a 1 s absolute range, or `now-5m`), even though every request answered and the data rendered. It reproduces on the Loki (direct) datasource, so the proxy is not involved. Default 7-day ranges split into 8 chunks and are unaffected. Grafana 13.3.0 bundles the Loki datasource plugin `13.2.5` (`loki/module.js?_cache=13.2.5`). The e2e-ui helper `runQuery` waits for the toolbar to go idle and fails with the stuck state named. The pin moves to 13.3.0 or later once this is fixed upstream.
 
 ## Client Detection Signals
 
@@ -87,7 +94,7 @@ These are handled by strict contract tests and conservative runtime-family gatin
 
 Current runtime family state:
 
-- current: `13.x` (pinned: `13.2.3`)
+- current: `13.x` (pinned: `13.2.5`)
 - previous supported: `12.x`
 - lts supported: `11.x`
 - next expected family to evaluate: `14.x` when released

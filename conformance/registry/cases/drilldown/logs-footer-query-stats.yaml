@@ -1,0 +1,49 @@
+id: drilldown/logs-footer-query-stats
+title: query_range answers an empty stats object, so the Logs Drilldown 3.1 footer has no "Total bytes processed" (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown 3.1.0 adds a footer under the logs panel
+  (src/Components/ServiceScene/LogsQueryFooter.tsx). It reads the frame
+  `meta.stats` entry "Summary: total bytes processed" and `meta.notices` and
+  shows "Total bytes processed: <size>" plus a "Query details" drawer. Grafana
+  builds those entries from `data.stats.summary` of the query_range answer,
+  which Loki always fills (pkg/util/marshal/query.go:323-324 writes the
+  `stats` field from the query statistics; stats.Summary carries
+  totalBytesProcessed, pkg/logqlmodel/stats/stats.pb.go:205-211). The proxy
+  answers `"stats":{}` for log queries (internal/proxy/stream_processing.go:320
+  and the limit, multi-tenant and cold-dispatch paths), so the footer shows no
+  byte count and an empty drawer where Loki direct shows both.
+
+  Open on purpose: VictoriaLogs has no bytes-processed counter for a log
+  query, and the proxy does not invent one. The Grafana side of the stat name
+  has not been verified against Grafana 13.3 source.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"}'
+    start: 'now-1h'
+    end: 'now'
+    limit: '1000'
+    direction: 'backward'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [data.stats.summary.totalBytesProcessed]
+  expect: |
+    A stats object with summary.totalBytesProcessed, as Loki answers.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy/stream_processing.go (stats envelope of log query_range answers)'
+  loki: 'pkg/util/marshal/query.go:323-324 stats field; pkg/logqlmodel/stats/stats.pb.go:205-211 Summary.totalBytesProcessed'
+  proxy: 'data.stats is {}'
+  planned_test: 'visual comparison of the Drilldown Logs footer (Loki vs proxy) in the Grafana 13.2.5 / Drilldown 3.1.0 window'
+  clusters: []
