@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `| duration > 1s`. A label filter `| addr = ip("10.0.0.0/8")` is no longer
   cut at its closing parenthesis.
 
+### Performance
+
+- Answer `sum by (detected_level)` over `| json` with the parser errors kept
+  (Logs Drilldown's JSON logs volume) and over `| json | __error__!=""` from
+  VictoriaLogs stats instead of reading every selected line. Only the brace
+  lines VictoriaLogs cannot vouch for are read as raw rows; a line Loki's
+  parser rejects still answers Loki's pipeline error, and the raw rows stay
+  within `-manual-range-metric-row-limit` (the documented 400 naming the flag
+  past it). The error count over 24h, which answered 500 at the row limit,
+  answers 200, and the Drilldown volume's first view drops from seconds to
+  tenths of a second at 1h and 24h.
+
 ## [2.62.1] - 2026-11-03
 
 ### Fixed
@@ -232,18 +244,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking:** clients, dashboards and alerts that keyed on HTTP 500 for this
   limit now see 400; it counts toward `LokiVLProxyHighClientErrors`
   and no longer toward `LokiVLProxyHighErrorRate`.
-
-### Performance
-
-- Answer `sum by (detected_level)` over `| json` with the parser errors kept
-  (Logs Drilldown's JSON logs volume) and over `| json | __error__!=""` from
-  VictoriaLogs stats instead of reading every selected line. Only the brace
-  lines VictoriaLogs cannot vouch for are read as raw rows; a line Loki's
-  parser rejects still answers Loki's pipeline error, and the raw rows stay
-  within `-manual-range-metric-row-limit` (the documented 400 naming the flag
-  past it). The error count over 24h, which answered 500 at the row limit,
-  answers 200, and the Drilldown volume's first view drops from seconds to
-  tenths of a second at 1h and 24h.
 
 ## [2.60.0] - 2026-11-02
 
