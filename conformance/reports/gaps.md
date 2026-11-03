@@ -82,7 +82,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | resource_control | `peer-cache-stats-extent` — Stats extent buckets read on one replica are served by every replica without VictoriaLogs | 3 | 1 | partial |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 11 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 6 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 7 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
 | resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 2 | unknown |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
@@ -141,6 +141,7 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `semantics/json-extracted-metric-pushdown` | 5 | 19.85s (X1 json filter level_extracted, by level, 24h) | 5.12s | 0.10s | 0.04s | — |
 | `quality/query-range-settled-steps` | 9 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
 | `semantics/unwrap-conversion-error` | 8 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
+| `semantics/json-detected-level-error-split` | 8 | 12.24s (DLV2 json error filter, detected_level, 6h) | 1.24s | 0.08s | 0.05s | — |
 | `semantics/json-metric-detected-level-derivation` | 10 | 12.24s (DLV2 json error filter, detected_level, 6h) | 1.24s | 0.08s | 0.05s | — |
 | `severity-detected-level-derivation` | 31 | 12.24s (DLV2 json error filter, detected_level, 6h) | 1.24s | 0.08s | 0.05s | — |
 | `explore-logs-volume-json` | 3 | 8.20s (A explore volume, 2 filters, drop, 24h) | 4.21s | 0.06s | 0.09s | — |
