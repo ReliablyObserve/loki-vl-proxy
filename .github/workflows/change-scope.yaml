@@ -13,9 +13,16 @@ name: Change scope
 #            a pull request into main that carries the `baseline` or `ci-full` label or whose
 #            shipped diff is big (change_scope.py: BASELINE_*); never for a stacked
 #            pull request. Fails the other way round: any doubt is "false".
+#   jobs     the jobs a forced run is narrowed to (",ci/test,visual-smoke/full,"); empty
+#            when the run is not narrowed. A caller runs a job when its lane is not "false"
+#            or its id is in this list: contains(format(',{0},', <this output>), ',ci/test,')
 # Everything except an unlabelled pull request whose changed paths all fall in
 # a lane reports "true" for the lanes above it, and so does any error, so a
-# caller that skips on "false" can only skip on purpose. scripts/ci/change_scope.py
+# caller that skips on "false" can only skip on purpose. The exception is a
+# narrowed run: the `ci-full` label on a pull request, and a push to main, whose
+# changed paths are all mapped to the jobs they affect (JOB_MAP in
+# scripts/ci/change_scope.py). Those report every lane "false" and the job list.
+# A path nothing maps keeps the forced run of every lane. scripts/ci/change_scope.py
 # holds the path tables.
 #
 # Callers need `contents: read` and `pull-requests: read`.
@@ -49,8 +56,14 @@ on:
         description: >-
           "true" only for a pull request into main with the baseline or ci-full
           label or a big shipped diff; "false" on every other event, on a stacked
-          pull request and on any error.
+          pull request, on a narrowed run and on any error.
         value: ${{ jobs.scope.outputs.baseline }}
+      jobs:
+        description: >-
+          Comma-delimited ids ("<workflow>/<job>") of the jobs a narrowed forced run
+          (ci-full label, push to main, every changed path mapped) still has to run;
+          empty when the run is not narrowed.
+        value: ${{ jobs.scope.outputs.jobs }}
 
 permissions: {}
 
@@ -68,6 +81,7 @@ jobs:
       perf: ${{ steps.result.outputs.perf }}
       evidence: ${{ steps.result.outputs.evidence }}
       baseline: ${{ steps.result.outputs.baseline }}
+      jobs: ${{ steps.result.outputs.jobs }}
     steps:
       - name: Decide whether the classifier applies
         id: gate
@@ -79,47 +93,58 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -u
+          # mode: natural (an unlabelled pull request: the lane of its paths), narrow (the ci-full
+          # label, or a push to main: the jobs its paths are mapped to, or every lane when one is
+          # not) or full (every lane: the baseline label, a manual run, or when unsure).
+          mode=natural
           reason=""
           diff=false
           label_list=""
-          if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
+            diff=true
+            mode=narrow
+          elif [ "$EVENT_NAME" != "pull_request" ]; then
+            mode=full
             reason="event is $EVENT_NAME, not pull_request"
           elif [ -z "$PR_NUMBER" ]; then
+            mode=full
             reason="no pull request number"
           elif labels=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.labels[].name'); then
             # Read at run time so a re-run after adding the label sees it.
             diff=true
             label_list=$(printf '%s\n' "$labels" | paste -sd, -)
-            if printf '%s\n' "$labels" | grep -qx 'ci-full'; then
-              reason="the ci-full label is set"
-            elif printf '%s\n' "$labels" | grep -qx 'baseline'; then
+            if printf '%s\n' "$labels" | grep -qx 'baseline'; then
+              mode=full
               reason="the baseline label is set"
+            elif printf '%s\n' "$labels" | grep -qx 'ci-full'; then
+              mode=narrow
             fi
           else
+            mode=full
             reason="could not read the pull request labels"
           fi
-          echo "diff=$diff" >> "$GITHUB_OUTPUT"
-          echo "labels=$label_list" >> "$GITHUB_OUTPUT"
-          if [ -n "$reason" ]; then
-            echo "force=true" >> "$GITHUB_OUTPUT"
-            # A forced pull request is still classified (below) for the baseline.
-            if [ "$diff" != "true" ]; then
-              {
-                echo "### Change scope"
-                echo
-                echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\`, \`evidence=true\`, \`baseline=false\` ($reason)."
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "force=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "diff=$diff"
+            echo "labels=$label_list"
+            echo "mode=$mode"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$diff" != "true" ]; then
+            {
+              echo "### Change scope"
+              echo
+              echo "Result: \`product=true\`, \`stack=true\`, \`perf=true\`, \`evidence=true\`, \`baseline=false\` ($reason)."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # A pull request is checked out as its merge ref, whose first parent is the base tip. A push
+      # needs the history back to the commit before it, which can be several commits.
       - name: Check out the merge ref
         if: ${{ !cancelled() && steps.gate.outputs.diff == 'true' }}
         continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          fetch-depth: 2
+          # The number 0 is falsy in an expression, so the full history (0) has to be the last operand.
+          fetch-depth: ${{ github.event_name != 'push' && 2 || 0 }}
           persist-credentials: false
 
       - name: Classify the changed paths
@@ -127,20 +152,31 @@ jobs:
         if: ${{ !cancelled() && steps.gate.outputs.diff == 'true' }}
         continue-on-error: true
         env:
-          FORCE: ${{ steps.gate.outputs.force }}
+          MODE: ${{ steps.gate.outputs.mode }}
           LABELS: ${{ steps.gate.outputs.labels }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          # The merge ref's first parent is the base tip, so this is the net
-          # change of the pull request. --no-renames lists both the old and
-          # the new path of a rename. A failed diff leaves the list empty,
-          # which the classifier reports as product (all three lanes true) and
-          # as no baseline.
-          force_arg=""
-          if [ "$FORCE" = "true" ]; then force_arg="--force-product"; fi
-          git -c core.quotepath=false diff --numstat --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/numstat.txt"
+          # The change is HEAD against the commit before it: the merge ref's first parent (the base
+          # tip) for a pull request, the previous tip of main for a push. --no-renames lists both the
+          # old and the new path of a rename. A failed diff (a push whose previous tip is unknown, or
+          # was rewritten) leaves the list empty, which the classifier reports as product (every lane
+          # true) and as no baseline.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            base="$BEFORE"
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base=""; fi
+          else
+            base="HEAD^1"
+          fi
+          mode_arg=""
+          if [ "$MODE" = "full" ]; then mode_arg="--force-product"; fi
+          if [ "$MODE" = "narrow" ]; then mode_arg="--narrow"; fi
+          : > "$RUNNER_TEMP/numstat.txt"
+          if [ -n "$base" ]; then
+            git -c core.quotepath=false diff --numstat --no-renames "$base" HEAD > "$RUNNER_TEMP/numstat.txt"
+          fi
           cut -f3- "$RUNNER_TEMP/numstat.txt" \
-            | python3 scripts/ci/change_scope.py --files-from - $force_arg \
+            | python3 scripts/ci/change_scope.py --files-from - $mode_arg --git-base "$base" \
                 --numstat "$RUNNER_TEMP/numstat.txt" --base-ref "$BASE_REF" --labels "$LABELS" \
                 --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
 
@@ -149,7 +185,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           GATE_OUTCOME: ${{ steps.gate.outcome }}
-          FORCE: ${{ steps.gate.outputs.force }}
+          MODE: ${{ steps.gate.outputs.mode }}
           DIFF: ${{ steps.gate.outputs.diff }}
           CLASSIFY_OUTCOME: ${{ steps.classify.outcome }}
           CLASSIFIED_PRODUCT: ${{ steps.classify.outputs.product }}
@@ -157,9 +193,12 @@ jobs:
           CLASSIFIED_PERF: ${{ steps.classify.outputs.perf }}
           CLASSIFIED_EVIDENCE: ${{ steps.classify.outputs.evidence }}
           CLASSIFIED_BASELINE: ${{ steps.classify.outputs.baseline }}
+          CLASSIFIED_JOBS: ${{ steps.classify.outputs.jobs }}
         run: |
           # A lane is skipped only on an explicit "false" from a classifier that
-          # ran, on a pull request that is not forced; anything else keeps it.
+          # ran, on a run that is not forced (mode full); anything else keeps it. A narrowed
+          # run (mode narrow) takes the classifier's answer: every lane true when it could not
+          # narrow, every lane false and a job list when it could.
           # Evidence is independent of the forced lanes and labels.
           # The baseline goes the other way: only an explicit "true" from a
           # classifier that ran on a pull request diff.
@@ -168,15 +207,17 @@ jobs:
           perf=true
           evidence=true
           baseline=false
+          jobs=""
           if [ "$GATE_OUTCOME" = "success" ] && [ "$DIFF" = "true" ] \
              && [ "$CLASSIFY_OUTCOME" = "success" ]; then
-            if [ "$FORCE" = "false" ]; then
+            if [ "$MODE" != "full" ]; then
               if [ "$CLASSIFIED_PRODUCT" = "false" ]; then product=false; fi
               if [ "$CLASSIFIED_STACK" = "false" ]; then stack=false; fi
               if [ "$CLASSIFIED_PERF" = "false" ]; then perf=false; fi
             fi
             if [ "$CLASSIFIED_BASELINE" = "true" ]; then baseline=true; fi
             if [ "$CLASSIFIED_EVIDENCE" = "false" ]; then evidence=false; fi
+            if [ "$MODE" = "narrow" ]; then jobs="$CLASSIFIED_JOBS"; fi
           fi
           # The lanes are nested: a lane that runs keeps the ones below it, and
           # the baseline is a product run.
@@ -189,5 +230,6 @@ jobs:
             echo "perf=$perf"
             echo "evidence=$evidence"
             echo "baseline=$baseline"
+            echo "jobs=$jobs"
           } >> "$GITHUB_OUTPUT"
-          echo "Change scope: product=$product stack=$stack perf=$perf evidence=$evidence baseline=$baseline"
+          echo "Change scope: product=$product stack=$stack perf=$perf evidence=$evidence baseline=$baseline jobs=${jobs:-(not narrowed)}"

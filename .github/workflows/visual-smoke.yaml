@@ -40,8 +40,11 @@ on:
 permissions:
   contents: read
 
+# A label event that does not re-run this workflow (any label but visual-change-expected, for
+# example ci-full set when the pull request is opened) starts a run whose jobs are all skipped. It gets
+# its own group so that it cannot cancel the run of the code, which shares the pull request's group.
 concurrency:
-  group: visual-smoke-${{ github.event.pull_request.number }}
+  group: visual-smoke-${{ github.event.pull_request.number }}${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'visual-change-expected' && '-label' || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -59,7 +62,7 @@ jobs:
   visual-plan:
     name: visual-plan
     needs: [scope]
-    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/visual-plan,')) && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -72,7 +75,7 @@ jobs:
       end: ${{ steps.plan.outputs.end }}
     env:
       OUT: /tmp/visual-smoke
-      BASELINE: ${{ needs.scope.outputs.baseline }}
+      BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/full,') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -120,7 +123,7 @@ jobs:
     if: ${{ !cancelled() && needs.visual-plan.result == 'success' && needs.visual-plan.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     # A shard holds about a dozen captures; the baseline run's shards are the largest.
-    timeout-minutes: ${{ needs.scope.outputs.baseline == 'true' && 45 || 25 }}
+    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/full,')) && 45 || 25 }}
     permissions:
       contents: read
     strategy:
@@ -213,7 +216,7 @@ jobs:
     needs: [scope, visual-plan, visual-shard]
     # Only runtime changes can produce a meaningful before/after Grafana proof.
     # A forced CI/baseline label does not make a docs or CI-only diff measurable.
-    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/visual-smoke,')) && (github.event.action != 'labeled' && github.event.action != 'unlabeled' || github.event.label.name == 'visual-change-expected') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -224,7 +227,7 @@ jobs:
     env:
       OUT: /tmp/visual-smoke
       PR_HEAD: ${{ github.event.pull_request.head.sha }}
-      BASELINE: ${{ needs.scope.outputs.baseline }}
+      BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/full,') }}
       RUN: ${{ needs.visual-plan.outputs.run }}
       SHARDS: ${{ needs.visual-plan.outputs.shards }}
       BASE: ${{ needs.visual-plan.outputs.base }}
@@ -494,7 +497,7 @@ jobs:
         env:
           RAN: ${{ needs.visual-smoke.outputs.run }}
           RESULT: ${{ needs.visual-smoke.result }}
-          BASELINE: ${{ needs.scope.outputs.baseline }}
+          BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',visual-smoke/full,') }}
           PUBLISHED: ${{ needs.visual-publish.outputs.published }}
         with:
           script: |

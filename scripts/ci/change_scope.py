@@ -81,6 +81,7 @@ changelog and the release labels) stay the deciding gate in that case.
 import argparse
 import posixpath
 import re
+import subprocess
 import sys
 
 DEFAULT_RULE = "P-default"
@@ -425,6 +426,346 @@ def any_ships(paths):
     return any(ships(p) for p in paths)
 
 
+# ---------------------------------------------------------------------------
+# Job selection for a forced run (the `ci-full` label on a pull request, a push
+# to main).
+#
+# Ids are "<workflow file stem>/<job id>": several workflows have a job named
+# `scope`, and a workflow tests the list with contains(), where `ci/test` must
+# not match `ci/test-shard`. `perf-ab/full` and `visual-smoke/full` are not jobs:
+# they ask those workflows for their full run (every A/B set, every visual
+# page). A change to the harness needs it, because the shapes and pages a run
+# normally selects are chosen from the runtime code the change touches.
+
+CI_WORKFLOW = ".github/workflows/ci.yaml"
+# ci.yaml jobs that run on every change and are never selected.
+ALWAYS_ON_CI = ("scope", "lint", "helm")
+CI_JOBS = (
+    "test-shard", "test", "tuple-contract", "fuzz-smoke-shard", "fuzz-smoke",
+    "race-stress-shard", "race-stress", "image", "tuple-smoke", "bench",
+    "conformance", "docker", "e2e-compat-group", "e2e-compat", "e2e-fleet",
+    "e2e-ui", "stress-tests", "memory-leak-tests",
+)
+# A job and the aggregate that carries its required check name: one never runs without the other.
+CI_PARTNERS = (
+    ("test-shard", "test"),
+    ("fuzz-smoke-shard", "fuzz-smoke"),
+    ("race-stress-shard", "race-stress"),
+    ("e2e-compat-group", "e2e-compat"),
+)
+# Jobs that cannot run without another job of the same run (an artifact they download).
+CI_NEEDS_RUN = {
+    "conformance": ("test",),
+    "tuple-smoke": ("image",),
+    "e2e-compat-group": ("image",),
+    "e2e-fleet": ("image",),
+    "e2e-ui": ("image",),
+}
+# Jobs that consume what a job produces: an edit to the producer runs them too.
+CI_CONSUMERS = {
+    "image": ("tuple-smoke", "e2e-compat-group", "e2e-compat", "e2e-fleet", "e2e-ui"),
+    "test-shard": ("conformance",),
+    "test": ("conformance",),
+}
+# The Go test that pins the shard wiring (test/testcache) runs in a unit test shard and reads both
+# shard jobs, so an edit to the race shards runs it.
+CI_ALSO_RUN = {
+    "race-stress-shard": ("test-shard",),
+    "race-stress": ("test-shard",),
+}
+
+# Workflow file -> (stem, its selectable jobs, extra ids). A change to the file runs the whole
+# workflow, in full where the workflow has a full run.
+WORKFLOW_JOBS = {
+    ".github/workflows/compat-loki.yaml": ("compat-loki", ("loki-pinned",), ()),
+    ".github/workflows/compat-drilldown.yaml": (
+        "compat-drilldown", ("drilldown-pinned-runtime", "drilldown-grafana-pr-matrix"), ()),
+    ".github/workflows/compat-vl.yaml": ("compat-vl", ("vl-pinned",), ()),
+    ".github/workflows/e2e-pipeline.yml": ("e2e-pipeline", ("e2e-pipeline",), ()),
+    ".github/workflows/security-pr.yaml": ("security-pr", ("security-runtime",), ()),
+    ".github/workflows/perf-ab.yaml": ("perf-ab", ("perf-smoke",), ("full",)),
+    ".github/workflows/visual-smoke.yaml": ("visual-smoke", ("visual-plan", "visual-smoke"), ("full",)),
+    ".github/workflows/pr-quality-report.yaml": ("pr-quality-report", ("report",), ()),
+}
+# Workflows with no selectable job: they carry their own triggers (path filters, schedules, labels,
+# releases), so a change to one needs nothing more from the pull request CI.
+NO_JOB_WORKFLOWS = (
+    "auto-release.yaml", "cancel-conflicted-pr-runs.yaml", "changelog-pr.yaml", "codeql.yaml",
+    "docs-site.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "perf-daily.yaml",
+    "pr-evidence-summary.yaml", "pr-labeler.yaml", "release-pr-validation.yaml", "release.yaml",
+    "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml", "vl-ast-coverage.yml",
+)
+
+
+def _qualified(stem, names):
+    return frozenset("%s/%s" % (stem, name) for name in names)
+
+
+ALL_CI = _qualified("ci", CI_JOBS)
+ALL_JOBS = ALL_CI.union(*(_qualified(stem, jobs + extra) for stem, jobs, extra in WORKFLOW_JOBS.values()))
+STACK_JOBS = _qualified("ci", ("image", "tuple-smoke", "e2e-compat-group", "e2e-compat", "e2e-fleet", "e2e-ui")) | {
+    "compat-loki/loki-pinned", "compat-drilldown/drilldown-pinned-runtime",
+    "compat-drilldown/drilldown-grafana-pr-matrix", "compat-vl/vl-pinned",
+    "e2e-pipeline/e2e-pipeline", "security-pr/security-runtime",
+}
+UNIT_JOBS = _qualified("ci", ("test-shard", "test"))
+FUZZ_JOBS = _qualified("ci", ("fuzz-smoke-shard", "fuzz-smoke"))
+CONFORMANCE_JOBS = _qualified("ci", ("conformance",))
+E2E_UI_JOBS = _qualified("ci", ("image", "e2e-ui"))
+VISUAL_JOBS = _qualified("visual-smoke", ("visual-plan", "visual-smoke", "full"))
+PERF_AB_JOBS = _qualified("perf-ab", ("perf-smoke", "full"))
+REPORT_JOBS = _qualified("pr-quality-report", ("report",))
+NO_JOBS = frozenset()
+
+# Paths below a JOB_MAP glob that must never narrow: files that other gates read as data.
+# (PRODUCT_OVERRIDES and the shipped paths never narrow either; mapped_jobs() checks them first.)
+NEVER_NARROW = (
+    "bench/visual/spec.json",  # conformance/scripts/census.py reads it, like bench/ab/shapes.json
+)
+
+# (rule id, globs, jobs). First match wins. An empty job set means the path is read by nothing that
+# runs on a pull request but the always-on checks (lint, helm, Security / static, CodeQL).
+JOB_MAP = [
+    ("J1", ("docs/**", "website/**", "results/**", "examples/**", "*.md", "LICENSE",
+            "bench/*.md", "bench/**/*.md", "test/**/*.md"), NO_JOBS),
+    ("J2", (".gitignore", ".gitleaks.toml", ".trivyignore.yaml", ".hadolint.yaml", ".golangci.yml",
+            "docker-compose.yml"), NO_JOBS),
+    ("J3", (".github/dependabot.yml", ".github/FUNDING.yml", ".github/ISSUE_TEMPLATE/**",
+            ".github/pull_request_template.md", ".github/badges/**"), NO_JOBS),
+    ("J4", tuple(".github/workflows/" + name for name in NO_JOB_WORKFLOWS), NO_JOBS),
+    # Scripts the release, changelog, helm and security-scan workflows run, and the unit tests of
+    # scripts/ci (lint runs them).
+    ("J5", (
+        "scripts/ci/tests/**", "scripts/ci/check_changelog_pr.py", "scripts/ci/cancel_conflicted_pr_runs.py",
+        "scripts/ci/collect_release_assets.sh", "scripts/ci/commit_via_api.sh",
+        "scripts/ci/extract_changelog_section.sh", "scripts/ci/fetch_ghcr_pulls.sh",
+        "scripts/ci/materialize_unreleased.sh", "scripts/ci/scan_release_image.sh",
+        "scripts/ci/sync_release_metadata.sh", "scripts/ci/sync_observability_assets.sh",
+        "scripts/ci/validate_compose.sh", "scripts/ci/validate_helm_flags.sh",
+        "scripts/ci/validate_helm_secrets.sh", "scripts/ci/helm-*.yaml", "scripts/ci/check_scorecard.py",
+        "scripts/ci/repro_dense_patterns.sh", "scripts/ci/run_nuclei_scan.sh",
+        "scripts/check-vl-ast-coverage.py", "scripts/vl-ast-coverage.json",
+        "scripts/bench-cache-tiers.sh", "scripts/test-short.sh",
+        "bench/ab/history/**", "bench/ab/results/**", "bench/drilldown-memory/**",
+        "conformance/registry/generated/perf-evidence.json", "conformance/reports/performance.md",
+        "conformance/reports/gaps.md",
+        "test/e2e-compat/docker-compose.bench.yml", "test/e2e-compat/docker-compose.review.yml",
+        "test/e2e-fleet/docker-compose.http-discovery.yml",
+        "test/e2e-compat/loki-bench-config.yaml", "test/e2e-compat/loki-bench-nocache-config.yaml",
+    ), NO_JOBS),
+    ("J6", ("scripts/ci/go_test_unit.sh", "scripts/ci/unit_test_mode.sh", "scripts/ci/test_shards.py",
+            "scripts/ci/merge_unit_shards.py", "scripts/ci/merge_coverprofile.py",
+            "scripts/ci/test-shard-weights.tsv", "scripts/ci/test-cache-uncached.tsv"),
+     UNIT_JOBS | CONFORMANCE_JOBS),
+    ("J7", ("scripts/ci/fuzz_smoke.py", "scripts/ci/fuzz_smoke_targets.tsv"), FUZZ_JOBS),
+    ("J8", ("scripts/ci/race_sensitive_tests.sh",), CONFORMANCE_JOBS),
+    ("J9", ("scripts/ci/pr_quality_report.py", "scripts/ci/quality_scope.py",
+            "scripts/ci/quality_comparison.py", "scripts/ci/query_semantics_comment.py"), REPORT_JOBS),
+    ("J10", ("test/e2e-ui/package.json", "test/e2e-ui/package-lock.json"), E2E_UI_JOBS),
+    # The compose files and configs the stack jobs start.
+    ("J11", (
+        "test/e2e-compat/docker-compose.yml", "test/e2e-fleet/docker-compose.yml",
+        "test/e2e-pipeline/docker-compose.yml", "test/e2e-compat/loki-local-config.yaml",
+        "test/e2e-compat/grafana-*.yaml", "test/e2e-compat/vm*.yml", "test/e2e-compat/nginx-tail.conf",
+    ), STACK_JOBS),
+    ("J12", ("bench/visual/**",), VISUAL_JOBS),
+    ("J13", ("bench/ab/**",), PERF_AB_JOBS),
+]
+
+
+def parse_jobs(text):
+    """Return {job id: {"needs", "if", "uses", "body"}} for a workflow's jobs.
+
+    Reads the block layout the workflows use (two-space job keys, four-space
+    fields) with the standard library only: the scope job has no YAML module.
+    """
+    jobs = {}
+    lines = text.splitlines()
+    in_jobs = False
+    current = None
+    for index, line in enumerate(lines):
+        if not in_jobs:
+            in_jobs = bool(_JOBS_KEY.match(line))
+            continue
+        if line and not line.startswith((" ", "#")):
+            break  # next top-level key
+        key = _JOB_KEY.match(line)
+        if key:
+            current = {"needs": [], "if": None, "uses": None, "body": []}
+            jobs[key.group(1)] = current
+            continue
+        if current is None:
+            continue
+        current["body"].append(line)
+        field = _JOB_FIELD.match(line)
+        if not field:
+            continue
+        name, value = field.groups()
+        value = re.sub(r"\s+#.*$", "", value)
+        if name == "needs":
+            if value.startswith("["):
+                current["needs"] = [n.strip() for n in value.strip("[]").split(",") if n.strip()]
+            elif value:
+                current["needs"] = [value]
+            else:
+                for follow in lines[index + 1:]:
+                    item = _LIST_ITEM.match(follow)
+                    if not item:
+                        break
+                    current["needs"].append(item.group(1))
+        elif name == "if":
+            current["if"] = value.strip("\"'") if not value.startswith(("\"", "'")) else value[1:-1]
+        else:
+            current["uses"] = value
+    for job in jobs.values():
+        job["body"] = "\n".join(job["body"])
+    return jobs
+
+
+_JOBS_KEY = re.compile(r"^jobs:\s*$")
+_JOB_KEY = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
+_JOB_FIELD = re.compile(r"^    (needs|if|uses):\s*(.*?)\s*$")
+_LIST_ITEM = re.compile(r"^      -\s+(\S+)")
+
+
+def workflow_blocks(text):
+    """(everything outside the jobs, {job id: its lines}), without comments and blank lines.
+
+    A comment-only edit is then no edit. Inline comments stay, so an edit to one is an edit.
+    """
+    header, jobs, current, in_jobs = [], {}, None, False
+    for line in text.splitlines():
+        if in_jobs and line and not line.startswith((" ", "#")):
+            in_jobs = False
+            current = None
+        if not in_jobs:
+            if _JOBS_KEY.match(line):
+                in_jobs = True
+                continue
+            if line.strip() and not line.lstrip().startswith("#"):
+                header.append(line.rstrip())
+            continue
+        key = _JOB_KEY.match(line)
+        if key:
+            current = jobs.setdefault(key.group(1), [])
+            continue
+        if current is not None and line.strip() and not line.lstrip().startswith("#"):
+            current.append(line.rstrip())
+    return header, jobs
+
+
+def ci_closure(edited, edit=True):
+    """The bare ci.yaml job ids to run for `edited`, with what they need.
+
+    For an edit of a job (edit=True) the jobs that consume what it produces run too, but only for
+    the jobs that were edited, not for the ones they pull in: an edit to e2e-ui runs the image it
+    needs, not every other job that uses the image.
+    """
+    result = set(edited)
+    if edit:
+        for name in edited:
+            result.update(CI_CONSUMERS.get(name, ()))
+            result.update(CI_ALSO_RUN.get(name, ()))
+    changed = True
+    while changed:
+        changed = False
+        for name in list(result):
+            extra = set(CI_NEEDS_RUN.get(name, ()))
+            for left, right in CI_PARTNERS:
+                if name == left:
+                    extra.add(right)
+                elif name == right:
+                    extra.add(left)
+            if not extra <= result:
+                result |= extra
+                changed = True
+    return result
+
+
+def expand(ids):
+    """Add what the ci.yaml jobs among `ids` cannot run without (their aggregate, the job they download from)."""
+    ci = {i.split("/", 1)[1] for i in ids if i.startswith("ci/")}
+    return frozenset(i for i in ids if not i.startswith("ci/")) | _qualified("ci", ci_closure(ci, edit=False))
+
+
+def ci_workflow_jobs(read_pair=None):
+    """The ids to run for an edit of ci.yaml: the jobs whose block changed, with their closure.
+
+    A change outside the job blocks (triggers, permissions, env, the scope job), a job this module
+    does not know and any failure to read either side run every ci.yaml job.
+    """
+    try:
+        pair = read_pair(CI_WORKFLOW) if read_pair else None
+        if not pair or pair[0] is None or pair[1] is None:
+            return ALL_CI
+        base_header, base_jobs = workflow_blocks(pair[0])
+        head_header, head_jobs = workflow_blocks(pair[1])
+    except Exception:
+        return ALL_CI
+    if base_header != head_header or not base_jobs or not head_jobs:
+        return ALL_CI
+    edited = {name for name in set(base_jobs) | set(head_jobs) if base_jobs.get(name) != head_jobs.get(name)}
+    # The scope job decides what runs, and a job this module does not know has no place in the tables.
+    if "scope" in edited or any(name not in CI_JOBS and name not in ALWAYS_ON_CI for name in edited):
+        return ALL_CI
+    return _qualified("ci", ci_closure(edited & set(CI_JOBS)))
+
+
+def mapped_jobs(path, read_pair=None):
+    """The ids a change to `path` needs, or None when no entry maps it (then every lane runs).
+
+    Only an explicit entry returns a set: a product override, a shipped path, anything in
+    NEVER_NARROW and every unknown path return None.
+    """
+    clean = normalize(path)
+    if clean is None:
+        return None
+    if any(glob_match(g, clean) for _, globs in PRODUCT_OVERRIDES for g in globs):
+        return None
+    if ships(clean) or any(glob_match(g, clean) for g in NEVER_NARROW):
+        return None
+    if clean == CI_WORKFLOW:
+        return ci_workflow_jobs(read_pair)
+    if clean in WORKFLOW_JOBS:
+        stem, jobs, extra = WORKFLOW_JOBS[clean]
+        return _qualified(stem, jobs + extra)
+    for _, globs, jobs in JOB_MAP:
+        if any(glob_match(g, clean) for g in globs):
+            return jobs
+    return None
+
+
+def select_jobs(paths, read_pair=None):
+    """The ids to run for a forced run of this change, or None when it cannot be narrowed.
+
+    None (an empty list, or any path no entry maps) keeps the forced run of every lane.
+    """
+    paths = [p for p in paths if p and p.strip()]
+    if not paths:
+        return None
+    selected = set()
+    for path in paths:
+        jobs = mapped_jobs(path, read_pair)
+        if jobs is None:
+            return None
+        selected |= jobs
+    return expand(selected)
+
+
+def git_pair_reader(base_rev, root=None):
+    """read_pair(path) -> (text at base_rev, text in the working tree); None where a side is missing."""
+    def read(path):
+        try:
+            base = subprocess.run(["git", "show", "%s:%s" % (base_rev, path)], cwd=root, check=True,
+                                  capture_output=True, text=True).stdout
+            with open(posixpath.join(root, path) if root else path, encoding="utf-8") as handle:
+                head = handle.read()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return base, head
+    return read
+
+
 def parse_numstat(text):
     """[(path, changed lines)] from `git diff --numstat --no-renames` output.
 
@@ -496,11 +837,14 @@ def _cell(text):
 def render_summary(paths, flags, forced=False, note="", reasons=()):
     lines = ["### Change scope", "", "Result: " + ", ".join(
         "`%s=%s`" % (key, str(flags[key]).lower()) for key in FLAG_NAMES if key in flags)]
+    if flags.get("jobs") is not None:
+        lines += ["", "Forced run, narrowed to the jobs the change can affect: " + (
+            ", ".join("`%s`" % job for job in sorted(flags["jobs"])) or "none beyond the always-on checks") + "."]
     if flags.get("baseline"):
         lines += ["", "Baseline run: " + "; ".join(reasons) + "."]
     if forced:
         lines.append("")
-        lines.append("Forced to product by `--force-product`.")
+        lines.append("Forced to every lane: `--force-product`, or `--narrow` with a path no JOB_MAP entry maps.")
     if note:
         lines.append("")
         lines.append(note)
@@ -529,6 +873,11 @@ def build_parser():
                         help="report every lane whatever the paths are")
     parser.add_argument("--github-output", metavar="FILE",
                         help="append product, stack, perf and baseline =true|false to this file")
+    parser.add_argument("--narrow", action="store_true",
+                        help="a forced run (the ci-full label, a push to main) that may run less: when every path "
+                             "is mapped by JOB_MAP, report no lane and `jobs=` instead of forcing every lane")
+    parser.add_argument("--git-base", default="", metavar="REV",
+                        help="with --narrow: the revision to compare changed workflow files against")
     parser.add_argument("--ships", action="store_true",
                         help="report ships=true|false (does anything users receive change) "
                              "instead of product=true|false")
@@ -549,10 +898,17 @@ FLAG_NAMES = ("product", "stack", "perf", "baseline", "evidence")
 ALL_TRUE = {"product": True, "stack": True, "perf": True, "baseline": False, "evidence": True}
 
 
+def format_jobs(jobs):
+    """The `jobs=` value: ids between commas, so a workflow can test one with contains()."""
+    return "," + "".join(job + "," for job in sorted(jobs))
+
+
 def emit(value, github_output, name="product"):
     """Report one flag, or (name="lanes") all scope outputs of a dict."""
     if name == "lanes":
         lines = ["%s=%s" % (key, str(value.get(key, False)).lower()) for key in FLAG_NAMES]
+        if value.get("jobs") is not None:
+            lines.append("jobs=" + format_jobs(value["jobs"]))
     else:
         lines = ["%s=%s" % (name, str(value).lower())]
     if github_output:
@@ -602,8 +958,16 @@ def main(argv=None):
     try:
         if args.files_from:
             paths = read_paths(args.files_from)
-        if args.force_product:
+        narrowed = None
+        if args.narrow and not args.force_product and paths:
+            read_pair = git_pair_reader(args.git_base) if args.git_base else None
+            narrowed = select_jobs(paths, read_pair)
+        # A forced run (--force-product, or --narrow when some path cannot be narrowed) reports every lane.
+        forced = args.force_product or (args.narrow and narrowed is None and bool(paths))
+        if forced:
             pass
+        elif narrowed is not None:
+            flags = {"product": False, "stack": False, "perf": False, "baseline": False, "jobs": narrowed}
         elif not paths:
             note = "No changed paths were provided, so the change counts as product."
         else:
@@ -611,7 +975,7 @@ def main(argv=None):
         if paths:
             flags["evidence"] = product_evidence(paths)
         # Fails towards the cheaper answer: no paths, no diff or any error is no baseline.
-        if paths and args.base_ref:
+        if paths and args.base_ref and narrowed is None:
             numstat = []
             if args.numstat:
                 with open(args.numstat, encoding="utf-8", errors="replace") as handle:
@@ -622,6 +986,7 @@ def main(argv=None):
         print("change_scope: %s; treating the change as product" % exc, file=sys.stderr)
         flags = dict(ALL_TRUE)
         reasons = []
+        forced = False
         note = "The classifier failed, so the change counts as product."
 
     try:
@@ -635,7 +1000,7 @@ def main(argv=None):
     if args.summary:
         try:
             with open(args.summary, "a", encoding="utf-8") as handle:
-                handle.write(render_summary(paths, flags, args.force_product, note, reasons))
+                handle.write(render_summary(paths, flags, forced, note, reasons))
         except Exception as exc:
             print("change_scope: cannot write summary: %s" % exc, file=sys.stderr)
     return 0

@@ -20,7 +20,7 @@ jobs:
     needs: [scope]
     # The base-vs-PR snapshots and load benchmarks measure runtime changes.
     # Forced CI on docs or workflow files does not need this report.
-    if: ${{ !cancelled() && needs.scope.outputs.evidence == 'true' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',pr-quality-report/report,')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
