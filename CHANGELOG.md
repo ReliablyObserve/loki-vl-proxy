@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.63.1] - 2026-11-03
+
 ### Performance
 
 - Answer `sum by (detected_level)` over `| json` with the parser errors kept
