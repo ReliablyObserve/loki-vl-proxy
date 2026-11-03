@@ -39,10 +39,50 @@ jobs:
         with:
           persist-credentials: false
 
+      # setup-go's own cache is saved once per go.sum and never updated, so it
+      # cannot carry test results. The caches below are restored and saved here.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        id: setup-go
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: false
+
+      # Go keys a cached test result on the modification time of each file the
+      # test opened in the module, and a checkout stamps every file "now", so a
+      # test that reads repository files (internal/proxy reads the registry, the
+      # compatibility matrix and the scripts) would never replay. Derive each
+      # tracked file's time from its content instead: same content, same time.
+      - name: Make file times a function of content (Go test cache key)
+        run: go run ./test/testcache/cmd/normalize-mtimes
+
+      - name: Locate the Go caches
+        id: gopaths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] downloaded modules, verified against go.sum; nothing from this job is published
+        with:
+          path: ${{ steps.gopaths.outputs.mod }}
+          key: gomod-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      # GOCACHE holds the compiled packages and Go's test results. A result is
+      # replayed only while the package's test binary, flags, the environment
+      # variables it read and the files it opened inside the module are the
+      # same, so a restored entry for changed code is a miss, never a stale pass.
+      # The key is the Go version, OS/arch, go.sum, this file and a hash of the
+      # sources: an exact hit means nothing changed, so nothing is saved; a miss
+      # restores the closest earlier cache. Bump `v1` to drop every cached result.
+      - name: Restore the Go build and test-result cache
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: ${{ steps.gopaths.outputs.build }}
+          key: gotest-v1-test-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('.github/workflows/ci.yaml') }}-${{ hashFiles('**/*.go', '**/go.mod', 'conformance/**', 'test/**', 'scripts/**') }}
+          restore-keys: |
+            gotest-v1-test-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('.github/workflows/ci.yaml') }}-
+            gotest-v1-test-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-
+            gotest-v1-test-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-
 
       - name: Build
         run: go build ./...
@@ -64,7 +104,9 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          go test ./... -count=1 -race -timeout=50m -coverprofile=coverage.out -json \
+          # Go's test cache replays unchanged packages (no -count=1); the few that
+          # read host state outside the module run uncached. See go_test_unit.sh.
+          scripts/ci/go_test_unit.sh \
             | tee unit-results-full.json \
             | jq -rR --unbuffered 'fromjson? | select(.Action == "output" and .Test == null) | .Output | rtrimstr("\n") | select(. != "PASS" and (startswith("coverage:") | not))' \
             || status=$?
@@ -91,13 +133,31 @@ jobs:
           path: unit-results-full.json
           if-no-files-found: ignore
 
+      - name: Go test cache summary
+        if: always()
+        env:
+          RESTORED_FROM: ${{ steps.gocache.outputs.cache-matched-key }}
+          GOCACHE_DIR: ${{ steps.gopaths.outputs.build }}
+        run: |
+          pkgs=""
+          if [ -f unit-results-full.json ]; then
+            pkgs="$(jq -r 'select(.Action == "output" and .Test == null and (.Output | test("^(ok|FAIL)\\s"))) | .Output' unit-results-full.json)"
+          fi
+          {
+            echo "### Go test cache"
+            echo
+            echo "- restored from: \`${RESTORED_FROM:-nothing (cold)}\`"
+            echo "- packages replayed from the cache: $(grep -c '(cached)' <<<"$pkgs" || true) of $(grep -c . <<<"$pkgs" || true)"
+            echo "- GOCACHE size: $(du -sh "$GOCACHE_DIR" | cut -f1)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
 
       - name: Cache package coverage guard
         run: |
           set -euo pipefail
-          go test ./internal/cache -coverprofile=coverage-cache.out -count=1 >/dev/null
+          go test ./internal/cache -coverprofile=coverage-cache.out >/dev/null
           cache_cov="$(go tool cover -func=coverage-cache.out | awk 'END {gsub("%","",$3); print $3}')"
           echo "internal/cache coverage: ${cache_cov}%"
           awk -v cov="${cache_cov}" 'BEGIN {
@@ -115,6 +175,16 @@ jobs:
           path: |
             coverage.out
             coverage-cache.out
+
+      # After the tests, so the saved cache holds this run's results. It also
+      # runs when a test failed (a failed result is never cached, the passing
+      # packages are) and not when the run was cancelled.
+      - name: Save the Go build and test-result cache
+        if: ${{ (success() || failure()) && steps.gocache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] compiled packages and test results keyed on their inputs; nothing from this job is published
+        with:
+          path: ${{ steps.gopaths.outputs.build }}
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
 
       - name: Record unit evidence source
         if: always()
@@ -315,9 +385,45 @@ jobs:
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        id: setup-go
         with:
           go-version: "1.27.3"
-          cache: true
+          cache: false
+
+      # Go keys a cached test result on the modification time of each file the
+      # test opened in the module, and a checkout stamps every file "now", so a
+      # test that reads repository files (internal/proxy reads the registry, the
+      # compatibility matrix and the scripts) would never replay. Derive each
+      # tracked file's time from its content instead: same content, same time.
+      - name: Make file times a function of content (Go test cache key)
+        run: go run ./test/testcache/cmd/normalize-mtimes
+
+      - name: Locate the Go caches
+        id: gopaths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] downloaded modules, verified against go.sum; nothing from this job is published
+        with:
+          path: ${{ steps.gopaths.outputs.mod }}
+          key: gomod-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      # Same cache design as the `test` job: Go replays a shard's result only
+      # while the test binary, its flags (the -run list of the shard included),
+      # the environment variables it read and the files it opened inside the
+      # module are the same. One cache per shard, because a shard's results are
+      # in the cache that shard saved.
+      - name: Restore the Go build and test-result cache
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: ${{ steps.gopaths.outputs.build }}
+          key: gotest-v1-race-${{ matrix.shard }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('.github/workflows/ci.yaml') }}-${{ hashFiles('**/*.go', '**/go.mod', 'conformance/**', 'test/**', 'scripts/**') }}
+          restore-keys: |
+            gotest-v1-race-${{ matrix.shard }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('.github/workflows/ci.yaml') }}-
+            gotest-v1-race-${{ matrix.shard }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}-
+            gotest-v1-race-${{ matrix.shard }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.setup-go.outputs.go-version }}-
 
       - name: Select this shard's internal/proxy tests
         if: matrix.shard != 'other'
@@ -340,19 +446,19 @@ jobs:
         if: matrix.shard != 'other'
         run: |
           set -euo pipefail
-          go test -race -count=1 -timeout=12m -run "$(cat shard-run.txt)" ./internal/proxy/
+          go test -race -timeout=12m -run "$(cat shard-run.txt)" ./internal/proxy/
 
       - name: Race-detector tests (cache, middleware, observability)
         if: matrix.shard == 'other'
         run: |
           set -euo pipefail
-          go test -race -count=1 -timeout=8m \
+          go test -race -timeout=8m \
             ./internal/cache/... \
             ./internal/middleware/... \
             ./internal/observability/...
           # internal/proxy subpackages, if any
           mapfile -t pkgs < <(go list ./internal/proxy/... | grep -v '/internal/proxy$' || true)
-          if [ "${#pkgs[@]}" -gt 0 ]; then go test -race -count=1 -timeout=8m "${pkgs[@]}"; fi
+          if [ "${#pkgs[@]}" -gt 0 ]; then go test -race -timeout=8m "${pkgs[@]}"; fi
 
       - name: Concurrent regression tests (verbose, race)
         if: matrix.shard == 'other'
@@ -362,6 +468,15 @@ jobs:
           go test -race -count=1 -v -timeout=2m \
             -run '^Test(SnapshotEntriesForPatterns_|RequestSampler_ConcurrentShouldLogIsRaceFree|AsyncHandler_|DetectFieldSummariesStream_Concurrent|HandleSeries_Concurrent)' \
             ./internal/proxy/ ./internal/observability/
+
+      # After the tests, so the saved cache holds this run's results; also after
+      # a failed test (only passing results are cached), not after a cancel.
+      - name: Save the Go build and test-result cache
+        if: ${{ (success() || failure()) && steps.gocache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] compiled packages and test results keyed on their inputs; nothing from this job is published
+        with:
+          path: ${{ steps.gopaths.outputs.build }}
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
 
   race-stress:
     # Aggregate gate keeping the original `race-stress` check name stable for
