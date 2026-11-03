@@ -1,0 +1,71 @@
+# Fuzz targets the CI `fuzz-smoke` job runs, and the ones it does not.
+#
+# scripts/ci/fuzz_smoke.py reads this file: it shards the `smoke` rows across the
+# `fuzz-smoke-shard` matrix (row N goes to shard N mod shards, so shards differ by
+# at most one target), runs each as `go test ./<package> -run '^$' -fuzz='^<target>$'
+# -fuzztime=<fuzztime>`, and fails the check when a Fuzz function in the tree is in
+# neither list or a row names a function that no longer exists.
+#
+# Columns (tab separated): status, package, target, fuzztime, timeout ("-" = Go's
+# default), description.
+#   smoke        run on every CI run.
+#   unscheduled  exists in the tree and runs only as a seed-corpus test; not fuzzed in
+#                CI. This list may only shrink (the script caps it).
+smoke	internal/proxy	FuzzNormalizeMetadataPairsFromJSON	12s	-	structured metadata normalization
+smoke	internal/proxy	FuzzMergeLokiQueryResponsesStructuredMetadataContract	12s	-	merged categorized stream contract
+smoke	internal/proxy	FuzzParseLokiDuration	12s	-	parse Loki duration
+smoke	internal/proxy	FuzzParseTimestamp	12s	-	parse timestamp
+smoke	internal/proxy	FuzzSeriesKeyFromMetric	20s	60s	series key from metric
+smoke	internal/proxy	FuzzParseValueToFloat	12s	-	parse value to float
+smoke	internal/proxy	FuzzLokiErrorType	12s	-	Loki error type
+smoke	internal/proxy	FuzzFormatVLStep	12s	-	format VL step
+smoke	internal/proxy	FuzzNormalizeMetadataPairs	12s	-	normalize metadata pairs
+smoke	internal/proxy	FuzzCombineBinaryMetricResultsScalarPath	12s	-	combine binary metric results scalar path
+smoke	internal/proxy	FuzzParseOriginalRangeMetricSpec	12s	-	parse original range metric spec
+smoke	internal/proxy	FuzzParseLegacyRulesPath	20s	-	parse legacy rules path
+smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
+smoke	internal/proxy	FuzzExtractLogPatternsFromWindowEntries	12s	-	extract log patterns from window entries
+smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate
+smoke	internal/proxy	FuzzStatsJSONSeriesTransformDifferential	12s	-	stats series JSON compatibility
+smoke	internal/proxy	FuzzStatsExtentOwnedEncoding	12s	-	owned stats extent encoding
+smoke	internal/proxy	FuzzLokiClientError	12s	-	Loki client error mapping
+smoke	internal/proxy	FuzzErrorBodyShapes	12s	-	Loki error body shapes
+smoke	internal/proxy	FuzzProxyLifecycleNoGoroutineLeak	12s	-	proxy lifecycle leaves no goroutines
+smoke	internal/proxy	FuzzTopKPerStep	20s	60s	topk and bottomk per step
+smoke	internal/proxy	FuzzQueryStepsRoundTrip	12s	-	settled steps parse, merge and write-back
+smoke	internal/proxy	FuzzSlidingWithoutCut	12s	-	sliding sum without cut vs per-stream fold
+smoke	internal/proxy	FuzzQuantileSlider	12s	-	sliding quantile vs window sort
+smoke	internal/proxy	FuzzSortQuantileSamples	12s	-	quantile counts time sort
+smoke	internal/proxy	FuzzRateCounterOneSample	12s	-	rate_counter one-sample proof vs Loki
+smoke	internal/proxy	FuzzFoldBinaryAggregation	12s	-	fold an aggregation over a binary
+smoke	internal/proxy	FuzzParserProbeLeavesBinaries	12s	-	parser probe leaves a binary to its operands
+smoke	internal/proxy	FuzzIndexStatsWindowLikeLoki	12s	-	index/stats window like Loki
+smoke	internal/proxy	FuzzAlignQueryRangeToStep	12s	-	query_range step alignment
+smoke	internal/proxy	FuzzRawQueryWithBounds	12s	-	query_range step alignment query string
+smoke	internal/proxy	FuzzSubSecondStepAndTimestamps	12s	-	sub-second step and timestamps like Loki
+smoke	internal/translator	FuzzTranslateLogQL	12s	-	translate LogQL
+smoke	internal/translator	FuzzParseBinaryMetricExpr	12s	-	parse binary metric expr
+smoke	internal/translator	FuzzIsScalar	12s	-	is scalar
+smoke	internal/translator	FuzzTranslateWithStreamFields	20s	60s	translate with stream fields
+smoke	internal/translator	FuzzSelectorRegexpFilter	12s	-	selector and label-filter regexp anchoring
+smoke	internal/translator	FuzzBinaryExpressions	12s	-	binary expressions
+smoke	internal/translator	FuzzSanitizeLabelName	12s	-	sanitize label name
+smoke	internal/cache	FuzzHashRingGet	12s	-	hash ring get
+smoke	internal/cache	FuzzCacheGetSet	12s	-	cache get/set
+smoke	internal/rulesmigrate	FuzzConvertWithOptions	12s	-	rules migrate convert
+unscheduled	internal/cache	FuzzDiskRecordDecode	-	-	seed corpus only
+unscheduled	internal/cache	FuzzPeerCapacitySequences	-	-	seed corpus only
+unscheduled	internal/cache	FuzzPeerTTLMillisCompatibility	-	-	seed corpus only
+unscheduled	internal/logql	FuzzDottedNameError	-	-	seed corpus only
+unscheduled	internal/logql	FuzzParse	-	-	seed corpus only
+unscheduled	internal/logsql	FuzzCapabilitiesFor	-	-	seed corpus only
+unscheduled	internal/logsql	FuzzFieldFilterString	-	-	seed corpus only
+unscheduled	internal/logsql	FuzzParseRoundTrip	-	-	seed corpus only
+unscheduled	internal/logsql	FuzzQueryString	-	-	seed corpus only
+unscheduled	internal/proxy	FuzzMergeLabelsIntoCache	-	-	seed corpus only
+unscheduled	internal/proxy	FuzzTwiceGateIsASupersetOfTheKeyPatterns	-	-	seed corpus only
+unscheduled	internal/translator	FuzzKeywordGateIsASupersetOfTheRegexp	-	-	seed corpus only
+unscheduled	internal/translator	FuzzParseDropConditions	-	-	seed corpus only
+unscheduled	internal/translator	FuzzParseDropKeepConsistency	-	-	seed corpus only
+unscheduled	internal/translator	FuzzRegexpMatcherEscaping	-	-	seed corpus only
+unscheduled	internal/translator	FuzzStoredLevelCopyFilter	-	-	seed corpus only
