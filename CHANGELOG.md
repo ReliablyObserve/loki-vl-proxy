@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match. A filter after a parser, `drop`, `keep` or `label_format` stage is
   unchanged.
 
+- Stamp the last `/loki/api/v1/index/volume` and `index/volume_range` sample
+  at the request end rounded up to the millisecond, as Loki does
+  (`util.RoundToMilliseconds`). The proxy truncated the end, so an end with
+  sub-millisecond nanoseconds was stamped one millisecond earlier than in Loki.
+
 ### Performance
 
 - Translate and relabel a large Logs Drilldown breakdown (range equal to the

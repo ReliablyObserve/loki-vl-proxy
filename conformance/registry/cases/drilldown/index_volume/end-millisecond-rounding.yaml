@@ -1,0 +1,41 @@
+id: drilldown/index_volume/end-millisecond-rounding
+title: The last index volume sample is stamped at the end rounded up to the millisecond (fixed)
+pending: true
+proves:
+  - loki_api_v1_index_volume
+  - loki_api_v1_index_volume_range
+consumer: drilldown
+why: |
+  Loki turns the request bounds into milliseconds with util.RoundToMilliseconds
+  (v3.7.9 pkg/util/conv.go:29-39, called for VolumeOp and VolumeRangeOp in
+  pkg/querier/queryrange/codec.go): the start is truncated and the end goes up
+  to the next millisecond unless it is whole. The instant volume sample and the
+  last volume_range sample carry that end. The proxy truncated the end, so an
+  end with nanoseconds (1793740438805999999) was stamped one millisecond
+  earlier than Loki (…438.805 against …438.806).
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{service_name=~".+"}'
+    targetLabels: service_name
+    aggregateBy: series
+    limit: "5000"
+    start: '1789450500000000000'
+    end: '1789451580805999999'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: structural
+  fields: [status, data.resultType, 'data.result[].metric', 'data.result[].value[0]']
+  expect: |
+    Every sample at 1789451580.806, as Loki stamps it.
+gap:
+  status: fixed
+  fixed_by: '#1048'
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/volume.go volumeBucketMillis'
+  loki: 'pkg/util/conv.go RoundToMilliseconds rounds the end up to the millisecond'
+  proxy: 'the last sample is stamped at the end rounded up to the millisecond'
+  planned_test: 'TestVolume_LastSampleIsTheEndRoundedUpToTheMillisecond, FuzzVolumeEndMillisecondsLikeLoki (internal/proxy); TestDrilldown_IndexVolumeSegmentsMatchLokiOnRepeat (test/e2e-compat, drilldown) sends nanosecond ends'

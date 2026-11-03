@@ -488,9 +488,14 @@ func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQu
 
 // volumeBucketMillis returns the Loki timestamp of the bucket VictoriaLogs
 // labels with its start: the bucket end minus 1ms, or the request end for the
-// last bucket (pkg/util.ForInterval with endTimeInclusive).
+// last bucket (pkg/util.ForInterval with endTimeInclusive). Loki rounds the
+// request end up to the millisecond (pkg/util.RoundToMilliseconds), so an end
+// of 1.0000001s is stamped 1.001s.
 func volumeBucketMillis(req volumeRequest, bucketStartSeconds float64) int64 {
 	endMs := req.endNs / int64(time.Millisecond)
+	if req.endNs%int64(time.Millisecond) != 0 {
+		endMs++
+	}
 	if req.stepNs <= 0 {
 		return endMs
 	}
