@@ -58,7 +58,7 @@ WORKFLOW_LANES = {
 }
 LANES = ("product", "stack", "perf")
 ALWAYS_ON = ("lint", "helm")
-AGGREGATORS = ("e2e-compat", "race-stress")
+AGGREGATORS = ("e2e-compat", "race-stress", "fuzz-smoke")
 STATUS_FUNCTIONS = re.compile(r"\b(always|cancelled|failure)\(\)")
 
 JOBS_KEY = re.compile(r"^jobs:\s*$")
