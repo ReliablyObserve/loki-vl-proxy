@@ -389,7 +389,7 @@ func volumeStatsQuery(req volumeRequest, logsqlQuery string, plan volumePlan, op
 			b.WriteString(" ")
 			b.WriteString(plan.serviceNameDerivation)
 		}
-		if plan.unpackLevels && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+		if plan.unpackLevels && !unpacksMessage(logsqlQuery) {
 			// Unpack only the level fields and keep existing values: a full
 			// unpack could replace _msg (changing its length) or _time.
 			b.WriteString(volumeLevelUnpackPipes)

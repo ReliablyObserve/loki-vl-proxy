@@ -3,6 +3,7 @@ package translator
 import (
 	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"strconv"
 	"strings"
@@ -553,7 +554,9 @@ func newDetectedLevelMatcher(op, value string) (detectedLevelMatcher, error) {
 	switch op {
 	case "=", "!=":
 	case "=~", "!~":
-		re, err := regexp.Compile("^(?:" + value + ")$")
+		// Loki's label filter regexp, simplified as Loki does
+		// (lokiLabelFilterPattern): `=~""` keeps every line.
+		re, err := regexp.Compile(anchorLabelFilterPattern(lokiLabelFilterPattern(value)))
 		if err != nil {
 			return m, fmt.Errorf("invalid detected_level regexp %q: %w", value, err)
 		}
@@ -786,93 +789,257 @@ func (m detectedLevelMatcher) storedFilter(existingFields []string) string {
 type DetectedLevelFilterPlan struct {
 	// Never is set when the matcher accepts no row (Loki: `detected_level=""`).
 	Never bool
-	// Prefilter is an index-friendly filter to AND with the base query, or "".
+	// Prefilter is a filter to AND with the base query, or "": a superset of
+	// the matching rows that VictoriaLogs evaluates before the chain, so the
+	// chain only reads the rows that can match.
 	Prefilter string
-	// Pipes is the body chain followed by the final filter, starting with
-	// "| ". It must run before any user parser stage. Matching rows keep the
-	// body value in __dl.
+	// Pipes is the chain followed by the final filter, starting with "| ", or
+	// "" when every row matches. It must run before any user parser stage.
 	Pipes string
 }
 
-// BuildDetectedLevelFilter plans `| detected_level <op> "<value>"` as
-// stored OR (no stored level AND body value), negated for != and !~.
-func BuildDetectedLevelFilter(op, value string, existingFields []string) (DetectedLevelFilterPlan, error) {
+// DetectedLevelFilterMode selects where BuildDetectedLevelFilter keeps the
+// value it filters on.
+type DetectedLevelFilterMode int
+
+const (
+	// DetectedLevelFilterLogs computes the value into the scratch field __dl,
+	// filters on it and deletes every scratch field again, so the rows of a
+	// log query keep the fields VictoriaLogs stored.
+	DetectedLevelFilterLogs DetectedLevelFilterMode = iota
+	// DetectedLevelFilterMetric writes the value into detected_level with the
+	// grouping chain (DetectedLevelChainGrouping over every field Loki reads)
+	// and filters on it: the one chain of a stats query, which a grouping by
+	// detected_level reuses and the proxy narrows to the fields and keys of
+	// the window. The filter keeps the rows the proxy's witness flags
+	// (LevelWitnessField): their level the narrowed chain may have misread,
+	// and the proxy sends the request again with the full chain for them.
+	DetectedLevelFilterMetric
+	// DetectedLevelFilterStored reads the stored level fields alone, a row
+	// without one being unknown: the proxy's derivation with
+	// -detected-level-body-scan=false. It needs no chain.
+	DetectedLevelFilterStored
+)
+
+// LevelWitnessField is the field the proxy sets on a row holding a level field
+// or body key a narrowed chain does not read.
+const LevelWitnessField = "__lw"
+
+// The closing pipes of the chain: DetectedLevelChainGroup keeps __dl, every
+// other mode deletes it too. The log form filters between the two, so its
+// pipes end like every other chain, which the proxy's query heuristics skip.
+const (
+	groupChainDelete = " | delete __dl_*, __j_*, __l_*"
+	levelChainEnd    = " | delete __dl, __dl_*, __j_*, __l_*"
+)
+
+// BuildDetectedLevelFilter plans `| detected_level <op> "<value>"`: the rows
+// whose ingest-time value (Loki v3.7.9 pkg/distributor/field_detection.go
+// extractLogLevel: the stream labels, then structured metadata, then the OTLP
+// severity_number, then the line's JSON or logfmt level key, then its first
+// bounded keyword, else unknown) the matcher accepts. Every row has a non-empty
+// value, so `=""` matches no row and `!=""` every row.
+//
+// The value is the chain's (BuildDetectedLevelChain); the filter compares it
+// with Loki's label filter semantics. The prefilter only narrows the rows the
+// chain reads: the rows a stored level decides for an accepted value, and the
+// rows without one whose line can give an accepted value.
+func BuildDetectedLevelFilter(op, value string, existingFields []string, mode DetectedLevelFilterMode) (DetectedLevelFilterPlan, error) {
 	m, err := newDetectedLevelMatcher(op, value)
 	if err != nil {
 		return DetectedLevelFilterPlan{}, err
 	}
-	// Every row carries a non-empty value.
 	if m.re == nil && value == "" {
-		if m.negated() {
-			return DetectedLevelFilterPlan{}, nil
-		}
-		return DetectedLevelFilterPlan{Never: true}, nil
+		return detectedLevelFilterAll(!m.negated()), nil
 	}
 	stored := m.storedFilter(existingFields)
-	has := BuildHasLevelFilter(existingFields)
 	targets := m.canonicalTargets()
-
-	body := ""
-	if len(targets) > 0 {
-		quoted := make([]string, len(targets))
-		for i, t := range targets {
-			quoted[i] = logsql.QuoteValue(t)
-		}
-		body = "__dl:in(" + strings.Join(quoted, ", ") + ")"
-		if has != "" {
-			body = "!(" + has + ") " + body
-		}
+	if mode == DetectedLevelFilterStored {
+		return storedOnlyLevelFilter(m, stored, BuildHasLevelFilter(existingFields), slices.Contains(targets, "unknown")), nil
 	}
-	var positive string
-	switch {
-	case stored != "" && body != "":
-		positive = "(" + stored + " OR (" + body + "))"
-	case stored != "":
-		positive = stored
-	case body != "":
-		positive = "(" + body + ")"
-	default:
-		if !m.negated() {
-			return DetectedLevelFilterPlan{Never: true}, nil
-		}
-		return DetectedLevelFilterPlan{}, nil
+	if stored == "" && len(targets) == 0 {
+		// Neither a stored word nor a derived value can match.
+		return detectedLevelFilterAll(!m.negated()), nil
 	}
-
 	plan := DetectedLevelFilterPlan{}
-	final := positive
-	if m.negated() {
-		final = "!" + positive
-	} else {
-		plan.Prefilter = detectedLevelPrefilter(targets, has, stored != "")
+	if !m.negated() {
+		plan.Prefilter = m.prefilter(existingFields, targets)
 	}
-	plan.Pipes = BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup, nil) + " | filter " + final
+	if mode == DetectedLevelFilterMetric {
+		// The prefilter is a pipe of its own right before the chain: the
+		// proxy probes which level fields a window holds over the rows before
+		// it (DetectedLevelProbeBase), and the same probe then serves every
+		// filter and grouping on the selector.
+		pre := ""
+		if plan.Prefilter != "" {
+			pre = "| filter " + plan.Prefilter + " "
+			plan.Prefilter = ""
+		}
+		plan.Pipes = pre + BuildDetectedLevelChain(existingFields, DetectedLevelChainGrouping, nil) +
+			" | filter (" + m.matchFilter(detectedLevelLabelName) + ") OR " + LevelWitnessField + ":*"
+		return plan, nil
+	}
+	plan.Pipes = strings.TrimSuffix(BuildDetectedLevelChain(existingFields, DetectedLevelChainGroup, nil), groupChainDelete) +
+		" | filter " + m.matchFilter("__dl") + levelChainEnd
 	return plan, nil
 }
 
-// detectedLevelPrefilter returns a word filter that every matching row passes:
-// rows with a stored level, or bodies holding a spelling of a target. Targets
-// that include unknown cannot be prefiltered.
-func detectedLevelPrefilter(targets []string, has string, storedCanMatch bool) string {
-	var words []string
-	for _, t := range targets {
-		if t == "unknown" {
-			return ""
+// DetectedLevelProbeBase returns the rows a probe of the level fields of base
+// may read: base without its last pipe when that is a filter pipe (a filter
+// never adds a field, so the rows before it hold every field the rows after it
+// hold). The prefilter of a metric detected_level filter is such a pipe; the
+// probe of the selector alone then serves every filter on it.
+func DetectedLevelProbeBase(base string) string {
+	last := -1
+	for offset := 0; offset < len(base); {
+		next := firstTopLevelPipe(base[offset:])
+		if next < 0 {
+			break
 		}
-		for _, s := range detectedLevelSpellings {
-			if s.level == t {
-				words = append(words, s.spellings...)
-			}
+		last = offset + next
+		offset = last + 1
+	}
+	if last < 0 || !strings.HasPrefix(base[last:], "| filter ") {
+		return base
+	}
+	return strings.TrimSpace(base[:last])
+}
+
+// storedOnlyLevelFilter is the plan of DetectedLevelFilterStored: the rows a
+// stored level field decides for an accepted value (stored), and the rows
+// without one when unknown is accepted, negated for != and !~.
+func storedOnlyLevelFilter(m detectedLevelMatcher, stored, has string, unknown bool) DetectedLevelFilterPlan {
+	positive := stored
+	if unknown {
+		if has == "" {
+			return detectedLevelFilterAll(m.negated()) // every row is unknown
+		}
+		positive = joinOr(stored, "!("+has+")")
+	}
+	if positive == "" {
+		return detectedLevelFilterAll(!m.negated())
+	}
+	if m.negated() {
+		return DetectedLevelFilterPlan{Prefilter: "!(" + positive + ")"}
+	}
+	return DetectedLevelFilterPlan{Prefilter: "(" + positive + ")"}
+}
+
+// detectedLevelFilterAll is the plan of a matcher that accepts every row
+// (none when never is set).
+func detectedLevelFilterAll(never bool) DetectedLevelFilterPlan {
+	return DetectedLevelFilterPlan{Never: never}
+}
+
+// matchFilter is the filter the matcher puts on field, which holds the
+// derived value: Loki's label filter, an exact comparison or a regexp over the
+// whole value (labelFilterRegexpFieldFilter, as every label filter).
+func (m detectedLevelMatcher) matchFilter(field string) string {
+	if m.re != nil {
+		return labelFilterRegexpFieldFilter(field, m.value, m.negated())
+	}
+	return buildFieldFilterStr(field, logsql.FieldOpExact, m.value, m.negated())
+}
+
+// prefilter returns a filter every row the positive matcher accepts passes,
+// built from word, exact and presence filters only: VictoriaLogs compiles a
+// regexp filter for every request, and a regexp per stored field cost more
+// than the rows it saved. A row passes when
+//   - a stored level text field holds a spelling of a target, "unknown" when
+//     unknown is one, or a raw word the matcher accepts (any value when the
+//     matcher is a regexp whose words cannot be listed): the stored value
+//     decides, and it is one of these or no match;
+//   - it holds severity_number, or VictoriaLogs' pre-v1.50 severity name
+//     without a number: the chain maps the number;
+//   - it has no stored level and its line holds a spelling of a target as a
+//     word (VictoriaLogs' token index, case-insensitive), or unknown is a
+//     target: the line decides, from a level key's value or a keyword, both of
+//     which are such words.
+//
+// It returns "" when it would not narrow the rows.
+func (m detectedLevelMatcher) prefilter(existingFields, targets []string) string {
+	stored := DetectedLevelStoredFields(existingFields)
+	unknown := slices.Contains(targets, "unknown")
+	var words []string
+	for _, s := range detectedLevelSpellings {
+		if slices.Contains(targets, s.level) {
+			words = append(words, s.spellings...)
 		}
 	}
-	if len(words) == 0 {
+	storedWords := words
+	if unknown {
+		storedWords = append(slices.Clone(words), "unknown")
+	}
+	raws, anyRaw := m.rawStoredValues()
+	var alts []string
+	for _, f := range levelTextFields(stored) {
+		name := logsqlFieldName(f)
+		if anyRaw {
+			alts = append(alts, name+":*")
+			continue
+		}
+		if len(storedWords) > 0 {
+			alts = append(alts, name+":"+wordAlternatives(storedWords))
+		}
+		for _, raw := range raws {
+			alts = append(alts, name+":="+logsql.QuoteValue(raw))
+		}
+	}
+	if len(targets) > 0 {
+		if hasField(stored, "severity_number") {
+			alts = append(alts, "severity_number:*")
+		}
+		if hasField(stored, "severity") && !anyRaw {
+			alts = append(alts, "(severity:* -severity_number:*)")
+		}
+		var body []string
+		if has := BuildHasLevelFilter(existingFields); has != "" {
+			body = append(body, "!("+has+")")
+		}
+		if !unknown {
+			body = append(body, "_msg:"+wordAlternatives(words))
+		}
+		if len(body) == 0 {
+			return "" // no stored level field and unknown accepted: every row
+		}
+		alts = append(alts, "("+strings.Join(body, " ")+")")
+	}
+	if len(alts) == 0 {
 		return ""
 	}
-	alts := make([]string, 0, len(words)+1)
-	if has != "" && storedCanMatch {
-		alts = append(alts, "("+has+")")
+	return "(" + strings.Join(alts, " OR ") + ")"
+}
+
+// rawStoredValues returns the stored words the positive matcher accepts that
+// Loki keeps as they are (normalizeLogLevel returns a word it does not know
+// unchanged): an equality on such a word, or the literal alternatives of a
+// regexp. anyRaw is set when a regexp's words cannot be listed.
+func (m detectedLevelMatcher) rawStoredValues() (raws []string, anyRaw bool) {
+	values := []string{m.value}
+	if m.re != nil {
+		reg, err := syntax.Parse(lokiLabelFilterPattern(m.value), syntax.Perl)
+		if err != nil {
+			return nil, true
+		}
+		var ok bool
+		if values, ok = literalSet(reg.Simplify(), maxExactAlternatives); !ok {
+			return nil, true
+		}
 	}
-	for _, w := range words {
-		alts = append(alts, "i("+w+")")
+	for _, v := range values {
+		if v != "" && v != "unknown" && !isKnownLevelSpelling(v) {
+			raws = append(raws, v)
+		}
+	}
+	return raws, false
+}
+
+// wordAlternatives is `(i(w1) OR i(w2) ...)`: any of the words, as a word,
+// in any case.
+func wordAlternatives(words []string) string {
+	alts := make([]string, len(words))
+	for i, w := range words {
+		alts[i] = "i(" + w + ")"
 	}
 	return "(" + strings.Join(alts, " OR ") + ")"
 }

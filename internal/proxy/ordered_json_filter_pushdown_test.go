@@ -170,12 +170,16 @@ func splitLogsQLPipes(query string) []string {
 // and its probes emit with VictoriaLogs semantics over a row's values:
 // `field:="v"`, `field:~"re"`, `field:*`, `field:*"text"*`, `field:"phrase"` and `field:word`
 // (a word delimited by non-word characters; letters, digits and underscores
-// are word characters), `-`/`!` negation, parentheses, implicit and, `or`.
+// are word characters), `i(word)` (the word in any case) and
+// `field:(...)` (the filters inside read field), `-`/`!` negation,
+// parentheses, implicit and, `or`.
 type fakeLogsQLFilter struct {
 	t    testing.TB
 	src  string
 	pos  int
 	vals map[string]string
+	// field is the field a filter without a name reads ("" means _msg).
+	field string
 }
 
 func (f *fakeLogsQLFilter) skipSpace() {
@@ -227,6 +231,21 @@ func (f *fakeLogsQLFilter) factor() bool {
 		}
 		f.pos++
 		return result
+	}
+	if f.peek("i(") {
+		// i(word): the word as a word of the field, in any case.
+		f.pos += len("i(")
+		word := f.quoted()
+		if !f.peek(")") {
+			f.t.Errorf("fake VL: expected ) closing i( at %d in %q", f.pos, f.src)
+			return false
+		}
+		f.pos++
+		field := f.field
+		if field == "" {
+			field = "_msg"
+		}
+		return vlPhrasePos(strings.ToLower(f.vals[field]), strings.ToLower(word)) >= 0
 	}
 	return f.fieldFilter()
 }
@@ -326,6 +345,19 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	}
 	value := f.vals[name]
 	switch {
+	case strings.HasPrefix(f.src[f.pos:], "("):
+		// field:(filters): every filter inside without a name reads field.
+		f.pos++
+		outer := f.field
+		f.field = name
+		result := f.expr()
+		f.field = outer
+		if !f.peek(")") {
+			f.t.Errorf("fake VL: expected ) closing %s:( at %d in %q", name, f.pos, f.src)
+			return false
+		}
+		f.pos++
+		return result
 	case strings.HasPrefix(f.src[f.pos:], `*"`):
 		// A substring filter, field:*"text"*.
 		f.pos++
@@ -1944,7 +1976,9 @@ func TestOrderedJSONDetectedLevelFilterBeforeParserWithoutBodyScan(t *testing.T)
 		rawRows  bool
 		unpacked string
 	}{
-		{`sum by (export_ms) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, false, "| unpack_logfmt | filter level:=\"info\""},
+		// The stored level fields alone decide, as the proxy derives the label
+		// without the body scan: a filter of the query, no pipe.
+		{`sum by (export_ms) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, false, "detected_level:\"\" level:~`(?i)^(info|inf|information)$`"},
 		{`sum by (export_ms, detected_level) (count_over_time({app="api"} | detected_level="info" | json | drop __error__, __error_details__ | export_ms!="" [1m]))`, true, ""},
 	} {
 		t.Run(tc.query, func(t *testing.T) {

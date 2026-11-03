@@ -451,6 +451,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		p.configMu.RUnlock()
 
 		caps := p.logsqlCapabilities()
+		caps.NoDetectedLevelBodyScan = !p.detectedLevelBodyScan
 
 		translate := translator.TranslateLogQLWithCapabilities
 		if keepLine {

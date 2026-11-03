@@ -710,6 +710,16 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	// Loki adds a non-empty detected_level at ingest. Bare drop/keep can
 	// change whether later presence filters see it.
 	detectedPresence := detectedLevelPresent
+	// levelInputsIntact holds while every stage so far left the line and the
+	// stored fields as VictoriaLogs stored them (label filters, a drop of the
+	// parser error labels): a detected_level filter then reads Loki's
+	// ingest-time value from them (detectedLevelStageFilter).
+	levelInputsIntact := true
+	// pendingLevelPipes hold the pipes of such a filter until the next pipe
+	// stage: the line filters that follow it in the query stay filters of the
+	// query, which VictoriaLogs evaluates before every pipe (they commute
+	// with the level filter, which reads no label a line filter sets).
+	var pendingLevelPipes []string
 	// afterKeyParser is set once a json or logfmt parser ran: label filters after
 	// it name sanitized keys (see parsedKeyVariants).
 	afterKeyParser := false
@@ -909,6 +919,8 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 
 		// Skip the pipe character for pipe stages
 		remaining = strings.TrimSpace(remaining[1:])
+		parts = append(parts, pendingLevelPipes...)
+		pendingLevelPipes = nil
 
 		// Determine the pipeline stage type
 		stage, rest := extractPipelineStage(remaining)
@@ -1002,6 +1014,22 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return plain(label)
 			}
 		}
+		if levelInputsIntact {
+			if filter, ok := detectedLevelStageFilter(stage, metric, caps); ok {
+				for _, part := range filter {
+					switch {
+					case strings.HasPrefix(part, "|"):
+						pendingLevelPipes = append(pendingLevelPipes, part)
+					case len(parts) > 0 && strings.HasPrefix(strings.TrimSpace(parts[len(parts)-1]), "|"):
+						parts = append(parts, "| filter "+part) // a bare filter after a pipe is a pipe of its own
+					default:
+						parts = append(parts, part)
+					}
+				}
+				continue
+			}
+		}
+		levelInputsIntact = levelInputsIntact && (isLabelFilterStage(stage) || dropsOnlyErrorLabels(stage))
 		translated := translatePipelineStage(stage, stageLabelFn, caps)
 		if !metric {
 			if nonempty, ok := detectedLevelEmptyPresenceFilter(stage); ok && detectedPresence != detectedLevelUnknown {
@@ -1103,6 +1131,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			detectedPresence = nextDetectedLevelPresence(detectedPresence, stage)
 		}
 	}
+	parts = append(parts, pendingLevelPipes...)
 
 	if svCopied {
 		parts = append(parts, "| delete "+svScratch+"*")
@@ -3187,6 +3216,95 @@ func applyDetectedLevelGrouping(query string, existingFields []string) string {
 }
 
 const detectedLevelLabelName = "detected_level"
+
+// detectedLevelStageFilter renders a `detected_level <op> "<value>"` stage that
+// no parser, line rewrite or label stage precedes. Loki assigns the label at
+// ingest (pkg/distributor/field_detection.go extractLogLevel: the stream
+// labels first, then structured metadata, then the OTLP severity_number, then
+// the line's JSON or logfmt level key, then its first bounded level keyword,
+// else unknown), so the filter compares that value (BuildDetectedLevelFilter)
+// rather than one stored field: a stream label decides over a level key in the
+// line, and a line without any level is unknown. A metric query writes the
+// value into detected_level with the grouping chain, which a grouping by it
+// reuses; a log query reads it into a scratch field it deletes again; with
+// -detected-level-body-scan=false the stored level fields alone decide, as
+// the proxy derives the label then. ok is
+// false for any other stage, for an invalid regexp, and for a log query's
+// matcher on the empty value, which keep their rendering.
+func detectedLevelStageFilter(stage string, metric bool, caps logsql.Capabilities) (parts []string, ok bool) {
+	op, value, ok := detectedLevelStageMatcher(stage)
+	if !ok || (!metric && value == "" && (op == "=" || op == "!=")) {
+		// A log query reads `=""` and `!=""` from the presence of the label
+		// (detectedLevelEmptyPresenceFilter), which drop and keep change.
+		return nil, false
+	}
+	mode := DetectedLevelFilterLogs
+	switch {
+	case caps.NoDetectedLevelBodyScan:
+		mode = DetectedLevelFilterStored
+	case metric:
+		mode = DetectedLevelFilterMetric
+	}
+	plan, err := BuildDetectedLevelFilter(op, value, detectedLevelKnownFields(nil), mode)
+	if err != nil {
+		return nil, false
+	}
+	if plan.Never {
+		return []string{matchNoRows}, true
+	}
+	for _, part := range []string{plan.Prefilter, plan.Pipes} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return parts, true
+}
+
+// dropsOnlyErrorLabels reports whether stage is a drop of the parser error
+// labels alone, which leaves the level inputs as stored.
+func dropsOnlyErrorLabels(stage string) bool {
+	spec, ok := strings.CutPrefix(stage, "drop ")
+	if !ok {
+		return false
+	}
+	for _, item := range splitCSV(spec) {
+		if item = strings.TrimSpace(item); item != "__error__" && item != "__error_details__" {
+			return false
+		}
+	}
+	return true
+}
+
+// detectedLevelStageMatcher reads a label filter stage holding one matcher on
+// detected_level with a single quoted value.
+func detectedLevelStageMatcher(stage string) (op, value string, ok bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(stage), detectedLevelLabelName)
+	if !found {
+		return "", "", false
+	}
+	rest = strings.TrimSpace(rest)
+	for _, candidate := range []string{"!=", "=~", "!~", "==", "="} {
+		quoted, cut := strings.CutPrefix(rest, candidate)
+		if !cut {
+			continue
+		}
+		op = candidate
+		if candidate == "==" {
+			op = "="
+		}
+		quoted = strings.TrimSpace(quoted)
+		if len(quoted) >= 2 && quoted[0] == '`' && quoted[len(quoted)-1] == '`' && !strings.Contains(quoted[1:len(quoted)-1], "`") {
+			return op, quoted[1 : len(quoted)-1], true
+		}
+		if len(quoted) >= 2 && quoted[0] == '"' {
+			if decoded, err := strconv.Unquote(quoted); err == nil {
+				return op, decoded, true
+			}
+		}
+		return "", "", false
+	}
+	return "", "", false
+}
 
 // detectedLevelChainMarker is the first pipe of BuildDetectedLevelChain.
 const detectedLevelChainMarker = `| format if (detected_level:*) "<detected_level>" as __dl_s`
