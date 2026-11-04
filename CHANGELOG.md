@@ -9,39 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- Refresh a `| logfmt` metric query, such as Grafana Explore's logs volume
-  `sum by (level, detected_level) (count_over_time({...} | logfmt | drop __error__ [1m]))`,
-  without its parse-risk probe when the lines carry the grouped label as a
-  stored field. The probe's line-shape expression costs VictoriaLogs a fixed
-  40-80 ms to simplify on every request, whatever the window holds, so every
-  refresh of the volume waited for it (80 ms warm at 24h on the e2e stack
-  against Loki's 30 ms). A cheap candidate probe now finds the lines lacking
-  the label as a stored field that hold its key; every risky line is one. The
-  first check of a window sends the probe and, beside it, the candidate probe
-  over the window's newest minutes (`-parse-risk-probe-settle`), and remembers
-  whether a candidate line was seen; the parts checked later send only the
-  candidate probe when none was (and the probe when it finds one), or only the
-  probe when one was. Answers are unchanged. A refreshed 24h volume over
-  stream-label levels went from 45-52 ms to 4-5 ms against VictoriaLogs
-  v1.51.1; first requests, and selectors whose levels are only in the body,
-  keep their time.
-
-## [2.76.0] - 2026-11-04
-
-### Fixed
-
-- Answer `detected_fields` like Loki when the query matches no line: no
-  fields and no `limit`. The Logs Drilldown Logs tab with the error and warn
-  level pills (whose escaped pipe matches no level) listed fields the
-  service's other lines have, because the proxy fell back to VictoriaLogs'
-  field index of the bare stream selector whenever the query's own scan found
-  no field; Loki lists only the fields of the lines the query returns. An
-  empty answer also carried `limit: 1000`, which Loki sends only with fields.
-  The fallback now runs only after the proxy's Drilldown scan deadline, so an
-  empty answer no longer pays for the bare-selector lookup.
-
-### Performance
-
 - Translate and relabel a metric whose range equals the step in one parse
   when its answer is within the pooled parser's 1 MiB bound, such as
   `sum without (pod) (count_over_time({...}[1m]))` over 24h at Grafana's 60 s
@@ -57,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   earlier paths. With a fake VictoriaLogs serving kept buckets, this shape
   dropped from 10.4 ms to 5.9 ms per request (-43%), and its allocations from
   51 MiB to 32 MiB.
+
+## [2.76.0] - 2026-11-04
+
+### Fixed
+
+- Answer `detected_fields` like Loki when the query matches no line: no
+  fields and no `limit`. The Logs Drilldown Logs tab with the error and warn
+  level pills (whose escaped pipe matches no level) listed fields the
+  service's other lines have, because the proxy fell back to VictoriaLogs'
+  field index of the bare stream selector whenever the query's own scan found
+  no field; Loki lists only the fields of the lines the query returns. An
+  empty answer also carried `limit: 1000`, which Loki sends only with fields.
+  The fallback now runs only after the proxy's Drilldown scan deadline, so an
+  empty answer no longer pays for the bare-selector lookup.
 
 ## [2.75.0] - 2026-11-04
 
