@@ -46,7 +46,8 @@ why: |
   as for avg, max and min over time (semantics/unwrap-over-time-range-windows);
   the series identity is the stream and the line, as for those functions
   (semantics/unwrap-per-series-identity-raw-rows); offset and line filters stay
-  in semantics/first-last-over-time-translation.
+  in semantics/first-last-over-time-translation. The query_range timestamps of
+  a range up to the step are semantics/unwrap-first-last-range-timestamps.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -72,3 +73,10 @@ gap:
   proxy: 'row_min / row_max per series, unpacked, then the outer stats pipe'
   planned_test: 'TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastTopkBottomk and TestCompat_UnwrapFirstLastRangeLevelBy (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeUnderAggregationInstantDifferential, TestFirstLastOverTimeUnderAggregationRange, TestFirstLastOverTimeTopkBottomkInstantDifferential, TestFirstLastOverTimeRangeLevelByDifferential, TestUnwrapConversionErrorAnswersLokiText (internal/proxy); TestFirstLastOverTimeUnderAggregationTranslatesToRowStats (internal/translator)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

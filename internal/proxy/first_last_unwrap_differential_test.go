@@ -127,9 +127,20 @@ type firstLastRun struct {
 
 func runFirstLast(t *testing.T, emu *vlEmulator, query string, instant bool, start, end int64, step time.Duration) firstLastRun {
 	t.Helper()
+	return runFirstLastConfig(t, emu, query, instant, start, end, step, nil)
+}
+
+// runFirstLastConfig is runFirstLast with the proxy's configuration changed by
+// configure (nil: the defaults).
+func runFirstLastConfig(t *testing.T, emu *vlEmulator, query string, instant bool, start, end int64, step time.Duration, configure func(*Config)) firstLastRun {
+	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	defer backend.Close()
-	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
+	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second}
+	if configure != nil {
+		configure(&cfg)
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

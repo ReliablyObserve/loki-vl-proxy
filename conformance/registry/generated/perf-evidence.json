@@ -105727,6 +105727,9 @@
       "warm_p50": 0.015
     }
   ],
+  "semantics/unwrap-first-last-range-longer-than-step": [],
+  "semantics/unwrap-first-last-range-timestamps": [],
+  "semantics/unwrap-first-last-under-aggregation": [],
   "semantics/unwrap-gate-parsefloat-divergences": [
     {
       "baseline": "release",

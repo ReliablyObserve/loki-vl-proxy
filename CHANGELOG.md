@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Answer `first_over_time` and `last_over_time` with `unwrap` on
+  `/loki/api/v1/query_range` at Loki's evaluation timestamps when the range is
+  at most the step (Grafana's `$__auto`), under any outer aggregation, a binary
+  operation or `topk`. Every point came one step early, and a line exactly on a
+  step edge landed in the next step, because these two functions skipped the
+  relabelling of VictoriaLogs step buckets that the other unwrap functions use.
+  No VictoriaLogs call is added.
+
 ## [2.71.0] - 2026-11-04
 
 ### Performance
