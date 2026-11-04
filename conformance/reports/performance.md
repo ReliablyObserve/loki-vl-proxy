@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 91 items are locked; 5 carry an effort exception.
+29 of 94 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -387,6 +387,9 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/sub-second-step-grid` | 3 × 1 ranges | 3 same | worst 0.02s / 0.01s (5m-200ms) | 0.03s / 0.02s | same | not locked |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 3.84s / 0.02s (24h) | 6.42s / 0.07s | differs; 4 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.41s / 0.03s (24h) | 0.24s / 0.01s | same; 1 slower than Loki cold | not locked; exception |
+| `semantics/unwrap-first-last-range-longer-than-step` | — | not measured | | | | not locked |
+| `semantics/unwrap-first-last-range-timestamps` | — | not measured | | | | not locked |
+| `semantics/unwrap-first-last-under-aggregation` | — | not measured | | | | not locked |
 | `semantics/unwrap-gate-parsefloat-divergences` | 12 × 5 ranges | 42 same | worst 3.84s / 0.02s (24h) | 6.42s / 0.07s | differs; 3 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-rate-counter-one-sample-series` | 1 × 4 ranges | 4 same | worst 0.32s / 0.01s (24h) | 1.64s † / 0.02s | same | not locked |
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 2 faster, 2 fixed, 23 same | worst 2.77s / 0.02s (24h) | 6.70s / 0.07s | differs | not locked |
