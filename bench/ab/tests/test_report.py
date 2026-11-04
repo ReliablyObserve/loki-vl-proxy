@@ -192,3 +192,149 @@ class ProfileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def daily_rows(loki, main, release=None, cache=None, ranked_max=None, runs=7):
+    """Raw rows shaped like a daily row: run 0 is the one Loki computed, later runs move the window back a
+    minute each and Loki's results cache answers them whole (entriesFound == entriesRequested)."""
+    cache = cache or {0: {"result": {"entriesFound": 0, "entriesRequested": 25}}}
+    rows = []
+    for run in range(runs):
+        for target, sigs in (("release", release or main), ("main", main), ("loki", loki)):
+            row = {"shape": "s", "range": "24h", "run": run, "target": target, "seconds": 0.1, "status": 200,
+                   "signature": sigs[run], "vl_cpu_max": 0, "end": 1793810580 - 60 * run}
+            if target == "loki":
+                row["cache"] = cache.get(run, {"result": {"entriesFound": 25, "entriesRequested": 25}})
+                if ranked_max is not None:
+                    row["ranked_max_points"] = ranked_max
+            rows.append(row)
+    return {"set": "x", "runs": runs, "rows": rows}
+
+
+def daily_summary(raw):
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "raw.json")
+        with open(path, "w") as f:
+            json.dump(raw, f)
+        args = argparse.Namespace(raw=path, baseline="release", candidate="main", reference="loki", label="t",
+                                  save=d, tolerance=0.01, cold=False, noise=0.25, min_delta=0.05, refresh="")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            report.summarize(args)
+        with open(os.path.join(d, [n for n in os.listdir(d) if n != "raw.json"][0])) as f:
+            return json.load(f), out.getvalue()
+
+
+class ComputedReferenceParityTest(unittest.TestCase):
+    """Daily 2026-11-04 (main 69d07019): every run whose answer differed from Loki's was one Loki's results
+    cache answered whole; the run Loki computed matched main."""
+
+    def test_topk_more_points_than_k_per_step_on_cached_runs(self):
+        # control "topk rate by app" 1h: 5 x 721 steps = 3605 points; Loki's cached runs held up to 3612.
+        main = ["series=ranked points=3605 sum=9812.4"] + [f"series=ranked points=3605 sum={9810 - k}" for k in range(1, 7)]
+        loki = [main[0], main[1]] + [f"series=ranked points={3605 + k} sum={9815 + k}" for k in (2, 3, 4, 5, 7)]
+        cache = {0: {"result": {"entriesFound": 0, "entriesRequested": 2}}}
+        for run in range(1, 7):
+            cache[run] = {"result": {"entriesFound": 2, "entriesRequested": 2}}
+        summary, text = daily_summary(daily_rows(loki, main, cache=cache, ranked_max=3605))
+        row = summary["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "same")
+        self.assertEqual(row["baseline_parity_vs_reference"], "same")
+        self.assertEqual(row["reference_skipped"], {"cache": 6})
+        self.assertIn("compared only with the loki runs loki computed", text)
+
+    def test_ranked_reference_over_k_per_step_is_no_reference(self):
+        # The same topk answer with no cache counters (an older Loki, an instant query): the points alone
+        # rule the run out, it is not a difference.
+        main = ["series=ranked points=10805 sum=495856"] * 7
+        loki = main[:3] + ["series=ranked points=10806 sum=495753"] * 4
+        raw = daily_rows(loki, main, ranked_max=10805)
+        for r in raw["rows"]:
+            r.pop("cache", None)
+        row = daily_summary(raw)[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "same")
+        self.assertEqual(row["reference_skipped"], {"ranked": 4})
+
+    def test_ranked_reference_within_k_per_step_still_differs(self):
+        # Fewer points than k x steps is a legal ranked answer: a computed run that differs is a difference.
+        main = ["series=ranked points=3605 sum=10"] * 7
+        loki = ["series=ranked points=3600 sum=10"] * 7
+        cache = {run: {"result": {"entriesFound": 0, "entriesRequested": 2}} for run in range(7)}
+        row = daily_summary(daily_rows(loki, main, cache=cache, ranked_max=3605))[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "differs")
+        self.assertNotIn("reference_skipped", row)
+
+    def test_one_point_fewer_on_cached_runs(self):
+        # json-filter-pushdown B 24h: Loki's cached runs 3 and 5 lost one point; run 0 was computed.
+        main = ["series=2 points=1939 sum=28389", "series=2 points=1940 sum=28393", "series=2 points=1941 sum=28383",
+                "series=2 points=1941 sum=28385", "series=2 points=1941 sum=28376", "series=2 points=1941 sum=28380",
+                "series=2 points=1941 sum=28379"]
+        loki = list(main)
+        loki[3], loki[5] = "series=2 points=1940 sum=28366", "series=2 points=1940 sum=28361"
+        row = daily_summary(daily_rows(loki, main))[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "same")
+        self.assertEqual(row["reference_skipped"], {"cache": 6})
+
+    def test_a_computed_run_that_differs_still_differs(self):
+        main = ["series=2 points=1939 sum=28389"] + ["series=2 points=1941 sum=28383"] * 6
+        loki = ["series=2 points=1940 sum=28400"] + main[1:]
+        row = daily_summary(daily_rows(loki, main))[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "differs")
+
+    def test_partly_cached_runs_are_still_compared(self):
+        # Only a request the cache answered whole is left out: one with entries left to compute counts.
+        main = ["series=2 points=1939 sum=28389"] * 7
+        loki = list(main)
+        loki[2] = "series=2 points=1938 sum=28370"
+        cache = {run: {"result": {"entriesFound": 24, "entriesRequested": 25}} for run in range(7)}
+        cache[0] = {"result": {"entriesFound": 0, "entriesRequested": 25}}
+        row = daily_summary(daily_rows(loki, main, cache=cache))[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "differs")
+        self.assertNotIn("reference_skipped", row)
+
+    def test_index_stats_cache_is_not_an_answer(self):
+        main = ["series=1 points=3 sum=4"] * 7
+        loki = ["series=1 points=3 sum=4"] * 6 + ["series=1 points=2 sum=4"]
+        cache = {run: {"statsResult": {"entriesFound": 1, "entriesRequested": 1}} for run in range(7)}
+        row = daily_summary(daily_rows(loki, main, cache=cache))[0]["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "differs")
+
+    def test_no_computed_run_is_not_compared(self):
+        # Every Loki run answered whole from its cache (a query an earlier set already asked): no verdict,
+        # neither same nor differs, and the summary says how many rows that left.
+        main = ["series=1 points=3 sum=4"] * 7
+        loki = ["series=1 points=2 sum=4"] * 7
+        cache = {run: {"volumeResult": {"entriesFound": 3, "entriesRequested": 3}} for run in range(7)}
+        summary, text = daily_summary(daily_rows(loki, main, cache=cache))
+        row = summary["rows"][0]
+        self.assertEqual(row["parity_vs_reference"], "n/a")
+        self.assertEqual(row["baseline_parity_vs_reference"], "n/a")
+        self.assertEqual(summary["result_differs_from_reference"], 0)
+        self.assertIn("1 row(s) had no computed loki run", text)
+
+    def test_timing_is_unchanged(self):
+        main = ["series=1 points=3 sum=4"] * 7
+        raw = daily_rows(main, main)
+        before = daily_summary(raw)[0]["rows"][0]
+        for r in raw["rows"]:
+            r.pop("cache", None)
+        after = daily_summary(raw)[0]["rows"][0]
+        for k in ("p50", "p95", "cold", "verdict", "status"):
+            self.assertEqual(before[k], after[k], k)
+
+
+class RankedMaxPointsTest(unittest.TestCase):
+    def test_k_per_step(self):
+        import perf_matrix
+        for query, secs, step, instant, want in (
+                ('topk(5, sum by (app) (rate({env="production"}[5m])))', 3600, 5, False, 3605),
+                ("topk(5, x)", 21600, 10, False, 10805),
+                ("topk(5, x)", 86400, 60, False, 7205),
+                ("  bottomk( 3 , x)", 3600, 5, False, 2163),
+                ("topk(3, x)", 300, 0.2, False, 4503),
+                ("topk(4, x)", 0, 0, True, 4),
+                ("sum(topk(5, x))", 3600, 5, False, None),
+                ('sum by (app) (rate({app="topk(5,"}[5m]))', 3600, 5, False, None),
+                ("topk(5, x)", 3600, 0, False, None)):
+            with self.subTest(query=query, secs=secs, step=step):
+                self.assertEqual(perf_matrix.ranked_max_points(query, secs, step, instant), want)

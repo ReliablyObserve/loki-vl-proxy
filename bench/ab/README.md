@@ -22,6 +22,19 @@ answers; missing points are differences even when their sums match. These
 fingerprints do not establish equality of every label, timestamp, sample value
 or log line. Use the Loki compatibility tests for those comparisons.
 
+Results are compared with Loki only on the runs Loki computed. Each run moves the
+window back a minute, and from run 1 on Loki's results cache usually answers the
+request whole from the extents of the runs before it (its own counters: every
+`entriesRequested` found). Those put-together answers are no reference: they can
+hold a step twice with other ranked members (a `topk(5, …)` answer with more than
+5 series at a step) or lose a step's sample. `report.py` leaves out a Loki run its
+results cache answered whole, and a ranked (`topk`/`bottomk`) Loki run with more
+points than k per step (`ranked_max_points`, which `perf_matrix.py` writes on
+every ranked row), and counts both under `reference_skipped`. A run the cache
+answered in part is still compared. A row with no computed Loki run has no result
+verdict (`n/a`), so it neither enters nor leaves the ratchet. Timing is not
+affected.
+
 | file | purpose |
 |---|---|
 | `shapes.json` | Named query sets and ranges. `control` is the shared no-degradation set; add a set per change. Shapes marked `"smoke": true` run on every code change. |
