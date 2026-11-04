@@ -809,7 +809,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			break // the per-row evaluator answers
 		}
 		markQueryStepsRoute(r.Context(), routeName+strconv.Itoa(route))
-		p.writeHitsRangeMetricMatrix(w, matrixFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window)
+		p.writeHitsRangeMetricMatrixFolded(w, matrixFunc, shiftSeriesSamples(series, sampleShift), startTS, endTS, step, origSpec.Window, matrixFoldFrom(r.Context()))
 		return true
 	}
 
@@ -962,7 +962,13 @@ func shiftSeriesSamples(series map[string]manualSeriesSamples, shift time.Durati
 
 // writeHitsRangeMetricMatrix writes the bucket matrix and returns the HTTP status.
 func (p *Proxy) writeHitsRangeMetricMatrix(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) int {
-	result, err := buildHitsRangeMetricMatrix(manualFunc, series, start, end, step, window, p.limits().BufferedBackendBodyBytes)
+	return p.writeHitsRangeMetricMatrixFolded(w, manualFunc, series, start, end, step, window, nil)
+}
+
+// writeHitsRangeMetricMatrixFolded is writeHitsRangeMetricMatrix for a request
+// whose vector aggregations the builder folds (matrixFold).
+func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, fold *matrixFold) int {
+	result, err := buildHitsRangeMetricMatrixFolded(manualFunc, series, start, end, step, window, p.limits().BufferedBackendBodyBytes, fold)
 	if err != nil {
 		return p.writeErr(w, context.Background(), err)
 	}
@@ -2579,6 +2585,13 @@ func encodeWindowMatrix(ctx context.Context, keys []string, metric func(key stri
 // The encoded response is bounded by maxBufferedBackendBodyBytes, like the raw
 // evaluator's output; an estimate above it returns an error instead.
 func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int) ([]byte, error) {
+	return buildHitsRangeMetricMatrixFolded(manualFunc, series, start, end, step, window, maxBytes, nil)
+}
+
+// buildHitsRangeMetricMatrixFolded is buildHitsRangeMetricMatrix; with fold set
+// it folds each series into the vector aggregations around the range metric as
+// it is built, so the per-series matrix is never encoded (matrix_fold_sink.go).
+func buildHitsRangeMetricMatrixFolded(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxBytes int, fold *matrixFold) ([]byte, error) {
 	if end.Before(start) || step <= 0 {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
 	}
@@ -2599,20 +2612,14 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 	sort.Strings(keys)
 
 	startNS, endNS, stepNS := start.UnixNano(), end.UnixNano(), step.Nanoseconds()
-	expectedBuckets := int(end.Sub(start)/step) + 1
-	if expectedBuckets > 32768 { // pre-size cap; appends grow beyond it
-		expectedBuckets = 32768
-	}
+	expectedBuckets := min(int(end.Sub(start)/step)+1, 32768) // pre-size cap; appends grow beyond it
 
+	sink := newMatrixFoldSink(fold) // nil without a fold
+	var folded []typedPoint
 	results := make([]map[string]interface{}, 0, len(keys))
 	for _, key := range keys {
 		seriesEntry := series[key]
-		samples := seriesEntry.Samples
-		if !sort.SliceIsSorted(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts }) {
-			// Coalesced results are shared between requests: sort a copy.
-			samples = append([]rangeMetricSample(nil), samples...)
-			sort.Slice(samples, func(i, j int) bool { return samples[i].ts < samples[j].ts })
-		}
+		samples := sortedHitsSamples(seriesEntry.Samples)
 		var prefix []float64
 		if !mergedUnwrap {
 			prefix = make([]float64, len(samples)+1)
@@ -2623,9 +2630,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		present := seriesEntry.PresentBuckets // ascending; nil without presence data
 		counts := seriesEntry.Counts          // ascending; avg over time only
 
-		for k, v := range seriesEntry.Metric {
-			encodedBytes += len(k) + len(v) + 6
-		}
+		encodedBytes += hitsSeriesLabelBytes(seriesEntry.Metric)
 		var points []byte
 		// A point needs a bucket in its window, and a bucket is in the window of
 		// at most window/step+2 evaluation times, so a series with few buckets
@@ -2677,25 +2682,21 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			if zero {
 				value = 0
 			}
-			// The points are written as encoding/json writes [][]interface{}{{float64
-			// seconds, value text}}, without a value per point.
-			if points == nil {
-				points = make([]byte, 0, 32*pointHint)
-				points = append(points, '[')
-			} else {
-				points = append(points, ',')
+			if sink != nil {
+				folded = append(folded, typedPoint{ts: lokiSampleSeconds(tNS), v: value})
+				continue
 			}
-			points = append(points, '[')
-			points = strconv.AppendFloat(points, lokiSampleSeconds(tNS), 'f', -1, 64)
-			points = append(points, ',', '"')
-			mark := len(points)
-			points = strconv.AppendFloat(points, value, 'f', -1, 64)
-			formatted := len(points) - mark
-			points = append(points, '"', ']')
+			var formatted int
+			points, formatted = appendHitsPoint(points, pointHint, tNS, value)
 			// `[1700000000,"<value>"],`: a timestamp of at most 20 bytes plus punctuation.
 			if encodedBytes += formatted + 26; encodedBytes > maxBytes {
 				return nil, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", maxBytes)
 			}
+		}
+		if sink != nil {
+			sink.add(seriesEntry.Metric, folded)
+			folded = folded[:0]
+			continue
 		}
 		if points != nil {
 			results = append(results, map[string]interface{}{
@@ -2704,7 +2705,50 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			})
 		}
 	}
+	if sink != nil {
+		return sink.finish(fold, maxBytes)
+	}
 	return marshalManualMetricResponse("matrix", results), nil
+}
+
+// sortedHitsSamples returns samples in time order. Coalesced results are shared
+// between requests: an unsorted slice is sorted as a copy.
+func sortedHitsSamples(samples []rangeMetricSample) []rangeMetricSample {
+	less := func(i, j int) bool { return samples[i].ts < samples[j].ts }
+	if sort.SliceIsSorted(samples, less) {
+		return samples
+	}
+	samples = append([]rangeMetricSample(nil), samples...)
+	sort.Slice(samples, less)
+	return samples
+}
+
+// hitsSeriesLabelBytes is what a series' labels add to the encoded response.
+func hitsSeriesLabelBytes(metric map[string]string) int {
+	n := 0
+	for k, v := range metric {
+		n += len(k) + len(v) + 6
+	}
+	return n
+}
+
+// appendHitsPoint appends the point to a series' values array (opened on the
+// first), written as encoding/json writes [][]interface{}{{float64 seconds,
+// value text}}, and returns the array and the length of the value text.
+func appendHitsPoint(points []byte, pointHint int, tNS int64, value float64) ([]byte, int) {
+	if points == nil {
+		points = make([]byte, 0, 32*pointHint)
+		points = append(points, '[')
+	} else {
+		points = append(points, ',')
+	}
+	points = append(points, '[')
+	points = strconv.AppendFloat(points, lokiSampleSeconds(tNS), 'f', -1, 64)
+	points = append(points, ',', '"')
+	mark := len(points)
+	points = strconv.AppendFloat(points, value, 'f', -1, 64)
+	formatted := len(points) - mark
+	return append(points, '"', ']'), formatted
 }
 
 // nextHitsStep returns, for a window at tNS whose buckets hold no line, the

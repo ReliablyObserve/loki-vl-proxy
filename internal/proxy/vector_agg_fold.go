@@ -83,16 +83,19 @@ func foldVectorAggregations(p *Proxy, w http.ResponseWriter, r *http.Request, qu
 	}
 	buf := &bufferedResponseWriter{}
 	ctx := context.WithValue(context.WithValue(r.Context(), foldedSumKey{}, true), vectorAggFoldKey{}, true)
+	levels := make([]foldLevel, len(chain))
+	for i, agg := range chain {
+		levels[i] = foldLevelOf(agg)
+	}
+	ctx, built := withMatrixFold(ctx, levels)
 	if !serve(buf, r.WithContext(ctx)) {
 		return false
 	}
 	body, code := buf.body, buf.code
 	if code == 0 || code == http.StatusOK {
-		levels := make([]foldLevel, len(chain))
-		for i, agg := range chain {
-			levels[i] = foldLevelOf(agg)
-		}
-		if folded, ok := foldLevels(body, levels...); ok {
+		if built.folded {
+			// The bucket matrix builder folded each series as it built it.
+		} else if folded, ok := foldLevels(body, levels...); ok {
 			body = folded
 		} else {
 			for _, agg := range chain {
