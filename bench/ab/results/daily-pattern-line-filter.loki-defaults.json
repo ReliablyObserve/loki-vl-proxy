@@ -1,6 +1,6 @@
 {
  "label": "daily-pattern-line-filter-loki-defaults",
- "date": "2026-11-03",
+ "date": "2026-11-04",
  "set": "pattern-line-filter",
  "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
  "baseline": "release",
@@ -41,8 +41,8 @@
     "loki": 0.005
    },
    "cold": {
-    "release": 0.018,
-    "main": 0.009,
+    "release": 0.019,
+    "main": 0.01,
     "loki": 0.029
    },
    "status": {
@@ -138,19 +138,19 @@
    "shape": "P2 api-gateway not empty pattern, line filter",
    "range": "1h",
    "p50": {
-    "main": 0.057,
-    "release": 0.061,
+    "main": 0.064,
+    "release": 0.063,
     "loki": 0.021
    },
    "p95": {
-    "main": 0.061,
+    "main": 0.067,
     "release": 0.07,
-    "loki": 0.022
+    "loki": 0.023
    },
    "cold": {
-    "main": 0.061,
-    "release": 0.059,
-    "loki": 0.02
+    "main": 0.062,
+    "release": 0.063,
+    "loki": 0.024
    },
    "status": {
     "main": "200",
@@ -158,9 +158,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 81.8,
-    "release": 81.8,
-    "loki": 81.8
+    "main": 92.97,
+    "release": 92.97,
+    "loki": 92.97
    },
    "cache": {
     "loki": {
@@ -234,7 +234,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.07
+   "speedup": 0.98
   },
   {
    "shape": "P3 nginx count_over_time, pattern with spaces",
@@ -247,11 +247,11 @@
    "p95": {
     "release": 0.004,
     "main": 0.004,
-    "loki": 0.006
+    "loki": 0.005
    },
    "cold": {
     "release": 0.006,
-    "main": 0.006,
+    "main": 0.005,
     "loki": 0.012
    },
    "status": {
@@ -260,9 +260,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 81.8,
-    "main": 81.8,
-    "loki": 81.8
+    "release": 92.97,
+    "main": 92.97,
+    "loki": 92.97
    },
    "stale": [
     "release",
@@ -307,12 +307,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 4596
+       "bytesReceived": 4604
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1680
+       "bytesReceived": 1116
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -349,7 +349,7 @@
    "p50": {
     "main": 0.003,
     "release": 0.003,
-    "loki": 0.005
+    "loki": 0.004
    },
    "p95": {
     "main": 0.004,
@@ -359,7 +359,7 @@
    "cold": {
     "main": 0.006,
     "release": 0.008,
-    "loki": 0.012
+    "loki": 0.014
    },
    "status": {
     "main": "200",
@@ -367,9 +367,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 81.8,
-    "release": 81.8,
-    "loki": 81.8
+    "main": 92.97,
+    "release": 92.97,
+    "loki": 92.97
    },
    "cache": {
     "loki": {
@@ -382,7 +382,7 @@
       "statsResult": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 598
+       "bytesReceived": 372
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -409,12 +409,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85939
+       "bytesReceived": 85940
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1134
+       "bytesReceived": 1128
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -446,8 +446,8 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.61.0",
- "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
+ "baseline_ref": "v2.69.0",
+ "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
  "proxy_align": {
   "release": "on",
   "main": "on"

@@ -300,46 +300,93 @@
   },
   {
    "commits": [
-    "45d1ea4703"
+    "45d1ea4703",
+    "7eaf79cebe"
    ],
    "date": "2026-11-03",
    "profiles": {
     "aligned": {
      "cold": {
       "above": 20,
-      "below": 246,
+      "below": 255,
       "between": 19,
-      "close": 97,
-      "rows": 382,
-      "share_below": 64.4
+      "close": 100,
+      "rows": 394,
+      "share_below": 64.7
      },
-     "sets": 27,
+     "sets": 29,
      "warm": {
       "above": 14,
       "below": 20,
       "between": 4,
-      "close": 416,
-      "rows": 454,
-      "share_below": 4.4
+      "close": 435,
+      "rows": 473,
+      "share_below": 4.2
      }
     },
     "loki-defaults": {
      "cold": {
       "above": 48,
-      "below": 274,
+      "below": 283,
       "between": 18,
-      "close": 161,
-      "rows": 501,
-      "share_below": 54.7
+      "close": 164,
+      "rows": 513,
+      "share_below": 55.2
+     },
+     "sets": 31,
+     "warm": {
+      "above": 14,
+      "below": 92,
+      "between": 5,
+      "close": 567,
+      "rows": 678,
+      "share_below": 13.6
+     }
+    }
+   }
+  },
+  {
+   "commits": [
+    "7eaf79cebe"
+   ],
+   "date": "2026-11-04",
+   "profiles": {
+    "aligned": {
+     "cold": {
+      "above": 8,
+      "below": 287,
+      "between": 11,
+      "close": 89,
+      "rows": 395,
+      "share_below": 72.7
      },
      "sets": 29,
      "warm": {
-      "above": 14,
-      "below": 91,
-      "between": 5,
-      "close": 549,
-      "rows": 659,
-      "share_below": 13.8
+      "above": 11,
+      "below": 15,
+      "between": 2,
+      "close": 446,
+      "rows": 474,
+      "share_below": 3.2
+     }
+    },
+    "loki-defaults": {
+     "cold": {
+      "above": 30,
+      "below": 314,
+      "between": 16,
+      "close": 154,
+      "rows": 514,
+      "share_below": 61.1
+     },
+     "sets": 31,
+     "warm": {
+      "above": 11,
+      "below": 117,
+      "between": 1,
+      "close": 553,
+      "rows": 682,
+      "share_below": 17.2
      }
     }
    }
