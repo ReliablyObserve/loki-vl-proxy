@@ -69167,6 +69167,840 @@
       "warm_p50": 0.105
     }
   ],
+  "quality/json-label-probe-gates": [
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.455,
+      "date": "2026-11-04",
+      "label": "daily-extracted-suffix-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.067,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 374,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.015,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "extracted-suffix",
+      "shape": "E7 json count by level_extracted",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.062
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.844,
+      "date": "2026-11-04",
+      "label": "daily-extracted-suffix-loki-defaults",
+      "loki_cache_served": true,
+      "loki_cold": 0.106,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 43866,
+          "entriesFound": 2,
+          "entriesRequested": 4
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 561,
+          "entriesFound": 3,
+          "entriesRequested": 3
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.016,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "3h",
+      "set": "extracted-suffix",
+      "shape": "E7 json count by level_extracted",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.067
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 1.115,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.251,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 354,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.021,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "extracted-pushdown",
+      "shape": "X1 json filter level_extracted, by level",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.077
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 19.721,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 4.828,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 4668,
+          "entriesFound": 26,
+          "entriesRequested": 26
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.046,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "extracted-pushdown",
+      "shape": "X1 json filter level_extracted, by level",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.099
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 5.346,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 1.209,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 1428,
+          "entriesFound": 8,
+          "entriesRequested": 8
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.041,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "extracted-pushdown",
+      "shape": "X1 json filter level_extracted, by level",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.094
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.111,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.261,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 354,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.02,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "extracted-pushdown",
+      "shape": "X2 json group by level_extracted",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.007
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 2.499,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 5.663,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 4668,
+          "entriesFound": 26,
+          "entriesRequested": 26
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.043,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "extracted-pushdown",
+      "shape": "X2 json group by level_extracted",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.02
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.633,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 1.276,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 1428,
+          "entriesFound": 8,
+          "entriesRequested": 8
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.043,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "extracted-pushdown",
+      "shape": "X2 json group by level_extracted",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.017
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.1,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.196,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 354,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.017,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "extracted-pushdown",
+      "shape": "X3 json rate, level_extracted equality",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.006
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 2.253,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 3.996,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 4668,
+          "entriesFound": 26,
+          "entriesRequested": 26
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.044,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "extracted-pushdown",
+      "shape": "X3 json rate, level_extracted equality",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.016
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.574,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 1.098,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 1428,
+          "entriesFound": 8,
+          "entriesRequested": 8
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.04,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "extracted-pushdown",
+      "shape": "X3 json rate, level_extracted equality",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.016
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.133,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.235,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 354,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.038,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "extracted-pushdown",
+      "shape": "X4 json bytes, level_extracted regexp",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.008
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 2.717,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 4.904,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 4668,
+          "entriesFound": 26,
+          "entriesRequested": 26
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.067,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "extracted-pushdown",
+      "shape": "X4 json bytes, level_extracted regexp",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.097
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.6,
+      "date": "2026-11-04",
+      "label": "daily-extracted-pushdown-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 1.218,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 1428,
+          "entriesFound": 8,
+          "entriesRequested": 8
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.057,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "extracted-pushdown",
+      "shape": "X4 json bytes, level_extracted regexp",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.017
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.456,
+      "date": "2026-11-04",
+      "label": "daily-level-filter-stored-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.057,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 374,
+          "entriesFound": 2,
+          "entriesRequested": 2
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.008,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "level-filter-stored",
+      "shape": "LS8 json count by level_extracted, collision",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.062
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 2.108,
+      "date": "2026-11-04",
+      "label": "daily-level-filter-stored-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.286,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 1500,
+          "entriesFound": 8,
+          "entriesRequested": 8
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.011,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "level-filter-stored",
+      "shape": "LS8 json count by level_extracted, collision",
+      "slower_than_loki_cold": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.084
+    }
+  ],
   "quality/query-range-extent-cache-large-answer": [
     {
       "baseline": "release",
