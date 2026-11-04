@@ -28,8 +28,9 @@ var restorePipeRE = regexp.MustCompile("^extract_regexp `(.*)` from _stream$")
 
 // applyRestoreForTest runs the pipes streamTagRestorePipes writes for name on
 // one entry: Go's regexp is VictoriaLogs' (RE2), the extract pattern `<name>`
-// unquotes a quoted value (lib/logstorage/pattern.go tryUnquoteString) and
-// skip_empty_results keeps the field when nothing was captured.
+// unquotes a quoted value (lib/logstorage/pattern.go tryUnquoteString), and
+// the extract runs only when something was captured (if), so the entry keeps
+// its field otherwise.
 func applyRestoreForTest(t testing.TB, name, stream, field string) string {
 	t.Helper()
 	pipes := strings.Split(strings.TrimPrefix(streamTagRestorePipes([]string{name}), "| "), " | ")
@@ -40,7 +41,7 @@ func applyRestoreForTest(t testing.TB, name, stream, field string) string {
 	if m == nil {
 		t.Fatalf("restore of %q: unexpected first pipe %q", name, pipes[0])
 	}
-	if want := `extract "<` + name + `>" from __lxst_0 skip_empty_results`; pipes[1] != want || pipes[2] != "delete __lxst_0" {
+	if want := `extract if (__lxst_0:*) "<` + name + `>" from __lxst_0`; pipes[1] != want || pipes[2] != "delete __lxst_0" {
 		t.Fatalf("restore of %q: pipes %q", name, pipes)
 	}
 	sub := regexp.MustCompile(m[1]).FindStringSubmatch(stream)
@@ -127,6 +128,15 @@ func TestStreamTagRestorePlacementAndStrip(t *testing.T) {
 	}
 	if got := withStreamTagRestore([]string{`app:="a"`}, []string{"version"}); len(got) != 2 || got[1] != streamTagRestorePipes([]string{"version"}) {
 		t.Fatalf("no pipe: %q", got)
+	}
+	// VictoriaLogs reuses an extract's results across consecutive entries with
+	// the same source value (lib/logstorage/pipe_extract.go writeBlock), the
+	// original field included under skip_empty_results or keep_original_fields:
+	// a run of entries the stream gives no tag would all take the first
+	// entry's field (one span_id series for a block). Only `if` keeps each
+	// entry's own field.
+	if strings.Contains(restore, "skip_empty_results") || strings.Contains(restore, "keep_original_fields") || strings.Count(restore, "extract if (__lxst_") != 2 {
+		t.Fatalf("the restore must extract only where the stream has the tag: %s", restore)
 	}
 	if q := `app:="a" | extract_regexp "x(?P<y>.+)" | stats count()`; WithoutStreamTagRestore(q) != q {
 		t.Fatalf("a query's own extract must stay: %s", WithoutStreamTagRestore(q))

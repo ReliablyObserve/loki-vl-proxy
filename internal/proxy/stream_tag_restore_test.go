@@ -318,7 +318,7 @@ func TestStreamTagRestoreNames(t *testing.T) {
 			t.Fatalf("%s: %v", c.query, err)
 		}
 		var restored []string
-		for _, m := range regexp.MustCompile(`extract "<([^>]+)>" from __lxst_\d+ skip_empty_results`).FindAllStringSubmatch(got, -1) {
+		for _, m := range regexp.MustCompile(`extract if \(__lxst_\d+:\*\) "<([^>]+)>" from __lxst_\d+`).FindAllStringSubmatch(got, -1) {
 			if !slicesContains(restored, m[1]) {
 				restored = append(restored, m[1])
 			}

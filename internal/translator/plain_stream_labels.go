@@ -91,8 +91,12 @@ const quotedBody = `[^\x22\\]*(?:\\.[^\x22\\]*)*`
 // into the field of that name. _stream is `{name="value",...}`, names sorted,
 // values Go-quoted (lib/logstorage/rows.go marshalToStreamTag): the anchored
 // regexp walks whole tags, so a name inside another tag's value or a longer
-// name ending in it never matches; extract unquotes the captured value and
-// keeps the field when the stream has no such tag (skip_empty_results).
+// name ending in it never matches; extract unquotes the captured value, and
+// only on the entries whose stream has the tag (if): the others keep their
+// field. skip_empty_results would not do: VictoriaLogs reuses an extract's
+// results across consecutive entries with the same source value
+// (lib/logstorage/pipe_extract.go writeBlock), so every entry of a run with an
+// empty capture would get the first entry's original field.
 func streamTagRestorePipes(names []string) string {
 	var b strings.Builder
 	i := 0
@@ -105,7 +109,7 @@ func streamTagRestorePipes(names []string) string {
 		scratch := stScratch + strconv.Itoa(i)
 		re := `^\{(?:[^=\x22]*=\x22` + quotedBody + `\x22,)*?` + regexp.QuoteMeta(n) + `=(?P<` + scratch + `>\x22` + quotedBody + `\x22)`
 		b.WriteString(" | extract_regexp `" + re + "` from _stream")
-		b.WriteString(" | extract \"<" + n + ">\" from " + scratch + " skip_empty_results")
+		b.WriteString(" | extract if (" + scratch + ":*) \"<" + n + ">\" from " + scratch)
 		b.WriteString(" | delete " + scratch)
 		i++
 	}

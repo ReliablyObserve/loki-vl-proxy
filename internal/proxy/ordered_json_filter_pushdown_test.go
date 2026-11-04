@@ -744,22 +744,23 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 					values[name] = sub[i]
 				}
 			}
-		case strings.HasPrefix(pipe, `extract "<`):
-			// A pattern of one placeholder: the whole value, unquoted when it is
-			// a quoted string (lib/logstorage/pattern.go tryUnquoteString).
+		case strings.HasPrefix(pipe, `extract if (`):
+			// A pattern of one placeholder on the entries whose condition field
+			// is set: the whole value, unquoted when it is a quoted string
+			// (lib/logstorage/pattern.go tryUnquoteString); the others keep
+			// their field.
 			m := fakeExtractWholeRE.FindStringSubmatch(pipe)
 			if m == nil {
 				t.Errorf("fake VL: unsupported extract pipe %q", pipe)
 				return nil, false
 			}
-			v := values[m[2]]
-			if strings.HasPrefix(v, `"`) {
-				if q, err := strconv.QuotedPrefix(v); err == nil {
-					v, _ = strconv.Unquote(q)
+			if v := values[m[3]]; values[m[1]] != "" {
+				if strings.HasPrefix(v, `"`) {
+					if q, err := strconv.QuotedPrefix(v); err == nil {
+						v, _ = strconv.Unquote(q)
+					}
 				}
-			}
-			if v != "" {
-				values[m[1]] = v
+				values[m[2]] = v
 			}
 		case strings.HasPrefix(pipe, "delete "):
 			for _, field := range strings.Split(strings.TrimPrefix(pipe, "delete "), ", ") {
@@ -829,7 +830,7 @@ func (f *pushdownFakeVL) guardMatches(t testing.TB, query string, row pushdownRo
 
 var (
 	fakeExtractRegexpRE = regexp.MustCompile("^extract_regexp `(.*)` from (\\S+)$")
-	fakeExtractWholeRE  = regexp.MustCompile(`^extract "<([^>]+)>" from (\S+) skip_empty_results$`)
+	fakeExtractWholeRE  = regexp.MustCompile(`^extract if \((\S+):\*\) "<([^>]+)>" from (\S+)$`)
 )
 
 func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) string) (*httptest.Server, *pushdownFakeVL) {
