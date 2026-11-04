@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.75.0] - 2026-11-04
+
 ### Fixed
 
 - Group a metric query by a stream label as Loki does when a JSON line has a
