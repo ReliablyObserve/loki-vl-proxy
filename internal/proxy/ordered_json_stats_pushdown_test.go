@@ -32,7 +32,12 @@ type jsonVolumeFakeVL struct {
 	lines      []jsonVolumeLine
 	statsCalls []string
 	guardCalls []string
-	rawCalls   int
+	// candidateCalls holds the candidate probes of the logfmt parse-risk
+	// probe (isLogfmtCandidateProbe), which guardCalls leaves out.
+	candidateCalls []string
+	rawCalls       int
+	// lineShapeCalls counts the logfmt parse-risk probes (in guardCalls too).
+	lineShapeCalls int
 	// presence answers the level presence probe from the lines (see
 	// pushdownFakeVL); presenceCalls records the probes.
 	presence      bool
@@ -254,11 +259,18 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			// labels, which the generic fake evaluates over the same lines.
 			logfmtGuard := guard && !strings.Contains(query, "unpack_json") && !strings.Contains(query, `_msg:"LEVEL"`) && !strings.Contains(query, "filter _stream:{detected_level")
 			levelGuard := guard && !logfmtGuard
+			candidates := logfmtGuard && isLogfmtCandidateProbe(query)
 			fake.mu.Lock()
-			if guard {
+			switch {
+			case candidates:
+				fake.candidateCalls = append(fake.candidateCalls, query)
+			case guard:
 				fake.guardCalls = append(fake.guardCalls, query)
-			} else {
+			default:
 				fake.rawCalls++
+			}
+			if logfmtGuard && !candidates {
+				fake.lineShapeCalls++
 			}
 			fake.mu.Unlock()
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -276,7 +288,10 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 						continue
 					}
 				}
-				if logfmtGuard && (line.level != "" || !logfmtLineIsRisk(line.msg, "level")) {
+				if candidates && !logfmtCandidateMatches(query, map[string]string{"level": line.level}, line.msg) {
+					continue
+				}
+				if logfmtGuard && !candidates && (line.level != "" || !logfmtLineIsRisk(line.msg, "level")) {
 					continue
 				}
 				row := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "_stream": `{app="api"}`, "app": "api"}

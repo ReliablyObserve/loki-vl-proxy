@@ -44,7 +44,10 @@ type pushdownFakeVL struct {
 	stored func(string) string // Loki label -> stored spelling
 	stats  []string
 	guards []string
-	raw    int
+	// candidates holds the candidate probes of the logfmt parse-risk probe
+	// (isLogfmtCandidateProbe), which guards leaves out.
+	candidates []string
+	raw        int
 	// listings counts stream_field_names calls.
 	listings int
 	// presence answers the level presence probe from the rows; otherwise the
@@ -1003,9 +1006,12 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			}
 			guard := strings.HasSuffix(query, " | limit 1")
 			fake.mu.Lock()
-			if guard {
+			switch {
+			case guard && isLogfmtCandidateProbe(query):
+				fake.candidates = append(fake.candidates, query)
+			case guard:
 				fake.guards = append(fake.guards, query)
-			} else {
+			default:
 				fake.raw++
 				fake.rawQueries = append(fake.rawQueries, fakeRawQuery{query, start, end})
 			}
