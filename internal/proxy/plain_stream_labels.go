@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // A parser stage never overwrites a label the entry has from its stream in
@@ -18,10 +21,10 @@ import (
 // overwrite the stored field, so the translator reads the stored value aside
 // for the stream label names this returns (translator.WithStreamLabels).
 // VictoriaLogs' Loki push API also stores a JSON line's key over the stream
-// label of the same name at ingest, so a metric query restores the names it
-// reads from _stream first, with or without a parser. A query that names no
-// stream label of the tenant outside its selector keeps its plain translation
-// and so the Drilldown fast paths that match it.
+// label of the same name at ingest, so a parser-free metric query restores the
+// names it groups by from _stream first, without the tenant's listing. A
+// parser query that names no stream label of the tenant outside its selector
+// keeps its plain translation and so the Drilldown fast paths that match it.
 
 const (
 	// streamLabelNamesWindow is the recent window the tenant's stream label
@@ -49,6 +52,7 @@ type streamLabelNamesState struct {
 	mu        sync.Mutex
 	byKey     map[string]*streamLabelNamesEntry
 	mentioned map[string]map[string]bool // query text -> identifiers it names (mentionedNames)
+	grouping  map[string][]string        // query text -> names it groups by (groupingNames)
 	refreshes int                        // started, for tests
 	base      context.Context
 	stop      context.CancelFunc
@@ -78,7 +82,7 @@ type streamLabelNamesEntry struct {
 var (
 	parserKeywordRE = regexp.MustCompile(`\|\s*(json|logfmt|unpack|regexp|pattern)\b`)
 	// rangeFunctionRE finds a range aggregation: a metric query reads its
-	// names from the stored fields even without a parser stage.
+	// grouping names from the stored fields even without a parser stage.
 	rangeFunctionRE  = regexp.MustCompile(`\b(?:count_over_time|rate|bytes_over_time|bytes_rate|(?:sum|avg|min|max|first|last|stddev|stdvar|quantile|absent)_over_time|rate_counter)\s*\(`)
 	queryStringRE    = regexp.MustCompile("\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`")
 	queryTemplateRE  = regexp.MustCompile(`\{\{[^}]*\}\}`)
@@ -87,13 +91,24 @@ var (
 	plainLabelNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
 
-// plainStreamLabelNames returns the stream label names of the tenant that the
-// query names outside its stream selectors and string literals, when the query
-// has a parser stage or a range aggregation (Loki-compatible profile, and only
-// for a query a client request runs: the tenant is read from it).
+// plainStreamLabelNames returns the label names whose stored value the
+// translation reads aside as the stream's (Loki-compatible profile, and only
+// for a query a client request runs). A query with a parser stage gets the
+// tenant's stream label names it mentions outside its selectors and string
+// literals. A parser-free metric query gets the names it groups by
+// (by (...)), whatever the tenant's listing holds: the translation restores
+// them from _stream, a name the stream lacks keeps its stored field, so the
+// answer, the translation and every cache key are the same on every replica
+// from the first request on.
 func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []string {
-	if ctx.Value(origRequestKey) == nil || (!parserKeywordRE.MatchString(query) && !rangeFunctionRE.MatchString(query)) || !p.lokiCompatibleProfile() {
+	if ctx.Value(origRequestKey) == nil || !p.lokiCompatibleProfile() {
 		return nil
+	}
+	if !parserKeywordRE.MatchString(query) {
+		if !rangeFunctionRE.MatchString(query) {
+			return nil
+		}
+		return p.streamLabelNames.groupingNames(query, p.restorableName)
 	}
 	known := p.tenantStreamLabelNames(ctx)
 	candidate := false
@@ -115,6 +130,47 @@ func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []strin
 	}
 	sort.Strings(out)
 	return out
+}
+
+// restorableName reports whether a grouping name can be read from _stream:
+// a plain Loki label name stored under the same name, no derived label, and no
+// name the detected_level derivation reads as stored.
+func (p *Proxy) restorableName(name string) bool {
+	return plainLabelNameRE.MatchString(name) && name != "service_name" && name != detectedLevelLabel &&
+		!slices.Contains(translator.DetectedLevelFieldNames, name) && p.labelTranslator.ToVL(name) == name
+}
+
+// groupingByRE finds a `by (...)` grouping (vector or range aggregation).
+var groupingByRE = regexp.MustCompile(`\bby\s*\(([^()]*)\)`)
+
+// groupingNames returns the sorted names the query groups by outside its
+// stream selectors and string literals, that keep(name) accepts, memoized per
+// query text like mentionedNames.
+func (st *streamLabelNamesState) groupingNames(query string, keep func(string) bool) []string {
+	st.mu.Lock()
+	names, ok := st.grouping[query]
+	st.mu.Unlock()
+	if ok {
+		return names
+	}
+	seen := map[string]bool{}
+	stripped := queryStreamSelRE.ReplaceAllString(queryStringRE.ReplaceAllString(query, `""`), "")
+	for _, m := range groupingByRE.FindAllStringSubmatch(stripped, -1) {
+		for _, name := range strings.Split(m[1], ",") {
+			if name = strings.TrimSpace(name); name != "" && !seen[name] && keep(name) {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
+	st.mu.Lock()
+	if st.grouping == nil || len(st.grouping) >= mentionedNamesMax {
+		st.grouping = make(map[string][]string, 64)
+	}
+	st.grouping[query] = names
+	st.mu.Unlock()
+	return names
 }
 
 // mentionedNamesMax bounds the per-query memo of mentionedNames.

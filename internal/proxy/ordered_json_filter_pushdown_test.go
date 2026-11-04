@@ -45,6 +45,8 @@ type pushdownFakeVL struct {
 	stats  []string
 	guards []string
 	raw    int
+	// listings counts stream_field_names calls.
+	listings int
 	// presence answers the level presence probe from the rows; otherwise the
 	// probe gets no counts (the proxy then keeps the full chain). presenceFail
 	// makes it a backend error, presenceLine replaces the honest answer.
@@ -844,6 +846,9 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			// The stream label names of the rows (the tenant's, over the window).
+			fake.mu.Lock()
+			fake.listings++
+			fake.mu.Unlock()
 			names := map[string]bool{}
 			for _, row := range fake.rows {
 				for k := range row.stream {

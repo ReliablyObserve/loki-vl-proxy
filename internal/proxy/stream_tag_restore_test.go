@@ -100,13 +100,12 @@ func lokiVersionReference(rows []pushdownRow, by, levelOp, levelValue string, st
 }
 
 // newStreamTagProxy is the pushdown test proxy in the default (Loki-compatible)
-// profile with the tenant's stream label names listed (they come from the fake's stream_field_names).
+// profile, fresh: the tenant's stream label names are not listed.
 func newStreamTagProxy(t *testing.T, srvURL string) *Proxy {
 	t.Helper()
 	p := newFilterPushdownProxy(t, srvURL)
 	p.metadataFieldMode = MetadataFieldModeTranslated // the default: the Loki-compatible profile
 	t.Cleanup(p.stopStreamLabelNames)
-	warmStreamLabels(t, p, scopedRequest(p, "/").Context())
 	return p
 }
 
@@ -236,47 +235,67 @@ func TestStreamLabelShadowedByIngestJSONKeyLikeLoki(t *testing.T) {
 	}
 }
 
-// Before the tenant's stream label names are first listed (a fresh proxy), a
-// query keeps the plain translation and starts the listing in the background;
-// the answer made then is cached under a key without the names, so the same
-// query after the listing is translated with the restore and answers Loki's
-// counts instead of the cached plain answer.
+// A fresh proxy restores the grouping on the first request, without listing
+// the tenant's stream label names: the answer is Loki's, VictoriaLogs gets no
+// stream_field_names call, and the second request is a response cache hit.
 //
 // conformance: semantics/stream-label-shadowed-by-ingest-json-key
-func TestStreamTagRestoreColdThenWarm(t *testing.T) {
+func TestStreamTagRestoreFirstRequestWithoutListing(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	rows := shadowedVersionRows(s0)
 	srv, fake := newPushdownFakeVL(t, rows, nil)
-	p := newFilterPushdownProxy(t, srv.URL)
-	p.metadataFieldMode = MetadataFieldModeTranslated
-	t.Cleanup(p.stopStreamLabelNames)
+	p := newStreamTagProxy(t, srv.URL)
 	query := `sum by (version) (count_over_time({service_name="api-gateway"} [1m]))`
 	start, end := s0.Add(time.Minute), s0.Add(9*time.Minute)
 	want := lokiVersionReference(rows, "version", "", "", start, end, time.Minute, time.Minute)
-	cold := runScopedQueryRange(t, p, query, start, end, time.Minute)
-	if diffSeriesPoints(cold, want) == "" {
-		t.Fatal("the cold answer already restored the stream values: the test checks nothing")
-	}
-	warmStreamLabels(t, p, scopedRequest(p, "/").Context())
-	for i := 0; i < 2; i++ { // the second is served from the response cache
+	for i := 0; i < 2; i++ {
 		if d := diffSeriesPoints(runScopedQueryRange(t, p, query, start, end, time.Minute), want); d != "" {
-			t.Fatalf("after the listing (#%d): %s", i, d)
+			t.Fatalf("request #%d: %s", i, d)
 		}
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.stats) != 2 {
-		t.Fatalf("%d stats calls, want 2: the cold answer must not be served once the names are known, and the restored one is cached", len(fake.stats))
+	if fake.listings != 0 || len(fake.stats) != 1 {
+		t.Fatalf("%d stream_field_names and %d stats calls, want 0 and 1 (the second request is cached)", fake.listings, len(fake.stats))
 	}
 }
 
-// A grouping label that is no stream label of the tenant, and a query that
-// names no stream label outside its selector, keep the plain translation.
+// Two replicas that never listed anything translate a parser-free grouped
+// metric identically and key its response identically, so an entry one
+// computes is the entry the other looks up (the peer cache tiers).
 //
 // conformance: semantics/stream-label-shadowed-by-ingest-json-key
-func TestStreamTagRestoreOnlyForStreamLabels(t *testing.T) {
+func TestStreamTagRestoreSameOnEveryReplica(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
 	srv, _ := newPushdownFakeVL(t, shadowedVersionRows(s0), nil)
+	a, b := newStreamTagProxy(t, srv.URL), newStreamTagProxy(t, srv.URL)
+	warmStreamLabels(t, b, scopedRequest(b, "/").Context()) // B knows the tenant's names, A does not
+	for _, q := range []string{
+		`sum by (version) (count_over_time({service_name="api-gateway"} [1m]))`,
+		`sum(count_over_time({service_name="api-gateway" ,version != ""} | detected_level="error" [5s])) by (version)`,
+		`sum by (app) (count_over_time({app="x"} [5m]))`,
+	} {
+		ra, rb := scopedRequest(a, "/loki/api/v1/query_range"), scopedRequest(b, "/loki/api/v1/query_range")
+		ta, errA := a.translateQueryWithContext(ra.Context(), q)
+		tb, errB := b.translateQueryWithContext(rb.Context(), q)
+		if errA != nil || errB != nil || ta != tb {
+			t.Fatalf("%s: translations differ (%v, %v):\nA %s\nB %s", q, errA, errB, ta, tb)
+		}
+		if ka, kb := a.responseNamesCacheKey(ra, q), b.responseNamesCacheKey(rb, q); ka != kb || ka == "" {
+			t.Fatalf("%s: cache key parts %q and %q", q, ka, kb)
+		}
+	}
+}
+
+// A parser-free metric query restores exactly the names it groups by (in a
+// vector or range aggregation, nested in label_replace or a binary operand; a
+// topk is answered from its inner aggregation's translation), never a derived or level name, a name only its selector or a
+// `without` holds, or a log query's.
+//
+// conformance: semantics/stream-label-shadowed-by-ingest-json-key
+func TestStreamTagRestoreNames(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	srv, fake := newPushdownFakeVL(t, shadowedVersionRows(s0), nil)
 	p := newStreamTagProxy(t, srv.URL)
 	ctx := scopedRequest(p, "/").Context()
 	for _, c := range []struct {
@@ -285,10 +304,13 @@ func TestStreamTagRestoreOnlyForStreamLabels(t *testing.T) {
 	}{
 		{`sum by (version) (count_over_time({service_name="api-gateway"} [1m]))`, []string{"version"}},
 		{`sum by (env, version) (rate({service_name="api-gateway"} [1m]))`, []string{"env", "version"}},
-		{`sum by (user) (count_over_time({service_name="api-gateway"} [1m]))`, nil},
+		{`sum by (user) (count_over_time({service_name="api-gateway"} [1m]))`, []string{"user"}},
 		{`sum(count_over_time({service_name="api-gateway", version="v2"} [1m]))`, nil},
+		{`sum without (pod) (count_over_time({service_name="api-gateway"} [1m]))`, nil},
 		{`sum by (level) (count_over_time({service_name="api-gateway"} [1m]))`, nil},
-		{`sum by (detected_level) (count_over_time({service_name="api-gateway"} [1m]))`, nil},
+		{`sum by (detected_level, service_name) (count_over_time({service_name="api-gateway"} [1m]))`, nil},
+		{`label_replace(sum by (version) (count_over_time({service_name="api-gateway"} [1m])), "v", "$1", "version", "(.*)")`, []string{"version"}},
+		{`sum by (env) (count_over_time({service_name="api-gateway"} [1m])) / sum by (env) (count_over_time({service_name="api-gateway"} |= "by (x)" [1m]))`, []string{"env"}},
 		{`{service_name="api-gateway"} | version="v2"`, nil},
 	} {
 		got, err := p.translateQueryWithContext(ctx, c.query)
@@ -297,13 +319,29 @@ func TestStreamTagRestoreOnlyForStreamLabels(t *testing.T) {
 		}
 		var restored []string
 		for _, m := range regexp.MustCompile(`extract "<([^>]+)>" from __lxst_\d+ skip_empty_results`).FindAllStringSubmatch(got, -1) {
-			restored = append(restored, m[1])
+			if !slicesContains(restored, m[1]) {
+				restored = append(restored, m[1])
+			}
 		}
 		sort.Strings(restored)
 		if fmt.Sprint(restored) != fmt.Sprint(c.restore) {
 			t.Errorf("%s: restores %v, want %v\n%s", c.query, restored, c.restore, got)
 		}
 	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.listings != 0 {
+		t.Errorf("parser-free metric queries listed the tenant's stream label names %d times", fake.listings)
+	}
+}
+
+func slicesContains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Differential: generated stream labels, JSON keys that shadow them or not,
@@ -454,14 +492,6 @@ func BenchmarkStreamTagRestore(b *testing.B) {
 			}
 			b.Cleanup(p.stopStreamLabelNames)
 			p.storeBackendVersion("v1.50.0", "v1.50.0")
-			ctx := scopedRequest(p, "/").Context()
-			p.tenantStreamLabelNames(ctx)
-			for deadline := time.Now().Add(10 * time.Second); len(p.tenantStreamLabelNames(ctx)) == 0; {
-				if time.Now().After(deadline) {
-					b.Fatal("stream label names were not refreshed")
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
 			targetAt := func(i int) string {
 				shift := time.Duration(0)
 				if sh.cached {

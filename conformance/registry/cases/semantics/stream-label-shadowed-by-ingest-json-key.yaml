@@ -26,9 +26,8 @@ why: |
   stream label was counted under the line's value. The same holds without the
   pill and for any grouping by such a label.
 
-  Fixed: for a metric query that names a stream label of the tenant outside
-  its selector (the recent stream_field_names listing the parser case already
-  uses, semantics/plain-name-after-parser-reads-stream-label), the translation
+  Fixed: for a metric query without a parser stage, every label it groups by
+  (by (...), in a vector or range aggregation) is restored: the translation
   writes the label's value from `_stream` back into the field before the
   query's first pipe: an anchored extract_regexp over the whole tags of
   `_stream` (a name inside another tag's value or a longer name ending in it
@@ -36,7 +35,11 @@ why: |
   field when the stream has no such label (structured metadata, a field
   VictoriaLogs did not take into the stream). VictoriaLogs runs both once per
   run of equal `_stream` values, that is once per block; no VictoriaLogs call
-  is added and no shape changes route. The pipes were run on VictoriaLogs
+  is added, no stream label listing is needed (the names come from the query
+  text, so the translation and every cache key are the same on every replica
+  from the first request on), and no measured shape changes route. A label
+  the stream lacks costs one regexp per block and keeps its value. The pipes
+  were run on VictoriaLogs
   v1.49.0 and v1.53.0's own pipe code (shadowed, missing, first and last tag,
   names inside values, quotes, backslashes, commas).
 
@@ -45,10 +48,9 @@ why: |
   names the detected_level derivation reads
   (semantics/stream-level-shadowed-by-ingest-json-key); `| json` metric plans
   and log-query filters after a parser
-  (semantics/stream-label-shadowed-after-json-parser). Before the tenant's
-  names are first listed (a fresh proxy, about a second) a query keeps the
-  plain translation; its answer is cached under a key without the names, so it
-  is not served afterwards.
+  (semantics/stream-label-shadowed-after-json-parser); a query with a parser
+  keeps the listing-gated restore of
+  semantics/plain-name-after-parser-reads-stream-label.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -69,10 +71,10 @@ gap:
   fixed_by: '#1065'
   impact: drilldown-visible
   effort: M
-  area: 'internal/translator/plain_stream_labels.go streamTagRestorePipes, withStreamTagRestore; internal/translator/translator.go metric pipeline; internal/proxy/plain_stream_labels.go plainStreamLabelNames; internal/proxy/range_metric_compat.go queryUsesParserStages'
+  area: 'internal/translator/plain_stream_labels.go streamTagRestorePipes, withStreamTagRestore; internal/translator/translator.go metric pipeline; internal/proxy/plain_stream_labels.go plainStreamLabelNames, groupingNames; internal/proxy/range_metric_compat.go queryUsesParserStages'
   loki: 'pkg/logql/log/labels.go:293-314 getWithCategory, 390-397 Add (a colliding name becomes name_extracted); pkg/logql/log/parser.go:152-154'
   proxy: 'the stream label value restored from _stream before the first pipe of a metric query'
-  planned_test: 'TestCompat_StreamLabelShadowedByIngestJSONKey (test/e2e-compat, group core; written, not yet run); TestStreamLabelShadowedByIngestJSONKeyLikeLoki, TestStreamLabelShadowedByIngestJSONKeyDifferential, TestStreamTagRestoreColdThenWarm, TestStreamTagRestoreOnlyForStreamLabels (internal/proxy); TestStreamTagRestoreEdgeCases, TestStreamTagRestorePlacementAndStrip, FuzzStreamTagRestoreLikeLoki (internal/translator)'
+  planned_test: 'TestCompat_StreamLabelShadowedByIngestJSONKey (test/e2e-compat, group core; written, not yet run); TestStreamLabelShadowedByIngestJSONKeyLikeLoki, TestStreamLabelShadowedByIngestJSONKeyDifferential, TestStreamTagRestoreFirstRequestWithoutListing, TestStreamTagRestoreSameOnEveryReplica, TestStreamTagRestoreNames (internal/proxy); TestStreamTagRestoreEdgeCases, TestStreamTagRestorePlacementAndStrip, FuzzStreamTagRestoreLikeLoki (internal/translator)'
   clusters: []
 perf:
   max_ratio: 2.0

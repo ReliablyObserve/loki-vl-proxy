@@ -67,23 +67,6 @@ func TestCompat_StreamLabelShadowedByIngestJSONKey(t *testing.T) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	// The proxy learns the tenant's stream label names in the background (at
-	// most once a minute over the last hour); until the listing holds this
-	// fixture's version label, a query keeps the plain translation, the
-	// documented cold window of a fresh label. Wait for it, bounded.
-	breakdown := `sum by (version) (count_over_time(` + selector + ` [1m]))`
-	warm := time.Now().Add(90 * time.Second)
-	for {
-		loki := slidingRangeSeries(t, lokiURL, breakdown, end, end, time.Minute, nil)
-		proxy := slidingRangeSeries(t, proxyURL, breakdown, end, end, time.Minute, nil)
-		if fmt.Sprint(loki) == fmt.Sprint(proxy) {
-			break
-		}
-		if time.Now().After(warm) {
-			t.Fatalf("the proxy never grouped by the stream label: Loki %v, proxy %v", loki, proxy)
-		}
-		time.Sleep(3 * time.Second)
-	}
 	for _, c := range []struct {
 		name, query string
 		step        time.Duration
