@@ -321,6 +321,7 @@
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
+      "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/matrix_fold_sink_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
@@ -376,6 +377,7 @@
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
+      "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -515,8 +517,10 @@
     ],
     "parser-logfmt": [
       "internal/proxy/drilldown_breakdown_exact_test.go",
+      "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_conditional_unpack_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
+      "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go"
     ],
     "parser-pattern": [
@@ -688,6 +692,10 @@
       "internal/proxy/labels_cache_warm_test.go",
       "internal/proxy/metadata_edge_refresh_test.go",
       "test/e2e-compat/stack_profiles_test.go"
+    ],
+    "quality/logfmt-parse-risk-candidates": [
+      "internal/proxy/logfmt_risk_candidates_test.go",
+      "test/e2e-compat/logfmt_risk_candidates_test.go"
     ],
     "quality/metadata-bounded-staleness": [
       "internal/proxy/metadata_edge_refresh_test.go",
@@ -1317,13 +1325,15 @@
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/detected_level_keys_gate_test.go",
       "internal/proxy/detected_level_test.go",
+      "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
       "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
-      "test/e2e-compat/detected_level_test.go"
+      "test/e2e-compat/detected_level_test.go",
+      "test/e2e-compat/logfmt_risk_candidates_test.go"
     ],
     "severity-exposure-surfaces": [
       "internal/proxy/detected_level_response_test.go",
@@ -1447,7 +1457,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 413,
+  "registry_items": 414,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1816,6 +1826,12 @@
     "internal/proxy/line_format_error_test.go": [
       "profiles/tail-line-format-parse-error-status",
       "semantics/line-format-template-error-keeps-entry"
+    ],
+    "internal/proxy/logfmt_risk_candidates_test.go": [
+      "loki_api_v1_query_range",
+      "parser-logfmt",
+      "quality/logfmt-parse-risk-candidates",
+      "severity-detected-level-derivation"
     ],
     "internal/proxy/loki_client_error_test.go": [
       "semantics/error-layer-backend-failure-status",
@@ -2742,6 +2758,12 @@
       "parser-logfmt",
       "semantics/logfmt-existence-filter-ungrouped-sum"
     ],
+    "test/e2e-compat/logfmt_risk_candidates_test.go": [
+      "loki_api_v1_query_range",
+      "parser-logfmt",
+      "quality/logfmt-parse-risk-candidates",
+      "severity-detected-level-derivation"
+    ],
     "test/e2e-compat/loki_profile_parity_test.go": [
       "profiles/dotted-name-parse-error",
       "profiles/dotted-names-accepted-outside-loki-profile",
@@ -3054,7 +3076,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 315,
+  "tests_with_markers": 317,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3160,5 +3182,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 236
+  "wired_items": 237
 }
