@@ -757,24 +757,31 @@ func TestFleetPeerCacheProof(t *testing.T) {
 			for _, req := range base.volume {
 				requireVolumeLikeVL(t, req.String()+" on A", req, first[req.path])
 			}
-			// B and C read A's replies, or sum A's segments: nothing is read
-			// from VictoriaLogs.
+			// Each replica first reads its own moved window, which only the
+			// segments A kept can answer: it has read nothing of this selector
+			// yet, so every segment it does not own itself comes from a peer.
+			// (Read after the replica summed A's segments for the base window,
+			// the segments are already in its memory and no peer read is left
+			// to see: 4 of 10 runs on the CI stack.)
+			peerReads := 0.0
+			for _, move := range []struct {
+				idx int
+				by  time.Duration
+			}{{replicaB, time.Hour}, {replicaC, 2 * time.Hour}} {
+				d := requireMovedVolume(t, fleetReplica(move.idx), movedVolume(fx, move.by), "after A kept the segments", false)
+				peerReads += d.peerHits
+			}
+			if peerReads < 1 && replicationFactor < 2 {
+				t.Errorf("no replica read a volume segment kept on A from a peer through a moved window")
+			}
+			// Then B and C read A's replies, or sum A's segments: nothing is
+			// read from VictoriaLogs.
 			for _, req := range base.volume {
 				for _, rep := range []replica{b, c} {
 					if d, _ := askSame(t, rep, req, first[req.path]); volumeRead(d) != 0 {
 						t.Errorf("%s on %s read volume segments from VictoriaLogs; A kept its reply and segments (%s)", req, rep.name, d)
 					}
 				}
-			}
-			// Then each reads its own moved window, which only the segments
-			// A kept can answer.
-			peerReads := 0.0
-			for idx, by := range map[int]time.Duration{replicaB: time.Hour, replicaC: 2 * time.Hour} {
-				d := requireMovedVolume(t, fleetReplica(idx), movedVolume(fx, by), "after A kept the segments", false)
-				peerReads += d.peerHits
-			}
-			if peerReads < 1 && replicationFactor < 2 {
-				t.Errorf("no replica read a volume segment kept on A from a peer through a moved window")
 			}
 			readAgain(t, fleetReplicas(), base.volume, first)
 		})
