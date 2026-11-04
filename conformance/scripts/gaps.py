@@ -31,14 +31,15 @@ def fmt(value):
 def slower_rows(evidence, flag):
     """item -> the measured rows the proxy answers slower than Loki on `flag`.
 
-    Rows Loki's results cache answered are left out: their Loki time is not a computed one.
+    Rows Loki's results cache answered are left out: their Loki time is not a computed one. So are rows the
+    newest daily run did not re-measure (`stale`, perf_evidence.is_current): they keep an older run's figures.
     """
     slow = {}
     for item, measured in evidence.items():
         if item.startswith(GENERIC):
             continue
         for r in measured:
-            if r.get(flag) and not r.get("loki_cache_served"):
+            if r.get(flag) and not r.get("loki_cache_served") and not r.get("stale"):
                 slow.setdefault(item, []).append(r)
     return slow
 
@@ -51,7 +52,8 @@ def perf_section(evidence):
              "cold request (bench/ab runs; details in [performance.md](performance.md)). Warm is the",
              "p50 of the runs after the first, on the worst cold row; `also slower warm` counts the rows",
              "slower warm too (— when no row comes from a run that can say). Rows Loki's results cache",
-             "answered (by its own counters or the identical-answer heuristic) are excluded.", ""]
+             "answered (by its own counters or the identical-answer heuristic) are excluded, and so are rows the",
+             "newest daily run did not re-measure (listed apart in performance.md).", ""]
     if cold:
         header = ("| registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there "
                   + "| Loki warm there | also slower warm |")
