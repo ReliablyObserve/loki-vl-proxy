@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.74.1] - 2026-11-04
+
 ### Fixed
 
 - Answer the proxy's own failures with Loki's text instead of the error's: a
