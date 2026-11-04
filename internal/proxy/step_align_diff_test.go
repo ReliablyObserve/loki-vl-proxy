@@ -288,6 +288,9 @@ func FuzzAlignQueryRangeToStep(f *testing.F) {
 		{"1700000000", "1700011001", "1"},
 		{"1700000000", "1700000001", "0.0001"},
 		{"", "", "60"},
+		// No start, so Loki derives it an hour before an end near the earliest
+		// int64 nanosecond: that start in nanoseconds is outside int64.
+		{"", "-9223368436854551616", "1000000"},
 	} {
 		f.Add(seed[0], seed[1], seed[2])
 	}
@@ -338,9 +341,11 @@ func FuzzAlignQueryRangeToStep(f *testing.F) {
 			if ns%stepNs != 0 {
 				t.Fatalf("%s %d is not a multiple of the step %d", b.name, ns, stepNs)
 			}
-			rawMs := b.raw.UnixMilli() * int64(time.Millisecond)
-			if d := rawMs - ns; d >= stepNs || d <= -stepNs || (rawMs >= 0 && d < 0) || (rawMs < 0 && d > 0) {
-				t.Fatalf("%s moved from %d to %d, step %d: not less than a step toward zero", b.name, rawMs, ns, stepNs)
+			// Compared in milliseconds: a bound near either int64 limit times 1e6
+			// would leave int64 and wrap.
+			rawMs, alignedMs, stepMs := b.raw.UnixMilli(), ns/int64(time.Millisecond), stepNs/int64(time.Millisecond)
+			if d := rawMs - alignedMs; d >= stepMs || d <= -stepMs || (rawMs >= 0 && d < 0) || (rawMs < 0 && d > 0) {
+				t.Fatalf("%s moved from %d ms to %d ms, step %d ms: not less than a step toward zero", b.name, rawMs, alignedMs, stepMs)
 			}
 		}
 		again, ok := alignQueryRangeToStep(got, now)
