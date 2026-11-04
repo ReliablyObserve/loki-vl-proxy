@@ -1,0 +1,106 @@
+id: semantics/query-range-window-full-limit-reads
+title: A moved, longer or shorter log range reuses every history window an earlier range read (fixed)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A log query_range longer than -query-range-split-interval is read from
+  VictoriaLogs in aligned windows, newest first for a backward query, and
+  every history window is kept in the shared window cache. The proxy read a
+  window after the first batch with only the rows still missing as its
+  limit, and since #929 that limit is part of the window's cache key. The
+  rows still missing depend on the newest, partial window, on the request's
+  range and on the batch layout (two windows at a time, or one at a time when
+  the /hits estimate marks a window expensive), so a window moved by a
+  minute, a longer range over the same hours or a refresh asked the same
+  hour again under a limit no earlier read had used, and read it from
+  VictoriaLogs again. In the daily A/B run the O1 shape
+  (loki-profile-otel-metadata, 24h) went from 22 ms to 170 ms warm p50 from
+  v2.48.1 on, because every warm 24h run read the second-newest hour again;
+  the 24h log shapes of level-filter (LF1, LF6-LF10) and stage-field-exposure
+  (SF6) moved the same day.
+
+  Loki reads each interval split with the request's whole limit
+  (pkg/querier/queryrange/splitters.go:39-52: every split LokiRequest keeps
+  Limit: r.Limit), takes the splits newest first for a backward query
+  (pkg/querier/queryrange/split_by_interval.go:212-219) and stops once the
+  limit is reached (split_by_interval.go:136-146), then keeps `limit`
+  entries of the merged splits (pkg/querier/queryrange/codec.go:1629-1630
+  mergeOrderedNonOverlappingStreams). The proxy now does the same for every
+  window its cache keeps: such a window is read with the request's whole
+  limit (internal/proxy/query_range_windowing.go fetchQueryRangeWindowBatch)
+  and the collected lines are trimmed to the limit as before. A kept
+  window's rows then depend only on the window and the limit, so every
+  history window is read from VictoriaLogs once, whatever range, move or
+  batch layout asks for it. A window no cache keeps (newer than
+  -query-range-freshness with -query-range-recent-cache-ttl 0) gains nothing
+  from a larger read and still reads only the rows still missing. The window
+  cache key and its value are unchanged.
+
+  Answers: the newest (backward) or oldest (forward) `limit` lines, as
+  before. Two edge cases change towards Loki. A line VictoriaLogs returns
+  that the proxy cannot decode still takes a place of its window's read
+  limit; read with only the rows still missing, a later window then answered
+  fewer lines than it held and the next window's lines took their place.
+  The label-filter refill of the Loki-compatible profile reads further pages
+  of a window until it holds the read limit's kept lines or its page budget
+  (-label-filter-refill-max-pages) is spent; with pages as small as the rows
+  still missing and eleven of twelve lines dropped, the budget ran out before
+  the window gave the lines it holds. Read with the whole limit, a window
+  that holds fewer lines than the limit answers all of them in both cases
+  (TestQueryRangeWindow_FullLimitReadEdgeCases).
+
+  Measured with a recording fake VictoriaLogs, before and after:
+  BenchmarkQueryRangeWindowO1ShiftedRepeat (the O1 A/B sequence: 1h, 3h, 6h
+  and 24h, seven runs each, moved a minute back per run; the six warm 24h
+  runs timed): 1 window read (670 rows) per warm 24h run before, none
+  after; 23.1 ms -> 13.4 ms for the six runs, B/op -41%, allocs/op -55%.
+  The cost is on a cold read of the window that completes the limit, which
+  now reads up to the whole limit once (BenchmarkQueryRangeWindowColdRead,
+  one cold 24h request): the O1 query 2 reads either way, 1,000 -> 1,400
+  rows; a dense forward query 1,000 -> 1,800 rows; a sparse query 100 rows
+  either way; the Loki-profile refill with a third of the lines kept 10 ->
+  6 reads, 604 -> 640 rows. The extra rows are bounded by the limit per
+  request, and the window is then reused by every later range.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{env="production"} | json | pipeline=`metrics/prometheus` | k8s_namespace_name=`monitoring`'
+    start: now-24h
+    end: now-45m
+    limit: '1000'
+    direction: backward
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The same query over 1h, 3h and 6h ending at the same time answered first,
+    then the 24h range asked again with start and end moved a minute back
+    (the A/B matrix's shifted warm runs).
+compare:
+  mode: exact
+  fields: [status, data.result]
+  expect: |
+    Loki's lines. The moved 24h request reads no history window from
+    VictoriaLogs that an earlier request read.
+gap:
+  status: fixed
+  fixed_by: 'fix/query-range-window-reuse-full-limit'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/query_range_windowing.go fetchQueryRangeWindowBatch (window read limit), proxyLogQueryWindowed and fetchQueryRangeWindow'
+  loki: 'pkg/querier/queryrange/splitters.go:39-52; pkg/querier/queryrange/split_by_interval.go:136-146, 212-219; pkg/querier/queryrange/codec.go:1629-1630'
+  proxy: 'windows after the first batch read with the rows still missing as limit and key; a moved or longer range read them again (O1 24h warm p50 22 ms -> 170 ms)'
+  planned_test: 'proxy TestQueryRangeWindow_ShiftedRangesReuseHistoryWindows, TestQueryRangeWindow_BatchLayoutSharesWindows, TestQueryRangeWindow_FullLimitReadEdgeCases, TestQueryRangeWindow_NearNowWindowsReadOnlyTheMissingRows, TestQueryRangeWindow_ReuseMatchesLokiDifferential, FuzzQueryRangeWindowReuse, BenchmarkQueryRangeWindowO1ShiftedRepeat, BenchmarkQueryRangeWindowColdRead; e2e TestCompat_QueryRangeWindowMovedRangeReuse (test/e2e-compat, core); fleet TestFleet_QueryRangeWindowsServeMovedRangesOnPeers (test/e2e-fleet)'
+  clusters: []
+  visual: none
+  visual_reason: 'a latency change: the answers are Loki''s before and after for the visual fixtures (the two edge cases need a backend line the proxy cannot decode, or a window with more lines than the limit of which a label filter drops eleven in twelve, which no Grafana fixture holds); the warm repeat is measured by the A/B O1 and SF6 shapes and the daily 24h log shapes of level-filter'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: true
+  locked_since: '2026-11-04'
+  effort_exception: null

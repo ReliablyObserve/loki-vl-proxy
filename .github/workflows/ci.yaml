@@ -1323,7 +1323,7 @@ jobs:
             export FLEET_PROOF_REPORT="$RUNNER_TEMP/fleet-peer-cache-proof-rf$rf.json"
             docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
             docker compose -f test/e2e-fleet/docker-compose.yml up -d --no-build --wait --wait-timeout 180
-            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry)$' ./test/e2e-fleet/
+            go test -v -count=1 -tags=e2e -timeout=20m -run '^(TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics|TestFleetPeerCacheProof|TestFleet_QueryRangeSettledStepsReachPeers|TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry|TestFleet_QueryRangeWindowsServeMovedRangesOnPeers)$' ./test/e2e-fleet/
             docker compose -f test/e2e-fleet/docker-compose.yml --profile edge down -v
           done
 

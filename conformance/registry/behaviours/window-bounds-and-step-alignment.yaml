@@ -32,3 +32,4 @@ cases:
   - semantics/resolution-limit-11000
   - semantics/unwrap-range-last-point
   - semantics/query-range-window-budget
+  - semantics/query-range-window-full-limit-reads

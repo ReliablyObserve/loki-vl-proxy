@@ -121,9 +121,9 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 
 	p := newWindowingTestProxy(t, vlBackend.URL)
 	start := time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
-	// Use 3 windows initially, then expand to 4 windows. The first two
-	// windows retain their backend budget and are reused; the third is fetched
-	// again when its remaining-row budget changes with the expanded range.
+	// Use 3 windows initially, then expand to 4 windows. Every window is
+	// read with the request's whole limit, so the three windows already read
+	// are reused and only the new one is fetched.
 	const initialRangeDuration = 3 * time.Hour
 	const expandedRangeDuration = 4 * time.Hour
 	endA := start + int64(initialRangeDuration) - 1
@@ -150,8 +150,8 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 	if wB.Code != http.StatusOK {
 		t.Fatalf("unexpected status for expanded range: %d body=%s", wB.Code, wB.Body.String())
 	}
-	if got := backendCalls.Load(); got != 5 {
-		t.Fatalf("expected one new window and one budget-changed refetch after expansion, got %d calls", got)
+	if got := backendCalls.Load(); got != 4 {
+		t.Fatalf("expected only the new window to be fetched after expansion, got %d calls", got)
 	}
 	mu.Lock()
 	if len(seenWindows) != 4 {
@@ -160,8 +160,9 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 	mu.Unlock()
 }
 
-// A later window may be fetched with only the remaining request budget. That
-// fragment must not satisfy a shifted request which needs more rows from it.
+// A window read for one range must answer a shifted range which needs more
+// rows from it: every window is read with the request's whole limit, never
+// with only the rows still missing.
 func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
@@ -171,7 +172,10 @@ func TestQueryRangeWindow_ShiftedRangeDoesNotReuseTruncatedWindow(t *testing.T) 
 		shiftedLastRow int
 	}{
 		{name: "all-valid", firstRows: 5, shiftedRows: 5, shiftedLastRow: 4},
-		{name: "one-malformed", malformed: true, firstRows: 4, shiftedRows: 4, shiftedLastRow: 4},
+		// The undecodable line takes a place of the third window's read
+		// limit, but that window is read with the request's whole limit, so
+		// it still holds the four decodable lines the first range needs.
+		{name: "one-malformed", malformed: true, firstRows: 5, shiftedRows: 4, shiftedLastRow: 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			start := time.Now().Add(-24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()

@@ -81,3 +81,4 @@ smoke	internal/translator	FuzzStoredLevelCopyFilter	12s	-	stored level copy filt
 smoke	internal/proxy	FuzzStripUnrestrictedLogfmtUnpacks	12s	-	detected_fields field_names query without logfmt token columns
 smoke	internal/proxy	FuzzDetectedLevelFilterLikeLoki	12s	-	detected_level filter keeps the lines of Loki's level
 smoke	internal/proxy	FuzzVolumeEndMillisecondsLikeLoki	12s	-	index volume last sample at the end rounded up to the millisecond
+smoke	internal/proxy	FuzzQueryRangeWindowReuse	12s	-	log query windows reused across moved ranges answer like Loki
