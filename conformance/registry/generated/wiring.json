@@ -983,6 +983,7 @@
     "semantics/keep-leaves-labels-loki-drops": [
       "internal/proxy/keep_extracted_collision_test.go",
       "internal/proxy/keep_series_grouping_test.go",
+      "internal/translator/keep_grouping_test.go",
       "test/e2e-compat/keep_service_name_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
@@ -2502,6 +2503,9 @@
     "internal/translator/json_bracket_path_test.go": [
       "drilldown/fields-pill-json-path-extracted-empty"
     ],
+    "internal/translator/keep_grouping_test.go": [
+      "semantics/keep-leaves-labels-loki-drops"
+    ],
     "internal/translator/label_filter_expr_test.go": [
       "semantics/label-filter-expression-syntax"
     ],
@@ -3164,7 +3168,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 327,
+  "tests_with_markers": 328,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -1383,6 +1383,7 @@
     "internal/translator/ip_label_filter_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translator/ip_label_filter_test.go | semantics/ip-label-filter-missing-label",
     "internal/translator/json_bracket_path_test.go | drilldown/fields-pill-json-path-extracted-empty",
+    "internal/translator/keep_grouping_test.go | semantics/keep-leaves-labels-loki-drops",
     "internal/translator/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
     "internal/translator/label_format_rename_test.go | profiles/stage-field-exposure",
     "internal/translator/label_matcher_anchoring_test.go | profiles/label-filter-regexp-anchoring",
@@ -1803,7 +1804,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 326,
+      "go": 327,
       "playwright": 1
     },
     "page_kinds": {
