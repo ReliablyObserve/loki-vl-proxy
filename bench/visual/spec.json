@@ -2058,9 +2058,6 @@
     "semantics/vector-aggregation-over-log-selector-status",
     "status-400",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "semantics/vector-aggregation-over-log-selector-status"
    ]
   }
  ],

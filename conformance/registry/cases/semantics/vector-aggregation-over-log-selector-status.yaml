@@ -51,6 +51,8 @@ gap:
   status: fixed
   fixed_by: '#1106'
   impact: explore-visible
+  visual: none
+  visual_reason: 'a status and error text change: Grafana shows an error panel on the base and on the PR, and the visual comparison compares only the status Grafana returns for a failed panel, which is the same for both. The capture explore-topk-over-log-selector (visual-smoke run 41916596305) shows the base''s "Internal Server Error" and the PR''s and Loki''s "parse error at line 1, col 45: syntax error: unexpected )". The status and text are pinned by TestCompat_VectorAggregationOverLogSelector against Loki and the parser edge table'
   effort: S
   area: 'internal/logql/parser.go parseVectorAggregation (vector aggregation operand must be a metric expression)'
   loki: 'pkg/logql/syntax/syntax.y:176-185 (vectorAggregationExpr takes a metricExpr); pkg/logql/syntax/parser_test.go:689-690'
