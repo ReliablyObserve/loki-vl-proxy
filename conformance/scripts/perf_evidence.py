@@ -43,8 +43,8 @@ define — the performance evidence and the registry cannot drift apart.
 Quality summary: `--quality-summary PATH` rewrites only the text between the
 `<!-- quality-summary:start -->` and `<!-- quality-summary:end -->` markers of PATH (README.md and
 docs/real-window-compatibility-gaps.md) with the "Quality and performance vs Loki" section. Every figure comes from
-files: the latest valid daily run (bench/ab/results/daily-*.json; the date and commit from
-bench/ab/history/acceptance.json), the above-2× list (bench/ab/history/over-2x-loki.json), the registry (summary.json,
+files: the newest valid daily run (bench/ab/results/daily-*.json, the summaries of one run and one commit;
+the commit and distribution from those summaries), the above-2× list (bench/ab/history/over-2x-loki.json), the registry (summary.json,
 the cases' gap blocks, the behaviour states, the perf: blocks) and the Loki version pinned in
 test/e2e-compat/docker-compose.yml. The gate (scripts/ci/check_conformance.py) fails when the text is stale.
 
@@ -658,26 +658,41 @@ def pinned_loki(compose_text):
     return found.group(1)
 
 
+def run_stamp(summary):
+    """Where a daily summary stands in time: the start of its run (bench/ab/daily.py stamps every summary of one
+    run alike), or its date for a summary saved before runs were stamped."""
+    return summary.get("measured_at") or summary["date"]
+
+
+def run_key(summary):
+    """(start, commit) of the run a daily summary came from: what its sibling summaries share."""
+    return run_stamp(summary), summary.get("commit", "")
+
+
 def daily_runs(shape_sets, problems):
-    """(latest rows, date, profile): the newest valid daily summaries, all of one date and one Loki profile
-    (loki-defaults when that profile ran that day, otherwise aligned)."""
+    """(latest rows, date, profile): the summaries of the newest valid daily run, one commit and one Loki profile
+    (loki-defaults when that profile ran in that run, otherwise aligned). Summaries of another run, even of the
+    same date, are left out: a section states one run's figures."""
     summaries = [load_json(p) for p in sorted(glob.glob(f"{RESULTS}/daily-*.json"))]
     valid = [x for x in summaries if x.get("valid", True)]
     if not valid:
         raise ValueError(f"{RESULTS}: no valid daily-*.json summary")
-    date = max(x["date"] for x in valid)
-    profile = max((profile_of(x) for x in valid if x["date"] == date), key=lambda p: PROFILE_RANK.get(p, 0))
+    newest = max(valid, key=run_stamp)
+    run = [x for x in valid if run_key(x) == run_key(newest)]
+    profile = max((profile_of(x) for x in run), key=lambda p: PROFILE_RANK.get(p, 0))
     latest = latest_runs(shape_sets, problems, "daily-*.json",
-                         lambda x: x.get("valid", True) and x["date"] == date and profile_of(x) == profile)
-    return latest, date, profile
+                         lambda x: x.get("valid", True) and run_key(x) == run_key(newest) and profile_of(x) == profile)
+    return latest, newest["date"], profile
 
 
-def profile_runs(shape_sets, problems, date):
-    """Loki profile -> the latest rows of the valid daily summaries of `date` measured against that profile."""
+def profile_runs(shape_sets, problems, date, run=None):
+    """Loki profile -> the latest rows of the valid daily summaries of `date` measured against that profile; with
+    `run` (run_key), only those of that run."""
     out = {}
     for profile in PROFILE_RANK:
         rows = latest_runs(shape_sets, problems, "daily-*.json",
-                           lambda x, p=profile: x.get("valid", True) and x["date"] == date and profile_of(x) == p)
+                           lambda x, p=profile: x.get("valid", True) and x["date"] == date and profile_of(x) == p
+                           and (run is None or run_key(x) == run))
         if rows:
             out[profile] = rows
     return out
@@ -759,6 +774,17 @@ def behaviour_claims(found):
     return out
 
 
+def profile_last(days, ran, date):
+    """Loki profile -> the newest date it has a full daily run. A profile the shown run did not run (`ran`: the
+    profiles it did), though an earlier run of the same date did, is named so: that date alone would read as if it
+    ran in the shown run."""
+    out = {p: max((d["date"] for d in days if p in d.get("profiles", {})), default="") for p in PROFILE_RANK}
+    for p, last in out.items():
+        if p not in ran and last == date:
+            out[p] = f"{date}, in an earlier run"
+    return out
+
+
 def quality_inputs():
     """Everything the section states, read from the committed files."""
     spec = load_json(SHAPES)
@@ -767,9 +793,9 @@ def quality_inputs():
     if problems:
         raise ValueError("; ".join(problems))
     acceptance_file = load_json(ACCEPTANCE)
-    # The distribution and the commit are read from the results the section shows, not from the history of that
-    # date: history keeps the first full run of a day, so a later run of the same date would be mixed in.
-    runs = profile_runs(spec["sets"], [], date)
+    # The distribution and the commit are read from the results the section shows, not from the history: the
+    # summaries of one run, so a second run of the same date is never mixed in.
+    runs = profile_runs(spec["sets"], [], date, run_key(next(iter(latest.values()))[1]))
     runs[profile] = latest
     found, _, parity_problems = parity_gaps.analyse()
     behaviours = roadmap.collect("behaviours", "behaviours") + roadmap.collect("translations", "translations")
@@ -787,8 +813,7 @@ def quality_inputs():
         "over_latest": run_states(latest),
         "targets": acceptance_file.get("targets", {}),
         # The newest day each Loki profile has a full daily run (a profile that stopped running is behind `date`).
-        "profile_last": {p: max((d["date"] for d in acceptance_file["days"] if p in d.get("profiles", {})), default="")
-                         for p in PROFILE_RANK},
+        "profile_last": profile_last(acceptance_file["days"], runs, date),
         "over": load_json(OVER_2X) if os.path.exists(OVER_2X) else {"rows": []},
         "blocks": over2x.read_bounds(spec=spec).get("blocks", {}),
         "stats": load_json(SUMMARY_JSON), "states": states, "differences": found,

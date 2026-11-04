@@ -4,21 +4,23 @@
 The scheduled workflow (.github/workflows/perf-daily.yaml) runs this on a
 fresh runner and opens a bot pull request with what it writes:
 
-  bench/ab/results/daily-<set>.json   the day's summary per set (report.py
-                                      format; overwritten daily, the git
-                                      history keeps every day) against the
-                                      stack's Loki ("aligned" profile);
+  bench/ab/results/daily-<set>.json   the latest full run's summary per set
+                                      (report.py format; overwritten by each
+                                      full run of every set, the git history
+                                      keeps every run) against the stack's
+                                      Loki ("aligned" profile);
   bench/ab/results/daily-<set>.loki-defaults.json
                                       the same against Loki with its own
                                       defaults (the "loki-defaults" profile)
-  bench/ab/history/<set>.jsonl        one appended line per set per day
+  bench/ab/history/<set>.jsonl        one appended line per set per run (a second
+                                      run of a day is a second line)
   bench/ab/history/<set>.loki-defaults.jsonl   the same, per profile
   bench/ab/history/trend.md           day-over-day and week-over-week report
   bench/ab/history/ratchet.json       rows as good as Loki (only ever added to)
   bench/ab/history/over-2x-loki.json  rows above 2x Loki (a row is added after two
                                       consecutive runs above 2x and removed after two
                                       within 2x; one run is a warning, see over2x.py)
-  bench/ab/history/acceptance.json    per day, the rows below Loki, close, 1-2x
+  bench/ab/history/acceptance.json    per run, the rows below Loki, close, 1-2x
                                       and above 2x (history.py acceptance)
   <out>/alerts.md, alerts.json        regressions, improvements and ratchet
   alerts-body.md                      losses of this run's lines (not committed:
@@ -44,6 +46,7 @@ Ranges are each set's own, up to --max-range (the seeded window is sized from
 it); 7d is not seeded.
 """
 import argparse
+import datetime
 import json
 import os
 import subprocess
@@ -93,6 +96,10 @@ def main():
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     t0 = time.time()
+    # One stamp for the whole invocation, shared by every summary it writes: it names the run in the history
+    # (history.py: stamp, run_of) and gives all of its lines one date, even when the run crosses midnight.
+    measured_at = datetime.datetime.fromtimestamp(t0, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run_id = ".".join(x for x in (os.environ.get("GITHUB_RUN_ID"), os.environ.get("GITHUB_RUN_ATTEMPT")) if x)
 
     with open(os.path.join(HERE, "shapes.json")) as f:
         spec = json.load(f)
@@ -158,6 +165,9 @@ def main():
                                               label="daily", extra=["--long-runs", f"release={args.long_runs}"],
                                               profile=profile, unlike=unlike)
                 summary["baseline_ref"], summary["commit"] = baseline, head
+                summary["measured_at"], summary["date"] = measured_at, measured_at[:10]
+                if run_id:
+                    summary["run"] = run_id
                 summary["proxy_align"] = profile_meta[profile]["proxy_align"]
                 summary["loki_restarted"] = restarted
                 summaries.append(summary)
@@ -185,11 +195,19 @@ def main():
         stack.log("run invalid (VictoriaLogs restarted); nothing written")
         return 2
     written = []
+    # results/ is what the README and the reports show, and they state one run: only a full run of every set
+    # replaces it. A run of some sets, or a cut-down one, still enters the history (judged if it is a full
+    # measurement of its sets) but leaves the figures of the last complete run alone.
+    complete = (args.runs == history.FULL_RUNS and range_defs[args.max_range][0] >= range_defs[history.FULL_MAX_RANGE][0]
+                and all(n in sets for n in spec["sets"] if history.full_ranges(spec, n)))
+    if not complete:
+        stack.log("not a full run of every set: results/ is left as the last complete run wrote it")
     for summary in summaries:
         profile = summary["profile"]
         suffix = "" if profile == over2x.LEGACY_PROFILE else f".{profile}"
-        with open(os.path.join(RESULTS, f"daily-{summary['set']}{suffix}.json"), "w") as f:
-            json.dump(summary, f, indent=1)
+        if complete:
+            with open(os.path.join(RESULTS, f"daily-{summary['set']}{suffix}.json"), "w") as f:
+                json.dump(summary, f, indent=1)
         if history.append(summary, commit=head)[1] and summary["set"] not in written:
             written.append(summary["set"])
     with open(os.path.join(history.HISTORY, "trend.md"), "w") as f:

@@ -517,24 +517,18 @@ class AlertsTest(unittest.TestCase):
         self.day(row(parity="differs"), name="gone")
         self.assertEqual(alerts(self.dir)["regressions"], [])
 
-    def test_the_full_run_replaces_a_cut_down_one_of_the_same_day(self):
+    def test_a_cut_down_run_and_a_full_run_of_one_date_are_both_kept_and_only_the_full_one_is_judged(self):
         path = os.path.join(self.dir, "control.jsonl")
-
-        def lines():
-            with open(path) as f:
-                return [json.loads(line) for line in f]
-
         self.assertTrue(history.append(summary("2026-10-01", row(), runs=3), self.dir, "manual", SPEC)[1])
         self.assertTrue(history.append(summary("2026-10-01", row(p50=0.7), runs=7), self.dir, "scheduled", SPEC)[1])
-        self.assertEqual([(e["runs"], e["commit"]) for e in lines()], [(7, "scheduled")])
-        # A full line is never replaced, a cut-down one never replaces anything.
-        self.assertFalse(history.append(summary("2026-10-01", row(), runs=7), self.dir, "again", SPEC)[1])
+        self.assertEqual([(e["runs"], e["commit"]) for e in history.read(path)], [(3, "manual"), (7, "scheduled")])
+        # The same line again is the only thing not added.
+        self.assertFalse(history.append(summary("2026-10-01", row(), runs=7), self.dir, "scheduled", SPEC)[1])
         self.assertFalse(history.append(summary("2026-10-01", row(), runs=3), self.dir, "manual", SPEC)[1])
-        self.assertEqual([(e["runs"], e["commit"]) for e in lines()], [(7, "scheduled")])
-        # Other days are untouched by a replacement.
-        history.append(summary("2026-10-02", row(), runs=3), self.dir, "m2", SPEC)
-        history.append(summary("2026-10-02", row(), runs=7), self.dir, "s2", SPEC)
-        self.assertEqual([(e["date"], e["commit"]) for e in lines()], [("2026-10-01", "scheduled"), ("2026-10-02", "s2")])
+        self.assertEqual(len(history.read(path)), 2)
+        # The cut-down line is neither compared nor a baseline: the full one has nothing to be compared with.
+        self.assertEqual(history.last_commit(self.dir, SPEC), "")
+        self.assertEqual(alerts(self.dir)["regressions"], [])
 
     # the exemptions for an error Loki gives too
     def test_ratchet_row_whose_loki_gives_the_same_error_is_not_lost(self):

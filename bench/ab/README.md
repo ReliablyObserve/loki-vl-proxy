@@ -546,12 +546,12 @@ release build's 24h ranges are capped at 3 runs. It writes:
 
 | path | content |
 |---|---|
-| `results/daily-<set>.json`, `results/daily-<set>.loki-defaults.json` | the day's summary per set and Loki profile (`report.py` format), overwritten daily; git history keeps every day, and `perf_evidence.py` reads the latest as evidence (`loki-defaults` first). The `aligned` profile runs its range-metric shapes when a build supports `-align-queries-with-step` |
-| `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per day, append-only (the first file also holds every line written before the profiles existed): date, commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
+| `results/daily-<set>.json`, `results/daily-<set>.loki-defaults.json` | the summary per set and Loki profile (`report.py` format) of the latest full run of every set, overwritten by the next one; git history keeps every run, and `perf_evidence.py` reads the newest run's summaries, of one commit and stamp, as evidence (`loki-defaults` first). A run of some sets, or a cut-down one, enters the history but leaves these files alone, so the README states one run. The `aligned` profile runs its range-metric shapes when a build supports `-align-queries-with-step` |
+| `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per run, append-only (the first file also holds every line written before the profiles existed): date, `measured_at` (UTC start of the run, the same on every line the run wrote), `run` (the CI run id and attempt), commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
 | `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the rows listed before the profiles existed were measured with an unaligned proxy side and live in `loki-defaults`, the profile that measures that side; `aligned` is empty until a build supports `-align-queries-with-step`, then it fills itself); the daily run adds a row after two consecutive full runs above 2× and removes one after two within 2× (see "Above 2× Loki" below) |
-| `history/acceptance.json` | per day of the history and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
+| `history/acceptance.json` | per run of the history (a day with two runs has two entries) and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
@@ -578,8 +578,10 @@ Each run also compares every set's newest history line with the earlier ones
 (`history.py alerts`) and reports transitions, not the state many rows are
 already in (rows that differ from Loki today do not alert again). Only full
 measurements (7 runs, every range of the set up to 24h) count, on either side:
-a cut-down manual run is recorded but neither compared nor a baseline, and the
-scheduled full run replaces a cut-down line of the same day. Each row is
+a cut-down manual run is recorded but neither compared nor a baseline. Every
+full measurement is its own line, keyed by run (`measured_at`, commit, `run`): a manual
+run on a day the scheduled one already ran is kept and judged, and "the previous line" is the previous run in
+the order measured, whatever the lines' dates. Each row is
 compared with the newest earlier full line that has it, and only sets in
 `shapes.json` are looked at. A regression is a result that went `same` →
 `differs` (only when Loki answered 200 in both lines: a Loki failure says
@@ -645,7 +647,10 @@ daily) and replayed the history of 2026-10-29 to 2026-11-02 through the rule bel
 cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) keeps the list, symmetrically
 (a pull request never edits it):
 
-- a row is added once two consecutive full runs measure it comparable and above 2× (both answered 200, Loki's
+- a row is added once two consecutive full runs (in measured order; two runs of one commit, or of one day,
+  count as two: each is a fresh stack and an independent sample, and the rule exists so one noisy sample
+  decides nothing. Requiring a new commit would leave a pending row open for as long as main stays quiet, as
+  the scheduled job does not run then) measure it comparable and above 2× (both answered 200, Loki's
   results cache did not answer the cold run, beyond the 50 ms floor). Its `since` is the first of the two
   runs. A row above 2× on one run only is a warning at the top of the daily pull request body and a
   `::warning::` annotation ("pending add"), the way a listed row within 2× once is pending removal;
