@@ -48,7 +48,7 @@ compare:
     Loki's series and values.
 gap:
   status: fixed
-  fixed_by: 'PRNUMBER'
+  fixed_by: '#1108'
   impact: drilldown-visible
   effort: M
   area: 'internal/translator/translator.go resolveJSONBracketPath (json extraction-list label from a multi-key bracket path)'

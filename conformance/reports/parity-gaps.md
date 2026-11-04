@@ -195,7 +195,7 @@ Last run: 2026-11-04T17:02:53Z on `69d07019`, window [1793806920, 1793810520].
 | `semantics/without-sliding-sum-folded-buckets` — sum without over count_over_time or bytes_over_time on a sliding window reads its buckets folded by VictoriaLogs, with Loki's series and ... | TBD-PR | 0 | 0 |
 | `severity/otlp-severity-before-vl-1.50` — OTLP rows stored by VictoriaLogs before v1.50 (one `severity` field, no severity_number) get detected_level "Unspecified" / "Info2" (fixed) | #666 | 0 | 0 |
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
-| `drilldown/fields-pill-json-path-extracted-empty` — A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (fixed) | PRNUMBER | 1 | 1 |
+| `drilldown/fields-pill-json-path-extracted-empty` — A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (fixed) | #1108 | 1 | 1 |
 | `semantics/detected-fields-empty-answer` — detected_fields of a query that matches no line answers Loki's empty body (fixed) | TBD-PR | 1 | 1 |
 | `quality/index-volume-settled-segments` — An instant /index/volume moved by a refresh reads only its edges from VictoriaLogs, with the answer of one whole-window call (fixed) | perf/segmented-volume-cache | 0 | 0 |
 | `semantics/detected-fields-no-logfmt-token-fields` — detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed) | #1032 | 0 | 0 |
