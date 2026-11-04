@@ -317,6 +317,7 @@
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/line_fields_without_parser_test.go",
+      "internal/proxy/matrix_fold_sink_test.go",
       "internal/proxy/metadata_query_validation_test.go",
       "internal/proxy/ordered_json_result_cache_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
@@ -384,6 +385,7 @@
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/series_level_aggregation_fine_step_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stage_field_exposure_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
@@ -450,6 +452,7 @@
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/series_count_aggregation_test.go",
+      "test/e2e-compat/series_level_aggregation_fine_step_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
       "test/e2e-compat/stddev_stdvar_grouped_test.go",
       "test/e2e-compat/unwrap_quantile_test.go",
@@ -742,6 +745,7 @@
       "internal/proxy/binary_aggregation_differential_test.go",
       "internal/proxy/binary_aggregation_fuzz_test.go",
       "internal/proxy/binary_aggregation_test.go",
+      "internal/proxy/matrix_fold_sink_test.go",
       "test/e2e-compat/aggregation_over_binary_test.go"
     ],
     "semantics/backend-aborted-response": [
@@ -1003,6 +1007,7 @@
     ],
     "semantics/non-sum-vector-aggregation-unreduced": [
       "internal/proxy/instant_unwrap_sum_test.go",
+      "internal/proxy/matrix_fold_sink_test.go",
       "internal/proxy/ordered_json_recorded_test.go",
       "internal/proxy/typed_fold_test.go",
       "internal/proxy/vector_agg_fold_test.go",
@@ -1076,6 +1081,10 @@
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
       "test/e2e-compat/instant_result_type_test.go"
+    ],
+    "semantics/series-level-aggregation-bounded-memory": [
+      "internal/proxy/matrix_fold_sink_test.go",
+      "test/e2e-compat/series_level_aggregation_fine_step_test.go"
     ],
     "semantics/sliding-window-recurrence-exact": [
       "internal/proxy/sliding_window_stats_test.go",
@@ -1777,6 +1786,12 @@
     "internal/proxy/manual_metric_encoding_test.go": [
       "numeric-and-response-formatting",
       "quality/query-range-extent-cache"
+    ],
+    "internal/proxy/matrix_fold_sink_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/aggregation-over-binary-dropped",
+      "semantics/non-sum-vector-aggregation-unreduced",
+      "semantics/series-level-aggregation-bounded-memory"
     ],
     "internal/proxy/metadata_edge_refresh_test.go": [
       "loki_api_v1_label_name_values",
@@ -2780,6 +2795,11 @@
     "test/e2e-compat/series_count_aggregation_test.go": [
       "metric-series-identity",
       "series-limits-and-partial-results"
+    ],
+    "test/e2e-compat/series_level_aggregation_fine_step_test.go": [
+      "loki_api_v1_query_range",
+      "metric-series-identity",
+      "semantics/series-level-aggregation-bounded-memory"
     ],
     "test/e2e-compat/sliding_sum_without_test.go": [
       "loki_api_v1_query_range",
