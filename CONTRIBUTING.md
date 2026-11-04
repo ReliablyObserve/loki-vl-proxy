@@ -194,6 +194,31 @@ the reports below list the gap.
    order: errors, results that differ, a slower first answer, a slower repeated answer;
    largest gap first within each.
 
+5. **Design for fleet scale.** Assume a production deployment runs tens of proxy
+   replicas in front of a much larger VictoriaLogs cluster, with far more concurrent
+   clients than any test stack, and that its limits are not the defaults: Loki's
+   `max_query_series`, the proxy's series and size limits and VictoriaLogs' memory
+   caps may be raised or removed. A limit is never what keeps a change safe. Every
+   change:
+   - makes as few VictoriaLogs calls per client request as it can: it reuses cached
+     answers, stats extents and settled steps, coalesces identical work in flight
+     across clients and replicas, pushes work down so VictoriaLogs returns aggregates,
+     and never adds a call where a cached or derived answer exists;
+   - keeps the proxy a defence for VictoriaLogs: fan-out per request and per replica is
+     bounded, heavy calls run with bounded concurrency, excess load gets Loki's
+     back-pressure statuses, and label and label-value calls keep their own lane;
+   - parallelises VictoriaLogs calls where that shortens the answer, sized by the
+     request (time chunks, stream groups) and bounded, so replicas times clients cannot
+     add up to unbounded VictoriaLogs load;
+   - bounds proxy and VictoriaLogs memory by construction (chunking, streaming,
+     aggregated input), with every limit raised;
+   - keeps state replicas can share in the fleet cache, so one replica's work serves the
+     others.
+
+   A pull request that changes how the proxy calls VictoriaLogs states how many calls a
+   request makes on a first request, a repeat and a refresh, how that grows with
+   replicas and clients, and what bounds memory and concurrency.
+
 ## Code Style
 
 - Follow standard Go conventions (`gofmt -s`, `go vet`)
