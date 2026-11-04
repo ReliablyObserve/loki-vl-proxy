@@ -31,19 +31,19 @@
    "shape": "P3 nginx count_over_time, pattern with spaces",
    "range": "1h",
    "p50": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.006
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.008
    },
    "p95": {
     "release": 0.004,
-    "main": 0.004,
-    "loki": 0.007
+    "main": 0.005,
+    "loki": 0.008
    },
    "cold": {
-    "release": 0.014,
-    "main": 0.005,
-    "loki": 0.016
+    "release": 0.015,
+    "main": 0.006,
+    "loki": 0.02
    },
    "status": {
     "release": "200",
@@ -98,12 +98,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 4596
+       "bytesReceived": 4602
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1680
+       "bytesReceived": 1692
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -138,19 +138,19 @@
    "shape": "P4 nginx count_over_time, GET request pattern",
    "range": "1h",
    "p50": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.005
-   },
-   "p95": {
     "main": 0.004,
     "release": 0.004,
-    "loki": 0.005
+    "loki": 0.007
+   },
+   "p95": {
+    "main": 0.009,
+    "release": 0.005,
+    "loki": 0.007
    },
    "cold": {
-    "main": 0.006,
+    "main": 0.007,
     "release": 0.007,
-    "loki": 0.013
+    "loki": 0.015
    },
    "status": {
     "main": "200",
@@ -159,8 +159,8 @@
    },
    "vl_cpu_max": {
     "main": 0,
-    "release": 0,
-    "loki": 0
+    "release": 3.24,
+    "loki": 3.24
    },
    "cache": {
     "loki": {
@@ -173,7 +173,7 @@
       "statsResult": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 598
+       "bytesReceived": 602
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -200,12 +200,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85939
+       "bytesReceived": 85951
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1122
+       "bytesReceived": 1134
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -237,8 +237,10 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.69.0",
- "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
+ "baseline_ref": "v2.74.1",
+ "commit": "69d07019b344a30d28e0211a4680852ce35e812b",
+ "measured_at": "2026-11-04T16:42:56Z",
+ "run": "41870053493.1",
  "proxy_align": {
   "release": "on",
   "main": "on"

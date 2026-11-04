@@ -31,18 +31,6 @@
   },
   {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.277,
-   "mode": "warm",
-   "profile": "aligned",
-   "proxy_s": 1.117,
-   "range": "24h",
-   "ratio": 4.03,
-   "set": "drilldown-breakdown-exact",
-   "shape": "DB4 json field breakdown batch_id",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
    "loki_s": 0.257,
    "mode": "cold",
    "profile": "aligned",
@@ -139,114 +127,6 @@
   },
   {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.059,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.519,
-   "range": "1h",
-   "ratio": 8.8,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.916,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 11.864,
-   "range": "24h",
-   "ratio": 12.95,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.245,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 2.974,
-   "range": "6h",
-   "ratio": 12.14,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.25,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 2.14,
-   "range": "1h",
-   "ratio": 8.56,
-   "set": "json-detected-level",
-   "shape": "DLV2 json error filter, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.018,
-   "mode": "warm",
-   "profile": "aligned",
-   "proxy_s": 0.071,
-   "range": "1h",
-   "ratio": 3.94,
-   "set": "json-detected-level",
-   "shape": "DLV2 json error filter, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 1.046,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 12.177,
-   "range": "6h",
-   "ratio": 11.64,
-   "set": "json-detected-level",
-   "shape": "DLV2 json error filter, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.058,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.525,
-   "range": "1h",
-   "ratio": 9.05,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.899,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 12.224,
-   "range": "24h",
-   "ratio": 13.6,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.228,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 3.017,
-   "range": "6h",
-   "ratio": 13.23,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
    "loki_s": 0.21,
    "mode": "cold",
    "profile": "aligned",
@@ -283,48 +163,12 @@
   },
   {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.489,
+   "loki_s": 0.188,
    "mode": "cold",
    "profile": "aligned",
-   "proxy_s": 1.223,
-   "range": "24h",
-   "ratio": 2.5,
-   "set": "level-filter",
-   "shape": "LF12 drilldown logs volume by level, level pill",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.107,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.317,
+   "proxy_s": 0.413,
    "range": "6h",
-   "ratio": 2.96,
-   "set": "level-filter",
-   "shape": "LF12 drilldown logs volume by level, level pill",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.114,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.323,
-   "range": "24h",
-   "ratio": 2.83,
-   "set": "level-filter",
-   "shape": "LF14 explore volume, plain-text service",
-   "since": "2026-10-28"
-  },
-  {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.193,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 1.331,
-   "range": "6h",
-   "ratio": 6.9,
+   "ratio": 2.2,
    "set": "level-filter-stored",
    "shape": "LS8 json count by level_extracted, collision",
    "since": "2026-10-28"
@@ -342,18 +186,6 @@
    "since": "2026-10-28"
   },
   {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.552,
-   "mode": "warm",
-   "profile": "aligned",
-   "proxy_s": 5.492,
-   "range": "24h",
-   "ratio": 9.95,
-   "set": "metric-latency-gap",
-   "shape": "DL3 drilldown logfmt field breakdown, level filter",
-   "since": "2026-10-28"
-  },
-  {
    "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
    "loki_s": 0.199,
    "mode": "cold",
@@ -366,18 +198,6 @@
    "since": "2026-11-03"
   },
   {
-   "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.055,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.113,
-   "range": "6h",
-   "ratio": 2.05,
-   "set": "unwrap-gate",
-   "shape": "G8 bytes() of a number",
-   "since": "2026-10-28"
-  },
-  {
    "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
    "loki_s": 0.097,
    "mode": "cold",
@@ -388,18 +208,6 @@
    "set": "control",
    "shape": "logs plain",
    "since": "2026-10-31"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.23,
-   "mode": "warm",
-   "profile": "loki-defaults",
-   "proxy_s": 0.599,
-   "range": "24h",
-   "ratio": 2.6,
-   "set": "drilldown-breakdown-exact",
-   "shape": "DB4 json field breakdown batch_id",
-   "since": "2026-10-27"
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
@@ -486,102 +294,6 @@
    "since": "2026-10-27"
   },
   {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.056,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.255,
-   "range": "1h",
-   "ratio": 4.55,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.761,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 6.264,
-   "range": "24h",
-   "ratio": 8.23,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.437,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 2.586,
-   "range": "6h",
-   "ratio": 5.92,
-   "set": "json-detected-level",
-   "shape": "DLV1 drilldown logs volume, json",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.368,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 2.157,
-   "range": "1h",
-   "ratio": 5.86,
-   "set": "json-detected-level",
-   "shape": "DLV2 json error filter, detected_level",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.884,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 6.783,
-   "range": "6h",
-   "ratio": 7.67,
-   "set": "json-detected-level",
-   "shape": "DLV2 json error filter, detected_level",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.072,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.454,
-   "range": "1h",
-   "ratio": 6.31,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 1.078,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 9.597,
-   "range": "24h",
-   "ratio": 8.9,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.236,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 2.353,
-   "range": "6h",
-   "ratio": 9.97,
-   "set": "json-detected-level",
-   "shape": "DLV3 plain json, detected_level",
-   "since": "2026-10-27"
-  },
-  {
    "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
    "loki_s": 0.009,
    "mode": "cold",
@@ -604,90 +316,6 @@
    "set": "label-replace",
    "shape": "L7 label_replace around a binary of two sums by level",
    "since": "2026-10-31"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.182,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.385,
-   "range": "6h",
-   "ratio": 2.12,
-   "set": "level-filter",
-   "shape": "LF1 logs, detected_level equals",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.077,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.162,
-   "range": "6h",
-   "ratio": 2.1,
-   "set": "level-filter",
-   "shape": "LF10 drilldown logs, level pill multi-select, json service",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.572,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 1.195,
-   "range": "24h",
-   "ratio": 2.09,
-   "set": "level-filter",
-   "shape": "LF12 drilldown logs volume by level, level pill",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.142,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.322,
-   "range": "6h",
-   "ratio": 2.27,
-   "set": "level-filter",
-   "shape": "LF12 drilldown logs volume by level, level pill",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.118,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.325,
-   "range": "24h",
-   "ratio": 2.75,
-   "set": "level-filter",
-   "shape": "LF14 explore volume, plain-text service",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
-   "loki_s": 0.028,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.086,
-   "range": "6h",
-   "ratio": 3.07,
-   "set": "level-filter",
-   "shape": "LF14 explore volume, plain-text service",
-   "since": "2026-10-31"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.031,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.119,
-   "range": "1h",
-   "ratio": 3.84,
-   "set": "level-filter",
-   "shape": "LF2 logs, detected_level regexp",
-   "since": "2026-10-27"
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
@@ -714,18 +342,6 @@
    "since": "2026-10-27"
   },
   {
-   "commit": "4c5b769f96f1630dd69854449dd0e0f1872b1859",
-   "loki_s": 0.053,
-   "mode": "warm",
-   "profile": "loki-defaults",
-   "proxy_s": 0.119,
-   "range": "6h",
-   "ratio": 2.25,
-   "set": "level-filter",
-   "shape": "LF2 logs, detected_level regexp",
-   "since": "2026-11-01"
-  },
-  {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
    "loki_s": 0.018,
    "mode": "cold",
@@ -736,18 +352,6 @@
    "set": "level-filter",
    "shape": "LF29 logs, drop detected_level",
    "since": "2026-10-27"
-  },
-  {
-   "commit": "4c5b769f96f1630dd69854449dd0e0f1872b1859",
-   "loki_s": 0.043,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.176,
-   "range": "1h",
-   "ratio": 4.09,
-   "set": "level-filter",
-   "shape": "LF3 logs, detected_level not equal, all services",
-   "since": "2026-11-01"
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
@@ -787,42 +391,6 @@
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.096,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.248,
-   "range": "1h",
-   "ratio": 2.58,
-   "set": "level-filter",
-   "shape": "LF4 logs, detected_level regexp with unknown",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.059,
-   "mode": "warm",
-   "profile": "loki-defaults",
-   "proxy_s": 0.145,
-   "range": "1h",
-   "ratio": 2.46,
-   "set": "level-filter",
-   "shape": "LF4 logs, detected_level regexp with unknown",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.45,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 1.37,
-   "range": "6h",
-   "ratio": 3.04,
-   "set": "level-filter",
-   "shape": "LF4 logs, detected_level regexp with unknown",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
    "loki_s": 0.087,
    "mode": "cold",
    "profile": "loki-defaults",
@@ -844,30 +412,6 @@
    "set": "level-filter",
    "shape": "LF5 logs, plain-text service, detected_level regexp",
    "since": "2026-10-27"
-  },
-  {
-   "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
-   "loki_s": 0.046,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.121,
-   "range": "6h",
-   "ratio": 2.63,
-   "set": "level-filter",
-   "shape": "LF9 drilldown logs, level pill, logfmt service",
-   "since": "2026-10-31"
-  },
-  {
-   "commit": "6159745fb4bcfed65660d02f1ee33c9d2525c68c",
-   "loki_s": 0.089,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.292,
-   "range": "6h",
-   "ratio": 3.28,
-   "set": "level-filter-stored",
-   "shape": "LS2 logs, level stream label regexp, all services",
-   "since": "2026-11-02"
   },
   {
    "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
@@ -895,12 +439,12 @@
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.122,
+   "loki_s": 0.199,
    "mode": "cold",
    "profile": "loki-defaults",
-   "proxy_s": 0.742,
+   "proxy_s": 0.43,
    "range": "6h",
-   "ratio": 6.08,
+   "ratio": 2.16,
    "set": "level-filter-stored",
    "shape": "LS8 json count by level_extracted, collision",
    "since": "2026-10-27"
@@ -916,30 +460,6 @@
    "set": "level-filter-stored",
    "shape": "LS8 json count by level_extracted, collision",
    "since": "2026-10-31"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.091,
-   "mode": "warm",
-   "profile": "loki-defaults",
-   "proxy_s": 0.226,
-   "range": "24h",
-   "ratio": 2.48,
-   "set": "metadata-inventory",
-   "shape": "drilldown landing volume",
-   "since": "2026-10-27"
-  },
-  {
-   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
-   "loki_s": 0.448,
-   "mode": "warm",
-   "profile": "loki-defaults",
-   "proxy_s": 2.868,
-   "range": "24h",
-   "ratio": 6.4,
-   "set": "metric-latency-gap",
-   "shape": "DL3 drilldown logfmt field breakdown, level filter",
-   "since": "2026-10-27"
   },
   {
    "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
@@ -1036,18 +556,6 @@
    "set": "stage-field-exposure",
    "shape": "SF3 logs, json then line_format",
    "since": "2026-11-01"
-  },
-  {
-   "commit": "6159745fb4bcfed65660d02f1ee33c9d2525c68c",
-   "loki_s": 0.05,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.102,
-   "range": "3h",
-   "ratio": 2.04,
-   "set": "stage-field-exposure",
-   "shape": "SF4 logs, line_format without a parser",
-   "since": "2026-11-02"
   },
   {
    "commit": "716fff9b17f8b1ff522addc4ef899a20dc616721",
