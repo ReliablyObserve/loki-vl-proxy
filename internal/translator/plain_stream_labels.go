@@ -2,6 +2,7 @@ package translator
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -60,6 +61,102 @@ func plainStreamLabels(labelFn LabelTranslateFunc) []string {
 		return strings.Split(r, ",")
 	}
 	return nil
+}
+
+// VictoriaLogs' Loki push API unpacks the keys of a JSON line into fields at
+// ingest, after the stream labels (app/vlinsert/loki/loki_json.go
+// parseJSONRequest, addMsgField), and a block keeps the last value written for
+// a name (lib/logstorage/block.go mustInitFromRows). A line whose JSON has a
+// key named like one of its stream labels therefore stores the line's value
+// under the label's name, while _stream keeps the label. In Loki the stream
+// label wins and the key is the line's (version_extracted after a parser).
+//
+// A metric query reads its names (grouping, filters, unwrap) from the field,
+// so before its first pipe the translation writes each name's value from
+// _stream back into the field (withStreamTagRestore). An entry whose stream
+// has no such label keeps the stored field: a structured metadata label, or a
+// field VictoriaLogs did not take into the stream. VictoriaLogs runs the
+// extract pipes once per run of equal _stream values, that is once per block.
+
+// stScratch names the scratch field holding a name's quoted stream value.
+const stScratch = "__lxst_"
+
+// quotedBody matches the inside of a Go-quoted string: runs of plain bytes and
+// backslash escapes. The regexp spells the quote \x22 and has no alternation,
+// so the pipe holds no '"' or '|' that a quote-aware pipe scanner could take
+// for a string or a pipe boundary.
+const quotedBody = `[^\x22\\]*(?:\\.[^\x22\\]*)*`
+
+// streamTagRestorePipes writes the value each name has in the entry's _stream
+// into the field of that name. _stream is `{name="value",...}`, names sorted,
+// values Go-quoted (lib/logstorage/rows.go marshalToStreamTag): the anchored
+// regexp walks whole tags, so a name inside another tag's value or a longer
+// name ending in it never matches; extract unquotes the captured value and
+// keeps the field when the stream has no such tag (skip_empty_results).
+func streamTagRestorePipes(names []string) string {
+	var b strings.Builder
+	i := 0
+	for _, n := range names {
+		if slices.Contains(DetectedLevelFieldNames, n) {
+			// The detected_level derivation reads these names as stored
+			// (severity-detected-level-derivation); they keep the stored field.
+			continue
+		}
+		scratch := stScratch + strconv.Itoa(i)
+		re := `^\{(?:[^=\x22]*=\x22` + quotedBody + `\x22,)*?` + regexp.QuoteMeta(n) + `=(?P<` + scratch + `>\x22` + quotedBody + `\x22)`
+		b.WriteString(" | extract_regexp `" + re + "` from _stream")
+		b.WriteString(" | extract \"<" + n + ">\" from " + scratch + " skip_empty_results")
+		b.WriteString(" | delete " + scratch)
+		i++
+	}
+	return strings.TrimPrefix(b.String(), " ")
+}
+
+// streamTagRestorePrefix starts every restore that streamTagRestorePipes writes.
+const streamTagRestorePrefix = "| extract_regexp `^\\{(?:[^=\\x22]*=\\x22"
+
+// WithoutStreamTagRestore removes the stream value restore of a translation
+// (streamTagRestorePipes): it reads no line, so a check for parser stages of
+// the query must not see its extract pipes.
+func WithoutStreamTagRestore(query string) string {
+	if !strings.Contains(query, stScratch) {
+		return query
+	}
+	for {
+		start := strings.Index(query, streamTagRestorePrefix)
+		if start < 0 {
+			return query
+		}
+		del := strings.Index(query[start:], "| delete "+stScratch)
+		if del < 0 {
+			return query
+		}
+		end := start + del + len("| delete "+stScratch)
+		for end < len(query) && query[end] >= '0' && query[end] <= '9' {
+			end++
+		}
+		if end < len(query) && query[end] == ' ' {
+			end++
+		}
+		query = query[:start] + query[end:]
+	}
+}
+
+// withStreamTagRestore inserts streamTagRestorePipes before the first pipe of
+// a metric query's parts, after the filters VictoriaLogs evaluates first.
+func withStreamTagRestore(parts []string, names []string) []string {
+	restore := streamTagRestorePipes(names)
+	if restore == "" {
+		return parts
+	}
+	at := len(parts)
+	for i, part := range parts {
+		if strings.HasPrefix(strings.TrimSpace(part), "|") {
+			at = i
+			break
+		}
+	}
+	return append(parts[:at:at], append([]string{restore}, parts[at:]...)...)
 }
 
 // isPlainParserStage reports whether the stage can overwrite a stored field of

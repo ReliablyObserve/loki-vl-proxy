@@ -72,6 +72,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
+        "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]
@@ -92,6 +93,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/range_metric_compat.go",
+        "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go"
       ]
     },
@@ -103,6 +105,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/range_metric_compat.go",
+        "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go"
       ]
     },

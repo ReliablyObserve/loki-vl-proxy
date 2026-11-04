@@ -16,9 +16,12 @@ import (
 // Loki: the parsed key is renamed name_extracted and a later filter, grouping
 // or unwrap on the plain name reads the stream value. VictoriaLogs' parsers
 // overwrite the stored field, so the translator reads the stored value aside
-// for the stream label names this returns (translator.WithStreamLabels). A
-// query that names no stream label of the tenant after a parser keeps its
-// plain translation and so the Drilldown fast paths that match it.
+// for the stream label names this returns (translator.WithStreamLabels).
+// VictoriaLogs' Loki push API also stores a JSON line's key over the stream
+// label of the same name at ingest, so a metric query restores the names it
+// reads from _stream first, with or without a parser. A query that names no
+// stream label of the tenant outside its selector keeps its plain translation
+// and so the Drilldown fast paths that match it.
 
 const (
 	// streamLabelNamesWindow is the recent window the tenant's stream label
@@ -45,7 +48,8 @@ const (
 type streamLabelNamesState struct {
 	mu        sync.Mutex
 	byKey     map[string]*streamLabelNamesEntry
-	refreshes int // started, for tests
+	mentioned map[string]map[string]bool // query text -> identifiers it names (mentionedNames)
+	refreshes int                        // started, for tests
 	base      context.Context
 	stop      context.CancelFunc
 	wg        sync.WaitGroup // running refreshes
@@ -72,7 +76,10 @@ type streamLabelNamesEntry struct {
 }
 
 var (
-	parserKeywordRE  = regexp.MustCompile(`\|\s*(json|logfmt|unpack|regexp|pattern)\b`)
+	parserKeywordRE = regexp.MustCompile(`\|\s*(json|logfmt|unpack|regexp|pattern)\b`)
+	// rangeFunctionRE finds a range aggregation: a metric query reads its
+	// names from the stored fields even without a parser stage.
+	rangeFunctionRE  = regexp.MustCompile(`\b(?:count_over_time|rate|bytes_over_time|bytes_rate|(?:sum|avg|min|max|first|last|stddev|stdvar|quantile|absent)_over_time|rate_counter)\s*\(`)
 	queryStringRE    = regexp.MustCompile("\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`")
 	queryTemplateRE  = regexp.MustCompile(`\{\{[^}]*\}\}`)
 	queryStreamSelRE = regexp.MustCompile(`\{[^{}]*\}`)
@@ -82,23 +89,24 @@ var (
 
 // plainStreamLabelNames returns the stream label names of the tenant that the
 // query names outside its stream selectors and string literals, when the query
-// has a parser stage (Loki-compatible profile, and only for a query a client
-// request runs: the tenant is read from it).
+// has a parser stage or a range aggregation (Loki-compatible profile, and only
+// for a query a client request runs: the tenant is read from it).
 func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []string {
-	if ctx.Value(origRequestKey) == nil || !parserKeywordRE.MatchString(query) || !p.lokiCompatibleProfile() {
+	if ctx.Value(origRequestKey) == nil || (!parserKeywordRE.MatchString(query) && !rangeFunctionRE.MatchString(query)) || !p.lokiCompatibleProfile() {
 		return nil
 	}
-	mentioned := map[string]bool{}
-	for _, id := range queryIdentRE.FindAllString(queryStreamSelRE.ReplaceAllString(queryStringRE.ReplaceAllString(query, `""`), ""), -1) {
-		mentioned[id] = true
-	}
-	// A label_format or line_format template reads a label as {{.name}}.
-	for _, tmpl := range queryTemplateRE.FindAllString(query, -1) {
-		for _, id := range queryIdentRE.FindAllString(tmpl, -1) {
-			mentioned[id] = true
+	known := p.tenantStreamLabelNames(ctx)
+	candidate := false
+	for _, name := range known {
+		if strings.Contains(query, name) {
+			candidate = true
+			break
 		}
 	}
-	known := p.tenantStreamLabelNames(ctx)
+	if !candidate {
+		return nil
+	}
+	mentioned := p.streamLabelNames.mentionedNames(query)
 	var out []string
 	for _, name := range known {
 		if mentioned[name] {
@@ -107,6 +115,40 @@ func (p *Proxy) plainStreamLabelNames(ctx context.Context, query string) []strin
 	}
 	sort.Strings(out)
 	return out
+}
+
+// mentionedNamesMax bounds the per-query memo of mentionedNames.
+const mentionedNamesMax = 1024
+
+// mentionedNames returns the identifiers the query names outside its stream
+// selectors and string literals, and inside label_format / line_format
+// templates. A request is translated more than once (the response and
+// translation cache keys) and Grafana repeats its queries, so the scan is
+// memoized per query text.
+func (st *streamLabelNamesState) mentionedNames(query string) map[string]bool {
+	st.mu.Lock()
+	m, ok := st.mentioned[query]
+	st.mu.Unlock()
+	if ok {
+		return m
+	}
+	m = map[string]bool{}
+	for _, id := range queryIdentRE.FindAllString(queryStreamSelRE.ReplaceAllString(queryStringRE.ReplaceAllString(query, `""`), ""), -1) {
+		m[id] = true
+	}
+	// A label_format or line_format template reads a label as {{.name}}.
+	for _, tmpl := range queryTemplateRE.FindAllString(query, -1) {
+		for _, id := range queryIdentRE.FindAllString(tmpl, -1) {
+			m[id] = true
+		}
+	}
+	st.mu.Lock()
+	if st.mentioned == nil || len(st.mentioned) >= mentionedNamesMax {
+		st.mentioned = make(map[string]map[string]bool, 64)
+	}
+	st.mentioned[query] = m
+	st.mu.Unlock()
+	return m
 }
 
 // tenantStreamLabelNames returns the tenant's recent stream label names whose

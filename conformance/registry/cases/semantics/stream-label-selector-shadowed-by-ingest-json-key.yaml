@@ -1,0 +1,54 @@
+id: semantics/stream-label-selector-shadowed-by-ingest-json-key
+title: A stream selector matcher, and the detected_labels cardinality, of a label that a JSON line's key shadows in VictoriaLogs read the line's value (open)
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  VictoriaLogs' Loki push API stores a JSON line's key over the stream label of
+  the same name (semantics/stream-label-shadowed-by-ingest-json-key). The
+  proxy translates a stream selector matcher on a label it does not know as a
+  VictoriaLogs stream field into a field filter (`version:="v2"`), which reads
+  the stored value. Loki's selector reads the stream labels only.
+
+  With an emulated VictoriaLogs and 60 api-gateway lines (stream label
+  version="v2", JSON key "version" v1 or v2):
+  `{service_name="api-gateway", version="v2"}` returned 30 lines where Loki
+  returns 60, and `{..., version="v1"}` returned 30 lines, labelled
+  version="v2", where Loki returns none. `{version!=""}` also keeps lines whose
+  version is structured metadata, which Loki's selector leaves out.
+
+  The metadata reads that list a label's values from field_values have the
+  same cause: on the visual stack (1h) `detected_labels` for
+  {service_name="api-gateway"} gives version a cardinality of 2 where Loki
+  gives 1 (internal/proxy/drilldown.go reads field_values, which holds the
+  lines' v1 and v2).
+
+  An exact selector reads the stream (`_stream:{version="v2"}`) for a label
+  the stream holds and the field otherwise; that changes the filter of every
+  query on such a label, so it is its own change with its own measurements.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway", version="v1"}'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    No line on the stack (every api-gateway stream has version="v2").
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator stream selector matchers (streamMatcherToFieldFilter); internal/proxy/drilldown.go detected_labels field_values'
+  loki: 'pkg/logql/syntax stream selector: stream labels only'
+  proxy: 'a field filter on the stored value'
+  planned_test: 'TestStreamLabelSelectorShadowedByIngestJSONKey (internal/proxy) and TestCompat_StreamLabelSelectorShadowedByIngestJSONKey (test/e2e-compat, group core)'
+  clusters: []

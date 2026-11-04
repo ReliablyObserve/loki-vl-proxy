@@ -278,10 +278,14 @@
    "covers": [
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
+    "semantics/stream-label-shadowed-by-ingest-json-key",
     "drilldown-service-landing",
     "loki_api_v1_query_range",
     "loki_api_v1_detected_labels",
     "loki_api_v1_labels"
+   ],
+   "fixes": [
+    "semantics/stream-label-shadowed-by-ingest-json-key"
    ]
   },
   {

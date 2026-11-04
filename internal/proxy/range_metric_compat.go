@@ -2236,7 +2236,7 @@ func unpacksMessage(query string) bool {
 }
 
 func queryUsesParserStages(baseQuery string) bool {
-	baseQuery = translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery))
+	baseQuery = translator.WithoutStreamTagRestore(translator.WithoutPatternLineFilterExtracts(withoutDerivedLevelChain(baseQuery)))
 	// The bytes() gate reads the value with an extract_regexp pipe: that is not a
 	// parser stage of the query.
 	if base, _, ok := translator.SplitUnwrapGate(baseQuery); ok {

@@ -30,6 +30,12 @@ why: |
   prefilter keeps the chain off rows that cannot match. A filter after a
   parser, drop, keep or label_format stage keeps its rendering
   (severity/detected-level-stage-side-effects).
+
+  The extra version="v1" series the Drilldown labels tab still showed with a
+  level pill on the visual stack is the grouping, not the filter: with an
+  emulated VictoriaLogs over the stack's api-gateway shape, the proxy's
+  per-step counts of v1 and v2 add up to Loki's v2. It is
+  semantics/stream-label-shadowed-by-ingest-json-key.
 request:
   method: GET
   path: /loki/api/v1/query_range

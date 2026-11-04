@@ -723,6 +723,42 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				src, dst, _ := strings.Cut(pair, " as ")
 				values[dst] = values[strings.Trim(src, "`")]
 			}
+		case strings.HasPrefix(pipe, "extract_regexp `"):
+			// Go's regexp is VictoriaLogs' (RE2): every named group is written,
+			// empty when the value does not match.
+			m := fakeExtractRegexpRE.FindStringSubmatch(pipe)
+			if m == nil {
+				t.Errorf("fake VL: unsupported extract_regexp pipe %q", pipe)
+				return nil, false
+			}
+			re := fakeRegexp(m[1])
+			sub := re.FindStringSubmatch(values[m[2]])
+			for i, name := range re.SubexpNames() {
+				if name == "" {
+					continue
+				}
+				values[name] = ""
+				if sub != nil {
+					values[name] = sub[i]
+				}
+			}
+		case strings.HasPrefix(pipe, `extract "<`):
+			// A pattern of one placeholder: the whole value, unquoted when it is
+			// a quoted string (lib/logstorage/pattern.go tryUnquoteString).
+			m := fakeExtractWholeRE.FindStringSubmatch(pipe)
+			if m == nil {
+				t.Errorf("fake VL: unsupported extract pipe %q", pipe)
+				return nil, false
+			}
+			v := values[m[2]]
+			if strings.HasPrefix(v, `"`) {
+				if q, err := strconv.QuotedPrefix(v); err == nil {
+					v, _ = strconv.Unquote(q)
+				}
+			}
+			if v != "" {
+				values[m[1]] = v
+			}
 		case strings.HasPrefix(pipe, "delete "):
 			for _, field := range strings.Split(strings.TrimPrefix(pipe, "delete "), ", ") {
 				if prefix, ok := strings.CutSuffix(field, "*"); ok {
@@ -789,6 +825,11 @@ func (f *pushdownFakeVL) guardMatches(t testing.TB, query string, row pushdownRo
 	return kept
 }
 
+var (
+	fakeExtractRegexpRE = regexp.MustCompile("^extract_regexp `(.*)` from (\\S+)$")
+	fakeExtractWholeRE  = regexp.MustCompile(`^extract "<([^>]+)>" from (\S+) skip_empty_results$`)
+)
+
 func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) string) (*httptest.Server, *pushdownFakeVL) {
 	t.Helper()
 	fake := &pushdownFakeVL{rows: rows, stored: stored}
@@ -801,6 +842,20 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 		}
 		query := r.Form.Get("query")
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			// The stream label names of the rows (the tenant's, over the window).
+			names := map[string]bool{}
+			for _, row := range fake.rows {
+				for k := range row.stream {
+					names[k] = true
+				}
+			}
+			items := make([]string, 0, len(names))
+			for n := range names {
+				items = append(items, `{"value":`+strconv.Quote(n)+`,"hits":1}`)
+			}
+			sort.Strings(items)
+			_, _ = w.Write([]byte(`{"values":[` + strings.Join(items, ",") + `]}`))
 		case "/select/logsql/stats_query":
 			fake.mu.Lock()
 			fake.stats = append(fake.stats, query)

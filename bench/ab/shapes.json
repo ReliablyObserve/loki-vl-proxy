@@ -3172,6 +3172,53 @@
      ]
     }
    ]
+  },
+  "stream-label-shadowed": {
+   "description": "A Logs Drilldown labels tab breakdown by a stream label that a JSON line's key shadows in VictoriaLogs (semantics/stream-label-shadowed-by-ingest-json-key): api-gateway's stream label version=\"v2\" under JSON lines with a version key of v1 or v2. SL1 is the labels tab with a level pill, SL2 without, SL3 a breakdown by a stream label no key shadows (cluster), which the stream value restore also reads. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "SL1 labels tab by version, level pill",
+     "query": "sum(count_over_time({service_name=\"api-gateway\" ,version != \"\"} | detected_level=\"error\" [$__auto])) by (version)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/stream-label-shadowed-by-ingest-json-key",
+      "severity/detected-level-filter-json-level",
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+     ]
+    },
+    {
+     "name": "SL2 labels tab by version",
+     "query": "sum(count_over_time({service_name=\"api-gateway\" ,version != \"\"} [$__auto])) by (version)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/stream-label-shadowed-by-ingest-json-key",
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+     ]
+    },
+    {
+     "name": "SL3 labels tab by cluster (not shadowed)",
+     "query": "sum(count_over_time({service_name=\"api-gateway\" ,cluster != \"\"} [$__auto])) by (cluster)",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/stream-label-shadowed-by-ingest-json-key",
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+     ]
+    }
+   ]
   }
 ,
   "series-level-fine-step": {
