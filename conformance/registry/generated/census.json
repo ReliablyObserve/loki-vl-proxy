@@ -722,7 +722,8 @@
     "semantics/uppercase-topk-ranks-once | gap:open",
     "semantics/uppercase-topk-ranks-once | query",
     "semantics/vector-aggregation-over-log-selector-status | compare:observed",
-    "semantics/vector-aggregation-over-log-selector-status | gap:open",
+    "semantics/vector-aggregation-over-log-selector-status | gap:fixed",
+    "semantics/vector-aggregation-over-log-selector-status | perf",
     "semantics/vector-aggregation-over-log-selector-status | query",
     "semantics/window-edge-float64-nanoseconds | compare:observed",
     "semantics/window-edge-float64-nanoseconds | gap:documented",
@@ -796,6 +797,7 @@
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
+    "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/proxy/absent_over_time_differential_test.go | metric-series-identity",
     "internal/proxy/absent_over_time_differential_test.go | semantics/absent-over-time-semantics",
@@ -1327,6 +1329,10 @@
     "internal/proxy/unwrap_ungrouped_sum_differential_test.go | window-bounds-and-step-alignment",
     "internal/proxy/vector_agg_fold_test.go | metric-series-identity",
     "internal/proxy/vector_agg_fold_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/vector_agg_log_selector_test.go | loki_api_v1_query",
+    "internal/proxy/vector_agg_log_selector_test.go | loki_api_v1_query_range",
+    "internal/proxy/vector_agg_log_selector_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "internal/proxy/vector_agg_log_selector_test.go | status-400",
     "internal/proxy/vector_agg_series_differential_test.go | metric-series-identity",
     "internal/proxy/vector_agg_series_differential_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "internal/proxy/vector_agg_series_differential_test.go | window-bounds-and-step-alignment",
@@ -1415,6 +1421,10 @@
     "test/e2e-compat/align_queries_with_step_test.go | loki_api_v1_query_range",
     "test/e2e-compat/align_queries_with_step_test.go | semantics/query-range-step-alignment",
     "test/e2e-compat/bad_request_status_parity_test.go | loki-compatible-profile",
+    "test/e2e-compat/bad_request_status_parity_test.go | loki_api_v1_query",
+    "test/e2e-compat/bad_request_status_parity_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/bad_request_status_parity_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "test/e2e-compat/bad_request_status_parity_test.go | status-400",
     "test/e2e-compat/binary_division_zero_test.go | loki_api_v1_query",
     "test/e2e-compat/binary_division_zero_test.go | loki_api_v1_query_range",
     "test/e2e-compat/binary_division_zero_test.go | semantics/binary-division-by-zero-nan",
@@ -1785,12 +1795,12 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 322,
+      "go": 324,
       "playwright": 1
     },
     "page_kinds": {
       "drilldown": 18,
-      "explore": 121,
+      "explore": 122,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -1802,10 +1812,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 100,
+    "shape_covers_distinct": 101,
     "shapes_path_only": 8,
-    "unwired_items": 100,
-    "wired_items": 240
+    "unwired_items": 99,
+    "wired_items": 241
   },
   "gates": [
     "A/B shape selection",
@@ -1902,6 +1912,7 @@
     "explore-sum-without-count",
     "explore-sum-without-rate",
     "explore-topk-by-per-step",
+    "explore-topk-over-log-selector",
     "explore-topk-sum-without",
     "explore-topk-without-keeps-labels",
     "explore-unwrap-conversion-error",
@@ -2551,6 +2562,10 @@
     "unwrap-validity/U6 missing label, no parser",
     "unwrap-validity/U7 missing label, ungrouped sum",
     "unwrap-validity/U8 rate of an unwrapped label",
-    "unwrap-validity/U9 bytes() conversion"
+    "unwrap-validity/U9 bytes() conversion",
+    "vector-aggregation-log-selector/VA1 topk over a log selector",
+    "vector-aggregation-log-selector/VA2 sort over a log selector",
+    "vector-aggregation-log-selector/VA3 stddev over a log selector",
+    "vector-aggregation-log-selector/VA4 topk over a log selector, instant"
   ]
 }

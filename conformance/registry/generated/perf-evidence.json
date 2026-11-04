@@ -119080,6 +119080,7 @@
       "warm_p50": 8.62
     }
   ],
+  "semantics/vector-aggregation-over-log-selector-status": [],
   "semantics/without-nested-under-aggregation": [
     {
       "baseline": "release",

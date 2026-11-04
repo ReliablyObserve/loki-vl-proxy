@@ -52,6 +52,7 @@ consumers: |
   Drilldown shows it in the affected panel.
 cases:
   - semantics/pipeline-error-text-parity
+  - semantics/vector-aggregation-over-log-selector-status
   - semantics/unwrap-conversion-error
   - semantics/error-layer-body-shape
   - limits/row-limit-error-names-flag

@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 100 items are locked; 5 carry an effort exception.
+29 of 101 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -261,6 +261,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 2 faster, 2 fixed, 23 same | worst 1.38s / 0.01s (24h) | 5.00s / 0.08s | differs | not locked |
 | `semantics/unwrap-sample-validity` | 14 × 4 ranges | 1 faster, 37 same | worst 0.16s / 0.01s (3h) | 0.59s † / 0.06s | differs | not locked; exception |
 | `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 4 faster, 22 same | worst 0.61s / 0.02s (24h) | 3.87s / 0.10s | same | not locked; exception |
+| `semantics/vector-aggregation-over-log-selector-status` | — | not measured | | | | not locked |
 | `semantics/without-nested-under-aggregation` | 3 × 3 ranges | 5 same | worst 0.18s / 0.01s (6h) | 1.49s / 0.03s | same | not locked |
 | `semantics/without-over-inner-aggregation-collapses` | 3 × 3 ranges | 5 same | worst 0.18s / 0.01s (6h) | 1.49s / 0.03s | same | not locked |
 | `semantics/without-sliding-sum-folded-buckets` | 5 × 4 ranges | 16 same | worst 0.76s / 0.02s (24h) | 2.83s / 0.03s | same | locked 2026-10-28 |
