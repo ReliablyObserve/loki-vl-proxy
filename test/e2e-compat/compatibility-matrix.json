@@ -95,7 +95,7 @@
     },
     "grafana": {
       "image_repo": "grafana/grafana",
-      "pinned_version": "13.2.5",
+      "pinned_version": "13.3.0",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
       "plugins": {
         "victoriametrics-logs-datasource": {
@@ -115,12 +115,12 @@
       },
       "runtime_profiles": [
         {
-          "version": "13.2.5",
+          "version": "13.3.0",
           "profile": "full",
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "13.2.5",
+          "version": "13.3.0",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
@@ -208,7 +208,7 @@
         }
       ],
       "notes": [
-        "13.3.0 is tracked here but not gated: its Explore keeps the run button on Cancel (loading) after queries on short single-chunk ranges (a 1 s absolute range, now-5m), also on Loki direct, so e2e-ui specs that run such a query time out. 13.3.0 bundles the Loki datasource plugin 13.2.5 (loki/module.js?_cache=13.2.5). Pinned Grafana stays 13.2.5 until that is fixed upstream.",
+        "13.3.0 is the pinned runtime. Its Explore leaves the auto-run from the URL on Cancel (loading) although every request answered, also on Loki direct; the e2e-ui runQuery helper clears it once and requires the explicit run to send and answer a new query. 13.3.0 bundles the Loki datasource plugin 13.2.5 (loki/module.js?_cache=13.2.5).",
         "Datasource plugin exact semver is not emitted on request headers by default.",
         "Proxy runtime sensing uses Grafana User-Agent version family and endpoint/source-tag request shape."
       ]

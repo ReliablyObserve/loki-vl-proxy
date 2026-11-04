@@ -22,6 +22,7 @@ export const LOKI_DS = "Loki (direct)";
  */
 export async function openExplore(page: Page, datasource: string, expr = "", range?: { from: string; to: string }) {
   const uid = await resolveDatasourceUid(page, datasource);
+  trackDsQueries(page);
   await page.goto(buildExploreUrl(uid, expr, range));
   await waitForGrafanaReady(page);
   await expect(exploreQueryEditor(page)).toBeVisible({ timeout: 15_000 });
@@ -175,34 +176,109 @@ export async function typeQuery(page: Page, query: string) {
   await page.keyboard.type(query, { delay: 10 });
 }
 
+type DsQueryTracker = { inflight: number; completed: number; answeredSinceLoad: number; lastActivity: number };
+const dsQueryTrackers = new WeakMap<Page, DsQueryTracker>();
+
+/**
+ * Count the /api/ds/query requests of a page: how many are in flight, how many
+ * finished (any status, in total and since the last page load) and when the last
+ * one moved. Install it before the page
+ * navigates, so the queries Explore runs on load are seen. Idempotent.
+ */
+export function trackDsQueries(page: Page): DsQueryTracker {
+  const existing = dsQueryTrackers.get(page);
+  if (existing) return existing;
+  const tracker: DsQueryTracker = { inflight: 0, completed: 0, answeredSinceLoad: 0, lastActivity: Date.now() };
+  const isDsQuery = (url: string) => url.includes("/api/ds/query");
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) tracker.answeredSinceLoad = 0;
+    if (!isDsQuery(request.url())) return;
+    tracker.inflight++;
+    tracker.lastActivity = Date.now();
+  });
+  const settled = (request: { url(): string }) => {
+    if (!isDsQuery(request.url())) return;
+    tracker.inflight--;
+    tracker.completed++;
+    tracker.answeredSinceLoad++;
+    tracker.lastActivity = Date.now();
+  };
+  page.on("requestfinished", settled);
+  page.on("requestfailed", settled);
+  dsQueryTrackers.set(page, tracker);
+  return tracker;
+}
+
 /**
  * Wait until the Explore toolbar is idle. While a query is in flight the run
  * button reads "Cancel" (clicking it cancels the queries), so it is never
  * clicked as the run action. Playwright's isVisible() ignores its timeout and
- * answers at once, so waiting needs an explicit poll. On Grafana 13.3 the
- * auto-run from the URL can still be in flight when the page is ready, and
- * short single-chunk ranges (1 s absolute, now-5m) stayed on "Cancel" for
- * seconds after the data rendered.
+ * answers at once, so waiting needs an explicit poll.
+ *
+ * Grafana 13.3.0 never leaves the loading state of the auto-run that Explore
+ * starts from the URL on page load, although every request answered and the
+ * data rendered (also on the Loki direct datasource, on every time range). The
+ * next run goes idle normally. With clearStuckAutoRun the stuck state is
+ * cleared, once, with Cancel, and only when the page's queries were tracked
+ * (trackDsQueries), at least one answered since the page load and none is in flight or moved for
+ * three seconds. A query still in flight, or a toolbar that stays on Cancel
+ * after that, fails with the loading state named. Without clearStuckAutoRun
+ * nothing is ever cancelled.
  */
-export async function waitForExploreIdle(page: Page, timeoutMs = 20_000) {
-  const cancel = page.getByRole("button", { name: /^cancel$/i });
-  try {
-    await expect
-      .poll(() => cancel.first().isVisible(), { timeout: timeoutMs })
-      .toBe(false);
-  } catch {
-    throw new Error(
-      `Explore stayed in its loading state (run button reads "Cancel") for ${timeoutMs} ms`
-    );
+export async function waitForExploreIdle(
+  page: Page,
+  timeoutMs = 20_000,
+  options: { clearStuckAutoRun?: boolean } = {}
+) {
+  const cancel = page.getByRole("button", { name: /^cancel$/i }).first();
+  const tracker = dsQueryTrackers.get(page);
+  const quietMs = 3_000;
+  const deadline = Date.now() + timeoutMs;
+  let cleared = false;
+  for (;;) {
+    if (!(await cancel.isVisible())) return;
+    if (
+      options.clearStuckAutoRun &&
+      tracker &&
+      !cleared &&
+      tracker.answeredSinceLoad > 0 &&
+      tracker.inflight === 0 &&
+      Date.now() - tracker.lastActivity >= quietMs
+    ) {
+      await cancel.click();
+      cleared = true;
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Explore stayed in its loading state (run button reads "Cancel") for ${timeoutMs} ms` +
+          (tracker ? ` (${tracker.inflight} query request(s) in flight, ${tracker.completed} answered)` : "")
+      );
+    }
+    await page.waitForTimeout(250);
   }
 }
 
 /**
- * Click the Run Query button in Explore.
+ * Click the Run Query button in Explore. A stuck auto-run from the page load
+ * is cleared first (see waitForExploreIdle). The run itself must send a new
+ * query request that answers, so the rows asserted afterwards are the ones of
+ * this run, and the toolbar must go idle again without any clearing.
  */
 export async function runQuery(page: Page) {
-  await waitForExploreIdle(page);
+  const tracker = dsQueryTrackers.get(page);
+  await waitForExploreIdle(page, 20_000, { clearStuckAutoRun: true });
+  const answeredBefore = tracker?.completed ?? 0;
   await clickExploreToolbarAction(page, /run query/i);
+  if (tracker) {
+    await expect
+      .poll(() => tracker.completed, {
+        timeout: 20_000,
+        message: "Run query sent no query request that answered",
+      })
+      .toBeGreaterThan(answeredBefore);
+  }
+  await waitForExploreIdle(page);
   await waitForGrafanaReady(page);
   await page.waitForTimeout(1000);
 }

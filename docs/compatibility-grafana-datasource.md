@@ -29,8 +29,8 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 
 | Grafana runtime version | Coverage path | Focus |
 |---|---|---|
-| `13.3.0` | tracked, not gated | newest release; known upstream issue below |
-| `13.2.5` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19 |
+| `13.3.0` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19; Explore auto-run quirk below |
+| `13.2.5` | datasource contract matrix | previous pinned runtime |
 | `13.2.3` | datasource contract matrix | previous pinned runtime |
 | `13.2.1` | datasource contract matrix | previous pinned runtime |
 | `13.0.1` | datasource contract matrix | previous current-family pin |
@@ -41,9 +41,11 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 | `12.4.1` | Scheduled and manual matrix | previous-family datasource contract coverage |
 | `11.6.6` | Scheduled and manual matrix | lts-family datasource contract coverage |
 
-### Grafana 13.3.0: known upstream issue
+### Grafana 13.3.0: Explore auto-run stays on `Cancel`
 
-Grafana 13.3.0 is tracked but not gated. Its Explore keeps the run button on `Cancel` (the loading state) after a query on a short, single-chunk range (a 1 s absolute range, or `now-5m`), even though every request answered and the data rendered. It reproduces on the Loki (direct) datasource, so the proxy is not involved. Default 7-day ranges split into 8 chunks and are unaffected. Grafana 13.3.0 bundles the Loki datasource plugin `13.2.5` (`loki/module.js?_cache=13.2.5`). The e2e-ui helper `runQuery` waits for the toolbar to go idle and fails with the stuck state named. The pin moves to 13.3.0 or later once this is fixed upstream.
+Grafana 13.3.0 Explore never leaves the loading state of the query it auto-runs from the URL on page load: the run button keeps reading `Cancel` with a spinner although every request answered (none in flight) and the logs rendered. It reproduces on the Loki (direct) datasource and on every time range (`now-1h` to `now-7d`), so the proxy is not involved. The next run, by the run button after `Cancel` or by `Shift+Enter` in the editor, goes idle normally. Grafana 13.3.0 bundles the Loki datasource plugin `13.2.5` (`loki/module.js?_cache=13.2.5`), and no `13.3.x` patch is published yet.
+
+The e2e-ui helper `runQuery` copes with it without weakening any assertion: it clears the stuck auto-run with `Cancel` once, and only when the page's `/api/ds/query` requests were tracked from before the navigation, at least one answered, none is in flight and none moved for three seconds. The explicit run that follows must send a new query request that answers, and the toolbar must go idle again without any clearing, so a query that hangs still fails and the rows asserted are the ones of that run. A page that stays on `Cancel` with a query in flight fails with the loading state named.
 
 ## Client Detection Signals
 
@@ -94,7 +96,7 @@ These are handled by strict contract tests and conservative runtime-family gatin
 
 Current runtime family state:
 
-- current: `13.x` (pinned: `13.2.5`)
+- current: `13.x` (pinned: `13.3.0`)
 - previous supported: `12.x`
 - lts supported: `11.x`
 - next expected family to evaluate: `14.x` when released
