@@ -956,6 +956,7 @@
      "name": "E7 json count by level_extracted",
      "query": "sum by (level_extracted) (count_over_time({service_name=\"api-gateway\"} | json | drop __error__ [1m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/extracted-suffix-collision",
       "profiles/structured-metadata-label-collision",
       "loki-compatible-profile",
@@ -1350,6 +1351,7 @@
      "name": "X1 json filter level_extracted, by level",
      "query": "sum by (level) (count_over_time({env=\"production\"} | json | level_extracted!=\"\" [1m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown",
       "semantics/extracted-suffix-collision",
       "parser-error-and-label-collision",
@@ -1360,6 +1362,7 @@
      "name": "X2 json group by level_extracted",
      "query": "sum by (level_extracted) (count_over_time({env=\"production\"} | json | drop __error__ [1m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown",
       "semantics/extracted-suffix-collision",
       "parser-error-and-label-collision",
@@ -1370,6 +1373,7 @@
      "name": "X3 json rate, level_extracted equality",
      "query": "sum(rate({env=\"production\"} | json | level_extracted=\"error\" [1m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown",
       "semantics/extracted-suffix-collision",
       "parser-error-and-label-collision",
@@ -1380,6 +1384,7 @@
      "name": "X4 json bytes, level_extracted regexp",
      "query": "sum by (level) (bytes_over_time({env=\"production\"} | json | level_extracted=~\"err.*|warn\" [5m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/json-extracted-metric-pushdown",
       "semantics/extracted-suffix-collision",
       "parser-error-and-label-collision",
@@ -2615,6 +2620,7 @@
      "name": "LS8 json count by level_extracted, collision",
      "query": "sum by (level_extracted) (count_over_time({service_name=\"api-gateway\"} | json | level_extracted=\"error\" | drop __error__ [1m]))",
      "covers": [
+      "quality/json-label-probe-gates",
       "semantics/extracted-suffix-collision",
       "semantics/json-extracted-metric-pushdown",
       "parser-error-and-label-collision",

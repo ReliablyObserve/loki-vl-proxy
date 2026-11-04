@@ -60,7 +60,15 @@ func vlUnpackJSONLevel(msg string) string {
 	return ""
 }
 
-var jsonVolumeMsgFilterRE = regexp.MustCompile(`_msg:~("(?:[^"\\]|\\.)*")`)
+// jsonVolumeGuardFake evaluates the guard probes over the lines with the
+// unpack of the bucket emulation (vlUnpackJSONLevel): a line yields fields only
+// when its first byte opens the object, as in VictoriaLogs before v1.52.
+var jsonVolumeGuardFake = &pushdownFakeVL{jsonUnpack: func(msg string) map[string]string {
+	if msg == "" || msg[0] != '{' {
+		return nil
+	}
+	return vlUnpackJSONFields(msg)
+}}
 
 // fakeVLLevelFilterRE matches the `| filter [-]level:="v"` pipe the pushdown
 // renders for a Loki level=/!= label filter.
@@ -242,20 +250,13 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 			guard := strings.HasSuffix(query, " | limit 1")
 			// The guard probes of the detected_level pipes, which the generic
 			// fake evaluates over the same lines.
-			levelGuard := guard && (strings.Contains(query, `_msg:"LEVEL"`) || strings.Contains(query, "filter _stream:{detected_level"))
-			logfmtGuard := guard && !levelGuard && !strings.Contains(query, "unpack_json")
-			var msgRE *regexp.Regexp
+			// The guard probes of the detected_level pipes and of the parsed
+			// labels, which the generic fake evaluates over the same lines.
+			logfmtGuard := guard && !strings.Contains(query, "unpack_json") && !strings.Contains(query, `_msg:"LEVEL"`) && !strings.Contains(query, "filter _stream:{detected_level")
+			levelGuard := guard && !logfmtGuard
 			fake.mu.Lock()
-			if levelGuard || logfmtGuard {
+			if guard {
 				fake.guardCalls = append(fake.guardCalls, query)
-			} else if guard {
-				fake.guardCalls = append(fake.guardCalls, query)
-				match := jsonVolumeMsgFilterRE.FindStringSubmatch(query)
-				pattern, err := strconv.Unquote(match[1])
-				if err != nil {
-					t.Errorf("fake VL: guard pattern %q: %v", match[1], err)
-				}
-				msgRE = regexp.MustCompile(pattern)
 			} else {
 				fake.rawCalls++
 			}
@@ -271,14 +272,11 @@ func newJSONVolumeFakeVL(t testing.TB, lines []jsonVolumeLine) (*httptest.Server
 					if line.level != "" {
 						labels["level"] = line.level
 					}
-					if !new(pushdownFakeVL).guardMatches(t, query, pushdownRow{ts: line.ts, stream: labels, msg: line.msg}) {
+					if !jsonVolumeGuardFake.guardMatches(t, query, pushdownRow{ts: line.ts, stream: labels, msg: line.msg}) {
 						continue
 					}
 				}
 				if logfmtGuard && (line.level != "" || !logfmtLineIsRisk(line.msg, "level")) {
-					continue
-				}
-				if guard && !levelGuard && !logfmtGuard && (line.level != "" || !msgRE.MatchString(line.msg) || vlUnpackJSONLevel(line.msg) != "") {
 					continue
 				}
 				row := map[string]string{"_time": line.ts.UTC().Format(time.RFC3339Nano), "_msg": line.msg, "_stream": `{app="api"}`, "app": "api"}

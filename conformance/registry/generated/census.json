@@ -212,6 +212,10 @@
     "quality/index-volume-settled-segments | gap:fixed",
     "quality/index-volume-settled-segments | perf",
     "quality/index-volume-settled-segments | query",
+    "quality/json-label-probe-gates | compare:exact",
+    "quality/json-label-probe-gates | gap:fixed",
+    "quality/json-label-probe-gates | perf",
+    "quality/json-label-probe-gates | query",
     "quality/label-cache-aged-labels-kept | compare:observed",
     "quality/label-cache-aged-labels-kept | gap:open",
     "quality/label-cache-warm | compare:status",
@@ -844,6 +848,9 @@
     "internal/proxy/instant_result_type_test.go | semantics/scalar-sample-time-units",
     "internal/proxy/instant_unwrap_sum_test.go | profiles/sanitized-json-key-grouping",
     "internal/proxy/instant_unwrap_sum_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/json_label_probe_gates_test.go | parser-error-and-label-collision",
+    "internal/proxy/json_label_probe_gates_test.go | quality/json-label-probe-gates",
+    "internal/proxy/json_label_probe_gates_test.go | semantics/json-extracted-metric-pushdown",
     "internal/proxy/label_cache_behavior_test.go | loki_api_v1_labels",
     "internal/proxy/label_empty_run_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/label_filter_expression_test.go | loki_api_v1_query_range",
@@ -1390,6 +1397,9 @@
     "test/e2e-compat/json_filter_pushdown_test.go | semantics/json-filter-pushdown-without-error-drop",
     "test/e2e-compat/json_filter_pushdown_test.go | semantics/json-label-spelling-probe",
     "test/e2e-compat/json_instant_volume_stats_test.go | semantics/json-instant-volume-stats",
+    "test/e2e-compat/json_label_probe_gates_test.go | quality/json-label-probe-gates",
+    "test/e2e-compat/json_label_probe_gates_test.go | semantics/extracted-suffix-collision",
+    "test/e2e-compat/json_label_probe_gates_test.go | semantics/json-extracted-metric-pushdown",
     "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-detected-level-error-split",
     "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-metric-step-wider-than-range",
     "test/e2e-compat/keep_service_name_test.go | loki_api_v1_query_range",
@@ -1625,12 +1635,12 @@
       "any": 28,
       "api": 37,
       "drilldown": 40,
-      "explore": 127,
+      "explore": 128,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 298,
+      "go": 300,
       "playwright": 1
     },
     "page_kinds": {
@@ -1647,10 +1657,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 88,
+    "shape_covers_distinct": 89,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 229
+    "wired_items": 230
   },
   "gates": [
     "A/B shape selection",

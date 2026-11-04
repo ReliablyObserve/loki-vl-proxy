@@ -135,6 +135,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/pattern-line-filter` — An empty pattern line filter (`\|> ""`, `!> ""`) matches only the empty line, like Loki (fixed) | #743 | 2 | 2 |
 | `profiles/label-filter-regexp-anchoring` — A label-filter regexp after a parser matches what Loki's simplified, anchored filter matches (fixed) | TBD-PR | 0 | 0 |
 | `profiles/stream-selector-regexp-anchoring` — A stream-selector regexp matcher matches the whole label value, on every route and for __tenant_id__ (fixed) | TBD-PR | 0 | 0 |
+| `quality/json-label-probe-gates` — The parse-risk probes of a `\| json` metric run their key regexps only on lines that can hold the key they look for (fixed) | #1058 | 0 | 0 |
 | `quality/query-range-settled-steps` — a window-evaluated metric moved by a refresh or a re-run evaluates only the steps it does not hold, with the same answers, headers and 40... | TBD-PR | 0 | 0 |
 | `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
 | `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |

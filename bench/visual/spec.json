@@ -822,6 +822,7 @@
     "1h"
    ],
    "covers": [
+    "quality/json-label-probe-gates",
     "semantics/extracted-suffix-collision",
     "semantics/json-extracted-metric-pushdown",
     "parser-error-and-label-collision",
@@ -997,6 +998,7 @@
     "semantics/json-extracted-metric-pushdown"
    ],
    "covers": [
+    "quality/json-label-probe-gates",
     "semantics/json-extracted-metric-pushdown",
     "semantics/extracted-suffix-collision",
     "parser-error-and-label-collision",
@@ -1011,6 +1013,7 @@
     "semantics/json-extracted-metric-pushdown"
    ],
    "covers": [
+    "quality/json-label-probe-gates",
     "semantics/json-extracted-metric-pushdown",
     "semantics/extracted-suffix-collision",
     "parser-error-and-label-collision",

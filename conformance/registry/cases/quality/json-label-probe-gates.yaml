@@ -1,0 +1,90 @@
+id: quality/json-label-probe-gates
+title: The parse-risk probes of a `| json` metric run their key regexps only on lines that can hold the key they look for (fixed)
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - data-probing-and-freshness
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A metric over a label parsed by `| json` is answered from VictoriaLogs
+  stats buckets once the parse-risk probes found no line that Loki's parser
+  and unpack_json read differently (semantics/json-extracted-metric-pushdown,
+  quality/extracted-label-probe-cost). Loki renames a parsed key that a
+  stream label or structured metadata already holds to name_extracted and
+  keeps the first value of a key it extracted
+  (pkg/logql/log/parser.go:25 duplicateSuffix and 139-158 parseLabelValue,
+  v3.7.9), so the probes of level_extracted read every line of a stream with
+  the level label, with that label deleted.
+
+  The probes and the stats query run side by side and the answer waits for
+  the slowest. Their key regexps are led by a quote (`"[spaces]*level...`),
+  and VictoriaLogs runs a regexp led by a literal at every occurrence of that
+  literal (lib/regexutil.Regex, the matcher of `_msg:~`): at every quote of a
+  line. On the generator's api-gateway lines, where every body holds level,
+  the two probes of level_extracted ran ten such regexps per line, about
+  17 microseconds per line against VictoriaLogs' regexp code, and the first
+  request took 3.6-4.1x Loki's at 24h (X1 19.7 s against 4.8 s in the daily
+  run of 2026-11-04, 10.6 s against 3.0 s the day before, when the proxy's
+  log of that request shows a 4.1 s stats_query_range beside probe calls of
+  6.3 s and 10.6 s), E7 6.4-6.8x and LS8 7.4-9.1x at 1h and 6h.
+
+  Each key regexp now runs behind a filter every one of its matches passes,
+  led by a literal VictoriaLogs finds with a substring search: the key name
+  followed by its spaces, quote and colon; the name twice as a phrase for a
+  repeated key; the piece before a sanitized rune, the piece before a space,
+  a quote followed by a space or a non-ASCII space, or two quotes for the
+  key spellings. The partial-parse probe unpacks the lines that start with a
+  brace and pass the gate of one of the keys, without first matching the key
+  regexp after the brace (every check after the unpack holds a key of the
+  fields, which in such a line follows the brace), and the key-spelling probe
+  does not run its filter on _msg a second time behind the delete it already
+  ran ahead of. The lines found are the same, so every answer is unchanged; a
+  gated probe longer than VictoriaLogs' default query length, or refused as
+  too long, gives way to the probe as sent before. VictoriaLogs calls and the
+  lines each probe unpacks are unchanged. Measured with a recording fake
+  VictoriaLogs over generator lines, timing VictoriaLogs' regexp matcher
+  (v1.51.1 lib/regexutil) on every regexp each probe evaluates: X1, E7, LS8
+  and X3 from about 16,900 to 1,400 ns of regexp work per line (12,400 to
+  1,160 when a third of the lines hold the field names as words of a
+  message), plain json metrics over method, user_id and a label filter from
+  8,400-13,500 to 170-1,600.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({env="production"} | json | level_extracted!="" [1m]))'
+    start: now-24h
+    end: now
+    step: "60"
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    `level` is a stream label and a key of every JSON body (the log
+    generator's api-gateway, payment and worker services).
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values from one stats_query_range after
+    the probes; the first request over a base no slower than 2x Loki's, toward
+    Loki's.
+gap:
+  status: fixed
+  fixed_by: '#1058'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: the probes find the same lines, so every answer and every panel is the base''s. The pages that cover it (explore-extracted-filter-metric, explore-extracted-group-metric, lvl-explore-volume-level-extracted-stored) captured base = PR identical at 15m, 1h and 6h with the metric data equal to Loki''s, the only difference being the documented index/stats byte accounting (visual-smoke run 41795055155); the first-request time is measured by the A/B sets extracted-pushdown, extracted-suffix and level-filter-stored'
+  effort: S
+  area: 'internal/proxy/ordered_json_metric.go orderedJSONPartialParseQuery, orderedJSONKeySpellingQuery, orderedJSONKeyAliasGates, jsonKeyGate, gatedRiskExists'
+  loki: 'pkg/logql/log/parser.go:25 duplicateSuffix; pkg/logql/log/parser.go:139-158 parseLabelValue (sanitizeLabelKey, BaseHas -> _extracted, first value kept)'
+  proxy: 'quote-led key regexps over every line of the range in the parse-risk probes (X1 cold 3.6-4.1x Loki at 24h, E7 6.4-6.8x, LS8 7.4-9.1x)'
+  planned_test: 'proxy TestJSONLabelProbeGatesEdgeTable, TestJSONLabelProbeGatesAreSupersets, TestJSONLabelProbeGatesDifferential, TestJSONLabelProbesRunNoKeyRegexpOnPlainLines, TestJSONLabelProbeGatesFallBackWhenTooLong, TestJSONKeySpaceNonASCIIClass, FuzzJSONLabelProbeGates; e2e TestCompat_JSONLabelProbeGatesLikeLoki (core); bench/ab sets extracted-pushdown, extracted-suffix, level-filter-stored; visual regression coverage explore-extracted-filter-metric, explore-extracted-group-metric, lvl-explore-volume-level-extracted-stored'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

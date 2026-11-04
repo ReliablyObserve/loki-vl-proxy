@@ -850,9 +850,7 @@ func orderedJSONSpellingPrefilter(labels []string) string {
 // that cost it a third of a second per query. Empty when no label holds an
 // underscore.
 func orderedJSONKeyAliasPattern(labels []string) string {
-	// A quote is in the class: an escaped quote inside a key (a\"b) is two
-	// runes Loki sanitizes to two underscores.
-	const other = `[^A-Za-z0-9]`
+	const other = jsonSanitizedRune
 	var alternatives []string
 	underscored := false
 	for _, label := range labels {
@@ -878,6 +876,97 @@ func orderedJSONKeyAliasPattern(labels []string) string {
 	return "(?:" + strings.Join(alternatives, "|") + ")"
 }
 
+// jsonSanitizedRune is the class of the runes Loki's sanitizeLabelKey turns
+// into an underscore in a JSON key. A quote is in the class: an escaped quote
+// inside a key (a\"b) is two runes Loki sanitizes to two underscores.
+const jsonSanitizedRune = `[^A-Za-z0-9]`
+
+// jsonKeySpaceNonASCII is the class of the runes of jsonKeySpace outside
+// ASCII (U+0085 and the separators of \p{Z}), spelled out so that a filter
+// on them is a plain class VictoriaLogs runs in one pass instead of decoding
+// every rune against the Unicode tables; TestJSONKeySpaceNonASCIIClass keeps
+// it equal to jsonKeySpace.
+const jsonKeySpaceNonASCII = `[\x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}]`
+
+// jsonKeyGate renders the text after the opening quote of a JSON key
+// matching the raw name pattern, followed by rest: every match of
+// jsonKeyPattern(name)+rest holds one. With a literal name it is led by that
+// literal, which VictoriaLogs finds with a substring search before it runs
+// the rest of the regexp (lib/regexutil.Regex); jsonKeyPattern is led by the
+// quote, after which VictoriaLogs runs the regexp at every quote of a line,
+// four to forty times the cost of the gate on a line that lacks the key.
+func jsonKeyGate(name, rest string) string {
+	return name + jsonKeySpace + `*"\s*:` + rest
+}
+
+// orderedJSONKeyAliasGates renders filters every match of
+// orderedJSONKeyAliasPattern(labels) passes, alternative by alternative: a
+// sanitized spelling holds its pattern (led by the literal piece before the
+// rune it sanitizes); spaces after a piece hold the piece and the space
+// before the closing quote; spaces before a piece, and a blank key with
+// spaces, hold a quote and a space (an ASCII space after a quote, or a
+// non-ASCII space anywhere); a blank key without spaces holds two quotes.
+// Each is a substring search or a short regexp on a line lacking them.
+// Empty when no label holds an underscore.
+func orderedJSONKeyAliasGates(labels []string) string {
+	var gates []string
+	add := func(re string) {
+		if gate := "_msg:~" + strconv.Quote(re); !containsString(gates, gate) {
+			gates = append(gates, gate)
+		}
+	}
+	for _, label := range labels {
+		if !strings.Contains(label, "_") {
+			continue
+		}
+		for _, span := range orderedJSONLabelSpans(label) {
+			for _, spelled := range lokiKeyAliasPatterns(span, jsonSanitizedRune) {
+				add(spelled)
+			}
+			add(regexp.QuoteMeta(span) + jsonKeySpace + `+"`)
+		}
+	}
+	if len(gates) == 0 {
+		return ""
+	}
+	add(`"[\t-\r ]`)
+	add(jsonKeySpaceNonASCII)
+	add(`""`)
+	return "(" + strings.Join(gates, " or ") + ")"
+}
+
+// orderedJSONNestedGate renders a filter every match of a loose regexp of
+// orderedJSONNestedSplits passes: the first key of the nesting, under one of
+// its spellings firsts, led by its literal and opening an object
+// (jsonKeyGate).
+func orderedJSONNestedGate(firsts []string) string {
+	gates := make([]string, len(firsts))
+	for i, first := range firsts {
+		gates[i] = "_msg:~" + strconv.Quote(jsonKeyGate(regexp.QuoteMeta(first), `\s*\{`))
+	}
+	return "(" + strings.Join(gates, " or ") + ")"
+}
+
+// gatedRiskExists runs a probe whose gated query (query(true)) finds the same
+// lines as the ungated one (query(false)) with less work per line. A gated
+// query too long for VictoriaLogs' default -search.maxQueryLen, or refused as
+// too long (an operator may have lowered it), gives way to the ungated one,
+// the probe as sent before the gates: the same verdict.
+func (p *Proxy) gatedRiskExists(ctx context.Context, query func(gated bool) string, start, end time.Time) (bool, error) {
+	if gated := query(true); len(gated)+len(riskRestriction(ctx)) <= vlDefaultMaxQueryLen {
+		risky, err := p.statsPushdownRiskExists(ctx, gated, start, end)
+		var tooLong *queryTooLongError
+		if !errors.As(err, &tooLong) {
+			return risky, err
+		}
+		if ungated := query(false); ungated != gated {
+			return p.statsPushdownRiskExists(ctx, ungated, start, end)
+		}
+		return risky, err
+	}
+	return p.statsPushdownRiskExists(ctx, query(false), start, end)
+}
+
 // orderedJSONNestedSplits returns, for the labels holding underscores, every
 // split of a label at its underscores into nested object keys (a blank key
 // is skipped by Loki, so splits with one are left out): the name unpack_json
@@ -885,6 +974,13 @@ func orderedJSONKeyAliasPattern(labels []string) string {
 // also as the bare digit, which Loki prefixes) and a loose regexp locating
 // the keys in order, which every line holding the nesting matches.
 func orderedJSONNestedSplits(labels []string) (dotted, loose []string) {
+	dotted, loose, _ = orderedJSONNestedSplitsFirsts(labels)
+	return dotted, loose
+}
+
+// orderedJSONNestedSplitsFirsts is orderedJSONNestedSplits with the spellings
+// of the first key of each loose regexp.
+func orderedJSONNestedSplitsFirsts(labels []string) (dotted, loose []string, firstKeys [][]string) {
 	for _, label := range labels {
 		var separators []int
 		for i := 0; i < len(label); i++ {
@@ -921,9 +1017,10 @@ func orderedJSONNestedSplits(labels []string) (dotted, loose []string) {
 				pattern += `\s*\{(?s:.*)` + jsonKeyPattern(regexp.QuoteMeta(part))
 			}
 			loose = append(loose, pattern)
+			firstKeys = append(firstKeys, firsts)
 		}
 	}
-	return dotted, loose
+	return dotted, loose, firstKeys
 }
 
 // logfmtKeyAliasPattern is the key-spelling probe for logfmt lines, where a
@@ -2092,11 +2189,36 @@ func newLogfmtRiskPatterns(field string) logfmtRiskPatterns {
 // value it extracts first for a repeated key and replaces U+FFFD, where
 // unpack_json does not. One matching line keeps the exact raw evaluator.
 func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
+	return p.gatedRiskExists(ctx, func(gated bool) string { return orderedJSONPartialParseQuery(ctx, base, fields, stored, gated) }, start, end)
+}
+
+// orderedJSONPartialParseQuery is the probe of orderedJSONPartialParseRisk.
+// Gated, it finds the same lines with work VictoriaLogs does per line only
+// where a line can be risky (jsonKeyGate):
+//   - the lines it unpacks are those starting with a brace and passing the
+//     gate of one of the keys, without the key regexp after the brace: each
+//     check after the unpack except the escapes holds a key of the fields,
+//     which in such a line follows the brace, and the escapes stand for
+//     themselves in the candidate filter, so the lines found are the same;
+//   - each key regexp after the unpack runs behind a filter its matches pass:
+//     the key name led by its literal (jsonKeyGate), or for a repeated key the
+//     name as a phrase twice (logsqlTwiceFilter: a key is a phrase between a
+//     quote or a space and another).
+//
+// Ungated it is the probe as sent before the gates, kept for a query over
+// VictoriaLogs' length limit (gatedRiskExists).
+func orderedJSONPartialParseQuery(ctx context.Context, base string, fields []string, stored map[string]string, gated bool) string {
 	// escapedKey: unpack_json unescapes keys, Loki keeps them raw. replaced:
 	// Loki turns U+FFFD in string values into a space, whether it is in the
 	// text or escaped (the two spellings are separate filters: an alternation
 	// with a non-ASCII literal cost VictoriaLogs six times the scan).
 	const escapedKey, replaced, replacedEscape = `\\u[0-9A-Fa-f]{4}[^"]*"\s*:`, `\x{FFFD}`, `\\u[Ff]{3}[Dd]`
+	gate := func(re string) string {
+		if !gated {
+			return ""
+		}
+		return "_msg:~" + strconv.Quote(re) + " "
+	}
 	absent := make([]string, len(fields))
 	keyed := make([]string, len(fields))
 	empty := make([]string, len(fields))
@@ -2111,29 +2233,42 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 		// key are not word characters), which VictoriaLogs finds in its token
 		// index instead of scanning every line of the range.
 		keyed[i] = "(" + absent[i] + " " + logsqlWordPrefilter([]string{field}) + ")"
-		empty[i] = "(" + field + `:="" _msg:~` + strconv.Quote(jsonKeyPattern(names[i])) + ")"
+		empty[i] = "(" + field + `:="" ` + gate(jsonKeyGate(names[i], "")) + "_msg:~" + strconv.Quote(jsonKeyPattern(names[i])) + ")"
 	}
 	// Loki trims spaces around a key before sanitizing it.
 	key := jsonKeyPattern(strings.Join(names, "|"))
-	pattern := `^\s*\{(?s:.*)` + key
-	for _, name := range names {
+	pattern := "_msg:~" + strconv.Quote(`^\s*\{(?s:.*)`+key)
+	if gated {
+		// A line the key regexp matches holds one of the keys after the brace,
+		// so it passes the gate of that key.
+		keyGates := make([]string, len(names))
+		for i, name := range names {
+			keyGates[i] = "_msg:~" + strconv.Quote(jsonKeyGate(name, ""))
+		}
+		pattern = "_msg:~" + strconv.Quote(`^\s*\{`) + " (" + strings.Join(keyGates, " or ") + ")"
+	}
+	for i, name := range names {
 		field := jsonKeyPattern(name)
 		// A repeated key: Loki keeps one value, unpack_json adds a column per
 		// copy. An array: Loki skips it, unpack_json stores it as a string.
-		empty = append(empty, "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`))
+		twice, array := "_msg:~"+strconv.Quote(field+`(?s:.*)`+field), "_msg:~"+strconv.Quote(field+`\s*\[`)
+		if gated {
+			twice = "(" + logsqlTwiceFilter([]string{fields[i]}) + " " + twice + ")"
+			array = "(" + gate(jsonKeyGate(name, `\s*\[`)) + array + ")"
+		}
+		empty = append(empty, twice, array)
 	}
 	// The escape patterns apply to a line lacking any of the fields; the two
 	// spelled with a backslash escape run behind one literal substring
 	// filter, which VictoriaLogs answers without a regexp.
 	escapes := `(_msg:~"\\\\u" (_msg:~` + strconv.Quote(escapedKey) + " or _msg:~" + strconv.Quote(replacedEscape) + ")) or _msg:~" + strconv.Quote(replaced)
 	empty = append(empty, escapes)
-	candidate := "((" + strings.Join(keyed, " or ") + ") _msg:~" + strconv.Quote(pattern) + " or (" + strings.Join(absent, " or ") + ") (" + escapes + "))"
+	candidate := "((" + strings.Join(keyed, " or ") + ") " + pattern + " or (" + strings.Join(absent, " or ") + ") (" + escapes + "))"
 	unpack := " | unpack_json fields (" + strings.Join(fields, ", ") + ") keep_original_fields | filter "
 	query := base + " | filter " + candidate + unpack + strings.Join(empty, " or ") + " | limit 1"
 	// The same lines read through _msg alone, ahead of a delete of the labels.
-	ahead := filterAheadOfDelete(base, "("+logsqlWordPrefilter(fields)+" _msg:~"+strconv.Quote(pattern)+" or "+escapes+")")
-	query = fasterRiskQuery(ctx, query, ahead+query[len(base):])
-	return p.statsPushdownRiskExists(ctx, query, start, end)
+	ahead := filterAheadOfDelete(base, "("+logsqlWordPrefilter(fields)+" "+pattern+" or "+escapes+")")
+	return fasterRiskQuery(ctx, query, ahead+query[len(base):])
 }
 
 // orderedJSONKeySpellingRisk reports whether a selected line lacking one of
@@ -2150,21 +2285,41 @@ func (p *Proxy) orderedJSONPartialParseRisk(ctx context.Context, base string, fi
 // prefilter (orderedJSONSpellingPrefilter) and loose key-order regexps, so the
 // parser runs over few lines and no regexp needs balanced braces.
 func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
-	alias := orderedJSONKeyAliasPattern(fields)
-	if alias == "" {
+	// Without a label holding an underscore orderedJSONKeyAliasPattern is
+	// empty: there is no spelling to look for.
+	if !slices.ContainsFunc(fields, func(field string) bool { return strings.Contains(field, "_") }) {
 		return false, nil
 	}
+	return p.gatedRiskExists(ctx, func(gated bool) string { return orderedJSONKeySpellingQuery(ctx, base, fields, stored, gated) }, start, end)
+}
+
+// orderedJSONKeySpellingQuery is the probe of orderedJSONKeySpellingRisk.
+// Gated, each regexp runs behind filters its matches pass
+// (orderedJSONKeyAliasGates, and for a nesting the first key led by its
+// literal, jsonKeyGate), and the filter on _msg that runs ahead of a delete is
+// not run again after it: the lines found are the same. Ungated it is the
+// probe as sent before the gates (gatedRiskExists).
+func orderedJSONKeySpellingQuery(ctx context.Context, base string, fields []string, stored map[string]string, gated bool) string {
+	alias := orderedJSONKeyAliasPattern(fields)
 	absent := make([]string, len(fields))
 	for i, field := range fields {
 		absent[i] = storedFieldsAbsent(field, stored)
 	}
-	dotted, loose := orderedJSONNestedSplits(fields)
+	dotted, loose, firsts := orderedJSONNestedSplitsFirsts(fields)
 	candidates := []string{"_msg:~" + strconv.Quote(alias)}
-	for _, pattern := range loose {
-		candidates = append(candidates, "_msg:~"+strconv.Quote(pattern))
+	if gated {
+		candidates[0] = "(" + orderedJSONKeyAliasGates(fields) + " " + candidates[0] + ")"
+	}
+	for i, pattern := range loose {
+		candidate := "_msg:~" + strconv.Quote(pattern)
+		if gated {
+			candidate = "(" + orderedJSONNestedGate(firsts[i]) + " " + candidate + ")"
+		}
+		candidates = append(candidates, candidate)
 	}
 	lines := strings.TrimSpace(orderedJSONSpellingPrefilter(fields) + " (" + strings.Join(candidates, " or ") + ")")
 	query := base + " | filter (" + strings.Join(absent, " or ") + ") " + lines
+	tail := len(query)
 	if len(dotted) > 0 {
 		risky := []string{"_msg:~" + strconv.Quote(alias), "-__vlp:*"}
 		quoted := make([]string, len(dotted))
@@ -2177,8 +2332,14 @@ func (p *Proxy) orderedJSONKeySpellingRisk(ctx context.Context, base string, fie
 	}
 	query += " | limit 1"
 	// The same lines read through _msg alone, ahead of a delete of the labels.
-	query = fasterRiskQuery(ctx, query, filterAheadOfDelete(base, lines)+query[len(base):])
-	return p.statsPushdownRiskExists(ctx, query, start, end)
+	ahead := filterAheadOfDelete(base, lines)
+	rest := query[len(base):]
+	if gated && ahead != base {
+		// lines reads _msg alone, which the delete keeps: behind it only the
+		// absence of the labels is left to check.
+		rest = " | filter (" + strings.Join(absent, " or ") + ")" + query[tail:]
+	}
+	return fasterRiskQuery(ctx, query, ahead+rest)
 }
 
 // extractedBothKeysRisk reports whether a selected line holds both the key name
