@@ -50,7 +50,7 @@ compare:
     Loki's series, every point at Loki's evaluation time with Loki's value.
 gap:
   status: fixed
-  fixed_by: 'TBD-PR'
+  fixed_by: '#1059'
   impact: explore-visible
   effort: S
   area: 'internal/proxy/metric_binary.go logRangeFunctions, statsRateRangeEqualsStepShift (first_over_time / last_over_time with unwrap)'

@@ -161,7 +161,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `semantics/topk-over-vector-aggregation` — An aggregation around a topk, bottomk or sort folds what the ranking kept at each step (fixed) | #749 | 0 | 0 |
 | `semantics/unwrap-conversion-error` — An unwrap over a value its conversion rejects fails like Loki, with a 400 SampleExtractionErr (fixed) | #704 | 0 | 0 |
 | `semantics/unwrap-duration-seconds` — `unwrap duration_seconds(label)` is converted like duration(), as Loki does (fixed) | #729 | 0 | 0 |
-| `semantics/unwrap-first-last-range-timestamps` — first_over_time and last_over_time with unwrap answer Loki's query_range timestamps for a range up to the step (fixed) | TBD-PR | 0 | 0 |
+| `semantics/unwrap-first-last-range-timestamps` — first_over_time and last_over_time with unwrap answer Loki's query_range timestamps for a range up to the step (fixed) | #1059 | 0 | 0 |
 | `semantics/unwrap-first-last-under-aggregation` — first_over_time and last_over_time with unwrap under an aggregation answer 200 with Loki's series, and Loki's values at an instant (fixed) | #728 | 0 | 0 |
 | `semantics/unwrap-over-time-range-windows` — sum, avg, max and min over time with unwrap answer Loki's window on query_range for a range longer than the step (fixed) | TBD-PR | 0 | 0 |
 | `semantics/unwrap-over-time-short-range-windows` — sum, avg, max and min over time with unwrap and a range shorter than the step answer Loki's window on query_range (fixed) | TBD-PR | 0 | 0 |
