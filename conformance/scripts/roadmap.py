@@ -29,6 +29,21 @@ def item_state(track, identifier):
             " ".join(reason.group(1).split()) if reason else "")
 
 
+def listed(text, field):
+    """The ids of every `field:` list in an item: block lists and inline [a, b] lists (a translation names its
+    cases per delta)."""
+    found = []
+    for block in re.findall(rf'^{field}:\n((?:[ \t]+- \S+\n)+)', text, re.M):
+        found += re.findall(r'- (\S+)', block)
+    for inline in re.findall(rf'^\s*{field}:\s*\[([^\]]*)\]', text, re.M):
+        found += [x.strip().strip("'\"") for x in inline.split(",") if x.strip()]
+    return list(dict.fromkeys(found))
+
+
+def case_written(identifier):
+    return os.path.exists(os.path.join(ROOT, "cases", identifier + ".yaml"))
+
+
 def collect(track, directory):
     items = []
     base = os.path.join(ROOT, directory)
@@ -38,14 +53,21 @@ def collect(track, directory):
         identifier = name[:-5]
         text = read_text(os.path.join(base, name))
         title = re.search(r'^title:\s*(.+)$', text, re.M)
-        consumers = re.findall(r'^\s+- (\w+)$', re.search(
-            r'consumers:\n((?:\s+- \w+\n)+)', text).group(1), re.M) \
-            if re.search(r'consumers:\n', text) else []
+        consumers = listed(text, "consumers")
         state, reason = item_state(track, identifier)
         items.append({"id": identifier, "title": title.group(1) if title else identifier,
                       "state": state, "reason": reason, "consumers": consumers,
+                      "cases": listed(text, "cases"),
                       "weight": sum(WEIGHT.get(c, 1) for c in consumers)})
     return items
+
+
+def item_tests(wiring, item):
+    """Test files declaring the item itself or any case it names."""
+    tests = set(wiring["item_to_tests"].get(item["id"], []))
+    for case in item["cases"]:
+        tests.update(wiring["item_to_tests"].get(case, []))
+    return tests
 
 
 def main():
@@ -73,24 +95,28 @@ def main():
              f"**{len(by_state.get('proven', []))} proven**, "
              f"{len(by_state.get('partial', []))} partial, "
              f"{len(by_state.get('gap', []))} gaps, "
-             f"{len(by_state.get('waived', []))} waived", ""]
+             f"{len(by_state.get('waived', []))} waived"
+             + (f", {len(by_state['unknown'])} with no state recorded" if by_state.get("unknown") else ""), ""]
 
     for state, heading, blurb in (
         ("gap", "Next: unproven behaviour", "Ranked by which clients depend on it."),
         ("partial", "In progress", "Proven in part; the rest is named in the item's cases."),
         ("waived", "Accepted deviations", "Documented, with a rationale and an expiry."),
         ("proven", "Proven", "Held by at least one test that declares it."),
+        ("unknown", "No state recorded", "No file under `conformance/registry/state/` gives these a state yet."),
     ):
         items = sorted(by_state.get(state, []), key=lambda i: (-i["weight"], i["id"]))
         if not items:
             continue
         lines += ["", f"## {heading}", "", blurb, "",
-                  "| Item | Consumers | Tests | Why |", "|---|---|---:|---|"]
+                  "| Item | Consumers | Cases written / named | Tests | Why |", "|---|---|---:|---:|---|"]
         for item in items:
-            tests = len(wiring["item_to_tests"].get(item["id"], []))
             lines.append(f"| `{item['id']}` — {item['title']} | "
-                         f"{', '.join(item['consumers']) or '—'} | {tests} | "
-                         f"{item['reason'][:120] or '—'} |")
+                         f"{', '.join(item['consumers']) or '—'} | "
+                         f"{sum(1 for c in item['cases'] if case_written(c))} / {len(item['cases'])} | "
+                         f"{len(item_tests(wiring, item))} | {item['reason'][:120] or '—'} |")
+    lines += ["", "Tests counts the test files that declare the item or one of its cases (`// conformance:` in Go, "
+              "`@cov:` in Playwright); a case is written when its file exists under `conformance/registry/cases/`."]
     lines.append("")
     os.makedirs("conformance/reports", exist_ok=True)
     with open("conformance/reports/roadmap.md", "w", encoding="utf-8") as handle:
