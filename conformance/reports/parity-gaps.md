@@ -135,7 +135,7 @@ Last run: 2026-11-04T17:02:53Z on `69d07019`, window [1793806920, 1793810520].
 | `semantics/topk-bottomk-range-series` — A plain topk/bottomk on query_range ranks every step like Loki; ties at the k-th place follow Loki's map order (fixed) | #736 | 5 | 15 |
 | `semantics/topk-grouped-spellings` — topk/bottomk with by()/without() rank k series per group at every step, in every spelling Loki accepts (fixed) | #736 | 2 | 14 |
 | `semantics/stddev-stdvar-grouped-values` — stddev and stdvar with by or without fold the series of each group, like Loki (fixed) | #738 | 4 | 8 |
-| `semantics/ip-label-filter-missing-label` — An ip() label filter on a label the line does not have keeps the line; Loki drops it (fixed) | PRNUMBER | 1 | 4 |
+| `semantics/ip-label-filter-missing-label` — An ip() label filter on a label the line does not have keeps the line; Loki drops it (fixed) | #1105 | 1 | 4 |
 | `semantics/parenthesized-log-range` — A parenthesized log expression under a range function evaluates like the plain form | #669 | 2 | 2 |
 | `semantics/unwrap-sample-validity` — unwrap emits no sample for a missing label or a value that does not convert, and converts like Loki (fixed) | #680 | 2 | 2 |
 | `profiles/json-extraction-list-exposes-only-listed` — Extraction lists (`\| json msg="msg"`, `\| logfmt op`) expose only selected fields (fixed) | cf203629987b042cb2edb5022c77d6cf1a121c45 | 0 | 0 |

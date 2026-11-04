@@ -48,7 +48,7 @@ compare:
     200 with no line.
 gap:
   status: fixed
-  fixed_by: 'PRNUMBER'
+  fixed_by: '#1105'
   impact: explore-visible
   effort: S
   area: 'internal/translator/ip_label_filter.go ipLabelFilter (ip() label filter), internal/translator/translator.go translateSingleLabelFilter'
