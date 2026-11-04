@@ -153,5 +153,5 @@ python3 conformance/scripts/coverage_map.py
 python3 conformance/scripts/wire.py
 python3 conformance/scripts/translation_map.py
 python3 conformance/scripts/gaps.py
-python3 conformance/scripts/parity_gaps.py   # after bench/parity/publish.py records a run
+python3 conformance/scripts/parity_gaps.py   # after bench/parity/publish.py records a run (--prune drops the cluster ids it no longer shows)
 ```

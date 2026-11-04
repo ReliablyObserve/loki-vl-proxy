@@ -10,6 +10,7 @@ must account for. It discovers and registers gaps; it fixes nothing.
 | `run.py` | proves both sides healthy and the data equal, then sends every request to Loki and the proxy (query endpoints twice: with `X-Loki-Response-Encoding-Flags: categorize-labels`, as Grafana sends them, and without), replays the Grafana requests through Grafana's API against the Loki and proxy datasources, and diffs each pair (`differ.py`). |
 | `differ.py` | the semantic diff: status and error text, result type, log entries matched by timestamp and line (stream order ignored, entry order inside a stream checked against the query's direction; ties at the line limit's boundary timestamp ignored, Loki breaks them arbitrarily), per-entry labels and label categories, metric series sets (including one label set returned as several series) and values (relative tolerance 1e-6; scalars compared as numbers), name/value sets of the metadata endpoints, detected_fields types/parsers/cardinality (5 % for Loki's sketch), index/stats streams and entries. Stats blocks and execution metadata are ignored. Label names are generalised to their class (`__error__`, `*_extracted`, `<stream-label>`, `<line-or-metadata-key>`, ...) so one cause clusters once. Recorded deviations carry their registry case id and are never ranked. |
 | `cluster.py` | one cluster per differing request: endpoint class, query shape (outer operation, parser, stages and the kinds of filter used: line, label, pattern), the request's most fundamental differing facet (status before series before labels before values) with error texts reduced to a template. Ranked by user impact (explore- and drilldown-visible first), then distinct corpus queries. Writes `clusters.json` and `report.md`. |
+| `refresh.py` | the whole flow below in one entrypoint, as CI runs it (stack, captures, corpus, run, record, prune, regenerate, summary, tear down). |
 | `publish.py` | records a run in `conformance/registry/generated/parity-discovery.json`; `conformance/scripts/parity_gaps.py` ranks the registry's gap cases with those counts into `conformance/reports/parity-gaps.md`, and the conformance gate fails while a discovered cluster is accounted for by no registry case. |
 
 ## Run
@@ -39,6 +40,27 @@ generator data is 13-26 MiB between Loki's querier and frontend, and with
 8 MiB Loki drops the answer and the client waits for `query_timeout`. Ports:
 `--port-offset 1500` puts Loki on 34601, VictoriaLogs on 34928, the proxies
 on 34700/34702 and Grafana on 34502.
+
+## Weekly refresh (CI)
+
+`.github/workflows/parity-refresh.yaml` runs `refresh.py --mode full` from `main` every Saturday (and on
+dispatch), at an hour clear of `perf-daily.yaml`, on a fresh stack with the whole corpus. The Loki sources come
+from a shallow, sparse checkout of the tag the stack runs (`pkg/logql` only). The result goes to the bot branch
+`bench/parity-refresh` as a pull request (never to `main`): the recorded run, the registry cases that lost cluster
+ids, the regenerated reports, and a summary with every cluster no registry case claims yet. A run that cannot
+prove both sides healthy, or whose corpus sources did not all send requests, fails the job and opens nothing. New
+signatures need a registry case by hand: the pull request is opened anyway and the job ends red.
+
+A pull request that edits the pipeline runs `refresh.py --mode validate`: an evenly spaced slice of every corpus
+source (25 each) through the same steps, recorded as partial. Pruning refuses a partial run, and the result is only
+shown in the job summary.
+
+`conformance/scripts/parity_gaps.py --prune` edits the cases for the newest recorded run: a cluster id a case
+claims that the run no longer holds is deleted from its `clusters:` list, whatever the case's status, so `--check`
+passes after a rerun without a hand edit. Every case that lost ids is listed (`--prune-report FILE` writes it as
+markdown); an open, owner-kept, documented or upstream case left with no cluster is called out as undecided and its
+status is never changed by the script. It refuses a run with no cluster, a partial run or a corpus source that sent
+no request.
 
 ## Proof that both sides are healthy
 
@@ -79,7 +101,8 @@ under the current diff rules without sending a request, so a change to
 
 A fix PR retires a gap without a full rerun: set the case's `gap.status` to
 `fixed` with `fixed_by:` (the PR number or commit); its clusters stay claimed
-and the report lists it apart until the next recorded run no longer shows them.
+and the report lists it apart until the next recorded run no longer shows them; the weekly refresh then drops them
+(`--prune`).
 
 ## Tests
 

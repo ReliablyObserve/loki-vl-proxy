@@ -129,7 +129,9 @@ Every cluster in `generated/parity-discovery.json` is claimed by exactly one cas
 cluster the diff marked as a recorded deviation by the case id it names (which must be a
 case with status documented, owner-kept, upstream or fixed), every other one by a case's
 `gap.clusters`. A fixed case keeps its clusters until the next recorded run no longer
-shows them. The conformance gate fails otherwise.
+shows them; `parity_gaps.py --prune` (run by the weekly `parity-refresh` workflow) then deletes
+the ids a run no longer holds from every case and lists the cases left with none. The conformance
+gate fails otherwise.
 
 ## Performance acceptance
 

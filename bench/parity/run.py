@@ -495,7 +495,9 @@ def health(cfg):
     out["slices_differing"] = sorted(t for t in vl_counts if loki_counts.get(t, 0) != vl_counts[t])
     services_status, services, _, _ = http("GET", cfg["loki"] + "/loki/api/v1/label/service_name/values?" +
                                            urllib.parse.urlencode({"start": start * 10 ** 9, "end": end * 10 ** 9}), TENANT)
-    params = {"query": 'sum by (service_name) (count_over_time({env=~".+"}[5m]))', "start": start, "end": end, "step": 300}
+    # Every service the label lists, including the stack's fixtures that carry no env label and sit in the last
+    # minutes of the window: Loki aligns evaluation times to the step, so a 5-minute step can stop before them.
+    params = {"query": 'sum by (service_name) (count_over_time({service_name=~".+"}[5m]))', "start": start, "end": end, "step": 60}
     qs, qb, _, _ = http("GET", cfg["loki"] + "/loki/api/v1/query_range?" + urllib.parse.urlencode(params),
                         dict(TENANT, **{"Cache-Control": "no-cache"}))
     out["services_listed"] = len(services.get("data") or []) if services_status == 200 else None
