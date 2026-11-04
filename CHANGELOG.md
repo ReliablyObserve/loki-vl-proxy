@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Answer `detected_fields` like Loki when the query matches no line: no
+  fields and no `limit`. The Logs Drilldown Logs tab with the error and warn
+  level pills (whose escaped pipe matches no level) listed fields the
+  service's other lines have, because the proxy fell back to VictoriaLogs'
+  field index of the bare stream selector whenever the query's own scan found
+  no field; Loki lists only the fields of the lines the query returns. An
+  empty answer also carried `limit: 1000`, which Loki sends only with fields.
+  The fallback now runs only after the proxy's Drilldown scan deadline, so an
+  empty answer no longer pays for the bare-selector lookup.
+
 ## [2.75.0] - 2026-11-04
 
 ### Fixed

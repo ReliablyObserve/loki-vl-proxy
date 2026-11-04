@@ -1,0 +1,81 @@
+id: semantics/detected-fields-empty-answer
+title: detected_fields of a query that matches no line answers Loki's empty body (fixed)
+pending: true
+proves:
+  - loki_api_v1_detected_fields
+  - severity-detected-level-derivation
+consumer: drilldown
+why: |
+  The Logs Drilldown Logs tab of frontend-ssr with the error and warn level
+  pills sends `{service_name="frontend-ssr"} | detected_level=~"error\\|warn"
+  | json | logfmt | drop __error__, __error_details__` to /detected_fields.
+  Drilldown escapes the pipe, so the regexp is the literal `error|warn` and
+  matches no line, on Loki and on the proxy alike (the proxy sends
+  VictoriaLogs `detected_level:="error|warn"`, and the page's log query
+  answered the same as Loki's). Loki answered `{}`; the proxy listed 10
+  fields with empty parsers and cardinality 1. On db-postgres with the error
+  pill, where no line matched either, Loki answered `{}` and the proxy
+  `{"data":[],"fields":[],"limit":1000,"status":"success"}`.
+
+  Loki v3.7.9 lists only the fields of the lines the query itself returned
+  (pkg/querier/queryrange/detected_fields.go:42-73, parseDetectedFields over
+  re.Data.Result) and sets the limit only when it lists a field or a value
+  (:86-89, "otherwise all they get is the field limit"). Its JSON omits an
+  empty list and a zero limit (pkg/logproto/logproto.pb.go
+  DetectedFieldsResponse, `json:"fields,omitempty"`, `json:"limit,omitempty"`),
+  so a query that matches no line answers `{}`. That is Loki's normal empty
+  result, not a failure or a cancelled request.
+
+  The proxy fell back, whenever the query's own scan found no field, to
+  VictoriaLogs' field index of the bare stream selector (the query without
+  its parsers and filters): the 10 fields were JSON keys VictoriaLogs stores
+  for frontend-ssr lines the query does not match. It also sent the limit
+  with no field.
+
+  Fixed: a scan that answered lists only its own fields, and an answer with
+  no field carries no limit (single tenant, multi-tenant merge and the
+  background cache refresh). Only a scan cut by the proxy's own Drilldown
+  scan deadline keeps the bare-selector field index as a degraded answer
+  (Loki fails such a query instead; unchanged here). The proxy's status and
+  data mirror stay, as on every detected_fields answer. An empty answer
+  skips the bare-selector lookup (4 VictoriaLogs calls to 2 on a recording
+  fake).
+
+  Not changed here: /detected_field/{name}/values relaxes an empty strict
+  query the same way (resolveDetectedFieldValues); the multi-tenant merge
+  sends the request's line limit where Loki sends its limit.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="frontend-ssr"} | detected_level=~"error\\|warn"    | json  | logfmt | drop __error__, __error_details__ '
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [fields, limit]
+  expect: |
+    No fields and no limit when the query matches no line (Loki's `{}`), for
+    a level pill, an escaped-pipe level regexp, a field filter behind
+    `| json | logfmt`, a line filter and a selector without streams, on JSON,
+    logfmt and plain-text services; fields with the limit when lines match.
+gap:
+  status: fixed
+  fixed_by: TBD-PR
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/label_handlers.go handleDetectedFields (empty answer); multitenant.go, cache_keys.go'
+  loki: 'pkg/querier/queryrange/detected_fields.go:42-89; pkg/logproto/logproto.pb.go DetectedFieldsResponse'
+  proxy: 'no bare-selector field lookup after a scan that answered; no limit without fields'
+  planned_test: 'TestDetectedFields_EmptyAnswerLikeLoki_EdgeTable, TestDetectedFields_EmptyAnswerTokensLeaveRelaxedQuery, TestDetectedFields_EmptyAnswerCachedRepeat, TestDetectedFields_ScanDeadlineKeepsNativeFallback, TestDetectedFields_MultiTenantEmptyAnswer, TestDetectedFields_EmptyAnswerDifferentialAgainstLokiReference, FuzzDetectedFieldsEmptyAnswer (internal/proxy, CI fuzz-smoke); TestCompat_DetectedFieldsEmptyAnswer (test/e2e-compat, group core)'
+  clusters:
+    - 3b1319d9
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

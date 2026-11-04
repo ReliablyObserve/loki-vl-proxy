@@ -42,5 +42,4 @@ gap:
   proxy: 'one of the two parser stages is removed from the query'
   planned_test: 'TestCompat_TwoParsersOnMixedFormats (test/e2e-compat, group semantics)'
   clusters:
-    - 3b1319d9
     - 3de57bdc

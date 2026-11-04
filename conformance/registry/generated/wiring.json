@@ -201,8 +201,10 @@
       "test/e2e-compat/detected_level_test.go"
     ],
     "loki_api_v1_detected_fields": [
+      "internal/proxy/detected_fields_empty_answer_test.go",
       "internal/proxy/drilldown_compat_test.go",
       "internal/proxy/stage_field_exposure_test.go",
+      "test/e2e-compat/detected_fields_empty_answer_test.go",
       "test/e2e-compat/detected_fields_logfmt_tokens_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
@@ -781,6 +783,10 @@
     ],
     "semantics/delete-route-disabled-like-loki": [
       "internal/proxy/delete_route_test.go"
+    ],
+    "semantics/detected-fields-empty-answer": [
+      "internal/proxy/detected_fields_empty_answer_test.go",
+      "test/e2e-compat/detected_fields_empty_answer_test.go"
     ],
     "semantics/detected-fields-no-logfmt-token-fields": [
       "internal/proxy/detected_fields_logfmt_tokens_test.go",
@@ -1435,7 +1441,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 411,
+  "registry_items": 412,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1591,6 +1597,10 @@
     "internal/proxy/delete_route_test.go": [
       "loki_api_v1_delete",
       "semantics/delete-route-disabled-like-loki"
+    ],
+    "internal/proxy/detected_fields_empty_answer_test.go": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-empty-answer"
     ],
     "internal/proxy/detected_fields_logfmt_tokens_test.go": [
       "semantics/detected-fields-no-logfmt-token-fields"
@@ -2502,6 +2512,10 @@
     "test/e2e-compat/count_values_test.go": [
       "semantics/count-values-unsupported"
     ],
+    "test/e2e-compat/detected_fields_empty_answer_test.go": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-empty-answer"
+    ],
     "test/e2e-compat/detected_fields_logfmt_tokens_test.go": [
       "loki_api_v1_detected_fields",
       "semantics/detected-fields-no-logfmt-token-fields"
@@ -3028,7 +3042,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 312,
+  "tests_with_markers": 314,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3134,5 +3148,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 234
+  "wired_items": 235
 }

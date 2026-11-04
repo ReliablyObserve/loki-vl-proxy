@@ -426,12 +426,7 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			if detectErr != nil {
 				return nil, detectErr
 			}
-			payload := map[string]interface{}{
-				"status": "success",
-				"data":   fields,
-				"fields": fields,
-				"limit":  1000, // same constant as handleDetectedFields (Loki always returns 1000)
-			}
+			payload := detectedFieldsPayload(fields) // the handler's answer, limit only with fields
 			// Window-scaled TTL, matching the handler's staleness comparison.
 			p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, metadataWindowTTL(start, end, CacheTTLs["detected_fields"]), payload)
 			return nil, nil

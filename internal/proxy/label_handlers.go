@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -729,6 +730,28 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 	return resolved
 }
 
+// detectedFieldsPayload is the detected_fields answer for fields. Loki sets
+// its limit only when it lists a field (pkg/querier/queryrange/detected_fields.go:86-89,
+// "otherwise all they get is the field limit"), and its JSON omits an empty
+// list and a zero limit, so an answer without fields carries no limit.
+func detectedFieldsPayload(fields []map[string]interface{}) map[string]interface{} {
+	if fields == nil {
+		fields = []map[string]interface{}{}
+	}
+	payload := map[string]interface{}{
+		"status": "success",
+		"data":   fields,
+		"fields": fields,
+	}
+	if len(fields) > 0 {
+		// Loki returns 1000 here regardless of the requested line_limit.
+		// Drilldown reads this value and displays it as "Fields N" in the UI.
+		// Echoing the requested line_limit causes "Fields 5,951" etc. to appear.
+		payload["limit"] = 1000
+	}
+	return payload
+}
+
 // handleDetectedFields returns detected field names.
 func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -760,10 +783,15 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	scanCtx, scanCancel := p.withDrilldownScanTimeout(r.Context())
 	defer scanCancel()
 	fields, _, err := p.detectFields(scanCtx, query, r.FormValue("start"), r.FormValue("end"), lineLimit)
+	// detectFields can also answer an empty success once the deadline cut its
+	// scan (a transport error on the strict candidate), so the deadline is
+	// read from the scan context itself.
+	scanTimedOut := errors.Is(scanCtx.Err(), context.DeadlineExceeded)
 	if err != nil {
 		if isContextDeadlineErr(err) {
 			p.observeInternalOperation(r.Context(), "drilldown_scan_timeout", "detected_fields_handler", 0)
 			fields = nil
+			scanTimedOut = true
 		} else if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
 			return
 		} else {
@@ -772,28 +800,20 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// When the strict query (full LogQL including parser stages and field filters)
-	// returns zero fields, fall back to a native-only index lookup on the bare stream
-	// selector. This keeps the Drilldown fields panel populated when a specific field
-	// value filter narrows the log sample below the scan threshold.
-	// We use native-only (no log-line scan) to avoid returning every field from a
-	// broad relaxed scan, which would produce an overwhelming list.
-	if len(fields) == 0 {
+	// Loki lists only the fields of the lines the query itself returns
+	// (pkg/querier/queryrange/detected_fields.go:42-73): a query that matches
+	// no line, or only lines without fields, has no fields. Only a scan that
+	// ran out of time falls back to a native-only index lookup on the bare
+	// stream selector, so the Drilldown fields panel is not left blank by the
+	// proxy's own deadline.
+	if len(fields) == 0 && scanTimedOut {
 		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
 			if relaxedFields, _ := p.detectFieldsNativeOnly(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end")); len(relaxedFields) > 0 {
 				fields = relaxedFields
 			}
 		}
 	}
-	payload := map[string]interface{}{
-		"status": "success",
-		"data":   fields,
-		"fields": fields,
-		// Loki always returns 1000 here regardless of the requested line_limit.
-		// Drilldown reads this value and displays it as "Fields N" in the UI.
-		// Echoing the requested line_limit causes "Fields 5,951" etc. to appear.
-		"limit": 1000,
-	}
+	payload := detectedFieldsPayload(fields)
 	p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, detectedFieldsTTL, payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))

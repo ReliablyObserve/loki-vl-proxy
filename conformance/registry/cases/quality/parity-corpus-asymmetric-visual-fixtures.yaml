@@ -7,9 +7,12 @@ consumer: api
 why: |
   The visual-extraction-list seed of the visual stack writes different data
   to each side on purpose (bench/visual/stack.py
-  seed_extraction_list_fixture): VictoriaLogs rows carry a `level=info`
-  field that is not in the line, and Loki's copy has no structured metadata
-  for it. The differential run of 2026-11-04 seeds and compares it, so every
+  seed_extraction_list_fixture): VictoriaLogs rows carry a separate
+  `level=info` field, and Loki's copy has no structured metadata for it.
+  Both lines also hold the key (`{"msg":"hello","level":"info"}` and
+  `op=read level=info`); the proxy hides the stored level of the JSON row
+  (a key VictoriaLogs' Loki push projects from a JSON line), so only the
+  logfmt row shows it. The differential run of 2026-11-04 seeds and compares it, so every
   query that reads `level` on this service differs because the data
   differs, not the proxy:
     * `{service_name="visual-extraction-list"} | detected_level="info"`, `|
@@ -26,6 +29,17 @@ why: |
   (bench/parity/corpus.py). Real differences on the same service are
   registered apart (semantics/parse-error-labels-on-log-lines,
   drilldown/detected-labels-lists-stored-field).
+
+  Note: seeding Loki with that structured metadata would make the
+  extraction-list page of #981 (`| logfmt op`,
+  profiles/json-extraction-list-exposes-only-listed) differ instead: the
+  proxy hides a stored level under an extraction list when the logfmt line
+  holds the key, where Loki keeps structured metadata. The proxy reads such
+  a level as metadata on a plain selector and as part of the line under an
+  extraction list. VictoriaLogs itself makes fields only from JSON lines
+  (app/vlinsert/loki/loki.go, -loki.disableMessageParsing), never from
+  logfmt keys. Which of the two the seed models is decided before the
+  harness fix.
 request:
   method: GET
   path: /loki/api/v1/query_range

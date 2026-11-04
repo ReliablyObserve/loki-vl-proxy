@@ -1211,7 +1211,11 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		}
 		out = append(out, item)
 	}
-	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "fields": out, "limit": lineLimit})
+	payload := map[string]interface{}{"status": "success", "data": out, "fields": out}
+	if len(out) > 0 {
+		payload["limit"] = lineLimit // Loki sets the limit only when it lists a field
+	}
+	body, err := json.Marshal(payload)
 	return body, "application/json", err
 }
 

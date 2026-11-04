@@ -324,7 +324,11 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "drilldown-service-landing",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "loki_api_v1_detected_fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-empty-answer"
    ]
   },
   {
@@ -1795,7 +1799,11 @@
     "severity-detected-level-derivation",
     "severity/detected-level-filter-json-level",
     "drilldown-service-landing",
-    "loki_api_v1_query_range"
+    "loki_api_v1_query_range",
+    "loki_api_v1_detected_fields"
+   ],
+   "fixes": [
+    "semantics/detected-fields-empty-answer"
    ]
   },
   {
