@@ -132,15 +132,14 @@ Registry items whose measured shapes the proxy answers slower than Loki on a
 cold request (bench/ab runs; details in [performance.md](performance.md)). Warm is the
 p50 of the runs after the first, on the worst cold row; `also slower warm` counts the rows
 slower warm too (— when no row comes from a run that can say). Rows Loki's results cache
-answered (by its own counters or the identical-answer heuristic) are excluded.
+answered (by its own counters or the identical-answer heuristic) are excluded, and so are rows the
+newest daily run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
-| `parser-error-and-label-collision` | 13 | 19.72s (X1 json filter level_extracted, by level, 24h) | 4.83s | 0.10s | 0.05s | — |
+| `parser-error-and-label-collision` | 8 | 19.72s (X1 json filter level_extracted, by level, 24h) | 4.83s | 0.10s | 0.05s | — |
 | `semantics/extracted-suffix-collision` | 6 | 19.72s (X1 json filter level_extracted, by level, 24h) | 4.83s | 0.10s | 0.05s | — |
 | `semantics/json-extracted-metric-pushdown` | 5 | 19.72s (X1 json filter level_extracted, by level, 24h) | 4.83s | 0.10s | 0.05s | — |
-| `quality/query-range-settled-steps` | 10 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
-| `semantics/unwrap-conversion-error` | 9 | 13.13s (E3 logfmt latency_ms rate, production, 7d) | 0.01s | 13.44s | 0.00s | — |
 | `explore-logs-volume-json` | 2 | 8.30s (A explore volume, 2 filters, drop, 24h) | 5.02s | 0.07s | 0.11s | — |
 | `semantics/json-filter-pushdown-translated-label` | 2 | 8.30s (A explore volume, 2 filters, drop, 24h) | 5.02s | 0.07s | 0.11s | — |
 | `semantics/json-filter-pushdown-underscore-label` | 5 | 8.30s (A explore volume, 2 filters, drop, 24h) | 5.02s | 0.07s | 0.11s | — |
@@ -152,6 +151,8 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `severity/detected-level-filter-json-level` | 10 | 0.49s (LF2 logs, detected_level regexp, 24h) | 0.14s | 0.05s | 0.20s | — |
 | `semantics/pattern-line-filter-anchoring` | 4 | 0.28s (A1 nginx include GET, log query, 24h) | 0.03s | 0.03s | 0.04s | — |
 | `metric-series-identity` | 3 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.02s | 0.01s | — |
+| `quality/query-range-settled-steps` | 5 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.02s | 0.01s | — |
+| `semantics/unwrap-conversion-error` | 4 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.02s | 0.01s | — |
 | `semantics/unwrap-gate-parsefloat-divergences` | 3 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.02s | 0.01s | — |
 | `profiles/stage-field-exposure` | 10 | 0.27s (SF5 logs, regexp capture, 6h) | 0.07s | 0.02s | 0.07s | — |
 | `operator-drop` | 2 | 0.20s (LF29 logs, drop detected_level, 6h) | 0.01s | 0.06s | 0.01s | — |
@@ -159,8 +160,6 @@ answered (by its own counters or the identical-answer heuristic) are excluded.
 | `severity/detected-level-stage-side-effects` | 2 | 0.20s (LF29 logs, drop detected_level, 6h) | 0.01s | 0.06s | 0.01s | — |
 | `semantics/unwrap-duration-seconds` | 1 | 0.41s (D1 logfmt ttl duration_seconds rate by service, 24h) | 0.24s | 0.03s | 0.01s | — |
 | `drilldown-service-landing` | 2 | 0.27s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.15s | 0.03s | 0.14s | — |
-| `backend-admission-and-heavy-query-queueing` | 1 | 0.12s (drilldown landing volume, 7d) | 0.03s | 0.10s | 0.00s | — |
-| `quality/index-volume-settled-segments` | 1 | 0.12s (drilldown landing volume, 7d) | 0.03s | 0.10s | 0.00s | — |
 | `semantics/json-detected-level-error-split` | 1 | 0.31s (DLV1 drilldown logs volume, json, 6h) | 0.24s | 0.04s | 0.02s | — |
 | `semantics/json-metric-detected-level-derivation` | 1 | 0.31s (DLV1 drilldown logs volume, json, 6h) | 0.24s | 0.04s | 0.02s | — |
 | `profiles/stream-selector-regexp-anchoring` | 1 | 0.06s (M1 multi-value variable, log query, 6h) | 0.01s | 0.02s | 0.01s | — |
