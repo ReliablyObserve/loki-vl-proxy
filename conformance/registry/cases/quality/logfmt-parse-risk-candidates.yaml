@@ -1,0 +1,94 @@
+id: quality/logfmt-parse-risk-candidates
+title: A `| logfmt` metric refreshed over lines that carry the grouped label as a stored field is answered without the line-shape probe (fixed)
+pending: true
+proves:
+  - parser-logfmt
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Grafana Explore's logs volume for a `| logfmt` selector,
+  `sum by (level, detected_level) (count_over_time({env="production"} |
+  logfmt | drop __error__ [1m]))`, is answered from VictoriaLogs stats
+  buckets after a parse-risk probe (logfmtParseRisk) finds no line that
+  Loki's logfmt decoder and VictoriaLogs' unpack_logfmt read differently.
+  The probe tests every line lacking the label as a stored field against a
+  line-shape expression whose character classes admit every rune but a few.
+  VictoriaLogs simplifies each filter expression when it parses a query
+  (lib/regexutil.NewRegex, SimplifyRegex), and Go's regexp/syntax String()
+  walks every rune of such a class once per call, so the probe costs a fixed
+  40-80 ms per request whatever the window holds: 0.08 s of every 0.08 s warm
+  answer on the e2e stack (daily run 2026-11-04, control set, logfmt volume
+  warm p50 80 ms at 24h aligned against Loki's 30 ms), where every refresh
+  probes the newly uncovered part of its window.
+
+  Loki's answer is unchanged, from v3.7.9's source: `| logfmt` splits a line
+  into key/value pairs at any byte up to a space
+  (pkg/logql/log/logfmt/decode.go:43-140 ScanKeyval) and adds the pairs as
+  labels (pkg/logql/log/parser.go:379-440 LogfmtParser.Process), and
+  count_over_time counts the lines of each series in the window
+  (pkg/logql/range_vector.go:367 countOverTime).
+
+  A candidate probe now finds the lines that lack a label as a stored field
+  and hold its key (any line lacking it when a label may come from a key
+  spelled differently). Every clause of the probe requires such a line, so a
+  window without one holds no risky line; the candidate probe has no
+  line-shape expression and costs VictoriaLogs a few milliseconds. The first
+  check of a window sends the probe, answers with its verdict, and sends
+  beside it the candidate probe over the window's newest part
+  (-parse-risk-probe-settle, 5 minutes by default, which every refresh probes
+  again); the verdict remembers whether that part held a candidate line. The parts of the window checked later (a refresh, a wider range)
+  send only the candidate probe when none was seen, and the probe only when
+  the candidate probe finds a line or fails; when one was seen they send the
+  probe alone. The mark only decides which probes are sent; the verdict is
+  always the probe's or, for a window without a candidate line, clean. Lines
+  whose level is a stream label (the e2e stack, OTLP, any ingest that stores
+  the level) are refreshed without the probe.
+
+  Measured against VictoriaLogs v1.51.1 with the A/B generator's 25h data
+  profile and a recording VictoriaLogs front: the logfmt volume moved by a
+  60 s refresh went from 48 ms (1h) and 52 ms (24h), one 44 ms probe per
+  request, to 4.1 ms and 5.1 ms, with identical answers. A first request kept
+  its time (1h 50 vs 52 ms, 24h 396 vs 404 ms, p50 of 12 alternating runs
+  with emptied proxy caches), and so did a selector whose lines hold their
+  level only in the body (refresh 46 vs 48 ms and 45 vs 45 ms, first request
+  78 vs 79 ms and 302 vs 303 ms).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level, detected_level) (count_over_time({env="production"} | logfmt | drop __error__ [1m]))'
+    start: now-24h
+    end: now
+    step: 60s
+  headers:
+    X-Scope-OrgID: "0"
+  precondition: |
+    The same request answered once, then asked again with start and end
+    moved by a minute (a Grafana refresh).
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    Loki's series and values for every window; the moved part of a window
+    whose lines carry their level as a stored field is checked by the
+    candidate probe alone.
+gap:
+  status: fixed
+  fixed_by: 'perf/logfmt-risk-candidate-gate'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/ordered_json_metric.go (logfmtParseRisk, logfmtParseRiskQueries, rememberedRisk, logfmtCandidatesState)'
+  loki: 'pkg/logql/log/logfmt/decode.go:43-140 ScanKeyval; pkg/logql/log/parser.go:379-440 LogfmtParser.Process; pkg/logql/range_vector.go:367 countOverTime'
+  proxy: 'every refresh sent the line-shape probe, a fixed 40-80 ms of VictoriaLogs expression simplification (0.08 s warm at 24h against Loki 0.03 s)'
+  planned_test: 'proxy TestLogfmtParseRiskCandidatesEdgeTable, TestLogfmtParseRiskCandidatesSkipTheProbe, TestLogfmtParseRiskCandidatesDifferential, TestLogfmtVolumeRefreshSkipsTheLineShapeProbe, BenchmarkLogfmtLogsVolume, FuzzLogfmtParseRiskCandidatesCoverTheProbe; e2e TestRangeMetricCompatibilityLogfmtVolumeRefresh'
+  clusters: []
+  visual: none
+  visual_reason: 'a latency change: every answer is the probe-alone answer, proven by the gated-or-ungated differential over random windows, lines and label sets; the refresh time is measured by the A/B refresh pass of the control logfmt volume shape'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -323,6 +323,7 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 						attempts++
 					case strings.HasPrefix(call, "/select/logsql/stats_query_range "):
 						stats++
+					case isLogfmtCandidateCall(call): // beside the logfmt label probe, counted with it
 					case strings.HasPrefix(call, "/select/logsql/query ") && strings.HasSuffix(call, " | limit 1"):
 						guards++
 					case isLevelPresenceCall(call):
@@ -368,6 +369,7 @@ func TestRangeMetricCompatibilityJSONLogsVolume(t *testing.T) {
 		guards, rows := 0, 0
 		for _, call := range recorder.reset() {
 			switch {
+			case isLogfmtCandidateCall(call):
 			case strings.HasSuffix(call, " | limit 1"):
 				guards++
 			case isLevelPresenceCall(call):

@@ -754,8 +754,11 @@ class AcceptanceReplayTest(unittest.TestCase):
                         if blk["locked"] is True and blk["locked_since"] > SEED}
         # 29 locked at the seed; two are unlocked since the 2026-11-03 daily report (semantics/json-filter-pushdown-
         # translated-label, explore-logs-volume-json: the aligned A explore volume 1h cold row is above 2×).
+        # quality/logfmt-parse-risk-candidates covers the control logfmt volume, whose aligned 24h warm row is above
+        # 2× since the 2026-11-04 daily report; it is locked once a daily run measures it within.
         self.assertEqual(len(locked), 27)
-        unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json"}
+        unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json",
+                          "quality/logfmt-parse-risk-candidates"}
         state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
         for set_name, r in seed_lines():
             for mode, pair in over2x.history_pairs(r).items():
