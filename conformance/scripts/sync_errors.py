@@ -135,7 +135,9 @@ def enclosing(text, offset):
 def site(path, text, offset, writer, status_token, argument, kind, constants):
     status = STATUS_NAMES.get(status_token) or (int(status_token) if status_token and status_token.isdigit() else None)
     return {
-        "where": f"{path}:{text.count(chr(10), 0, offset) + 1}",
+        # The enclosing function, not the line: a site is found again from its name, and an edit above it in
+        # the file does not change this file (the conformance gate compares it byte for byte).
+        "where": f"{path} {enclosing(text, offset) or '(package level)'}",
         "writer": writer,
         "status_token": status_token,
         "status": status,

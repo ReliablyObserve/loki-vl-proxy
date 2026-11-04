@@ -9,7 +9,7 @@
       "message": "multi-tenant sub-request failed",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/absent_over_time.go:292",
+      "where": "internal/proxy/absent_over_time.go proxyAbsentOverTimeQuery",
       "writer": "writeError"
     },
     {
@@ -21,7 +21,7 @@
       "message": "multi-tenant sub-request failed",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/absent_over_time.go:320",
+      "where": "internal/proxy/absent_over_time.go proxyAbsentOverTimeQueryRange",
       "writer": "writeError"
     },
     {
@@ -33,7 +33,7 @@
       "message": "invalid start, end or step",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/absent_over_time.go:333",
+      "where": "internal/proxy/absent_over_time.go proxyAbsentOverTimeQueryRange",
       "writer": "writeError"
     },
     {
@@ -45,7 +45,7 @@
       "message": "Internal Server Error",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:79",
+      "where": "internal/proxy/alerting.go writeEmptyLegacyRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -57,7 +57,7 @@
       "message": "not supported value %q",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/alerting.go:107",
+      "where": "internal/proxy/alerting.go handleRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -69,7 +69,7 @@
       "message": "Internal Server Error",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:154",
+      "where": "internal/proxy/alerting.go writeAlertingBackendStatus",
       "writer": "writeErrorShaped"
     },
     {
@@ -81,7 +81,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/alerting.go:160",
+      "where": "internal/proxy/alerting.go proxyAlertingRead",
       "writer": "writeErrShaped"
     },
     {
@@ -93,7 +93,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/alerting.go:178",
+      "where": "internal/proxy/alerting.go proxyAlertingRead",
       "writer": "writeErrShaped"
     },
     {
@@ -105,7 +105,7 @@
       "message": null,
       "status": null,
       "status_token": "status",
-      "where": "internal/proxy/alerting.go:512",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -117,7 +117,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/alerting.go:526",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrShaped"
     },
     {
@@ -129,7 +129,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/alerting.go:542",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrShaped"
     },
     {
@@ -141,7 +141,7 @@
       "message": "group does not exist",
       "status": 404,
       "status_token": "http.StatusNotFound",
-      "where": "internal/proxy/alerting.go:567",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -153,7 +153,7 @@
       "message": "Internal Server Error",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:573",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -165,7 +165,7 @@
       "message": "Internal Server Error",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/alerting.go:587",
+      "where": "internal/proxy/alerting.go handleLegacyRules",
       "writer": "writeErrorShaped"
     },
     {
@@ -177,7 +177,7 @@
       "message": "multi-tenant sub-request failed",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_aggregation.go:65",
+      "where": "internal/proxy/binary_aggregation.go proxyBinaryAggregation",
       "writer": "writeError"
     },
     {
@@ -189,7 +189,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/binary_aggregation_range.go:45",
+      "where": "internal/proxy/binary_aggregation_range.go binaryAggregationResponse",
       "writer": "writeError"
     },
     {
@@ -201,7 +201,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_aggregation_range.go:51",
+      "where": "internal/proxy/binary_aggregation_range.go binaryAggregationResponse",
       "writer": "writeError"
     },
     {
@@ -213,7 +213,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:120",
+      "where": "internal/proxy/binary_logql.go evaluateBinaryLogQLOperand",
       "writer": "writeError"
     },
     {
@@ -225,7 +225,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:130",
+      "where": "internal/proxy/binary_logql.go evaluateBinaryLogQLOperand",
       "writer": "writeError"
     },
     {
@@ -237,7 +237,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:174",
+      "where": "internal/proxy/binary_logql.go finishBinaryOperandResponse",
       "writer": "writeError"
     },
     {
@@ -249,7 +249,7 @@
       "message": "unexpected literal for logical/set binary operation",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:262",
+      "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
       "writer": "writeError"
     },
     {
@@ -261,7 +261,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:269",
+      "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
       "writer": "writeError"
     },
     {
@@ -273,7 +273,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/binary_logql.go:300",
+      "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
       "writer": "writeError"
     },
     {
@@ -285,7 +285,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/binary_logql.go:307",
+      "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
       "writer": "writeError"
     },
     {
@@ -297,7 +297,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:218",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryCold",
       "writer": "writeErr"
     },
     {
@@ -309,7 +309,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:236",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryCold",
       "writer": "writeErr"
     },
     {
@@ -321,7 +321,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:242",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryCold",
       "writer": "writeBackendError"
     },
     {
@@ -333,7 +333,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:318",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeErr"
     },
     {
@@ -345,7 +345,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:328",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeErr"
     },
     {
@@ -357,7 +357,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:337",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeBackendError"
     },
     {
@@ -369,7 +369,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:346",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeErr"
     },
     {
@@ -381,7 +381,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:353",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeBackendError"
     },
     {
@@ -393,7 +393,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:375",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeErr"
     },
     {
@@ -405,7 +405,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:384",
+      "where": "internal/proxy/cold_dispatch.go proxyLogQueryBoth",
       "writer": "writeErr"
     },
     {
@@ -417,7 +417,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:421",
+      "where": "internal/proxy/cold_dispatch.go processLogQueryResponse",
       "writer": "writeBackendError"
     },
     {
@@ -429,7 +429,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/cold_dispatch.go:444",
+      "where": "internal/proxy/cold_dispatch.go processLogQueryResponse",
       "writer": "writeErr"
     },
     {
@@ -441,7 +441,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/cold_dispatch.go:467",
+      "where": "internal/proxy/cold_dispatch.go processLogQueryResponse",
       "writer": "writeError"
     },
     {
@@ -453,7 +453,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/empty_without_metric.go:26",
+      "where": "internal/proxy/empty_without_metric.go handleEmptySumWithout",
       "writer": "writeError"
     },
     {
@@ -465,7 +465,7 @@
       "message": "multi-tenant sub-request failed",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:93",
+      "where": "internal/proxy/http_utils.go validateQuery",
       "writer": "writeError"
     },
     {
@@ -477,7 +477,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:98",
+      "where": "internal/proxy/http_utils.go validateQuery",
       "writer": "writeError"
     },
     {
@@ -489,7 +489,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/http_utils.go:103",
+      "where": "internal/proxy/http_utils.go validateQuery",
       "writer": "writeError"
     },
     {
@@ -501,7 +501,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:109",
+      "where": "internal/proxy/label_handlers.go handleLabels",
       "writer": "writeErr"
     },
     {
@@ -513,7 +513,7 @@
       "message": "invalid label values URL",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:130",
+      "where": "internal/proxy/label_handlers.go handleLabelValues",
       "writer": "writeError"
     },
     {
@@ -525,7 +525,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:238",
+      "where": "internal/proxy/label_handlers.go handleLabelValues",
       "writer": "writeErr"
     },
     {
@@ -537,7 +537,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:330",
+      "where": "internal/proxy/label_handlers.go handleDetectedLevelLabelValues",
       "writer": "writeError"
     },
     {
@@ -549,7 +549,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:337",
+      "where": "internal/proxy/label_handlers.go handleDetectedLevelLabelValues",
       "writer": "writeErr"
     },
     {
@@ -561,7 +561,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:438",
+      "where": "internal/proxy/label_handlers.go handleSeries",
       "writer": "writeError"
     },
     {
@@ -573,7 +573,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:463",
+      "where": "internal/proxy/label_handlers.go handleSeries",
       "writer": "writeErr"
     },
     {
@@ -585,7 +585,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:470",
+      "where": "internal/proxy/label_handlers.go handleSeries",
       "writer": "writeBackendError"
     },
     {
@@ -597,7 +597,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:582",
+      "where": "internal/proxy/label_handlers.go handleIndexStats",
       "writer": "writeErr"
     },
     {
@@ -609,7 +609,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:770",
+      "where": "internal/proxy/label_handlers.go handleDetectedFields",
       "writer": "writeErr"
     },
     {
@@ -621,7 +621,7 @@
       "message": "missing field name in URL",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:823",
+      "where": "internal/proxy/label_handlers.go handleDetectedFieldValues",
       "writer": "writeError"
     },
     {
@@ -633,7 +633,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/label_handlers.go:862",
+      "where": "internal/proxy/label_handlers.go handleDetectedFieldValues",
       "writer": "writeErr"
     },
     {
@@ -645,7 +645,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/label_handlers.go:1077",
+      "where": "internal/proxy/label_handlers.go lokiQueryParamValidation",
       "writer": "writeError"
     },
     {
@@ -657,7 +657,7 @@
       "message": "multi-tenant sub-request failed",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/limits_enforcement.go:460",
+      "where": "internal/proxy/limits_enforcement.go tenantLimitsMiddleware",
       "writer": "writeError"
     },
     {
@@ -669,7 +669,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/manual_metric_budget.go:528",
+      "where": "internal/proxy/manual_metric_budget.go writeBoundedBareParserMetric",
       "writer": "writeErr"
     },
     {
@@ -681,7 +681,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go:213",
+      "where": "internal/proxy/metric_agg.go capFoldedGroups",
       "writer": "writeErr"
     },
     {
@@ -693,7 +693,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:636",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -705,7 +705,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:644",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -717,7 +717,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:680",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -729,7 +729,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:685",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -741,7 +741,7 @@
       "message": "unsupported instant aggregation target",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:705",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -753,7 +753,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:735",
+      "where": "internal/proxy/metric_agg.go handleInstantMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -765,7 +765,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:766",
+      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -777,7 +777,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:776",
+      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -789,7 +789,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_agg.go:854",
+      "where": "internal/proxy/metric_agg.go handleRangeMetricPostAggregation",
       "writer": "writeError"
     },
     {
@@ -801,7 +801,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_agg.go:935",
+      "where": "internal/proxy/metric_agg.go applyOuterPostAggregation",
       "writer": "writeErr"
     },
     {
@@ -813,7 +813,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:206",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeErr"
     },
     {
@@ -825,7 +825,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:246",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeGrafanaStatsFailure"
     },
     {
@@ -837,7 +837,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:248",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeGrafanaStatsFailure"
     },
     {
@@ -849,7 +849,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:253",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeBackendError"
     },
     {
@@ -861,7 +861,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:255",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeErr"
     },
     {
@@ -873,7 +873,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_binary.go:259",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeError"
     },
     {
@@ -885,7 +885,7 @@
       "message": "manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/metric_binary.go:262",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeError"
     },
     {
@@ -897,7 +897,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:265",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeErr"
     },
     {
@@ -909,7 +909,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/metric_binary.go:302",
+      "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
       "writer": "writeError"
     },
     {
@@ -921,7 +921,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1692",
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
       "writer": "writeErr"
     },
     {
@@ -933,7 +933,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1698",
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
       "writer": "writeBackendError"
     },
     {
@@ -945,7 +945,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1723",
+      "where": "internal/proxy/metric_binary.go proxyStatsQuery",
       "writer": "writeErr"
     },
     {
@@ -957,7 +957,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1879",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetricVM",
       "writer": "writeErr"
     },
     {
@@ -969,7 +969,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1883",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetricVM",
       "writer": "writeErr"
     },
     {
@@ -981,7 +981,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/metric_binary.go:1894",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetricVM",
       "writer": "writeError"
     },
     {
@@ -993,7 +993,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:1998",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
       "writer": "writeErr"
     },
     {
@@ -1005,7 +1005,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:2010",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
       "writer": "writeErr"
     },
     {
@@ -1017,7 +1017,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:2019",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
       "writer": "writeErr"
     },
     {
@@ -1029,7 +1029,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/metric_binary.go:2023",
+      "where": "internal/proxy/metric_binary.go proxyBinaryMetric",
       "writer": "writeErr"
     },
     {
@@ -1041,7 +1041,7 @@
       "message": null,
       "status": null,
       "status_token": "rpe.status",
-      "where": "internal/proxy/middleware.go:249",
+      "where": "internal/proxy/middleware.go tenantMiddleware",
       "writer": "writeError"
     },
     {
@@ -1053,7 +1053,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/middleware.go:252",
+      "where": "internal/proxy/middleware.go tenantMiddleware",
       "writer": "writeError"
     },
     {
@@ -1065,7 +1065,7 @@
       "message": "admin authentication required",
       "status": 401,
       "status_token": "http.StatusUnauthorized",
-      "where": "internal/proxy/middleware.go:273",
+      "where": "internal/proxy/middleware.go adminMiddleware",
       "writer": "writeError"
     },
     {
@@ -1077,7 +1077,7 @@
       "message": "peer authentication required",
       "status": 401,
       "status_token": "http.StatusUnauthorized",
-      "where": "internal/proxy/middleware.go:303",
+      "where": "internal/proxy/middleware.go peerCacheMiddleware",
       "writer": "writeError"
     },
     {
@@ -1089,7 +1089,7 @@
       "message": "peer authentication required",
       "status": 401,
       "status_token": "http.StatusUnauthorized",
-      "where": "internal/proxy/middleware.go:316",
+      "where": "internal/proxy/middleware.go peerCacheMiddleware",
       "writer": "writeError"
     },
     {
@@ -1101,7 +1101,7 @@
       "message": "peer cache endpoint is restricted to configured peers",
       "status": 403,
       "status_token": "http.StatusForbidden",
-      "where": "internal/proxy/middleware.go:321",
+      "where": "internal/proxy/middleware.go peerCacheMiddleware",
       "writer": "writeError"
     },
     {
@@ -1113,7 +1113,7 @@
       "message": "multi-tenant fanout exceeds limit of %d tenants; raise -multi-tenant-max-fanout or query fewer tenants",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:30",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1125,7 +1125,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:35",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1137,7 +1137,7 @@
       "message": "parse error : %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:42",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1149,7 +1149,7 @@
       "message": "log queries are not supported as an instant query type, please change your query to a range query type",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:46",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1161,7 +1161,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/multitenant.go:70",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeErr"
     },
     {
@@ -1173,7 +1173,7 @@
       "message": "failed to merge multi-tenant response: ",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/multitenant.go:143",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1185,7 +1185,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/multitenant.go:147",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1197,7 +1197,7 @@
       "message": "multi-tenant merged response exceeds configured safety limit; raise -multi-tenant-max-merged-response-bytes or query fewer tenants",
       "status": 413,
       "status_token": "http.StatusRequestEntityTooLarge",
-      "where": "internal/proxy/multitenant.go:151",
+      "where": "internal/proxy/multitenant.go handleMultiTenantFanout",
       "writer": "writeError"
     },
     {
@@ -1209,7 +1209,7 @@
       "message": "multi-tenant sub-request failed",
       "status": null,
       "status_token": "code",
-      "where": "internal/proxy/multitenant.go:213",
+      "where": "internal/proxy/multitenant.go writeMultiTenantFailure",
       "writer": "writeError"
     },
     {
@@ -1221,7 +1221,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/ordered_json_metric.go:253",
+      "where": "internal/proxy/ordered_json_metric.go serveOrderedJSONMetric",
       "writer": "writeErr"
     },
     {
@@ -1233,7 +1233,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/ordered_json_metric.go:1870",
+      "where": "internal/proxy/ordered_json_metric.go serveLevelVolumeStatsBuckets",
       "writer": "writeErr"
     },
     {
@@ -1245,7 +1245,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/ordered_json_vector.go:159",
+      "where": "internal/proxy/ordered_json_vector.go handleOrderedJSONVectorMetric",
       "writer": "writeErr"
     },
     {
@@ -1257,7 +1257,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:233",
+      "where": "internal/proxy/patterns.go handlePatterns",
       "writer": "writeError"
     },
     {
@@ -1269,7 +1269,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/patterns.go:337",
+      "where": "internal/proxy/patterns.go handlePatterns",
       "writer": "writeErr"
     },
     {
@@ -1281,7 +1281,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/patterns.go:1487",
+      "where": "internal/proxy/patterns.go handleDetectedLabels",
       "writer": "writeErr"
     },
     {
@@ -1293,7 +1293,7 @@
       "message": "delete requires X-Delete-Confirmation: true header for safety",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1538",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1305,7 +1305,7 @@
       "message": "query parameter required for delete",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1547",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1317,7 +1317,7 @@
       "message": "wildcard delete rejected \u2014 query must target specific streams (e.g., {app=\\",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1553",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1329,7 +1329,7 @@
       "message": "both start and end parameters required for delete",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1563",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1341,7 +1341,7 @@
       "message": "invalid start timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1574",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1353,7 +1353,7 @@
       "message": "invalid end timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1579",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1365,7 +1365,7 @@
       "message": "delete time range too wide: %s exceeds maximum %s",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1585",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1377,7 +1377,7 @@
       "message": "end must be after start",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/patterns.go:1592",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeDeleteError"
     },
     {
@@ -1389,7 +1389,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/patterns.go:1600",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeErrShaped"
     },
     {
@@ -1401,7 +1401,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/patterns.go:1627",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeErrShaped"
     },
     {
@@ -1413,7 +1413,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/patterns.go:1636",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeErrShaped"
     },
     {
@@ -1425,7 +1425,7 @@
       "message": "multiple org IDs present",
       "status": 401,
       "status_token": "http.StatusUnauthorized",
-      "where": "internal/proxy/patterns.go:1446",
+      "where": "internal/proxy/patterns.go handleTenantLimitsConfig",
       "writer": "http.Error"
     },
     {
@@ -1437,7 +1437,7 @@
       "message": null,
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/patterns.go:1453",
+      "where": "internal/proxy/patterns.go handleTenantLimitsConfig",
       "writer": "http.Error"
     },
     {
@@ -1449,7 +1449,7 @@
       "message": null,
       "status": 405,
       "status_token": "http.StatusMethodNotAllowed",
-      "where": "internal/proxy/patterns.go:1532",
+      "where": "internal/proxy/patterns.go handleDelete",
       "writer": "writeBodylessError"
     },
     {
@@ -1461,7 +1461,7 @@
       "message": "exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2350",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1473,7 +1473,7 @@
       "message": "error while processing request: runtime error: integer divide by zero",
       "status": 500,
       "status_token": "http.StatusInternalServerError",
-      "where": "internal/proxy/proxy.go:2360",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1485,7 +1485,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2475",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1497,7 +1497,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2515",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1509,7 +1509,7 @@
       "message": "invalid range selector",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2558",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1521,7 +1521,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2581",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1533,7 +1533,7 @@
       "message": "parse error : invalid regex in label_replace: %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2591",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1545,7 +1545,7 @@
       "message": "unsupported metric query: range aggregations require compatible unwrap or translator support",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2603",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1557,7 +1557,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2658",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1569,7 +1569,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2660",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1581,7 +1581,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2704",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1593,7 +1593,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2708",
+      "where": "internal/proxy/proxy.go handleQueryRange",
       "writer": "writeError"
     },
     {
@@ -1605,7 +1605,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2832",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1617,7 +1617,7 @@
       "message": "invalid range selector",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2880",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1629,7 +1629,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2899",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1641,7 +1641,7 @@
       "message": "parse error : invalid regex in label_replace: %v",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2910",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1653,7 +1653,7 @@
       "message": "unsupported metric query: range aggregations require compatible unwrap or translator support",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2917",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1665,7 +1665,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2964",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1677,7 +1677,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2966",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1689,7 +1689,7 @@
       "message": "log queries are not supported as an instant query type, please change your query to a range query type",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/proxy.go:2975",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1701,7 +1701,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:2982",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1713,7 +1713,7 @@
       "message": null,
       "status": null,
       "status_token": "sc.code",
-      "where": "internal/proxy/proxy.go:3000",
+      "where": "internal/proxy/proxy.go handleQuery",
       "writer": "writeError"
     },
     {
@@ -1725,7 +1725,7 @@
       "message": "method not allowed",
       "status": 405,
       "status_token": "http.StatusMethodNotAllowed",
-      "where": "internal/proxy/proxy.go:2025",
+      "where": "internal/proxy/proxy.go handleCacheFlush",
       "writer": "http.Error"
     },
     {
@@ -1737,7 +1737,7 @@
       "message": "method not allowed",
       "status": 405,
       "status_token": "http.StatusMethodNotAllowed",
-      "where": "internal/proxy/proxy.go:2140",
+      "where": "internal/proxy/proxy.go handlePeerCachePurge",
       "writer": "http.Error"
     },
     {
@@ -1749,7 +1749,7 @@
       "message": "method not allowed",
       "status": 405,
       "status_token": "http.StatusMethodNotAllowed",
-      "where": "internal/proxy/proxy.go:2152",
+      "where": "internal/proxy/proxy.go handleMetrics",
       "writer": "http.Error"
     },
     {
@@ -1761,7 +1761,7 @@
       "message": "metrics scrape already in progress",
       "status": 429,
       "status_token": "http.StatusTooManyRequests",
-      "where": "internal/proxy/proxy.go:2161",
+      "where": "internal/proxy/proxy.go handleMetrics",
       "writer": "http.Error"
     },
     {
@@ -1773,7 +1773,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/quantile_histogram.go:635",
+      "where": "internal/proxy/quantile_histogram.go writeQuantileHistogramRange",
       "writer": "writeErr"
     },
     {
@@ -1785,7 +1785,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/quantile_histogram.go:641",
+      "where": "internal/proxy/quantile_histogram.go writeQuantileHistogramRange",
       "writer": "writeErr"
     },
     {
@@ -1797,7 +1797,7 @@
       "message": null,
       "status": 408,
       "status_token": "http.StatusRequestTimeout",
-      "where": "internal/proxy/query_range_windowing.go:254",
+      "where": "internal/proxy/query_range_windowing.go proxyLogQueryWindowed",
       "writer": "writeError"
     },
     {
@@ -1809,7 +1809,7 @@
       "message": null,
       "status": 408,
       "status_token": "http.StatusRequestTimeout",
-      "where": "internal/proxy/query_range_windowing.go:276",
+      "where": "internal/proxy/query_range_windowing.go proxyLogQueryWindowed",
       "writer": "writeError"
     },
     {
@@ -1821,7 +1821,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/query_range_windowing.go:301",
+      "where": "internal/proxy/query_range_windowing.go proxyLogQueryWindowed",
       "writer": "writeErr"
     },
     {
@@ -1833,7 +1833,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_range_windowing.go:351",
+      "where": "internal/proxy/query_range_windowing.go proxyLogQueryWindowed",
       "writer": "writeError"
     },
     {
@@ -1845,7 +1845,7 @@
       "message": "invalid start timestamp",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1796",
+      "where": "internal/proxy/query_translation.go proxyBareParserMetricQueryRange",
       "writer": "writeError"
     },
     {
@@ -1857,7 +1857,7 @@
       "message": "invalid end timestamp",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1802",
+      "where": "internal/proxy/query_translation.go proxyBareParserMetricQueryRange",
       "writer": "writeError"
     },
     {
@@ -1869,7 +1869,7 @@
       "message": "invalid step",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1808",
+      "where": "internal/proxy/query_translation.go proxyBareParserMetricQueryRange",
       "writer": "writeError"
     },
     {
@@ -1881,7 +1881,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/query_translation.go:1844",
+      "where": "internal/proxy/query_translation.go proxyBareParserMetricQueryRange",
       "writer": "writeErr"
     },
     {
@@ -1893,7 +1893,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/query_translation.go:1914",
+      "where": "internal/proxy/query_translation.go writeBareParserSeriesLimitError",
       "writer": "writeError"
     },
     {
@@ -1905,7 +1905,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/query_translation.go:1972",
+      "where": "internal/proxy/query_translation.go tryUnwrapViaStatsFastPath",
       "writer": "writeErr"
     },
     {
@@ -1917,7 +1917,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/query_translation.go:1992",
+      "where": "internal/proxy/query_translation.go proxyBareParserMetricQuery",
       "writer": "writeErr"
     },
     {
@@ -1929,7 +1929,7 @@
       "message": "invalid range metric query",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:453",
+      "where": "internal/proxy/range_metric_compat.go handleStatsCompatRange",
       "writer": "writeError"
     },
     {
@@ -1941,7 +1941,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:457",
+      "where": "internal/proxy/range_metric_compat.go handleStatsCompatRange",
       "writer": "writeError"
     },
     {
@@ -1953,7 +1953,7 @@
       "message": "invalid range metric query",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:564",
+      "where": "internal/proxy/range_metric_compat.go handleStatsCompatInstant",
       "writer": "writeError"
     },
     {
@@ -1965,7 +1965,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:568",
+      "where": "internal/proxy/range_metric_compat.go handleStatsCompatInstant",
       "writer": "writeError"
     },
     {
@@ -1977,7 +1977,7 @@
       "message": "invalid start timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:691",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeError"
     },
     {
@@ -1989,7 +1989,7 @@
       "message": "invalid end timestamp: ",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:696",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeError"
     },
     {
@@ -2001,7 +2001,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:705",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeError"
     },
     {
@@ -2013,7 +2013,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:709",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeError"
     },
     {
@@ -2025,7 +2025,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:801",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeErr"
     },
     {
@@ -2037,7 +2037,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:828",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeErr"
     },
     {
@@ -2049,7 +2049,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:834",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricRange",
       "writer": "writeErr"
     },
     {
@@ -2061,7 +2061,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:967",
+      "where": "internal/proxy/range_metric_compat.go writeHitsRangeMetricMatrix",
       "writer": "writeErr"
     },
     {
@@ -2073,7 +2073,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:1064",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeError"
     },
     {
@@ -2085,7 +2085,7 @@
       "message": "invalid aggregation %s without unwrap",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/range_metric_compat.go:1068",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeError"
     },
     {
@@ -2097,7 +2097,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:1075",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeErr"
     },
     {
@@ -2109,7 +2109,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:1080",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeErr"
     },
     {
@@ -2121,7 +2121,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:1093",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeErr"
     },
     {
@@ -2133,7 +2133,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go:1099",
+      "where": "internal/proxy/range_metric_compat.go proxyManualRangeMetricInstant",
       "writer": "writeErr"
     },
     {
@@ -2145,7 +2145,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/sliding_window_stats.go:161",
+      "where": "internal/proxy/sliding_window_stats.go writeRankedRangeFromBuckets",
       "writer": "writeErr"
     },
     {
@@ -2157,7 +2157,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/sliding_window_stats.go:265",
+      "where": "internal/proxy/sliding_window_stats.go writeSlidingWindowStatsRange",
       "writer": "writeErr"
     },
     {
@@ -2169,7 +2169,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/sliding_window_stats.go:281",
+      "where": "internal/proxy/sliding_window_stats.go writeSlidingWindowStatsRange",
       "writer": "writeErr"
     },
     {
@@ -2181,7 +2181,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/stream_processing.go:105",
+      "where": "internal/proxy/stream_processing.go proxyLogQuery",
       "writer": "writeErr"
     },
     {
@@ -2193,7 +2193,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/stream_processing.go:113",
+      "where": "internal/proxy/stream_processing.go proxyLogQuery",
       "writer": "writeBackendError"
     },
     {
@@ -2205,7 +2205,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/stream_processing.go:130",
+      "where": "internal/proxy/stream_processing.go proxyLogQuery",
       "writer": "writeErr"
     },
     {
@@ -2217,7 +2217,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/stream_processing.go:152",
+      "where": "internal/proxy/stream_processing.go proxyLogQuery",
       "writer": "writeErr"
     },
     {
@@ -2229,7 +2229,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/stream_processing.go:179",
+      "where": "internal/proxy/stream_processing.go proxyLogQuery",
       "writer": "writeError"
     },
     {
@@ -2241,7 +2241,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/stream_processing.go:2119",
+      "where": "internal/proxy/stream_processing.go wrapStatsOrFail",
       "writer": "writeVLStatsErrorBody"
     },
     {
@@ -2253,7 +2253,7 @@
       "message": "query parameter required",
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/tail.go:30",
+      "where": "internal/proxy/tail.go handleTail",
       "writer": "writeError"
     },
     {
@@ -2265,7 +2265,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/tail.go:39",
+      "where": "internal/proxy/tail.go handleTail",
       "writer": "writeError"
     },
     {
@@ -2277,7 +2277,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/tail.go:53",
+      "where": "internal/proxy/tail.go handleTail",
       "writer": "writeError"
     },
     {
@@ -2289,7 +2289,7 @@
       "message": "tail origin not allowed",
       "status": 403,
       "status_token": "http.StatusForbidden",
-      "where": "internal/proxy/tail.go:60",
+      "where": "internal/proxy/tail.go handleTail",
       "writer": "writeError"
     },
     {
@@ -2301,7 +2301,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/tail.go:71",
+      "where": "internal/proxy/tail.go handleTail",
       "writer": "writeErr"
     },
     {
@@ -2313,7 +2313,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/unwrap_conversion_error.go:1622",
+      "where": "internal/proxy/unwrap_conversion_error.go finish",
       "writer": "writeLokiTextError"
     },
     {
@@ -2325,7 +2325,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/vector_agg_fold.go:104",
+      "where": "internal/proxy/vector_agg_fold.go foldVectorAggregations",
       "writer": "writeErr"
     },
     {
@@ -2337,7 +2337,7 @@
       "message": null,
       "status": 400,
       "status_token": "http.StatusBadRequest",
-      "where": "internal/proxy/volume.go:213",
+      "where": "internal/proxy/volume.go serveVolume",
       "writer": "writeError"
     },
     {
@@ -2349,7 +2349,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/volume.go:237",
+      "where": "internal/proxy/volume.go serveVolume",
       "writer": "writeErr"
     }
   ],

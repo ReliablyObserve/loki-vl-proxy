@@ -71,6 +71,12 @@ class SyncErrorsTest(unittest.TestCase):
         self.assertFalse(any(e["writer"] == "writeErrorCause" for e in doc["entries"]))
         self.assertFalse(any("a_test.go" in e["where"] for e in doc["entries"]))
 
+    def test_a_site_is_named_by_its_function_and_survives_lines_added_above_it(self):
+        before = run(SOURCE)["entries"]
+        after = run(SOURCE.replace("package proxy\n", "package proxy\n\n// a comment\n// another\n", 1))["entries"]
+        self.assertEqual(before, after)
+        self.assertEqual(before[0]["where"], "internal/proxy/a.go handle")
+
     def test_the_summary_counts_each_kind(self):
         summary = run(SOURCE)["summary"]["by_status"]
         self.assertEqual((summary["400"]["literal_sites"], summary["400"]["dynamic_sites"],
