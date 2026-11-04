@@ -2,8 +2,8 @@ apiVersion: v2
 name: loki-vl-proxy
 description: HTTP proxy translating Loki API to VictoriaLogs
 type: application
-version: 2.77.1
-appVersion: "2.77.1"
+version: 2.78.0
+appVersion: "2.78.0"
 home: https://github.com/ReliablyObserve/Loki-VL-proxy
 sources:
   - https://github.com/ReliablyObserve/Loki-VL-proxy
