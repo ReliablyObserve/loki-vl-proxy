@@ -2013,6 +2013,21 @@
    "fixes": [
     "semantics/proxy-accepts-operators-not-in-loki"
    ]
+  },
+  {
+   "id": "explore-ip-label-filter-absent",
+   "kind": "explore",
+   "query": "{service_name=\"payment-service\"} | logfmt | addr=ip(\"1.2.3.4\")",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/ip-label-filter-missing-label",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/ip-label-filter-missing-label"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

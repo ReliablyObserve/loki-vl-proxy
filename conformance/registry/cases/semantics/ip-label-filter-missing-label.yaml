@@ -1,5 +1,5 @@
 id: semantics/ip-label-filter-missing-label
-title: An ip() label filter on a label the line does not have keeps the line; Loki drops it (open)
+title: An ip() label filter on a label the line does not have keeps the line; Loki drops it (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -14,7 +14,22 @@ why: |
   `ipaddr=ip(...)`, with `level="error"`) answer 0 lines on Loki and 99 on
   the proxy; payment-service lines have no addr field. Until #995 the proxy
   rejected the filter with a 400 (semantics/proxy-rejects-valid-logql); since
-  it accepts it, the filter keeps lines Loki drops.
+  it accepts it, the filter keeps lines Loki drops. A single address and a
+  range were sent as a match-all regexp, `!=` as its negation (no line), and
+  a CIDR as ipv4_range, which VictoriaLogs also matches on a leading-zero
+  address Loki does not read.
+
+  Fixed (internal/translator/ip_label_filter.go): the pattern is read as
+  Loki reads it (address, CIDR, range) and sent as ipv4_range or ipv6_range
+  on the label, with guards for what VictoriaLogs' parsers read and Loki's
+  netip scan does not (leading zeros, a two-character last octet with a
+  non-digit, IPv4 text under an IPv6 pattern, a value shorter than five
+  characters or a zone). `!=` keeps a present label holding no address of
+  the pattern. An absent label matches neither operator. A value with an
+  address inside other text is open apart
+  (semantics/ip-label-filter-embedded-address). Loki also keeps a line its
+  parser failed on under both operators (ip.go:124-127); the proxy drops it,
+  as it has no label value (semantics/parse-error-labels-on-log-lines).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -32,12 +47,20 @@ compare:
   expect: |
     200 with no line.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 'PRNUMBER'
   impact: explore-visible
   effort: S
-  area: 'internal/translator/label_filter_expr.go (ip() label filter on an absent field)'
-  loki: 'pkg/logql/log/ip.go:123-133 (absent label: line dropped)'
-  proxy: 'every line kept when the label is absent'
-  planned_test: 'TestCompat_IPLabelFilterAbsentLabel (test/e2e-compat, group semantics)'
+  area: 'internal/translator/ip_label_filter.go ipLabelFilter (ip() label filter), internal/translator/translator.go translateSingleLabelFilter'
+  loki: 'pkg/logql/log/ip.go:123-145 (absent label: line dropped under = and !=), :183-261 (address scan, pattern forms)'
+  proxy: 'Loki''s lines for an absent label and for a whole-address value'
+  planned_test: 'TestCompat_IPLabelFilterAbsentLabel (test/e2e-compat, group core)'
   clusters:
     - e018ec65
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

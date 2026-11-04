@@ -489,6 +489,11 @@ func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilt
 	if m := numericLabelFilterRE.FindStringSubmatch(raw); m != nil {
 		return []lineFieldFilter{{name: m[1], before: before}}
 	}
+	if m := ipLabelFilterRE.FindStringSubmatch(raw); m != nil {
+		// An ip() filter drops a line without the label under = and !=
+		// (pkg/logql/log/ip.go:128-131).
+		return []lineFieldFilter{{name: m[1], before: before}}
+	}
 	parsed, err := logqlpkg.ParseLogQuery("{" + raw + "}")
 	if err != nil {
 		return nil
@@ -504,6 +509,9 @@ func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilt
 	}
 	return conditions
 }
+
+// ipLabelFilterRE matches an ip() label filter, e.g. addr != ip("10.0.0.0/8").
+var ipLabelFilterRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*!?=\s*ip\(\s*"[^"]*"\s*\)\s*$`)
 
 // numericLabelFilterRE matches a numeric, duration or bytes label filter
 // (an unquoted value), e.g. status >= 500 or latency > 250ms.

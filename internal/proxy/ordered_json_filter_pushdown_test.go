@@ -417,6 +417,13 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	case strings.HasPrefix(f.src[f.pos:], "!"):
 		f.pos++
 		return value != f.quoted()
+	case strings.HasPrefix(f.src[f.pos:], "ipv4_range("), strings.HasPrefix(f.src[f.pos:], "ipv6_range("):
+		// One whole address in [lo, hi] (fakeVLIPInRange).
+		v6 := strings.HasPrefix(f.src[f.pos:], "ipv6")
+		end := strings.IndexByte(f.src[f.pos:], ')')
+		args := strings.Split(f.src[f.pos+len("ipv4_range("):f.pos+end], ", ")
+		f.pos += end + 1
+		return fakeVLIPInRange(value, strings.Trim(args[0], `"`), strings.Trim(args[1], `"`), v6)
 	case strings.HasPrefix(f.src[f.pos:], "seq("):
 		// seq("a","b"): the phrases in this order, each after the one before.
 		f.pos += len("seq(")

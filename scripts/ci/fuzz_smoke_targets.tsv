@@ -90,3 +90,4 @@ smoke	internal/proxy	FuzzJSONLabelProbeGates	12s	-	gated JSON parse-risk probes 
 smoke	internal/proxy	FuzzFirstLastOverTimeRangeTimestampsLikeLoki	12s	-	first/last over time query_range points at Loki evaluation timestamps
 smoke	internal/proxy	FuzzLogfmtParseRiskCandidatesCoverTheProbe	12s	-	logfmt parse-risk candidate probe covers the probe
 smoke	internal/translator	FuzzStreamTagRestoreLikeLoki	12s	-	stream label value restored from _stream like Loki
+smoke	internal/translator	FuzzIPLabelFilterNeverKeepsWhatLokiDrops	12s	-	ip() label filter keeps no line Loki drops, exact on whole addresses

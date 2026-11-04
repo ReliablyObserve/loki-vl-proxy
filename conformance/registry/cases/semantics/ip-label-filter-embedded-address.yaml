@@ -1,0 +1,53 @@
+id: semantics/ip-label-filter-embedded-address
+title: An ip() label filter on a value with an address inside other text ("1.2.3.4:443") keeps fewer lines than Loki (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's ip() label filter scans the label's value for addresses
+  (pkg/logql/log/ip.go:183-226): it starts one at a digit with a dot within
+  three characters or at an IPv6 group, reads the longest run of address
+  characters and parses it with netip.ParseAddr. So `addr=ip("1.2.3.4")`
+  keeps `addr="1.2.3.4:443"` and `addr="client 1.2.3.4"`, and
+  `addr!=ip("1.2.3.4")` drops them.
+
+  VictoriaLogs' ipv4_range and ipv6_range match a value that is one whole
+  address, and no LogsQL filter runs Loki's scan. The translation
+  (semantics/ip-label-filter-missing-label) answers a whole-address value
+  exactly. On a value with an address inside other text it never keeps a
+  line Loki drops: `=` leaves the value out, and `!=` leaves out every value
+  holding text of the pattern's form. A zoned IPv6 value ("fe80::1%eth0")
+  is handled the same way under `!=`, since a zone can hold an address
+  Loki scans.
+
+  Planned approach: per request, probe VictoriaLogs for the distinct label
+  values that are no whole address but hold text of the pattern's form,
+  evaluate them with Loki's scan in the proxy, and add the matching ones as
+  exact-value alternatives (`=`) or exclusions (`!=`), bounded by a flag.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="nginx"} | logfmt | addr=ip("10.0.0.0/8")'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines, including the ones whose addr holds a matching address
+    inside other text.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator/ip_label_filter.go ipLabelFilter (values with an address inside other text)'
+  loki: 'pkg/logql/log/ip.go:183-226 (address scan inside the value)'
+  proxy: 'a subset of Loki''s lines: an embedded address is not read'
+  planned_test: 'TestIPLabelFilter_Differential (internal/translator): the kept set is a subset of Loki''s for embedded values; an e2e row once the probe lands'
+  clusters: []

@@ -84,6 +84,22 @@ func keepMetadataProjectionResponseKeyVersion(query string) string {
 	return ""
 }
 
+// ipLabelFilterStageRE matches a `label = ip("...")` or `label != ip("...")`
+// label filter (not the `|= ip(...)` line filter).
+var ipLabelFilterStageRE = regexp.MustCompile(`[A-Za-z0-9_]\s*!?=\s*ip\s*\(`)
+
+const ipLabelFilterResponseVersion = "@ip-label-filter-v1:"
+
+// ipLabelFilterResponseKeyVersion fences the replies cached before an ip()
+// label filter answered like Loki (an absent label matches neither
+// operator) in local and peer-fed response caches.
+func ipLabelFilterResponseKeyVersion(query string) string {
+	if ipLabelFilterStageRE.MatchString(query) {
+		return ipLabelFilterResponseVersion
+	}
+	return ""
+}
+
 // marshalJSON encodes v to JSON using a pooled buffer, then writes to w.
 // Reduces allocations vs json.NewEncoder(w).Encode() by reusing buffers.
 func marshalJSON(w http.ResponseWriter, v interface{}) {
@@ -2742,6 +2758,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	key.WriteString(logfmtPresenceResponseKeyVersion(r, logqlQuery))
 	key.WriteString(detectedLevelMutationResponseKeyVersion(logqlQuery))
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(logqlQuery))
+	key.WriteString(ipLabelFilterResponseKeyVersion(logqlQuery))
 	writePart := func(value string) {
 		var digits [20]byte
 		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))
