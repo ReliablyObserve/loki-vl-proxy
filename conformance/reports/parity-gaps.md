@@ -175,6 +175,7 @@ Last run: 2026-10-05T20:16:15Z on `fcaccfcc`, window [1791220800, 1791224400].
 | `quality/index-volume-settled-segments` — An instant /index/volume moved by a refresh reads only its edges from VictoriaLogs, with the answer of one whole-window call (fixed) | perf/segmented-volume-cache | 0 | 0 |
 | `semantics/detected-fields-no-logfmt-token-fields` — detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed) | #1032 | 0 | 0 |
 | `semantics/json-detected-level-error-split` — `sum by (detected_level)` over `\| json` with the parser errors kept, or `\| json \| __error__!=""`, is answered from VictoriaLogs stats,... | perf/detected-level-native-count | 0 | 0 |
+| `semantics/json-metric-step-wider-than-range` — A `\| json` metric whose range is shorter than the step (`[1m]` at a 120 s step) is answered from VictoriaLogs stats over the lines insid... | perf/dlv-step-longer-than-range | 0 | 0 |
 | `semantics/pattern-line-filter-anchoring` — A pattern line filter (`\|>`, `!>`) keeps exactly the lines Loki's pattern matcher accepts (fixed) | #747 | 0 | 0 |
 | `semantics/instant-result-type-missing` — An instant query answers its failure status and a resultType, like Loki (fixed) | #735 | 1 | 2 |
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |

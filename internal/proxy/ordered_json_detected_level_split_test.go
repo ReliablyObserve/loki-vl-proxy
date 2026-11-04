@@ -341,8 +341,9 @@ func TestJSONDetectedLevelSplitEdgeTable(t *testing.T) {
 }
 
 // Shapes outside the family keep their routes: a strict plan grouped by a
-// parsed key or filtered, a `__error__!=""` followed by another label stage,
-// an instant query and a step wider than the window.
+// parsed key or filtered, a `__error__!=""` followed by another label stage.
+// A step wider than the window stays on the split: its stats read only the
+// lines inside a window (TestOrderedJSONStepWiderThanRangeDifferential).
 // conformance: semantics/json-detected-level-error-split, semantics/json-metric-detected-level-derivation
 func TestJSONDetectedLevelSplitEligibility(t *testing.T) {
 	for _, tc := range []struct {
@@ -386,8 +387,8 @@ func TestJSONDetectedLevelSplitEligibility(t *testing.T) {
 		fake.mu.Lock()
 		stats, raw := len(fake.stats), fake.raw
 		fake.mu.Unlock()
-		if code != http.StatusOK || stats != 0 || raw == 0 {
-			t.Fatalf("%s: status %d stats=%d raw=%d (%s), want the row evaluator", tc.label, code, stats, raw, body)
+		if code != http.StatusOK || stats == 0 || raw != 0 {
+			t.Fatalf("%s: status %d stats=%d raw=%d (%s), want the stats split", tc.label, code, stats, raw, body)
 		}
 	}
 }

@@ -29,6 +29,7 @@ smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
 smoke	internal/proxy	FuzzExtractLogPatternsFromWindowEntries	12s	-	extract log patterns from window entries
 smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate
 smoke	internal/proxy	FuzzJSONErrorSplitPredicate	12s	-	json parser error count split predicate
+smoke	internal/proxy	FuzzOrderedJSONStepWiderThanRange	12s	-	json metric with a range shorter than the step against the Loki-semantics reference
 smoke	internal/proxy	FuzzStatsJSONSeriesTransformDifferential	12s	-	stats series JSON compatibility
 smoke	internal/proxy	FuzzVLStatsErrorBodyDifferential	12s	-	stats error body check against the decoding
 smoke	internal/proxy	FuzzStatsFoldRelabelDifferential	12s	-	one-pass stats translation and tumbling relabel

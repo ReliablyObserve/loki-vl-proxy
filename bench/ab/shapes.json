@@ -1776,7 +1776,7 @@
    ]
   },
   "json-detected-level": {
-   "description": "sum by (detected_level) over a JSON pipeline (row evaluator, and the stats pushdown with the level computed in VictoriaLogs and its guard probes).",
+   "description": "sum by (detected_level) over a JSON pipeline (row evaluator, and the stats pushdown with the level computed in VictoriaLogs and its guard probes). DLV7 is DLV3 over a 30s range, shorter than the 60 s step of the 24h range, so the daily run measures a range shorter than the step (semantics/json-metric-step-wider-than-range); at 1h and 6h its range is longer than the step.",
    "ranges": [
     "1h",
     "6h",
@@ -1810,6 +1810,18 @@
      "name": "DLV3 plain json, detected_level",
      "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [1m]))",
      "covers": [
+      "semantics/json-metric-step-wider-than-range",
+      "semantics/json-detected-level-error-split",
+      "semantics/json-metric-detected-level-derivation",
+      "severity-detected-level-derivation",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "DLV7 plain json, detected_level, 30s range (shorter than the 24h step)",
+     "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [30s]))",
+     "covers": [
+      "semantics/json-metric-step-wider-than-range",
       "semantics/json-detected-level-error-split",
       "semantics/json-metric-detected-level-derivation",
       "severity-detected-level-derivation",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -706,6 +707,21 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			re, _ := strconv.Unquote(m[1])
 			repl, _ := strconv.Unquote(m[2])
 			values[m[3]] = regexp.MustCompile(re).ReplaceAllString(values[m[3]], repl)
+		case emuPhaseMathRE.MatchString(pipe):
+			// The window phase of windowPhaseFilter, in float64 as VictoriaLogs'
+			// math pipe computes it (windowPhaseKeeps).
+			m := emuPhaseMathRE.FindStringSubmatch(pipe)
+			anchor, _ := strconv.ParseInt(m[1], 10, 64)
+			step, _ := strconv.ParseInt(m[2], 10, 64)
+			values["__lvp_window_phase"] = strconv.FormatFloat(math.Mod(float64(row.ts.UnixNano())-float64(anchor), float64(step)), 'f', -1, 64)
+		case emuPhaseFilterRE.MatchString(pipe):
+			m := emuPhaseFilterRE.FindStringSubmatch(pipe)
+			lower, _ := strconv.ParseFloat(m[1], 64)
+			upper, _ := strconv.ParseFloat(m[2], 64)
+			phase, err := strconv.ParseFloat(values["__lvp_window_phase"], 64)
+			if err != nil || phase <= lower || phase > upper {
+				return values, false
+			}
 		case strings.HasPrefix(pipe, "filter "):
 			if !fakeLogsQLMatch(t, strings.TrimPrefix(pipe, "filter "), values) {
 				return values, false

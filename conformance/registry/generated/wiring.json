@@ -841,7 +841,9 @@
       "test/e2e-compat/instant_result_type_test.go"
     ],
     "semantics/json-detected-level-error-split": [
-      "internal/proxy/ordered_json_detected_level_split_test.go"
+      "internal/proxy/ordered_json_detected_level_split_test.go",
+      "internal/proxy/ordered_json_step_wider_test.go",
+      "test/e2e-compat/json_metric_step_wider_test.go"
     ],
     "semantics/json-error-filter-metric-split-pushdown": [
       "internal/proxy/ordered_json_recorded_test.go",
@@ -895,11 +897,16 @@
       "internal/proxy/detected_level_shared_unpack_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
       "internal/proxy/ordered_json_detected_level_test.go",
+      "internal/proxy/ordered_json_step_wider_test.go",
       "internal/proxy/stored_level_series_limit_test.go",
       "test/e2e-compat/detected_level_keys_gate_test.go",
       "test/e2e-compat/detected_level_variants_test.go",
       "test/e2e-compat/json_detected_level_series_limit_test.go",
       "test/e2e-compat/json_detected_level_test.go"
+    ],
+    "semantics/json-metric-step-wider-than-range": [
+      "internal/proxy/ordered_json_step_wider_test.go",
+      "test/e2e-compat/json_metric_step_wider_test.go"
     ],
     "semantics/label-browser-latency-cold-and-refresh": [
       "internal/proxy/metadata_inventory_test.go"
@@ -1375,7 +1382,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 386,
+  "registry_items": 387,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1864,6 +1871,11 @@
       "loki_api_v1_query_range",
       "parser-error-and-label-collision",
       "tenant-numeric-routing"
+    ],
+    "internal/proxy/ordered_json_step_wider_test.go": [
+      "semantics/json-detected-level-error-split",
+      "semantics/json-metric-detected-level-derivation",
+      "semantics/json-metric-step-wider-than-range"
     ],
     "internal/proxy/ordered_json_steps_cache_test.go": [
       "loki_api_v1_query_range",
@@ -2542,6 +2554,10 @@
     "test/e2e-compat/json_instant_volume_stats_test.go": [
       "semantics/json-instant-volume-stats"
     ],
+    "test/e2e-compat/json_metric_step_wider_test.go": [
+      "semantics/json-detected-level-error-split",
+      "semantics/json-metric-step-wider-than-range"
+    ],
     "test/e2e-compat/keep_service_name_test.go": [
       "loki_api_v1_query_range",
       "profiles/keep-removes-derived-service-name"
@@ -2888,7 +2904,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 295,
+  "tests_with_markers": 297,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -2977,5 +2993,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 227
+  "wired_items": 228
 }

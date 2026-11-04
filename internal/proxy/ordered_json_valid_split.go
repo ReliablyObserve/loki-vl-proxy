@@ -197,7 +197,8 @@ func (p *Proxy) jsonLokiRejectHazardRisk(ctx context.Context, base string, start
 // jsonUnparsedLineRisk reports whether a line that does not open with a brace
 // lies in a window a range query evaluates: (start-window, last], last the
 // final evaluation time on the step grid, the lines unparsedLinePipelineError
-// looks up (step is never wider than window here). Windows found free of one
+// looks up. With a step wider than the window, base carries the window phase
+// filter, so only the lines inside a window count. Windows found free of one
 // are remembered like the hazard probe's (coveredWindowProbe, local to the
 // replica).
 func (p *Proxy) jsonUnparsedLineRisk(ctx context.Context, base string, start, end time.Time, step, window time.Duration) (bool, error) {
@@ -372,6 +373,10 @@ func orderedJSONASCIIAlnum(s string) bool {
 // row evaluator and adds them to the stats series.
 func (p *Proxy) addOrderedJSONRowLines(ctx context.Context, plan *orderedJSONMetricPlan, merged map[string]manualSeriesSamples, base string, rowEdges []int64, hazard bool, bucket time.Duration, start, end time.Time, step time.Duration) (map[string]manualSeriesSamples, error) {
 	rowQuery := base + " | filter " + jsonObjectStartFilter + jsonValidityPipes(true) + " | filter " + jsonInvalidCondition(hazard) + " | delete " + jsonValidField + p.orderedJSONRowProjection(plan)
+	if plan.window < step {
+		// Only the lines inside a window, as the stats counted them.
+		rowQuery = withWindowPhaseFilter(ctx, rowQuery, start, step, plan.window)
+	}
 	rows, err := p.collectOrderedJSONRowSpans(ctx, plan, rowQuery, orderedJSONRowSpans(rowEdges, bucket), start, end, step)
 	if err != nil {
 		return nil, err

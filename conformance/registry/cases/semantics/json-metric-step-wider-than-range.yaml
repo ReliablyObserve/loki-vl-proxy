@@ -1,0 +1,97 @@
+id: semantics/json-metric-step-wider-than-range
+title: 'A `| json` metric whose range is shorter than the step (`[1m]` at a 120 s step) is answered from VictoriaLogs stats over the lines inside the windows (fixed)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  `sum by (detected_level) (count_over_time({env="production",
+  app="api-gateway"} | json [1m]))` (the DLV3 A/B shape; Logs Drilldown and
+  Explore send the same count with a fixed range) over 48 hours at Grafana's
+  120 s step read every selected line from VictoriaLogs as one streamed
+  `/select/logsql/query` and evaluated it in the proxy: 6.4 s against Loki's
+  0.40 s (aligned) and 0.65 s (defaults), cold, 16x and 9.8x. The same query
+  at 24h (60 s step, equal to the range) answered from stats. Any step longer
+  than the range took the same route, so a 24h panel whose step exceeds its
+  range (`[1m]` at a 2 m step, a `[30s]` range at 24h, `$__auto` above a fixed
+  range) did too. The evaluator counter showed it as
+  loki_vl_proxy_parser_metric_evaluations_total{evaluator="raw_rows",
+  reason="grid"}: the strict detected_level split (jsonSplitStrict) returned
+  before its stats scan whenever the step exceeded the range, because its
+  lookup of a line Loki's parser rejects (jsonUnparsedLineRisk) read the whole
+  range, lines between two windows included.
+
+  Loki's answer, from v3.7.9's source: with a range shorter than the step
+  newRangeVectorIterator takes the batch iterator
+  (pkg/logql/range_vector.go:55), and batchRangeVectorIterator.load
+  (range_vector.go:150-188) consumes every sample at or before the window
+  start without adding it: each step reads (t-range, t] and the lines between
+  two windows are never evaluated. RangeVectorEvaluator.Next
+  (pkg/logql/evaluator.go:721-735) checks only the step's vector for
+  __error__, so a line the JSON parser rejects fails the query only inside a
+  window.
+
+  Fixed: when the range is shorter than the step, the ordered JSON pushdown
+  (every split mode and the plain pushdown) keeps only the lines inside a
+  window with the window phase filter of the sliding route
+  (windowPhaseFilter) and asks VictoriaLogs for one bucket per step,
+  (t-step, t], which then holds exactly the window (t-range, t]; the counts
+  are relabelled onto the window they hold (shiftSeriesSamples), as on the
+  sliding route. The parse-risk, hazard, foreign-level and unbraced-line
+  probes and the raw reads of the lines VictoriaLogs cannot vouch for read
+  the same window lines, and the probes remember their verdicts under the
+  filtered query, so a verdict for one step grid is never reused for another.
+  VictoriaLogs reads only the window lines (half of them for `[1m]` at 120 s,
+  a fifth at 300 s), and a step that is not a multiple of the range no longer
+  needs buckets of their greatest common divisor (a 604.8 s step over a 5 m
+  range needed 2.4 s buckets).
+
+  Known limit, shared with the sliding route: VictoriaLogs evaluates the
+  phase in float64, so a line within about 256 ns of a window edge, not on
+  it, may fall on either side (semantics/sub-second-step-grid); a line
+  exactly on an edge is classified as Loki classifies it.
+
+  Fake VictoriaLogs, 48h of lines (one every 20 s), uncached responses, main
+  against this change: DLV3 at 120 s 11.8 ms -> 1.25 ms per request, one raw
+  query of 8,643 rows -> one stats_query_range with a bucket per step, 159,762 ->
+  1,034 allocations; `| json | __error__=""` by status and `| json | drop
+  __error__` at 120 s 2.05 ms -> 1.24 ms and 1.23 ms -> 0.83 ms (half the
+  buckets); the 60 s step, the `__error__!=""` count and a range equal to the
+  step unchanged.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (detected_level) (count_over_time({env="production", app="api-gateway"} | json [1m]))'
+    start: now-48h
+    end: now
+    step: "120"
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, series_labels, values]
+  expect: |
+    HTTP 200 with Loki's series and values, from one stats_query_range scan
+    of step-wide buckets over the lines inside the windows (two when the
+    hazard probe finds a line) plus raw reads limited to the window lines
+    VictoriaLogs cannot vouch for, for a range shorter than, equal to and
+    longer than the step, aligned and unaligned starts; a strict count fails
+    with Loki's 400 pipeline error only for a rejected line inside a window.
+gap:
+  status: fixed
+  fixed_by: 'perf/dlv-step-longer-than-range'
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/ordered_json_metric.go orderedJSONStatsBuckets (window phase filter, step buckets, relabelling); internal/proxy/ordered_json_valid_split.go addOrderedJSONRowLines, jsonUnparsedLineRisk'
+  loki: 'pkg/logql/range_vector.go:55 newRangeVectorIterator, :102-114 batchRangeVectorIterator.Next, :150-188 load; pkg/logql/evaluator.go:721-735 RangeVectorEvaluator.Next'
+  proxy: 'every selected line read as a raw row when the step exceeds the range (raw_rows, reason grid)'
+  planned_test: 'proxy TestOrderedJSONStepWiderThanRangeDifferential, TestOrderedJSONStepWiderThanRangeEdgeTable, TestOrderedJSONStepWiderThanRangeRefresh, TestOrderedJSONStepWiderThanRangeRoute, FuzzOrderedJSONStepWiderThanRange (internal/proxy, CI fuzz-smoke), BenchmarkOrderedJSONStepWiderThanRange; TestRangeMetricCompatibilityJSONStepWiderThanRange (test/e2e-compat, group semantics)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
