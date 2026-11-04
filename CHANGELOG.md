@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.71.0] - 2026-11-04
+
 ### Performance
 
 - Read a windowed log query's first window alone, before the `/hits`
