@@ -1,7 +1,10 @@
 {
   "registry": {
+    "cases_defined": 236,
+    "live_cases_blocked": 1,
     "live_cases_gap": 0,
     "live_cases_hold": 0,
+    "live_cases_recorded": 1,
     "live_recorded": "2026-09-22T09:56:52+00:00",
     "scores": {
       "coverage": 0.7037,
