@@ -183,7 +183,8 @@
      "covers": [
       "parser-logfmt",
       "severity-detected-level-derivation",
-      "loki_api_v1_query_range"
+      "loki_api_v1_query_range",
+      "quality/logfmt-parse-risk-candidates"
      ]
     },
     {

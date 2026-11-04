@@ -235,6 +235,10 @@
     "quality/label-values-chunk-window | gap:open",
     "quality/labels-backfill-into-cached-bucket | compare:observed",
     "quality/labels-backfill-into-cached-bucket | gap:open",
+    "quality/logfmt-parse-risk-candidates | compare:exact",
+    "quality/logfmt-parse-risk-candidates | gap:fixed",
+    "quality/logfmt-parse-risk-candidates | perf",
+    "quality/logfmt-parse-risk-candidates | query",
     "quality/metadata-bounded-staleness | compare:observed",
     "quality/metadata-bounded-staleness | gap:owner-kept",
     "quality/parity-corpus-asymmetric-visual-fixtures | compare:observed",
@@ -978,6 +982,10 @@
     "internal/proxy/line_fields_without_parser_test.go | profiles/parsed-fields-without-parser",
     "internal/proxy/line_format_error_test.go | profiles/tail-line-format-parse-error-status",
     "internal/proxy/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
+    "internal/proxy/logfmt_risk_candidates_test.go | loki_api_v1_query_range",
+    "internal/proxy/logfmt_risk_candidates_test.go | parser-logfmt",
+    "internal/proxy/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
+    "internal/proxy/logfmt_risk_candidates_test.go | severity-detected-level-derivation",
     "internal/proxy/loki_client_error_test.go | semantics/error-layer-backend-failure-status",
     "internal/proxy/loki_client_error_test.go | semantics/error-layer-backend-text",
     "internal/proxy/loki_client_error_test.go | semantics/error-layer-cancel-deadline",
@@ -1543,6 +1551,10 @@
     "test/e2e-compat/logfmt_existence_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/logfmt_existence_filter_test.go | parser-logfmt",
     "test/e2e-compat/logfmt_existence_filter_test.go | semantics/logfmt-existence-filter-ungrouped-sum",
+    "test/e2e-compat/logfmt_risk_candidates_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/logfmt_risk_candidates_test.go | parser-logfmt",
+    "test/e2e-compat/logfmt_risk_candidates_test.go | quality/logfmt-parse-risk-candidates",
+    "test/e2e-compat/logfmt_risk_candidates_test.go | severity-detected-level-derivation",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
@@ -1750,12 +1762,12 @@
       "any": 28,
       "api": 39,
       "drilldown": 47,
-      "explore": 142,
+      "explore": 143,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 314,
+      "go": 316,
       "playwright": 1
     },
     "page_kinds": {
@@ -1772,10 +1784,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 97,
+    "shape_covers_distinct": 98,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 236
+    "wired_items": 237
   },
   "gates": [
     "A/B shape selection",

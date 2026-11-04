@@ -71613,6 +71613,156 @@
       "warm_p50": 0.054
     }
   ],
+  "quality/logfmt-parse-risk-candidates": [
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.154,
+      "date": "2026-11-04",
+      "label": "daily-control-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 0.434,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 179,
+          "entriesFound": 1,
+          "entriesRequested": 1
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.072,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "control",
+      "shape": "logfmt volume",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.082
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 1.46,
+      "date": "2026-11-04",
+      "label": "daily-control-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 7.1,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 4475,
+          "entriesFound": 25,
+          "entriesRequested": 25
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.073,
+      "parity_vs_loki": "same",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "control",
+      "shape": "logfmt volume",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.084
+    },
+    {
+      "baseline": "main",
+      "baseline_status": "200",
+      "candidate": "branch",
+      "cold": 0.111,
+      "date": "2026-10-06",
+      "label": "plain-name-control",
+      "loki_cache_served": false,
+      "loki_cold": 0.277,
+      "loki_warm_p50": 0.004,
+      "parity_vs_loki": "same",
+      "profile": "aligned",
+      "range": "3h",
+      "set": "control",
+      "shape": "logfmt volume",
+      "slower_than_loki_cold": false,
+      "stale": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.059
+    },
+    {
+      "baseline": "base",
+      "baseline_status": "200",
+      "candidate": "pr",
+      "cold": 0.796,
+      "date": "2026-10-17",
+      "label": "unwrapwithout-control-long",
+      "loki_cache_served": false,
+      "loki_cold": null,
+      "loki_warm_p50": null,
+      "parity_vs_loki": "n/a",
+      "profile": "aligned",
+      "range": "6h",
+      "set": "control",
+      "shape": "logfmt volume",
+      "slower_than_loki_cold": false,
+      "stale": true,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.694
+    }
+  ],
   "quality/query-range-extent-cache-large-answer": [
     {
       "baseline": "release",

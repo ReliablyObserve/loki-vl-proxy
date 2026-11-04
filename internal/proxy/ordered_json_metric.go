@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -2000,23 +2001,87 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 // and its value is printable ASCII. Loki also splits on tabs, recovers from
 // malformed tokens and keeps the first duplicate, while VictoriaLogs splits on
 // spaces only and stops after a malformed quoted value.
-func (p *Proxy) logfmtParseRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time) (bool, error) {
+//
+// The probe's line-shape expression, whose classes admit every rune but a few,
+// costs VictoriaLogs' regexp simplifier a fixed 40-80 ms per request, more
+// than reading a refreshed window's lines. A candidate probe without it finds
+// a line that lacks a label as a stored field and holds its key; every risky
+// line is one, so a window without one is clean. What the parts of the window
+// checked before found (seen) decides how the two run:
+//   - none checked (a first request, or no cache): the probe, its verdict the
+//     answer, and beside it the candidate probe over the newest part of the
+//     window only (-parse-risk-probe-settle, which every refresh probes
+//     again), so the request waits as long as the probe and VictoriaLogs reads
+//     a few minutes more; its answer only sets the mark;
+//   - only clean parts: the candidate probe first, and the probe only when it
+//     finds a line (or fails), so a refresh of a window whose lines carry the
+//     label as a stored field never sends the probe;
+//   - a part with a candidate line: the probe alone.
+//
+// It returns the verdict and the mark for the parts checked later
+// (logfmtCandidatesClean or logfmtCandidatesSeen). A mark that misreads the
+// window only changes which probes are sent, never the verdict.
+func (p *Proxy) logfmtParseRisk(ctx context.Context, base string, fields []string, stored map[string]string, start, end time.Time, seen string) (risky bool, held string, err error) {
+	full, candidateQuery := logfmtParseRiskQueries(base, fields, stored)
+	switch seen {
+	case logfmtCandidatesSeen:
+		risky, err = p.statsPushdownRiskExists(ctx, full, start, end)
+		return risky, logfmtCandidatesSeen, err
+	case logfmtCandidatesClean:
+		if found, err := p.statsPushdownRiskExists(ctx, candidateQuery, start, end); err == nil && !found {
+			return false, logfmtCandidatesClean, nil
+		}
+		risky, err = p.statsPushdownRiskExists(ctx, full, start, end)
+		return risky, logfmtCandidatesSeen, err
+	}
+	var found bool
+	var foundErr error
+	done := make(chan struct{})
+	newest := start
+	if settle := p.parseRiskProbeSettle; settle > 0 && end.Add(-settle).After(start) {
+		newest = end.Add(-settle)
+	}
+	go func() {
+		defer close(done)
+		found, foundErr = p.statsPushdownRiskExists(ctx, candidateQuery, newest, end)
+	}()
+	risky, err = p.statsPushdownRiskExists(ctx, full, start, end)
+	if risky || err != nil {
+		return risky, logfmtCandidatesSeen, err // never remembered
+	}
+	<-done
+	held = logfmtCandidatesSeen
+	if foundErr == nil && !found {
+		held = logfmtCandidatesClean
+	}
+	return risky, held, err
+}
+
+// logfmtParseRiskQueries returns the probe of logfmtParseRisk and its
+// candidate probe: the lines that lack a label as a stored field and hold its
+// key (any such line when a label may come from a key spelled differently).
+// Every clause of the probe requires a candidate line, so a window without one
+// holds no risky line.
+func logfmtParseRiskQueries(base string, fields []string, stored map[string]string) (full, candidates string) {
 	conditions := make([]string, 0, len(fields)+1)
-	for _, field := range fields {
+	alias := logfmtKeyAliasPattern(fields)
+	absent := make([]string, len(fields))
+	keyed := make([]string, len(fields))
+	for i, field := range fields {
 		re := newLogfmtRiskPatterns(field)
+		absent[i] = "(" + storedFieldsAbsent(field, stored) + ")"
+		keyed[i] = "(" + storedFieldsAbsent(field, stored) + " _msg:~" + strconv.Quote(re.key) + ")"
 		conditions = append(conditions, "("+storedFieldsAbsent(field, stored)+" _msg:~"+strconv.Quote(re.key)+" (-_msg:~"+strconv.Quote(re.wellFormed)+
 			" or _msg:~"+strconv.Quote(re.repeated)+" or (_msg:~"+strconv.Quote(re.keyAssignment)+" -_msg:~"+strconv.Quote(re.safeValue)+")))")
 	}
 	// Loki sanitizes logfmt keys like JSON keys, so a label holding an
 	// underscore may come from a key unpack_logfmt spells differently.
-	if alias := logfmtKeyAliasPattern(fields); alias != "" {
-		absent := make([]string, len(fields))
-		for i, field := range fields {
-			absent[i] = "(" + storedFieldsAbsent(field, stored) + ")"
-		}
+	if alias != "" {
 		conditions = append(conditions, "(("+strings.Join(absent, " or ")+") _msg:~"+strconv.Quote(alias)+")")
+		keyed = absent
 	}
-	return p.statsPushdownRiskExists(ctx, base+" | filter "+strings.Join(conditions, " or ")+" | limit 1", start, end)
+	return base + " | filter " + strings.Join(conditions, " or ") + " | limit 1",
+		base + " | filter " + strings.Join(keyed, " or ") + " | limit 1"
 }
 
 // storedFieldsAbsent renders the LogsQL condition that a line carries the
@@ -2580,7 +2645,7 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 	}
 	labels := func(ctx context.Context) (bool, error) {
 		key := "stats-pushdown-risk:v5:" + getOrgID(ctx) + ":" + parser + ":" + strings.Join(spelled, ",") + ":" + strings.Join(errorFilters, ",") + ":" + base + riskRestriction(ctx)
-		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time, seen *logfmtCandidatesState) []func(context.Context) (bool, error) {
 			probes := []func(context.Context) (bool, error){
 				func(ctx context.Context) (bool, error) {
 					if len(errorFilters) == 0 {
@@ -2610,7 +2675,9 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 					})
 			case "logfmt":
 				probes = append(probes, func(ctx context.Context) (bool, error) {
-					return p.logfmtParseRisk(ctx, base, fields, stored, from, to)
+					risky, held, err := p.logfmtParseRisk(ctx, base, fields, stored, from, to, seen.before)
+					seen.add(held)
+					return risky, err
 				})
 			}
 			return probes
@@ -2621,7 +2688,7 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 	}
 	levels := func(ctx context.Context) (bool, error) {
 		key := "stats-pushdown-risk:v5:level:" + getOrgID(ctx) + ":" + base + riskRestriction(ctx)
-		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time) []func(context.Context) (bool, error) {
+		return p.rememberedRisk(ctx, key, start, end, func(from, to time.Time, _ *logfmtCandidatesState) []func(context.Context) (bool, error) {
 			return []func(context.Context) (bool, error){
 				func(ctx context.Context) (bool, error) { return p.detectedLevelStreamRisk(ctx, base, from, to) },
 				func(ctx context.Context) (bool, error) { return p.detectedLevelKeysRisk(ctx, base, from, to) },
@@ -2632,12 +2699,42 @@ func (p *Proxy) cachedStatsPushdownRisk(ctx context.Context, parser, base string
 	return anyRisk(ctx, []func(context.Context) (bool, error){labels, levels})
 }
 
+// What the logfmt parse-risk probe found in the parts of a remembered verdict's
+// window (logfmtParseRisk): only windows without a candidate line, or one with
+// a candidate line. A verdict without either mark had no logfmt probe.
+const (
+	logfmtCandidatesClean = "logfmt-clean"
+	logfmtCandidatesSeen  = "logfmt-candidates"
+)
+
+// logfmtCandidatesState carries the mark of the parts checked before (before)
+// to the probes of a part and collects what they found.
+type logfmtCandidatesState struct {
+	before string
+	mu     sync.Mutex
+	after  string
+}
+
+// add merges what a probe found: a candidate line anywhere marks the window.
+func (s *logfmtCandidatesState) add(held string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.after != logfmtCandidatesSeen {
+		s.after = held
+	}
+}
+
 // rememberedRisk runs the probes of the parts of [start, end] that the verdict
-// under key does not cover (coveredWindowProbe).
-func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.Time, probes func(from, to time.Time) []func(context.Context) (bool, error)) (bool, error) {
-	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, _ string) (string, bool, error) {
-		risky, err := anyRisk(ctx, probes(from, to))
-		return "", risky, err
+// under key does not cover (coveredWindowProbe). The verdict remembers what
+// the logfmt probe found (logfmtCandidatesState), which only decides how that
+// probe is sent for the parts checked later.
+func (p *Proxy) rememberedRisk(ctx context.Context, key string, start, end time.Time, probes func(from, to time.Time, seen *logfmtCandidatesState) []func(context.Context) (bool, error)) (bool, error) {
+	_, risky, err := p.coveredWindowProbe(ctx, key, start, end, func(from, to time.Time, acc string) (string, bool, error) {
+		seen := &logfmtCandidatesState{before: acc, after: acc}
+		risky, err := anyRisk(ctx, probes(from, to, seen))
+		seen.mu.Lock()
+		defer seen.mu.Unlock()
+		return seen.after, risky, err
 	})
 	return risky, err
 }
