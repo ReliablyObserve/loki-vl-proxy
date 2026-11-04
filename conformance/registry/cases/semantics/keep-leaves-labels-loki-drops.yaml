@@ -38,8 +38,14 @@ why: |
   and bytes_rate under `sum by (<kept>)`, an unwrapped function with a range
   `by (<kept> less the unwrapped label)` (internal/proxy/keep_series_grouping.go),
   so VictoriaLogs' stats group by those labels and `count(...)` is the
-  number of kept label sets. A keep with a matcher, or one followed by a
-  parser, label_format or drop, keeps its previous plan.
+  number of kept label sets. On query_range a JSON pipeline under an outer
+  fold (`count(rate({...} | json | keep foo [5m]))`) is not rewritten, as
+  the ordered JSON fold it would take answers over the whole window only,
+  off the settled-steps cache; its inner stats are grouped by the kept labels
+  in the translation (internal/translator/translator.go trailingKeepGrouping)
+  and a repeat of a moving range reads only its new step. A keep with a
+  matcher, or one followed by a parser, label_format or drop, keeps its
+  previous plan.
 request:
   method: GET
   path: /loki/api/v1/query_range

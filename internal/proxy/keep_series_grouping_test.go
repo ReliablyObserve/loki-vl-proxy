@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -9,12 +10,14 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
@@ -149,6 +152,8 @@ func sameMatrixValues(got, want map[string]map[int64]string) bool {
 // and raw-row requests.
 type keepFakeVL struct {
 	stats, raw atomic.Int32
+	// span is the time range of the last stats request, in nanoseconds.
+	span atomic.Int64
 }
 
 func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdownFakeVL, *keepFakeVL) {
@@ -163,6 +168,9 @@ func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdow
 		case "/select/logsql/stats_query_range", "/select/logsql/stats_query":
 			counts.stats.Add(1)
 			_ = r.ParseForm()
+			if from, to, ok := fakeVLRequestRange(r); ok {
+				counts.span.Store(to - from)
+			}
 			if testing.Verbose() {
 				t.Logf("fake VL stats: %s", r.Form.Get("query"))
 			}
@@ -191,6 +199,20 @@ func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdow
 	}))
 	t.Cleanup(srv.Close)
 	return srv, fake, counts
+}
+
+// fakeVLRequestRange is the start and end of a VictoriaLogs request.
+func fakeVLRequestRange(r *http.Request) (int64, int64, bool) {
+	parse := func(v string) (int64, bool) {
+		if ts, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return ts.UnixNano(), true
+		}
+		n, err := strconv.ParseInt(v, 10, 64)
+		return n, err == nil
+	}
+	from, ok1 := parse(r.Form.Get("start"))
+	to, ok2 := parse(r.Form.Get("end"))
+	return from, to, ok1 && ok2
 }
 
 // lokiKeepReference evaluates fn(X | parser | keep labels [window]) with
@@ -303,6 +325,13 @@ func TestKeepSeriesGrouping_Differential(t *testing.T) {
 			}
 			fn := []string{"count_over_time", "rate", "bytes_over_time"}[rng.Intn(3)]
 			outer := []string{"", "sum", "count"}[rng.Intn(3)]
+			if parser == "json" && outer != "" && slices.Contains(keep, "level") {
+				// Under an outer fold a JSON keep is grouped in VictoriaLogs'
+				// stats by the kept field, which holds the line's level where
+				// a stream label of that name is shadowed
+				// (semantics/stream-label-shadowed-after-json-parser).
+				keep = []string{"foo", "pod"}
+			}
 			pipeline := ""
 			if parser != "" {
 				pipeline = " | " + parser
@@ -343,7 +372,7 @@ func TestKeepSeriesGrouping_InstantCount(t *testing.T) {
 	p := newFilterPushdownProxy(t, srv.URL)
 	fake.stored = p.labelTranslator.ToVL
 	at := s0.Add(6 * time.Minute)
-	for _, keep := range []string{"zzz", "foo", "pod", "level", "foo, pod"} {
+	for _, keep := range []string{"zzz", "foo", "pod", "foo, pod"} {
 		query := fmt.Sprintf(`count(rate({app="api"} | json | keep %s [5m]))`, keep)
 		want := lokiKeepReference(rows, "json", strings.Split(keep, ", "), "rate", "count", 5*time.Minute, at, at, time.Minute)
 		params := url.Values{"query": {query}, "time": {strconv.FormatInt(at.UnixNano(), 10)}}
@@ -420,4 +449,51 @@ func FuzzKeepSeriesGrouping(f *testing.F) {
 			t.Fatalf("%q rewritten twice: %q then %q", query, out, again)
 		}
 	})
+}
+
+// A Grafana range that moves keeps the settled-steps cache for a count over
+// a JSON keep (bench/ab K3 `count(rate({...} | json | keep foo [5m]))`): the
+// first request reads its window from VictoriaLogs stats, a repeat one step
+// later reads only the new step, and both answer like Loki. Grouping it as
+// `count(sum by (foo) (...))` sent it to the ordered JSON fold, which
+// re-reads every row of the window on each repeat.
+// conformance: semantics/keep-leaves-labels-loki-drops, loki_api_v1_query_range
+func TestKeepSeriesGrouping_JSONFoldKeepsSettledSteps(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	rows := keepRows(rand.New(rand.NewSource(9)), s0, 600, false)
+	srv, fake, counts := newKeepFakeVL(t, rows)
+	c := cache.NewWithMaxBytes(time.Minute, 100000, 64<<20)
+	t.Cleanup(c.Close)
+	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", LabelStyle: LabelStyleUnderscores,
+		QueryRangeExtentCache: true, QueryRangeExtentCacheTTL: time.Hour, QueryRangeFreshness: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	p.storeBackendVersion("v1.50.0", "v1.50.0")
+	fake.stored = p.labelTranslator.ToVL
+	const query = `count(rate({app="api"} | json | keep foo [5m]))`
+	for i, shift := range []time.Duration{0, time.Minute, 2 * time.Minute} {
+		start, end := s0.Add(6*time.Minute+shift), s0.Add(26*time.Minute+shift)
+		want := lokiKeepReference(rows, "json", []string{"foo"}, "rate", "count", 5*time.Minute, start, end, time.Minute)
+		stats, raw := counts.stats.Load(), counts.raw.Load()
+		params := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}, "step": {"60"}}
+		rec := httptest.NewRecorder()
+		p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d: %d %s", i, rec.Code, rec.Body)
+		}
+		if got := decodeExtractedMatrix(t, rec.Body.Bytes()); !sameMatrixValues(got, want) {
+			t.Errorf("request %d\n got: %v\nwant: %v", i, got, want)
+		}
+		dStats, dRaw := counts.stats.Load()-stats, counts.raw.Load()-raw
+		span := time.Duration(counts.span.Load())
+		t.Logf("request %d: %d stats over %s, %d raw-row requests", i, dStats, span, dRaw)
+		if dRaw != 0 || dStats != 1 {
+			t.Errorf("request %d read %d stats and %d raw-row requests; want one stats call and no raw rows", i, dStats, dRaw)
+		}
+		if i > 0 && span > 10*time.Minute {
+			t.Errorf("request %d read %s of stats; a repeat one step later reads the new step and its range, not the window", i, span)
+		}
+	}
 }

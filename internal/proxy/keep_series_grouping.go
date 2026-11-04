@@ -142,10 +142,20 @@ func trailingKeepLabels(pipeline []logqlpkg.Stage) (kept []string, ok bool) {
 // keepSeriesGrouping, in every place a handler reads it from. It runs after
 // validateQuery: a query reaching it holds concrete range durations (Grafana
 // resolves [$__auto] before it sends the query).
-func applyKeepSeriesGrouping(r *http.Request, query string) string {
+//
+// On query_range, a JSON metric that the rewrite would put under an outer
+// vector aggregation (`count(sum by (foo) (rate({...} | json | keep foo
+// [5m])))`) is left as it is: the ordered JSON evaluator answers such a fold
+// over the whole window only (affectedOrderedJSONVectorQuery), off the
+// settled-steps cache, so every repeat of a moving Grafana range would read
+// all its rows again. The query as written keeps the steps cache, and its
+// inner stats are grouped by the kept labels in the translation
+// (translator.trailingKeepGrouping). An instant query has no steps to keep.
+func applyKeepSeriesGrouping(r *http.Request, query string, isRange bool) string {
 	rewritten, changed := keepSeriesGrouping(query)
-	if changed {
-		setRequestQuery(r, rewritten)
+	if !changed || isRange && affectedOrderedJSONVectorQuery(rewritten) && !affectedOrderedJSONVectorQuery(query) {
+		return query
 	}
+	setRequestQuery(r, rewritten)
 	return rewritten
 }

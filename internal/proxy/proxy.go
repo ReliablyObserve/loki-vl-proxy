@@ -2391,7 +2391,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery)
+	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
@@ -2811,7 +2811,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery)
+	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
 	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {
