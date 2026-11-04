@@ -348,6 +348,13 @@ class MatrixLiveProofTest(unittest.TestCase):
             self.assertEqual(module.live_proof_workflows(str(Path(directory, "missing"))), [])
 
 
+class ErrorSurfaceReportTest(unittest.TestCase):
+    def test_error_sites_are_checked_before_gaps(self):
+        order = [target for _, target, _ in load_gate().REPORTS]
+        self.assertLess(order.index("conformance/registry/generated/proxy/errors.json"),
+                        order.index("conformance/reports/gaps.md"))
+
+
 class MatrixLinkCheckTest(unittest.TestCase):
     """matrix_link.py --check is a gate: a pinned version the matrix does not run, or a missing score test, fails."""
 

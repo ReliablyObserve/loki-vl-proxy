@@ -3,9 +3,12 @@
 
 Every message the proxy can return to a client is a compatibility contract: the
 status, the Loki errorType derived from it, and the text. This script collects
-them from the source (writeError / writeBackendError / writeGrafanaStatsFailure
-call sites and the error strings they format), groups them by status, and seeds
-one registry file per failure class under conformance/registry/loki/errors/.
+them from the source (every error writer in WRITERS, http.Error and bodyless
+error statuses, and the strings they format), classifies each site as a literal
+message, an error passed through the error layer (lokiClientError: Loki's text
+or Loki's fixed text for the status), a message formatted at run time, or no
+body, groups them by status, and seeds one registry file per failure class
+under conformance/registry/loki/errors/ (only files that do not exist yet).
 
 Writes conformance/registry/generated/proxy/errors.json.
 
@@ -36,10 +39,24 @@ def error_type(status):
     if status is None:
         return None
     return ERROR_TYPE.get(status, "bad_data" if 400 <= status < 500 else "internal")
-# Call sites whose status is an argument: p.writeError(<writer>, <status>, <message>).
-WRITE_ERROR_RE = re.compile(r'\bp\.writeError\(')
-# Helpers that write the backend's own status and redacted message.
-BACKEND_WRITERS_RE = re.compile(r'\bp\.(writeBackendError|writeGrafanaStatsFailure|writeDrilldownPartialFromUpstream)\(')
+# Every way the proxy writes a client-facing error, by helper name: where the status and the message sit in
+# the call's arguments. "msg" helpers write the message they are given (internal/proxy/http_utils.go
+# writeError, writeErrorCause and writeErrorShaped, the delete route's writeDeleteError and writeLokiTextError);
+# "layer" helpers pass an error through lokiClientError, which replaces any text the proxy did not write in
+# Loki's words with Loki's fixed text for the status (writeErr, writeErrShaped and the helpers built on them).
+WRITERS = {
+    "writeError": ("msg", 1, 2), "writeErrorCause": ("msg", 1, 2), "writeErrorShaped": ("msg", 1, 2),
+    "writeDeleteError": ("msg", 1, 2), "writeLokiTextError": ("msg", 1, 2),
+    "writeErr": ("layer", None, None), "writeErrShaped": ("layer", None, None),
+    "writeBackendError": ("layer", None, None), "writeGrafanaStatsFailure": ("layer", None, None),
+    "writeVLStatsErrorBody": ("layer", None, None),
+}
+WRITER_RE = re.compile(r'\bp\.(' + "|".join(WRITERS) + r')\(')
+# Bodies Loki's own handlers write with net/http: http.Error(w, msg, code) and a status with no body.
+HTTP_ERROR_RE = re.compile(r'\bhttp\.Error\(')
+BODYLESS_RE = re.compile(r'\bwriteBodylessError\(')
+FUNC_RE = re.compile(r'^func (?:\([^)]*\) )?(\w+)\(', re.M)
+CONST_RE = re.compile(r'^\s*(?:(?:const|var)\s+)?(\w+)\s*(?:string\s*)?=\s*("(?:[^"\\]|\\.)*")\s*(?://.*)?$', re.M)
 MESSAGE_RE = re.compile(r'"([^"]{4,})"')
 ONLY_LITERAL_RE = re.compile(r'^"(?:[^"\\]|\\.)*"$')
 
@@ -85,37 +102,85 @@ def sources():
             yield path, read_text(path)
 
 
+def string_constants(files):
+    """Package-level string constants and variables of internal/proxy: name -> literal."""
+    found = {}
+    for _, text in files:
+        for name, literal in CONST_RE.findall(text):
+            found.setdefault(name, literal)
+    return found
+
+
+def is_literal(argument, constants):
+    """One string literal, a string constant, or a concatenation of those: text the proxy wrote."""
+    parts = [p.strip() for p in argument.split("+")]
+    return all(ONLY_LITERAL_RE.match(p) or p in constants for p in parts) and bool(parts)
+
+
+def message_of(argument, constants):
+    literal = MESSAGE_RE.findall(argument)
+    if literal:
+        return literal[0]
+    for part in (p.strip() for p in argument.split("+")):
+        if part in constants:
+            return constants[part][1:-1]
+    return None
+
+
+def enclosing(text, offset):
+    names = [m.group(1) for m in FUNC_RE.finditer(text, 0, offset)]
+    return names[-1] if names else ""
+
+
+def site(path, text, offset, writer, status_token, argument, kind, constants):
+    status = STATUS_NAMES.get(status_token) or (int(status_token) if status_token and status_token.isdigit() else None)
+    return {
+        "where": f"{path}:{text.count(chr(10), 0, offset) + 1}",
+        "writer": writer,
+        "status_token": status_token,
+        "status": status,
+        "error_type": error_type(status),
+        "message": message_of(argument, constants) if kind != "layer" else None,
+        "kind": kind,
+        # Text formatted at run time can carry what the proxy did not write; an error's own text most of all.
+        "dynamic": kind == "dynamic",
+        "error_text": kind == "dynamic" and ".Error()" in argument,
+        "expression": argument[:160],
+    }
+
+
 def main():
     entries = []
-    for path, text in sources():
-        for match in WRITE_ERROR_RE.finditer(text):
+    files = list(sources())
+    constants = string_constants(files)
+    for path, text in files:
+        for match in WRITER_RE.finditer(text):
+            # A writer's own body passes its parameters on; its callers are the sites.
+            if enclosing(text, match.start()) in WRITERS:
+                continue
+            args, _ = call_arguments(text, match.end())
+            mode, status_at, message_at = WRITERS[match.group(1)]
+            if mode == "layer":
+                entries.append(site(path, text, match.start(), match.group(1), None, ", ".join(args[1:]), "layer",
+                                    constants))
+                continue
+            if len(args) <= message_at:
+                continue
+            argument = args[message_at]
+            entries.append(site(path, text, match.start(), match.group(1), args[status_at], argument,
+                                "literal" if is_literal(argument, constants) else "dynamic", constants))
+        for match in HTTP_ERROR_RE.finditer(text):
             args, _ = call_arguments(text, match.end())
             if len(args) < 3:
                 continue
-            status_token, argument = args[1], ", ".join(args[2:])
-            status = STATUS_NAMES.get(status_token)
-            literal = MESSAGE_RE.findall(argument)
-            entries.append({
-                "where": f"{path}:{text.count(chr(10), 0, match.start()) + 1}",
-                "status_token": status_token,
-                "status": status,
-                "error_type": error_type(status),
-                "message": literal[0] if literal else None,
-                # Anything but one string literal can carry text the proxy did not write.
-                "dynamic": not ONLY_LITERAL_RE.match(argument),
-                "expression": argument[:160],
-            })
-        for match in BACKEND_WRITERS_RE.finditer(text):
+            entries.append(site(path, text, match.start(), "http.Error", args[2], args[1],
+                                "literal" if is_literal(args[1], constants) else "dynamic", constants))
+        for match in BODYLESS_RE.finditer(text):
+            if enclosing(text, match.start()) == "writeBodylessError" or text[match.start() - 5:match.start()] == "func ":
+                continue
             args, _ = call_arguments(text, match.end())
-            entries.append({
-                "where": f"{path}:{text.count(chr(10), 0, match.start()) + 1}",
-                "status_token": match.group(1),
-                "status": None,
-                "error_type": None,
-                "message": None,
-                "dynamic": True,
-                "expression": ", ".join(args[1:])[:160],
-            })
+            entries.append(site(path, text, match.start(), "writeBodylessError", args[1] if len(args) > 1 else None,
+                                "", "no_body", constants))
     by_status = {}
     for entry in entries:
         key = str(entry["status"] or DERIVED)
@@ -123,7 +188,11 @@ def main():
     payload = {"call_sites": len(entries), "by_status": {
         key: {"count": len(value), "error_type": value[0]["error_type"],
               "messages": sorted({e["message"] for e in value if e["message"]}),
-              "dynamic_sites": sum(1 for e in value if e["dynamic"])}
+              "literal_sites": sum(1 for e in value if e["kind"] == "literal"),
+              "layer_sites": sum(1 for e in value if e["kind"] == "layer"),
+              "no_body_sites": sum(1 for e in value if e["kind"] == "no_body"),
+              "dynamic_sites": sum(1 for e in value if e["dynamic"]),
+              "error_text_sites": sum(1 for e in value if e["error_text"])}
         for key, value in sorted(by_status.items())}}
     os.makedirs("conformance/registry/generated/proxy", exist_ok=True)
     with open("conformance/registry/generated/proxy/errors.json", "w") as handle:
@@ -151,8 +220,9 @@ def main():
     print(f"errors: {len(entries)} call sites across {len(payload['by_status'])} statuses "
           f"({written} registry files written)")
     for key, summary in payload["by_status"].items():
-        print(f"  {key:5} {summary['error_type'] or '-':12} sites={summary['count']:3} "
-              f"literal={len(summary['messages']):3} dynamic={summary['dynamic_sites']:3}")
+        print(f"  {key:7} sites={summary['count']:3} literal={summary['literal_sites']:3} "
+              f"layer={summary['layer_sites']:3} dynamic={summary['dynamic_sites']:3} "
+              f"(error text {summary['error_text_sites']})")
     return 0
 
 
