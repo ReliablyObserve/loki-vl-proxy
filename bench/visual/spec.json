@@ -195,10 +195,12 @@
     "parser-json",
     "loki_api_v1_detected_fields",
     "loki_api_v1_query_range",
-    "semantics/detected-fields-no-logfmt-token-fields"
+    "semantics/detected-fields-no-logfmt-token-fields",
+    "drilldown/fields-pill-json-path-extracted-empty"
    ],
    "fixes": [
-    "semantics/detected-fields-no-logfmt-token-fields"
+    "semantics/detected-fields-no-logfmt-token-fields",
+    "drilldown/fields-pill-json-path-extracted-empty"
    ]
   },
   {

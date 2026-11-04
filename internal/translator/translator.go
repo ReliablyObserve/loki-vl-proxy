@@ -4680,25 +4680,59 @@ func parseJSONFieldAliases(stage string) map[string]string {
 	return aliases
 }
 
-// resolveJSONBracketPath converts a Loki JSON bracket-notation path to a plain field name.
-// Only resolves simple single-segment paths: ["api"] or [\"api\"] → api.
-// Complex or multi-segment paths are returned as-is so the alias is skipped safely.
+// resolveJSONBracketPath converts a Loki JSON path in bracket notation
+// (pkg/logql/log/jsonexpr: `["a"]`, `["a"]["b"]`, `["a"].b`, the quotes
+// escaped or not) to the field VictoriaLogs' unpack_json writes for it: the
+// keys of a nested object joined with dots (`service.name`); a key holding a
+// dot is written as it is (`["probe.verb"]`). A path through an array index,
+// or with an empty key or one holding a bracket, quote or space, names no
+// such field and resolves to "", which skips the alias. A path that does not start
+// with a bracket is returned as is (already a plain or dotted name).
 func resolveJSONBracketPath(orig string) string {
 	orig = strings.TrimSpace(orig)
-	if !strings.HasPrefix(orig, "[") || !strings.HasSuffix(orig, "]") {
+	if !strings.HasPrefix(orig, "[") {
 		return orig // not bracket notation — already a plain field name or dot path
 	}
-	inner := orig[1 : len(orig)-1] // strip outer [ and ]
-	// Strip backslash-escaped quotes \" at start/end (Loki URL-encodes them)
-	inner = strings.TrimPrefix(inner, `\"`)
-	inner = strings.TrimSuffix(inner, `\"`)
-	// Strip plain quotes
-	inner = strings.Trim(inner, `"'`)
-	// Only accept simple single-segment names (no nested brackets, quotes, backslashes)
-	if strings.ContainsAny(inner, `[]"'\ `) {
-		return "" // complex path — don't alias; skip this entry
+	if strings.Contains(orig, `\"`) {
+		// The quotes of the keys arrive escaped inside the stage's string.
+		unescaped, err := strconv.Unquote(`"` + orig + `"`)
+		if err != nil {
+			return ""
+		}
+		orig = unescaped
 	}
-	return inner
+	var keys []string
+	for i := 0; i < len(orig); {
+		switch orig[i] {
+		case '.':
+			i++
+		case '[':
+			quoted, err := strconv.QuotedPrefix(orig[i+1:])
+			if err != nil {
+				return "" // an array index or an unquoted key
+			}
+			key, _ := strconv.Unquote(quoted)
+			i += 1 + len(quoted)
+			if i >= len(orig) || orig[i] != ']' {
+				return ""
+			}
+			i++
+			keys = append(keys, key)
+		default:
+			j := i
+			for j < len(orig) && orig[j] != '.' && orig[j] != '[' {
+				j++
+			}
+			keys = append(keys, orig[i:j])
+			i = j
+		}
+	}
+	for _, key := range keys {
+		if key == "" || strings.ContainsAny(key, `[]"'\ `) {
+			return ""
+		}
+	}
+	return strings.Join(keys, ".")
 }
 
 // rewriteJSONAliasedFilter rewrites a label filter stage that references a

@@ -733,7 +733,7 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 		case strings.HasPrefix(pipe, "copy "):
 			for _, pair := range strings.Split(strings.TrimPrefix(pipe, "copy "), ", ") {
 				src, dst, _ := strings.Cut(pair, " as ")
-				values[dst] = values[strings.Trim(src, "`")]
+				values[strings.Trim(dst, "`\"")] = values[strings.Trim(src, "`\"")]
 			}
 		case strings.HasPrefix(pipe, "extract_regexp `"):
 			// Go's regexp is VictoriaLogs' (RE2): every named group is written,
