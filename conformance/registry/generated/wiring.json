@@ -313,6 +313,7 @@
       "internal/proxy/drilldown_breakdown_matrix_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
+      "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/label_filter_expression_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
@@ -361,6 +362,7 @@
       "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go",
       "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
+      "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/keep_service_name_test.go",
@@ -1168,7 +1170,12 @@
     "semantics/unwrap-extraction-list-series-identity": [
       "internal/proxy/extraction_list_outside_without_test.go"
     ],
+    "semantics/unwrap-first-last-range-timestamps": [
+      "internal/proxy/first_last_range_timestamps_test.go",
+      "test/e2e-compat/first_last_range_timestamps_test.go"
+    ],
     "semantics/unwrap-first-last-under-aggregation": [
+      "internal/proxy/first_last_range_timestamps_test.go",
       "internal/proxy/first_last_unwrap_differential_test.go",
       "internal/translator/first_last_over_time_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go"
@@ -1412,7 +1419,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 392,
+  "registry_items": 394,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1666,6 +1673,11 @@
       "metric-series-identity",
       "semantics/topk-bottomk-without-strips-label",
       "semantics/unwrap-extraction-list-series-identity"
+    ],
+    "internal/proxy/first_last_range_timestamps_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-first-last-range-timestamps",
+      "semantics/unwrap-first-last-under-aggregation"
     ],
     "internal/proxy/first_last_unwrap_differential_test.go": [
       "metric-series-identity",
@@ -2550,6 +2562,10 @@
       "profiles/structured-metadata-label-collision",
       "semantics/extracted-suffix-collision"
     ],
+    "test/e2e-compat/first_last_range_timestamps_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/unwrap-first-last-range-timestamps"
+    ],
     "test/e2e-compat/first_last_under_aggregation_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -2972,7 +2988,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 305,
+  "tests_with_markers": 307,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3049,6 +3065,7 @@
     "semantics/unwrap-conversion-error-parser-divergence",
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
+    "semantics/unwrap-first-last-range-longer-than-step",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-sum-by-group-quantile",
@@ -3061,5 +3078,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 232
+  "wired_items": 233
 }

@@ -1971,7 +1971,10 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		{"sliding_max_over_time", `max_over_time({app="x"} | unwrap v [5m])`, true},
 		{"sliding_sum_by_avg_over_time", `sum by (l) (avg_over_time({app="x"} | json | unwrap v [5m]))`, true},
 		{"quantile_over_time", `quantile_over_time(0.5, {app="x"} | unwrap v [1m])`, false},
-		{"first_over_time", `first_over_time({app="x"} | unwrap v [1m])`, false},
+		// first and last read one row per series and step bucket: relabelled
+		// onto Loki's evaluation time like the other unwrap functions.
+		{"first_over_time", `first_over_time({app="x"} | unwrap v [1m])`, true},
+		{"sum_last_over_time", `sum by (l) (last_over_time({app="x"} | logfmt | unwrap v [1m]))`, true},
 		// Function names inside string literals are not range aggregations: a
 		// log range function over a 5m range at step 1m is not shifted, and an
 		// unwrap one is whatever literal it filters on.

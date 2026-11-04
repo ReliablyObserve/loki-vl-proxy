@@ -1,0 +1,67 @@
+id: semantics/unwrap-first-last-range-timestamps
+title: first_over_time and last_over_time with unwrap answer Loki's query_range timestamps for a range up to the step (fixed)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Grafana Explore sends `sum by (service_name) (last_over_time({service_name=
+  "payment-service"} | logfmt | unwrap amount [$__auto]))` with the range equal
+  to the step ([1s] at 15 minutes, [5s] at 1 hour). Loki answered 90 and 360
+  points; the proxy answered as many, every one a step earlier than Loki's.
+
+  Loki evaluates the range aggregation at start, start+step, ..., end
+  (v3.7.9 pkg/logql/range_vector.go:102-113 batchRangeVectorIterator.Next); the
+  sample at t reads the window (t-range, t], the lower bound exclusive
+  (range_vector.go:150-160 load), and is stamped t (range_vector.go:189 At); a
+  range shorter than the step reads the same window (range_vector.go:54-73).
+  The sharded merge that keeps sample timestamps (pkg/logql/
+  first_last_over_time.go) runs only under shard_aggregations, off by default
+  (pkg/logql/shardmapper.go:30-48, 616).
+
+  The proxy reads first and last with row_min / row_max over VictoriaLogs
+  stats_query_range buckets, labelled by their start and covering [T, T+step).
+  statsRateRangeEqualsStepShift relabels such buckets onto Loki's evaluation
+  times for sum, avg, min and max over time, but logRangeFunctions left first
+  and last out, so their points kept the bucket start: one step early, and a
+  line exactly on a step edge in the next step.
+
+  Fixed: first_over_time and last_over_time with unwrap take the same anchored,
+  relabelled step buckets (fetched from start-step, a range shorter than the
+  step filtered to its window), under any outer aggregation, a binary operation
+  or topk, in both alignment profiles. No VictoriaLogs call is added.
+  A range longer than the step stays open in
+  semantics/unwrap-first-last-range-longer-than-step.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (last_over_time({service_name="payment-service"} | logfmt | unwrap amount [5s]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '5'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, timestamps, values]
+  expect: |
+    Loki's series, every point at Loki's evaluation time with Loki's value.
+gap:
+  status: fixed
+  fixed_by: '#1059'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/metric_binary.go logRangeFunctions, statsRateRangeEqualsStepShift (first_over_time / last_over_time with unwrap)'
+  loki: 'pkg/logql/range_vector.go:102-189 window (t-range, t] stamped t; pkg/logql/shardmapper.go:30-48 first/last sharding off by default'
+  proxy: 'step buckets fetched from start-step and relabelled onto the evaluation times, as for the other unwrap functions'
+  planned_test: 'TestCompat_UnwrapFirstLastRangeTimestamps (test/e2e-compat, group core; written, not yet run); TestFirstLastOverTimeRangeTimestampsLikeLoki, TestFirstLastOverTimeRangeTimestampsBinaryAndTopk, TestFirstLastOverTimeRangeTimestampsDifferential, FuzzFirstLastOverTimeRangeTimestampsLikeLoki (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

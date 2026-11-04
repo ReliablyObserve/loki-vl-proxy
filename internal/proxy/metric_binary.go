@@ -821,7 +821,7 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 // query is answered from native step buckets, so that the caller can fetch from
 // start-W and relabel buckets onto Loki's evaluation timestamps: a log range
 // function (rate, bytes_rate, count_over_time, bytes_over_time) with range==step,
-// or sum, avg, min or max over time with unwrap, whose native bucket is the step
+// or sum, avg, min, max, first or last over time with unwrap, whose native bucket is the step
 // whatever the range. The returned spec's Window is that bucket width.
 // The parsed expression is walked, so outer aggregations like
 // sum by(x)(count_over_time(...)) are detected, grouped or not, and function
@@ -860,7 +860,8 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 // logRangeFunctions walks a metric expression. found reports at least one range
 // aggregation, hasRate a rate or bytes_rate, logRangeOnly that every range
 // aggregation is rate, bytes_rate, count_over_time or bytes_over_time over a
-// log query, or sum, avg, min or max over time over an unwrapped label, and every
+// log query, or sum, avg, min, max, first or last over time over an unwrapped
+// label (first and last read one row per series and step bucket), and every
 // other node is an aggregation, binary operation or literal. unwrapOnly reports
 // that every range aggregation is of the unwrap kind.
 func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrapOnly bool) {
@@ -875,7 +876,8 @@ func logRangeFunctions(expr logqlpkg.Expr) (found, hasRate, logRangeOnly, unwrap
 			return true, true, true, false
 		case logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesOverTime:
 			return true, false, true, false
-		case logqlpkg.RangeSumOverTime, logqlpkg.RangeAvgOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeMaxOverTime:
+		case logqlpkg.RangeSumOverTime, logqlpkg.RangeAvgOverTime, logqlpkg.RangeMinOverTime, logqlpkg.RangeMaxOverTime,
+			logqlpkg.RangeFirstOverTime, logqlpkg.RangeLastOverTime:
 			unwrapped := hasUnwrapStage(lq)
 			return true, false, unwrapped, unwrapped
 		}

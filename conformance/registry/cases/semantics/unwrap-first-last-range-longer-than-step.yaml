@@ -1,0 +1,55 @@
+id: semantics/unwrap-first-last-range-longer-than-step
+title: first_over_time and last_over_time with unwrap on query_range for a range longer than the step read one step, not Loki's window (open)
+pending: true
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's sample at t is the first or last sample of each series in the window
+  (t-range, t] (v3.7.9 pkg/logql/range_vector.go:102-189). For a range longer
+  than the step the windows overlap. The proxy answers first and last from one
+  VictoriaLogs step bucket per point (statsRateRangeEqualsStepShift treats every
+  unwrap range as the step), so a point holds the step (t-step, t], not the
+  window: `sum(last_over_time({app="uw"} | unwrap amount [15s]))` at step 5s
+  misses the points whose window has a line only in its earlier steps, and a
+  value can be an earlier line's. With an emulated VictoriaLogs it differs from
+  the Loki-semantics reference before and after
+  semantics/unwrap-first-last-range-timestamps (which fixed range <= step).
+
+  sum, avg, max and min over time take the window evaluator for this
+  (semantics/unwrap-over-time-range-windows: gcd buckets merged per window).
+  first and last need the same merge with the latest (or earliest) bucket of
+  each series in the window: VictoriaLogs answers row_max / row_min per series
+  and gcd bucket, the proxy keeps the last non-empty one per window.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(last_over_time({service_name="payment-service"} | logfmt | unwrap amount [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, timestamps, values]
+  expect: |
+    Loki's window value at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/metric_binary.go statsRateRangeEqualsStepShift; internal/proxy unwrapWindowBuckets (first/last not merged per window)'
+  loki: 'pkg/logql/range_vector.go:102-189 window (t-range, t]'
+  proxy: 'one step bucket per point'
+  planned_test: 'TestFirstLastOverTimeRangeLongerThanStep (internal/proxy) and TestCompat_UnwrapFirstLastRangeLongerThanStep (test/e2e-compat, group core)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
