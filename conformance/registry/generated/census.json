@@ -252,6 +252,10 @@
     "quality/stats-answer-transform-cost | compare:numeric",
     "quality/stats-answer-transform-cost | perf",
     "quality/stats-answer-transform-cost | query",
+    "quality/stats-tumbling-relabel-one-parse | compare:numeric",
+    "quality/stats-tumbling-relabel-one-parse | gap:fixed",
+    "quality/stats-tumbling-relabel-one-parse | perf",
+    "quality/stats-tumbling-relabel-one-parse | query",
     "quality/stats-tumbling-relabel-one-pass | compare:numeric",
     "quality/stats-tumbling-relabel-one-pass | perf",
     "quality/stats-tumbling-relabel-one-pass | query",
@@ -1178,6 +1182,9 @@
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "internal/proxy/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
     "internal/proxy/stats_extent_retention_test.go | quality/query-range-extent-cache",
+    "internal/proxy/stats_fold_relabel_parse_test.go | quality/stats-tumbling-relabel-one-parse",
+    "internal/proxy/stats_fold_relabel_parse_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/proxy/stats_fold_relabel_test.go | quality/stats-tumbling-relabel-one-parse",
     "internal/proxy/stats_fold_relabel_test.go | quality/stats-tumbling-relabel-one-pass",
     "internal/proxy/stats_fold_relabel_test.go | series-limits-and-partial-results",
     "internal/proxy/stddev_grouped_differential_test.go | metric-series-identity",
@@ -1624,6 +1631,7 @@
     "test/e2e-compat/series_level_aggregation_fine_step_test.go | semantics/series-level-aggregation-bounded-memory",
     "test/e2e-compat/sliding_sum_without_test.go | loki_api_v1_query_range",
     "test/e2e-compat/sliding_sum_without_test.go | metric-series-identity",
+    "test/e2e-compat/sliding_sum_without_test.go | quality/stats-tumbling-relabel-one-parse",
     "test/e2e-compat/sliding_sum_without_test.go | semantics/without-sliding-sum-folded-buckets",
     "test/e2e-compat/stack_profiles_test.go | loki-compatible-profile",
     "test/e2e-compat/stack_profiles_test.go | quality/label-cache-warm",
@@ -1742,12 +1750,12 @@
       "any": 28,
       "api": 39,
       "drilldown": 47,
-      "explore": 141,
+      "explore": 142,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 313,
+      "go": 314,
       "playwright": 1
     },
     "page_kinds": {
@@ -1764,10 +1772,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 96,
+    "shape_covers_distinct": 97,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 235
+    "wired_items": 236
   },
   "gates": [
     "A/B shape selection",
