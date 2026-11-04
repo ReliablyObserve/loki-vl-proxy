@@ -125,14 +125,30 @@ def main():
               "Outside the read API score and ranking: the opt-in `/loki/api/v1/delete` handler",
               "does not implement VictoriaLogs deletion. It is not a proven working delete API.", "",
               "## Error surface", "",
-              "Every dynamic message is a risk: it can carry VictoriaLogs or proxy-internal text that Loki",
-              "would never emit. Each needs a registry entry stating Loki's own text.", "",
-              "| Status | errorType | proxy call sites | literal messages | dynamic |", "|---|---|---:|---:|---:|"]
+              "Every place the proxy writes an error to a client (`conformance/scripts/sync_errors.py`). A literal",
+              "message is text the proxy wrote; an error passed through the error layer (`lokiClientError`) reaches",
+              "the client only as Loki's text or Loki's fixed text for its status; a message formatted at run time",
+              "can carry text Loki would never emit, an error's own text most of all. The query routes answer in",
+              "Loki's query-frontend shape: the status and the text, `text/plain`, no errorType.", "",
+              "| Status | call sites | literal message | through the error layer | formatted at run time "
+              "| of those, an error's own text | no body |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
     for key, value in errors.items():
-        if key.isdigit() or key == "derived":
-            label = key if key.isdigit() else "set at run time"
-            lines.append(f"| {label} | {value['error_type'] or '—'} | {value['count']} | "
-                         f"{len(value['messages'])} | {value['dynamic_sites']} |")
+        label = key if key.isdigit() else "set at run time"
+        lines.append(f"| {label} | {value['count']} | {value.get('literal_sites', 0)} | {value.get('layer_sites', 0)} | "
+                     f"{value['dynamic_sites']} | {value.get('error_text_sites', 0)} | {value.get('no_body_sites', 0)} |")
+    registered = sorted(f[:-5] for f in os.listdir(f"{ROOT}/loki/errors")) if os.path.isdir(f"{ROOT}/loki/errors") else []
+    lines += ["", f"The registry holds one item per status ({len(registered)} under `conformance/registry/loki/errors/`), "
+              "not one per message: no check yet compares a formatted message with Loki's text."]
+    leaks_path = f"{ROOT}/error-layer-known-leaks.json"
+    if os.path.exists(leaks_path):
+        leaks = load_json(leaks_path)
+        cells = leaks.get("leaks", {})
+        pairs = sum(len(v) if isinstance(v, (list, dict)) else 1 for v in cells.values())
+        lines += ["", f"The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs "
+                  f"failure mode) lists {len(cells)} route × failure-mode cells that still leak "
+                  f"({pairs} cell × case pairs, ceiling {leaks.get('ceiling')}) in `{leaks_path}`; the list may only "
+                  "shrink. Sites outside those routes and modes are not driven by the gate."]
     behaviours = []
     base = f"{ROOT}/behaviours"
     for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:

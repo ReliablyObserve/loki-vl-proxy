@@ -77,6 +77,8 @@ REPORTS = (
     # them), then the LogQL-to-VictoriaLogs links gaps.py reads; both went stale unchecked before.
     ("sync_vl_surface.py", "conformance/registry/generated/vl/logsql-surface.json", "--offline"),
     ("link_ast.py", "conformance/registry/generated/ast-links.json", None),
+    # The client-facing error sites gaps.py tabulates; it went stale unchecked before.
+    ("sync_errors.py", "conformance/registry/generated/proxy/errors.json", None),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),
