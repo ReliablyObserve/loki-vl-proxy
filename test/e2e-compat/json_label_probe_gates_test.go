@@ -4,6 +4,7 @@ package e2e_compat
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +42,8 @@ func generatorProbeFixture(s0 time.Time, lines int, every time.Duration) []jsonV
 // Loki's on generator lines, answered from VictoriaLogs stats after the
 // parse-risk probes found no line (one stats pushdown, no raw rows), and equal
 // Loki's over a window holding the lines the probes must find, which keep the
-// exact raw evaluator.
+// exact raw evaluator; there a shape that keeps parser errors answers Loki's
+// 400 pipeline error.
 // conformance: quality/json-label-probe-gates, semantics/json-extracted-metric-pushdown, semantics/extracted-suffix-collision
 func TestCompat_JSONLabelProbeGatesLikeLoki(t *testing.T) {
 	now := time.Now()
@@ -54,13 +56,19 @@ func TestCompat_JSONLabelProbeGatesLikeLoki(t *testing.T) {
 	route, recorder := newJSONVolumeRouteProxyWithRowLimit(t, 0)
 	targets := map[string]string{"proxy": proxyURL, "in-process": route}
 	selector := `{app="` + app + `"}`
-	queries := []struct{ name, query string }{
-		{"X1 filter level_extracted, by level", `sum by (level) (count_over_time(` + selector + ` | json | level_extracted!="" [1m]))`},
-		{"E7 count by level_extracted", `sum by (level_extracted) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`},
-		{"LS8 count by level_extracted, equality", `sum by (level_extracted) (count_over_time(` + selector + ` | json | level_extracted="error" | drop __error__ [1m]))`},
-		{"X3 rate, level_extracted equality", `sum(rate(` + selector + ` | json | level_extracted="error" [1m]))`},
-		{"parsed method", `sum by (method) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`},
-		{"parsed user_id", `sum by (user_id) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`},
+	// keepsErrors marks the shapes without `drop __error__`: over the hour
+	// holding a line Loki's parser fails on (`truncated`, an unknown value
+	// type), Loki answers 400 with its pipeline error, and so must the proxy.
+	queries := []struct {
+		name, query string
+		keepsErrors bool
+	}{
+		{"X1 filter level_extracted, by level", `sum by (level) (count_over_time(` + selector + ` | json | level_extracted!="" [1m]))`, true},
+		{"E7 count by level_extracted", `sum by (level_extracted) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`, false},
+		{"LS8 count by level_extracted, equality", `sum by (level_extracted) (count_over_time(` + selector + ` | json | level_extracted="error" | drop __error__ [1m]))`, false},
+		{"X3 rate, level_extracted equality", `sum(rate(` + selector + ` | json | level_extracted="error" [1m]))`, true},
+		{"parsed method", `sum by (method) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`, false},
+		{"parsed user_id", `sum by (user_id) (count_over_time(` + selector + ` | json | drop __error__ [1m]))`, false},
 	}
 	for _, window := range []struct {
 		name       string
@@ -72,6 +80,21 @@ func TestCompat_JSONLabelProbeGatesLikeLoki(t *testing.T) {
 	} {
 		for _, tc := range queries {
 			t.Run(window.name+"/"+tc.name, func(t *testing.T) {
+				if tc.keepsErrors && !window.clean {
+					params := rangeParams(tc.query, window.start, window.end, time.Minute)
+					headers := map[string]string{"X-Scope-OrgID": "0"}
+					lokiStatus, lokiBody, _ := queryRangeGET(t, lokiURL, params, headers)
+					if lokiStatus != http.StatusBadRequest || !strings.Contains(lokiBody, "pipeline error: 'JSONParserErr'") {
+						t.Fatalf("Loki sanity: expected 400 pipeline error JSONParserErr, got %d %s", lokiStatus, lokiBody)
+					}
+					for name, base := range targets {
+						status, body, _ := queryRangeGET(t, base, params, headers)
+						if status != http.StatusBadRequest || !strings.Contains(body, "pipeline error: 'JSONParserErr'") {
+							t.Fatalf("%s: expected Loki's 400 pipeline error JSONParserErr, got %d %s", name, status, body)
+						}
+					}
+					return
+				}
 				loki := slidingRangeSeries(t, lokiURL, tc.query, window.start, window.end, time.Minute, nil)
 				for name, base := range targets {
 					recorder.reset()
