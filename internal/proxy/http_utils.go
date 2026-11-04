@@ -72,17 +72,23 @@ func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if query := r.FormValue("query"); query != "" {
 			if lower := logql.LowercaseKeywords(query); lower != query {
-				r.Form.Set("query", lower)
-				if r.PostForm.Has("query") {
-					r.PostForm.Set("query", lower)
-				}
-				if values := r.URL.Query(); values.Has("query") { // read again by the multi-tenant fan-out
-					values.Set("query", lower)
-					r.URL.RawQuery = values.Encode()
-				}
+				setRequestQuery(r, lower)
 			}
 		}
 		next(w, r)
+	}
+}
+
+// setRequestQuery replaces the query parameter of a parsed request wherever a
+// handler reads it.
+func setRequestQuery(r *http.Request, query string) {
+	r.Form.Set("query", query)
+	if r.PostForm.Has("query") {
+		r.PostForm.Set("query", query)
+	}
+	if values := r.URL.Query(); values.Has("query") { // read again by the multi-tenant fan-out
+		values.Set("query", query)
+		r.URL.RawQuery = values.Encode()
 	}
 }
 

@@ -302,6 +302,12 @@ type lineFieldExposure struct {
 	// filters are the pipeline's label filters on a single label, each with
 	// what the stages before it expose (see dropsRow).
 	filters []lineFieldFilter
+	// kept is the label list of the | keep stages after the last parser
+	// (their intersection): every other label the parser added is gone from
+	// the entry (Loki pkg/logql/log/keep_labels.go:15-45), a name_extracted
+	// label included unless the stages name it. A later label_format adds
+	// only its own target.
+	kept map[string]bool
 }
 
 // lineExtraction is one entry of a | json or | logfmt extraction list: the
@@ -468,6 +474,11 @@ func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
 			for _, f := range s.Formats {
 				exposure.labelFormats = append(exposure.labelFormats, newLabelFormatTarget(f, before))
 			}
+		case *logqlpkg.KeepStage:
+			exposure.kept = keepStageNames(s, exposure.kept)
+		}
+		if _, parser := stage.(*logqlpkg.ParserStage); parser {
+			exposure.kept = nil
 		}
 	}
 	exposure.names = pipelineLineFields(pipeline)
@@ -660,7 +671,25 @@ func (e *lineFieldExposure) repeatsLabel(key, value string, labels, streamOnly m
 // extracted.
 func (e *lineFieldExposure) extractedName(name string) (string, bool) {
 	renamed := name + extractedSuffix
+	if e.kept != nil && !e.kept[renamed] {
+		// A later | keep that does not name it removes the renamed label.
+		return renamed, false
+	}
 	return renamed, !e.names[renamed]
+}
+
+// keepStageNames returns the labels a | keep stage names, bare or with a
+// matcher, that an earlier keep (prior, nil when there is none since the
+// last parser) also left in place.
+func keepStageNames(s *logqlpkg.KeepStage, prior map[string]bool) map[string]bool {
+	names := make(map[string]bool, len(s.Labels)+len(s.Matchers))
+	for _, l := range s.Labels {
+		names[l] = prior == nil || prior[l]
+	}
+	for _, m := range s.Matchers {
+		names[m.Name] = prior == nil || prior[m.Name]
+	}
+	return names
 }
 
 // entryLabelName returns the label a stored field is exposed as, and whether

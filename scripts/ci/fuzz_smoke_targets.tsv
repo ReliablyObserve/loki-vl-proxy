@@ -93,3 +93,4 @@ smoke	internal/translator	FuzzStreamTagRestoreLikeLoki	12s	-	stream label value 
 smoke	internal/translator	FuzzIPLabelFilterNeverKeepsWhatLokiDrops	12s	-	ip() label filter keeps no line Loki drops, exact on whole addresses
 smoke	internal/translator	FuzzResolveJSONBracketPath	12s	-	a JSON bracket path resolves to the dotted field unpack_json writes
 smoke	internal/logql	FuzzVectorAggregationOverLogExpression	12s	-	a vector aggregation over a log expression fails with Loki parse error at the closing parenthesis
+smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a trailing keep regrouped by the kept labels, once

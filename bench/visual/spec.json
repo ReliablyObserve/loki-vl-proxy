@@ -2059,6 +2059,22 @@
     "status-400",
     "loki_api_v1_query_range"
    ]
+  },
+  {
+   "id": "explore-keep-series-count",
+   "kind": "explore",
+   "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/keep-leaves-labels-loki-drops",
+    "operator-keep",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/keep-leaves-labels-loki-drops"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,
