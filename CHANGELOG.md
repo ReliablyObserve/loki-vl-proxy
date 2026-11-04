@@ -52,6 +52,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of its answer, so such a query answers Loki's series (or its empty matrix)
   instead of the series limit error. A line within about 256 ns of a window edge, not on it,
   may fall on either side, as on the plain range metric route.
+- Answer the first request of a `| json` metric over a `name_extracted`
+  label, such as `sum by (level) (count_over_time({env="production"} | json |
+  level_extracted!="" [1m]))`, without the VictoriaLogs scans that made it
+  3.5-9 times slower than Loki. Before such a metric is answered from
+  VictoriaLogs stats, parse-risk probes look for lines Loki's parser and
+  VictoriaLogs' `unpack_json` read differently. For `level_extracted` they read
+  every line of a stream with the `level` label, and their key regexps start
+  with a quote, which VictoriaLogs tries at every quote of every line. Each key
+  regexp now runs only on lines that pass a filter led by a literal (the key
+  name, the name twice for a repeated key, a quote followed by a space for a
+  spaced key), and a filter already applied ahead of the label delete is not
+  applied again. The probes find the same lines, the answers and VictoriaLogs
+  calls are unchanged, and the regexp work per line on the log generator's
+  JSON lines drops from about 17 to 1.4 microseconds for these shapes and
+  7-50 times for other `| json` metrics. A gated probe longer than
+  VictoriaLogs' default `-search.maxQueryLen`, or refused as too long, is sent
+  as before.
 
 ## [2.69.0] - 2026-11-03
 

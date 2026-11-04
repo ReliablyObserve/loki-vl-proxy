@@ -181,7 +181,20 @@ type fakeLogsQLFilter struct {
 	vals map[string]string
 	// field is the field a filter without a name reads ("" means _msg).
 	field string
+	// skipped counts the enclosing and/or operands whose outcome is already
+	// decided, which VictoriaLogs does not evaluate for the row (filterAnd and
+	// filterOr apply each filter only to the rows still undecided); trace, when
+	// set, sees every regexp it does evaluate.
+	skipped int
+	trace   func(pattern, value string)
 }
+
+// fakeRegexpTraces maps a test to the hook fakeLogsQLMatch passes as trace;
+// the hook also sees every row an unpack pipe parses, as fakeUnpackTrace.
+var fakeRegexpTraces sync.Map
+
+// fakeUnpackTrace is the pattern a trace hook receives for a parsed row.
+const fakeUnpackTrace = "| unpack"
 
 func (f *fakeLogsQLFilter) skipSpace() {
 	for f.pos < len(f.src) && f.src[f.pos] == ' ' {
@@ -198,7 +211,14 @@ func (f *fakeLogsQLFilter) expr() bool {
 	result := f.term()
 	for f.peek("or ") || f.peek("OR ") {
 		f.pos += 3
+		decided := result
+		if decided {
+			f.skipped++
+		}
 		result = f.term() || result
+		if decided {
+			f.skipped--
+		}
 	}
 	return result
 }
@@ -213,7 +233,14 @@ func (f *fakeLogsQLFilter) term() bool {
 		if f.peek("and ") || f.peek("AND ") {
 			f.pos += 4
 		}
+		decided := !result
+		if decided {
+			f.skipped++
+		}
 		result = f.factor() && result
+		if decided {
+			f.skipped--
+		}
 	}
 }
 
@@ -377,7 +404,11 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 		return value == f.quoted()
 	case strings.HasPrefix(f.src[f.pos:], "~"):
 		f.pos++
-		return fakeRegexp(f.quoted()).MatchString(value)
+		pattern := f.quoted()
+		if f.trace != nil && f.skipped == 0 {
+			f.trace(pattern, value)
+		}
+		return fakeRegexp(pattern).MatchString(value)
 	case strings.HasPrefix(f.src[f.pos:], "!"):
 		f.pos++
 		return value != f.quoted()
@@ -507,6 +538,9 @@ func fakeStatsFuncs(t testing.TB, statsPipe string) []fakeStatsFunc {
 
 func fakeLogsQLMatch(t testing.TB, expr string, values map[string]string) bool {
 	f := &fakeLogsQLFilter{t: t, src: expr, vals: values}
+	if trace, ok := fakeRegexpTraces.Load(t); ok {
+		f.trace = trace.(func(pattern, value string))
+	}
 	result := f.expr()
 	f.skipSpace()
 	if f.pos != len(f.src) {
@@ -612,6 +646,9 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 				if !fakeLogsQLMatch(t, pipe[i+5:end], values) {
 					continue
 				}
+			}
+			if trace, ok := fakeRegexpTraces.Load(t); ok {
+				trace.(func(pattern, value string))(fakeUnpackTrace, values[source])
 			}
 			fields, keep, prefix := unpackOptions(pipe)
 			if fields == nil {
