@@ -2061,7 +2061,7 @@
       "message": null,
       "status": null,
       "status_token": null,
-      "where": "internal/proxy/range_metric_compat.go writeHitsRangeMetricMatrix",
+      "where": "internal/proxy/range_metric_compat.go writeHitsRangeMetricMatrixFolded",
       "writer": "writeErr"
     },
     {
