@@ -350,6 +350,18 @@ class WorkflowWiringTest(unittest.TestCase):
         listed = re.search(r'SHARDS: "([^"]*)"', merge).group(1).split()
         self.assertEqual(sorted(listed), sorted(matrix))
 
+    def test_the_race_shards_use_the_weighted_split_with_their_matrix_count(self):
+        # race-stress-shard splits internal/proxy with the same weights as the
+        # test job; a checksum split put the heaviest -race tests together.
+        race = self.job("race-stress-shard")
+        matrix = re.search(r"shard: \[([^\]]*)\]", race).group(1).replace(" ", "").split(",")
+        numbered = [m for m in matrix if m != "other"]
+        self.assertEqual(numbered, [str(i) for i in range(1, len(numbered) + 1)])
+        self.assertIn("other", matrix)
+        counts = set(re.findall(r"scripts/ci/test_shards\.py (?:check|regex) --shards (\d+)", race))
+        self.assertEqual(counts, {str(len(numbered))})
+        self.assertNotIn("cksum", race)
+
     def test_the_check_named_test_fans_in_and_fails_unless_every_shard_passed(self):
         test = self.job("test")
         self.assertIn("needs: [scope, test-shard]", test)

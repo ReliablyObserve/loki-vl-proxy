@@ -434,8 +434,8 @@ jobs:
     # derivedFields + autodetect combination.
     #
     # internal/proxy alone takes well over 30 minutes of -race test time, so its
-    # top-level tests are split into four deterministic shards (checksum of the test name over
-    # the sorted `go test -list` output) that run in parallel, each with its own 12m
+    # top-level tests are split into four shards by scripts/ci/test_shards.py (the
+    # measured -race weights of the slow tests) that run in parallel, each with its own 12m
     # budget. The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
@@ -498,16 +498,14 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          # Shard by a stable checksum of the test name (not the list index) so
-          # a shard keeps the same tests when unrelated tests are added. The
-          # "30:" salt was picked to balance measured -race test time across
-          # the shards and to keep the two heaviest sliding-window tests apart.
-          go test -list '.*' ./internal/proxy/ | grep -E '^(Test|Fuzz)' | LC_ALL=C sort \
-            | while read -r t; do printf '%s %s\n' "$(printf '30:%s' "$t" | cksum | cut -d' ' -f1)" "$t"; done \
-            | awk -v shard="$SHARD" '$1 % 4 == shard % 4 { print $2 }' > shard-tests.txt
-          echo "shard $SHARD: $(wc -l < shard-tests.txt) tests"
-          test -s shard-tests.txt
-          echo "^($(paste -sd'|' shard-tests.txt))\$" > shard-run.txt
+          # The same split as the test job's shards (scripts/ci/test_shards.py): the
+          # slow tests named in scripts/ci/test-shard-weights.tsv, measured under
+          # -race, are spread longest first over the shards; every other test goes
+          # to the shard its name hashes to, so each test is in exactly one shard.
+          go test -list '.*' ./internal/proxy/ > shard-list.txt
+          python3 scripts/ci/test_shards.py check --shards 4 --list shard-list.txt
+          python3 scripts/ci/test_shards.py regex --shards 4 --shard "$SHARD" --list shard-list.txt > shard-run.txt
+          test -s shard-run.txt
 
       - name: Race-detector tests (internal/proxy shard)
         if: matrix.shard != 'other'
