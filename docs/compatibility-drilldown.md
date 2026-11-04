@@ -28,8 +28,7 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.2.5` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19; runs Drilldown `3.1.0` (needs Grafana `>= 13.2.0`) |
-| `13.3.0` | Tracked, not gated | Explore keeps the run button on Cancel (loading) after queries on short single-chunk ranges, also on Loki direct; see [Grafana datasource compatibility](compatibility-grafana-datasource.md) |
+| `13.3.0` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19; runs Drilldown `3.1.0` (needs Grafana `>= 13.2.0`); Explore keeps the auto-run from the URL on Cancel (loading), also on Loki direct, see [Grafana datasource compatibility](compatibility-grafana-datasource.md#grafana-1330-explore-auto-run-stays-on-cancel) |
 | `12.4.14` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
 | `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |

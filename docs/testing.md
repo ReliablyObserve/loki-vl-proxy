@@ -177,12 +177,12 @@ Test, security and quality jobs defined under `.github/workflows/` (release, doc
 | `ci.yaml` | `e2e-compat` | aggregates the five grouped jobs into one result |
 | `ci.yaml` | `e2e-fleet` | `test/e2e-fleet` 3-proxy stack, `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` only |
 | `ci.yaml` | `e2e-ui (5 shards)` | compose stack with `--profile ui`, one group of Playwright tags per job (see [CI Shards](#ci-shards)) |
-| `compat-loki.yaml` | `loki-pinned` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.2.5: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
+| `compat-loki.yaml` | `loki-pinned` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.3.0: `TestLokiTrackScore` (must be 100%), `TestQuerySemantics*`, `TestLabelCache_*` |
 | `compat-loki.yaml` | `loki-matrix` | weekly: the same checks for every `stack.loki.matrix_versions` entry |
-| `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.2.5: `TestDrilldownTrackScore` |
-| `compat-drilldown.yaml` | `drilldown-grafana-pr-matrix` | runtime profiles with `run_on_pr` (Grafana 13.2.5 `current_smoke`, 12.4.14 `previous_smoke`) |
+| `compat-drilldown.yaml` | `drilldown-pinned-runtime` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.3.0: `TestDrilldownTrackScore` |
+| `compat-drilldown.yaml` | `drilldown-grafana-pr-matrix` | runtime profiles with `run_on_pr` (Grafana 13.3.0 `current_smoke`, 12.4.14 `previous_smoke`) |
 | `compat-drilldown.yaml` | `drilldown-contract-matrix`, `drilldown-grafana-runtime-matrix` | weekly/manual: Drilldown app contract checks per version and every Grafana runtime profile |
-| `compat-vl.yaml` | `vl-pinned` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.2.5: `TestVLTrackScore` |
+| `compat-vl.yaml` | `vl-pinned` | Loki 3.7.9, VictoriaLogs v1.52.0, Grafana 13.3.0: `TestVLTrackScore` |
 | `compat-vl.yaml` | `vl-matrix` | weekly/manual, for every `stack.victorialogs.matrix_versions` entry: `TestVLTrackScore`, the version-sensitive checks (`TestCompat_DetectedLevelQueryRange`, `TestCompat_RejectedQueryStatusParity`) and the range-metric table compared with Loki (`TestCompat_Unwrap*`, `TestRangeMetric*`, `TestGrafanaClickout_*`) |
 | `security-pr.yaml` | `Security / static` | Gitleaks v8.28.0, gosec v2.29.0, Trivy 0.71.0 filesystem scan, actionlint 1.7.7, hadolint v2.12.0, OpenSSF Scorecard v5.6.0 guardrails |
 | `security-pr.yaml` | `Security / runtime` | compose stack, `scripts/ci/run_security_regressions.sh`, ZAP baseline |
@@ -654,7 +654,7 @@ The default local stack (`test/e2e-compat/docker-compose.yml`) is pinned to:
 - VictoriaLogs `v1.52.0`
 - vmalert `v1.138.0` and vmauth `v1.138.0`
 - VictoriaMetrics `v1.119.0` (remote-write target for vmalert recording rules and scrape store for the stack)
-- Grafana `13.2.5` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (overridable through `GRAFANA_PLUGINS_PREINSTALL`)
+- Grafana `13.3.0` with `GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (overridable through `GRAFANA_PLUGINS_PREINSTALL`)
 - Logs Drilldown contract `3.1.0` from `grafana/logs-drilldown` commit `3b8466c7e48ea4e9128e10015bf8fd5cc35d49cb`
 
 `TestPinnedCompatibilityMatrixMatchesCompose` fails when the Loki, VictoriaLogs or Grafana image defaults in compose drift from the pinned versions in `compatibility-matrix.json`, so bump both together. The same test checks that compose preinstalls `grafana-lokiexplore-app@<stack.logs_drilldown_contract.pinned_version>` and that a runtime profile's `drilldown_plugin_version` is a tracked Drilldown version. The VictoriaLogs datasource pin is not checked; keep it aligned by hand.
@@ -682,11 +682,11 @@ Support window policy:
 
 Grafana runtime profiles from the manifest:
 
-- `13.2.5` (`full`) runs `TestDrilldownTrackScore` and `TestDrilldown_RuntimeFamilyContracts` on scheduled and manual compatibility checks
-- `13.2.5` (`current_smoke`) runs `TestGrafanaDatasourceCatalogAndHealth`, `TestDrilldown_GrafanaResourceContracts` and `TestDrilldown_RuntimeFamilyContracts` on pull requests
+- `13.3.0` (`full`) runs `TestDrilldownTrackScore` and `TestDrilldown_RuntimeFamilyContracts` on scheduled and manual compatibility checks
+- `13.3.0` (`current_smoke`) runs `TestGrafanaDatasourceCatalogAndHealth`, `TestDrilldown_GrafanaResourceContracts` and `TestDrilldown_RuntimeFamilyContracts` on pull requests
 - `12.4.14` (`previous_smoke`) runs the same smoke tests on pull requests against the previous family, with Logs Drilldown `2.6.0` (`drilldown_plugin_version`) because Drilldown `3.x` requires Grafana `>= 13.1`
 
-Grafana `13.3.0` is tracked in the datasource contract list but not gated (see [Grafana datasource compatibility](compatibility-grafana-datasource.md#grafana-1330-known-upstream-issue)).
+Grafana `13.3.0` Explore leaves the auto-run from the URL on `Cancel`; the e2e-ui `runQuery` helper clears it and still requires the explicit run to send and answer a query (see [Grafana datasource compatibility](compatibility-grafana-datasource.md#grafana-1330-explore-auto-run-stays-on-cancel)).
 
 The Grafana Loki datasource contract tracks `13.3.0`, `13.2.5`, `13.2.3`, `13.2.1`, `13.0.1`, `12.4.14`, `12.4.12`, `12.4.10`, `12.4.2` and `12.4.1`.
 
