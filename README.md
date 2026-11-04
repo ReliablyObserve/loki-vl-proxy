@@ -124,6 +124,8 @@ Details, the per-workload tables and the method: [performance summary](conforman
 
 <!-- quality-summary:end -->
 
+**Two-day (48h) ranges**, measured separately on 2026-11-04 (commit `69d07019b3`, Loki v3.7.9, VictoriaLogs v1.53.0, both Loki profiles): on a first request the proxy is faster than Loki on **81–83%** of compared rows and above 2x Loki on at most 2 rows (1.4%), both waiting for a confirming run; a long-range load test kept `/labels` at 249 of 249 answers 200 with no VictoriaLogs or Loki restart. One open defect shows only at this range: answers larger than the buffered-response limit (B2, and the same shapes at a 20 s step) answer 500 where Loki answers 200. Details: [two-day ranges](docs/performance.md#two-day-ranges-48h).
+
 ---
 
 ## One-glance comparison

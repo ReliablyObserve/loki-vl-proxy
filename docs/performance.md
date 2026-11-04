@@ -41,7 +41,44 @@ The report lists **51** shape and range pairs where the proxy is slower than Lok
 | E8 json duration_ms sum by service, namespace prod | 7d | 9.29 s | 0.01 s | 13.40 s | 0.06 s |
 | E1 json duration_ms sum by service | 7d | 5.93 s | 0.10 s | 4.46 s | 0.05 s |
 
-The report lists the registry items that cover each row. The rows above the 7d ones are examples from the earlier 2026-10-27 daily run, where Loki's cache counters show no cache answer. The 7d rows (E1, E3, E8) come from the run of 2026-10-08, which recorded no Loki cache counters, so Loki's cold time there is unverified and may understate a truly cold Loki. For the current ranking, use the generated report, which also lists the worst row per registry item and whether its answer matches Loki's.
+The report lists the registry items that cover each row. The rows above the 7d ones are examples from the earlier 2026-10-27 daily run, where Loki's cache counters show no cache answer. The 7d rows (E1, E3, E8) come from the run of 2026-10-08, which recorded no Loki cache counters, so Loki's cold time there is unverified and may understate a truly cold Loki. For the current ranking, use the generated report, which also lists the worst row per registry item and whether its answer matches Loki's. Two-day ranges are measured separately; see [Two-day ranges (48h)](#two-day-ranges-48h).
+
+### Two-day ranges (48h)
+
+Ranges above 24h behave differently on both sides: Grafana's Loki datasource splits a metric range into 24h chunks and merges the frames, Loki reads older data from its store instead of the ingesters, and `$__auto` steps grow. The daily run stops at 24h, so a separate pass measured every shape set that runs a 24h range at **48h** (step 120 s, Grafana's `$__auto` step for two days), on 2026-11-04 at commit `69d07019b3`, against Loki v3.7.9 with VictoriaLogs v1.53.0. 7d is not measured: Loki does not answer the heavier 7d shapes on the bench stack, so a 7d comparison would show Loki failing rather than the proxy's speed. The 7d rows listed above (E1, E3, E8) are superseded by this pass.
+
+Method: `bench/ab/daily.py --max-range 48h --runs 7 --long-runs 1 --profiles auto`, with a 48h range (`[172800, 120]`) in place of 24h for those sets, and a 48.4h seed (4.60 M lines; Loki and VictoriaLogs agreed on the line count in every one of 290 slices). 26 sets, both Loki profiles, 7 runs per shape, 50 passes; every pass was valid, with VictoriaLogs restarts 0 before and after each. The first pass ran on a loaded host and inflated the cold times of the json-heavy sets (for example X1 39.7 s), so the 7 sets that showed a row above 2x were measured again on a fresh stack; the tables use the second measurement for those sets. Bands are those of `bench/ab/over2x.py`, as in the daily report; rows whose first request Loki's results cache answered are not compared.
+
+Range-dependent rows (instant queries excluded):
+
+| Loki profile | Request | Rows compared | Faster than Loki | Close to Loki | 1–2x Loki | Above 2x Loki | Loki cache-served first request (not compared) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `loki-defaults` | first | 143 | 116 (81.1%) | 23 (16.1%) | 2 (1.4%) | 2 (1.4%) | 31 |
+| `loki-defaults` | repeat | 174 | 74 (42.5%) | 100 (57.5%) | 0 | 0 | — |
+| `aligned` | first | 120 | 99 (82.5%) | 18 (15.0%) | 3 (2.5%) | 0 | 8 |
+| `aligned` | repeat | 128 | 4 (3.1%) | 121 (94.5%) | 2 (1.6%) | 1 (0.8%) | — |
+
+On the 7 sets measured twice no row is above 2x Loki; the largest ratio is 1.39x. The three rows above 2x in the table (DB4 json field breakdown and one other first-request row in `loki-defaults`, and a logfmt logs-volume repeat in `aligned`) come from sets measured once, on the loaded first pass, and are waiting for a confirming run.
+
+Shapes that changed since the previous 48h measurement (commit `7eaf79ce`, VictoriaLogs v1.52.0, so part of each change is the VictoriaLogs version):
+
+| Shape | Loki profile | Then: proxy / Loki | Now: proxy / Loki |
+|---|---|---|---|
+| DLV3 plain json, `detected_level` (#1057) | `loki-defaults`, first request | 6.43 s / 0.65 s | 0.34 s / 0.53 s |
+| X1 json filter `level_extracted`, by level (#1058) | `loki-defaults`, first request | 8.61 s / 2.21 s | 3.99 s / 3.61 s |
+| X1 json filter `level_extracted`, by level (#1058) | `aligned`, first request | 8.72 s / 1.95 s | 3.63 s / 2.83 s |
+| DB1 label breakdown `pod` | `loki-defaults`, first request | 0.60 s / 7.94 s | 0.91 s / 26.77 s |
+| E2 json `duration_ms` p95 by service | `loki-defaults`, first request | 0.35 s / 0.43 s | 0.38 s / 0.49 s |
+
+- Log queries (the `logs` shapes of the control, level-filter, or-filter, pattern-filter and stage-field sets) are at or below Loki's time on every compared row; plain log queries take 0.02 s against Loki's 0.10–0.14 s.
+- DB1, DB4, E2 and U9, which answered 502 on older 7d runs, answer 200 at 48h.
+- **Open: answers larger than the buffered-response limit.** B2 (`sum by` over a ratio of two per-stream metrics) answers 500 at 48h in both profiles, where Loki answers 200 (a first request in 41–167 s); at 24h it answers 200. The set `series-level-fine-step` (four `sum`/`count`/`avg` by shapes at a 20 s step over 48h, finer than Grafana's step for two days) answers 500 on all four shapes for the same reason. Loki never answers these with 500, so this is an open defect.
+
+Backend safety at long ranges: 12 workers for 180 s sent 222 distinct 24h and 48h queries built from 146 bench shapes, with `/labels` and label-value probes every second. Every one of the 249 probes answered 200 (p95 105 ms, max 228 ms). VictoriaLogs and Loki restarted 0 times and neither was OOM-killed. Of the queries, 211 answered 200, 6 answered Loki's own 400 with Loki's text, 2 answered 429 `too many outstanding requests`, and 3 answered 500, all three at the buffered-response limit above.
+
+Grafana range matrix on the same build (5m, 15m, 1h, 6h and 24h, 30 calls through Grafana's datasources, proxy against Loki direct, log generator on): no call answered other than 200 where Loki answered 200. Plain, json and logfmt log queries, logs volume, `rate`/`count_over_time`/`bytes_over_time` grouped and ungrouped, and the Logs Drilldown volume and field breakdown queries match Loki's status, series, grid and totals at every range. The known differences that remain: `topk(5)` returns 5 series where Loki returns 8, `detected_fields` lists 12 fields against Loki's 15 (Loki's `_extracted` fields), `index/stats` totals differ, and `index/volume_range` answers up to 6h (Loki answers it at 5m only) and answers 500 at 24h at the same buffered-response limit.
+
+Visual comparison on the same code (all 139 pages, 287 captures at 15m, 1h, 6h, 24h and live): against Loki, 214 captures were compared; 12 are identical, 50 differ only in documented ways, 145 differ only in Loki's `index/stats` chunk accounting, and 7 captures on 5 pages show other differences (10 captures on 7 pages before). No new visual difference from Loki appeared.
 
 ### Repeated and refreshed windows
 
