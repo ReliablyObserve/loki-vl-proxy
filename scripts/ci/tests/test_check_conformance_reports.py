@@ -313,6 +313,17 @@ class MatrixAndCensusReportsTest(unittest.TestCase):
             self.assertIn(target, targets)
 
 
+class VictoriaLogsSurfaceReportsTest(unittest.TestCase):
+    def test_surface_usage_and_links_are_checked_before_gaps(self):
+        reports = load_gate().REPORTS
+        order = [target for _, target, _ in reports]
+        self.assertIn(("sync_vl_surface.py", "conformance/registry/generated/vl/logsql-surface.json", "--offline"), reports)
+        self.assertLess(order.index("conformance/registry/generated/vl/logsql-surface.json"),
+                        order.index("conformance/registry/generated/ast-links.json"))
+        self.assertLess(order.index("conformance/registry/generated/ast-links.json"),
+                        order.index("conformance/reports/gaps.md"))
+
+
 class MatrixLinkCheckTest(unittest.TestCase):
     """matrix_link.py --check is a gate: a pinned version the matrix does not run, or a missing score test, fails."""
 

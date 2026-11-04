@@ -73,6 +73,10 @@ REPORTS = (
     ("coverage_map.py", "docs/compatibility-loki.md", "--api-status"),
     ("coverage_map.py", "docs/KNOWN_ISSUES.md", "--api-status"),
     ("coverage_map.py", "docs/roadmap.md", "--api-status"),
+    # What the proxy emits of the VictoriaLogs surface (offline: the release tags stay as the last full run wrote
+    # them), then the LogQL-to-VictoriaLogs links gaps.py reads; both went stale unchecked before.
+    ("sync_vl_surface.py", "conformance/registry/generated/vl/logsql-surface.json", "--offline"),
+    ("link_ast.py", "conformance/registry/generated/ast-links.json", None),
     ("gaps.py", "conformance/reports/gaps.md", None),
     ("translation_map.py", "conformance/reports/translation-map.md", None),
     ("roadmap.py", "conformance/reports/roadmap.md", None),

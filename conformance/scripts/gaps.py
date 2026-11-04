@@ -169,14 +169,25 @@ def main():
     if os.path.exists(links_path):
         links = load_json(links_path)
         lines += ["", "## VictoriaLogs reuse opportunities", "",
-                  "VictoriaLogs already provides these, and the proxy does not emit them. Each is a",
-                  "chance to move work off the proxy and onto the backend.", "",
-                  "| LogQL | VictoriaLogs | Available since |", "|---|---|---|"]
-        for item in links["reuse_opportunities"]:
-            lines.append(f"| `{item['logql']}` | {', '.join(item['victorialogs'])} | {item['since']} |")
-        lines += ["", "LogQL constructs the proxy supports with no VictoriaLogs equivalent "
+                  "VictoriaLogs constructs that would serve a LogQL construct and that the proxy emits nowhere",
+                  "(`conformance/scripts/link_ast.py`; what the proxy emits is a scan of the LogsQL the translator",
+                  "and the proxy build, refreshed by `sync_vl_surface.py --offline`). A construct the proxy emits for",
+                  "other queries is not listed even where it computes this LogQL construct itself, for example",
+                  "topk and bottomk per step, label_replace, or a binary operator between two metrics; telling",
+                  "those apart needs translating each construct.", ""]
+        if links["reuse_opportunities"]:
+            lines += ["| LogQL | VictoriaLogs | Available since | Covers |", "|---|---|---|---|"]
+            for item in links["reuse_opportunities"]:
+                lines.append(f"| `{item['logql']}` | {', '.join(item['victorialogs'])} | {item['since']} | "
+                             f"{('part: ' + item['partial']) if item.get('partial') else 'all'} |")
+        else:
+            lines.append("None.")
+        lines += ["", "LogQL constructs the proxy supports with no VictoriaLogs construct to serve them "
                   f"({len(links['no_victorialogs_equivalent'])}): " +
                   ", ".join(f"`{x}`" for x in links["no_victorialogs_equivalent"]), ""]
+        if links.get("not_applicable"):
+            lines += ["Not a backend construct: " + "; ".join(f"`{x['logql']}` ({x['why']})"
+                                                            for x in links["not_applicable"]) + ".", ""]
     perf_path = f"{ROOT}/generated/perf-evidence.json"
     if os.path.exists(perf_path):
         lines += perf_section(load_json(perf_path))
