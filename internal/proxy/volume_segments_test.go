@@ -402,6 +402,60 @@ func segCallsSummary(calls []segCall) (n int, span time.Duration) {
 	return n, span
 }
 
+// segRepeatEnd is the end of the first window of the repeat test: 5 s into a
+// minute, at least 3 s before now. The test moves the window by 7 s three times,
+// so its start stays inside one minute whatever the clock says. A start that
+// crosses a minute, 5-minute or hour boundary stops using the cached segment
+// that began before it and reads the pieces of that segment instead (up to 4
+// minutes, or 55 for an hour boundary): a wall-clock phase the test must not
+// depend on, as about 7% of the phases of an hour did.
+func segRepeatEnd(now time.Time) time.Time {
+	end := now.Add(-3 * time.Second).Truncate(time.Minute).Add(5 * time.Second)
+	if end.After(now.Add(-3 * time.Second)) {
+		end = end.Add(-time.Minute)
+	}
+	return end
+}
+
+// TestVolumeSegmentsRepeatWindowIsClockPhaseIndependent plans the repeat test's
+// four windows against a cache filled by the earlier ones, for every second of
+// an hour as "now" (the tail and its sealing move with it, as the proxy's clock
+// does): each repeat reads at most 3 calls and the last 10 minutes plus the
+// moved start, so the repeat test cannot fail on the time it runs at.
+// conformance: quality/index-volume-settled-segments
+func TestVolumeSegmentsRepeatWindowIsClockPhaseIndependent(t *testing.T) {
+	base := time.Date(2026, 11, 4, 8, 0, 0, 0, time.UTC)
+	for off := 0; off < 3600; off++ {
+		now0 := base.Add(time.Duration(off) * time.Second)
+		cached := map[[2]int64]bool{}
+		end0 := segRepeatEnd(now0)
+		for i := 0; i < 4; i++ {
+			now := now0.Add(time.Duration(i) * 200 * time.Millisecond)
+			end := end0.Add(time.Duration(i) * 7 * time.Second)
+			segs := planInventorySegments(end.Add(-24*time.Hour).UnixNano(), end.UnixNano(), now.Add(-DefaultMaxStatsCacheFreshness).UnixNano())
+			var missing []int
+			for k, s := range segs {
+				if s.level < 0 || !cached[[2]int64{s.start, int64(s.level)}] {
+					missing = append(missing, k)
+				}
+			}
+			jobs := volumeSegmentJobs(segs, missing)
+			var span time.Duration
+			for _, job := range jobs {
+				span += time.Duration(segs[job[len(job)-1]].end - segs[job[0]].start)
+			}
+			for _, k := range missing {
+				if segs[k].level >= 0 {
+					cached[[2]int64{segs[k].start, int64(segs[k].level)}] = true
+				}
+			}
+			if i > 0 && (len(jobs) > 3 || span > DefaultMaxStatsCacheFreshness+2*time.Minute+time.Duration(i)*7*time.Second) {
+				t.Fatalf("now=%s repeat %d reads %d calls over %s", now0.Format("15:04:05"), i, len(jobs), span)
+			}
+		}
+	}
+}
+
 // TestVolumeSegmentsRepeatReadsOnlyTheEdges: Logs Drilldown's landing volume
 // over 24h, asked again with the window moved by seconds (a refresh), reads
 // only its two edges from VictoriaLogs, and every answer equals the
@@ -415,7 +469,7 @@ func TestVolumeSegmentsRepeatReadsOnlyTheEdges(t *testing.T) {
 	seg := newSegProxy(t, vl.URL, 0, DefaultMaxStatsCacheFreshness)
 	whole := newSegProxy(t, vl.URL, -1, DefaultMaxStatsCacheFreshness)
 
-	end := now.Add(-3 * time.Second)
+	end := segRepeatEnd(now)
 	start := end.Add(-24 * time.Hour)
 	for i := 0; i < 4; i++ {
 		params := segWindow(landingParams(), start, end)
