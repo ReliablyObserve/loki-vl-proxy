@@ -204,5 +204,48 @@ class GapsTest(unittest.TestCase):
         self.assertEqual(ev, before)
 
 
+class CurrentRowsTest(unittest.TestCase):
+    """Only rows the newest daily run measured are ranked; older rows are shown apart (perf_evidence.is_current)."""
+
+    def test_only_the_newest_daily_date_is_current(self):
+        daily = dict(summary(), date="2026-11-04")
+        self.assertTrue(pe.is_current(("2026-11-04", 1, "daily-x.json"), daily, "2026-11-04"))
+        self.assertFalse(pe.is_current(("2026-11-03", 1, "daily-x.json"), dict(daily, date="2026-11-03"), "2026-11-04"))
+        # A pull request's run is never current while a daily run exists, even on the same date.
+        self.assertFalse(pe.is_current(("2026-11-04", 0, "2026-11-04-pr.json"), daily, "2026-11-04"))
+        self.assertFalse(pe.is_current(("2026-11-04", 1, "daily-x.json"), dict(daily, valid=False), "2026-11-04"))
+
+    def test_without_a_daily_run_every_row_is_current(self):
+        self.assertTrue(pe.is_current(("2026-10-08", 0, "2026-10-08-pr.json"), summary(), None))
+
+    def test_stale_rows_are_not_ranked_in_gaps(self):
+        ev = evidence()
+        ev["parser-json"][0]["stale"] = True
+        self.assertEqual(gaps.slower_rows(ev, "slower_than_loki_cold"), {})
+        self.assertIn("None measured.", "\n".join(gaps.perf_section(ev)))
+
+    def test_stale_rows_are_listed_apart_and_not_counted_by_item(self):
+        current = dict(pe.measurement(summary(), row(branch_cold=0.3, loki_cold=0.1)), set="x", shape="cur", range="24h")
+        old = dict(pe.measurement(summary(), row(branch_cold=13.0, loki_cold=0.005)), set="x", shape="old", range="7d",
+                   stale=True, candidate="branch")
+        failed = dict(pe.measurement(summary(), row(status={"main": "200", "branch": "502", "loki": "200"})),
+                      set="x", shape="err", range="7d", stale=True, candidate="branch")
+        text = pe.render({"parser-json": [current, old, failed]}, {}, [])
+        ranked = text.split("## Slower than Loki on first load")[1].split("## Slower than Loki on repeat views")[0]
+        apart = text.split("## Not re-measured by the daily run")[1].split("## By registry item")[0]
+        by_item = text.split("## By registry item")[1]
+        self.assertIn("| cur | 24h |", ranked)
+        self.assertNotIn("| old |", ranked)
+        self.assertIn("| old | 7d | 13.00s | 0.01s | no (no cache counters) | t (2026-10-19, branch) |", apart)
+        self.assertIn("| err | 7d | **502** |", apart)
+        self.assertIn("worst 0.30s / 0.50s (24h) | 0.10s / 0.05s | same; 1 slower than Loki cold", by_item)
+
+    def test_an_item_with_only_stale_rows_shows_the_dated_older_run(self):
+        old = dict(pe.measurement(summary(), row()), set="x", shape="old", range="7d", stale=True, candidate="branch")
+        by_item = pe.render({"parser-json": [old]}, {}, []).split("## By registry item")[1]
+        self.assertIn("(7d, 2026-10-19 ‡)", by_item)
+        self.assertNotIn("slower than Loki cold |", by_item.split("| `parser-json` |")[1].split("\n")[0])
+
+
 if __name__ == "__main__":
     unittest.main()

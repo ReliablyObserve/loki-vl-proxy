@@ -121,6 +121,23 @@ def latest_runs(shape_sets, problems, pattern="*.json", keep=None):
     return latest
 
 
+def newest_daily_date():
+    """The date of the newest valid daily run (bench/ab/results/daily-*.json), or None when there is none."""
+    dates = [x["date"] for x in (load_json(p) for p in glob.glob(f"{RESULTS}/daily-*.json")) if x.get("valid", True)]
+    return max(dates) if dates else None
+
+
+def is_current(stamp, summary, newest):
+    """A row the newest daily run measured. With no daily run at all, every row is current.
+
+    The daily run measures main against Loki on 1h to 24h with Loki's cache counters; a row it does not
+    re-measure (7d, a set or shape it does not run) keeps the figures of an older run, often a pull
+    request's branch build without those counters. Such a row is shown apart and is never ranked."""
+    if newest is None:
+        return True
+    return stamp[2].startswith("daily-") and summary.get("date") == newest and summary.get("valid", True)
+
+
 def beyond_noise(cand, ref):
     """cand is slower than ref by both the relative and the absolute margin."""
     return cand is not None and ref is not None and cand > ref * (1 + NOISE) and cand - ref > MIN_DELTA
@@ -370,13 +387,16 @@ def main():
                 covers.setdefault(item, []).append((set_name, shape["name"]))
 
     latest = latest_runs(shape_sets, problems)
+    newest = newest_daily_date()
     evidence = {}
     for item, shapes in sorted(covers.items()):
         rows = []
         for set_name, shape_name in shapes:
-            for (s, n, rng), (_, summary, row) in sorted(latest.items()):
+            for (s, n, rng), (stamp, summary, row) in sorted(latest.items()):
                 if (s, n) == (set_name, shape_name):
-                    rows.append({"set": s, "shape": n, "range": rng, **measurement(summary, row)})
+                    stale = ({} if is_current(stamp, summary, newest)
+                             else {"stale": True, "candidate": summary["candidate"]})
+                    rows.append({"set": s, "shape": n, "range": rng, **measurement(summary, row), **stale})
         evidence[item] = rows
 
     if args.check:
@@ -481,9 +501,12 @@ def over_2x(over):
 
 def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
     gaps = {}
+    stale = {}
     for item, rows in evidence.items():
         for r in rows:
-            if r["slower_than_loki_cold"]:
+            if r.get("stale") and (r["slower_than_loki_cold"] or r["status"] != "200"):
+                stale.setdefault((r["set"], r["shape"], r["range"]), (r, []))[1].append(item)
+            elif r["slower_than_loki_cold"] and not r.get("stale"):
                 gaps.setdefault((r["set"], r["shape"], r["range"]), (r, []))[1].append(item)
     labels = sorted({(s["date"], s["label"]) for _, s, _ in latest.values()})
     out = ["# Performance evidence", "",
@@ -505,7 +528,9 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
     if bounds is not None:
         out += render_acceptance(latest, bounds)
     out += over_2x(over)
-    out += ["## Slower than Loki on first load", ""]
+    out += ["## Slower than Loki on first load", "",
+            "Rows the newest daily run measured; rows it does not re-measure are listed under "
+            "[Not re-measured by the daily run](#not-re-measured-by-the-daily-run) and are not ranked.", ""]
     if gaps:
         out += ["| shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |",
                 "|---|---|---|---|---|---|---|"]
@@ -520,7 +545,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
     repeat = {}
     for item, rows in evidence.items():
         for r in rows:
-            if (r.get("slower_than_loki_warm") or r.get("slower_than_loki_refresh")) and not r["loki_cache_served"]:
+            if (r.get("slower_than_loki_warm") or r.get("slower_than_loki_refresh")) and not r["loki_cache_served"] \
+                    and not r.get("stale"):
                 repeat.setdefault((r["set"], r["shape"], r["range"]), (r, []))[1].append(item)
     out += ["", "## Slower than Loki on repeat views", "",
             "Warm p50 (runs after the first) and refresh p50 (windows moving forward), where the proxy is",
@@ -538,6 +564,21 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         out += ["", f"{len(repeat)} shape×range slower than Loki beyond noise on a repeat view."]
     else:
         out.append("None measured.")
+    out += ["", "## Not re-measured by the daily run", "",
+            "Rows slower than Loki cold, or answered with an error, in an older run that the newest daily run does not",
+            "measure (7d, or a set or shape it does not run). They keep that run's figures: often a pull request's branch build, and without",
+            "Loki's cache counters the Loki cold time is unverified. Shown for reference; not ranked and not counted",
+            "as slower above or in the registry table. Re-measure them before acting on them.", ""]
+    if stale:
+        out += ["| shape | range | proxy cold | Loki cold | Loki cold verified | run (date, candidate) | registry items |",
+                "|---|---|---|---|---|---|---|"]
+        for (s_, n, rng), (r, items) in sorted(stale.items()):
+            out.append(f"| {n.replace('|', chr(92) + '|')} | {rng} | {fmt(r['cold'], r['status'])} | {fmt(r['loki_cold'])} | "
+                       f"{'yes' if 'loki_cold_cache' in r else 'no (no cache counters)'} | "
+                       f"{r['label']} ({r['date']}, {r.get('candidate', '—')}) | "
+                       f"{', '.join(f'`{i}`' for i in sorted(items) if not GENERIC.match(i)) or ', '.join(f'`{i}`' for i in items)} |")
+    else:
+        out.append("None.")
     blocks = (bounds or {}).get("blocks", {})
 
     def lock(item):
@@ -557,15 +598,19 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         verdicts = {}
         for r in rows:
             verdicts[r["verdict_vs_baseline"]] = verdicts.get(r["verdict_vs_baseline"], 0) + 1
-        slow = sum(1 for r in rows if r["slower_than_loki_cold"])
-        worst = max(rows, key=lambda r: (r["cold"] or 0))
+        current = [r for r in rows if not r.get("stale")]
+        slow = sum(1 for r in current if r["slower_than_loki_cold"])
+        worst = max(current or rows, key=lambda r: (r["cold"] or 0))
         parity = "differs" if any(r["parity_vs_loki"] == "differs" for r in rows) else "same"
         out.append(f"| `{item}` | {len({(r['set'], r['shape']) for r in rows})} × {len({r['range'] for r in rows})} ranges | "
                    f"{', '.join(f'{n} {k}' for k, n in sorted(verdicts.items()))} | "
-                   f"worst {fmt(worst['cold'], worst['status'])} / {fmt(worst['warm_p50'], worst['status'])} ({worst['range']}) | "
+                   f"worst {fmt(worst['cold'], worst['status'])} / {fmt(worst['warm_p50'], worst['status'])} ({worst['range']}"
+                   f"{'' if current else ', ' + worst['date'] + ' ‡'}) | "
                    f"{fmt(worst['loki_cold'])}{' †' if worst['loki_cache_served'] else ''} / {fmt(worst['loki_warm_p50'])} | "
                    f"{parity}{f'; {slow} slower than Loki cold' if slow else ''} | {lock(item)} |")
-    out += ["", "† Loki's results cache answered that cold run: not a computed time, and in no comparison."]
+    out += ["", "† Loki's results cache answered that cold run: not a computed time, and in no comparison.",
+            "‡ No row of the item was re-measured by the newest daily run: the worst row is from the dated older run.",
+            "The worst row and the slower count use the rows the newest daily run measured."]
     if problems:
         out += ["", "## Problems", ""] + [f"- {p}" for p in problems]
     return "\n".join(out) + "\n"
