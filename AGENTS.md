@@ -100,6 +100,26 @@ matrix in its PR summary, with links to retained, reproducible evidence.
 Infrastructure, release metadata and documentation changes may mark this matrix
 not applicable with their scope reason; they must not claim runtime savings.
 
+## Fleet scale
+
+Design every change for tens of proxy replicas, a much larger VictoriaLogs
+cluster and far more concurrent clients than the test stacks, with limits that
+operators may raise or remove. No limit is the safety mechanism.
+
+- Minimise VictoriaLogs calls per client request: reuse cached answers,
+  extents and settled steps, coalesce identical in-flight work across clients
+  and replicas, push work down so VictoriaLogs returns aggregates.
+- The proxy shields VictoriaLogs: bounded fan-out per request and replica,
+  bounded heavy-call concurrency, Loki's back-pressure statuses, a separate
+  lane for label and label-value calls.
+- Parallel VictoriaLogs calls are sized by the request and bounded; memory is
+  bounded by construction (chunking, streaming, aggregated input), not by a
+  limit that rejects.
+- Shareable state lives in the fleet cache so replicas reuse each other's work.
+- Pull requests that change VictoriaLogs calls state the calls per request
+  (first, repeat, refresh), their growth with replicas and clients, and the
+  memory and concurrency bounds. See CONTRIBUTING.md, Performance Rules.
+
 ## Production investigations
 
 Cache investigations and operational checks must be reproducible in a deployed
