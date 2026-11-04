@@ -98,12 +98,17 @@ class SummaryTest(unittest.TestCase):
     result = {"mode": "full", "ref": "abc12345", "loki": "v3.7.9", "clusters": 3, "requests": 4, "not_reproducible": 0,
               "elapsed_s": 60, "phases_s": {"run": 30}, "conformance_ok": False}
 
-    def test_unclaimed_clusters_lead_the_summary_with_the_count(self):
+    def test_unclaimed_clusters_are_listed_apart_from_claims_the_run_does_not_hold(self):
         problems = [f"cluster c{i} (q) is accounted for by no registry case" for i in range(50)]
+        problems += [f"t/x: cluster g{i} is not in discovery.json" for i in range(7)]
         text = refresh.summary_md(None, self.result, self.discovery, "Prune: nothing dropped.", problems)
-        self.assertIn("reports 50 problem(s)", text)
+        self.assertIn("reports 57 problem(s)", text)
+        self.assertIn("50 cluster(s) no registry case claims", text)
+        self.assertIn("7 claim(s) of a cluster the run does not hold", text)
+        self.assertIn("should have been pruned", text)
         self.assertIn("cluster c0", text)
         self.assertNotIn("cluster c45", text)
+        self.assertNotIn("cluster g0", text)  # not listed one by one: the prune step covers them
         self.assertIn("10 more in `conformance.txt`", text)
         self.assertIn("| repo | 4 | 2 | 1 | 1 | 0 |", text)
 
@@ -112,6 +117,9 @@ class SummaryTest(unittest.TestCase):
                       slice={"per_source": 25, "of": 900}, prune_refused="the recorded run is partial")
         text = refresh.summary_md(None, result, self.discovery, "", [])
         self.assertIn("slice (25 per source of 900", text)
+        slice_text = refresh.summary_md(None, dict(result, conformance_ok=False), self.discovery, "",
+                                        ["t/x: cluster g is not in d.json"])
+        self.assertIn("expected for a slice", slice_text)
         self.assertIn("refused", text)
         self.assertIn("gate passes", text)
 

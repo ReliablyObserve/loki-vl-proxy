@@ -192,16 +192,26 @@ def summary_md(a, result, discovery, prune_text, problems):
                   f"refused it (`{result.get('prune_refused')}`) and nothing here is for a commit.", ""]
     else:
         lines += [prune_text, ""]
+    unclaimed = [p for p in problems if "no registry case" in p or "claimed by" in p]
+    absent = [p for p in problems if " is not in " in p]
+    other = [p for p in problems if p not in unclaimed and p not in absent]
     if result["conformance_ok"]:
         lines += ["The conformance gate passes against this run.", ""]
     else:
-        shown = problems[:UNCLAIMED_SHOWN]
-        lines += [f"The conformance gate reports {len(problems)} problem(s) in `parity_gaps.py --check` "
-                  "(an unclaimed cluster needs a registry case with a `gap:` block that claims it):", ""]
-        lines += [f"- {p}" for p in shown]
-        if len(problems) > len(shown):
-            lines.append(f"- ... {len(problems) - len(shown)} more in `conformance.txt` of the artifact")
-        lines.append("")
+        lines += [f"The conformance gate reports {len(problems)} problem(s) in `parity_gaps.py --check`: "
+                  f"{len(unclaimed)} cluster(s) no registry case claims (or claimed twice), {len(absent)} claim(s) of a "
+                  f"cluster the run does not hold, {len(other)} other.", ""]
+        if absent and result.get("slice"):
+            lines += ["The claims the run does not hold are expected for a slice: most clusters were not sent.", ""]
+        elif absent:
+            lines += ["Claims the run does not hold should have been pruned: the prune step above did not cover them.", ""]
+        for title, group in (("Unclaimed clusters (each needs a registry case with a `gap:` block that claims it)", unclaimed),
+                             ("Other problems", other)):
+            if group:
+                lines += [f"{title}:", ""] + [f"- {p}" for p in group[:UNCLAIMED_SHOWN]]
+                if len(group) > UNCLAIMED_SHOWN:
+                    lines.append(f"- ... {len(group) - UNCLAIMED_SHOWN} more in `conformance.txt` of the artifact")
+                lines.append("")
     return "\n".join(lines)
 
 
