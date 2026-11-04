@@ -151,6 +151,8 @@ func TestJSONLabelProbeGatesEdgeTable(t *testing.T) {
 // from it would let a key spelled with that space past the alias gate.
 // conformance: quality/json-label-probe-gates
 func TestJSONKeySpaceNonASCIIClass(t *testing.T) {
+	// Single-threaded: the test job runs it in full, the race job has nothing to check.
+	skipSimulationUnderRace(t)
 	space := regexp.MustCompile(`^` + jsonKeySpace + `$`)
 	gate := regexp.MustCompile(`^` + jsonKeySpaceNonASCII + `$`)
 	ascii := regexp.MustCompile(`^"[\t-\r ]$`)
@@ -179,38 +181,75 @@ func TestJSONKeySpaceNonASCIIClass(t *testing.T) {
 // gate, and a line the key patterns match passes theirs.
 // conformance: quality/json-label-probe-gates
 func TestJSONLabelProbeGatesAreSupersets(t *testing.T) {
+	// Single-threaded: the test job runs it in full, the race job has nothing to check.
+	skipSimulationUnderRace(t)
+	// The probe texts and patterns of each setup, built once (fakeRegexp
+	// compiles each pattern once).
+	ctx := context.Background()
+	type built struct {
+		alias, aliasGates   string
+		loose, nestedGates  []string
+		partial, spelling   [2]string // gated, ungated
+		keys, gates, twices []string
+		twiceGates          []string
+	}
+	all := make([]built, len(jsonProbeSetups))
+	for i, setup := range jsonProbeSetups {
+		b := &all[i]
+		b.alias, b.aliasGates = orderedJSONKeyAliasPattern(setup.fields), orderedJSONKeyAliasGates(setup.fields)
+		_, loose, firsts := orderedJSONNestedSplitsFirsts(setup.fields)
+		for j, pattern := range loose {
+			b.loose = append(b.loose, pattern)
+			b.nestedGates = append(b.nestedGates, orderedJSONNestedGate(firsts[j]))
+		}
+		for k, gated := range []bool{true, false} {
+			b.partial[k] = orderedJSONPartialParseQuery(ctx, setup.base, setup.fields, setup.stored, gated)
+			if b.alias != "" {
+				b.spelling[k] = orderedJSONKeySpellingQuery(ctx, setup.base, setup.fields, setup.stored, gated)
+			}
+		}
+		for _, field := range setup.fields {
+			name := regexp.QuoteMeta(field)
+			for _, rest := range []string{"", `\s*\[`} {
+				b.keys = append(b.keys, jsonKeyPattern(name)+rest)
+				b.gates = append(b.gates, jsonKeyGate(name, rest))
+			}
+			b.twices = append(b.twices, jsonKeyPattern(name)+`(?s:.*)`+jsonKeyPattern(name))
+			b.twiceGates = append(b.twiceGates, logsqlTwiceFilter([]string{field}))
+		}
+	}
+	verdict := func(fake *pushdownFakeVL, query string, row pushdownRow) bool {
+		return query != "" && fake.guardMatches(t, query, row)
+	}
 	rng := rand.New(rand.NewSource(1))
 	for i := 0; i < 4000; i++ {
 		msg := randomJSONProbeLine(rng)
 		row := pushdownRow{stream: map[string]string{"app": "api"}, msg: msg}
 		values := map[string]string{"_msg": msg}
-		for _, setup := range jsonProbeSetups {
-			if alias := orderedJSONKeyAliasPattern(setup.fields); alias != "" && regexp.MustCompile(alias).MatchString(msg) {
-				if !fakeLogsQLMatch(t, orderedJSONKeyAliasGates(setup.fields), values) {
-					t.Fatalf("%s: alias pattern matches %q, its gates do not", setup.name, msg)
-				}
+		for s, setup := range jsonProbeSetups {
+			b := all[s]
+			if b.alias != "" && fakeRegexp(b.alias).MatchString(msg) && !fakeLogsQLMatch(t, b.aliasGates, values) {
+				t.Fatalf("%s: alias pattern matches %q, its gates do not", setup.name, msg)
 			}
-			_, loose, firsts := orderedJSONNestedSplitsFirsts(setup.fields)
-			for j, pattern := range loose {
-				if regexp.MustCompile(pattern).MatchString(msg) && !fakeLogsQLMatch(t, orderedJSONNestedGate(firsts[j]), values) {
+			for j, pattern := range b.loose {
+				if fakeRegexp(pattern).MatchString(msg) && !fakeLogsQLMatch(t, b.nestedGates[j], values) {
 					t.Fatalf("%s: nested pattern %s matches %q, its gate does not", setup.name, pattern, msg)
 				}
 			}
-			for _, field := range setup.fields {
-				name := regexp.QuoteMeta(field)
-				for _, rest := range []string{"", `\s*\[`} {
-					if regexp.MustCompile(jsonKeyPattern(name)+rest).MatchString(msg) && !regexp.MustCompile(jsonKeyGate(name, rest)).MatchString(msg) {
-						t.Fatalf("%s: key pattern of %s%s matches %q, its gate does not", setup.name, field, rest, msg)
-					}
+			for j, key := range b.keys {
+				if fakeRegexp(key).MatchString(msg) && !fakeRegexp(b.gates[j]).MatchString(msg) {
+					t.Fatalf("%s: key pattern %s matches %q, its gate does not", setup.name, key, msg)
 				}
-				twice := jsonKeyPattern(name) + `(?s:.*)` + jsonKeyPattern(name)
-				if regexp.MustCompile(twice).MatchString(msg) && !fakeLogsQLMatch(t, logsqlTwiceFilter([]string{field}), values) {
-					t.Fatalf("%s: repeated key of %s matches %q, the twice filter does not", setup.name, field, msg)
+			}
+			for j, twice := range b.twices {
+				if fakeRegexp(twice).MatchString(msg) && !fakeLogsQLMatch(t, b.twiceGates[j], values) {
+					t.Fatalf("%s: repeated key %s matches %q, the twice filter does not", setup.name, twice, msg)
 				}
 			}
 			for _, version := range jsonProbeUnpacks {
-				gp, gs := jsonProbeVerdicts(t, setup, row, true, version.unpack)
-				up, us := jsonProbeVerdicts(t, setup, row, false, version.unpack)
+				fake := &pushdownFakeVL{jsonUnpack: version.unpack}
+				gp, gs := verdict(fake, b.partial[0], row), verdict(fake, b.spelling[0], row)
+				up, us := verdict(fake, b.partial[1], row), verdict(fake, b.spelling[1], row)
 				if gp != up || gs != us {
 					t.Fatalf("%s %s: %q: gated probes (%v, %v) differ from ungated (%v, %v)", version.name, setup.name, msg, gp, gs, up, us)
 				}
