@@ -39,6 +39,7 @@ smoke	internal/proxy	FuzzLokiClientError	12s	-	Loki client error mapping
 smoke	internal/proxy	FuzzErrorBodyShapes	12s	-	Loki error body shapes
 smoke	internal/proxy	FuzzProxyLifecycleNoGoroutineLeak	12s	-	proxy lifecycle leaves no goroutines
 smoke	internal/proxy	FuzzTopKPerStep	20s	60s	topk and bottomk per step
+smoke	internal/proxy	FuzzQueryRangeWindowLeadWindow	20s	60s	windowed log query first-window read plan
 smoke	internal/proxy	FuzzQueryStepsRoundTrip	12s	-	settled steps parse, merge and write-back
 smoke	internal/proxy	FuzzSlidingWithoutCut	12s	-	sliding sum without cut vs per-stream fold
 smoke	internal/proxy	FuzzQuantileSlider	12s	-	sliding quantile vs window sort

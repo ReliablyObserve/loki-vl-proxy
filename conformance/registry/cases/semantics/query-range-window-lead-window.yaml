@@ -1,0 +1,71 @@
+id: semantics/query-range-window-lead-window
+title: A windowed log query reads its first window alone and stops there when it holds the limit (fixed)
+proves:
+  - window-bounds-and-step-alignment
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki splits a log query by interval, takes the splits newest first for a
+  backward query (pkg/querier/queryrange/split_by_interval.go:216) and stops
+  once the limit is met (:136-146); every split keeps the request's limit
+  (splitters.go:44). The answer is the newest (forward: oldest) `limit`
+  lines of the range.
+
+  The proxy's windowed path started a log query with the /hits prefilter
+  over every window (one /hits call per window once a request has
+  -query-range-prefilter-min-windows of them) and then read a first batch of
+  as many windows as the adaptive parallelism allowed (six to eight on a busy
+  proxy), each with the whole limit, before looking at any answer. A dense
+  stream's limit is held by its newest window alone, so the other reads and
+  every /hits call were wasted, and the concurrent reads made the newest one
+  three to five times slower. In the daily A/B run (2026-11-03 and
+  2026-11-04, Loki-defaults profile) the first request of `{service_name="api-gateway"} | drop detected_level`
+  at 6h made 6 window reads and took 0.13-0.20 s against Loki's
+  0.01-0.02 s; `{service_name="nginx-ingress"} |> "<_> \"GET <_>"` at 24h
+  made 25 /hits calls and 7 window reads (0.12-0.28 s against 0.02-0.03 s).
+  Level filters, drops and pattern filters were not the cause: their
+  translations are one VictoriaLogs query each.
+
+  Fixed: the first window (from the window cache when it is kept) is read
+  alone, before the prefilter. When it holds the limit the query is answered
+  with that one read. Otherwise the remaining windows are prefiltered (the
+  minimum-window count still counts the first one) and read as before; the
+  batch after the first window holds about as many windows as the lines per
+  window the first one showed need, and every kept window reads with the
+  whole limit (semantics/query-range-window-full-limit-reads). VictoriaLogs
+  answers each window read with its own last-N
+  search (`sort by (_time desc)` with a limit).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | drop detected_level'
+    start: 'now-6h'
+    end: 'now'
+    limit: '1000'
+compare:
+  mode: exact
+  fields: [data.result]
+  expect: |
+    The newest 1000 lines of the range, as Loki answers them, read from
+    VictoriaLogs with one window query and no /hits call when the newest
+    window holds them.
+gap:
+  status: fixed
+  fixed_by: '#1074'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: every answer is the one main and Loki give (the newest or oldest limit lines), proven by the edge-case table, the random differential and the fuzz target against Loki''s newest/oldest N; the first-load time is measured by the A/B shapes covering this case, and lvl-explore-logs-drop-dl still captures the page against Loki at 1h, 6h and 24h'
+  effort: S
+  area: 'internal/proxy/query_range_windowing.go proxyLogQueryWindowed and prefilterQueryRangeWindowsByHits'
+  loki: 'pkg/querier/queryrange/split_by_interval.go Process and Do; splitters.go'
+  proxy: 'first window read alone before the /hits prefilter and the batches; the next batch sized by its line density'
+  planned_test: 'TestQueryRangeWindow_LeadWindowFillsBeforeFanOut, TestQueryRangeWindow_LeadWindowCachedAndNearNow, TestQueryRangeWindow_LeadWindowMatchesLokiDifferential, FuzzQueryRangeWindowLeadWindow (internal/proxy); TestCompat_QueryRangeLeadWindowLikeLoki (test/e2e-compat, core)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

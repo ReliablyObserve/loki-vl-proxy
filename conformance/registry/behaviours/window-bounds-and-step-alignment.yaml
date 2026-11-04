@@ -33,3 +33,4 @@ cases:
   - semantics/unwrap-range-last-point
   - semantics/query-range-window-budget
   - semantics/query-range-window-full-limit-reads
+  - semantics/query-range-window-lead-window

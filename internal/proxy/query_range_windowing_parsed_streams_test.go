@@ -256,7 +256,8 @@ func TestQueryRangeWindow_ParsedLabelStreamsMatchSingleWindow(t *testing.T) {
 
 							got := runParsedStreamsQuery(t, windowed, tc.query, start, end, direction, limit, categorized)
 							want := runParsedStreamsQuery(t, single, tc.query, start, end, direction, limit, categorized)
-							if windowCalls.Load() < 2 {
+							// A limit the first window holds is answered by that one read.
+							if minCalls := map[bool]int64{true: 1, false: 2}[limit < tc.wantEntries]; windowCalls.Load() < minCalls {
 								t.Fatalf("expected the windowed path to split the range, backend calls=%d", windowCalls.Load())
 							}
 							if singleCalls.Load() != 1 {

@@ -187,11 +187,14 @@ func TestCircuitBreaker_RealTransportFailureOnLiveCancelableContextTrips(t *test
 
 // A windowed query_range whose one window loses its connection cancels its
 // sibling windows. Only that genuine failure may reach the breaker; the
-// cancelled siblings must not open it and fail every other client.
+// cancelled siblings must not open it and fail every other client. The
+// newest window is read alone first and holds one line, so the other five
+// are read as one batch.
 func TestQueryRangeWindow_FailedSiblingWindowDoesNotOpenBreaker(t *testing.T) {
 	const windows = 6
 	start := time.Now().Add(-8 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(windows*time.Hour) - 1
+	newest := start + int64((windows-1)*time.Hour)
 
 	var queryCalls atomic.Int64
 	arrived := make(chan struct{}, windows)
@@ -208,6 +211,10 @@ func TestQueryRangeWindow_FailedSiblingWindowDoesNotOpenBreaker(t *testing.T) {
 			http.Error(w, "unexpected extra window fetch", http.StatusInternalServerError)
 			return
 		}
+		if reqStart == newest {
+			_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"one\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n", time.Unix(0, newest).UTC().Format(time.RFC3339Nano))
+			return
+		}
 		if reqStart != start {
 			arrived <- struct{}{}
 			select { // sibling window: held until cancelled
@@ -216,8 +223,8 @@ func TestQueryRangeWindow_FailedSiblingWindowDoesNotOpenBreaker(t *testing.T) {
 			}
 			return
 		}
-		// First window: wait for every sibling, then drop the connection.
-		for i := 1; i < windows; i++ {
+		// Oldest window: wait for every sibling of its batch, then drop the connection.
+		for i := 2; i < windows; i++ {
 			select {
 			case <-arrived:
 			case <-time.After(10 * time.Second):

@@ -500,6 +500,10 @@
     "semantics/query-range-window-full-limit-reads | perf",
     "semantics/query-range-window-full-limit-reads | perf:locked",
     "semantics/query-range-window-full-limit-reads | query",
+    "semantics/query-range-window-lead-window | compare:exact",
+    "semantics/query-range-window-lead-window | gap:fixed",
+    "semantics/query-range-window-lead-window | perf",
+    "semantics/query-range-window-lead-window | query",
     "semantics/repeated-label-filter-replaced-across-label-format | compare:observed",
     "semantics/repeated-label-filter-replaced-across-label-format | gap:open",
     "semantics/repeated-label-filter-replaced-across-label-format | query",
@@ -1029,6 +1033,7 @@
     "internal/proxy/query_range_steps_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_test.go | semantics/unwrap-over-time-range-windows",
     "internal/proxy/query_range_steps_test.go | tenant-numeric-routing",
+    "internal/proxy/query_range_window_lead_test.go | semantics/query-range-window-lead-window",
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/range_lower_bound_test.go | semantics/lower-bound-exclusive",
     "internal/proxy/range_lower_bound_test.go | window-bounds-and-step-alignment",
@@ -1484,6 +1489,9 @@
     "test/e2e-compat/plain_name_after_parser_test.go | loki_api_v1_query",
     "test/e2e-compat/plain_name_after_parser_test.go | loki_api_v1_query_range",
     "test/e2e-compat/plain_name_after_parser_test.go | semantics/plain-name-after-parser-reads-stream-label",
+    "test/e2e-compat/query_range_lead_window_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/query_range_lead_window_test.go | semantics/query-range-window-lead-window",
+    "test/e2e-compat/query_range_lead_window_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/query_range_settled_steps_test.go | loki_api_v1_query_range",
     "test/e2e-compat/query_range_settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-compat/query_range_settled_steps_test.go | semantics/unwrap-over-time-range-windows",
@@ -1635,12 +1643,12 @@
       "any": 28,
       "api": 37,
       "drilldown": 40,
-      "explore": 128,
+      "explore": 129,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 300,
+      "go": 302,
       "playwright": 1
     },
     "page_kinds": {
@@ -1657,10 +1665,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 89,
+    "shape_covers_distinct": 90,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 230
+    "wired_items": 231
   },
   "gates": [
     "A/B shape selection",

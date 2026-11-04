@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- Read a windowed log query's first window alone, before the `/hits`
+  prefilter and before any batch of windows, and answer from it when it holds
+  the limit, as Loki stops reading its interval splits once the limit is met
+  (`pkg/querier/queryrange/split_by_interval.go`). The proxy prefiltered every
+  window with one `/hits` call each (from 8 windows) and then read six to
+  eight windows at once with the whole limit, so a dense stream's first load
+  over 6h made 6 window reads and over 24h 25 `/hits` calls and up to 7 reads,
+  where one read holds the answer; the concurrent reads also made the newest
+  one several times slower. In the daily A/B run this put log queries with a
+  `detected_level` filter, `| drop detected_level`, `| drop level` and pattern
+  filters (`|>`, `!>`) at 2.4-14× Loki on the first request. Otherwise the
+  remaining windows are prefiltered and read as before; the next batch holds
+  about as many windows as the first window's lines per hour need. Answers
+  are unchanged.
+
 - Read every window of a windowed log `query_range` that the window cache
   keeps with the request's whole limit, as Loki reads each interval split,
   instead of the lines still missing after the newer windows. The missing
