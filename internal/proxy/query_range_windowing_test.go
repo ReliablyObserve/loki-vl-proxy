@@ -884,8 +884,10 @@ func TestQueryRangeWindow_PrefilterSkipsEmptyWindows(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := hitsCalls.Load(); got != 3 {
-		t.Fatalf("expected 3 prefilter hit checks, got %d", got)
+	// The newest window is read first; its one line does not fill the limit,
+	// so the prefilter checks the two older windows and skips the empty one.
+	if got := hitsCalls.Load(); got != 2 {
+		t.Fatalf("expected 2 prefilter hit checks, got %d", got)
 	}
 	if got := queryCalls.Load(); got != 2 {
 		t.Fatalf("expected 2 window query calls after prefilter, got %d", got)
@@ -895,7 +897,7 @@ func TestQueryRangeWindow_PrefilterSkipsEmptyWindows(t *testing.T) {
 	for _, snippet := range []string{
 		"loki_vl_proxy_window_prefilter_attempt_total 1",
 		"loki_vl_proxy_window_prefilter_error_total 0",
-		"loki_vl_proxy_window_prefilter_kept_total 2",
+		"loki_vl_proxy_window_prefilter_kept_total 1",
 		"loki_vl_proxy_window_prefilter_skipped_total 1",
 	} {
 		if !strings.Contains(metricsBody, snippet) {
@@ -1287,8 +1289,9 @@ func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
 	if got := queryCalls.Load(); got > 30 {
 		t.Fatalf("expected <=30 window query fanout calls after prefilter, got %d", got)
 	}
-	if got := hitsCalls.Load(); got < 168 {
-		t.Fatalf("expected prefilter to inspect all 168 windows, got %d", got)
+	// The newest window is read before the prefilter, which inspects the other 167.
+	if got := hitsCalls.Load(); got < 167 {
+		t.Fatalf("expected prefilter to inspect the 167 windows after the first, got %d", got)
 	}
 }
 

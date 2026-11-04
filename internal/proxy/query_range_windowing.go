@@ -196,30 +196,50 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
 	shape := newLogQueryShape(r.FormValue("query"))
 
-	filteredWindows, windowHitEstimate, prefilterErr := p.prefilterQueryRangeWindowsByHits(r.Context(), r, logsqlQuery, windows)
-	if prefilterErr != nil {
-		p.log.Debug(
-			"query_range window prefilter unavailable; using full window set",
-			"error", prefilterErr,
-			"window_count", originalWindowCount,
-		)
-	} else {
-		windows = filteredWindows
-	}
-
-	p.metrics.RecordQueryRangeWindowCount(len(windows))
-	if len(windows) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(marshalWindowedStreamsResult(nil, categorizedLabels)) // nosemgrep
-		return true
-	}
-
+	// Loki reads a limited log query's splits in the query's direction and
+	// stops once the limit is met (pkg/querier/queryrange/split_by_interval.go
+	// :136-146; backward splits are reversed at :216). A dense stream's limit
+	// is usually held by the first window alone, so that window is read on its
+	// own (from the window cache when it is kept) before the /hits prefilter
+	// runs and before any batch fans out. When it fills the limit, VictoriaLogs
+	// reads one window and answers no /hits call; otherwise the remaining
+	// windows are prefiltered and read in batches as before.
+	var windowHitEstimate map[string]int64
+	prefiltered := false
 	remaining := limitValue
 	// Keep preallocation constant-sized to avoid any user-influenced allocation growth.
 	collected := make([]queryRangeWindowEntry, 0, queryRangeCollectedInitialCap)
 	for i := 0; i < len(windows) && remaining > 0; {
-		parallel := p.queryRangeWindowBatchParallelLimit(windows[i], windowHitEstimate)
-		batchSize := min(parallel, len(windows)-i)
+		if i > 0 && !prefiltered {
+			prefiltered = true
+			rest, estimates, prefilterErr := p.prefilterQueryRangeWindowsByHits(r.Context(), r, logsqlQuery, windows[i:], originalWindowCount)
+			if prefilterErr != nil {
+				p.log.Debug(
+					"query_range window prefilter unavailable; using full window set",
+					"error", prefilterErr,
+					"window_count", originalWindowCount,
+				)
+			} else {
+				windows, windowHitEstimate = append(windows[:i:i], rest...), estimates
+			}
+			p.metrics.RecordQueryRangeWindowCount(len(windows))
+			if i >= len(windows) {
+				break
+			}
+		}
+		batchSize := 1 // the first window is read alone
+		if i > 0 {
+			batchSize = min(p.queryRangeWindowBatchParallelLimit(windows[i], windowHitEstimate), len(windows)-i)
+			if i == 1 && len(collected) > 0 {
+				// The lines the first window held size the next batch: a
+				// stream that filled part of the limit there needs about this
+				// many more windows, and siblings past them only compete for
+				// VictoriaLogs' CPUs. Later batches are not sized this way.
+				leadSpan := windows[0].endNs - windows[0].startNs + 1
+				perWindow := float64(len(collected)) * float64(p.queryRangeSplitInterval.Nanoseconds()) / float64(leadSpan)
+				batchSize = min(batchSize, max(1, int(math.Ceil(float64(remaining)/perWindow))))
+			}
+		}
 		if batchSize <= 0 {
 			batchSize = 1
 		}
@@ -315,6 +335,9 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 			remaining = limitValue - len(collected)
 		}
 		i += batchSize
+	}
+	if !prefiltered {
+		p.metrics.RecordQueryRangeWindowCount(1)
 	}
 
 	mergeStart := time.Now()
@@ -593,8 +616,9 @@ func (p *Proxy) prefilterQueryRangeWindowsByHits(
 	r *http.Request,
 	logsqlQuery string,
 	windows []queryRangeWindow,
+	splitCount int, // the request's windows, the first one included: -query-range-prefilter-min-windows counts them
 ) ([]queryRangeWindow, map[string]int64, error) {
-	if !p.queryRangePrefilterIndexStats || len(windows) < p.queryRangePrefilterMinWindows {
+	if !p.queryRangePrefilterIndexStats || splitCount < p.queryRangePrefilterMinWindows || len(windows) == 0 {
 		return windows, nil, nil
 	}
 	p.metrics.RecordQueryRangeWindowPrefilterAttempt()

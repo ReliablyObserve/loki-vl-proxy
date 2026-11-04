@@ -1704,6 +1704,7 @@
      "name": "A1 nginx include GET, log query",
      "query": "{service_name=\"nginx-ingress\"} |> \"<_> \\\"GET <_>\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ],
@@ -1714,6 +1715,7 @@
      "name": "A2 nginx exclude GET, log query",
      "query": "{service_name=\"nginx-ingress\"} !> \"<_> \\\"GET <_>\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ],
@@ -1748,6 +1750,7 @@
      "name": "A6 nginx include ends on a literal, log query",
      "query": "{service_name=\"nginx-ingress\"} |> \"<_> HTTP/1.1\\\"\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ],
@@ -1758,6 +1761,7 @@
      "name": "A7 nginx exclude ends on a literal, log query",
      "query": "{service_name=\"nginx-ingress\"} !> \"<_> HTTP/1.1\\\"\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "semantics/pattern-line-filter-anchoring",
       "loki_api_v1_query_range"
      ],
@@ -2178,6 +2182,7 @@
      "name": "LF1 logs, detected_level equals",
      "query": "{service_name=\"api-gateway\"} | detected_level=\"error\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "loki_api_v1_query_range"
@@ -2188,6 +2193,7 @@
      "name": "LF2 logs, detected_level regexp",
      "query": "{service_name=\"api-gateway\"} | detected_level=~\"error|warn\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "loki_api_v1_query_range"
@@ -2198,6 +2204,7 @@
      "name": "LF3 logs, detected_level not equal, all services",
      "query": "{env=\"production\"} | detected_level!=\"info\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "loki_api_v1_query_range"
@@ -2208,6 +2215,7 @@
      "name": "LF4 logs, detected_level regexp with unknown",
      "query": "{env=\"production\"} | detected_level=~\"unknown|error\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "loki_api_v1_query_range"
@@ -2218,6 +2226,7 @@
      "name": "LF5 logs, plain-text service, detected_level regexp",
      "query": "{service_name=\"db-postgres\"} | detected_level=~\"info|error\"",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level",
       "loki_api_v1_query_range"
@@ -2481,6 +2490,7 @@
      "name": "LF29 logs, drop detected_level",
      "query": "{service_name=\"api-gateway\"} | drop detected_level",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity/detected-level-stage-side-effects",
       "severity-exposure-surfaces",
       "operator-drop",
@@ -2492,6 +2502,7 @@
      "name": "LF30 logs, drop level",
      "query": "{service_name=\"api-gateway\"} | drop level",
      "covers": [
+      "semantics/query-range-window-lead-window",
       "severity/detected-level-stage-side-effects",
       "severity-exposure-surfaces",
       "operator-drop",
