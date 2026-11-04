@@ -53,4 +53,3 @@ gap:
   planned_test: 'TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown); bench/visual/tests/test_compare.py test_index_stats_bodies_name_both_sides_numbers'
   clusters:
     - 2a68e26c
-    - aa98afb1

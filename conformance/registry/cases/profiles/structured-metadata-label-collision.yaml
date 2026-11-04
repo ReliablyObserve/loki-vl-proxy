@@ -45,25 +45,12 @@ gap:
   planned_test: 'TestCompat_ExtractedSuffixOnParsedCollision (test/e2e-compat, group core), subtest structured metadata against the derived service_name'
   note: 'Fixed by the same row rename as semantics/extracted-suffix-collision. Not changed: a label filter or keep on service_name_extracted over structured metadata, and metadata whose value equals the stream label.'
   clusters:
-    - '0e676869'
-    - 1802c76f
-    - 1de4e9f2
-    - 25b77e2f
     - 265b2418
-    - 269ef189
-    - 343338a6
-    - 3df8d769
-    - 56dc3ddd
-    - 57ff8760
     - 5aa8ef5c
     - 6650ff42
-    - 6f3e6db5
-    - 6f88a869
-    - 829672cc
     - b2133367
     - b3a784df
     - cb109373
-    - d32173c3
     - e6dc2163
 perf:
   max_ratio: 2.0

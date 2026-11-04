@@ -66,18 +66,7 @@ gap:
   proxy: 'one grammar for the parser (Loki-shaped 400) and the translator (every binary node parenthesized into one | filter pipe)'
   planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics) and TestComplex_Logfmt_FilterAfterParse (test/e2e-compat, group otel-edge); neither has run yet: prepared without a stack; TestLabelFilterExpressionMatchesLokiGolden (internal/logql, 1036 expressions recorded from Loki v3.7.9), TestParseLogQuery_LabelFilterExpressionStages, TestValidateLogQL_LabelFilterExpressionContexts, TestValidateLogQL_LabelFilterExpressionErrorsInMetrics (internal/logql); TestParseLabelFilterExpr_Precedence, TestParseLabelFilterExpr_SyntaxErrors, TestTranslateLabelFilterExpression_LogsQL, TestTranslateLabelFilterExpression_PipelineContexts, TestLabelFilterExpression_ReferenceParserAgrees, TestLabelFilterExpression_EmittedLogsQLEvaluatesLikeLokiTree, TestLabelFilterExpression_CompoundStageHasNoSingleIdentity, TestLabelFilterExpression_JSONAliasRewrittenPerFilter (internal/translator); TestQueryRange_LabelFilterExpressionsReachVictoriaLogsAsOneFilter, TestQueryRange_LabelFilterExpressionMetricsTakeTheRouteOfASingleFilter, TestQueryRange_MalformedLabelFilterExpressionsAreRejectedLikeLoki (internal/proxy); FuzzLabelFilterExpression (internal/translator, CI fuzz smoke)'
   note: 'Prepared without a stack: the e2e and the perf block (PR over Loki, cold, warm, refresh) have not run. The status stays open until the e2e has passed on the stack.'
-  clusters:
-    - 163be53e
-    - 4e6094a0
-    - 7b225b99
-    - 7c27b83b
-    - 834735ce
-    - 967f3abc
-    - ac2c4509
-    - adb16001
-    - e67ce23c
-    - ed5ff2d9
-    - f59a58b3
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

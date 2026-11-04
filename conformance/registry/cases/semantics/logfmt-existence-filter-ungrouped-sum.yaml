@@ -39,5 +39,4 @@ gap:
   loki: 'pkg/logql/log/parser.go:398-409 logfmt label extraction; label filter on the parsed label'
   proxy: 'the logfmt stats read retains the parser and returns one empty-label series with Loki counts'
   planned_test: 'TestCompat_LogfmtExistenceFilterUngroupedSum (test/e2e-compat, core CI group); TestLogfmtPresenceResponseVersionScope (internal/proxy)'
-  clusters:
-    - 0a9f54e0
+  clusters: []

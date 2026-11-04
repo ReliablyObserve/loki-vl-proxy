@@ -90,8 +90,7 @@ gap:
   proxy: 'the operands as native stats queries, the join and the fold over their aggregated series'
   planned_test: 'TestCompat_AggregationOverBinary, TestCompat_AggregationOverBinaryMixedParsers and TestCompat_AggregationOverBinaryUnderLabelTransforms (test/e2e-compat, group core); TestAggregationOverBinaryEdgeCases, TestAggregationOverBinaryRange, TestAggregationOverBinaryDifferential, TestAggregationOverBinaryKeepsEachOperandsParser, TestAggregationOverBinaryMixedOffset, TestAggregationOverBinaryUniformOffset, TestAggregationOverBinaryUnderLabelTransforms, TestBinaryWithLabelReplaceOperandStaysBinary, TestAggregationOverBinaryMixedParsersAfterTheParserProbe, TestParserProbeLeavesBinariesToTheirOperands, TestAggregationOverBinaryMultiTenant, TestWithoutFoldLabelOrderAndKeys and TestLabelTransformsKeepVectorAndWarnings (internal/proxy); FuzzFoldBinaryAggregation and FuzzParserProbeLeavesBinaries (internal/proxy, CI fuzz smoke)'
   note: 'The e2e ran once in CI (e2e-compat core, run 38249801561): it failed on its label_join cases, which Loki answers with a parse error (now label_replace over label_replace), and on the mixed-parser instant shape (the parser probe fix above). Its next run is pending.'
-  clusters:
-    - f2066991
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

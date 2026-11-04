@@ -36,13 +36,7 @@ gap:
   loki: 'pkg/logql/syntax/ast.go:473 newOrLineFilterExpr'
   proxy: 'parsed like syntax.y orFilter; translated to one regexp per chain'
   planned_test: 'TestCompat_LineFilterOrAlternatives (test/e2e-compat, group core)'
-  clusters:
-    - 147e07fb
-    - 435e2f3c
-    - 9d69befe
-    - b349505b
-    - c061fca0
-    - dfe987e7
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

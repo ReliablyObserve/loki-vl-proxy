@@ -69,11 +69,7 @@ gap:
     bare drop/keep of the plain name in a log query and the `delete level` of `label_format x=level` that
     costs the entry its level_extracted (semantics/drop-keep-plain-name-after-parser), a same-stage
     `label_format x="{{.level}}", level="z"` and template functions (`{{ .level | ToUpper }}`).
-  clusters:
-    - 08fb5da3
-    - 19e8f424
-    - 35e2a101
-    - d650bcfb
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

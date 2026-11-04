@@ -59,9 +59,7 @@ gap:
   loki: 'pkg/logql/syntax/lex.go:26,29 (NPA, PIPE_PATTERN); pkg/logql/log/filter.go:618-621,858-873 (pattern filter); pkg/logql/log/pattern/pattern.go:36-39,124-128 (ParseLineFilter, Matcher.Test)'
   proxy: 'the empty pattern is `^$` (the empty line), not match-all'
   planned_test: 'TestCompat_PatternLineFilter (test/e2e-compat, group semantics); TestTranslateEmptyPatternLineFilter, TestEmptyPatternRegexpMatchesOnlyEmptyLine (internal/translator); TestEmptyPatternLineFilterReachesVictoriaLogs (internal/proxy)'
-  clusters:
-    - 90e7eb36
-    - f131187f
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

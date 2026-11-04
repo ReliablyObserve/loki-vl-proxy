@@ -40,14 +40,4 @@ gap:
   loki: 'pkg/logql/first_last_over_time.go'
   proxy: '422 VictoriaLogs parse error'
   planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics); TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastRangeLevelBy (written, not yet run)'
-  clusters:
-    - 13f557ca
-    - '20680725'
-    - 3c0a55f2
-    - 56b4c549
-    - 61ff16ca
-    - 83edd378
-    - 90a46cda
-    - a27681a7
-    - ae0d1b7b
-    - b91f5292
+  clusters: []
