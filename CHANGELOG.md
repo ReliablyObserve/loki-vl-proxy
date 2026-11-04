@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.73.1] - 2026-11-04
+
 ### Fixed
 
 - Answer a windowed log `query_range` (`-query-range-windowing`) that ends
