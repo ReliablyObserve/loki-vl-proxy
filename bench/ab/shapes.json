@@ -676,6 +676,7 @@
      "covers": [
       "profiles/structured-metadata-keys-per-profile",
       "loki-compatible-profile",
+      "semantics/query-range-window-full-limit-reads",
       "loki_api_v1_query_range"
      ]
     },
@@ -836,6 +837,7 @@
      "covers": [
       "profiles/label-filter-on-line-field",
       "loki-compatible-profile",
+      "semantics/query-range-window-full-limit-reads",
       "loki_api_v1_query_range"
      ]
     },

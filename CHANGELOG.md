@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Read every window of a windowed log `query_range` that the window cache
+  keeps with the request's whole limit, as Loki reads each interval split,
+  instead of the lines still missing after the newer windows. The missing
+  count changed with every moved, longer or shorter range and with the batch
+  layout, and since 2.48.1 it is part of the window cache key, so a moved 24h
+  log query read hours it had already read from VictoriaLogs again (Explore
+  logs over 24h, warm: 22 ms before 2.48.1, 170 ms after, in the daily A/B
+  run). Every history window is now read once and reused by any range, move,
+  refresh or batch layout that covers it. The window that completes the limit
+  reads up to the whole limit the first time; windows newer than
+  `-query-range-freshness`, not kept by default, still read only what is
+  missing.
+
+### Fixed
+
+- A log `query_range` over several windows no longer answers older lines in
+  place of newer ones when a later window was read short: a line the proxy
+  cannot decode, or label-filter refill pages (Loki-compatible profile) as
+  small as the lines still missing, left that window with fewer lines than it
+  holds.
+
 ## [2.70.0] - 2026-11-04
 
 ### Performance

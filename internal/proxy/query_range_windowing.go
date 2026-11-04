@@ -229,7 +229,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		for {
 			batch := windows[i : i+batchSize]
 			limitForBatch := remaining
-			results, err = p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, batchSize, shape, categorizedLabels, emitStructuredMetadata)
+			results, err = p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, limitValue, batchSize, shape, categorizedLabels, emitStructuredMetadata)
 			if err == nil {
 				break
 			}
@@ -398,6 +398,7 @@ func (p *Proxy) fetchQueryRangeWindowBatch(
 	queryLimit string,
 	windows []queryRangeWindow,
 	limitForBatch int,
+	fullLimit int,
 	maxParallel int,
 	shape logQueryShape,
 	categorizedLabels bool,
@@ -416,13 +417,25 @@ func (p *Proxy) fetchQueryRangeWindowBatch(
 	for i := range windows {
 		i := i
 		window := windows[i]
+		// A window the cache keeps is read with the request's whole limit,
+		// like each of Loki's interval splits, not with the rows still
+		// missing: its cached rows then depend only on the window and the
+		// limit, so a moved, longer or shorter range and a sequential or
+		// parallel batch layout all reuse it. The collector trims the rows
+		// past the limit. A window no cache keeps (newer than
+		// -query-range-freshness with no recent TTL) reads only what is
+		// missing, on every request.
+		windowLimit := limitForBatch
+		if windowLimit < fullLimit && p.queryRangeWindowTTL(window.endNs) > 0 {
+			windowLimit = fullLimit
+		}
 		g.Go(func() error {
 			entry, err := p.fetchQueryRangeWindow(
 				ctx,
 				r,
 				logsqlQuery,
 				queryLimit,
-				limitForBatch,
+				windowLimit,
 				window,
 				shape,
 				categorizedLabels,
@@ -461,9 +474,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 	}
 	defer cancel()
 
-	// A later window may be read with only the request's remaining row budget.
-	// Key by that actual backend limit: a shorter fragment cannot answer a
-	// shifted request which needs more rows from the same aligned window.
+	// Key by the backend read limit. A kept window is read with the
+	// request's whole limit (fetchQueryRangeWindowBatch); a fragment read
+	// with fewer rows, as an earlier version read later windows, cannot
+	// answer a request which needs more rows from the same aligned window.
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, windowLimit, window, shape, categorizedLabels, emitStructuredMetadata)
 	if cached, _, _, ok := p.cache.GetSharedWithTTL(cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {

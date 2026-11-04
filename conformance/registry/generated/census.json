@@ -491,6 +491,11 @@
     "semantics/query-range-window-budget | compare:exact",
     "semantics/query-range-window-budget | gap:fixed",
     "semantics/query-range-window-budget | query",
+    "semantics/query-range-window-full-limit-reads | compare:exact",
+    "semantics/query-range-window-full-limit-reads | gap:fixed",
+    "semantics/query-range-window-full-limit-reads | perf",
+    "semantics/query-range-window-full-limit-reads | perf:locked",
+    "semantics/query-range-window-full-limit-reads | query",
     "semantics/repeated-label-filter-replaced-across-label-format | compare:observed",
     "semantics/repeated-label-filter-replaced-across-label-format | gap:open",
     "semantics/repeated-label-filter-replaced-across-label-format | query",
@@ -1477,6 +1482,9 @@
     "test/e2e-compat/query_range_window_budget_test.go | loki_api_v1_query_range",
     "test/e2e-compat/query_range_window_budget_test.go | semantics/query-range-window-budget",
     "test/e2e-compat/query_range_window_budget_test.go | window-bounds-and-step-alignment",
+    "test/e2e-compat/query_range_window_moved_reuse_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
+    "test/e2e-compat/query_range_window_moved_reuse_test.go | window-bounds-and-step-alignment",
     "test/e2e-compat/query_semantics_matrix_test.go | loki_api_v1_query",
     "test/e2e-compat/query_semantics_matrix_test.go | loki_api_v1_query_range",
     "test/e2e-compat/query_semantics_matrix_test.go | parser-json",
@@ -1604,6 +1612,7 @@
     "test/e2e-fleet/peer_cache_proof_test.go | peer-cache-stats-extent",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/index-volume-settled-segments",
     "test/e2e-fleet/peer_cache_proof_test.go | quality/query-range-settled-steps",
+    "test/e2e-fleet/query_range_window_moved_reuse_test.go | semantics/query-range-window-full-limit-reads",
     "test/e2e-fleet/settled_steps_test.go | quality/query-range-settled-steps",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache",
     "test/e2e-fleet/stats_extent_large_answer_test.go | quality/query-range-extent-cache-large-answer",
@@ -1616,12 +1625,12 @@
       "any": 28,
       "api": 37,
       "drilldown": 40,
-      "explore": 126,
+      "explore": 127,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 296,
+      "go": 298,
       "playwright": 1
     },
     "page_kinds": {
@@ -1638,10 +1647,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 87,
+    "shape_covers_distinct": 88,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 228
+    "wired_items": 229
   },
   "gates": [
     "A/B shape selection",
