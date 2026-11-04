@@ -36,5 +36,4 @@ gap:
   proxy: 'keeps mapped and pre-normalized field names; versions old keep-response cache entries'
   planned_test: 'TestCompat_KeepStructuredMetadataKey (test/e2e-compat core) and explore-keep-structured-metadata (visual fix proof)'
   note: 'Reproduced on main 6159745f with a dual-ingest fixture; all four ordinary/categorized keep queries differed before and matched Loki after the fix. Visual smoke seeds the dotted stored field separately.'
-  clusters:
-    - 4e8cf844
+  clusters: []

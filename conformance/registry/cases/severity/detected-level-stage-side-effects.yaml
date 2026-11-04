@@ -44,10 +44,7 @@ gap:
   proxy: 'bare keep/drop, presence filters and value filters before any stage corrected; value filters after a parser, drop, keep or label_format and later label_format ordering remain open'
   planned_test: 'TestCompat_DetectedLevelKeepDrop and TestCompat_DetectedLevelPresenceFilters (test/e2e-compat core); extend the live Loki comparison for exact-value filters and label_format ordering when fixed'
   note: 'The remaining value-filter and label_format differences reproduce with the existing dual-ingest fixture; they are not asserted as passing.'
-  clusters:
-    - 89a7162d
-    - ab9cc1fc
-    - f737ddd5
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

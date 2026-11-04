@@ -78,28 +78,4 @@ gap:
   proxy: 'the series of the range evaluator folded per step by the query vector aggregations'
   planned_test: 'TestCompat_NonSumVectorAggregationRange (test/e2e-compat, group core); TestVectorAggregationOverRangeFunctionDifferential, TestVectorAggregationGroupedLabelsSlidingWindow, TestVectorAggregationOverRateCounterFolds, TestFoldByGroupingEdgeCases, TestSeriesAggregationChain, TestParseOriginalRangeMetricSpecNestedAggregations (internal/proxy)'
   note: 'Found on origin/main cf738b80. The differential tests run the real handler against an emulated VictoriaLogs (unknown version, v1.52.0, v1.49.0); the e2e against Loki is written, not yet run.'
-  clusters:
-    - 099e8acf
-    - 0b8db994
-    - 0d361b0c
-    - 0e319b2f
-    - 20bb13d8
-    - 2bbe720f
-    - 2c7140a9
-    - 2ec3f6c0
-    - 543a2f07
-    - 77eeea84
-    - 864af0b3
-    - 86c51db9
-    - 91b7514f
-    - 9259c6c6
-    - bb04eea0
-    - be6066e1
-    - cf968b92
-    - d13dd24b
-    - da2a39ee
-    - da345f70
-    - db50c7bd
-    - ea157df5
-    - efb24a18
-    - feb671c2
+  clusters: []

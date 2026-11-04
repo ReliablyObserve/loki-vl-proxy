@@ -42,8 +42,4 @@ gap:
   loki: 'pkg/logql engine series limit (max_query_series) with partial result for Drilldown'
   proxy: '502 over the 64 MiB budget'
   planned_test: 'TestCompat_MetricBufferedBudget1h + TestE2E_Drilldown7dHighCardinalityBreakdown (test/e2e-compat, groups semantics and drilldown)'
-  clusters:
-    - 1e223d96
-    - 6d9fc70d
-    - 7b521e8a
-    - a644d4bb
+  clusters: []

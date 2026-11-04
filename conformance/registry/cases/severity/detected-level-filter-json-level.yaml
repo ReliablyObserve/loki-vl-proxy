@@ -61,15 +61,7 @@ gap:
   loki: 'pkg/distributor/field_detection.go extractLogLevel (v3.7.9) stores detected_level as structured metadata; the filter reads it'
   proxy: 'the filter compares the chain-derived detected_level, the value the response derivation shows'
   planned_test: 'TestCompat_DetectedLevelFilterJSONLevel (test/e2e-compat, group core); TestDetectedLevelFilterAnswersLikeLoki, TestDetectedLevelFilterDifferential, FuzzDetectedLevelFilterLikeLoki, TestDetectedLevelFilterThroughHandlersLikeLoki (internal/proxy)'
-  clusters:
-    - 337f7f5e
-    - 36eeb045
-    - 44bcb9d1
-    - 5e798d62
-    - 80fabfe0
-    - 9016b6b0
-    - ce40a9c8
-    - f248d966
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

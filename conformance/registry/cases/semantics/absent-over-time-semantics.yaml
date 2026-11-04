@@ -83,10 +83,4 @@ gap:
   proxy: 'the inversion of an ungrouped sum(count_over_time) (sum(rate) with unwrap) answered from VictoriaLogs stats, on Loki steps'
   planned_test: 'TestCompat_AbsentOverTime and TestCompat_AbsentOverTimeUnderVectorAggregation (test/e2e-compat, group semantics); TestAbsentOverTimeDifferential, TestAbsentOverTimeUnderVectorAggregation, TestAbsentOverTimeLabelsEdgeTable, TestParseAbsentOverTimeCompatSpecEdgeTable, TestAbsentOverTimeSeriesFoldEdgeTable, TestAbsentOverTimeParserStageEdgeTable, TestAbsentOverTimeDoesNotInvertFailedPresence, TestAbsentOverTimeInstantEdgeTable, TestAbsentOverTimeGroupingIsLokisParseError, TestAbsentOverTimePassesOnWarningInBody, TestAbsentOverTimeMultiTenant, TestAbsentOverTimePresenceQueryKeepsEveryStage (internal/proxy); TestCompat_AbsentOverTimeLabelReplace, TestCompat_AbsentOverTimeGroupingRejected (test/e2e-compat)'
   note: 'Differential over generated rows (starts with milliseconds, offset, instant, sliding and tumbling windows) on VictoriaLogs v1.52, v1.40 (no offset argument) and with no version. An unwrapped value Loki cannot convert now fails absent_over_time with Loki 400 pipeline error, as rate does (it was a 200). A parser error line is answered as for count_over_time (parse-error*). Not run yet: the e2e against Loki.'
-  clusters:
-    - 2336e2a5
-    - 4dfd84f7
-    - 5eaf17b5
-    - aeebcc0d
-    - bd172c7d
-    - c4f74a0e
+  clusters: []

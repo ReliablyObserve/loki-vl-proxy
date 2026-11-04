@@ -38,47 +38,8 @@ gap:
   proxy: 'parsed and rewritten to the plain range form (logql.CanonicalizeLogRanges)'
   planned_test: 'TestCompat_ParenthesizedLogRange (test/e2e-compat, group core)'
   clusters:
-    - 0e5f1b8d
-    - 154f3c5e
-    - 25b1f798
     - 26eda2af
-    - 2731385f
     - 27527d05
-    - 2ec911a8
-    - 2fe5e780
-    - 34fd43a7
-    - 35c82cd3
-    - 361b1ce4
-    - 3f290148
-    - 40bbb685
-    - 4fc1fe7c
-    - 585e4266
-    - 5d3d5b11
-    - 5ea3232b
-    - 6813c1b2
-    - 68fcec74
-    - 74815f5f
-    - 75e5bc38
-    - 87216ff6
-    - '98078324'
-    - 9ef01b8a
-    - a97fb38d
-    - b31a48a7
-    - b5e0e1c5
-    - b871c258
-    - bc81e845
-    - c04abdc5
-    - c37f606b
-    - c77525e2
-    - d0dfe746
-    - d3d0631c
-    - d517894b
-    - d8b61530
-    - e0a75c1d
-    - e3b4a851
-    - f7b13aae
-    - f982bf27
-    - fb38c36f
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
