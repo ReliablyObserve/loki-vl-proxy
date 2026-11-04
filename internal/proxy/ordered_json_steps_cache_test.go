@@ -180,10 +180,10 @@ func TestOrderedJSONSettledStepsFreshTailRevalidated(t *testing.T) {
 	_ = dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
 	p.statsExtentStores.wait()
 	// New rows in the unsettled tail must be visible on a moving request.
-	fixture.rows = append(fixture.rows, jsonVolumeLine{base.Add(3*time.Minute + 45*time.Second), "warn", "bad JSON"}, jsonVolumeLine{base.Add(3*time.Minute + 46*time.Second), "warn", "bad JSON"})
+	fixture.appendRows(jsonVolumeLine{base.Add(3*time.Minute + 45*time.Second), "warn", "bad JSON"}, jsonVolumeLine{base.Add(3*time.Minute + 46*time.Second), "warn", "bad JSON"})
 	target, headers = dlvBaselineRequest(shape, base.Add(2*time.Minute), base.Add(5*time.Minute))
 	got := dlvBaselineReadMatrix(t, doCompatProxyRequest(p, target, headers))
-	want := dlvBaselineWant(fixture.rows, shape, base.Add(2*time.Minute), base.Add(5*time.Minute), "10", "alpha")
+	want := dlvBaselineWant(fixture.snapshot(), shape, base.Add(2*time.Minute), base.Add(5*time.Minute), "10", "alpha")
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("fresh-tail backfill hidden: got%v want%v", got, want)
 	}

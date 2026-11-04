@@ -41,6 +41,21 @@ type dlvBaselineBackend struct {
 	accounts, credentials []string
 }
 
+// snapshot is the rows as they are now. A test appends rows while a request
+// the proxy started earlier, such as a cancelled probe, may still be served.
+func (b *dlvBaselineBackend) snapshot() []jsonVolumeLine {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]jsonVolumeLine(nil), b.rows...)
+}
+
+// appendRows adds rows under the lock snapshot reads with.
+func (b *dlvBaselineBackend) appendRows(rows ...jsonVolumeLine) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rows = append(b.rows, rows...)
+}
+
 func newDLVBaselineBackend(t *testing.T, shape dlvBaselineShape, at time.Time) (*httptest.Server, *dlvBaselineBackend) {
 	t.Helper()
 	b := &dlvBaselineBackend{}
@@ -103,14 +118,15 @@ func newDLVBaselineBackend(t *testing.T, shape dlvBaselineShape, at time.Time) (
 		}
 		query := r.Form.Get("query")
 		unparsed := strings.Contains(query, " | filter -"+jsonObjectStartFilter)
-		limit := len(b.rows)
+		rows := b.snapshot()
+		limit := len(rows)
 		if pos := strings.LastIndex(query, " | limit "); pos >= 0 {
 			if n, err := strconv.Atoi(query[pos+9:]); err == nil {
 				limit = n
 			}
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		for index, row := range b.rows {
+		for index, row := range rows {
 			if row.ts.Before(from) || !row.ts.Before(to) || !dlvBaselineIdentityKeeps(index, r.Header.Get("AccountID"), r.Header.Get("X-Auth-Token")) {
 				continue
 			}
