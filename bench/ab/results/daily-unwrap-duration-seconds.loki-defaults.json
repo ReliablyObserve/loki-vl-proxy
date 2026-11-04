@@ -1,6 +1,6 @@
 {
  "label": "daily-unwrap-duration-seconds-loki-defaults",
- "date": "2026-11-03",
+ "date": "2026-11-04",
  "set": "unwrap-duration-seconds",
  "description": "unwrap duration_seconds(label) (PR for semantics/unwrap-duration-seconds): Loki converts it like duration(label), in seconds; the proxy answered an empty matrix. D1 is duration_seconds(ttl) over the cache-redis logfmt streams, D2 its duration(ttl) twin (the answers must be equal and D2 must not move), D3 and D4 are the instant forms. Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "D1 logfmt ttl duration_seconds rate by service",
    "range": "1h",
    "p50": {
-    "release": 0.016,
-    "main": 0.016,
-    "loki": 0.007
-   },
-   "p95": {
     "release": 0.017,
     "main": 0.017,
     "loki": 0.007
    },
+   "p95": {
+    "release": 0.018,
+    "main": 0.018,
+    "loki": 0.009
+   },
    "cold": {
-    "release": 0.042,
-    "main": 0.034,
-    "loki": 0.024
+    "release": 0.041,
+    "main": 0.033,
+    "loki": 0.019
    },
    "status": {
     "release": "200",
@@ -51,9 +51,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 166.4,
-    "main": 166.4,
-    "loki": 166.4
+    "release": 0,
+    "main": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -143,9 +143,9 @@
     "loki": 0.011
    },
    "cold": {
-    "main": 0.402,
-    "release": 0.397,
-    "loki": 0.232
+    "main": 0.41,
+    "release": 0.402,
+    "loki": 0.239
    },
    "status": {
     "main": "200",
@@ -153,9 +153,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 166.4,
-    "release": 166.4,
-    "loki": 166.4
+    "main": 154.35,
+    "release": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -168,7 +168,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 17556
+       "bytesReceived": 20086
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -195,12 +195,12 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 225469
+       "bytesReceived": 225613
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 4590
+       "bytesReceived": 5274
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -240,14 +240,14 @@
     "loki": 0.006
    },
    "p95": {
-    "release": 0.001,
+    "release": 0.002,
     "main": 0.001,
     "loki": 0.006
    },
    "cold": {
-    "release": 0.001,
-    "main": 0.002,
-    "loki": 0.024
+    "release": 0.002,
+    "main": 0.001,
+    "loki": 0.022
    },
    "status": {
     "release": "200",
@@ -255,9 +255,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 166.4,
-    "main": 166.4,
-    "loki": 166.4
+    "release": 154.35,
+    "main": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -297,7 +297,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 86507
+       "bytesReceived": 86508
       },
       "statsResult": {
        "entriesFound": 6,
@@ -338,18 +338,18 @@
    "range": "24h",
    "p50": {
     "main": 0.001,
-    "release": 0.001,
+    "release": 0.002,
     "loki": 0.007
    },
    "p95": {
     "main": 0.002,
-    "release": 0.001,
+    "release": 0.002,
     "loki": 0.008
    },
    "cold": {
     "main": 0.002,
-    "release": 0.002,
-    "loki": 0.228
+    "release": 0.003,
+    "loki": 0.224
    },
    "status": {
     "main": "200",
@@ -357,9 +357,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 166.4,
-    "release": 166.4,
-    "loki": 166.4
+    "main": 154.35,
+    "release": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -372,7 +372,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 17578
+       "bytesReceived": 20086
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -399,12 +399,12 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 223545
+       "bytesReceived": 223690
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 4590
+       "bytesReceived": 5274
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -433,20 +433,20 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 2.0
   },
   {
    "shape": "D3 logfmt ttl duration_seconds rate, instant",
    "range": "instant",
    "p50": {
-    "release": 0.016,
+    "release": 0.015,
     "main": 0.015,
-    "loki": 0.007
+    "loki": 0.006
    },
    "p95": {
     "release": 0.016,
-    "main": 0.017,
-    "loki": 0.008
+    "main": 0.016,
+    "loki": 0.006
    },
    "cold": {
     "release": 0.016,
@@ -459,9 +459,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 166.4,
-    "main": 166.4,
-    "loki": 166.4
+    "release": 154.35,
+    "main": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -535,7 +535,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.07
+   "speedup": 1.0
   },
   {
    "shape": "D4 logfmt ttl duration rate, instant",
@@ -546,14 +546,14 @@
     "loki": 0.006
    },
    "p95": {
-    "main": 0.017,
-    "release": 0.015,
+    "main": 0.016,
+    "release": 0.016,
     "loki": 0.006
    },
    "cold": {
-    "main": 0.017,
-    "release": 0.017,
-    "loki": 0.006
+    "main": 0.016,
+    "release": 0.021,
+    "loki": 0.007
    },
    "status": {
     "main": "200",
@@ -561,9 +561,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 166.4,
-    "release": 166.4,
-    "loki": 166.4
+    "main": 154.35,
+    "release": 154.35,
+    "loki": 154.35
    },
    "cache": {
     "loki": {
@@ -640,8 +640,8 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.61.0",
- "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
+ "baseline_ref": "v2.69.0",
+ "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
  "proxy_align": {
   "release": "on",
   "main": "on"
