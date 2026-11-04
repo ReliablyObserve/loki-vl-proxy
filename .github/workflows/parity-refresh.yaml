@@ -1,0 +1,293 @@
+name: Parity refresh
+
+# Weekly differential run of the proxy against Loki (bench/parity) from main,
+# on a fresh stack, over the whole corpus. The result is recorded in
+# conformance/registry/generated/parity-discovery.json, the registry cases lose
+# the cluster ids the run no longer shows (parity_gaps.py --prune), the
+# conformance reports are regenerated, and everything is delivered through a bot
+# pull request on the rolling branch bench/parity-refresh (never pushed to
+# main). See bench/parity/README.md.
+#
+# A run that cannot speak for the whole corpus (a side not proven healthy, a
+# corpus source that sent nothing, no cluster) fails the job and opens nothing.
+# New difference signatures cannot be claimed by a script: the pull request is
+# opened anyway with the unclaimed clusters listed at its top, and the job ends
+# red, which is the notification that a registry case is needed.
+#
+# The schedule is a different weekday and hour from perf-daily.yaml (daily at
+# 03:17, up to four hours), so the two stacks never share a runner window.
+#
+# A pull request that edits this pipeline runs a short validation instead: an
+# evenly spaced slice of every corpus source through the same entrypoint
+# (bench/parity/refresh.py), recorded as partial, with pruning refused. It shows
+# the result in the job summary and opens no pull request.
+
+on:
+  schedule:
+    - cron: "43 13 * * 6"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/parity-refresh.yaml"
+      - "bench/parity/*.py"
+      - "bench/parity/docker-compose.parity.yml"
+      - "conformance/scripts/parity_gaps.py"
+      - "bench/visual/stack.py"
+      - "bench/ab/stack.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parity-refresh-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Pull requests that edit the pipeline: a slice of the corpus with a read-only token.
+  validate:
+    name: parity-refresh
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      OUT: /tmp/parity-refresh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The "main" build of the stack comes from origin/main.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: bench/visual/package-lock.json
+
+      - name: Install the capture tooling
+        working-directory: bench/visual
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          # The runner's Chrome, as the e2e-ui jobs use; Playwright's own build otherwise.
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -n "$CHROME_BIN" ]; then
+            echo "PLAYWRIGHT_EXECUTABLE_PATH=$CHROME_BIN" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Differential run (validation size)
+        run: python3 bench/parity/refresh.py --out "$OUT" --mode validate --slice 25
+
+      - name: Publish the result
+        if: always()
+        run: |
+          # Shown here and never failing a pull request's validation: a slice proves the pipeline, not the registry.
+          if [ -f "$OUT/summary.md" ]; then cat "$OUT/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          git status --short
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: parity-refresh
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.log
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.txt
+            ${{ env.OUT }}/run/report.md
+            ${{ env.OUT }}/run/health.json
+            ${{ env.OUT }}/run/clusters.json
+          if-no-files-found: ignore
+
+  refresh:
+    name: parity-refresh
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # About two hours of requests, the stack, the captures and the confirmation pass.
+    timeout-minutes: 240
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      OUT: /tmp/parity-refresh
+      BRANCH: bench/parity-refresh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          # The checkout only reads. The step that pushes gets the bot token through
+          # a credential helper and nothing keeps a token in the git config.
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          # No restored cache in the job that holds the bot token: nothing a pull
+          # request or branch run saved can run inside it.
+          cache: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: "22"
+
+      - name: Install the capture tooling
+        working-directory: bench/visual
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -n "$CHROME_BIN" ]; then
+            echo "PLAYWRIGHT_EXECUTABLE_PATH=$CHROME_BIN" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Differential run (whole corpus)
+        run: python3 bench/parity/refresh.py --out "$OUT" --mode full
+
+      - name: Publish the result
+        if: always()
+        run: |
+          if [ -f "$OUT/summary.md" ]; then cat "$OUT/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          git status --short
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: parity-refresh
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.log
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.txt
+            ${{ env.OUT }}/run/report.md
+            ${{ env.OUT }}/run/health.json
+            ${{ env.OUT }}/run/clusters.json
+            ${{ env.OUT }}/run/results.jsonl
+          if-no-files-found: ignore
+
+      - name: Open or update the parity report PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+          PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          # The push runs git against github.com with the token that a credential
+          # helper reads from the environment for that one command. The token is
+          # never put in a URL or in the git config, and the checkout above did
+          # not keep one.
+          # What a refresh may change: the recorded run, the cases that lost cluster ids, and the
+          # generated reports and sections that read them. Anything else is not part of it.
+          FILES=(conformance/registry/cases conformance/registry/generated conformance/reports
+                 README.md docs)
+          STRAY="$(git status --porcelain -- . ':(exclude)conformance/registry/cases' ':(exclude)conformance/registry/generated' ':(exclude)conformance/reports' ':(exclude)README.md' ':(exclude)docs' | head -20)"
+          if [ -n "$STRAY" ]; then
+            echo "::warning::files outside the refresh's scope changed and are left out of the commit: ${STRAY//$'\n'/; }"
+          fi
+          if [ -z "$(git status --porcelain -- "${FILES[@]}")" ]; then
+            echo "nothing changed"
+            exit 0
+          fi
+          DATE="$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The bot's commit sits on the main this run measured and touches only
+          # the files above. It is pushed to a temporary branch (a new ref, so
+          # nothing is compared with an older tip), and the report branch is then
+          # moved once, straight to that commit. It is never pushed over its old
+          # tip, and never set to main's tip first: git compares an update with
+          # the old tip, and when main had edited a workflow file since, a token
+          # without the workflow scope was refused ("refusing to allow a Personal
+          # Access Token to create or update workflow ... without workflow scope").
+          REF="repos/${GITHUB_REPOSITORY}/git/refs"
+          TMP_BRANCH="${BRANCH}-next"
+          git checkout -B "$TMP_BRANCH"
+          git add -- "${FILES[@]}"
+          git commit -m "bench: refresh the differential parity run ${DATE}"
+          SHA="$(git rev-parse HEAD)"
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          # shellcheck disable=SC2016 # git expands GIT_AUTH_TOKEN when it runs the helper
+          GIT_AUTH_TOKEN="${PUSH_TOKEN}" git -c credential.helper= -c 'credential.helper=!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "${GIT_AUTH_TOKEN}"; }; f' push origin "${TMP_BRANCH}"
+          # A branch that cannot be moved is deleted and created again; that
+          # closes its pull request, and the step below opens a new one.
+          # The existence check reads git/ref (one exact ref): git/refs/heads/<name>
+          # also answers with the refs that only start with <name>, such as the
+          # temporary branch pushed above.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
+            if ! gh api -X PATCH "${REF}/heads/${BRANCH}" -f sha="${SHA}" -F force=true >/dev/null 2>&1; then
+              echo "::warning::${BRANCH} could not be moved; deleting it and creating it again"
+              gh api -X DELETE "${REF}/heads/${BRANCH}" >/dev/null
+              gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+            fi
+          else
+            gh api -X POST "${REF}" -f ref="refs/heads/${BRANCH}" -f sha="${SHA}" >/dev/null
+          fi
+          gh api -X DELETE "${REF}/heads/${TMP_BRANCH}" >/dev/null 2>&1 || true
+          TITLE="bench: refresh the differential parity run ${DATE}"
+          # The pull request body is 65,536 characters at most; the job summary has the whole text.
+          SUMMARY="$(head -c 50000 "$OUT/summary.md")"
+          BODY="$(printf '%s\n\n%s\n\n%s\n' \
+            "$SUMMARY" \
+            "Differential run from \`main\` ($(git rev-parse --short HEAD^1)): the proxy against Loki on one fresh stack, the whole corpus (\`bench/parity\`). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Updates \`conformance/registry/generated/parity-discovery.json\`, drops the cluster ids the run no longer shows from the registry cases (\`parity_gaps.py --prune\`) and regenerates the reports that read them.")"
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+            PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          fi
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Arm auto-merge on the parity report PR
+        if: steps.pr.outputs.number != ''
+        env:
+          # The bot token only: a pull request the job's own token opened does not
+          # start the pull_request workflows, so it could not pass its checks.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          # A run the conformance gate does not pass (an unclaimed cluster) needs a registry case first:
+          # nothing is armed for it. Auto-merge otherwise merges by itself once the maintainer approves
+          # and the required checks pass. The report is already a PR: a problem here only warns.
+          if [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["conformance_ok"])' "$OUT/result.json")" != "True" ]; then
+            echo "::notice::the conformance gate does not pass against this run; auto-merge is not armed on pull request #${PR_NUMBER}"
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured; enable auto-merge on pull request #${PR_NUMBER} by hand"
+            exit 0
+          fi
+          if ! gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash; then
+            echo "::warning::could not arm auto-merge on pull request #${PR_NUMBER}; enable it by hand"
+          fi
+
+      - name: Fail when the registry needs a case
+        if: ${{ !cancelled() }}
+        run: |
+          # Red run = the notification. The pull request is already open with the unclaimed clusters at its top.
+          [ -f "$OUT/result.json" ] || exit 0
+          python3 - "$OUT/result.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          if r.get("exit") == 0 and not r.get("conformance_ok", True):
+              print(f"::error title=parity gate::{r.get('unclaimed', 0)} cluster(s) are claimed by no registry case "
+                    f"({r.get('problems', 0)} problem(s) in all); see the pull request and conformance.txt")
+              sys.exit(1)
+          for case in (r.get("pruned") or {}).get("undecided", [])[:10]:
+              print(f"::warning title=parity prune::{case} is not fixed in the registry but no run shows its difference any more")
+          PY

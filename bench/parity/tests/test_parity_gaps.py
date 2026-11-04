@@ -102,5 +102,140 @@ class ParityGapsTest(unittest.TestCase):
         self.assertEqual(len(problems), 2)
 
 
+ALL_SOURCES = {name: {"requests": 10, "same": 5, "diff": 5, "vacuous": 0, "blocked": 0}
+               for name in parity_gaps.SOURCES}
+
+
+class PruneTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.dir.name, "registry")
+        os.makedirs(os.path.join(self.root, "cases", "t"))
+        self.discovery = os.path.join(self.dir.name, "discovery.json")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def write_case(self, name, text):
+        with open(os.path.join(self.root, "cases", "t", name + ".yaml"), "w") as handle:
+            handle.write(text)
+
+    def read_case(self, name):
+        with open(os.path.join(self.root, "cases", "t", name + ".yaml")) as handle:
+            return handle.read()
+
+    def write_discovery(self, clusters, **extra):
+        doc = {"clusters": clusters, "summary": ALL_SOURCES}
+        doc.update(extra)
+        with open(self.discovery, "w") as handle:
+            json.dump(doc, handle)
+
+    def prune(self):
+        return parity_gaps.prune(self.root, self.discovery)
+
+    def analyse(self):
+        return parity_gaps.analyse(self.root, self.discovery)
+
+    def test_a_vanished_cluster_is_dropped_from_a_fixed_case_and_check_passes(self):
+        self.write_case("done", case(status="fixed", clusters=("c1", "c2"), fixed_by="#700"))
+        self.write_discovery([cluster("c1")])
+        self.assertTrue(any("c2 is not in" in p for p in self.analyse()[2]))
+        changes, refusal = self.prune()
+        self.assertEqual(refusal, "")
+        self.assertEqual(changes, [{"id": "t/done", "status": "fixed", "dropped": ["c2"], "left": 1}])
+        self.assertEqual(self.analyse()[2], [])
+        self.assertIn("    - c1\n", self.read_case("done"))
+        self.assertNotIn("c2", self.read_case("done"))
+
+    def test_an_open_case_left_without_a_cluster_is_reported_not_changed(self):
+        self.write_case("open", case(status="open", clusters=("gone",)))
+        self.write_discovery([cluster("c1", documented="t/doc")])
+        self.write_case("doc", case(status="documented"))
+        changes, refusal = self.prune()
+        self.assertEqual(changes, [{"id": "t/open", "status": "open", "dropped": ["gone"], "left": 0}])
+        text = self.read_case("open")
+        self.assertIn("  status: open\n", text)
+        self.assertIn("  clusters: []\n", text)
+        self.assertEqual(self.analyse()[2], [])
+        listing = parity_gaps.prune_report(changes)
+        self.assertIn("Not fixed in the registry, yet left with no cluster", listing)
+        self.assertIn("`t/open` (status open", listing)
+
+    def test_a_fixed_case_left_without_a_cluster_is_reported_as_confirmed(self):
+        self.write_case("done", case(status="fixed", clusters=("c1",), fixed_by="#700"))
+        self.write_discovery([cluster("other", documented="t/done")])
+        listing = parity_gaps.prune_report(self.prune()[0])
+        self.assertIn("the fix is confirmed", listing)
+        self.assertNotIn("Not fixed in the registry", listing)
+
+    def test_flow_lists_and_quoted_ids_keep_their_form(self):
+        quoted = case(status="open", clusters=()).replace("  clusters: []", "  clusters: [aa11bb22, '92699938', cc33dd44]")
+        self.write_case("flow", quoted)
+        block = case(status="open", clusters=("aa11bb22", "'92699938'", "cc33dd44"))
+        self.write_case("block", block)
+        self.write_discovery([cluster("aa11bb22"), cluster("92699938")])
+        self.prune()
+        self.assertIn("  clusters: [aa11bb22, '92699938']\n", self.read_case("flow"))
+        self.assertIn("    - aa11bb22\n    - '92699938'\n", self.read_case("block"))
+        self.assertNotIn("cc33dd44", self.read_case("block"))
+
+    def test_only_the_gap_block_is_touched(self):
+        text = "id: x\ntitle: T\nnotes:\n  clusters:\n    - c9\n" + case(clusters=("c9", "c1")) + "after: 1\n"
+        self.write_case("a", text)
+        self.write_discovery([cluster("c1")])
+        self.prune()
+        out = self.read_case("a")
+        self.assertIn("notes:\n  clusters:\n    - c9\n", out)
+        self.assertTrue(out.endswith("after: 1\n"))
+        self.assertEqual(parity_gaps.cases(self.root)[0][0]["clusters"], ["c1"])
+
+    def test_a_case_with_nothing_vanished_is_not_rewritten(self):
+        self.write_case("a", case(clusters=("c1",)))
+        self.write_case("planned", case(clusters=()))
+        self.write_discovery([cluster("c1")])
+        before = self.read_case("a"), self.read_case("planned")
+        changes, _ = self.prune()
+        self.assertEqual(changes, [])
+        self.assertEqual((self.read_case("a"), self.read_case("planned")), before)
+        self.assertIn("nothing dropped", parity_gaps.prune_report(changes))
+
+    def test_prune_is_idempotent(self):
+        self.write_case("a", case(status="fixed", clusters=("c1", "c2"), fixed_by="#1"))
+        self.write_discovery([cluster("c1")])
+        self.prune()
+        once = self.read_case("a")
+        self.assertEqual(self.prune()[0], [])
+        self.assertEqual(self.read_case("a"), once)
+
+    def test_unclaimed_new_clusters_stay_a_problem(self):
+        self.write_case("a", case(clusters=("c1", "gone")))
+        self.write_discovery([cluster("c1"), cluster("new")])
+        self.prune()
+        problems = self.analyse()[2]
+        self.assertEqual(len(problems), 1)
+        self.assertIn("new", problems[0])
+        self.assertIn("no registry case", problems[0])
+
+    def test_a_run_that_cannot_speak_for_the_corpus_is_refused_and_nothing_changes(self):
+        self.write_case("a", case(clusters=("c1", "c2")))
+        before = self.read_case("a")
+        for label, extra, wanted in (
+            ("partial", {"partial": True}, "partial"),
+            ("no cluster", {"clusters": []}, "no cluster"),
+        ):
+            with self.subTest(label):
+                self.write_discovery(extra.get("clusters", [cluster("c1")]), **{k: v for k, v in extra.items() if k != "clusters"})
+                changes, refusal = self.prune()
+                self.assertEqual(changes, [])
+                self.assertIn(wanted, refusal)
+                self.assertEqual(self.read_case("a"), before)
+        silent = dict(ALL_SOURCES, seeded={"requests": 0})
+        self.write_discovery([cluster("c1")], summary=silent)
+        self.assertIn("seeded", self.prune()[1])
+        os.remove(self.discovery)
+        self.assertIn("no cluster", self.prune()[1])
+        self.assertEqual(self.read_case("a"), before)
+
+
 if __name__ == "__main__":
     unittest.main()

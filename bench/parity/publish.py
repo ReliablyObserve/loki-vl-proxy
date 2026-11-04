@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record a differential run in the conformance registry.
 
-  publish.py RUN_DIR --ref <git ref the proxy was built from>
+  publish.py RUN_DIR --ref <git ref the proxy was built from> [--partial]
 
 Writes conformance/registry/generated/parity-discovery.json: the run's request
 counts per corpus source, its health proof, and every cluster (signature,
@@ -29,6 +29,8 @@ def main():
     ap.add_argument("run_dir")
     ap.add_argument("--ref", required=True)
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--partial", action="store_true",
+                    help="the run sent a slice of the corpus: parity_gaps.py --prune refuses to prune against it")
     a = ap.parse_args()
     data = json.load(open(os.path.join(a.run_dir, "clusters.json")))
     health = json.load(open(os.path.join(a.run_dir, "health.json")))
@@ -59,6 +61,8 @@ def main():
                         "restarts_unchanged": bool(h.get("vl_restarts_unchanged") and h.get("loki_restarts_unchanged"))}
     doc = {"ref": a.ref, "recorded": before.get("checked"), "window": health.get("window"),
            "health": proof, "passes": passes, "summary": data["summary"], "clusters": clusters}
+    if a.partial:
+        doc["partial"] = True
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     with open(a.out, "w") as handle:
         json.dump(doc, handle, indent=1, sort_keys=True)

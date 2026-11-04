@@ -78,7 +78,7 @@ class BotBranchWiring(unittest.TestCase):
         self.assertIn("!cancelled()", job)
 
     def test_release_workflows_never_force_push(self):
-        for name in ("auto-release.yaml", "release.yaml", "perf-daily.yaml"):
+        for name in ("auto-release.yaml", "release.yaml", "perf-daily.yaml", "parity-refresh.yaml"):
             self.assertNotRegex(text(name), r"git[^\n]* push [^\n]*--force")
 
     def test_the_new_tests_run_in_ci(self):
@@ -104,3 +104,78 @@ class BranchExistenceChecks(unittest.TestCase):
                     continue
                 if re.search(r"git/refs/heads/|\$\{REF\}/heads/", line):
                     self.fail(f"{path.name}:{number}: read one branch with git/ref/heads/, not git/refs/heads/: {line.strip()}")
+
+
+class ParityRefreshWiring(unittest.TestCase):
+    # The weekly differential run (bench/parity) is delivered the way perf-daily's report is: a bot branch moved
+    # through the API, a pull request, never main. Its schedule keeps off perf-daily's runner window.
+    def job(self, name):
+        parity = text("parity-refresh.yaml")
+        start = parity.index(f"\n  {name}:\n")
+        following = [parity.find(f"\n  {other}:\n", start + 1) for other in ("validate", "refresh")]
+        ends = [i for i in following if i > start]
+        return parity[start : min(ends)] if ends else parity[start:]
+
+    def test_the_schedule_is_weekly_and_clear_of_the_perf_daily_window(self):
+        parity, perf = text("parity-refresh.yaml"), text("perf-daily.yaml")
+        parity_cron = re.search(r'cron: "(\d+) (\d+) \* \* (\d)"', parity)
+        self.assertIsNotNone(parity_cron, "parity-refresh runs weekly (one weekday)")
+        perf_cron = re.search(r'cron: "(\d+) (\d+) \* \* \*"', perf)
+        self.assertIsNotNone(perf_cron, "perf-daily runs daily")
+        perf_start = int(perf_cron.group(2)) * 60 + int(perf_cron.group(1))
+        perf_minutes = int(re.search(r"timeout-minutes: (\d+)\n    permissions:\n      contents: write", perf).group(1))
+        start = int(parity_cron.group(2)) * 60 + int(parity_cron.group(1))
+        # Daily, so the parity run's start must lie outside [perf start, perf start + its timeout) of the same day,
+        # and the parity run's own timeout must end before the next daily start.
+        parity_minutes = int(re.search(r"timeout-minutes: (\d+)", self.job("refresh")).group(1))
+        self.assertTrue(start >= perf_start + perf_minutes, "starts after perf-daily's longest run ended")
+        self.assertTrue(start + parity_minutes <= 24 * 60 + perf_start, "ends before the next perf-daily start")
+
+    def test_the_entrypoint_is_the_one_the_tests_and_the_docs_describe(self):
+        self.assertIn('python3 bench/parity/refresh.py --out "$OUT" --mode full', self.job("refresh"))
+        self.assertIn('python3 bench/parity/refresh.py --out "$OUT" --mode validate', self.job("validate"))
+        self.assertTrue((REPO / "bench" / "parity" / "refresh.py").exists())
+
+    def test_a_pull_request_only_validates_with_a_read_only_token(self):
+        parity = text("parity-refresh.yaml")
+        self.assertIn("if: github.event_name == 'pull_request'", self.job("validate"))
+        self.assertIn("if: github.event_name != 'pull_request'", self.job("refresh"))
+        validate = self.job("validate")
+        self.assertNotIn("contents: write", validate)
+        self.assertNotIn("RELEASE_PR_TOKEN", validate)
+        self.assertNotIn("gh pr create", validate)
+        self.assertIn("pull_request:", parity)
+
+    def test_the_job_holding_the_bot_token_restores_no_cache_and_checks_out_main(self):
+        refresh = self.job("refresh")
+        self.assertIn("ref: main", refresh)
+        self.assertIn("cache: false", refresh)
+        self.assertNotIn("cache: npm", refresh)
+        self.assertNotIn("actions/cache", refresh)
+        self.assertIn("persist-credentials: false", refresh)
+        self.assertIn("timeout-minutes: 240", refresh)
+
+    def test_the_report_branch_is_only_ever_moved_through_the_api(self):
+        refresh = self.job("refresh")
+        step = refresh[refresh.index("name: Open or update the parity report PR") :]
+        step = step[: step.index("name: Arm auto-merge")]
+        self.assertIn('push origin "${TMP_BRANCH}"', step)
+        self.assertNotIn('push origin "$BRANCH"', step)
+        self.assertNotRegex(step, r"push [^\n]*(--force|-f |main)")
+        self.assertIn("-X PATCH", step)
+        self.assertIn("-X DELETE", step)
+        self.assertIn("git/ref/heads/${BRANCH}", step)  # the exact ref, not git/refs/heads/<prefix>
+        self.assertLess(step.index('push origin "${TMP_BRANCH}"'), step.index("-X PATCH"))
+        self.assertIn("BRANCH: bench/parity-refresh", refresh)
+
+    def test_what_a_refresh_commits_is_a_list_of_the_files_it_may_change(self):
+        refresh = self.job("refresh")
+        self.assertIn("conformance/registry/cases", refresh)
+        self.assertIn("conformance/registry/generated", refresh)
+        self.assertNotRegex(refresh, r"git add (-A|\.|--all)")
+
+    def test_the_pull_request_is_opened_even_when_the_gate_needs_a_case_and_the_job_then_ends_red(self):
+        refresh = self.job("refresh")
+        self.assertLess(refresh.index("name: Open or update the parity report PR"),
+                        refresh.index("name: Fail when the registry needs a case"))
+        self.assertIn("conformance_ok", refresh)
