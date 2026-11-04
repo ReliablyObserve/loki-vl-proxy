@@ -590,6 +590,38 @@
      ]
     },
     {
+     "name": "drilldown detected fields, level pills matching no line",
+     "path": "/loki/api/v1/detected_fields",
+     "query": "{service_name=\"frontend-ssr\"} | detected_level=~\"error\\\\|warn\"    | json  | logfmt | drop __error__, __error_details__ ",
+     "params": {
+      "limit": "1000"
+     },
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-empty-answer"
+     ]
+    },
+    {
+     "name": "drilldown detected fields, plain-text level pill",
+     "path": "/loki/api/v1/detected_fields",
+     "query": "{service_name=\"db-postgres\"} | detected_level=\"error\"    | json  | logfmt | drop __error__, __error_details__ ",
+     "params": {
+      "limit": "1000"
+     },
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.2.1"
+     },
+     "covers": [
+      "loki_api_v1_detected_fields",
+      "semantics/detected-fields-empty-answer"
+     ]
+    },
+    {
      "name": "refresh labels (label browser)",
      "path": "/loki/api/v1/labels",
      "shift": {
