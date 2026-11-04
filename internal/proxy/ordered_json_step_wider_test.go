@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -438,8 +439,10 @@ func TestOrderedJSONStepWiderThanRangeRefresh(t *testing.T) {
 // between two windows never count toward it: with every line in a gap the
 // answer is an empty matrix, not the limit error, and with the same lines
 // inside the windows one series past the limit is the error. This is the
-// over-the-limit case of TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit,
-// whose 300 s step left its lines in a gap.
+// over-the-limit case of TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit
+// at a 300 s step: unaligned (Loki's defaults) its one window ends before the
+// lines; aligned to the step (align_queries_with_step) the window ending at s0
+// holds only the line exactly at s0, one series under the limit.
 // conformance: semantics/json-metric-step-wider-than-range, limits/series-limit-error
 func TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries(t *testing.T) {
 	s0 := time.Unix(1700000400, 0).UTC()
@@ -456,11 +459,14 @@ func TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries(t *testing.T
 		start, end time.Time
 		step       time.Duration
 		wantError  bool
+		want       []string // the series of the answer, when it is not an error
 	}{
-		{"every line in a gap", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false},
-		{"every line in a gap, filtered", `sum by (pod) (count_over_time({env="prod"} | json | drop __error__ | detected_level="error" [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false},
-		{"the lines in a window", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(time.Minute), s0.Add(6 * time.Minute), 5 * time.Minute, true},
-		{"the lines in windows, step equal to the range", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), time.Minute, true},
+		{"every line in a gap", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false, nil},
+		{"every line in a gap, filtered", `sum by (pod) (count_over_time({env="prod"} | json | drop __error__ | detected_level="error" [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false, nil},
+		{"aligned to the step: the line on the window end", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-5 * time.Minute), s0, 5 * time.Minute, false, []string{`{detected_level="error",pod="p00"}`}},
+		{"aligned to the step, filtered", `sum by (pod) (count_over_time({env="prod"} | json | drop __error__ | detected_level="error" [1m]))`, s0.Add(-5 * time.Minute), s0, 5 * time.Minute, false, []string{`{pod="p00"}`}},
+		{"the lines in a window", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(time.Minute), s0.Add(6 * time.Minute), 5 * time.Minute, true, nil},
+		{"the lines in windows, step equal to the range", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), time.Minute, true, nil},
 	} {
 		srv, fake := newPushdownFakeVL(t, rows, nil)
 		fake.jsonUnpack = vlFastjsonUnpackFields
@@ -474,8 +480,13 @@ func TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries(t *testing.T
 			}
 			continue
 		}
-		if code != http.StatusOK || len(got) != 0 {
-			t.Fatalf("%s: got %d %v %s, want Loki's empty matrix", tc.name, code, got, body)
+		var keys []string
+		for key := range got {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if code != http.StatusOK || strings.Join(keys, " ") != strings.Join(tc.want, " ") {
+			t.Fatalf("%s: got %d %v %s, want Loki's series %v", tc.name, code, got, body, tc.want)
 		}
 	}
 }

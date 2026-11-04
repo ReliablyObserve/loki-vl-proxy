@@ -49,11 +49,13 @@ why: |
   Loki's series limit counts the series of the answer, the ones with a point
   at some step (pkg/logql/engine.go:530-590 JoinSampleVector). The gcd grid
   counted every group of the fetched buckets, gap buckets included, so a
-  query whose lines all fell between windows answered the series limit error
-  where Loki answers an empty matrix (the 300 s step of
-  TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit's over-the-limit
-  request); the window filter leaves those lines out, so the limit counts
-  Loki's series.
+  query whose lines fell between windows answered the series limit error
+  where Loki answers its few window series, or an empty matrix (the 300 s
+  step of TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit's
+  over-the-limit request: aligned to the step, Loki's window ending at the
+  fixture's first line holds that line alone, one series; unaligned, no
+  window holds a line); the window filter leaves those lines out, so the
+  limit counts Loki's series.
 
   Known limit, shared with the sliding route: VictoriaLogs evaluates the
   phase in float64, so a line within about 256 ns of a window edge, not on

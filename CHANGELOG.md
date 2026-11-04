@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a step that is not a multiple of the range no longer needs buckets of their
   greatest common divisor. A series whose lines all fall between windows no
   longer counts toward `-max-stats-query-series`: Loki counts only the series
-  of its answer, so such a query answers Loki's empty matrix instead of the
-  series limit error. A line within about 256 ns of a window edge, not on it,
+  of its answer, so such a query answers Loki's series (or its empty matrix)
+  instead of the series limit error. A line within about 256 ns of a window edge, not on it,
   may fall on either side, as on the plain range metric route.
 
 ## [2.69.0] - 2026-11-03
