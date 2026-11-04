@@ -727,6 +727,11 @@
       "internal/proxy/stats_error_body_test.go",
       "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go"
     ],
+    "quality/stats-tumbling-relabel-one-parse": [
+      "internal/proxy/stats_fold_relabel_parse_test.go",
+      "internal/proxy/stats_fold_relabel_test.go",
+      "test/e2e-compat/sliding_sum_without_test.go"
+    ],
     "quality/stats-tumbling-relabel-one-pass": [
       "internal/proxy/stats_fold_relabel_test.go",
       "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go"
@@ -1288,6 +1293,7 @@
     "semantics/without-sliding-sum-folded-buckets": [
       "internal/proxy/sliding_without_cut_harden_test.go",
       "internal/proxy/sliding_without_cut_test.go",
+      "internal/proxy/stats_fold_relabel_parse_test.go",
       "internal/proxy/without_pushdown_differential_test.go",
       "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/query_range_settled_steps_test.go",
@@ -1441,7 +1447,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 412,
+  "registry_items": 413,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2131,7 +2137,12 @@
     "internal/proxy/stats_extent_retention_test.go": [
       "quality/query-range-extent-cache"
     ],
+    "internal/proxy/stats_fold_relabel_parse_test.go": [
+      "quality/stats-tumbling-relabel-one-parse",
+      "semantics/without-sliding-sum-folded-buckets"
+    ],
     "internal/proxy/stats_fold_relabel_test.go": [
+      "quality/stats-tumbling-relabel-one-parse",
       "quality/stats-tumbling-relabel-one-pass",
       "series-limits-and-partial-results"
     ],
@@ -2870,6 +2881,7 @@
     "test/e2e-compat/sliding_sum_without_test.go": [
       "loki_api_v1_query_range",
       "metric-series-identity",
+      "quality/stats-tumbling-relabel-one-parse",
       "semantics/without-sliding-sum-folded-buckets"
     ],
     "test/e2e-compat/stack_profiles_test.go": [
@@ -3042,7 +3054,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 314,
+  "tests_with_markers": 315,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3148,5 +3160,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 235
+  "wired_items": 236
 }

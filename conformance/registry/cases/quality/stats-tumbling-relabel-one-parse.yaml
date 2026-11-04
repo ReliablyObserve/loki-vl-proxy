@@ -1,0 +1,74 @@
+id: quality/stats-tumbling-relabel-one-parse
+title: A range-equals-step answer within the pooled parser's bound is translated and relabelled in one parse, with the same series limit and answer
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - series-limits-and-partial-results
+consumer: explore
+why: |
+  A metric whose range equals the step (`sum without (pod)
+  (count_over_time({...}[1m]))` at Grafana's 60 s step over 24h, a Logs
+  Drilldown breakdown) is fetched one window early and every bucket is
+  relabelled to Loki's evaluation time. An answer within the pooled parser's
+  1 MiB input bound was parsed whole and rewritten twice: once to translate
+  the labels, then the translated answer was parsed whole again for the
+  relabel. Warm from the kept stats buckets (no VictoriaLogs call), that was
+  the proxy's remaining work on the daily run's SW1 24h shape: 68 ms warm
+  against Loki's 12 ms (aligned profile, 2026-11-04), bimodal between about
+  17 ms and 50-100 ms.
+
+  Each series is now translated and relabelled as it is written, in one
+  parse of the answer. The parts the two passes wrote and read back (each
+  series' labels, the resultType and the stats block) are written, read and
+  written again the same way, so the answer is the two passes' answer byte
+  for byte, but for the order of a series' labels, which the translation
+  writes in map order on every path. The series limit is applied where it
+  was: on the translated answer (Loki's max_query_series,
+  pkg/querier/queryrange/limits.go:447-448 and 511-512, v3.7.9). An answer
+  the one parse does not rewrite exactly as the two passes (a point the
+  first pass trims, a malformed point, a value with escapes, another result
+  slot or an error key, nothing to translate) and an answer over the bound
+  (quality/stats-tumbling-relabel-one-pass) take the earlier paths. The
+  bound is unchanged.
+
+  Measured with a fake VictoriaLogs serving every bucket from the kept stats
+  buckets (BenchmarkTumblingRelabelWarm, main and this change interleaved, 10
+  runs each, benchstat): SW1 24h at a 60 s step with 27 series 10.4 ms to
+  5.9 ms (-43%), 50.7 MiB to 32.5 MiB allocated per request; 1h with 10
+  series -34%; 6h with 40 series -40%; a 6h breakdown at a 10 s step over the
+  bound unchanged (no significant difference).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum without (pod) (count_over_time({env="production", instrumentation!="otel", app!="otel-collector"}[1m]))'
+    start: 'now-24h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    The same series and values as Loki at every step, on the first view and
+    on a repeat with the window moved by a step.
+gap:
+  status: fixed
+  fixed_by: '#1097'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/stats_json_stream.go trimTranslateRelabelStatsQRFJ; internal/proxy/metric_binary.go proxyStatsQueryRangeDirect'
+  loki: 'pkg/logql/range_vector.go:102-189 (the sample at t covers (t-range, t]); pkg/querier/queryrange/limits.go:447-448, 511-512'
+  proxy: 'two whole parses and rewrites of every range == step answer within 1 MiB (SW1 24h warm 68 ms against Loki 12 ms)'
+  planned_test: 'proxy TestStatsFoldRelabelOneParseMatchesTwoPasses, TestStatsFoldRelabelOneParseDifferential, FuzzStatsFoldRelabelOneParseDifferential, TestStatsFoldRelabelKeepsTheSeriesLimit, BenchmarkTumblingRelabelWarm; e2e TestCompat_SlidingSumWithoutStreamFold (range equals step)'
+  clusters: []
+  visual: none
+  visual_reason: 'a latency change: every answer is the two passes'' answer, proven by the one-parse differential over random answers, windows and trims; the time is measured by the A/B sliding-sum-without set (SW1)'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -148,11 +148,13 @@ func slidingWithoutRange(t *testing.T, base, query string, start, end time.Time,
 
 // TestCompat_SlidingSumWithoutStreamFold: a `sum without` over count_over_time
 // and bytes_over_time of short-lived pod streams on sliding windows (range over
-// the step, and under it) answers Loki's series and values at every step:
-// excluding pod (the only label that tells most streams apart), pod and zone
-// (zone on a third of the streams), a label no stream has, with a line
-// filter, and in the trailing spelling.
-// conformance: semantics/without-sliding-sum-folded-buckets, metric-series-identity, loki_api_v1_query_range
+// the step, and under it) and on tumbling windows (range equal to the step:
+// the answer is translated and relabelled to Loki's evaluation times in one
+// parse) answers Loki's series and values at every step: excluding pod (the
+// only label that tells most streams apart), pod and zone (zone on a third of
+// the streams), a label no stream has, with a line filter, and in the
+// trailing spelling.
+// conformance: semantics/without-sliding-sum-folded-buckets, quality/stats-tumbling-relabel-one-parse, metric-series-identity, loki_api_v1_query_range
 func TestCompat_SlidingSumWithoutStreamFold(t *testing.T) {
 	fx := ensureSlidingWithoutFixtures(t)
 	selector := fmt.Sprintf(`{probe=%q}`, fx.probe)
@@ -170,6 +172,7 @@ func TestCompat_SlidingSumWithoutStreamFold(t *testing.T) {
 		{"range over step", "1m", 20 * time.Second},
 		{"range 5m", "5m", time.Minute},
 		{"range under step", "1m", 2 * time.Minute},
+		{"range equals step", "1m", time.Minute},
 	}
 	for _, shape := range shapes {
 		for _, function := range []string{"count_over_time", "bytes_over_time"} {

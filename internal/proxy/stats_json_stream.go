@@ -586,3 +586,207 @@ func (p *Proxy) trimTranslateRelabelStatsQRBySeries(body []byte, keep func(int64
 	translatedSize += head.Len() + 2 + tail.Len()
 	return bytes.Clone(buf.Bytes()), translatedSize, translatedSeries, true
 }
+
+// trimTranslateRelabelStatsQRFJ is trimAndTranslateStatsQRFJFull, the wrap
+// and trimStatsQRByTimeFJShifted(translated, relabelKeep, relabel) in one
+// parse of an answer within the pooled parser's input bound: each series is
+// translated and relabelled as it is written, so the translated answer is
+// never assembled or parsed again. It also reports the series count the
+// translated answer would have had (the caller's series limit). It reports
+// false for an answer it does not rewrite exactly as the two passes do: over
+// the input bound, not a single non-empty data.result with a resultType, an
+// error key or another result slot, nothing to translate, a point the first
+// pass trims, a series that is not a metric and a values array of
+// [number, value] points, or a value the second pass's parse would read
+// back differently (the parts the two passes write and read again are
+// written and read here the same way).
+func (p *Proxy) trimTranslateRelabelStatsQRFJ(body []byte, keep func(int64) bool, originalQuery string, relabelKeep func(int64) bool, relabel func(int64) int64) (out []byte, translatedSeries int, ok bool) {
+	if len(body) > maxPooledStatsParserInputSize || relabel == nil || relabelKeep == nil {
+		return nil, 0, false
+	}
+	parser := statsTranslateFJPool.Get()
+	defer releaseFJParser(&statsTranslateFJPool, parser, len(body))
+	v, err := parser.ParseBytes(body)
+	if err != nil {
+		return nil, 0, false
+	}
+	data, items, ok := statsOneParseResult(v)
+	if !ok {
+		return nil, 0, false
+	}
+	grouping := requestedLevelGrouping(originalQuery)
+	translated, synthetic := make(map[string]string, 8), make(map[string]string, 8)
+	needsRebuild := false
+	for _, item := range items {
+		if !statsOneParseSeries(item, keep) {
+			return nil, 0, false
+		}
+		if _, changed := p.translateStatsQRMetricFJ(item.Get("metric"), grouping, translated, synthetic); changed {
+			needsRebuild = true
+		}
+	}
+	if !needsRebuild {
+		return nil, 0, false
+	}
+
+	w := &statsOneParseWriter{scratch: fjMarshalPool.Get().(*[]byte), part: jsonBufPool.Get().(*bytes.Buffer)}
+	defer releaseFJMarshalScratch(w.scratch)
+	defer releaseJSONBuffer(w.part)
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer releaseJSONBuffer(buf)
+	buf.Grow(len(body))
+	buf.WriteString(`{"status":"success","data":{"resultType":`)
+	if !w.roundTrip(buf, func(b *bytes.Buffer) { marshalFJ(b, data.Get("resultType"), w.scratch) }) {
+		return nil, 0, false
+	}
+	buf.WriteString(`,"result":[`)
+	written := false
+	for _, item := range items {
+		if !statsQRSeriesKeepsPoint(item.Get("values"), relabelKeep) {
+			continue // Loki never returns a matrix series without samples
+		}
+		if written {
+			buf.WriteByte(',')
+		}
+		written = true
+		metric, changed := p.translateStatsQRMetricFJ(item.Get("metric"), grouping, translated, synthetic)
+		if !w.series(buf, item, metric, changed, relabelKeep, relabel) {
+			return nil, 0, false
+		}
+	}
+	buf.WriteByte(']')
+	if stats := data.Get("stats"); stats != nil {
+		buf.WriteString(`,"stats":`)
+		if !w.roundTrip(buf, func(b *bytes.Buffer) { marshalFJ(b, stats, w.scratch) }) {
+			return nil, 0, false
+		}
+	}
+	buf.WriteString(`}}`)
+	return bytes.Clone(buf.Bytes()), len(items), true
+}
+
+// statsOneParseResult is the data object and the series of an answer the one
+// parse takes: a single non-empty data.result with a resultType, no error
+// key and no other result slot the translation would also rewrite.
+func statsOneParseResult(v *fj.Value) (*fj.Value, []*fj.Value, bool) {
+	if v.Type() != fj.TypeObject || v.Get("error") != nil {
+		return nil, nil, false
+	}
+	for _, key := range []string{"result", "results"} {
+		if r := v.Get(key); r != nil && r.Type() == fj.TypeArray && len(r.GetArray()) > 0 {
+			return nil, nil, false
+		}
+	}
+	data := v.Get("data")
+	if data == nil || data.Type() != fj.TypeObject || data.Get("resultType") == nil {
+		return nil, nil, false
+	}
+	items := data.GetArray("result")
+	return data, items, len(items) > 0
+}
+
+// statsOneParseSeries reports whether the one parse takes a series: a metric
+// and a values array of [number, value] points whose value reads back
+// unchanged, none of which the first pass's trim drops (its raw point filter
+// decides those).
+func statsOneParseSeries(item *fj.Value, keep func(int64) bool) bool {
+	if item.Type() != fj.TypeObject || item.Get("metric") == nil {
+		return false
+	}
+	values := item.Get("values")
+	if values == nil || values.Type() != fj.TypeArray {
+		return false
+	}
+	for _, point := range values.GetArray() {
+		parts, _ := point.Array()
+		if len(parts) != 2 || parts[0].Type() != fj.TypeNumber || !statsValueReadsBack(parts[1]) {
+			return false
+		}
+		if keep != nil && !keep(statsQRFJPointNano(parts[0])) {
+			return false
+		}
+	}
+	return true
+}
+
+// statsOneParseWriter writes the one parse's series. The small parts the
+// first pass writes and the second reads back (a series' labels, the
+// resultType, the stats block) are written, read and written again as the two
+// passes do, and must come out as JSON.
+type statsOneParseWriter struct {
+	scratch *[]byte
+	part    *bytes.Buffer
+	parser  fj.Parser
+}
+
+func (w *statsOneParseWriter) roundTrip(dst *bytes.Buffer, write func(*bytes.Buffer)) bool {
+	w.part.Reset()
+	write(w.part)
+	value, err := w.parser.ParseBytes(w.part.Bytes())
+	if err != nil {
+		return false
+	}
+	// fastjson writes a string it must escape with Go's quoting, which is not
+	// always JSON: such an answer is left to the two passes.
+	start := dst.Len()
+	marshalFJ(dst, value, w.scratch)
+	return json.Valid(dst.Bytes()[start:])
+}
+
+// series writes one translated series with the points relabelKeep keeps,
+// relabelled, as writeFilteredStatsQRSeriesFJ writes it from the translated
+// answer.
+func (w *statsOneParseWriter) series(buf *bytes.Buffer, item *fj.Value, metric map[string]string, changed bool, relabelKeep func(int64) bool, relabel func(int64) int64) bool {
+	buf.WriteString(`{"metric":`)
+	if !w.roundTrip(buf, func(b *bytes.Buffer) {
+		if changed {
+			marshalStringMapJSONTo(b, metric)
+		} else {
+			marshalFJ(b, item.Get("metric"), w.scratch)
+		}
+	}) {
+		return false
+	}
+	buf.WriteString(`,"values":[`)
+	first := true
+	for _, point := range item.GetArray("values") {
+		parts := point.GetArray()
+		tsNs := statsQRFJPointNano(parts[0])
+		if !relabelKeep(tsNs) {
+			continue
+		}
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteByte('[')
+		*w.scratch = appendLokiSampleTime((*w.scratch)[:0], relabel(tsNs))
+		buf.Write(*w.scratch)
+		buf.WriteByte(',')
+		marshalFJ(buf, parts[1], w.scratch)
+		buf.WriteByte(']')
+	}
+	buf.WriteString(`]}`)
+	return true
+}
+
+// statsValueReadsBack reports whether a sample value is written, read back
+// and written again unchanged: a JSON number (fastjson keeps a number's text,
+// and also takes text that is no JSON number), or a string with nothing to
+// escape (fastjson writes any other string with Go's quoting).
+func statsValueReadsBack(v *fj.Value) bool {
+	switch v.Type() {
+	case fj.TypeNumber:
+		var text [32]byte
+		return json.Valid(v.MarshalTo(text[:0]))
+	case fj.TypeString:
+		for _, c := range v.GetStringBytes() {
+			if c < 0x20 || c == '"' || c == '\\' {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}

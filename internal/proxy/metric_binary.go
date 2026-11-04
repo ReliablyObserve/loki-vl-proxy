@@ -289,6 +289,19 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 			_, _ = w.Write(folded)
 			return
 		}
+	} else if relabel != nil && foldTumblingRelabel {
+		// A smaller answer: both rewrites in one parse of the whole answer
+		// (the pooled parser, within its input bound), when the result is the
+		// two passes' bytes and the series limit would not apply.
+		started := time.Now()
+		folded, translatedSeries, ok := p.trimTranslateRelabelStatsQRFJ(body, keepFn, r.FormValue("query"), relabel.keep, relabel.relabel)
+		if ok && (read > 0 && read <= limit || translatedSeries <= limit) {
+			p.observeInternalOperation(ctx, "trim_translate_stats_qr", "folded", time.Since(started))
+			relabel.done = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(folded)
+			return
+		}
 	}
 	body = p.trimAndTranslateStatsQRFJ(ctx, body, keepFn, r.FormValue("query"))
 	// Over the limit, Logs Drilldown keeps the busiest series (by total count,
@@ -310,7 +323,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 	_, _ = w.Write(out)
 }
 
-// foldTumblingRelabel lets a large range == step answer be translated and
+// foldTumblingRelabel lets a range == step answer be translated and
 // relabelled in one pass; tests turn it off to compare with the two passes.
 var foldTumblingRelabel = true
 
@@ -1176,12 +1189,7 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 					continue
 				}
 				buf.WriteByte('[')
-				if ns := relabel(tsNs); ns%int64(time.Second) == 0 && ns >= 0 {
-					// A whole second: the digits FormatFloat(x, 'f', -1, 64) writes.
-					*scratch = strconv.AppendInt((*scratch)[:0], ns/int64(time.Second), 10)
-				} else {
-					*scratch = strconv.AppendFloat((*scratch)[:0], lokiSampleSeconds(ns), 'f', -1, 64)
-				}
+				*scratch = appendLokiSampleTime((*scratch)[:0], relabel(tsNs))
 				buf.Write(*scratch)
 				buf.WriteByte(',')
 				marshalFJ(buf, pts[1], scratch)
@@ -1192,6 +1200,16 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 		buf.WriteByte('}')
 	}
 	buf.WriteByte(']')
+}
+
+// appendLokiSampleTime appends a sample timestamp as Loki writes it: whole
+// seconds as the digits FormatFloat(x, 'f', -1, 64) writes, anything else as
+// lokiSampleSeconds.
+func appendLokiSampleTime(dst []byte, ns int64) []byte {
+	if ns%int64(time.Second) == 0 && ns >= 0 {
+		return strconv.AppendInt(dst, ns/int64(time.Second), 10)
+	}
+	return strconv.AppendFloat(dst, lokiSampleSeconds(ns), 'f', -1, 64)
 }
 
 // trimTranslateResult holds per-item output of trimAndTranslateStatsQRFJ's analysis pass.
