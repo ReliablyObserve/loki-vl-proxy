@@ -54,8 +54,8 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 | 405 | 4 | 3 | 0 | 0 | 0 | 1 |
 | 413 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 500 | 8 | 5 | 0 | 3 | 3 | 0 |
-| set at run time | 89 | 1 | 82 | 6 | 3 | 0 |
+| 500 | 6 | 6 | 0 | 0 | 0 | 0 |
+| set at run time | 89 | 1 | 86 | 2 | 1 | 0 |
 
 The registry holds one item per status (12 under `conformance/registry/loki/errors/`), not one per message: no check yet compares a formatted message with Loki's text.
 
