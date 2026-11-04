@@ -37,9 +37,13 @@ def inputs(**changes):
                          "warm": {"rows": 90, "below": 9, "close": 71, "between": 5, "above": 5, "share_below": 10.0}},
         "targets": {"share_below": "most queries below Loki (above 50%)"},
         "over": {"rows": [
-            {"mode": "cold", "shape": "slow one", "range": "24h", "proxy_s": 9.0, "loki_s": 1.0},
-            {"mode": "cold", "shape": "slow two", "range": "6h", "proxy_s": 3.0, "loki_s": 1.0},
-            {"mode": "warm", "shape": "repeat one", "range": "1h", "proxy_s": 2.0, "loki_s": 0.5}]},
+            {"set": "s", "mode": "cold", "shape": "slow one", "range": "24h", "proxy_s": 9.0, "loki_s": 1.0},
+            {"set": "s", "mode": "cold", "shape": "slow two", "range": "6h", "proxy_s": 3.0, "loki_s": 1.0},
+            {"set": "s", "mode": "warm", "shape": "repeat one", "range": "1h", "proxy_s": 2.0, "loki_s": 0.5}]},
+        # The run shown measures the listed rows as the list does, unless a test says otherwise.
+        "over_latest": {("s", "slow one", "24h", "cold"): ("above", 9.0, 1.0),
+                        ("s", "slow two", "6h", "cold"): ("above", 3.0, 1.0),
+                        ("s", "repeat one", "1h", "warm"): ("above", 2.0, 0.5)},
         "blocks": {"a": {"locked": True}, "b": {"locked": False}},
         "stats": {"endpoints": 33, "implemented": 23, "with_differential_tests": 18, "proven": 11,
                   "execution": {"native_vl": 6}},
@@ -110,8 +114,10 @@ class RenderTest(unittest.TestCase):
 
     def test_the_list_sentence_counts_only_the_profile_shown(self):
         mixed = [{**r, "profile": "aligned"} for r in inputs()["over"]["rows"]] + [
-            {"mode": "cold", "shape": "defaults only", "range": "1h", "proxy_s": 5.0, "loki_s": 1.0, "profile": "loki-defaults"}]
-        defaults = pe.render_quality_summary(inputs(profile="loki-defaults", over={"rows": mixed}))
+            {"set": "s", "mode": "cold", "shape": "defaults only", "range": "1h", "proxy_s": 5.0, "loki_s": 1.0,
+             "profile": "loki-defaults"}]
+        latest = {**inputs()["over_latest"], ("s", "defaults only", "1h", "cold"): ("above", 5.0, 1.0)}
+        defaults = pe.render_quality_summary(inputs(profile="loki-defaults", over={"rows": mixed}, over_latest=latest))
         self.assertIn("**1 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile**", defaults)
         self.assertIn("`defaults only` over 1h", defaults)
         self.assertNotIn("slow one", defaults)
@@ -130,7 +136,7 @@ class RenderTest(unittest.TestCase):
         self.assertNotIn("is measured too", stale)
         ran = pe.render_quality_summary(inputs(profile="loki-defaults", date="2026-11-02",
                                                profile_last={"aligned": "2026-11-02", "loki-defaults": "2026-11-02"}))
-        self.assertIn("is measured too and is not shown here.", ran)
+        self.assertIn("is measured too: the distribution table below shows both profiles", ran)
         never = pe.render_quality_summary(inputs(profile="loki-defaults", profile_last={"aligned": "", "loki-defaults": "x"}))
         self.assertIn("The `aligned` profile has no valid daily run yet.", never)
 
@@ -143,9 +149,40 @@ class RenderTest(unittest.TestCase):
 
     def test_largest_gaps_come_from_the_above_2x_list_by_seconds_behind(self):
         text = pe.render_quality_summary(inputs())
-        self.assertIn("Largest gaps on that list, first request: `slow one` over 24h, **9.00 s** against **1.00 s**; "
-                      "`slow two` over 6h", text)
-        self.assertIn("Largest gaps on that list, repeat: `repeat one` over 1h", text)
+        self.assertIn("Largest gaps on that list in the run shown, first request: `slow one` over 24h, **9.00 s** "
+                      "against **1.00 s**; `slow two` over 6h", text)
+        self.assertIn("Largest gaps on that list in the run shown, repeat: `repeat one` over 1h", text)
+        self.assertNotIn("In the run shown, **", text)  # every listed row is still above 2×: nothing to add
+
+    def test_largest_gaps_quote_the_run_shown_and_leave_out_rows_it_measured_within_2x(self):
+        # The list still holds "slow one" (it leaves after two runs within 2×), but the run shown measured it at
+        # 1.2× and "slow two" at a new figure; "repeat one" was not measured.
+        latest = {("s", "slow one", "24h", "cold"): ("within", 1.2, 1.0),
+                  ("s", "slow two", "6h", "cold"): ("above", 2.5, 1.0)}
+        text = pe.render_quality_summary(inputs(over_latest=latest))
+        self.assertIn("**3 shape, range and mode rows are on the above-2× list", text)
+        self.assertIn("In the run shown, **1** of those rows measured above 2× Loki and **1** within 2×; 1 could not "
+                      "be judged", text)
+        self.assertIn("first request: `slow two` over 6h, **2.50 s** against **1.00 s**.", text)
+        self.assertNotIn("`slow one` over 24h", text)
+        self.assertNotIn("9.00 s", text)
+        self.assertNotIn("Largest gaps on that list in the run shown, repeat", text)
+
+    def test_the_distribution_table_shows_both_profiles_with_the_rows_not_judged(self):
+        bands = {"aligned": {"cold": {"rows": 10, "below": 7, "close": 2, "between": 1, "above": 0,
+                                      "loki_failed": 1, "proxy_failed": 0, "cache_served": 4}},
+                 "loki-defaults": {"cold": {"rows": 20, "below": 10, "close": 6, "between": 2, "above": 2,
+                                            "loki_failed": 3, "proxy_failed": 1, "cache_served": 5},
+                                   "warm": {"rows": 25, "below": 5, "close": 20, "between": 0, "above": 0,
+                                            "loki_failed": 3, "proxy_failed": 1, "cache_served": 0}}}
+        text = pe.render_quality_summary(inputs(profile_bands=bands))
+        rows = [line for line in text.splitlines() if line.startswith("| `")]
+        self.assertEqual(rows, [
+            "| `loki-defaults` | first | 20 | 10 (50.0%) | 6 (30.0%) | 2 (10.0%) | **2 (10.0%)** | 3 / 1 / 5 |",
+            "| `loki-defaults` | repeat | 25 | 5 (20.0%) | 20 (80.0%) | 0 (0.0%) | **0 (0.0%)** | 3 / 1 / — |",
+            "| `aligned` | first | 10 | 7 (70.0%) | 2 (20.0%) | 1 (10.0%) | **0 (0.0%)** | 1 / 0 / 4 |"])
+        self.assertIn("**Distribution versus Loki in the run shown, both Loki profiles**", text)
+        self.assertNotIn("Distribution versus Loki in the run shown", pe.render_quality_summary(inputs()))
 
     def test_no_history_wording(self):
         text = pe.render_quality_summary(inputs()).lower()
@@ -199,6 +236,58 @@ class DailyRunsTest(unittest.TestCase):
         latest, date, profile = self.run_daily()
         self.assertEqual((date, profile), ("2026-10-28", "loki-defaults"))
         self.assertEqual({s["profile"] for _, s, _ in latest.values()}, {"loki-defaults"})
+
+    def summary(self, name, date, commit, rows, profile="loki-defaults", set_name="s"):
+        summary = {"set": set_name, "date": date, "valid": True, "label": name, "candidate": "main",
+                   "reference": "loki", "baseline": "release", "profile": profile, "commit": commit, "rows": rows}
+        with open(os.path.join(self._tmp.name, name), "w") as f:
+            json.dump(summary, f)
+
+    @staticmethod
+    def row(shape, main, loki, status=("200", "200"), served=False):
+        row = {"shape": shape, "range": "1h", "verdict": "same", "status": {"main": status[0], "loki": status[1]},
+               "cold": {"main": main, "loki": loki}, "p50": {"main": main / 10, "loki": loki / 10}}
+        if served:
+            row["cold_cache_served"] = ["loki"]
+        return row
+
+    def test_the_distribution_and_commit_are_read_from_the_results_shown(self):
+        # The history file of the same date may hold an earlier run; the section reads the results it shows.
+        shapes = {"s": {"shapes": [{"name": n} for n in "abcdef"]}}
+        self.summary("daily-s.loki-defaults.json", "2026-11-03", "7eaf79cebe6920de", [
+            self.row("a", 0.1, 1.0),                    # below Loki
+            self.row("b", 1.0, 1.05),                   # close to Loki
+            self.row("c", 1.5, 1.0),                    # 1–2× Loki
+            self.row("d", 3.0, 1.0),                    # above 2×
+            self.row("e", 1.0, 1.0, ("400", "400")),     # Loki did not answer 200
+            self.row("f", 2.0, 0.01, served=True)])     # Loki's cache answered the first request
+        self.summary("daily-s.json", "2026-11-03", "7eaf79cebe6920de", [self.row("a", 0.1, 1.0)], profile="aligned")
+        self.summary("daily-old.loki-defaults.json", "2026-11-02", "45d1ea4703aaaa", [self.row("a", 9.0, 1.0)])
+        latest, date, profile = pe.daily_runs(shapes, [])
+        self.assertEqual((date, profile), ("2026-11-03", "loki-defaults"))
+        self.assertEqual(pe.run_commits(latest), ["7eaf79cebe"])
+        cold = pe.run_bands(latest)["cold"]
+        self.assertEqual({k: cold[k] for k in ("rows", "below", "close", "between", "above", "loki_failed",
+                                               "proxy_failed", "cache_served")},
+                         {"rows": 4, "below": 1, "close": 1, "between": 1, "above": 1, "loki_failed": 1,
+                          "proxy_failed": 0, "cache_served": 1})
+        self.assertEqual(cold["share_below"], 25.0)
+        warm = pe.run_bands(latest)["warm"]
+        self.assertEqual((warm["rows"], warm["cache_served"]), (5, 0))  # warm is never cache-filtered
+        runs = pe.profile_runs(shapes, [], date)
+        self.assertEqual(sorted(runs), ["aligned", "loki-defaults"])
+        self.assertEqual(pe.run_bands(runs["aligned"])["cold"]["rows"], 1)
+        states = pe.run_states(latest)
+        self.assertEqual(states[("s", "d", "1h", "cold")], ("above", 3.0, 1.0))
+        self.assertEqual(states[("s", "c", "1h", "cold")][0], "within")
+        self.assertEqual(states[("s", "f", "1h", "cold")][0], "not_comparable")
+
+    def test_a_proxy_error_where_loki_answers_is_counted_apart(self):
+        self.summary("daily-s.loki-defaults.json", "2026-11-03", "7eaf79ce", [
+            self.row("a", 2.4, 42.0, ("500", "200"))])
+        latest, _, _ = pe.daily_runs({"s": {"shapes": [{"name": "a"}]}}, [])
+        cold = pe.run_bands(latest)["cold"]
+        self.assertEqual((cold["rows"], cold["proxy_failed"], cold["loki_failed"], cold["share_below"]), (0, 1, 0, 0.0))
 
     def test_no_valid_daily_summary_is_an_error(self):
         self.save("daily-s.json", "2026-10-28", valid=False)

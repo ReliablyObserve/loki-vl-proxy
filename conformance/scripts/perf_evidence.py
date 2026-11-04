@@ -627,6 +627,56 @@ def daily_runs(shape_sets, problems):
     return latest, date, profile
 
 
+def profile_runs(shape_sets, problems, date):
+    """Loki profile -> the latest rows of the valid daily summaries of `date` measured against that profile."""
+    out = {}
+    for profile in PROFILE_RANK:
+        rows = latest_runs(shape_sets, problems, "daily-*.json",
+                           lambda x, p=profile: x.get("valid", True) and x["date"] == date and profile_of(x) == p)
+        if rows:
+            out[profile] = rows
+    return out
+
+
+def run_bands(latest):
+    """mode -> the distribution of proxy ÷ Loki over the rows of `latest` (bench/ab/over2x.py's judge and band):
+    rows compared, below, close, between, above and share_below, plus the rows not judged: Loki did not answer 200,
+    the proxy did not while Loki did, and (cold) Loki's results cache answered the first request."""
+    out = {}
+    for _, summary, row in latest.values():
+        for mode, pair in over2x.summary_pairs(summary, row, summary["candidate"]).items():
+            d = out.setdefault(mode, {"rows": 0, **{b: 0 for b in over2x.BANDS},
+                                      "loki_failed": 0, "proxy_failed": 0, "cache_served": 0})
+            state = over2x.judge(*pair)
+            if state == "loki_failed":
+                d["loki_failed"] += 1
+            elif state == "not_comparable":
+                if pair[4]:
+                    d["cache_served"] += 1
+                elif pair[2] != "200":
+                    d["proxy_failed"] += 1
+            else:
+                d["rows"] += 1
+                d[over2x.band(*pair[:2])] += 1
+    for d in out.values():
+        d["share_below"] = round(100 * d["below"] / d["rows"], 1) if d["rows"] else 0.0
+    return {m: out[m] for m in over2x.MODES if m in out}
+
+
+def run_commits(latest):
+    """The commits (10 characters) the summaries of `latest` measured."""
+    return sorted({summary["commit"][:10] for _, summary, _ in latest.values() if summary.get("commit")})
+
+
+def run_states(latest):
+    """(set, shape, range, mode) -> (over2x.judge state, proxy seconds, Loki seconds) in the run of `latest`."""
+    out = {}
+    for (set_name, shape, rng), (_, summary, row) in latest.items():
+        for mode, pair in over2x.summary_pairs(summary, row, summary["candidate"]).items():
+            out[(set_name, shape, rng, mode)] = (over2x.judge(*pair), pair[0], pair[1])
+    return out
+
+
 def range_seconds(text):
     return int(text[:-1]) * {"m": 60, "h": 3600, "d": 86400}[text[-1]]
 
@@ -672,7 +722,10 @@ def quality_inputs():
     if problems:
         raise ValueError("; ".join(problems))
     acceptance_file = load_json(ACCEPTANCE)
-    day = next((d for d in acceptance_file["days"] if d["date"] == date), None)
+    # The distribution and the commit are read from the results the section shows, not from the history of that
+    # date: history keeps the first full run of a day, so a later run of the same date would be mixed in.
+    runs = profile_runs(spec["sets"], [], date)
+    runs[profile] = latest
     found, _, parity_problems = parity_gaps.analyse()
     behaviours = roadmap.collect("behaviours", "behaviours") + roadmap.collect("translations", "translations")
     states = {}
@@ -680,10 +733,13 @@ def quality_inputs():
         states[item["state"]] = states.get(item["state"], 0) + 1
     return {
         "loki": pinned_loki(read_text(COMPOSE)), "date": date, "profile": profile,
-        "commits": (day or {}).get("commits", []), "sets": len({k[0] for k in latest}),
+        "commits": run_commits(latest),
+        "sets": len({k[0] for k in latest}),
         "ranges": sorted({k[2] for k in latest if re.fullmatch(r"\d+[mhd]", k[2])}, key=range_seconds),
         "summary": summarize(latest, spec["sets"]),
-        "distribution": ((day or {}).get("profiles", {}).get(profile)),
+        "distribution": run_bands(latest),
+        "profile_bands": {p: run_bands(rows) for p, rows in runs.items()},
+        "over_latest": run_states(latest),
         "targets": acceptance_file.get("targets", {}),
         # The newest day each Loki profile has a full daily run (a profile that stopped running is behind `date`).
         "profile_last": {p: max((d["date"] for d in acceptance_file["days"] if p in d.get("profiles", {})), default="")
@@ -739,11 +795,41 @@ def other_profile_sentence(q, notes, others):
         if not last:
             out.append(f"The `{p}` profile has no valid daily run yet.")
         elif last == q["date"]:
-            out.append(f"The `{p}` profile ({notes[p]}) is measured too and is not shown here.")
+            out.append(f"The `{p}` profile ({notes[p]}) is measured too: the distribution table below shows both "
+                       "profiles, the rest of this section the one shown.")
         else:
             out.append(f"The `{p}` profile ({notes[p]}) did not run on {q['date']} (its newest daily run is {last}), "
                        "so it is not shown, and no row is judged in it.")
     return " ".join(out)
+
+
+def share(part, whole):
+    return f"{part} ({100 * part / whole:.1f}%)" if whole else str(part)
+
+
+def distribution_table(q):
+    """The distribution of the run shown per Loki profile and request kind, with the rows not judged."""
+    bands = q.get("profile_bands") or {}
+    if not bands:
+        return []
+    out = ["", "**Distribution versus Loki in the run shown, both Loki profiles**", "",
+           "Rows compared: both sides answered 200 and, on a first request, Loki's results cache did not answer. "
+           f"Bands are those of `bench/ab/over2x.py`: beyond {int(over2x.DIST_NOISE * 100)}% and "
+           f"{int(over2x.MIN_GAP * 1000)} ms, and above 2× Loki also more than {int(over2x.MIN_GAP * 1000)} ms behind. "
+           "The `aligned` profile runs the range-metric shapes only (the queries its setting changes).", "",
+           "| Loki profile | Request | Rows compared | Below Loki | Close to Loki | 1–2× Loki | Above 2× Loki "
+           "| Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |",
+           "|---|---|---:|---:|---:|---:|---:|---|"]
+    for profile in sorted(bands, key=lambda p: -PROFILE_RANK.get(p, 0)):
+        for mode, label in (("cold", "first"), ("warm", "repeat"), ("refresh", "refresh")):
+            d = bands[profile].get(mode)
+            if not d:
+                continue
+            n = d["rows"]
+            out.append(f"| `{profile}` | {label} | {n} | {share(d['below'], n)} | {share(d['close'], n)} | "
+                       f"{share(d['between'], n)} | **{share(d['above'], n)}** | "
+                       f"{d['loki_failed']} / {d['proxy_failed']} / {d['cache_served'] if mode == 'cold' else '—'} |")
+    return out
 
 
 def render_quality_summary(q, target_is_docs=False):
@@ -833,15 +919,25 @@ def render_quality_summary(q, target_is_docs=False):
     else:
         out.append(f"- No row is on the above-2× list for the `{q['profile']}` profile. {locked} of {len(q['blocks'])} covered registry items are "
                    f"locked at the 2× bound.")
-    gaps = {m: sorted((r for r in over if r["mode"] == m), key=lambda r: r["loki_s"] - r["proxy_s"])[:limit]
+    # The list keeps a row until two runs measure it within 2×; the figures quoted are the run shown above.
+    now = q.get("over_latest", {})
+    judged = [(r, now.get((r.get("set"), r["shape"], r["range"], r["mode"]))) for r in over]
+    still = [(r, s) for r, s in judged if s and s[0] == "above"]
+    within = sum(1 for _, s in judged if s and s[0] == "within")
+    if over and len(still) != len(over):
+        out.append(f"- In the run shown, **{len(still)}** of those rows measured above 2× Loki and **{within}** within 2×"
+                   + (f"; {len(over) - len(still) - within} could not be judged (not measured, or Loki's results "
+                      "cache answered the first request)" if len(over) - len(still) - within else "") + ".")
+    gaps = {m: sorted((x for x in still if x[0]["mode"] == m), key=lambda x: x[1][2] - x[1][1])[:limit]
             for m, limit in (("cold", 3), ("warm", 2))}
     for mode, label in (("cold", "first request"), ("warm", "repeat")):
         if gaps[mode]:
-            out.append(f"- Largest gaps on that list, {label}: " + "; ".join(
-                f"{code(r['shape'])} over {r['range']}, **{sec(r['proxy_s'])}** against **{sec(r['loki_s'])}**"
-                for r in gaps[mode]) + ".")
+            out.append(f"- Largest gaps on that list in the run shown, {label}: " + "; ".join(
+                f"{code(r['shape'])} over {r['range']}, **{sec(s[1])}** against **{sec(s[2])}**"
+                for r, s in gaps[mode]) + ".")
     out.append(f"- Answers: **{results.get('differs', 0)} of {s['pairs']}** pairs return a different result from Loki, "
                f"and **{results.get('not compared', 0)}** could not be compared.")
+    out += distribution_table(q)
     stats = q["stats"].get("read_api", q["stats"])
     found = q["differences"]
     count = {k: sum(1 for c in found if c["status"] == k) for k in ("open", "documented", "owner-kept", "upstream")}
