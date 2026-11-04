@@ -50,7 +50,7 @@ func TestRangeMetricCompatibilityUnwrapLogfmtNarrowedUnpack(t *testing.T) {
 	for _, query := range []string{
 		`sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap bytes(size_bytes) [5m]))`,
 		`sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap duration(ttl) [5m]))`,
-		`sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap size_bytes [5m]))`,
+		`sum by (service_name) (sum_over_time(` + sel + ` | logfmt | unwrap latency_ms [5m]))`,
 		`sum by (op) (sum_over_time(` + sel + ` | logfmt | unwrap latency_ms [5m]))`,
 		`sum by (service_name) (rate(` + sel + ` | logfmt | unwrap latency_ms [5m]))`,
 		`quantile_over_time(0.9, ` + sel + ` | logfmt | unwrap latency_ms [5m]) by (op)`,
