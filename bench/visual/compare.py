@@ -87,6 +87,12 @@ def frames_of(resp):
     return out
 
 
+# A request the page itself cancelled (Chrome net::ERR_ABORTED) has no answer. Whether the answer or the cancel
+# comes first is a race of the page, so a request cancelled on one side and answered on the other is reported, never
+# gated (the page does the same on Loki direct); cancelled on both sides it is equal.
+CANCELLED = "request cancelled by the page"
+
+
 def records(path, raw=None, gaps=None):
     """(settled, {request key: [answer digests]}); raw, when given, gets the answers themselves in the same order.
 
@@ -99,7 +105,9 @@ def records(path, raw=None, gaps=None):
     unreadable = False
     keys, reasons = set(), []
     for r in d["records"]:
-        missing_body = r["status"] == 200 and r["response"] is None
+        # A request the page cancelled (capture.spec.ts: `aborted`) has no answer and is not a gap of the capture.
+        cancelled = bool(r.get("aborted"))
+        missing_body = not cancelled and r["status"] == 200 and r["response"] is None
         unreadable |= missing_body
         if missing_body and r.get("body_unavailable"):
             reasons.append(str(r["body_unavailable"])[:160])
@@ -110,7 +118,8 @@ def records(path, raw=None, gaps=None):
                        digest(strip(sq)))
                 if missing_body:
                     keys.add(key)
-                recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
+                recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
+                                 {("capture", ""): ("capture", "body unreadable")} if missing_body else
                                  frames_of(r["response"]) if r["status"] == 200 else
                                  {("status", str(r["status"])): ("error", r["status"])})
                 if raw is not None:
@@ -127,7 +136,8 @@ def records(path, raw=None, gaps=None):
             rows = next((len(x) for x in lists if isinstance(x, list)), 0)
             if missing_body:
                 keys.add(key)
-            recs[key].append({("capture", ""): ("capture", "body unreadable")} if missing_body else
+            recs[key].append({("capture", ""): ("capture", CANCELLED)} if cancelled else
+                             {("capture", ""): ("capture", "body unreadable")} if missing_body else
                              {"body": ("other", hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), rows)}
                              if r["status"] == 200 else {("status", ""): ("error", r["status"])})
     if gaps is not None:
@@ -169,7 +179,10 @@ def ui_of(d, name):
 def same(a, b):
     """None when equal, else a short reason."""
     if ("capture", "") in a or ("capture", "") in b:
-        return "capture body unreadable"
+        why = {x.get(("capture", ""), ("capture", ""))[1] for x in (a, b)}
+        if why == {CANCELLED}:
+            return None  # the page cancelled this request on both sides
+        return f"capture {CANCELLED}" if CANCELLED in why else "capture body unreadable"
     if set(a) != set(b):
         only_a, only_b = sorted(map(str, set(a) - set(b))), sorted(map(str, set(b) - set(a)))
         return f"series sets differ: {len(set(a) - set(b))} only left {only_a[:2]}, {len(set(b) - set(a))} only right {only_b[:2]}"
@@ -273,7 +286,7 @@ def pairs(a, b):
 # the queries that proxy has already served: two processes running the same code
 # answer differently depending on their request history, so a patterns difference
 # between base and PR is reported, never gated.
-NONDETERMINISTIC = ("/resources/patterns", "capture body unreadable")
+NONDETERMINISTIC = ("/resources/patterns", "capture body unreadable", f"capture {CANCELLED}")
 # Resources whose answer is the proxy's deployment configuration (its
 # -tenant-default-limits / -tenant-limits flags), not data: a base-vs-PR
 # difference there comes from the stack's flags, so it is reported, never gated.

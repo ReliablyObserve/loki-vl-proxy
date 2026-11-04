@@ -73,6 +73,14 @@ lost the same request the row reports `unreadable_both`, leaves it uncompared an
 base read and the PR did not, or a PR page that never settled, still fails (`settled_pr` false). A page that settled on
 neither side with the same points and no difference also warns ("neither side settled") instead of failing the PR.
 
+The capture records a page only after every answer it is reading has been read (`settle` counts requests, not the
+reads of their bodies). A request the page itself cancels (Chrome `net::ERR_ABORTED`; Logs Drilldown cancels the volume
+panel's `sum(count_over_time(...)) by (detected_level)` query on some level-pill pages, on Loki direct too) is recorded as `aborted` whether the cancel came before or after the response headers, so
+it never turns into an unreadable body or a vanished request. `compare.py` treats a request cancelled on both sides as
+equal, and one cancelled on a single side and answered on the other as reported, never gated ("request cancelled by
+the page"): which of the answer and the cancel comes first is a race of the page. A request one side never made is
+still a difference.
+
 Logs Drilldown (2.5.2) crashes a breakdown page with Grafana's "Plugin failed to
 load" when a breakdown query is answered before the page's first time-series
 panel module has loaded (the app's legend sync calls the panel's field-config
