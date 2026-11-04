@@ -37,4 +37,6 @@ gap:
   loki: 'pkg/logql/evaluator.go LabelReplaceEvaluator.Next over VectorAggEvaluator, vector()'
   proxy: '400 on query; 400 (topk, sort) or empty streams (vector) on query_range'
   planned_test: 'TestCompat_LabelReplaceAroundRankingAndVector (test/e2e-compat, group semantics)'
-  clusters: []
+  clusters:
+    - 616dee70
+    - 76ff3326

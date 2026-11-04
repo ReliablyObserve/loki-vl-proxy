@@ -34,5 +34,6 @@ gap:
   planned_test: 'bench/visual history-dependent comparison (exists)'
   clusters:
     - 2c8e8dca
+    - 52dcf85a
     - 556a81b7
     - 7c1a4612

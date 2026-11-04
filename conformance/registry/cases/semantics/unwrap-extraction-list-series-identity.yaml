@@ -71,4 +71,6 @@ gap:
   proxy: 'the inner stats group by the line (unwrap functions) or by the stream (rate, count_over_time), so the outer aggregation reads other series'
   planned_test: 'TestExtractionListSeriesIdentityStillDiffers and TestExtractionListOutsideWithoutKeepsItsGrouping (internal/proxy, emulator); an e2e test vs Loki in group semantics when fixed (TestCompat_UnwrapExtractionListSeriesIdentity)'
   note: 'Found while confining the extraction-list grouping of semantics/unwrap-sum-without-collapses to the without fold. Applying the grouping to these queries is the fix shape, but it multiplies the series the stats return (a series per stream and parsed label set, which the series limit counts), so it needs the limit and the sliding route measured on their own before it lands.'
-  clusters: []
+  clusters:
+    - aa2da3e7
+    - f893d5df

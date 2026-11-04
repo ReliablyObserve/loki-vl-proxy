@@ -39,4 +39,6 @@ gap:
   loki: 'pkg/logql/log/parser.go duplicateSuffix; pkg/logql/log/labels.go LabelsBuilder'
   proxy: 'the stored field, the line value'
   planned_test: 'TestStreamLabelShadowedAfterJSONParser (internal/proxy) and TestCompat_StreamLabelShadowedAfterJSONParser (test/e2e-compat, group core)'
-  clusters: []
+  clusters:
+    - b9202c3b
+    - d2261efa

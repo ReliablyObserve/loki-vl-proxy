@@ -61,4 +61,6 @@ gap:
   loki: 'pkg/logql/log/metrics_extraction.go series labels; pkg/logql/evaluator.go VectorAggEvaluator.Next'
   proxy: 'operand series are the stream and level; parsed labels are missing'
   planned_test: 'TestCompat_StddevStdvarParserOperand (test/e2e-compat, group core)'
-  clusters: []
+  clusters:
+    - 94ae39ab
+    - cb20568c

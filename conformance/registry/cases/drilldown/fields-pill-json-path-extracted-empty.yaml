@@ -1,0 +1,46 @@
+id: drilldown/fields-pill-json-path-extracted-empty
+title: A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  With a level pill set, the Fields tab of Logs Drilldown breaks a nested
+  JSON field down with a JSON-path extraction list
+  (pkg/logql/log/parser.go:671 JSONExpressionParser.Process):
+
+    sum by (service_name_extracted) (count_over_time({service_name="api-gateway"}
+      | detected_level="error" | json service_name_extracted="[\"service\"][\"name\"]"
+      | drop __error__, __error_details__ | service_name_extracted!="" [$__auto]))
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0, Grafana page lvl-dd-fields-pill, 1h): Loki 1 series,
+  the proxy none, so the panel is empty. Without the level pill the
+  breakdown matches. Related: semantics/json-extracted-metric-pushdown
+  (fixed, the name_extracted metric pushdown without a level filter).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name_extracted) (count_over_time({service_name="api-gateway"} | detected_level="error" | json service_name_extracted="[\"service\"][\"name\"]" | drop __error__, __error_details__ | service_name_extracted!="" [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series and values.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/proxy json extraction-list metric with a detected_level filter before the parser'
+  loki: 'pkg/logql/log/parser.go:671 (JSONExpressionParser.Process, JSON path into the named label)'
+  proxy: 'empty result'
+  planned_test: 'TestCompat_DrilldownFieldsPillJSONPathExtracted (test/e2e-compat, group drilldown)'
+  clusters:
+    - 640ed4be

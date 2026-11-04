@@ -56,4 +56,6 @@ gap:
   loki: 'pkg/logql/evaluator.go:726-733'
   proxy: '200 without the rows that do not convert'
   planned_test: 'TestCompat_UnwrapConversionErrorParity open/* asserts Loki''s 400 and skips naming this case (label_replace); TestUnwrapCountingQuery and TestUnwrapLokiLabels pin the shapes left out'
-  clusters: []
+  clusters:
+    - 4f45a29f
+    - a48d17e7

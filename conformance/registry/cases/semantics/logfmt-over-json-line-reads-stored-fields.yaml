@@ -1,0 +1,56 @@
+id: semantics/logfmt-over-json-line-reads-stored-fields
+title: '`| logfmt` over a JSON line reads the keys VictoriaLogs stored from the JSON at ingestion; Loki''s logfmt extracts none of them (open)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki's logfmt parser extracts the `key=value` pairs of the line
+  (pkg/logql/log/parser.go:379 LogfmtParser.Process); a JSON line such as
+  `{"model": "m", "latency_ms": 12}` yields no latency_ms, so
+  `| logfmt | unwrap latency_ms` has no sample for it.
+
+  VictoriaLogs' Loki push stores the keys of a JSON line as fields at
+  ingestion, and the proxy's `| logfmt` reads the stored field. The
+  differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9, VictoriaLogs
+  v1.53.0) over the generator data (ml-serving writes JSON lines with a
+  numeric latency_ms):
+    * `sum by (service_name) (rate({env="production"} | logfmt | unwrap
+      latency_ms [5m]))`: Loki 1 series, the proxy also
+      `{service_name="ml-serving"}`;
+    * `max by (service_name) (max_over_time({env="production"} | logfmt |
+      unwrap latency_ms | __error__="" [1m]))`: the same extra series;
+    * `sum(rate({env="production"} | logfmt | unwrap latency_ms [5m]))`:
+      Loki 18707.7, proxy 21158.8 (the ml-serving samples).
+  Related: parsed-identity/bare-parser-metric-duplicates-extracted (stored
+  JSON fields beside a bare `| json`).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (rate({env="production"} | logfmt | unwrap latency_ms [5m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series: no series for services whose lines are JSON.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator logfmt pipeline (stored JSON fields read as logfmt keys)'
+  loki: 'pkg/logql/log/parser.go:379 (LogfmtParser.Process reads only the line)'
+  proxy: 'the stored field of a JSON line is read as a logfmt key'
+  planned_test: 'TestCompat_LogfmtOverJSONLine (test/e2e-compat, group semantics)'
+  clusters:
+    - 1b0728be
+    - 7fdea3f2
+    - d6e5e012
+    - e1dbc0fe

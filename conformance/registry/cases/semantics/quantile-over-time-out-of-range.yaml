@@ -1,0 +1,39 @@
+id: semantics/quantile-over-time-out-of-range
+title: quantile_over_time with a quantile above 1 or below 0 answers a sample value; Loki answers +Inf or -Inf (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki answers +Inf for a quantile above 1 and -Inf below 0
+  (pkg/logql/range_vector.go:449-475 quantileOverTime, Quantile).
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0): `quantile_over_time(2.0, {app="api-gateway"} | json
+  | unwrap duration_ms [5m])` (query and query_range) differs on every
+  series, the proxy's value lower than Loki's (+Inf by the code above).
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [values]
+  expect: |
+    +Inf for every series.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/translator quantile_over_time (quantile outside [0, 1])'
+  loki: 'pkg/logql/range_vector.go:449-475 (quantileOverTime, Quantile: q > 1 is +Inf, q < 0 is -Inf)'
+  proxy: 'a sample value'
+  planned_test: 'TestQuantileOverTimeOutOfRange (internal/proxy) and TestCompat_QuantileOutOfRange (test/e2e-compat, group semantics)'
+  clusters:
+    - 3b121b44
+    - a2c6431b

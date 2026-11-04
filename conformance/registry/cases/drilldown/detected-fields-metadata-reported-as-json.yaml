@@ -1,0 +1,45 @@
+id: drilldown/detected-fields-metadata-reported-as-json
+title: detected_fields reports a stored metadata field of a plain-text line with parsers ["json"]; Loki reports structured metadata with no parser (open)
+pending: true
+proves:
+  - loki_api_v1_detected_fields
+consumer: drilldown
+why: |
+  Loki lists a structured-metadata field with an empty parser list
+  (pkg/querier/queryrange/detected_fields.go:286-300); Logs Drilldown then
+  filters it without adding a parser stage to the query.
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0):
+    * `{service_name="visual-keep-metadata"}`: deployment_environment
+      (structured metadata on Loki, the OTel field deployment.environment on
+      VictoriaLogs; the line "metadata keep visual sample" is plain text):
+      Loki parsers [], proxy ["json"];
+    * `{service_name="visual-detected-level-stage"}`: level (structured
+      metadata `level=Warning` on Loki, a stored field on VictoriaLogs):
+      Loki parsers [], proxy ["json"].
+  A field filter Drilldown builds from ["json"] adds `| json` to the query.
+request:
+  method: GET
+  path: /loki/api/v1/detected_fields
+  params:
+    query: '{service_name="visual-keep-metadata"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [fields.parsers]
+  expect: |
+    parsers [] (null) for metadata fields.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy detected_fields parser attribution of stored fields'
+  loki: 'pkg/querier/queryrange/detected_fields.go:286-300 (structured metadata: empty parsers)'
+  proxy: 'parsers ["json"] for a stored field of a non-JSON line'
+  planned_test: 'TestCompat_DetectedFieldsMetadataParsers (test/e2e-compat, group drilldown)'
+  clusters:
+    - 79b6d220

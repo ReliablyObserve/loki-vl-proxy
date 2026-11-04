@@ -74,13 +74,13 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 20 partial, 3 gaps |
-| Known differences from Loki (ranked) | **95**: 72 open, 13 documented, 7 owner-kept, 3 upstream |
+| Known differences from Loki (ranked) | **108**: 85 open, 13 documented, 7 owner-kept, 3 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
 These are registry evidence counts, not a full runtime compatibility percentage. Optional deletion management is excluded from the read totals; deprecated aliases and write-only APIs are outside this score.
 
-The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/binary-ignoring-matching` (`+ ignoring(label)` between two sums joins the wrong series), `quality/label-values-chunk-window` (loki lists label values of streams whose chunks overlap the window; the proxy only of streams with lines in it). Differences kept on purpose are listed as documented or owner-kept.
+The 5 open differences with the most impact (all explore-visible): `parsed-identity/bare-parser-metric-duplicates-extracted` (bare JSON metrics cannot distinguish equal-valued metadata from ingested body fields), `semantics/parse-error-labels-on-log-lines` (A line a parser rejects carries __error__ and __error_details__ in Loki's log answer), `semantics/tail-history-start-limit` (native tail ignores start and limit: Grafana Live shows no history where Loki shows its last 100 lines), `semantics/keep-leaves-labels-loki-drops` (`| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation), `semantics/unwrap-per-series-identity-raw-rows` (A function taken per series (avg, max, min over time, rate_counter) under sum or sum by uses the stream as the series). Differences kept on purpose are listed as documented or owner-kept.
 
 Details, the per-workload tables and the method: [performance summary](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md#summary-versus-loki) · [performance guide](performance.md#current-position-versus-loki) · [ranked differences](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/parity-gaps.md) · [coverage map](compatibility-coverage.md) · [Known Issues](KNOWN_ISSUES.md).
 

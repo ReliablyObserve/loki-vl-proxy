@@ -1,0 +1,55 @@
+id: semantics/topk-per-step-membership-differs
+title: topk on query_range keeps other series at some steps than Loki, for grouped and level-filtered operands (open, cause not isolated)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki ranks k series per step, per group for `topk by` / `topk without`
+  (pkg/logql/evaluator.go:494-560). The plain forms match Loki
+  (semantics/topk-bottomk-range-series, semantics/topk-grouped-spellings);
+  the differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0) still shows other members at some steps:
+    * `topk(5, sum by (service_name) (count_over_time({env="production"} |
+      detected_level="error" [5m])))` (query_range and Grafana Explore, 1h):
+      `{service_name="checkout-svc"}` has 7 points on Loki and 9 on the proxy
+      (102 and 136 in Explore);
+    * `topk by (service_name) (2, sum by (service_name, level)
+      (count_over_time({env="production"}[$__auto])))` and the `topk without
+      (level)` spelling (Explore, 15m and 1h): Loki 32 or 33 series, the proxy
+      31 or 33 with `{level="info", service_name="batch-etl"}` missing;
+    * `topk(2, count_over_time({namespace="prod"}[3m]))`: the timestamps of
+      a matched series differ.
+  Not isolated: a tie at the k-th place (Loki keeps its map order there) and
+  a value difference in the operand both produce this; each row needs the
+  operand compared step by step before a fix.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'topk(5, sum by (service_name) (count_over_time({env="production"} | detected_level="error" [5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's members at every step.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy per-step topk ranking (ties, grouped ranking) and the detected_level-filtered operand'
+  loki: 'pkg/logql/evaluator.go:494-560 (per-step, per-group ranking)'
+  proxy: 'other members at some steps'
+  planned_test: 'TestCompat_TopkPerStepMembership (test/e2e-compat, group semantics): compare the operand per step, then the ranking'
+  clusters:
+    - 0423ae21
+    - 3fc6a3da
+    - '46305354'
+    - 71d9cb75
+    - c5f963b0

@@ -50,4 +50,5 @@ gap:
   proxy: 'one series on query_range (the last stats pipe has no by); the instant answers a series per stream'
   planned_test: 'TestWithoutShapesStillDifferFromLoki (internal/proxy, the series of the registered request); an e2e test vs Loki in group core when fixed'
   note: 'Related: semantics/unwrap-sum-without-collapses (fixed; a clause with labels), semantics/unwrap-over-time-range-windows (the values). The empty clause is Loki-correct from the source (Noop grouping); not run against a Loki here.'
-  clusters: []
+  clusters:
+    - 69f24906

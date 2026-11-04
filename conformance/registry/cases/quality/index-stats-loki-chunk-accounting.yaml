@@ -48,4 +48,5 @@ gap:
   loki: 'pkg/storage/stores/shipper/indexshipper/tsdb/index/chunk.go:262-267 pro rata; pkg/storage/async_store.go:167-171 and pkg/storage/stores/index/stats/stats.go:17-28 copies summed'
   proxy: 'exact counts'
   planned_test: 'bench/parity cross-check (run.py loki_counts_itself); TestDrilldown_IndexStatsLikeLoki (test/e2e-compat, group drilldown)'
-  clusters: []
+  clusters:
+    - 00a34ca2

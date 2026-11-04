@@ -1,0 +1,43 @@
+id: semantics/ip-label-filter-missing-label
+title: An ip() label filter on a label the line does not have keeps the line; Loki drops it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's ip() label filter drops a line whose label is absent
+  (pkg/logql/log/ip.go:123-133 filterTy: `if !ok { return false }`).
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0): `{service_name="payment-service"} | logfmt |
+  addr=ip("1.2.3.4")` and three variants (`remote_addr=ip(...)`,
+  `ipaddr=ip(...)`, with `level="error"`) answer 0 lines on Loki and 99 on
+  the proxy; payment-service lines have no addr field. Until #995 the proxy
+  rejected the filter with a 400 (semantics/proxy-rejects-valid-logql); since
+  it accepts it, the filter keeps lines Loki drops.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="payment-service"} | logfmt | addr=ip("1.2.3.4")'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    200 with no line.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator/label_filter_expr.go (ip() label filter on an absent field)'
+  loki: 'pkg/logql/log/ip.go:123-133 (absent label: line dropped)'
+  proxy: 'every line kept when the label is absent'
+  planned_test: 'TestCompat_IPLabelFilterAbsentLabel (test/e2e-compat, group semantics)'
+  clusters:
+    - e018ec65
