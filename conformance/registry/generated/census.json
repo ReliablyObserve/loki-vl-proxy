@@ -1790,7 +1790,7 @@
     },
     "page_kinds": {
       "drilldown": 18,
-      "explore": 120,
+      "explore": 121,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -1861,6 +1861,7 @@
     "explore-json-error-count-by-detected-level",
     "explore-json-error-filter-metric",
     "explore-json-extraction-list-level",
+    "explore-json-path-extraction-level-pill",
     "explore-keep-derived-service-name",
     "explore-keep-structured-metadata",
     "explore-label-browser",

@@ -204,6 +204,22 @@
    ]
   },
   {
+   "id": "explore-json-path-extraction-level-pill",
+   "kind": "explore",
+   "query": "sum by (service_name_extracted) (count_over_time({service_name=\"api-gateway\"} | detected_level=\"error\" | json service_name_extracted=\"[\\\"service\\\"][\\\"name\\\"]\" | drop __error__, __error_details__ | service_name_extracted!=\"\" [$__auto]))",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "drilldown/fields-pill-json-path-extracted-empty",
+    "parser-json",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "drilldown/fields-pill-json-path-extracted-empty"
+   ]
+  },
+  {
    "id": "lvl-dd-field-method-pill",
    "kind": "drilldown",
    "path": "service/{service}/field/method",
