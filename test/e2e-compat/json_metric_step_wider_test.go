@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,6 +69,11 @@ func TestRangeMetricCompatibilityJSONStepWiderThanRange(t *testing.T) {
 	eval := gridStart.Add(4 * 2 * time.Minute)
 	withGap := append(append([]jsonVolumeStreamLine(nil), lines...), jsonVolumeStreamLine{ts: eval.Add(-90 * time.Second), level: "warn", msg: "plain text in the gap"})
 	withWindow := append(append([]jsonVolumeStreamLine(nil), lines...), jsonVolumeStreamLine{ts: eval.Add(-30 * time.Second), level: "warn", msg: "plain text in a window"})
+	// In time order: the ingest check counts each app from its first to its
+	// last line.
+	for _, fixture := range [][]jsonVolumeStreamLine{withGap, withWindow} {
+		sort.Slice(fixture, func(i, j int) bool { return fixture[i].ts.Before(fixture[j].ts) })
+	}
 	ingestJSONVolumeFixture(t, map[string][]jsonVolumeStreamLine{clean: lines, mixed: mixedLines, gap: withGap, inWindow: withWindow})
 
 	// The stack's Loki and proxy align the bounds to the step; the in-process

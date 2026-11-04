@@ -65,14 +65,23 @@ func TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit(t *testing.T) {
 				assertSlidingParity(t, tc.query+fmt.Sprintf(" [limit %d]", limit), loki, slidingRangeSeries(t, route, tc.query, start, end, time.Minute, nil))
 			})
 		}
-		// one series past the limit: Loki's error
+		// one series past the limit: Loki's error, at the step the series above
+		// were read with. Loki counts the series of the answer
+		// (pkg/logql/engine.go JoinSampleVector), so at a 300 s step, whose one
+		// [1m] window ends before the fixture's lines, there is no series to
+		// count: Loki answers an empty matrix, and so does the proxy.
 		t.Run(tc.name+"/over the limit", func(t *testing.T) {
 			limit := tc.series - 1
 			route, _ := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) { cfg.MaxStatsQuerySeries = limit })
-			status, body, _ := alignLimitRangeQuery(t, route, tc.query, start, end, nil)
+			status, body := stepWiderStatus(t, route, tc.query, start, end, time.Minute)
 			if status != http.StatusBadRequest || !strings.Contains(body, fmt.Sprintf("maximum number of series (%d) reached for a single query", limit)) {
 				t.Fatalf("expected Loki's series limit error for %d series over a limit of %d, got %d %s", tc.series, limit, status, body)
 			}
+			gapLoki := slidingRangeSeries(t, lokiURL, tc.query, start, end, 5*time.Minute, nil)
+			if len(gapLoki) != 0 {
+				t.Fatalf("Loki sanity: %d series at a 300 s step, want none: %v", len(gapLoki), gapLoki)
+			}
+			assertSlidingParity(t, tc.query+" [300 s step]", gapLoki, slidingRangeSeries(t, route, tc.query, start, end, 5*time.Minute, nil))
 		})
 	}
 }

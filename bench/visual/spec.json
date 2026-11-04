@@ -1346,13 +1346,7 @@
   {
    "id": "explore-json-count-by-detected-level-short-range",
    "kind": "explore",
-   "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [5s]))",
-   "ranges": [
-    "6h"
-   ],
-   "fixes": [
-    "semantics/json-metric-step-wider-than-range"
-   ],
+   "query": "sum by (detected_level) (count_over_time({env=\"production\", app=\"api-gateway\"} | json [1s]))",
    "covers": [
     "semantics/json-metric-step-wider-than-range",
     "semantics/json-detected-level-error-split",

@@ -433,6 +433,53 @@ func TestOrderedJSONStepWiderThanRangeRefresh(t *testing.T) {
 	}
 }
 
+// Loki's series limit counts the series of the answer, the ones with a point
+// at some step (pkg/logql/engine.go JoinSampleVector), so lines in the gap
+// between two windows never count toward it: with every line in a gap the
+// answer is an empty matrix, not the limit error, and with the same lines
+// inside the windows one series past the limit is the error. This is the
+// over-the-limit case of TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit,
+// whose 300 s step left its lines in a gap.
+// conformance: semantics/json-metric-step-wider-than-range, limits/series-limit-error
+func TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries(t *testing.T) {
+	s0 := time.Unix(1700000400, 0).UTC()
+	var rows []pushdownRow
+	for p := 0; p < 12; p++ {
+		for i, level := range []string{"error", "ERR", "Err", "info"} {
+			rows = append(rows, pushdownRow{ts: s0.Add(time.Duration(p*4+i) * time.Second),
+				stream: map[string]string{"env": "prod", "pod": fmt.Sprintf("p%02d", p), "level": level}, msg: fmt.Sprintf(`{"n":%d}`, p*4+i)})
+		}
+	}
+	for _, tc := range []struct {
+		name       string
+		query      string
+		start, end time.Time
+		step       time.Duration
+		wantError  bool
+	}{
+		{"every line in a gap", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false},
+		{"every line in a gap, filtered", `sum by (pod) (count_over_time({env="prod"} | json | drop __error__ | detected_level="error" [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), 5 * time.Minute, false},
+		{"the lines in a window", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(time.Minute), s0.Add(6 * time.Minute), 5 * time.Minute, true},
+		{"the lines in windows, step equal to the range", `sum by (pod, detected_level) (count_over_time({env="prod"} | json | drop __error__ [1m]))`, s0.Add(-time.Minute), s0.Add(2 * time.Minute), time.Minute, true},
+	} {
+		srv, fake := newPushdownFakeVL(t, rows, nil)
+		fake.jsonUnpack = vlFastjsonUnpackFields
+		p := newFilterPushdownProxy(t, srv.URL)
+		fake.stored = p.labelTranslator.ToVL
+		p.maxStatsQuerySeries = 11
+		code, got, body := runSplitQuery(t, p, tc.query, tc.start, tc.end, tc.step)
+		if tc.wantError {
+			if code != http.StatusBadRequest || !strings.Contains(body, "maximum number of series (11) reached for a single query") {
+				t.Fatalf("%s: got %d %s, want Loki's series limit error", tc.name, code, body)
+			}
+			continue
+		}
+		if code != http.StatusOK || len(got) != 0 {
+			t.Fatalf("%s: got %d %v %s, want Loki's empty matrix", tc.name, code, got, body)
+		}
+	}
+}
+
 // DLV3 at the 48h step: a range shorter than the step is answered from one
 // stats_query_range request per attempt with buckets one step wide (not the
 // gcd of step and range) and the window filter, never a raw scan; the

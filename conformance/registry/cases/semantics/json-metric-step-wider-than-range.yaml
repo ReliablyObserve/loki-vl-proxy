@@ -46,6 +46,15 @@ why: |
   needs buckets of their greatest common divisor (a 604.8 s step over a 5 m
   range needed 2.4 s buckets).
 
+  Loki's series limit counts the series of the answer, the ones with a point
+  at some step (pkg/logql/engine.go:530-590 JoinSampleVector). The gcd grid
+  counted every group of the fetched buckets, gap buckets included, so a
+  query whose lines all fell between windows answered the series limit error
+  where Loki answers an empty matrix (the 300 s step of
+  TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit's over-the-limit
+  request); the window filter leaves those lines out, so the limit counts
+  Loki's series.
+
   Known limit, shared with the sliding route: VictoriaLogs evaluates the
   phase in float64, so a line within about 256 ns of a window edge, not on
   it, may fall on either side (semantics/sub-second-step-grid); a line
@@ -86,8 +95,10 @@ gap:
   area: 'internal/proxy/ordered_json_metric.go orderedJSONStatsBuckets (window phase filter, step buckets, relabelling); internal/proxy/ordered_json_valid_split.go addOrderedJSONRowLines, jsonUnparsedLineRisk'
   loki: 'pkg/logql/range_vector.go:55 newRangeVectorIterator, :102-114 batchRangeVectorIterator.Next, :150-188 load; pkg/logql/evaluator.go:721-735 RangeVectorEvaluator.Next'
   proxy: 'every selected line read as a raw row when the step exceeds the range (raw_rows, reason grid)'
-  planned_test: 'proxy TestOrderedJSONStepWiderThanRangeDifferential, TestOrderedJSONStepWiderThanRangeEdgeTable, TestOrderedJSONStepWiderThanRangeRefresh, TestOrderedJSONStepWiderThanRangeRoute, FuzzOrderedJSONStepWiderThanRange (internal/proxy, CI fuzz-smoke), BenchmarkOrderedJSONStepWiderThanRange; TestRangeMetricCompatibilityJSONStepWiderThanRange (test/e2e-compat, group semantics)'
+  planned_test: 'proxy TestOrderedJSONStepWiderThanRangeDifferential, TestOrderedJSONStepWiderThanRangeEdgeTable, TestOrderedJSONStepWiderThanRangeRefresh, TestOrderedJSONStepWiderThanRangeRoute, TestOrderedJSONStepWiderThanRangeSeriesLimitCountsWindowSeries, FuzzOrderedJSONStepWiderThanRange (internal/proxy, CI fuzz-smoke), BenchmarkOrderedJSONStepWiderThanRange; TestRangeMetricCompatibilityJSONStepWiderThanRange (test/e2e-compat, group semantics)'
   clusters: []
+  visual: none
+  visual_reason: 'a latency change: the base already answered Loki''s data through the row evaluator, so no panel differs base vs PR; every answer is proven by the differential against the Loki-semantics reference and the e2e test against Loki, the page explore-json-count-by-detected-level-short-range ([1s] range, shorter than Explore''s step at 1h and 6h) captures the shape against Loki, and the time is measured by the A/B shapes DLV3 and DLV7'
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
