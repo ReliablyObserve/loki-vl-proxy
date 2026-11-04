@@ -3041,6 +3041,7 @@
      "query": "sum without (pod) (count_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
      "covers": [
       "semantics/without-sliding-sum-folded-buckets",
+      "quality/stats-tumbling-relabel-one-parse",
       "metric-series-identity",
       "loki_api_v1_query_range"
      ]
@@ -3050,6 +3051,7 @@
      "query": "sum without (pod) (bytes_over_time({env=\"production\", instrumentation!=\"otel\", app!=\"otel-collector\"}[1m]))",
      "covers": [
       "semantics/without-sliding-sum-folded-buckets",
+      "quality/stats-tumbling-relabel-one-parse",
       "metric-series-identity",
       "loki_api_v1_query_range"
      ]

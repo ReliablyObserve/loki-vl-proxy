@@ -192,10 +192,10 @@ func foldFakeVL(t *testing.T, perBucket int) *httptest.Server {
 // The series limit sees the translated answer exactly as before: a Logs
 // Drilldown breakdown under the limit, over it (the busiest series and Loki's
 // warning), any other client over it (Loki's 400), a topk over it, and
-// answers under the size the one pass applies to give the same status,
+// smaller answers (one parse of the whole answer) give the same status,
 // warning and bytes with the one pass and with the two passes, and the
-// large answers within the limit take the one pass.
-// conformance: quality/stats-tumbling-relabel-one-pass, series-limits-and-partial-results
+// answers within the limit take the one pass.
+// conformance: quality/stats-tumbling-relabel-one-pass, quality/stats-tumbling-relabel-one-parse, series-limits-and-partial-results
 func TestStatsFoldRelabelKeepsTheSeriesLimit(t *testing.T) {
 	end := time.Unix(1700086400, 0).UTC()
 	for _, tc := range []struct {
@@ -212,7 +212,9 @@ func TestStatsFoldRelabelKeepsTheSeriesLimit(t *testing.T) {
 		{"explore under the limit", `sum by (pod) (count_over_time({app="a"}[1m]))`, 6, 60, 1000000, false, true},
 		{"explore over the limit", `sum by (pod) (count_over_time({app="a"}[1m]))`, 6, 60, 5000, false, false},
 		{"topk over the limit", `topk(10, sum by (pod) (count_over_time({app="a"}[1m])))`, 6, 60, 5000, true, false},
-		{"small answer", `sum by (pod) (count_over_time({app="a"}[1m]))`, 1, 5, 1000000, true, false},
+		{"small answer", `sum by (pod) (count_over_time({app="a"}[1m]))`, 1, 5, 1000000, true, true},
+		{"small answer over the limit", `sum by (pod) (count_over_time({app="a"}[1m]))`, 1, 5, 100, false, false},
+		{"sum without, 24h", `sum without (pod) (count_over_time({app="a"}[1m]))`, 24, 1, 1000000, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := foldFakeVL(t, tc.perBucket)

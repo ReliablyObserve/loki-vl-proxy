@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The fallback now runs only after the proxy's Drilldown scan deadline, so an
   empty answer no longer pays for the bare-selector lookup.
 
+### Performance
+
+- Translate and relabel a metric whose range equals the step in one parse
+  when its answer is within the pooled parser's 1 MiB bound, such as
+  `sum without (pod) (count_over_time({...}[1m]))` over 24h at Grafana's 60 s
+  step. The proxy parsed and rewrote such an answer twice: once to translate
+  the labels and once more to move every bucket to Loki's evaluation time. On
+  the daily run, the warm 24h answer of that shape came from kept stats
+  buckets with no VictoriaLogs call, took 68 ms against Loki's 12 ms, and
+  varied between about 17 ms and 100 ms. Each series is now translated and
+  relabelled as it is written. Answers are unchanged, apart from the order of
+  a series' labels, which the translation writes in map order on every path.
+  The series limit still applies to the translated answer. An answer the one
+  parse cannot rewrite exactly, and an answer over the bound, take the
+  earlier paths. With a fake VictoriaLogs serving kept buckets, this shape
+  dropped from 10.4 ms to 5.9 ms per request (-43%), and its allocations from
+  51 MiB to 32 MiB.
+
 ## [2.75.0] - 2026-11-04
 
 ### Fixed
