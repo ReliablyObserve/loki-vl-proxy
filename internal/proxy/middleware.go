@@ -407,6 +407,7 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 		prefix += bareJSONMetricResponseKeyVersion(r, r.FormValue("query"))
 		prefix += detectedLevelMutationResponseKeyVersion(r.FormValue("query"))
 		prefix += keepMetadataProjectionResponseKeyVersion(r.FormValue("query"))
+		prefix += ipLabelFilterResponseKeyVersion(r.FormValue("query"))
 		if endpoint == "query_range" {
 			prefix += logfmtPresenceResponseKeyVersion(r, r.FormValue("query"))
 		}

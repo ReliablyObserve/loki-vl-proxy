@@ -1462,11 +1462,14 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				label = `"` + label + `"`
 			}
 
-			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
-			// Detect calls before decoding a quoted exact value which may itself
-			// contain the literal text ip("...").
+			// ip() label filter: label = ip("pattern") or label != ip("pattern")
+			// (ipLabelFilter). Detect calls before decoding a quoted exact value
+			// which may itself contain the literal text ip("...").
 			if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
 				cidr := value[4 : len(value)-2]
+				if filter, ok := ipLabelFilter(label, cidr, entry.entry.negate); ok {
+					return filter, true
+				}
 				filter := logsql.NewBuilder(caps).BestIPv4Range(label, cidr)
 				if ff, ok := filter.(logsql.FieldFilter); ok && entry.entry.negate {
 					ff.Negate = true

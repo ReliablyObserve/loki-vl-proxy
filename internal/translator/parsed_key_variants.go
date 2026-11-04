@@ -167,7 +167,9 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 		return false
 	}
 	if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
-		return op.negate
+		// Loki's ip() filter drops a line without the label under both
+		// operators (pkg/logql/log/ip.go:128-131).
+		return false
 	}
 	v := streamMatcherValue(value, op.isRe)
 	if !op.isRe {

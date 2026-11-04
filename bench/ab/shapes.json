@@ -3309,6 +3309,59 @@
      ]
     }
    ]
+  },
+  "ip-label-filter": {
+   "description": "ip() label filters (PR for semantics/ip-label-filter-missing-label): Loki drops a line without the label under = and !=, keeps a whole address in the pattern under = and the others under !=. IP1 is the run's case (payment-service lines have no addr: Loki no line; before, a single address was sent as a match-all regexp, 99 lines). IP2-IP5 read the generator's ip key (10.0-5.x.y) on api-gateway and auth-service: a CIDR under = and !=, a CIDR and a range under count_over_time. The filter is an ipv4_range on the label with guards for what VictoriaLogs' parser reads and Loki's does not. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "IP1 logs, addr=ip(single), label absent",
+     "query": "{service_name=\"payment-service\"} | logfmt | addr=ip(\"1.2.3.4\")",
+     "covers": [
+      "semantics/ip-label-filter-missing-label",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "IP2 logs, json ip=ip(CIDR)",
+     "query": "{service_name=\"api-gateway\"} | json | ip=ip(\"10.1.0.0/16\")",
+     "covers": [
+      "semantics/ip-label-filter-missing-label",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "IP3 logs, json ip!=ip(CIDR)",
+     "query": "{service_name=\"api-gateway\"} | json | ip!=ip(\"10.1.0.0/16\")",
+     "covers": [
+      "semantics/ip-label-filter-missing-label",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "IP4 count, json ip=ip(CIDR)",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\") [1m]))",
+     "covers": [
+      "semantics/ip-label-filter-missing-label",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "IP5 count, json ip=ip(range)",
+     "query": "sum(count_over_time({service_name=\"auth-service\"} | json | ip=ip(\"10.0.0.0-10.2.255.255\") [1m]))",
+     "covers": [
+      "semantics/ip-label-filter-missing-label",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }
