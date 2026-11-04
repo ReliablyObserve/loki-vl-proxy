@@ -284,6 +284,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
+      "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -317,6 +318,7 @@
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
+      "internal/proxy/ip_label_filter_test.go",
       "internal/proxy/label_filter_expression_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
@@ -370,6 +372,7 @@
       "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/label_filter_expression_test.go",
@@ -882,6 +885,14 @@
     "semantics/instant-result-type-missing": [
       "internal/proxy/instant_result_type_test.go",
       "test/e2e-compat/instant_result_type_test.go"
+    ],
+    "semantics/ip-label-filter-embedded-address": [
+      "internal/translator/ip_label_filter_test.go"
+    ],
+    "semantics/ip-label-filter-missing-label": [
+      "internal/proxy/ip_label_filter_test.go",
+      "internal/translator/ip_label_filter_test.go",
+      "test/e2e-compat/ip_label_filter_test.go"
     ],
     "semantics/json-detected-level-error-split": [
       "internal/proxy/ordered_json_detected_level_split_test.go",
@@ -1457,7 +1468,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 414,
+  "registry_items": 415,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1752,6 +1763,10 @@
     "internal/proxy/instant_unwrap_sum_test.go": [
       "profiles/sanitized-json-key-grouping",
       "semantics/non-sum-vector-aggregation-unreduced"
+    ],
+    "internal/proxy/ip_label_filter_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/ip-label-filter-missing-label"
     ],
     "internal/proxy/json_label_probe_gates_test.go": [
       "parser-error-and-label-collision",
@@ -2430,6 +2445,10 @@
     "internal/translator/first_last_over_time_test.go": [
       "semantics/unwrap-first-last-under-aggregation"
     ],
+    "internal/translator/ip_label_filter_test.go": [
+      "semantics/ip-label-filter-embedded-address",
+      "semantics/ip-label-filter-missing-label"
+    ],
     "internal/translator/label_filter_expr_test.go": [
       "semantics/label-filter-expression-syntax"
     ],
@@ -2670,6 +2689,11 @@
       "loki_api_v1_query",
       "semantics/instant-result-type-missing",
       "semantics/scalar-sample-time-units"
+    ],
+    "test/e2e-compat/ip_label_filter_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/ip-label-filter-missing-label"
     ],
     "test/e2e-compat/json_detected_level_series_limit_test.go": [
       "limits/series-limit-error",
@@ -3076,7 +3100,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 317,
+  "tests_with_markers": 320,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3136,7 +3160,6 @@
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
     "semantics/ip-filter-precision",
-    "semantics/ip-label-filter-missing-label",
     "semantics/json-empty-value-label-series",
     "semantics/keep-leaves-labels-loki-drops",
     "semantics/label-replace-aggregation-over-transform",
@@ -3182,5 +3205,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 237
+  "wired_items": 239
 }

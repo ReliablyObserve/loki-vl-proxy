@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropped from 10.4 ms to 5.9 ms per request (-43%), and its allocations from
   51 MiB to 32 MiB.
 
+### Fixed
+
+- Answer an `ip()` label filter like Loki. `{service_name="payment-service"}
+  | logfmt | addr=ip("1.2.3.4")` answered every line where Loki answers none:
+  a single address or a range was sent as a match-all regexp, `!=` as its
+  negation (no line at all), and a line without the label was kept. Loki
+  drops a line without the label under both `=` and `!=`, and reads the
+  pattern as an address, a CIDR or a range of either family. The filter is
+  now VictoriaLogs' `ipv4_range` or `ipv6_range` on the label, guarded where
+  VictoriaLogs reads a value as an address and Loki does not (a leading zero,
+  IPv4 text under an IPv6 pattern). A value with an address inside other
+  text (`1.2.3.4:443`) still keeps fewer lines than Loki, never more.
+  Answers cached before the upgrade are not served.
+
 ## [2.76.0] - 2026-11-04
 
 ### Fixed
