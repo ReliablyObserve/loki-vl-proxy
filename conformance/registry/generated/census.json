@@ -1643,12 +1643,12 @@
       "any": 28,
       "api": 37,
       "drilldown": 40,
-      "explore": 128,
+      "explore": 129,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 300,
+      "go": 302,
       "playwright": 1
     },
     "page_kinds": {
@@ -1665,10 +1665,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 89,
+    "shape_covers_distinct": 90,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 230
+    "wired_items": 231
   },
   "gates": [
     "A/B shape selection",
