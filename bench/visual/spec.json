@@ -1420,6 +1420,28 @@
    ]
   },
   {
+   "id": "explore-last-over-time-offset-line-filter",
+   "kind": "explore",
+   "query": "last_over_time({service_name=\"payment-service\"} |= \"latency_ms\" | logfmt | unwrap latency_ms [1m] offset 2s) by (level)",
+   "ranges": ["1h"],
+   "covers": [
+    "semantics/first-last-over-time-translation",
+    "semantics/unwrap-first-last-range-timestamps",
+    "metric-series-identity",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
+   "id": "explore-logs-label-filter-expression",
+   "kind": "explore",
+   "query": "{service_name=\"api-gateway\"} | json | (status>=500 or duration_ms>1000), method=\"GET\"",
+   "ranges": ["15m", "1h"],
+   "covers": [
+    "semantics/label-filter-expression-syntax",
+    "loki_api_v1_query_range"
+   ]
+  },
+  {
    "id": "explore-max-by-count-over-time-sliding",
    "kind": "explore",
    "query": "max by (service_name) (count_over_time({service_name=\"api-gateway\"}[5m]))",
