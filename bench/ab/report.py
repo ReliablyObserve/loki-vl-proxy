@@ -20,6 +20,14 @@ index-stats cache Loki uses for query planning, is not an answer and is ignored.
 Rows from older runs carry none of these: they are left out, meaning unknown,
 never false.
 
+Results are compared with the reference only on the runs it computed. A reference
+run its results cache answered whole (every requested entry found) is Loki's
+cached extents put together for a window moved by a minute, and a ranked
+(topk/bottomk) reference run with more points than k per step
+("ranked_max_points", written by perf_matrix.py) cannot be a computed answer:
+both are left out and counted ("reference_skipped"). A row with no computed
+reference run has no result verdict (n/a). Timing is unchanged.
+
 Timing verdicts use warm p50 (runs after the first); the first run is reported
 as cold. A shape is slower or faster only when the p50 moves by more than
 --noise (relative, default 25%) and --min-delta seconds (default 0.05).
@@ -33,6 +41,8 @@ import sys
 
 SIG_RE = re.compile(r"series=(\d+|ranked) points=(\d+) sum=(\S+)")
 NOT_NUMBERS_RE = re.compile(r"not_numbers=(\d+)")
+SKIP_REASONS = {"cache": "run(s) its results cache answered whole",
+                "ranked": "ranked run(s) with more points than k per step"}
 
 
 def load(path):
@@ -65,6 +75,35 @@ def cache_served(stats):
     """
     return any((sub.get("entriesFound") or 0) > 0 or (sub.get("bytesReceived") or 0) > 0
                for name, sub in (stats or {}).items() if name != "statsResult")
+
+
+def cache_answered_whole(stats):
+    """True when Loki's counters say its results cache held every entry the request asked for: the answer is
+    Loki's cached extents put together for a moved window, not one Loki computed.
+
+    A shifted window answered this way is not a reference for the answer: merged extents can repeat a step with
+    other ranked members (a topk with more than k series at a step) or drop a step's sample. statsResult, the
+    index-stats cache, is never an answer and is ignored; a request with no counters (older runs, endpoints that
+    report none) counts as computed."""
+    asked = [sub for name, sub in (stats or {}).items() if name != "statsResult" and (sub.get("entriesRequested") or 0) > 0]
+    return bool(asked) and all((sub.get("entriesFound") or 0) >= sub["entriesRequested"] for sub in asked)
+
+
+def points_of(signature):
+    """The point count of a result signature, or None."""
+    found = SIG_RE.match(signature or "")
+    return int(found.group(2)) if found else None
+
+
+def reference_skip(row):
+    """Why a reference (Loki) run is no reference for the answer, or "": its results cache answered it whole, or
+    its ranked (topk/bottomk) answer holds more points than k per step, which no computed answer can."""
+    if cache_answered_whole(row.get("cache")):
+        return "cache"
+    limit, points = row.get("ranked_max_points"), points_of(row.get("signature"))
+    if limit is not None and points is not None and points > limit:
+        return "ranked"
+    return ""
 
 
 def sum_cache(rows):
@@ -167,6 +206,15 @@ def summarize(args):
             return {r["run"]: r["signature"] for r in by_target.get(t, [])}
 
         cand, base, ref = sig_by_run(args.candidate), sig_by_run(args.baseline), sig_by_run(args.reference)
+        # Only the reference runs Loki computed are compared; the others are counted by reason.
+        skipped = {}
+        for r in by_target.get(args.reference, []):
+            reason = reference_skip(r)
+            if reason:
+                skipped[reason] = skipped.get(reason, 0) + 1
+                ref.pop(r["run"], None)
+        if skipped:
+            entry["reference_skipped"] = skipped
         vs_ref = [parity(ref[run], cand[run], args.tolerance) for run in cand if run in ref]
         entry["parity_vs_reference"] = "differs" if "differs" in vs_ref else (max(vs_ref, key=len) if vs_ref else "n/a")
         base_vs_ref = [parity(ref[run], base[run], args.tolerance) for run in base if run in ref]
@@ -272,6 +320,15 @@ def markdown(s):
     if unlike:
         lines += ["", f"‡ {', '.join(sorted(unlike))}: this build did not run the setting of the Loki profile "
                   f"({s.get('profile')}), so its timings are not like-for-like with Loki's and are never compared."]
+    skipped = {}
+    for e in s["rows"]:
+        for reason, n in (e.get("reference_skipped") or {}).items():
+            skipped[reason] = skipped.get(reason, 0) + n
+    if skipped:
+        unchecked = sum(1 for e in s["rows"] if e["parity_vs_reference"] == "n/a" and e.get("reference_skipped"))
+        lines += ["", f"Results are compared only with the {r} runs {r} computed: "
+                  + ", ".join(f"{n} {SKIP_REASONS[k]}" for k, n in sorted(skipped.items()))
+                  + " left out" + (f"; {unchecked} row(s) had no computed {r} run, so their result is n/a." if unchecked else ".")]
     if any(stale.values()):
         lines += ["", "† identical answers for windows a minute apart: served from a cache or a stale view, so the "
                   "timing is not a like-for-like reference (" +

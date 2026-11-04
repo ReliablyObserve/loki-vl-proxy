@@ -54,6 +54,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -324,6 +325,23 @@ def name_set_signature(kind, names):
     return f"{kind}={len(names)} set={hashlib.sha256(chr(10).join(names).encode()).hexdigest()[:12]}"
 
 
+RANKED_RE = re.compile(r"\s*(?:topk|bottomk)\s*\(\s*(\d+)\s*,")
+
+
+def ranked_max_points(query, secs, step, instant=False):
+    """The most points a topk or bottomk answer can hold, or None for any other query: k per step (Loki keeps at most k
+    series per step), over the steps of [end - secs, end] or the one step of an instant query."""
+    found = RANKED_RE.match(query or "")
+    if not found:
+        return None
+    k = int(found.group(1))
+    if instant:
+        return k
+    if not step:
+        return None
+    return k * (int(secs / step + 1e-9) + 1)
+
+
 def signature(status, body, logs, ranked=False):
     """A result fingerprint: equal signatures mean equal answers.
 
@@ -503,6 +521,9 @@ def main():
                            "seconds": round(dt, 3), "signature": signature(status, body, shape.get("logs", False),
                                                   query.lstrip().startswith(("topk", "bottomk"))),
                            "vl_cpu_max": None, "vl_cpu_avg": None, "at": int(t0)}
+                    limit = ranked_max_points(query, secs, step, shape.get("instant", False))
+                    if limit is not None:
+                        row["ranked_max_points"] = limit
                     timings.append((row, t0, dt))
                     cache = loki_cache_stats(body) if status == 200 else None
                     if cache:
