@@ -42,6 +42,28 @@ class SliceTest(unittest.TestCase):
         self.assertEqual(kept, 3)
 
 
+class MetricWarmupTest(unittest.TestCase):
+    def verdict(self, **before):
+        base = {"loki_ready": 200, "proxy_ready": 200, "vl_ready": 200, "lines_loki": 5, "lines_vl": 5,
+                "slices_differing": [], "services_listed": 20, "services_in_loki_metric": 16}
+        base.update(before)
+        with tempfile.TemporaryDirectory() as directory:
+            with open(os.path.join(directory, "health.json"), "w") as handle:
+                json.dump({"before": base}, handle)
+            return refresh.only_metric_path_warming(directory)
+
+    def test_only_a_short_metric_answer_is_waited_for(self):
+        self.assertTrue(self.verdict())
+        self.assertFalse(self.verdict(services_in_loki_metric=20))
+        self.assertFalse(self.verdict(lines_loki=4))
+        self.assertFalse(self.verdict(loki_ready=503))
+        self.assertFalse(self.verdict(slices_differing=[1]))
+
+    def test_no_health_file_is_not_waited_for(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertFalse(refresh.only_metric_path_warming(directory))
+
+
 class GeneratorOrderTest(unittest.TestCase):
     def test_the_ranked_differences_are_written_before_the_sections_that_read_them(self):
         names = [(script, target) for script, target, _ in refresh.check_conformance.REPORTS]

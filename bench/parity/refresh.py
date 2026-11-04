@@ -54,6 +54,10 @@ DISCOVERY = parity_gaps.DISCOVERY
 VALIDATE_PAGES = ("explore-logs-plain", "lvl-dd-logs-pill-json")
 RANGES = "15m,1h"
 UNCLAIMED_SHOWN = 40
+# Loki answers range metrics for some services a little after others on a fresh stack: run.py's health proof
+# (exit 2) is tried again while that is the only thing missing.
+METRIC_RETRIES = 20
+METRIC_RETRY_S = 15
 
 
 def git(*args):
@@ -112,6 +116,17 @@ def capture(a, out, state, log):
     run(["npx", "playwright", "test"], cwd=visual, env=dict(env, VP_WARMUP="1"), log=log, check=False)
     result = run(["npx", "playwright", "test"], cwd=visual, env=env, log=log, check=False)
     return {"pages": len(pages), "exit": result.returncode}
+
+
+def only_metric_path_warming(run_dir):
+    """run.py refused for one reason only: Loki's range-metric path misses services its label values list."""
+    try:
+        before = load_json(os.path.join(run_dir, "health.json"))["before"]
+    except (OSError, ValueError, KeyError):
+        return False
+    return bool(before.get("loki_ready") == before.get("proxy_ready") == before.get("vl_ready") == 200
+                and before.get("lines_loki") == before.get("lines_vl") and not before.get("slices_differing")
+                and (before.get("services_in_loki_metric") or 0) < (before.get("services_listed") or 0))
 
 
 def slice_corpus(path, per_source):
@@ -247,8 +262,14 @@ def main():
 
         t0 = time.time()
         run_dir = os.path.join(out, "run")
-        ran = run([PY, os.path.join(HERE, "run.py"), "--state", os.path.join(out, "state.json"), "--corpus", corpus,
-                   "--out", run_dir, "--workers", str(a.workers)], log=os.path.join(out, "run.log"), check=False)
+        for attempt in range(1, METRIC_RETRIES + 1):
+            ran = run([PY, os.path.join(HERE, "run.py"), "--state", os.path.join(out, "state.json"), "--corpus", corpus,
+                       "--out", run_dir, "--workers", str(a.workers)], log=os.path.join(out, "run.log"), check=False)
+            if ran.returncode != 2 or attempt == METRIC_RETRIES or not only_metric_path_warming(run_dir):
+                break
+            print(f"Loki's range-metric path still lists fewer services than its label values ({attempt}); "
+                  f"trying again in {METRIC_RETRY_S} s", flush=True)
+            time.sleep(METRIC_RETRY_S)
         phase("run", t0)
         if ran.returncode:
             print(f"run.py exited {ran.returncode}: nothing is recorded (see {out}/run.log and run/health.json)", flush=True)
