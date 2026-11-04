@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.74.0] - 2026-11-04
+
 ### Fixed
 
 - Answer `/loki/api/v1/index/volume` and `index/volume_range` (Explore and
