@@ -9,14 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Answer `first_over_time` and `last_over_time` with `unwrap` on
-  `/loki/api/v1/query_range` at Loki's evaluation timestamps when the range is
-  at most the step (Grafana's `$__auto`), under any outer aggregation, a binary
-  operation or `topk`. Every point came one step early, and a line exactly on a
-  step edge landed in the next step, because these two functions skipped the
-  relabelling of VictoriaLogs step buckets that the other unwrap functions use.
-  No VictoriaLogs call is added.
-
 - Answer a windowed log `query_range` (`-query-range-windowing`) that ends
   while the proxy waits to retry a failed window batch as Loki does: `499` "the
   request was cancelled by the client" when the client went away and `504`
@@ -31,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking:** clients and alerts keyed on `408` from `query_range` now see
   `504` (or `499`), and `loki_vl_proxy_requests_total{status="408"}` becomes
   `status="504"` or `status="499"`.
+
+## [2.73.0] - 2026-11-04
+
+### Fixed
+
+- Answer `first_over_time` and `last_over_time` with `unwrap` on
+  `/loki/api/v1/query_range` at Loki's evaluation timestamps when the range is
+  at most the step (Grafana's `$__auto`), under any outer aggregation, a binary
+  operation or `topk`. Every point came one step early, and a line exactly on a
+  step edge landed in the next step, because these two functions skipped the
+  relabelling of VictoriaLogs step buckets that the other unwrap functions use.
+  No VictoriaLogs call is added.
 
 ## [2.72.0] - 2026-11-04
 
