@@ -324,6 +324,30 @@ class VictoriaLogsSurfaceReportsTest(unittest.TestCase):
                         order.index("conformance/reports/gaps.md"))
 
 
+class MatrixLiveProofTest(unittest.TestCase):
+    """The live-proof line states what was recorded against what the registry defines, and who runs it."""
+
+    def test_counts_blocked_cases_against_the_cases_defined(self):
+        module = load_script("matrix_link.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "generated").mkdir()
+            (root / "cases/semantics").mkdir(parents=True)
+            for name in ("a", "b", "c"):
+                (root / f"cases/semantics/{name}.yaml").write_text(f"id: semantics/{name}\n")
+            (root / "generated/live-evidence.json").write_text(json.dumps({"recorded": "2026-09-22", "cases": {
+                "semantics/a": {"verdict": "blocked"}, "semantics/b": {"verdict": "holds"}}}))
+            self.assertEqual(module.live_counts(str(root)), (2, 1, 3))
+
+    def test_names_the_workflows_that_run_it(self):
+        module = load_script("matrix_link.py")
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "a.yaml").write_text("run: python3 conformance/scripts/live_proof.py --loki x\n")
+            Path(directory, "b.yml").write_text("run: echo\n")
+            self.assertEqual(module.live_proof_workflows(directory), ["a.yaml"])
+            self.assertEqual(module.live_proof_workflows(str(Path(directory, "missing"))), [])
+
+
 class MatrixLinkCheckTest(unittest.TestCase):
     """matrix_link.py --check is a gate: a pinned version the matrix does not run, or a missing score test, fails."""
 
