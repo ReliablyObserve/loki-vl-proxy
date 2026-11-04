@@ -229,16 +229,16 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "bad_data",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "ctx, err",
+      "kind": "layer",
       "message": null,
-      "status": 400,
-      "status_token": "http.StatusBadRequest",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/binary_logql.go finishBinaryOperandResponse",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -265,16 +265,16 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "internal",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
       "message": null,
-      "status": 500,
-      "status_token": "http.StatusInternalServerError",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/binary_logql.go proxyBinaryLogQL",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": true,
@@ -877,16 +877,16 @@
       "writer": "writeError"
     },
     {
-      "dynamic": true,
+      "dynamic": false,
       "error_text": false,
-      "error_type": "internal",
-      "expression": "fmt.Sprintf(\"manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes\", p.limits().BufferedBackendBodyBytes)",
-      "kind": "dynamic",
-      "message": "manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes",
-      "status": 500,
-      "status_token": "http.StatusInternalServerError",
+      "error_type": null,
+      "expression": "ctx, fmt.Errorf(\"manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes\", p.limits().BufferedBackendBodyByte",
+      "kind": "layer",
+      "message": null,
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyStatsQueryRangeDirectAnchored",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -973,16 +973,16 @@
       "writer": "writeErr"
     },
     {
-      "dynamic": true,
-      "error_text": true,
-      "error_type": "internal",
-      "expression": "err.Error()",
-      "kind": "dynamic",
+      "dynamic": false,
+      "error_text": false,
+      "error_type": null,
+      "expression": "r.Context(), err",
+      "kind": "layer",
       "message": null,
-      "status": 500,
-      "status_token": "http.StatusInternalServerError",
+      "status": null,
+      "status_token": null,
       "where": "internal/proxy/metric_binary.go proxyBinaryMetricVM",
-      "writer": "writeError"
+      "writer": "writeErr"
     },
     {
       "dynamic": false,
@@ -2356,9 +2356,9 @@
   "summary": {
     "by_status": {
       "400": {
-        "count": 87,
-        "dynamic_sites": 59,
-        "error_text_sites": 43,
+        "count": 86,
+        "dynamic_sites": 58,
+        "error_text_sites": 42,
         "error_type": "bad_data",
         "layer_sites": 0,
         "literal_sites": 28,
@@ -2470,26 +2470,25 @@
         "no_body_sites": 0
       },
       "500": {
-        "count": 11,
-        "dynamic_sites": 6,
-        "error_text_sites": 5,
+        "count": 8,
+        "dynamic_sites": 3,
+        "error_text_sites": 3,
         "error_type": "internal",
         "layer_sites": 0,
         "literal_sites": 5,
         "messages": [
           "Internal Server Error",
           "error while processing request: runtime error: integer divide by zero",
-          "failed to merge multi-tenant response: ",
-          "manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes"
+          "failed to merge multi-tenant response: "
         ],
         "no_body_sites": 0
       },
       "derived": {
-        "count": 85,
+        "count": 89,
         "dynamic_sites": 6,
         "error_text_sites": 3,
         "error_type": null,
-        "layer_sites": 78,
+        "layer_sites": 82,
         "literal_sites": 1,
         "messages": [
           "multi-tenant sub-request failed"

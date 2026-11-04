@@ -470,6 +470,7 @@
       "internal/config/registry_test.go",
       "internal/proxy/backend_read_bounds_test.go",
       "internal/proxy/backend_response_guard_test.go",
+      "internal/proxy/binary_budget_status_test.go",
       "internal/proxy/drilldown_byte_overflow_test.go",
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
@@ -823,6 +824,7 @@
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
     "semantics/error-layer-proxy-limit-status": [
+      "internal/proxy/binary_budget_status_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "test/e2e-compat/error_layer_like_loki_test.go"
     ],
@@ -1325,6 +1327,7 @@
     ],
     "status-400": [
       "internal/proxy/absent_over_time_test.go",
+      "internal/proxy/binary_budget_status_test.go",
       "internal/proxy/error_body_shape_test.go",
       "internal/proxy/error_layer_gate_test.go",
       "internal/proxy/loki_client_error_test.go",
@@ -1537,6 +1540,11 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/aggregation-over-binary-dropped"
+    ],
+    "internal/proxy/binary_budget_status_test.go": [
+      "operator-configurable-limits",
+      "semantics/error-layer-proxy-limit-status",
+      "status-400"
     ],
     "internal/proxy/binary_division_zero_test.go": [
       "semantics/binary-division-by-zero-nan"
@@ -2988,7 +2996,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 307,
+  "tests_with_markers": 308,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
