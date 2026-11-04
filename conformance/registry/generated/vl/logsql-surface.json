@@ -23,7 +23,6 @@
       "since": "v1.51.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
         "internal/translator/translator.go"
       ]
     },
@@ -32,10 +31,8 @@
       "name": "collapse_nums",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -44,8 +41,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_valid_split.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
@@ -59,8 +56,6 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
-        "internal/proxy/postprocess.go",
         "internal/translator/translator.go"
       ]
     },
@@ -72,12 +67,13 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/detected_level_presence.go",
-        "internal/proxy/drilldown_burst_coalescer.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
-        "internal/translator/translator.go"
+        "internal/translator/translator.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -85,10 +81,8 @@
       "name": "drop_empty_fields",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -97,8 +91,6 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
-        "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/translator/translator.go"
       ]
@@ -110,7 +102,6 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/translator/translator.go"
       ]
@@ -120,10 +111,8 @@
       "name": "facets",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -132,7 +121,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go"
+        "internal/proxy/rate_counter_singletons.go"
       ]
     },
     {
@@ -140,10 +129,8 @@
       "name": "field_values",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -160,8 +147,10 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/detected_level_presence.go",
         "internal/proxy/metric_binary.go",
-        "internal/proxy/ordered_json_valid_split.go"
+        "internal/proxy/ordered_json_valid_split.go",
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -176,6 +165,7 @@
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/volume.go",
         "internal/translator/detected_level_logsql.go",
@@ -189,10 +179,8 @@
       "name": "first",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -201,12 +189,15 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
+        "internal/proxy/detected_level_presence.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/unwrap_conversion_error.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
-        "internal/translator/translator.go"
+        "internal/translator/translator.go",
+        "internal/translator/unwrap_gate.go"
       ]
     },
     {
@@ -214,75 +205,56 @@
       "name": "generate_sequence",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "hash",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "join",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "json_array_concat",
       "present_in_latest": true,
       "since": "v1.52.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "json_array_len",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "last",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "len",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go",
-        "internal/proxy/loki_profile.go",
-        "internal/proxy/postprocess.go",
-        "internal/proxy/query_translation.go",
-        "internal/proxy/stream_processing.go",
-        "internal/proxy/unwrap_conversion_error.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -294,7 +266,10 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
-        "internal/proxy/range_metric_compat.go"
+        "internal/proxy/query_translation.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/rate_counter_singletons.go",
+        "internal/proxy/unwrap_conversion_error.go"
       ]
     },
     {
@@ -304,8 +279,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/unwrap_conversion_error.go",
         "internal/translator/translator.go",
         "internal/translator/unwrap_gate.go"
       ]
@@ -315,10 +290,8 @@
       "name": "offset",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -349,10 +322,8 @@
       "name": "query_stats",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -375,10 +346,8 @@
       "name": "replace",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -388,7 +357,9 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
-        "internal/translator/unwrap_gate.go"
+        "internal/proxy/ordered_json_valid_split.go",
+        "internal/translator/unwrap_gate.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -396,30 +367,24 @@
       "name": "running_stats",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "sample",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "set_stream_fields",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -431,6 +396,8 @@
         "internal/proxy/cold_dispatch.go",
         "internal/proxy/drilldown.go",
         "internal/proxy/metric_binary.go",
+        "internal/proxy/query_range_windowing.go",
+        "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/stream_processing.go",
         "internal/proxy/tail.go",
@@ -450,10 +417,8 @@
       "name": "split",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -463,15 +428,24 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/detected_level_presence.go",
+        "internal/proxy/drilldown_burst_coalescer.go",
         "internal/proxy/label_handlers.go",
         "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
         "internal/proxy/metric_binary.go",
+        "internal/proxy/nested_vector_fold.go",
         "internal/proxy/quantile_histogram.go",
+        "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
+        "internal/proxy/stream_processing.go",
+        "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/unwrap_samples.go",
         "internal/proxy/volume.go",
-        "internal/translator/translator.go"
+        "internal/proxy/volume_segments.go",
+        "internal/translator/translator.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -479,60 +453,48 @@
       "name": "stream_context",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "time_add",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "top",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "total_stats",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "union",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "uniq",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -547,11 +509,8 @@
       "name": "unpack",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/proxy/loki_profile.go",
-        "internal/proxy/unwrap_conversion_error.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
@@ -560,8 +519,10 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/drilldown_burst_coalescer.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/metric_agg.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/volume.go",
         "internal/translator/parsed_key_variants.go",
@@ -575,7 +536,9 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/drilldown_burst_coalescer.go",
+        "internal/proxy/drilldown.go",
+        "internal/proxy/range_metric_compat.go",
+        "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/volume.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/translator.go"
@@ -586,40 +549,32 @@
       "name": "unpack_syslog",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "unpack_words",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "unroll",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "pipe",
       "name": "update",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/logsql/ast.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     },
     {
       "kind": "stats",
@@ -634,8 +589,10 @@
       "name": "avg",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/translator/translator.go"
+      ]
     },
     {
       "kind": "stats",
@@ -644,23 +601,24 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
         "internal/proxy/detected_level_presence.go",
         "internal/proxy/drilldown_burst_coalescer.go",
         "internal/proxy/label_handlers.go",
         "internal/proxy/manual_metric_budget.go",
         "internal/proxy/metadata_inventory.go",
         "internal/proxy/metric_binary.go",
+        "internal/proxy/nested_vector_fold.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/quantile_histogram.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/stream_processing.go",
-        "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translator/parsed_key_variants.go",
-        "internal/translator/translator.go"
+        "internal/translator/translator.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -686,7 +644,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/label_handlers.go"
+        "internal/proxy/label_handlers.go",
+        "internal/proxy/rate_counter_singletons.go"
       ]
     },
     {
@@ -764,8 +723,8 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/postprocess.go",
-        "internal/proxy/query_translation.go"
+        "internal/proxy/query_translation.go",
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -775,7 +734,6 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
         "internal/translator/translator.go"
       ]
     },
@@ -786,10 +744,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/query_translation.go",
-        "internal/proxy/range_metric_compat.go",
-        "internal/proxy/stream_processing.go",
-        "internal/translator/translator.go"
+        "internal/proxy/stream_processing.go"
       ]
     },
     {
@@ -813,24 +768,30 @@
       "name": "row_max",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/translator/translator.go"
+      ]
     },
     {
       "kind": "stats",
       "name": "row_min",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/translator/translator.go"
+      ]
     },
     {
       "kind": "stats",
       "name": "stddev",
       "present_in_latest": true,
       "since": "v1.49.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/translator/translator.go"
+      ]
     },
     {
       "kind": "stats",
@@ -839,12 +800,14 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/logsql/ast.go",
+        "internal/proxy/absent_over_time.go",
         "internal/proxy/manual_metric_budget.go",
+        "internal/proxy/metric_agg.go",
+        "internal/proxy/nested_vector_fold.go",
         "internal/proxy/query_translation.go",
-        "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_samples.go",
-        "internal/translator/translator.go"
+        "internal/translator/translator.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -854,12 +817,14 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/nested_vector_fold.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/volume.go",
-        "internal/translator/translator.go"
+        "internal/translator/translator.go",
+        "internal/translator/without_pushdown.go"
       ]
     },
     {
@@ -875,10 +840,8 @@
       "name": "values",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": true,
-      "used_in": [
-        "internal/proxy/unwrap_conversion_error.go"
-      ]
+      "used_by_proxy": false,
+      "used_in": []
     }
   ],
   "tags": [

@@ -18,4 +18,4 @@ cases: []       # case ids proving the semantics match
 victorialogs_candidates:
   - id: pipe-replace-regexp
     since: v1.40.0
-    emitted_by_proxy: false
+    emitted_by_proxy: true
