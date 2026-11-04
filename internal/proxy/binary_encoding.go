@@ -58,7 +58,7 @@ func checkBinaryOutputLabels(ctx context.Context, labels map[string]string) erro
 				return err
 			}
 			if size > state.budget.outputLabels {
-				return fmt.Errorf("binary expression output label budget exceeded")
+				return fmt.Errorf("binary expression output labels exceed %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", executionLimitsFrom(ctx).BufferedBackendBodyBytes)
 			}
 			state.budget.outputLabels -= size
 		}
@@ -81,8 +81,12 @@ func (e *binaryJSONEncoder) quoted(value string) {
 		e.w.err = err
 		return
 	}
-	if size > e.w.limit-e.w.body.Len() || size > e.w.budget.bytes {
-		e.w.err = fmt.Errorf("binary encoded response exceeds byte budget")
+	if size > e.w.budget.bytes {
+		e.w.err = &binaryBudgetError{flag: "binary-metric-max-operand-bytes"}
+		return
+	}
+	if size > e.w.limit-e.w.body.Len() {
+		e.w.err = fmt.Errorf("binary encoded response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", e.w.limit)
 		return
 	}
 	encoded, err := json.Marshal(value)

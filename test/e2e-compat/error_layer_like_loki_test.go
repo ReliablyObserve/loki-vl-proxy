@@ -330,6 +330,29 @@ func TestCompat_ErrorLayerLikeLoki(t *testing.T) {
 		errLayerE2EVerdict(t, got, nil, status, body)
 	})
 
+	t.Run("volume_buffered_response_limit", func(t *testing.T) {
+		// Volume reads VictoriaLogs' stats answer whole; a 64-byte budget holds
+		// none of it. Loki has no such limit and answers with data.
+		for _, path := range []string{"/loki/api/v1/index/volume", "/loki/api/v1/index/volume_range"} {
+			t.Run(strings.TrimPrefix(path, "/loki/api/v1/index/"), func(t *testing.T) {
+				params := window(url.Values{"query": {`{app="api-gateway"}`}, "step": {"60"}})
+				lokiStatus, lokiBody := rejectedQueryGet(t, lokiURL, path, params, "0", nil)
+				if lokiStatus != http.StatusOK || !strings.Contains(string(lokiBody), `"metric"`) {
+					t.Fatalf("Loki fixture drifted: want 200 with series for %s, got %d %.300s", path, lokiStatus, lokiBody)
+				}
+				route := newErrLayerProxy(t, errLayerFaultBackend(t, "pass"), func(cfg *proxy.Config) {
+					cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = 64
+				})
+				status, body := rejectedQueryGet(t, route, path, params, "0", nil)
+				if status == http.StatusOK {
+					t.Fatalf("the 64-byte buffered-response limit was not reached; the case proves nothing: %.300s", body)
+				}
+				got := errLayerE2EClasses(status, body, nil, http.StatusInternalServerError, "", false, true)
+				errLayerE2EVerdict(t, got, nil, status, body)
+			})
+		}
+	})
+
 	failures := []struct {
 		name, fault string
 		timeout     bool
