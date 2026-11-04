@@ -58,14 +58,17 @@ compare:
   expect: |
     200 with Loki's lines.
 gap:
-  status: open
+  status: fixed
+  visual: none
+  visual_reason: 'Fixed by #995 before this registry change; main already matches Loki, so no capture can show a pull request closer to Loki. The page explore-logs-label-filter-expression captures the query against Loki on every visual run to catch a regression.'
+  fixed_by: '#995'
   impact: explore-visible
   effort: M
   area: 'internal/translator/label_filter_expr.go (ParseLabelFilterExpr, LabelFilterExpr.translate); internal/translator/translator.go (translateLabelFilter, canonicalLabelFilterStage, extractPipelineStage); internal/logql/parser.go (parseLabelFilterStage, consumeRestOfStage)'
   loki: 'pkg/logql/syntax/syntax.y:302 labelFilter: labelFilter COMMA labelFilter, OPEN_PARENTHESIS labelFilter CLOSE_PARENTHESIS, labelFilter labelFilter, AND and OR (precedence at :90-91); pkg/logql/log/label_filter.go BinaryLabelFilter'
   proxy: 'one grammar for the parser (Loki-shaped 400) and the translator (every binary node parenthesized into one | filter pipe)'
   planned_test: 'TestCompat_LabelFilterExpressionSyntax (test/e2e-compat, group semantics) and TestComplex_Logfmt_FilterAfterParse (test/e2e-compat, group otel-edge); neither has run yet: prepared without a stack; TestLabelFilterExpressionMatchesLokiGolden (internal/logql, 1036 expressions recorded from Loki v3.7.9), TestParseLogQuery_LabelFilterExpressionStages, TestValidateLogQL_LabelFilterExpressionContexts, TestValidateLogQL_LabelFilterExpressionErrorsInMetrics (internal/logql); TestParseLabelFilterExpr_Precedence, TestParseLabelFilterExpr_SyntaxErrors, TestTranslateLabelFilterExpression_LogsQL, TestTranslateLabelFilterExpression_PipelineContexts, TestLabelFilterExpression_ReferenceParserAgrees, TestLabelFilterExpression_EmittedLogsQLEvaluatesLikeLokiTree, TestLabelFilterExpression_CompoundStageHasNoSingleIdentity, TestLabelFilterExpression_JSONAliasRewrittenPerFilter (internal/translator); TestQueryRange_LabelFilterExpressionsReachVictoriaLogsAsOneFilter, TestQueryRange_LabelFilterExpressionMetricsTakeTheRouteOfASingleFilter, TestQueryRange_MalformedLabelFilterExpressionsAreRejectedLikeLoki (internal/proxy); FuzzLabelFilterExpression (internal/translator, CI fuzz smoke)'
-  note: 'Prepared without a stack: the e2e and the perf block (PR over Loki, cold, warm, refresh) have not run. The status stays open until the e2e has passed on the stack.'
+  note: 'The e2e (TestCompat_LabelFilterExpressionSyntax, semantics group) runs in CI on every product pull request, and the full differential parity run of 2026-11-04 (parity-refresh run 41870079042, main 69d07019) shows none of this case''s clusters.'
   clusters: []
 perf:
   max_ratio: 2.0

@@ -33,11 +33,15 @@ compare:
   expect: |
     200 with Loki's series.
 gap:
-  status: open
+  status: fixed
+  visual: none
+  visual_reason: 'Fixed before this registry change (#1059 and earlier translation work); main already matches Loki, so no capture can show a pull request closer to Loki. The page explore-last-over-time-offset-line-filter captures the query against Loki on every visual run to catch a regression.'
+  fixed_by: '#1059'
   impact: explore-visible
   effort: S
   area: 'internal/translator first/last_over_time emission (row_min/row_max with offset and filters)'
   loki: 'pkg/logql/first_last_over_time.go'
   proxy: '422 VictoriaLogs parse error'
   planned_test: 'TestCompat_FirstLastOverTimeOffsetFilter (test/e2e-compat, group semantics); TestCompat_UnwrapFirstLastUnderAggregation and TestCompat_UnwrapFirstLastRangeLevelBy (written, not yet run)'
+  note: 'The full differential parity run of 2026-11-04 (parity-refresh run 41870079042, main 69d07019) shows none of this case''s clusters; #1059 made first_over_time/last_over_time answer at Loki''s query_range timestamps, and TestCompat_UnwrapFirstLastRangeTimestamps passes in CI. The range-longer-than-step residual is tracked in semantics/unwrap-first-last-range-longer-than-step.'
   clusters: []
