@@ -22,4 +22,4 @@ cases: []       # case ids proving the semantics match
 victorialogs_candidates:
   - id: stats-stddev
     since: v1.49.0
-    emitted_by_proxy: false
+    emitted_by_proxy: true

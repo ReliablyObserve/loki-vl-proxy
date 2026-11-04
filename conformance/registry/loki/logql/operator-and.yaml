@@ -20,4 +20,6 @@ victorialogs: |
 consumers: []   # explore, drilldown, datasource, api
 cases: []       # case ids proving the semantics match
 victorialogs_candidates:
-  []  # no VictoriaLogs equivalent: the proxy must compute it
+  - id: pipe-join
+    since: v1.40.0
+    emitted_by_proxy: false

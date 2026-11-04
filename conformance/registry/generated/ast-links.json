@@ -4,31 +4,61 @@
       "kind": "operator",
       "logql": "!=",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "%",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "*",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "+",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "-",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
@@ -46,43 +76,85 @@
       "kind": "operator",
       "logql": "/",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "<",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "<=",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "==",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": ">",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": ">=",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-filter",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
       "logql": "^",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-math",
+          "since": "v1.40.0",
+          "used_by_proxy": true
+        }
+      ]
     },
     {
       "kind": "operator",
@@ -124,7 +196,13 @@
       "kind": "operator",
       "logql": "and",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-join",
+          "since": "v1.40.0",
+          "used_by_proxy": false
+        }
+      ]
     },
     {
       "kind": "operator",
@@ -140,7 +218,7 @@
         {
           "id": "stats-avg",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -152,7 +230,7 @@
         {
           "id": "stats-avg",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -162,9 +240,9 @@
       "supported_by_proxy": true,
       "victorialogs": [
         {
-          "id": "pipe-sort-topk",
+          "id": "pipe-sort",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -215,9 +293,9 @@
       "supported_by_proxy": true,
       "victorialogs": [
         {
-          "id": "stats-count-uniq",
+          "id": "stats-count",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -289,7 +367,7 @@
         {
           "id": "stats-row-min",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -377,7 +455,7 @@
         {
           "id": "pipe-replace-regexp",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -389,7 +467,7 @@
         {
           "id": "stats-row-max",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -481,7 +559,13 @@
       "kind": "operator",
       "logql": "or",
       "supported_by_proxy": true,
-      "victorialogs": []
+      "victorialogs": [
+        {
+          "id": "pipe-union",
+          "since": "v1.40.0",
+          "used_by_proxy": false
+        }
+      ]
     },
     {
       "kind": "parser",
@@ -574,7 +658,7 @@
         {
           "id": "stats-stddev",
           "since": "v1.49.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -586,7 +670,7 @@
         {
           "id": "stats-stddev",
           "since": "v1.49.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -598,7 +682,7 @@
         {
           "id": "stats-stddev",
           "since": "v1.49.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -610,7 +694,7 @@
         {
           "id": "stats-stddev",
           "since": "v1.49.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -644,12 +728,7 @@
       "supported_by_proxy": true,
       "victorialogs": [
         {
-          "id": "pipe-sort-topk",
-          "since": "v1.40.0",
-          "used_by_proxy": false
-        },
-        {
-          "id": "pipe-top",
+          "id": "pipe-sort",
           "since": "v1.40.0",
           "used_by_proxy": true
         }
@@ -667,9 +746,9 @@
       "supported_by_proxy": true,
       "victorialogs": [
         {
-          "id": "pipe-unpack",
+          "id": "pipe-unpack-json",
           "since": "v1.40.0",
-          "used_by_proxy": false
+          "used_by_proxy": true
         }
       ]
     },
@@ -706,113 +785,39 @@
   ],
   "loki_version": "v3.7.7",
   "no_victorialogs_equivalent": [
-    "!=",
-    "%",
-    "*",
-    "+",
-    "-",
-    "/",
-    "<",
-    "<=",
-    "==",
-    ">",
-    ">=",
-    "^",
-    "and",
     "group_left",
     "group_right",
     "ignoring",
-    "offset",
     "on",
-    "or",
     "rate_counter",
     "unless",
-    "vector",
-    "|"
+    "vector"
+  ],
+  "not_applicable": [
+    {
+      "logql": "offset",
+      "why": "the proxy shifts the window it sends to VictoriaLogs, internal/proxy/query_translation.go extractLogQLOffset"
+    },
+    {
+      "logql": "|",
+      "why": "pipeline syntax"
+    }
   ],
   "reuse_opportunities": [
     {
-      "logql": "avg",
+      "logql": "and",
+      "partial": "join inner keeps the rows with a match on the join fields; Loki's and matches whole label sets (or on/ignoring) per step",
       "since": "v1.40.0",
       "victorialogs": [
-        "stats-avg"
+        "pipe-join"
       ]
     },
     {
-      "logql": "avg_over_time",
+      "logql": "or",
+      "partial": "union appends the rows of a second query; Loki's or keeps a right-side series only when no left-side series has its labels",
       "since": "v1.40.0",
       "victorialogs": [
-        "stats-avg"
-      ]
-    },
-    {
-      "logql": "bottomk",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "pipe-sort-topk"
-      ]
-    },
-    {
-      "logql": "count",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "stats-count-uniq"
-      ]
-    },
-    {
-      "logql": "first_over_time",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "stats-row-min"
-      ]
-    },
-    {
-      "logql": "label_replace",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "pipe-replace-regexp"
-      ]
-    },
-    {
-      "logql": "last_over_time",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "stats-row-max"
-      ]
-    },
-    {
-      "logql": "stddev",
-      "since": "v1.49.0",
-      "victorialogs": [
-        "stats-stddev"
-      ]
-    },
-    {
-      "logql": "stddev_over_time",
-      "since": "v1.49.0",
-      "victorialogs": [
-        "stats-stddev"
-      ]
-    },
-    {
-      "logql": "stdvar",
-      "since": "v1.49.0",
-      "victorialogs": [
-        "stats-stddev"
-      ]
-    },
-    {
-      "logql": "stdvar_over_time",
-      "since": "v1.49.0",
-      "victorialogs": [
-        "stats-stddev"
-      ]
-    },
-    {
-      "logql": "unpack",
-      "since": "v1.40.0",
-      "victorialogs": [
-        "pipe-unpack"
+        "pipe-union"
       ]
     }
   ]

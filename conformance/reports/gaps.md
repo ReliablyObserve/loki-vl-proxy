@@ -105,25 +105,21 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 ## VictoriaLogs reuse opportunities
 
-VictoriaLogs already provides these, and the proxy does not emit them. Each is a
-chance to move work off the proxy and onto the backend.
+VictoriaLogs constructs that would serve a LogQL construct and that the proxy emits nowhere
+(`conformance/scripts/link_ast.py`; what the proxy emits is a scan of the LogsQL the translator
+and the proxy build, refreshed by `sync_vl_surface.py --offline`). A construct the proxy emits for
+other queries is not listed even where it computes this LogQL construct itself, for example
+topk and bottomk per step, label_replace, or a binary operator between two metrics; telling
+those apart needs translating each construct.
 
-| LogQL | VictoriaLogs | Available since |
-|---|---|---|
-| `avg` | stats-avg | v1.40.0 |
-| `avg_over_time` | stats-avg | v1.40.0 |
-| `bottomk` | pipe-sort-topk | v1.40.0 |
-| `count` | stats-count-uniq | v1.40.0 |
-| `first_over_time` | stats-row-min | v1.40.0 |
-| `label_replace` | pipe-replace-regexp | v1.40.0 |
-| `last_over_time` | stats-row-max | v1.40.0 |
-| `stddev` | stats-stddev | v1.49.0 |
-| `stddev_over_time` | stats-stddev | v1.49.0 |
-| `stdvar` | stats-stddev | v1.49.0 |
-| `stdvar_over_time` | stats-stddev | v1.49.0 |
-| `unpack` | pipe-unpack | v1.40.0 |
+| LogQL | VictoriaLogs | Available since | Covers |
+|---|---|---|---|
+| `and` | pipe-join | v1.40.0 | part: join inner keeps the rows with a match on the join fields; Loki's and matches whole label sets (or on/ignoring) per step |
+| `or` | pipe-union | v1.40.0 | part: union appends the rows of a second query; Loki's or keeps a right-side series only when no left-side series has its labels |
 
-LogQL constructs the proxy supports with no VictoriaLogs equivalent (23): `!=`, `%`, `*`, `+`, `-`, `/`, `<`, `<=`, `==`, `>`, `>=`, `^`, `and`, `group_left`, `group_right`, `ignoring`, `offset`, `on`, `or`, `rate_counter`, `unless`, `vector`, `|`
+LogQL constructs the proxy supports with no VictoriaLogs construct to serve them (7): `group_left`, `group_right`, `ignoring`, `on`, `rate_counter`, `unless`, `vector`
+
+Not a backend construct: `offset` (the proxy shifts the window it sends to VictoriaLogs, internal/proxy/query_translation.go extractLogQLOffset); `|` (pipeline syntax).
 
 
 ## Slower than Loki on first load
