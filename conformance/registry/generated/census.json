@@ -976,6 +976,7 @@
     "internal/proxy/ordered_json_result_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/ordered_json_result_cache_test.go | parser-error-and-label-collision",
     "internal/proxy/ordered_json_result_cache_test.go | tenant-numeric-routing",
+    "internal/proxy/ordered_json_step_wider_test.go | limits/series-limit-error",
     "internal/proxy/ordered_json_step_wider_test.go | semantics/json-detected-level-error-split",
     "internal/proxy/ordered_json_step_wider_test.go | semantics/json-metric-detected-level-derivation",
     "internal/proxy/ordered_json_step_wider_test.go | semantics/json-metric-step-wider-than-range",
