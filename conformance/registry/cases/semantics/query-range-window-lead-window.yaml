@@ -54,6 +54,8 @@ gap:
   status: fixed
   fixed_by: '#1074'
   impact: explore-visible
+  visual: none
+  visual_reason: 'a latency change: every answer is the one main and Loki give (the newest or oldest limit lines), proven by the edge-case table, the random differential and the fuzz target against Loki''s newest/oldest N; the first-load time is measured by the A/B shapes covering this case, and lvl-explore-logs-drop-dl still captures the page against Loki at 1h, 6h and 24h'
   effort: S
   area: 'internal/proxy/query_range_windowing.go proxyLogQueryWindowed and prefilterQueryRangeWindowsByHits'
   loki: 'pkg/querier/queryrange/split_by_interval.go Process and Do; splitters.go'

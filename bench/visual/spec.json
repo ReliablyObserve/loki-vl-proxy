@@ -645,9 +645,6 @@
     "operator-drop",
     "semantics/query-range-window-lead-window",
     "loki_api_v1_query_range"
-   ],
-   "fixes": [
-    "semantics/query-range-window-lead-window"
    ]
   },
   {
