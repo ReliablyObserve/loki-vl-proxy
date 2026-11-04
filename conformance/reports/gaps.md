@@ -96,7 +96,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
 | semantics | `tenant-numeric-routing` — A numeric org reaches VictoriaLogs only in its canonical spelling, and strict routing serves only mapped orgs | 4 | 10 | proven |
 | limits | `tenant-query-limits` — Loki's per-tenant query limits, enforced as published | 13 | 3 | proven |
-| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 10 | 25 | partial |
+| semantics | `window-bounds-and-step-alignment` — Range windows, bucket edges and step alignment | 11 | 26 | partial |
 
 ## LogQL surface (v3.7.7)
 
@@ -152,6 +152,7 @@ newest daily run did not re-measure (listed apart in performance.md).
 | `semantics/json-label-spelling-probe` | 3 | 7.97s (F field breakdown service_version (explore), 24h) | 4.78s | 0.06s | 0.08s | — |
 | `loki-compatible-profile` | 11 | 0.46s (E7 json count by level_extracted, 1h) | 0.07s | 0.06s | 0.01s | — |
 | `profiles/structured-metadata-label-collision` | 1 | 0.46s (E7 json count by level_extracted, 1h) | 0.07s | 0.06s | 0.01s | — |
+| `semantics/query-range-window-lead-window` | 11 | 0.49s (LF2 logs, detected_level regexp, 24h) | 0.14s | 0.05s | 0.20s | — |
 | `severity-detected-level-derivation` | 12 | 0.49s (LF2 logs, detected_level regexp, 24h) | 0.14s | 0.05s | 0.20s | — |
 | `severity/detected-level-filter-json-level` | 10 | 0.49s (LF2 logs, detected_level regexp, 24h) | 0.14s | 0.05s | 0.20s | — |
 | `semantics/pattern-line-filter-anchoring` | 4 | 0.28s (A1 nginx include GET, log query, 24h) | 0.03s | 0.03s | 0.04s | — |

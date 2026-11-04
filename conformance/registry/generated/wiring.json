@@ -378,6 +378,7 @@
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
+      "test/e2e-compat/query_range_lead_window_test.go",
       "test/e2e-compat/query_range_settled_steps_test.go",
       "test/e2e-compat/query_range_window_budget_test.go",
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
@@ -1067,6 +1068,10 @@
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
       "test/e2e-fleet/query_range_window_moved_reuse_test.go"
     ],
+    "semantics/query-range-window-lead-window": [
+      "internal/proxy/query_range_window_lead_test.go",
+      "test/e2e-compat/query_range_lead_window_test.go"
+    ],
     "semantics/scalar-sample-time-units": [
       "internal/proxy/binary_matching_test.go",
       "internal/proxy/instant_result_type_test.go",
@@ -1385,6 +1390,7 @@
       "internal/proxy/window_phase_filter_test.go",
       "test/e2e-compat/absent_over_time_test.go",
       "test/e2e-compat/ordered_json_steps_cache_test.go",
+      "test/e2e-compat/query_range_lead_window_test.go",
       "test/e2e-compat/query_range_window_budget_test.go",
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
@@ -1966,6 +1972,9 @@
       "semantics/unwrap-conversion-error",
       "semantics/unwrap-over-time-range-windows",
       "tenant-numeric-routing"
+    ],
+    "internal/proxy/query_range_window_lead_test.go": [
+      "semantics/query-range-window-lead-window"
     ],
     "internal/proxy/query_semantics_compat_handlers_test.go": [
       "semantics/absent-over-time-semantics"
@@ -2715,6 +2724,11 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
+    ],
+    "test/e2e-compat/query_range_lead_window_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/query-range-window-lead-window",
+      "window-bounds-and-step-alignment"
     ],
     "test/e2e-compat/query_range_settled_steps_test.go": [
       "loki_api_v1_query_range",
