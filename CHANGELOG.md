@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relabelling of VictoriaLogs step buckets that the other unwrap functions use.
   No VictoriaLogs call is added.
 
+- Answer a windowed log `query_range` (`-query-range-windowing`) that ends
+  while the proxy waits to retry a failed window batch as Loki does: `499` "the
+  request was cancelled by the client" when the client went away and `504`
+  "request timed out, decrease the duration of the request or add more label
+  matchers (prefer exact match over regex match) to reduce the amount of data
+  processed" when the tenant's `query_timeout` passed
+  (`pkg/util/server/error.go:26-27`, `:103-107`, v3.7.9). Both waits (the batch
+  backoff and the single-window retry) answered `408` with Go's text (`context
+  canceled`, `context deadline exceeded`); Loki never answers a query with
+  `408`. They now answer through the error layer, so the proxy writes `408`
+  nowhere. Registry: `semantics/error-layer-cancel-deadline`, `status-408`.
+  **Breaking:** clients and alerts keyed on `408` from `query_range` now see
+  `504` (or `499`), and `loki_vl_proxy_requests_total{status="408"}` becomes
+  `status="504"` or `status="499"`.
+
 ## [2.72.0] - 2026-11-04
 
 ### Fixed

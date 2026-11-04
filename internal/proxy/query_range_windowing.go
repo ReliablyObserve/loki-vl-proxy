@@ -271,7 +271,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				backoff := queryRangeWindowRetryBackoff(retryAttempt)
 				select {
 				case <-r.Context().Done():
-					p.writeError(w, http.StatusRequestTimeout, r.Context().Err().Error())
+					p.writeErr(w, r.Context(), r.Context().Err())
 					return true
 				case <-time.After(backoff):
 				}
@@ -293,7 +293,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				)
 				select {
 				case <-r.Context().Done():
-					p.writeError(w, http.StatusRequestTimeout, r.Context().Err().Error())
+					p.writeErr(w, r.Context(), r.Context().Err())
 					return true
 				case <-time.After(backoff):
 				}
