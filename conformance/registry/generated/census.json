@@ -788,6 +788,11 @@
     "internal/proxy/binary_matching_differential_test.go | semantics/binary-ignoring-matching",
     "internal/proxy/binary_matching_test.go | loki_api_v1_query",
     "internal/proxy/binary_matching_test.go | semantics/scalar-sample-time-units",
+    "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
+    "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
+    "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
+    "internal/proxy/capture_error_replay_test.go | semantics/error-layer-cancel-deadline",
+    "internal/proxy/capture_error_replay_test.go | semantics/error-layer-transport-text",
     "internal/proxy/compat_cache_freshness_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "internal/proxy/count_values_test.go | semantics/count-values-unsupported",
     "internal/proxy/delete_route_test.go | loki_api_v1_delete",
@@ -1676,7 +1681,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 307,
+      "go": 308,
       "playwright": 1
     },
     "page_kinds": {

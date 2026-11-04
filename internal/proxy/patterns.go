@@ -1450,7 +1450,10 @@ func (p *Proxy) handleTenantLimitsConfig(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	data, err := yaml.Marshal(limits)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Loki answers its encoder's error text with http.Error
+		// (pkg/loki/config_handler.go writeYAMLResponse); the proxy keeps the
+		// shape and answers Loki's fixed text, the error goes to the log.
+		p.writeErrorShaped(w, http.StatusInternalServerError, lokiErrInternal, err, writeLokiHTTPError)
 		return
 	}
 	_, _ = w.Write(data)

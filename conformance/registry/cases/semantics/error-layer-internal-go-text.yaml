@@ -10,7 +10,13 @@ why: |
   malformed and oversized VictoriaLogs bodies with Loki's 500 text on every
   HTTP route; the decoder or scanner error (`unexpected EOF`, `invalid
   character ...`, `scanning VL response: ...`) goes to the log line only.
-  3 cells remain (25 before): a native tail whose VictoriaLogs stream is
+  The proxy's own 500s that wrote an error's text go through the error layer
+  too: a multi-tenant merge that cannot decode a tenant's answer (`failed to
+  merge multi-tenant response: invalid character ...`), the merge of a
+  binary aggregation's split halves, and the tenant limits YAML encoder
+  (`/config/tenant/v1/limits`, which keeps http.Error's shape) answer
+  `Internal Server Error`, or the limit text naming its flag. 3 cells
+  remain (25 before): a native tail whose VictoriaLogs stream is
   truncated, malformed or oversized after the websocket upgrade closes with
   the Go reader error as its reason.
 request:

@@ -13,7 +13,15 @@ why: |
   Server Error`, 400 `failed to parse the log query` (logqlmodel.ErrParse,
   pkg/logqlmodel/error.go:13) for a query VictoriaLogs rejects as unparsable,
   429 `too many outstanding requests`; VictoriaLogs' message stays in the log
-  line. 15 cells remain on the rules and alerts routes, which copy the
+  line. A metric query the proxy post-processes after its handler answered
+  (label_replace, a without fold, on query and query_range) sends the
+  handler's failed answer as written, which is the error layer's (it ran the
+  body through the VictoriaLogs message redaction again, which can only
+  rewrite Loki's own text); TestCapturedErrorAnswerIsTheInnerAnswer holds it
+  to the inner query's answer, with the gate's classes, for every backend
+  failure mode that fails the call (VictoriaLogs 400, 422, 429 and 500, a
+  front proxy's 502 and 503, connection refused and reset, a timeout, a
+  client cancel) and for the series limit. 15 cells remain on the rules and alerts routes, which copy the
   ruler's non-2xx body verbatim. Drilldown stats failures use the same
   sanitized error path as direct clients.
 request:
