@@ -433,8 +433,8 @@ jobs:
     # default unit-test pass missed because no test exercised the windowed +
     # derivedFields + autodetect combination.
     #
-    # internal/proxy alone takes ~7 minutes under -race, so its top-level tests
-    # are split into three deterministic shards (checksum of the test name over
+    # internal/proxy alone takes well over 30 minutes of -race test time, so its
+    # top-level tests are split into four deterministic shards (checksum of the test name over
     # the sorted `go test -list` output) that run in parallel, each with its own 12m
     # budget. The `other` entry carries the remaining packages and the verbose
     # concurrent-regression step so no proxy shard does.
@@ -445,7 +445,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, other]
+        shard: [1, 2, 3, 4, other]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -504,7 +504,7 @@ jobs:
           # the shards and to keep the two heaviest sliding-window tests apart.
           go test -list '.*' ./internal/proxy/ | grep -E '^(Test|Fuzz)' | LC_ALL=C sort \
             | while read -r t; do printf '%s %s\n' "$(printf '30:%s' "$t" | cksum | cut -d' ' -f1)" "$t"; done \
-            | awk -v shard="$SHARD" '$1 % 3 == shard % 3 { print $2 }' > shard-tests.txt
+            | awk -v shard="$SHARD" '$1 % 4 == shard % 4 { print $2 }' > shard-tests.txt
           echo "shard $SHARD: $(wc -l < shard-tests.txt) tests"
           test -s shard-tests.txt
           echo "^($(paste -sd'|' shard-tests.txt))\$" > shard-run.txt
