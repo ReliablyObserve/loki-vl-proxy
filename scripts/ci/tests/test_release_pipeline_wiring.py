@@ -90,3 +90,17 @@ class BotBranchWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BranchExistenceChecks(unittest.TestCase):
+    # GitHub answers GET git/refs/heads/<name> with every ref that starts with
+    # <name> when none matches exactly (bench/daily-perf "existed" while only
+    # bench/daily-perf-next did, and moving it failed with HTTP 422). An
+    # existence check reads git/ref/heads/<name>, which is exact.
+    def test_no_workflow_checks_a_branch_with_the_prefix_matching_endpoint(self):
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if "gh api" not in line or " -X " in line:
+                    continue
+                if re.search(r"git/refs/heads/|\$\{REF\}/heads/", line):
+                    self.fail(f"{path.name}:{number}: read one branch with git/ref/heads/, not git/refs/heads/: {line.strip()}")
