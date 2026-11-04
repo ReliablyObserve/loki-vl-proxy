@@ -203,7 +203,7 @@ class Harness:
                      'volumes': [{'type': 'bind', 'source': str(self.home / 'loki.yaml'),
                                   'target': '/etc/loki/local-config.yaml', 'read_only': True},
                                  'loki-data:/tmp/loki']},
-            'victorialogs': {'image': 'victoriametrics/victoria-logs:v1.52.0', 'mem_limit': '2g',
+            'victorialogs': {'image': 'victoriametrics/victoria-logs:v1.53.0', 'mem_limit': '2g',
                             'ports': [f'127.0.0.1:{self.ports["victorialogs"]}:9428'],
                             'volumes': ['vl-data:/vlogs'],
                             'command': ['-storageDataPath=/vlogs', '-retentionPeriod=3d',

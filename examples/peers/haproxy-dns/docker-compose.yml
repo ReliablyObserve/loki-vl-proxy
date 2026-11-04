@@ -32,7 +32,7 @@ services:
 
   # ── VictoriaLogs ───────────────────────────────────────────────────────────
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.52.0
+    image: victoriametrics/victoria-logs:v1.53.0
     networks:
       proxy-net:
         ipv4_address: 172.28.0.5

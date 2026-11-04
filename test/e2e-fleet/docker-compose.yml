@@ -22,7 +22,7 @@ version: "3.8"
 
 services:
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.52.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.53.0}
     container_name: ${FLEET_NAME_PREFIX:-fleet}-vl
     ports:
       - "${FLEET_VL_PORT:-9428}:9428"
