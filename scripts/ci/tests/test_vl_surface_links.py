@@ -1,5 +1,4 @@
 """Unit tests for conformance/scripts/sync_vl_surface.py (what the proxy emits) and link_ast.py (the map)."""
-import os
 import sys
 import tempfile
 import unittest
