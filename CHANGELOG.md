@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text (`1.2.3.4:443`) still keeps fewer lines than Loki, never more.
   Answers cached before the upgrade are not served.
 
+- Answer the Logs Drilldown Fields breakdown of a nested JSON field with a
+  level pill like Loki. Drilldown names the field with a bracket JSON path
+  (`| json service_name_extracted="[\"service\"][\"name\"]"`); with the pill,
+  the query takes the general translation, which resolved such a path only
+  when it had one key, so the label stayed empty and the panel showed nothing
+  where Loki shows the field's values. A bracket path now resolves to the
+  field VictoriaLogs' `unpack_json` writes, its keys joined with dots
+  (`service.name`), and the breakdown is answered from one VictoriaLogs stats
+  call with or without the pill. A path through an array index still names
+  no field.
+
 ## [2.77.1] - 2026-11-04
 
 ### Performance

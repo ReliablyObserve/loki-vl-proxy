@@ -31,6 +31,11 @@
     "data-probing-and-freshness": [
       "internal/proxy/ordered_json_result_cache_test.go"
     ],
+    "drilldown/fields-pill-json-path-extracted-empty": [
+      "internal/proxy/drilldown_fields_json_path_test.go",
+      "internal/translator/json_bracket_path_test.go",
+      "test/e2e-compat/drilldown_fields_json_path_test.go"
+    ],
     "drilldown/index_volume/end-millisecond-rounding": [
       "internal/proxy/volume_test.go"
     ],
@@ -281,6 +286,7 @@
       "test/e2e-compat/binary_ignoring_matching_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
+      "test/e2e-compat/drilldown_fields_json_path_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
@@ -315,6 +321,7 @@
       "internal/proxy/detected_level_filter_test.go",
       "internal/proxy/drilldown_breakdown_exact_test.go",
       "internal/proxy/drilldown_breakdown_matrix_test.go",
+      "internal/proxy/drilldown_fields_json_path_test.go",
       "internal/proxy/drilldown_longrange_survival_test.go",
       "internal/proxy/extracted_suffix_collision_test.go",
       "internal/proxy/first_last_range_timestamps_test.go",
@@ -366,6 +373,7 @@
       "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_field_bounds_test.go",
       "test/e2e-compat/drilldown_field_breakdown_test.go",
+      "test/e2e-compat/drilldown_fields_json_path_test.go",
       "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go",
       "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
@@ -1696,6 +1704,10 @@
       "loki_api_v1_detected_fields",
       "profiles/detected-fields-structured-metadata-beside-json-line"
     ],
+    "internal/proxy/drilldown_fields_json_path_test.go": [
+      "drilldown/fields-pill-json-path-extracted-empty",
+      "loki_api_v1_query_range"
+    ],
     "internal/proxy/drilldown_longrange_survival_test.go": [
       "limits/drilldown-breakdown-exact",
       "loki_api_v1_query_range"
@@ -2449,6 +2461,9 @@
       "semantics/ip-label-filter-embedded-address",
       "semantics/ip-label-filter-missing-label"
     ],
+    "internal/translator/json_bracket_path_test.go": [
+      "drilldown/fields-pill-json-path-extracted-empty"
+    ],
     "internal/translator/label_filter_expr_test.go": [
       "semantics/label-filter-expression-syntax"
     ],
@@ -2607,6 +2622,11 @@
       "limits/drilldown-breakdown-exact",
       "loki_api_v1_query_range",
       "parser-json"
+    ],
+    "test/e2e-compat/drilldown_fields_json_path_test.go": [
+      "drilldown/fields-pill-json-path-extracted-empty",
+      "loki_api_v1_query",
+      "loki_api_v1_query_range"
     ],
     "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go": [
       "loki_api_v1_query_range",
@@ -3100,7 +3120,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 320,
+  "tests_with_markers": 323,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3115,7 +3135,6 @@
     "drilldown/detected-fields-type-inference",
     "drilldown/detected-labels-lists-stored-field",
     "drilldown/detected-labels-sampled-cardinality",
-    "drilldown/fields-pill-json-path-extracted-empty",
     "drilldown/logs-footer-query-stats",
     "drilldown/patterns-mined-differently",
     "drilldown/plugin-legend-sync-race",
@@ -3205,5 +3224,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 239
+  "wired_items": 240
 }
