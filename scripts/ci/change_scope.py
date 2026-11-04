@@ -555,10 +555,14 @@ JOB_MAP = [
         "test/e2e-fleet/docker-compose.http-discovery.yml",
         "test/e2e-compat/loki-bench-config.yaml", "test/e2e-compat/loki-bench-nocache-config.yaml",
     ), NO_JOBS),
-    ("J6", ("scripts/ci/go_test_unit.sh", "scripts/ci/unit_test_mode.sh", "scripts/ci/test_shards.py",
+    ("J6", ("scripts/ci/go_test_unit.sh", "scripts/ci/unit_test_mode.sh",
             "scripts/ci/merge_unit_shards.py", "scripts/ci/merge_coverprofile.py",
-            "scripts/ci/test-shard-weights.tsv", "scripts/ci/test-cache-uncached.tsv"),
+            "scripts/ci/test-cache-uncached.tsv"),
      UNIT_JOBS | CONFORMANCE_JOBS),
+    # The test job's shards and the race-detector shards split internal/proxy with
+    # the same script and weights.
+    ("J6s", ("scripts/ci/test_shards.py", "scripts/ci/test-shard-weights.tsv"),
+     UNIT_JOBS | CONFORMANCE_JOBS | _qualified("ci", ("race-stress-shard", "race-stress"))),
     ("J7", ("scripts/ci/fuzz_smoke.py", "scripts/ci/fuzz_smoke_targets.tsv"), FUZZ_JOBS),
     ("J8", ("scripts/ci/race_sensitive_tests.sh",), CONFORMANCE_JOBS),
     ("J9", ("scripts/ci/pr_quality_report.py", "scripts/ci/quality_scope.py",
