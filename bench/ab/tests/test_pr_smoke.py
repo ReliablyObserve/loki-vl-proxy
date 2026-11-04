@@ -615,21 +615,46 @@ class DailyProfilesTest(unittest.TestCase):
         self.assertFalse(meta["profiles"]["aligned"]["ran"])
         self.assertIn("not like-for-like", meta["profiles"]["aligned"]["why_not"])
 
-    def test_the_summaries_of_the_second_profile_go_to_their_own_files(self):
+    def run_written(self, full):
+        """(code, files results/ got, history appends) of a daily run of the two test sets; full: that is the whole
+        daily run (the history's definition of one is patched down to these sets, 1h and 3 runs)."""
         import daily
+        patches = [mock.patch.object(daily.history, "FULL_RUNS", 3), mock.patch.object(daily.history, "FULL_MAX_RANGE", "1h"),
+                   mock.patch.object(daily.history, "full_ranges",
+                                     lambda spec, n: {"1h"} if n in ("control", "pattern-line-filter") else None)] if full else []
         with tempfile.TemporaryDirectory() as results, tempfile.TemporaryDirectory() as hist:
             with mock.patch.object(daily, "RESULTS", results), mock.patch.object(daily.history, "HISTORY", hist), \
                     mock.patch.object(daily.history, "append", return_value=("x", True)) as append, \
                     mock.patch.object(daily.history, "trend", return_value="t"), \
+                    mock.patch.object(daily.history, "write_acceptance"), \
                     mock.patch.object(daily.history, "write_alerts", side_effect=RuntimeError("skip")), \
                     mock.patch.object(daily.subprocess, "run"):
-                code, _, _ = self.run_daily({"release": False, "main": True})
-            self.assertEqual(code, 0)
-            self.assertEqual(sorted(os.listdir(results)),
-                             ["daily-control.json", "daily-control.loki-defaults.json",
-                              "daily-pattern-line-filter.json", "daily-pattern-line-filter.loki-defaults.json"])
-            self.assertEqual(sorted({c.args[0]["profile"] for c in append.call_args_list}),
-                             ["aligned", "loki-defaults"])
+                for p in patches:
+                    p.start()
+                try:
+                    code, _, _ = self.run_daily({"release": False, "main": True})
+                finally:
+                    for p in patches:
+                        p.stop()
+            return code, sorted(os.listdir(results)), append
+
+    def test_a_run_that_is_not_the_full_daily_run_leaves_the_results_alone_but_enters_the_history(self):
+        code, files, append = self.run_written(full=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(files, [])
+        self.assertEqual(sorted({c.args[0]["profile"] for c in append.call_args_list}), ["aligned", "loki-defaults"])
+        for c in append.call_args_list:  # every summary of the run names it, and shares one stamp
+            self.assertRegex(c.args[0]["measured_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+            self.assertEqual(c.args[0]["date"], c.args[0]["measured_at"][:10])
+        self.assertEqual(len({c.args[0]["measured_at"] for c in append.call_args_list}), 1)
+
+    def test_the_summaries_of_the_second_profile_go_to_their_own_files(self):
+        code, files, append = self.run_written(full=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(files,
+                         ["daily-control.json", "daily-control.loki-defaults.json",
+                          "daily-pattern-line-filter.json", "daily-pattern-line-filter.loki-defaults.json"])
+        self.assertEqual(sorted({c.args[0]["profile"] for c in append.call_args_list}), ["aligned", "loki-defaults"])
 
 
 if __name__ == "__main__":

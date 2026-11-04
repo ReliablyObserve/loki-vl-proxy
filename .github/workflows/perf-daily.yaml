@@ -17,7 +17,7 @@ name: Perf daily
 # summary. A regression or a lost ratchet row turns the run red, which is the
 # notification; nothing else is opened or labelled. The above-2x Loki list
 # (bench/ab/history/over-2x-loki.json) is kept the same way: a row is added after
-# two consecutive full runs above 2x Loki and removed after two within 2x, and a
+# two consecutive full runs (a manual run of the same day counts) above 2x Loki and removed after two within 2x, and a
 # row above 2x on one run only is a warning at the top of the pull request and
 # an annotation (pending add), never a red run.
 #

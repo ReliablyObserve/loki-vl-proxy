@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
 """Append-only A/B history and the trend report built from it.
 
-The daily run from main (daily.py) appends one line per shape set per day to
+The daily run from main (daily.py) appends one line per shape set per run to
 bench/ab/history/<set>.jsonl and regenerates bench/ab/history/trend.md. Docs
 and plots read the JSONL; nothing edits past lines.
+
+A run is one daily.py invocation: one fresh stack, one commit, every set it measured. Each full
+measurement is its own line, so a manual run on a day the scheduled one already ran is kept, judged and
+shown; nothing is skipped for sharing a date. A line names its run: "measured_at" (UTC, the start of the
+invocation, the same on every line the run wrote; older lines have none and stand for their date) and
+"run" (the CI run id and attempt, when there is one). The order of the history is the order of
+measured_at (a line without one sorts by its date, before the stamps of that day), however the lines were
+merged: read() returns it. "date" stays for display and for the calendar windows (trend's day and week
+columns). Only an exact repeat of a line (same measured_at or date, commit, run and label) is not added
+again, so appending a summary twice is harmless.
+
+"Consecutive" means consecutive runs in that order. Two runs of the same commit minutes apart count as two:
+each runs on a fresh stack, an independent sample, and the rule (two runs above or within 2× to add or
+remove a row, a slowdown that held for two runs) exists so one noisy sample decides nothing. Counting only
+runs of different commits would leave a pending row unconfirmed for as long as main stays quiet, because
+the scheduled job does not run when nothing measured changed.
 
   history.py append SUMMARY.json [--commit SHA] [--dir bench/ab/history]
   history.py trend [--dir bench/ab/history] [--out bench/ab/history/trend.md]
@@ -14,7 +30,7 @@ and plots read the JSONL; nothing edits past lines.
 A line holds the run's metadata and one row per shape x range in the column
 order named by "cols" (so a line stays small and self-describing):
 
-  {"date": "2026-09-24", "commit": "...", "baseline": "v1.93.0", "candidate": "main",
+  {"date": "2026-09-24", "measured_at": "2026-09-24T03:20:11Z", "run": "123456.1", "commit": "...", "baseline": "v1.93.0", "candidate": "main",
    "runs": 7, "valid": true, "cols": ["shape", "range", ...], "rows": [[...], ...]}
 
 Columns: shape, range, status (candidate HTTP status), p50 and cold (candidate
@@ -117,6 +133,17 @@ def history_name(set_name, profile):
     return f"{set_name}.jsonl" if profile == over2x.LEGACY_PROFILE else f"{set_name}.{profile}.jsonl"
 
 
+def stamp(e):
+    """Where a line stands in the history: the start of its run, or its date for a line written before runs were
+    stamped (a date sorts before the stamps of the same day)."""
+    return e.get("measured_at") or e["date"]
+
+
+def run_of(e):
+    """The run a line belongs to: every set and profile of one daily.py invocation shares it."""
+    return (stamp(e), e.get("commit") or "", e.get("run") or "")
+
+
 def entry(summary, commit=""):
     c, r, b = summary["candidate"], summary["reference"], summary["baseline"]
     lfl = over2x.like_for_like(summary, c)
@@ -125,7 +152,8 @@ def entry(summary, commit=""):
         rows.append([row["shape"], row["range"], row["status"].get(c), row["p50"].get(c), row["cold"].get(c),
                      row["p50"].get(r), row["cold"].get(r), row["status"].get(r),
                      row.get("parity_vs_reference", "n/a"), row["p50"].get(b), row["verdict"], cold_computed(row, r), lfl])
-    return {"date": summary["date"], "commit": commit, "set": summary["set"], "profile": profile_of(summary),
+    return {"date": summary["date"], **({"measured_at": summary["measured_at"]} if summary.get("measured_at") else {}),
+            **({"run": summary["run"]} if summary.get("run") else {}), "commit": commit, "set": summary["set"], "profile": profile_of(summary),
             **({"loki_restarted": True} if summary.get("loki_restarted") else {}),
             "label": summary.get("label", ""),
             "baseline": b, "candidate": c, "reference": r, "runs": summary.get("runs"),
@@ -153,32 +181,24 @@ def is_full(e, want):
 
 
 def append(summary, directory=HISTORY, commit="", spec=None):
+    """Add the run's line for the set and profile; False when this very line is already there (a repeat of the
+    same append). Any other line is added, whatever its date: a second run of a day is a second entry."""
     os.makedirs(directory, exist_ok=True)
     line = entry(summary, commit)
     path = os.path.join(directory, history_name(summary["set"], line["profile"]))
-    existing = read(path)
-    same_day = [i for i, e in enumerate(existing) if e["date"] == line["date"] and e.get("label") == line["label"]]
-    if same_day:
-        # One line per set per day: a re-run replaces nothing, it is skipped. Except that the full measurement
-        # replaces a cut-down manual run of the same day, which would otherwise keep the scheduled one out.
-        want = full_ranges(spec or load_spec(), summary["set"])
-        if not (is_full(line, want) and not is_full(existing[same_day[0]], want)):
-            return path, False
-        existing[same_day[0]] = line
-        with open(path, "w") as f:
-            for e in existing:
-                f.write(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n")
-        return path, True
+    if any(run_of(e) == run_of(line) and e.get("label") == line["label"] for e in read(path)):
+        return path, False
     with open(path, "a") as f:
         f.write(json.dumps(line, separators=(",", ":"), ensure_ascii=False) + "\n")
     return path, True
 
 
 def read(path):
+    """The lines of a file in the order they were measured (stable: lines of one stamp keep their file order)."""
     if not os.path.exists(path):
         return []
     with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+        return sorted((json.loads(line) for line in f if line.strip()), key=stamp)
 
 
 def last_commit(directory=HISTORY, spec=None):
@@ -202,7 +222,7 @@ def last_commit(directory=HISTORY, spec=None):
                 for e in read(os.path.join(directory, history_name(name, profile))) if is_full(e, want)]
         if not full:
             return ""
-        newest = max(full, key=lambda e: e["date"])
+        newest = max(reversed(full), key=stamp)  # the last line of the newest stamp
         commits.add(newest.get("commit") or "")
     return commits.pop() if len(commits) == 1 else ""
 
@@ -279,7 +299,7 @@ def trend(directory=HISTORY, window=14):
         recent = entries[-window:]
         profile = profile_of(last)
         lines += [f"## {last['set']}" + ("" if profile == over2x.LEGACY_PROFILE else f" ({profile})"), "",
-                  f"Latest {last['date']} (`{(last.get('commit') or '?')[:10]}`, {last.get('runs')} runs"
+                  f"Latest {last.get('measured_at') or last['date']} (`{(last.get('commit') or '?')[:10]}`, {last.get('runs')} runs"
                   f"{'' if last.get('valid', True) else ', **invalid: VictoriaLogs restarted**'}); "
                   f"previous {day['date'] if day else '—'}; week {week['date'] if week else '—'}.", "",
                   "| shape | range | proxy p50 | Δ day | Δ week | Loki p50 | proxy ÷ Loki | cold proxy / Loki | result vs Loki | trend |",
@@ -450,10 +470,18 @@ def profile_state(directory, spec, sets=None):
             newest = full[-1]
             lfl = any(r[newest["cols"].index("like_for_like")] is not False for r in newest["rows"]) \
                 if "like_for_like" in newest["cols"] else True
-            found[(name, profile)] = {"last": newest["date"], "like_for_like": lfl}
-    for (name, profile), v in found.items():
-        v["current"] = max(x["last"] for (n, _), x in found.items() if n == name)
-        v["stale"] = v["last"] < v["current"] or not v["like_for_like"]
+            found[(name, profile)] = {"last": newest["date"], "stamp": stamp(newest), "like_for_like": lfl}
+    newest = {}
+    for (name, _), v in found.items():
+        if name not in newest or v["stamp"] > newest[name]["stamp"]:
+            newest[name] = v
+    for (name, _), v in found.items():
+        # Compared by run, not by date: a manual run of one day that did not run a profile leaves the profile's
+        # line of the day's earlier run behind it. The profiles of one run share a stamp.
+        v["current"] = newest[name]["last"]
+        v["stale"] = v["stamp"] < newest[name]["stamp"] or not v["like_for_like"]
+    for v in found.values():
+        del v["stamp"]
     return found
 
 
@@ -708,10 +736,11 @@ def ready(out, bounds, items, looked):
 
 
 def acceptance_history(directory=HISTORY, spec=None):
-    """The distribution of every day of the history, per Loki profile: per date, the full valid lines of the
-    current sets of each profile (the aligned file holds every line written before the profiles existed)."""
+    """The distribution of every run of the history, per Loki profile: per run, the full valid lines of the
+    current sets of each profile (the aligned file holds every line written before the profiles existed). A day
+    with two runs has two entries; a line written before runs were stamped stands for its date and commit."""
     spec = spec or load_spec()
-    days = {}
+    runs = {}
     for name in spec["sets"]:
         want = full_ranges(spec, name)
         if not want:
@@ -719,21 +748,22 @@ def acceptance_history(directory=HISTORY, spec=None):
         for profile in over2x.PROFILES:
             for e in read(os.path.join(directory, history_name(name, profile))):
                 if e.get("valid", True) and is_full(e, want):
-                    d = days.setdefault(e["date"], {"commits": set(), "profiles": {}})
+                    d = runs.setdefault(run_of(e), {"date": e["date"], "profiles": {}})
+                    d["date"] = min(d["date"], e["date"])
                     p = d["profiles"].setdefault(profile, {"sets": 0, "bands": {}})
                     p["sets"] += 1
-                    d["commits"].add(short(e.get("commit")))
                     p["bands"].update(line_bands(name, e))
     out = []
-    for date, d in sorted(days.items()):
+    for key, d in sorted(runs.items()):
         profiles = {}
         for profile, p in d["profiles"].items():
             dist = over2x.distribution((k[4], v) for k, v in p["bands"].items())
             profiles[profile] = {"sets": p["sets"],
                                  **{m: {k: dist[m][k] for k in ("rows", "share_below", "below", "close", "between", "above")}
                                     for m in dist}}
-        out.append({"date": date, "commits": sorted(d["commits"]), "profiles": profiles})
-    return {"about": "The distribution of proxy ÷ Loki over the rows each daily run compared (both answered 200; "
+        out.append({"date": d["date"], **({"measured_at": key[0]} if "T" in key[0] else {}),
+                    "commits": [short(key[1])], "profiles": profiles})
+    return {"about": "The distribution of proxy ÷ Loki over the rows each daily run compared, one entry per run (both answered 200; "
                      "on cold, Loki's results cache did not answer), per Loki profile (aligned: the stack's Loki; "
                      "loki-defaults: Loki with its own defaults; days before the profiles existed are aligned, "
                      "measured with an unaligned proxy side): below Loki, close to Loki (within "
@@ -757,15 +787,16 @@ def full_lines(directory, spec, name, profile):
 
 def replay_over_2x(directory, spec, rows, profile=LOKI_DEFAULTS):
     """(rows, left, added, pending): the above-2× list rows after the daily history of `profile` is replayed
-    day by day through alerts() (the lines of each file up to that day, and the list as the day before left it),
+    run by run through alerts() (the lines of each file up to that run, and the list as the run before left it),
     the rows that left and the rows that were added, each with the date of the run that did it, and the rows
     above 2× on the newest run only (pending add). Nothing in `directory` is touched."""
-    days = sorted({e["date"] for name in spec["sets"] for e in full_lines(directory, spec, name, profile)})
+    dates = {stamp(e): e["date"] for name in spec["sets"] for e in full_lines(directory, spec, name, profile)}
     left, added, pending = [], [], []
     with tempfile.TemporaryDirectory() as tmp:
-        for day in days:
+        for at in sorted(dates):
+            day = dates[at]
             for path in glob.glob(os.path.join(directory, "*.jsonl")):
-                lines = [e for e in read(path) if e["date"] <= day]
+                lines = [e for e in read(path) if stamp(e) <= at]
                 with open(os.path.join(tmp, os.path.basename(path)), "w") as f:
                     f.writelines(json.dumps(e, separators=(",", ":"), ensure_ascii=False) + "\n" for e in lines)
             over2x.write_baseline(rows, os.path.join(tmp, over2x.BASELINE_NAME))
@@ -785,7 +816,7 @@ def reseed_over_2x(directory=HISTORY, spec=None):
     profile has not run since 2026-10-28 and nothing judged them. loki-defaults is the profile with the same
     proxy side, and the only one measured daily. The rows become loki-defaults rows (their `since` kept) and
     the daily history of that profile is replayed through alerts(): the list is what the daily rule (a row is
-    added after two consecutive full runs above 2×, removed after two within) makes of it, day by day.
+    added after two consecutive full runs above 2×, removed after two within) makes of it, run by run.
     Returns {"rows", "before", "after", "left", "reseeded", "seeded", "warnings"}; nothing is written."""
     spec = spec or load_spec()
     listed, problem = over2x.read_baseline(os.path.join(directory, over2x.BASELINE_NAME))
