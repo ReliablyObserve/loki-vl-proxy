@@ -259,7 +259,9 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 		p.writeError(w, http.StatusBadRequest, newSeriesLimitError(ctx, limit).Error())
 		return
 	case errors.Is(err, errBodyTooLarge):
-		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
+		// The binary aggregation split (binaryAggregationResponse) retries a
+		// 500 carrying this text over two half ranges.
+		p.writeErr(w, ctx, fmt.Errorf("manual metric response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", p.limits().BufferedBackendBodyBytes))
 		return
 	default:
 		p.writeErr(w, r.Context(), err)
@@ -1893,7 +1895,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		var err error
 		result, err = matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
 		if err != nil {
-			p.writeError(w, http.StatusInternalServerError, err.Error())
+			p.writeErr(w, r.Context(), err)
 			return
 		}
 	}

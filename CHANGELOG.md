@@ -26,6 +26,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `504` (or `499`), and `loki_vl_proxy_requests_total{status="408"}` becomes
   `status="504"` or `status="499"`.
 
+- Answer `/loki/api/v1/index/volume` and `index/volume_range` (Explore and
+  Logs Drilldown) whose VictoriaLogs stats answer is above
+  `-backend-max-buffered-response-bytes` with the proxy's limit text, `500`
+  "backend response exceeds N bytes; narrow the query or increase
+  -backend-max-buffered-response-bytes", as every other buffered read does.
+  They answered `500` "Internal Server Error", which names no flag. The status
+  is unchanged. The stats `query_range` answer above the same limit is now
+  written through the error layer too, with the same status and text.
+- Answer a binary expression over one of its evaluation budgets as the limits
+  registry documents: `400` "binary expression exceeds its evaluation budget;
+  narrow the query or increase -binary-metric-max-arrays" (or
+  `-binary-metric-max-operand-bytes`), as Loki answers a query over one of its
+  limits (`logqlmodel.ErrLimit`, `pkg/util/server/error.go:110-118`, v3.7.9).
+  The arrays budget answered `500` "binary expression sample/series budget
+  exceeded" and the operand-bytes budget `400` "binary expression exceeds
+  aggregate response byte budget", neither naming its flag. A binary operand
+  or result above `-backend-max-buffered-response-bytes` now answers that
+  buffer limit, `500` with the text naming the flag (an operand answered `400`
+  with its own text). The binary join and its operands now answer through the
+  error layer: a request cancelled or past its deadline while an operand is
+  buffered answers `499` or `504` with Loki's text instead of `400` "context
+  canceled". The fixed one-million-sample budgets of a binary expression,
+  which no flag sets, answer Loki's `500` "Internal Server Error" instead of
+  their own text ("binary expression output sample budget exceeded", "binary
+  operand exceeds 1000000 sample limit"); the text goes to the log line.
+  Registry: `semantics/error-layer-proxy-limit-status`,
+  `-binary-metric-max-arrays` and `-binary-metric-max-operand-bytes` in the
+  limits registry.
+  **Breaking:** a binary expression over `-binary-metric-max-arrays` answers
+  `400` `bad_data` instead of `500` `internal`
+  (`loki_vl_proxy_requests_total{status="500"}` becomes `status="400"` for
+  it), and a binary operand above `-backend-max-buffered-response-bytes`
+  answers `500` instead of `400`.
+
 ## [2.73.0] - 2026-11-04
 
 ### Fixed

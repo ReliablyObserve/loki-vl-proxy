@@ -127,6 +127,10 @@ func TestLokiClientError_LokiAnswers(t *testing.T) {
 		{"row limit of a bucket grid", context.Background(), &rowLimitError{limit: 3, unit: "stats rows in one bucket grid"}, http.StatusBadRequest, "manual range metric row limit exceeded (3 stats rows in one bucket grid); narrow the query or increase -manual-range-metric-row-limit"},
 		{"row limit of a count precheck", context.Background(), &rowLimitError{limit: 3, matches: 5000}, http.StatusBadRequest, "manual range metric row limit exceeded (3); the query matches 5000 log lines; narrow the query or increase -manual-range-metric-row-limit"},
 		{"row limit of a without fold", context.Background(), &seriesLimitError{limit: 3, rowBudget: true}, http.StatusBadRequest, ""},
+		// The binary evaluation budgets are query limits too (400, naming the flag).
+		{"binary arrays budget", context.Background(), &binaryBudgetError{flag: "binary-metric-max-arrays"}, http.StatusBadRequest, "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-arrays"},
+		{"binary operand bytes budget wrapped", context.Background(), fmt.Errorf("left query: %w", &binaryBudgetError{flag: "binary-metric-max-operand-bytes"}), http.StatusBadRequest, "binary expression exceeds its evaluation budget; narrow the query or increase -binary-metric-max-operand-bytes"},
+		{"binary budget of a cancelled request", canceled, &binaryBudgetError{flag: "binary-metric-max-arrays"}, 499, lokiErrClientCanceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			status, errorType, text := lokiClientError(tc.ctx, tc.err)
@@ -176,12 +180,15 @@ func FuzzLokiClientError(f *testing.F) {
 	f.Add(uint8(3), uint8(0), uint8(0), 200, "the connection has been aborted")
 	f.Add(uint8(4), uint8(2), uint8(0), 0, "x; narrow the query or increase -flag")
 	f.Add(uint8(0), uint8(0), uint8(0), 502, "<html>502 Bad Gateway nginx; narrow the query or increase -x</html>")
+	f.Add(uint8(5), uint8(1), uint8(0), 1, "")
+	f.Add(uint8(5), uint8(2), uint8(1), 0, "")
 	p := &Proxy{}
 	f.Fuzz(func(t *testing.T, kind, wrap, ctxState uint8, status int, body string) {
 		host := "10.0.0.9:9428"
 		target := "http://" + host + "/select/logsql/query"
 		var err error
-		switch kind % 5 {
+		var budget error
+		switch kind % 6 {
 		case 0: // a completed VictoriaLogs (or front proxy) error response
 			if status < 400 || status > 599 {
 				status = 400 + (status%200+200)%200
@@ -200,6 +207,9 @@ func FuzzLokiClientError(f *testing.F) {
 			err = &vlResponseAbortedError{elapsed: time.Duration(status) * time.Millisecond, timedOut: status%2 == 0, cause: errors.New(body)}
 		case 4: // a transport error whose text looks like a proxy limit
 			err = &url.Error{Op: "Get", URL: target, Err: errors.New(body)}
+		case 5: // a binary evaluation budget: a query limit naming its flag
+			budget = &binaryBudgetError{flag: []string{"binary-metric-max-arrays", "binary-metric-max-operand-bytes"}[status&1]}
+			err = budget
 		}
 		switch wrap % 3 {
 		case 1:
@@ -221,6 +231,12 @@ func FuzzLokiClientError(f *testing.F) {
 		gotStatus, errorType, text := lokiClientError(ctx, err)
 		if !lokiClientStatuses[gotStatus] || errorType != lokiErrorType(gotStatus) {
 			t.Fatalf("status %d errorType %q for %v", gotStatus, errorType, err)
+		}
+		if budget != nil && ctxState%3 == 0 {
+			if gotStatus != http.StatusBadRequest || text != budget.Error() {
+				t.Fatalf("binary budget %v answered %d %q", err, gotStatus, text)
+			}
+			return
 		}
 		if !lokiFixedClientTexts[text] {
 			t.Fatalf("text %q is not one of Loki's fixed texts (err %v)", text, err)

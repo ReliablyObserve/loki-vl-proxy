@@ -47,19 +47,19 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 87 | 28 | 0 | 59 | 43 | 0 |
+| 400 | 86 | 28 | 0 | 58 | 42 | 0 |
 | 401 | 4 | 4 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 405 | 4 | 3 | 0 | 0 | 0 | 1 |
 | 413 | 1 | 1 | 0 | 0 | 0 | 0 |
 | 429 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 500 | 11 | 5 | 0 | 6 | 5 | 0 |
-| set at run time | 85 | 1 | 78 | 6 | 3 | 0 |
+| 500 | 8 | 5 | 0 | 3 | 3 | 0 |
+| set at run time | 89 | 1 | 82 | 6 | 3 | 0 |
 
 The registry holds one item per status (12 under `conformance/registry/loki/errors/`), not one per message: no check yet compares a formatted message with Loki's text.
 
-The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 43 route × failure-mode cells that still leak (46 cell × case pairs, ceiling 46) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
+The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 40 route × failure-mode cells that still leak (43 cell × case pairs, ceiling 43) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 
 ## Behaviour tracks
 
@@ -76,7 +76,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 35 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
-| limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 9 | proven |
+| limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 10 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 13 | partial |
 | resource_control | `peer-cache-fleet-recovery` — With a ring owner down or every cache lost, the fleet answers like Loki from VictoriaLogs | 2 | 1 | partial |

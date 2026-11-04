@@ -478,14 +478,15 @@ func (p *Proxy) fetchVolumeStats(ctx context.Context, req volumeRequest, statsQu
 }
 
 // postVolumeStats sends a volume stats request to VictoriaLogs and returns
-// its buffered body, or a redacted error for a failed status.
+// its buffered body, or a redacted error for a failed status. A body above
+// -backend-max-buffered-response-bytes is the limit error naming that flag.
 func (p *Proxy) postVolumeStats(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	resp, err := p.vlPost(ctx, path, params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := readBodyLimited(resp.Body, int64(p.limits().BufferedBackendBodyBytes))
+	body, err := p.readBufferedBackendBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}

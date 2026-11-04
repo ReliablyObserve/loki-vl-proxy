@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -11,6 +12,24 @@ type binaryExecutionBudget struct {
 	arrays        int
 	outputLabels  int
 	outputSamples int
+}
+
+// binaryBudgetError is a binary expression over one of the evaluation
+// budgets an operator sets (-binary-metric-max-arrays,
+// -binary-metric-max-operand-bytes): 400 bad_data naming the flag, as Loki
+// answers a query over one of its limits (logqlmodel.ErrLimit,
+// pkg/util/server/error.go:110-118, v3.7.9).
+type binaryBudgetError struct {
+	flag string
+}
+
+func (e *binaryBudgetError) Error() string {
+	return "binary expression exceeds its evaluation budget" + proxyLimitMarker + e.flag
+}
+
+func isBinaryBudgetError(err error) bool {
+	var budgetErr *binaryBudgetError
+	return errors.As(err, &budgetErr)
 }
 
 func binaryEvaluationContext(ctx context.Context) context.Context {
@@ -46,8 +65,8 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(body) > executionLimitsFrom(ctx).BufferedBackendBodyBytes {
-		return fmt.Errorf("binary operand exceeds response byte limit")
+	if limit := executionLimitsFrom(ctx).BufferedBackendBodyBytes; len(body) > limit {
+		return fmt.Errorf("binary operand exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", limit)
 	}
 	state, _ := ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState)
 	budget := state.budget
@@ -77,7 +96,7 @@ func checkBinaryDecodeBudget(ctx context.Context, body []byte) error {
 		}
 		if c == '[' {
 			if budget.arrays <= 0 {
-				return fmt.Errorf("binary expression sample/series budget exceeded")
+				return &binaryBudgetError{flag: "binary-metric-max-arrays"}
 			}
 			budget.arrays--
 		}

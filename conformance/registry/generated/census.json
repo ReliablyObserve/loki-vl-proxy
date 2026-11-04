@@ -777,6 +777,9 @@
     "internal/proxy/binary_aggregation_test.go | loki_api_v1_query",
     "internal/proxy/binary_aggregation_test.go | loki_api_v1_query_range",
     "internal/proxy/binary_aggregation_test.go | semantics/aggregation-over-binary-dropped",
+    "internal/proxy/binary_budget_status_test.go | operator-configurable-limits",
+    "internal/proxy/binary_budget_status_test.go | semantics/error-layer-proxy-limit-status",
+    "internal/proxy/binary_budget_status_test.go | status-400",
     "internal/proxy/binary_division_zero_test.go | semantics/binary-division-by-zero-nan",
     "internal/proxy/binary_ignoring_matching_test.go | loki_api_v1_query",
     "internal/proxy/binary_ignoring_matching_test.go | loki_api_v1_query_range",
@@ -1673,7 +1676,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 306,
+      "go": 307,
       "playwright": 1
     },
     "page_kinds": {

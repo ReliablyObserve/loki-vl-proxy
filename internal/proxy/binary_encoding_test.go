@@ -72,7 +72,7 @@ func TestBinaryGroupedLabelAmplificationBound(t *testing.T) {
 			left, right = one, many
 		}
 		body, err := matchBinaryMetricResultsContext(ctx, left, right, "+", "matrix", vm, false)
-		if err == nil || !strings.Contains(err.Error(), "output label budget") || body != nil {
+		if err == nil || !strings.Contains(err.Error(), "output labels exceed") || body != nil {
 			t.Fatalf("%s amplification accepted: %s %v", side, body, err)
 		}
 	}
@@ -85,7 +85,7 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 	}
 	ctx := binaryEvaluationContext(context.Background())
 	ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState).budget.arrays = 0
-	if _, _, err := restoreBinaryOperandGrouping(ctx, []byte(`[[[`), expr, "vector"); err == nil || !strings.Contains(err.Error(), "sample/series budget") {
+	if _, _, err := restoreBinaryOperandGrouping(ctx, []byte(`[[[`), expr, "vector"); !isBinaryBudgetError(err) {
 		t.Fatalf("repair decoded before preflight: %v", err)
 	}
 	ctx = binaryEvaluationContext(context.Background())
@@ -96,7 +96,9 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 	}
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	p.restoreBinaryOperandResponse(w, expr, "vector")
-	if w.status != http.StatusBadRequest {
+	// The writer cap is -backend-max-buffered-response-bytes: a proxy buffer
+	// limit, Loki's failed call (500) with the text naming the flag.
+	if w.status != http.StatusInternalServerError || !strings.HasSuffix(w.body.String(), "increase -backend-max-buffered-response-bytes") {
 		t.Fatalf("expanded repair bypassed writer cap: %d %s", w.status, w.body.String())
 	}
 	ctx = binaryEvaluationContext(context.Background())

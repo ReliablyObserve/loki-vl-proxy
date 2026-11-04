@@ -99,11 +99,11 @@ func (w *binaryOperandResponse) Write(data []byte) (int, error) {
 		}
 	}
 	if w.budget != nil && len(data) > w.budget.bytes {
-		w.err = fmt.Errorf("binary expression exceeds aggregate response byte budget")
+		w.err = &binaryBudgetError{flag: "binary-metric-max-operand-bytes"}
 		return 0, w.err
 	}
 	if len(data) > w.limit-w.body.Len() {
-		w.err = fmt.Errorf("binary operand response exceeds %d byte limit", w.limit)
+		w.err = fmt.Errorf("binary operand response exceeds %d bytes; narrow the query or increase -backend-max-buffered-response-bytes", w.limit)
 		return 0, w.err
 	}
 	w.WriteHeader(http.StatusOK)
@@ -168,10 +168,10 @@ func (p *Proxy) finishBinaryOperandResponse(w *binaryOperandResponse) {
 	if w.err != nil {
 		w.body.Reset()
 		w.status = 0
-		err := w.err
+		err, ctx := w.err, w.ctx
 		w.err = nil
 		w.ctx, w.budget = nil, nil
-		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.writeErr(w, ctx, err)
 	}
 }
 
@@ -297,7 +297,7 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 		result, err = matchBinaryMetricResultsContext(r.Context(), bodies[0], bodies[1], expr.Op, resultType, binOpExprToVMInfo(expr), expr.ReturnBool)
 	}
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, err.Error())
+		p.writeErr(w, r.Context(), err)
 		return
 	}
 	if expr.Op == "or" {

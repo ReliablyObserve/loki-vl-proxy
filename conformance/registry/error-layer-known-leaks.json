@@ -1,5 +1,5 @@
 {
-  "ceiling": 46,
+  "ceiling": 43,
   "leaks": {
     "alerts malformed": [
       "semantics/error-layer-backend-text",
@@ -44,20 +44,11 @@
     "index_volume malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "index_volume oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ],
     "index_volume_range malformed": [
       "semantics/error-layer-silent-success"
     ],
-    "index_volume_range oversize": [
-      "semantics/error-layer-proxy-limit-status"
-    ],
     "index_volume_range_drilldown malformed": [
       "semantics/error-layer-silent-success"
-    ],
-    "index_volume_range_drilldown oversize": [
-      "semantics/error-layer-proxy-limit-status"
     ],
     "patterns client_cancel": [
       "semantics/error-layer-silent-success"
