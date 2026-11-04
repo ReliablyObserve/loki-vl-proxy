@@ -86,3 +86,4 @@ smoke	internal/proxy	FuzzVolumeEndMillisecondsLikeLoki	12s	-	index volume last s
 smoke	internal/proxy	FuzzQueryRangeWindowReuse	12s	-	log query windows reused across moved ranges answer like Loki
 smoke	internal/proxy	FuzzJSONLabelProbeGates	12s	-	gated JSON parse-risk probes find the lines of the ungated ones
 smoke	internal/proxy	FuzzFirstLastOverTimeRangeTimestampsLikeLoki	12s	-	first/last over time query_range points at Loki evaluation timestamps
+smoke	internal/translator	FuzzStreamTagRestoreLikeLoki	12s	-	stream label value restored from _stream like Loki

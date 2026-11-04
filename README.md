@@ -87,7 +87,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **46 of 514** pairs are slower (9%): log queries **25 of 81**, Drilldown and Explore pages **10 of 109**, metric queries **11 of 323**.
 - Between 1× and 2× Loki: **16** rows on the first request, **1** on a repeat; above 2× Loki: **30** on the first request and **11** on a repeat (the 2026-11-04 distribution).
-- **60 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **47** on the first request, **13** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 94 covered registry items are locked at the 2× bound.
+- **60 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **47** on the first request, **13** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 95 covered registry items are locked at the 2× bound.
 - In the run shown, **34** of those rows measured above 2× Loki and **26** within 2×.
 - Largest gaps on that list in the run shown, first request: `X1 json filter level_extracted, by level` over 24h, **19.72 s** against **4.83 s**; `X1 json filter level_extracted, by level` over 6h, **5.35 s** against **1.21 s**; `LS8 json count by level_extracted, collision` over 6h, **2.11 s** against **0.29 s**.
 - Largest gaps on that list in the run shown, repeat: `LS8 json count by level_extracted, collision` over 6h, **0.08 s** against **0.01 s**; `L7 label_replace around a binary of two sums by level` over 6h, **0.08 s** against **0.01 s**.
@@ -113,7 +113,7 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 20 partial, 3 gaps |
-| Known differences from Loki (ranked) | **92**: 69 open, 13 documented, 7 owner-kept, 3 upstream |
+| Known differences from Loki (ranked) | **95**: 72 open, 13 documented, 7 owner-kept, 3 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

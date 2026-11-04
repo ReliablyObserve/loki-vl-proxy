@@ -1,0 +1,45 @@
+id: semantics/stream-level-shadowed-by-ingest-json-key
+title: A level stream label that a JSON line's key shadows in VictoriaLogs is read as the line's value by groupings and the detected_level derivation (open)
+pending: true
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  VictoriaLogs' Loki push API stores a JSON line's key over the stream label of
+  the same name (semantics/stream-label-shadowed-by-ingest-json-key). For the
+  level names (level, lvl, severity, ...) the proxy keeps the stored field:
+  the detected_level derivation reads them as stored
+  (translator.BuildDetectedLevelChain), and Loki derives detected_level at
+  ingest from the stream label first (v3.7.9 pkg/distributor/
+  field_detection.go extractLogLevel). A stream with level="info" whose JSON
+  lines say "level":"error" is therefore grouped by `sum by (level)` and
+  derived as error where Loki has info.
+
+  The stream value restore of semantics/stream-label-shadowed-by-ingest-json-key
+  can serve these names too once the detected_level derivation reads the
+  restored value; that touches the level derivation and its measurements.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (level) (count_over_time({service_name="api-gateway"} [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's series per stream label level.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: M
+  area: 'internal/translator/plain_stream_labels.go streamTagRestorePipes (level names excluded); internal/translator/detected_level_logsql.go BuildDetectedLevelChain'
+  loki: 'pkg/distributor/field_detection.go extractLogLevel (stream label first)'
+  proxy: 'the stored field, the line value when a JSON key shadows the label'
+  planned_test: 'TestStreamLevelShadowedByIngestJSONKey (internal/proxy) and TestCompat_StreamLevelShadowedByIngestJSONKey (test/e2e-compat, group core)'
+  clusters: []

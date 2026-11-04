@@ -1,0 +1,42 @@
+id: semantics/stream-label-shadowed-after-json-parser
+title: After `| json`, a metric plan or a log filter on a stream label that a JSON line's key shadows in VictoriaLogs reads the line's value (open)
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  VictoriaLogs' Loki push API stores a JSON line's key over the stream label of
+  the same name (semantics/stream-label-shadowed-by-ingest-json-key). The
+  proxy's ordered `| json` metric plans build their own LogsQL and read the
+  stored field, and a log query's filter after a parser copies the stored value
+  aside (semantics/plain-name-after-parser-reads-stream-label), which is
+  already the line's. With an emulated VictoriaLogs,
+  `sum by (version) (count_over_time({service_name="api-gateway"} | json | drop __error__, __error_details__ [1m]))`
+  answers version="v1" and version="v2" where Loki answers version="v2"
+  (the line's key is version_extracted in Loki). A `| logfmt` metric is exact:
+  it goes through the translation that restores the stream value.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (version) (count_over_time({service_name="api-gateway"} | json | drop __error__, __error_details__ [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    One series per stream label value with Loki's counts.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/ordered_json_metric.go (plans that build their own LogsQL); internal/translator/plain_stream_labels.go svCopyPipes (log queries)'
+  loki: 'pkg/logql/log/parser.go duplicateSuffix; pkg/logql/log/labels.go LabelsBuilder'
+  proxy: 'the stored field, the line value'
+  planned_test: 'TestStreamLabelShadowedAfterJSONParser (internal/proxy) and TestCompat_StreamLabelShadowedAfterJSONParser (test/e2e-compat, group core)'
+  clusters: []

@@ -1155,6 +1155,9 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	if len(extractedBases) > 0 {
 		parts = withExtractedScratch(parts, keyParsers, keyParserParts, extractedBases)
 	}
+	if metric && svNames != nil {
+		parts = withStreamTagRestore(parts, svNames)
+	}
 	wrapBareFiltersAfterPipes(parts)
 	result := strings.Join(parts, " ")
 

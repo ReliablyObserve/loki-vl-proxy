@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Group a metric query by a stream label as Loki does when a JSON line has a
+  key of the same name. VictoriaLogs' Loki push API stores the line's value
+  under the label's name at ingest, so a Logs Drilldown labels tab breakdown
+  (with or without a level pill) or an Explore `sum by (label)` counted lines
+  under the line's value, for example an extra `version="v1"` series next to
+  the stream's `version="v2"`. A metric query without a parser stage now reads
+  every label it groups by from `_stream` before its first pipe, keeping the
+  stored field when the stream has no such label. No VictoriaLogs call is
+  added.
+
 ## [2.74.1] - 2026-11-04
 
 ### Fixed
