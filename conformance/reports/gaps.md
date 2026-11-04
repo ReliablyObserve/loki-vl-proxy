@@ -39,20 +39,28 @@ does not implement VictoriaLogs deletion. It is not a proven working delete API.
 
 ## Error surface
 
-Every dynamic message is a risk: it can carry VictoriaLogs or proxy-internal text that Loki
-would never emit. Each needs a registry entry stating Loki's own text.
+Every place the proxy writes an error to a client (`conformance/scripts/sync_errors.py`). A literal
+message is text the proxy wrote; an error passed through the error layer (`lokiClientError`) reaches
+the client only as Loki's text or Loki's fixed text for its status; a message formatted at run time
+can carry text Loki would never emit, an error's own text most of all. The query routes answer in
+Loki's query-frontend shape: the status and the text, `text/plain`, no errorType.
 
-| Status | errorType | proxy call sites | literal messages | dynamic |
-|---|---|---:|---:|---:|
-| 400 | bad_data | 87 | 25 | 67 |
-| 401 | bad_data | 3 | 2 | 0 |
-| 403 | bad_data | 2 | 2 | 0 |
-| 404 | not_found | 1 | 1 | 0 |
-| 408 | bad_data | 2 | 0 | 2 |
-| 413 | bad_data | 1 | 1 | 0 |
-| 500 | internal | 8 | 3 | 8 |
-| 502 | unavailable | 1 | 1 | 1 |
-| set at run time | — | 19 | 1 | 17 |
+| Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
+|---|---:|---:|---:|---:|---:|---:|
+| 400 | 87 | 28 | 0 | 59 | 43 | 0 |
+| 401 | 4 | 4 | 0 | 0 | 0 | 0 |
+| 403 | 2 | 2 | 0 | 0 | 0 | 0 |
+| 404 | 1 | 1 | 0 | 0 | 0 | 0 |
+| 405 | 4 | 3 | 0 | 0 | 0 | 1 |
+| 408 | 2 | 0 | 0 | 2 | 2 | 0 |
+| 413 | 1 | 1 | 0 | 0 | 0 | 0 |
+| 429 | 1 | 1 | 0 | 0 | 0 | 0 |
+| 500 | 11 | 5 | 0 | 6 | 5 | 0 |
+| set at run time | 83 | 1 | 76 | 6 | 3 | 0 |
+
+The registry holds one item per status (12 under `conformance/registry/loki/errors/`), not one per message: no check yet compares a formatted message with Loki's text.
+
+The error-layer gate (`TestErrorLayer_NoVictoriaLogsLeak`, every route through every VictoriaLogs failure mode) lists 43 route × failure-mode cells that still leak (46 cell × case pairs, ceiling 46) in `conformance/registry/error-layer-known-leaks.json`; the list may only shrink. Sites outside those routes and modes are not driven by the gate.
 
 ## Behaviour tracks
 
