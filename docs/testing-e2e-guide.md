@@ -64,7 +64,7 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 | Service | Host Port | Purpose |
 |---------|-----------|---------|
 | `loki` (Loki 3.7.9) | 13101 | Reference implementation (ground truth) |
-| `victorialogs` (VictoriaLogs v1.52.0) | 19428 | Backend for the proxy |
+| `victorialogs` (VictoriaLogs v1.53.0) | 19428 | Backend for the proxy |
 | `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
 | `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies (cache-tier benchmarks only) |
 | `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
@@ -234,7 +234,7 @@ Set environment variables before `docker compose up` to override image versions:
 | Variable | Default |
 |----------|---------|
 | `LOKI_IMAGE` | `grafana/loki:3.7.9` |
-| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.52.0` |
+| `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.53.0` |
 | `GRAFANA_IMAGE` | `grafana/grafana:13.3.0` |
 | `GRAFANA_PLUGINS_PREINSTALL` | `victoriametrics-logs-datasource@0.33.1,grafana-lokiexplore-app@3.1.0` (Grafana `12.x` needs `grafana-lokiexplore-app@2.6.0`; Drilldown `3.x` requires Grafana `>= 13.2`) |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |

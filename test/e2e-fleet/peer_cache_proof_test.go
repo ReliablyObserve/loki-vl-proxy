@@ -687,7 +687,7 @@ func TestFleetPeerCacheProof(t *testing.T) {
 	proofRec.report = proofReport{
 		Started: time.Now(),
 		Images: map[string]string{
-			"proxy": envOr("PROXY_IMAGE", "loki-vl-proxy:fleet-local"), "victorialogs": envOr("VICTORIALOGS_IMAGE", "victoriametrics/victoria-logs:v1.52.0"), "loki": envOr("LOKI_IMAGE", "grafana/loki:3.7.9"),
+			"proxy": envOr("PROXY_IMAGE", "loki-vl-proxy:fleet-local"), "victorialogs": envOr("VICTORIALOGS_IMAGE", "victoriametrics/victoria-logs:v1.53.0"), "loki": envOr("LOKI_IMAGE", "grafana/loki:3.7.9"),
 		},
 		Bounds: map[string]float64{"peer_timeout_ms": ms(peerTimeout), "owner_down_slack_ms": ms(ownerDownSlack), "rss_refill_slack_bytes": rssRefillSlack},
 	}

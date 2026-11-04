@@ -48,7 +48,7 @@ func TestFleet_QueryRangeSettledStepsReachPeers(t *testing.T) {
 	if resp.StatusCode >= 300 {
 		t.Fatalf("ingest: %d", resp.StatusCode)
 	}
-	if resp, err := http.Get(fleetVLURL + "/internal/force_flush"); err == nil {
+	if resp, err := http.Post(fleetVLURL+"/internal/force_flush", "text/plain", nil); err == nil {
 		resp.Body.Close()
 	}
 
