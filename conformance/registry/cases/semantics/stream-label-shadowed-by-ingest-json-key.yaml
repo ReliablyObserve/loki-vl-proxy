@@ -37,8 +37,10 @@ why: |
   take into the stream). skip_empty_results cannot do that: VictoriaLogs
   reuses an extract's results across consecutive entries with the same source
   value (lib/logstorage/pipe_extract.go writeBlock), original field included,
-  so a block of such entries collapsed onto its first entry's value. VictoriaLogs runs both once per
-  run of equal `_stream` values, that is once per block; no VictoriaLogs call
+  so a block of such entries collapsed onto its first entry's value. VictoriaLogs runs the regexp and
+  the unquote once per run of equal `_stream` values, that is once per block;
+  an entry without the tag passes through the extract's per-entry branch,
+  which copies its field. No VictoriaLogs call
   is added, no stream label listing is needed (the names come from the query
   text, so the translation and every cache key are the same on every replica
   from the first request on), and no measured shape changes route. A label

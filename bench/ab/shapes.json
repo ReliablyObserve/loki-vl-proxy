@@ -3174,7 +3174,7 @@
    ]
   },
   "stream-label-shadowed": {
-   "description": "A Logs Drilldown labels tab breakdown by a stream label that a JSON line's key shadows in VictoriaLogs (semantics/stream-label-shadowed-by-ingest-json-key): api-gateway's stream label version=\"v2\" under JSON lines with a version key of v1 or v2. SL1 is the labels tab with a level pill, SL2 without, SL3 a breakdown by a stream label no key shadows (cluster), which the stream value restore also reads. Run with the control set.",
+   "description": "A Logs Drilldown labels tab breakdown by a stream label that a JSON line's key shadows in VictoriaLogs (semantics/stream-label-shadowed-by-ingest-json-key): api-gateway's stream label version=\"v2\" under JSON lines with a version key of v1 or v2. SL1 is the labels tab with a level pill, SL2 without, SL3 a breakdown by a stream label no key shadows (cluster), SL4 a Drilldown field breakdown by structured metadata the stream does not hold (span_id): the restore runs for both and must keep their values and cost. Run with the control set.",
    "ranges": [
     "1h",
     "6h",
@@ -3214,6 +3214,19 @@
      },
      "covers": [
       "semantics/stream-label-shadowed-by-ingest-json-key",
+      "loki_api_v1_query_range",
+      "quality/query-range-settled-steps"
+     ]
+    },
+    {
+     "name": "SL4 field breakdown by span_id (structured metadata, no stream label)",
+     "query": "sum by (span_id) (count_over_time({service_name=\"otel-collector\"} | span_id!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "semantics/stream-label-shadowed-by-ingest-json-key",
+      "limits/drilldown-breakdown-exact",
       "loki_api_v1_query_range",
       "quality/query-range-settled-steps"
      ]
