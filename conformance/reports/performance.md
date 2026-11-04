@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 94 items are locked; 5 carry an effort exception.
+29 of 95 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -384,6 +384,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/query-range-window-full-limit-reads` | 2 × 4 ranges | 8 same | worst 0.36s / 0.12s (3h) | 0.58s † / 0.59s | same | locked 2026-11-04 |
 | `semantics/query-range-window-lead-window` | 11 × 3 ranges | 29 same | worst 0.51s / 0.06s (24h) | 1.04s / 1.14s | same; 11 slower than Loki cold | not locked |
 | `semantics/series-level-aggregation-bounded-memory` | 1 × 3 ranges | 3 same | worst 4.30s / 0.11s (24h) | 29.93s / 0.13s | differs | not locked |
+| `semantics/stream-label-shadowed-by-ingest-json-key` | — | not measured | | | | not locked |
 | `semantics/sub-second-step-grid` | 3 × 1 ranges | 3 same | worst 0.02s / 0.01s (5m-200ms) | 0.03s / 0.02s | same | not locked |
 | `semantics/unwrap-conversion-error` | 21 × 5 ranges | 1 faster, 2 fixed, 72 same | worst 3.84s / 0.02s (24h) | 6.42s / 0.07s | differs; 4 slower than Loki cold | not locked; exception |
 | `semantics/unwrap-duration-seconds` | 4 × 3 ranges | 6 same | worst 0.41s / 0.03s (24h) | 0.24s / 0.01s | same; 1 slower than Loki cold | not locked; exception |
