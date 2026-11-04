@@ -51,4 +51,5 @@ gap:
   loki: 'pkg/logql/syntax stream selector: stream labels only'
   proxy: 'a field filter on the stored value'
   planned_test: 'TestStreamLabelSelectorShadowedByIngestJSONKey (internal/proxy) and TestCompat_StreamLabelSelectorShadowedByIngestJSONKey (test/e2e-compat, group core)'
-  clusters: []
+  clusters:
+    - '01122448'

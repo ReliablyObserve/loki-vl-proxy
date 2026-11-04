@@ -51,4 +51,9 @@ gap:
   proxy: 'the value per stream (or per level), not per stream and parsed labels'
   planned_test: 'TestCompat_UnwrapPerSeriesIdentity (test/e2e-compat, group core) over sum and sum by x avg/max/min/rate_counter, logfmt and json'
   note: 'Found while fixing semantics/unwrap-rate-ungrouped-sum-per-stream, on origin/main e173e40b. VictoriaLogs stats group by named fields only; a fix needs the parsed keys of the data (parsed-identity/dynamic-key-parsers).'
-  clusters: []
+  clusters:
+    - 0e2f0a0c
+    - 4bec4ad3
+    - c254b66a
+    - c733db50
+    - db7a21cd

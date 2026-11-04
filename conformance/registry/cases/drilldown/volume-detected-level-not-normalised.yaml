@@ -1,0 +1,47 @@
+id: drilldown/volume-detected-level-not-normalised
+title: A volume by detected_level answers a stored level such as "Warning" as its own level; Loki normalises it to "warn" (open)
+pending: true
+proves:
+  - loki_api_v1_index_volume
+consumer: drilldown
+why: |
+  Loki's ingest normalises the level it reads from structured metadata or
+  a level label (pkg/distributor/field_detection.go:96-178 extractLogLevel,
+  normalizeLogLevel: "Warning", "WARN" and "warning" all become "warn").
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0): `/loki/api/v1/index/volume` for
+  `{service_name="visual-detected-level-stage"}` with
+  `targetLabels=detected_level, aggregateBy=series` (one line with
+  structured metadata `level=Warning` on Loki and the same value as a stored
+  field on VictoriaLogs, and one line on a stream labelled
+  detected_level=warn): Loki 1 series, `{detected_level="warn"}`; the proxy 2,
+  also `{detected_level="Warning"}`, so the Logs Drilldown level volume shows
+  a level Loki does not have. The volume by detected_level itself is a
+  documented proxy extension (profiles/volume-detected-level-extension).
+request:
+  method: GET
+  path: /loki/api/v1/index/volume
+  params:
+    query: '{service_name="visual-detected-level-stage"}'
+    start: 'now-1h'
+    end: 'now'
+    targetLabels: detected_level
+    aggregateBy: series
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [series]
+  expect: |
+    Normalised levels only.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy volume by detected_level (stored level value not normalised)'
+  loki: 'pkg/distributor/field_detection.go:96-178 (extractLogLevel, normalizeLogLevel)'
+  proxy: 'the stored value ("Warning") as a separate level'
+  planned_test: 'TestCompat_VolumeDetectedLevelNormalised (test/e2e-compat, group drilldown)'
+  clusters:
+    - da56b69d

@@ -51,4 +51,5 @@ gap:
   loki: 'pkg/logql/log/pattern/pattern.go:36-52 (ParseLineFilter, validateNoConsecutiveCaptures, validateNoNamedCaptures)'
   proxy: '`<_><_>` a 400 with VictoriaLogs'' extract error text; `<foo>` a 200 reading the name as a capture (was: as literal text)'
   planned_test: 'TestCompat_PatternLineFilterInvalidCaptures (test/e2e-compat, group core)'
-  clusters: []
+  clusters:
+    - d3337db8

@@ -39,5 +39,10 @@ gap:
   planned_test: 'TestCompat_ParseErrorLabelsOnLogLines (test/e2e-compat, group semantics)'
   note: 'Measured on main at fcaccfcc, before #652 rewrote the tail and log-row label conversion; recheck the behaviour on the current code before fixing.'
   clusters:
+    - 77a12e34
+    - 84295a1c
     - 9a63f6e2
+    - a348d859
     - b50e5ea5
+    - e3cd9490
+    - f7dc6567

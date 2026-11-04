@@ -36,21 +36,36 @@ gap:
   planned_test: 'differential run cluster count (bench/parity)'
   clusters:
     - 03f3b6e5
+    - 0c84c962
     - 0f386e36
     - 0f49a837
+    - 1d36eaaf
     - 1f333942
     - 241fb900
     - 273c6ca5
+    - 306c53e8
+    - 337a1cd9
     - 370c5620
+    - 37303f77
     - 375b5df6
+    - 3b52c3f3
+    - 3ed0faea
+    - 48bd74c6
     - 4d52c5cb
+    - 55632beb
     - 6bc7202e
     - 7cc910c2
     - 833babd8
     - 891109a9
+    - 8af2ed40
+    - 922e9e4f
+    - 973fbb88
     - aa8cfdc8
+    - bbbe4006
     - c0f15837
+    - c1becb6a
     - c434dd07
+    - c6218560
     - c84cb5a1
     - cd477d03
     - d21214b2
@@ -58,3 +73,4 @@ gap:
     - dcf0f4ed
     - e598f28d
     - e6579e4c
+    - fd0b9101

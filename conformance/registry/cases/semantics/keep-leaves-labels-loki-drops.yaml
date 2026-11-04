@@ -1,0 +1,60 @@
+id: semantics/keep-leaves-labels-loki-drops
+title: '`| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (open)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki's keep stage keeps a label only when its exact name is listed
+  (pkg/logql/log/keep_labels.go:15-45); every other label, stream label,
+  structured metadata or parsed, is deleted.
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0) shows two forms:
+    * `{namespace="prod"} | json | keep level` (13 queries, also
+      `| json | keep service_name, level` on every generator service and
+      `| logfmt | keep level, msg`): the JSON or logfmt `level` collides with
+      the stream label, so Loki names it level_extracted and keep drops it
+      (Loki `{"level": "error"}`); the proxy answers
+      `{"level": "error", "level_extracted": "error"}`;
+    * `count(rate({service_name="api-gateway"} | json | keep foo [5m]))`:
+      Loki 1 (keep removes every stream label, so all series fold into one),
+      proxy 166 (a series per stream).
+
+  The first form is a regression: on 2026-10-05 the proxy answered
+  `{app="payment-service",env="production"} | logfmt | level="error" | keep
+  level, msg` with `level`, `msg` (and the service_name a later fix removed)
+  and no level_extracted. The name_extracted renaming (#660) runs after the
+  keep the translator sent to VictoriaLogs, so the renamed key survives
+  (internal/proxy/stream_processing.go keepEntryFields).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} | json | keep level'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.labels]
+  expect: |
+    Loki's label sets: only the names keep lists.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/stream_processing.go keepEntryFields (rename after keep), the metric plan of keep under a vector aggregation'
+  loki: 'pkg/logql/log/keep_labels.go:15-45 (exact-name keep)'
+  proxy: 'level_extracted kept after a collision; stream labels kept under count()'
+  planned_test: 'TestCompat_KeepDropsUnlistedLabels (test/e2e-compat, group semantics): log keep after json/logfmt collisions, count over keep'
+  clusters:
+    - 4d601482
+    - 9925a3bc
+    - a70f6707
+    - e8b851a4
+    - ede6dabd

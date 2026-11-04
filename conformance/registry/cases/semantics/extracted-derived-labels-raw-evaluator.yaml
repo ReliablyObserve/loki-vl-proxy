@@ -42,4 +42,6 @@ gap:
   proxy: 'derived labels are not read from parsed keys'
   planned_test: 'TestCompat_ExtractedLabelMetricPushdown rows for service_name_extracted (test/e2e-compat, group core)'
   note: 'Related: profiles/parsed-key-colliding-with-structured-metadata.'
-  clusters: []
+  clusters:
+    - 928f96ae
+    - edd843c3

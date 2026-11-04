@@ -1,0 +1,44 @@
+id: semantics/uppercase-topk-ranks-once
+title: An uppercase TOPK on query_range keeps k series for the whole range; Loki ranks every step like lowercase topk (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki's lexer lowercases keywords (pkg/logql/syntax/lex.go:226-227), so
+  `TOPK(3, SUM BY (app) (RATE(...)))` is the same query as the lowercase
+  spelling and ranks every step (pkg/logql/evaluator.go:494-560).
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0), Grafana Explore, 1h:
+  `TOPK(3, SUM BY (app) (RATE({env="production"}[$__auto])))` is 8 series on
+  Loki (the union of every step's top 3) and 3 on the proxy, and a series the
+  proxy keeps has a point at every step (360) where Loki has one only where
+  it ranks (72). The lowercase spelling matches Loki
+  (semantics/topk-bottomk-range-series).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'TOPK(3, SUM BY (app) (RATE({env="production"}[5m])))'
+    start: 'now-1h'
+    end: 'now'
+    step: '10'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    The answer of the lowercase spelling.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy per-step topk/bottomk detection (case-sensitive keyword match)'
+  loki: 'pkg/logql/syntax/lex.go:226-227 (keywords lowercased); pkg/logql/evaluator.go:494-560 (per-step ranking)'
+  proxy: 'k series over the whole range, every point kept'
+  planned_test: 'TestCompat_UppercaseKeywordsRankPerStep (test/e2e-compat, group semantics)'
+  clusters:
+    - 912fa21e

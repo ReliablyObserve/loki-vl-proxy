@@ -51,4 +51,6 @@ gap:
   loki: 'pkg/logql/log/label_filter.go:90-100 BinaryLabelFilter.Process, 306-340 NumericLabelFilter.Process, 418-424 labelValue'
   proxy: 'no detection; 200 without the rows that do not convert'
   planned_test: 'TestUnwrapErrorProbePlans and TestUnwrapConversionErrorDifferential (internal/proxy) assert the detection stays off for these forms; flip them to compare'
-  clusters: []
+  clusters:
+    - 92b24c6c
+    - b8486866

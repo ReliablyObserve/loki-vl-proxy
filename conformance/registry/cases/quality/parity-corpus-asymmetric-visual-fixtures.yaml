@@ -1,0 +1,60 @@
+id: quality/parity-corpus-asymmetric-visual-fixtures
+title: The differential run compares a visual fixture whose Loki and VictoriaLogs copies hold different data (open, harness)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  The visual-extraction-list seed of the visual stack writes different data
+  to each side on purpose (bench/visual/stack.py
+  seed_extraction_list_fixture): VictoriaLogs rows carry a `level=info`
+  field that is not in the line, and Loki's copy has no structured metadata
+  for it. The differential run of 2026-11-04 seeds and compares it, so every
+  query that reads `level` on this service differs because the data
+  differs, not the proxy:
+    * `{service_name="visual-extraction-list"} | detected_level="info"`, `|
+      drop detected_level`, `| line_format "{{.detected_level}}"` and the
+      Logs Drilldown landing: a `level` label only the proxy has;
+    * `{service_name="visual-extraction-list"} | json | level!=""`: Loki 1
+      line, proxy 2 (the logfmt line keeps the stored level), and the same
+      filter under `sum by (level) (count_over_time(...))` is Loki 200, proxy
+      400 JSONParserErr.
+  With Loki holding the same `level` as structured metadata, Loki would
+  answer as the proxy does. This is not a Loki behaviour to copy. The fix is
+  in the harness: seed Loki with the structured metadata VictoriaLogs
+  stores, or leave the service out of the parity corpus
+  (bench/parity/corpus.py). Real differences on the same service are
+  registered apart (semantics/parse-error-labels-on-log-lines,
+  drilldown/detected-labels-lists-stored-field).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="visual-extraction-list"} | detected_level="info"'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [streams.labels]
+  expect: |
+    Not comparable until both sides hold the same data.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'bench/parity/corpus.py and bench/visual/stack.py (an asymmetric seed compared as equal data)'
+  loki: 'not a Loki behaviour: the two sides hold different data (bench/visual/stack.py seed_extraction_list_fixture)'
+  proxy: 'answers from the data VictoriaLogs holds'
+  planned_test: 'a bench/parity corpus test that every seeded service holds equal data on both sides'
+  clusters:
+    - 0b3c6a0b
+    - 0f86621f
+    - 56ea1b44
+    - 7d70217b
+    - be73ff43
+    - c18f02bf
+    - e53ed882

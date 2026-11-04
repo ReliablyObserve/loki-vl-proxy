@@ -1,0 +1,41 @@
+id: drilldown/detected-labels-lists-stored-field
+title: detected_labels lists level, a stored field outside the stream; Loki lists stream labels only (open)
+pending: true
+proves:
+  - loki_api_v1_detected_labels
+consumer: drilldown
+why: |
+  Loki's detected_labels reads stream labels from the ingesters and the
+  index (pkg/querier/querier.go:684-740 DetectedLabels); structured metadata
+  is not a detected label.
+
+  The differential run of 2026-11-04 (proxy 69d07019, Loki v3.7.9,
+  VictoriaLogs v1.53.0): for `{service_name="visual-detected-level-stage"}`
+  (structured metadata `level=Warning` on Loki, a stored field on
+  VictoriaLogs whose stream fields are app and case) and
+  `{service_name="visual-extraction-list"}`, the proxy also lists `level`, so
+  the Logs Drilldown Labels tab shows a level breakdown Loki does not offer.
+request:
+  method: GET
+  path: /loki/api/v1/detected_labels
+  params:
+    query: '{service_name="visual-detected-level-stage"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [detectedLabels.label]
+  expect: |
+    Loki's stream labels.
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy detected_labels (level read from a non-stream field)'
+  loki: 'pkg/querier/querier.go:684-740 (DetectedLabels: stream labels only)'
+  proxy: 'level listed from a stored field'
+  planned_test: 'TestCompat_DetectedLabelsStreamOnly (test/e2e-compat, group drilldown)'
+  clusters:
+    - 18d7282c
