@@ -83045,6 +83045,7 @@
       "warm_p50": 0.178
     }
   ],
+  "semantics/detected-fields-empty-answer": [],
   "semantics/detected-fields-no-logfmt-token-fields": [
     {
       "baseline": "release",
