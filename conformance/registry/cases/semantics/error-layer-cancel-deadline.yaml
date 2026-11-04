@@ -11,10 +11,15 @@ why: |
   over regex match) to reduce the amount of data processed"
   (pkg/util/server/error.go:26-27, :103-107). The error layer now answers
   both with Loki's status and text on every HTTP route, the raw-row metric
-  paths and rules/alerts included (they answered 502 before). 2 cells remain
-  (34 before): a native tail whose VictoriaLogs stream times out or is
-  cancelled after the websocket upgrade closes normally instead of with
-  Loki's error (the deadline text is also longer than a close frame holds).
+  paths and rules/alerts included (they answered 502 before). The windowed
+  log query_range path (-query-range-windowing) answered a request that ended
+  while it waited to retry a failed window batch with 408 and Go's text
+  ("context canceled", "context deadline exceeded"); it now answers 499 and
+  504 with Loki's texts through the error layer, in both waits (the batch
+  backoff and the single-window retry). 2 cells remain (34 before): a native
+  tail whose VictoriaLogs stream times out or is cancelled after the
+  websocket upgrade closes normally instead of with Loki's error (the
+  deadline text is also longer than a close frame holds).
 request:
   scope: internal
   entry: lokiClientError, (*Proxy).writeErr, writeBackendError, writeGrafanaStatsFailure
@@ -30,6 +35,10 @@ request:
     detected_field values, detected_labels; index stats, volume, volume_range,
     Drilldown volume_range; patterns; tail; rules; alerts). The cells that
     fail this class are listed in conformance/registry/error-layer-known-leaks.json.
+    TestErrorLayer_WindowRetryCancelDeadline drives the windowed log
+    query_range into both retry waits (VictoriaLogs answers every window with
+    a retryable 502) and ends the request there, by a client cancel and by the
+    tenant's query_timeout, with the gate's own classes.
     TestCompat_ErrorLayerLikeLoki repeats the main modes against the stack's
     VictoriaLogs through a fault-injecting forwarder and compares with Loki.
 compare:

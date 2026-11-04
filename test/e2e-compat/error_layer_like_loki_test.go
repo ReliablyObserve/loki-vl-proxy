@@ -78,6 +78,11 @@ func errLayerFaultBackend(t *testing.T, fault string) string {
 			_, _ = buf.Write(body[:len(body)/2])
 			_ = buf.Flush()
 			_ = conn.Close()
+		case "unavailable":
+			// A front proxy answers every query call with a retryable 502.
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, "<html><body>502 Bad Gateway</body></html>")
 		case "slow":
 			_, _ = io.Copy(io.Discard, r.Body)
 			select {
@@ -304,6 +309,24 @@ func TestCompat_ErrorLayerLikeLoki(t *testing.T) {
 			t.Fatalf("the 64-byte buffered-response limit was not reached; the case proves nothing: %.300s", body)
 		}
 		got := errLayerE2EClasses(status, body, nil, http.StatusInternalServerError, "", false, true)
+		errLayerE2EVerdict(t, got, nil, status, body)
+	})
+
+	t.Run("window_retry_deadline", func(t *testing.T) {
+		// The windowed log query_range waits to retry the failed windows; the
+		// tenant's query_timeout passes during that wait. Loki answers a
+		// query past query_timeout with 504 and its deadline text.
+		route := newErrLayerProxy(t, errLayerFaultBackend(t, "unavailable"), func(cfg *proxy.Config) {
+			cfg.QueryRangeWindowingEnabled = true
+			cfg.QueryRangeSplitInterval = 15 * time.Minute
+			cfg.QueryRangeMaxParallel = 4
+			cfg.QueryRangeParallelMin = 1
+			cfg.QueryRangeParallelMax = 4
+			cfg.QueryRangeFreshness = time.Minute
+			cfg.TenantDefaultLimits = map[string]any{"query_timeout": "300ms"}
+		})
+		status, body := rejectedQueryGet(t, route, "/loki/api/v1/query_range", window(url.Values{"query": {`{app="api-gateway"}`}, "limit": {"10"}}), "0", nil)
+		got := errLayerE2EClasses(status, body, nil, http.StatusGatewayTimeout, e2eLokiDeadlineExceeded, true, false)
 		errLayerE2EVerdict(t, got, nil, status, body)
 	})
 

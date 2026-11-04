@@ -698,3 +698,107 @@ func TestErrorLayer_LokiLimitTexts(t *testing.T) {
 		})
 	}
 }
+
+// TestErrorLayer_WindowRetryCancelDeadline drives the windowed log query_range
+// path (-query-range-windowing) into its retry backoff: VictoriaLogs answers
+// every window with a retryable 502, and the request ends while the proxy
+// waits to retry, by a client cancel or by the tenant's query_timeout. Loki
+// answers 499 "the request was cancelled by the client" and 504 with its
+// deadline text (pkg/util/server/error.go:26-27, :103-107); a request whose
+// context ended has no other answer. Both backoff waits are covered: the batch
+// backoff (several windows fetched in parallel, then halved) and the
+// single-window retry.
+// conformance: semantics/error-layer-cancel-deadline, semantics/error-layer-internal-go-text, backend-deadlines-and-cancellation
+func TestErrorLayer_WindowRetryCancelDeadline(t *testing.T) {
+	end := time.Now().Truncate(time.Hour)
+	start := end.Add(-4 * time.Hour)
+	rt := errLayerRoute{name: "query_range_log_window_retry", path: "/loki/api/v1/query_range"}
+	for _, wait := range []struct {
+		name     string
+		parallel int
+	}{
+		{"batch_backoff", 4},
+		{"single_window_retry", 1},
+	} {
+		for _, mode := range []string{"client_cancel", "timeout"} {
+			t.Run(wait.name+"/"+mode, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				var (
+					queries  atomic.Int64
+					mu       sync.Mutex
+					attempts = map[string]int{}
+					once     sync.Once
+				)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_ = r.ParseForm()
+					if r.URL.Path != "/select/logsql/query" {
+						// The hits prefilter and the version probe fail
+						// plainly: the windows are fetched without them.
+						w.WriteHeader(http.StatusNotFound)
+						return
+					}
+					queries.Add(1)
+					mu.Lock()
+					key := r.Form.Get("start") + ":" + r.Form.Get("end")
+					attempts[key]++
+					last := attempts[key] == queryRangeWindowFetchAttempts
+					mu.Unlock()
+					if last && mode == "client_cancel" {
+						// The window's own retries are spent: the client goes
+						// away while the proxy waits to retry the batch (the
+						// first wait is 100ms). A cancel during a window's own
+						// retries is answered by the fetch error path.
+						once.Do(func() { time.AfterFunc(50*time.Millisecond, cancel) })
+					}
+					w.WriteHeader(http.StatusBadGateway)
+					fmt.Fprintf(w, "<html><body>502 Bad Gateway nginx %s</body></html>", errLayerSentinel)
+				}))
+				defer srv.Close()
+				c := cache.New(time.Minute, 100)
+				defer c.Close()
+				cfg := Config{
+					BackendURL:                 srv.URL,
+					Cache:                      c,
+					LogLevel:                   "error",
+					BackendTimeout:             5 * time.Second,
+					QueryRangeWindowingEnabled: true,
+					QueryRangeSplitInterval:    time.Hour,
+					QueryRangeMaxParallel:      wait.parallel,
+					QueryRangeParallelMin:      1,
+					QueryRangeParallelMax:      wait.parallel,
+					QueryRangeAdaptiveParallel: false,
+					QueryRangeFreshness:        10 * time.Minute,
+				}
+				if mode == "timeout" {
+					// Loki's per-tenant query_timeout, shorter than the first wait.
+					cfg.TenantDefaultLimits = map[string]any{"query_timeout": "50ms"}
+				}
+				p, err := New(cfg)
+				if err != nil {
+					t.Fatalf("new proxy: %v", err)
+				}
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				mux := http.NewServeMux()
+				p.RegisterRoutes(mux)
+				v := url.Values{
+					"query": {`{app="api"}`},
+					"start": {fmt.Sprint(start.UnixNano())},
+					"end":   {fmt.Sprint(end.UnixNano() - 1)},
+					"limit": {"10"},
+				}
+				req := httptest.NewRequest(http.MethodGet, rt.path+"?"+v.Encode(), nil).WithContext(ctx)
+				req.Header.Set("X-Scope-OrgID", "0")
+				w := httptest.NewRecorder()
+				shippedChain(mux).ServeHTTP(w, req)
+				if queries.Load() == 0 {
+					t.Fatalf("no window was fetched; the cell proves nothing (status %d, body %.300q)", w.Code, w.Body.String())
+				}
+				outcome := errLayerOutcome{status: w.Code, body: w.Body.String(), headers: w.Header()}
+				if got := errLayerClasses(rt, mode, outcome, strings.TrimPrefix(srv.URL, "http://")); len(got) > 0 {
+					t.Fatalf("error-layer leak %v: status %d, body %.300q", got, outcome.status, outcome.body)
+				}
+			})
+		}
+	}
+}
