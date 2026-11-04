@@ -101927,6 +101927,164 @@
       "warm_p50": 0.065
     }
   ],
+  "semantics/series-level-aggregation-bounded-memory": [
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 0.274,
+      "date": "2026-11-04",
+      "label": "daily-aggregation-over-binary-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 4.266,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 2
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 708,
+          "entriesFound": 4,
+          "entriesRequested": 4
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.157,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "1h",
+      "set": "aggregation-over-binary",
+      "shape": "B2 sum by over a ratio of two per-stream metrics",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.049
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 4.298,
+      "date": "2026-11-04",
+      "label": "daily-aggregation-over-binary-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 29.929,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 25
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 9336,
+          "entriesFound": 52,
+          "entriesRequested": 52
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.133,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "24h",
+      "set": "aggregation-over-binary",
+      "shape": "B2 sum by over a ratio of two per-stream metrics",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.106
+    },
+    {
+      "baseline": "release",
+      "baseline_status": "200",
+      "cold": 1.354,
+      "date": "2026-11-04",
+      "label": "daily-aggregation-over-binary-loki-defaults",
+      "loki_cache_served": false,
+      "loki_cold": 14.79,
+      "loki_cold_cache": {
+        "instantMetricResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "labelResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "result": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 7
+        },
+        "seriesResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        },
+        "statsResult": {
+          "bytesReceived": 2856,
+          "entriesFound": 16,
+          "entriesRequested": 16
+        },
+        "volumeResult": {
+          "bytesReceived": 0,
+          "entriesFound": 0,
+          "entriesRequested": 0
+        }
+      },
+      "loki_warm_p50": 0.155,
+      "parity_vs_loki": "differs",
+      "profile": "loki-defaults",
+      "range": "6h",
+      "set": "aggregation-over-binary",
+      "shape": "B2 sum by over a ratio of two per-stream metrics",
+      "slower_than_loki_cold": false,
+      "status": "200",
+      "valid": true,
+      "verdict_vs_baseline": "same",
+      "warm_p50": 0.11
+    }
+  ],
   "semantics/sub-second-step-grid": [
     {
       "baseline": "release",

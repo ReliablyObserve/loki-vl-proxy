@@ -23,6 +23,10 @@
   "5m-200ms": [
    300,
    0.2
+  ],
+  "24h-20s": [
+   86400,
+   20
   ]
  },
  "sets": {
@@ -2742,6 +2746,7 @@
      "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))",
      "covers": [
       "semantics/aggregation-over-binary-dropped",
+      "semantics/series-level-aggregation-bounded-memory",
       "loki_api_v1_query_range"
      ]
     },
@@ -3123,6 +3128,48 @@
      "query": "sum by (level, detected_level) (count_over_time({env=\"production\"} | json | service_version=`0.96.0` | pipeline=`logs/loki` | drop __error__ [1m]))",
      "covers": [
       "explore-logs-volume-json",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  }
+,
+  "series-level-fine-step": {
+   "description": "count, min, max and avg of a range function, and a sum by over a rate/count ratio, at a 20 s step over 24h: a sliding 5m window gives every stream a sample at each of the 15 steps its window covers (2.5 at a 120 s step), so the bucket matrix the proxy built before folding was (stream, active step) pairs x about 35 bytes (B2 of aggregation-over-binary answered 500 at 48h with a 120 s step, where Loki answers 200). The answers are groups x steps. Like B2, these compare differs from Loki where structured metadata splits Loki's series (metric-identity/structured-metadata-splits-series). Run with the control set.",
+   "ranges": [
+    "24h-20s"
+   ],
+   "shapes": [
+    {
+     "name": "F1 sum by over a ratio of two per-stream metrics, 20s step",
+     "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))",
+     "covers": [
+      "semantics/series-level-aggregation-bounded-memory",
+      "semantics/aggregation-over-binary-dropped",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "F2 count by service of count_over_time, 20s step",
+     "query": "count by (service_name) (count_over_time({env=\"production\"}[5m]))",
+     "covers": [
+      "semantics/series-level-aggregation-bounded-memory",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "F3 avg by service of rate, 20s step",
+     "query": "avg by (service_name) (rate({env=\"production\"}[5m]))",
+     "covers": [
+      "semantics/series-level-aggregation-bounded-memory",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "F4 sum of max by service,app, 20s step",
+     "query": "sum by (service_name) (max by (service_name, app) (count_over_time({env=\"production\"}[5m])))",
+     "covers": [
+      "semantics/series-level-aggregation-bounded-memory",
       "loki_api_v1_query_range"
      ]
     }

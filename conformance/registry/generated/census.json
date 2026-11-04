@@ -514,6 +514,10 @@
     "semantics/scalar-sample-time-units | compare:observed",
     "semantics/scalar-sample-time-units | gap:fixed",
     "semantics/scalar-sample-time-units | query",
+    "semantics/series-level-aggregation-bounded-memory | compare:numeric",
+    "semantics/series-level-aggregation-bounded-memory | gap:fixed",
+    "semantics/series-level-aggregation-bounded-memory | perf",
+    "semantics/series-level-aggregation-bounded-memory | query",
     "semantics/sliding-window-recurrence-exact | compare:exact",
     "semantics/sliding-window-recurrence-exact | query",
     "semantics/stddev-stdvar-grouped-values | compare:observed",
@@ -912,6 +916,10 @@
     "internal/proxy/loki_profile_test.go | profiles/structured-metadata-keys-per-profile",
     "internal/proxy/manual_metric_encoding_test.go | numeric-and-response-formatting",
     "internal/proxy/manual_metric_encoding_test.go | quality/query-range-extent-cache",
+    "internal/proxy/matrix_fold_sink_test.go | loki_api_v1_query_range",
+    "internal/proxy/matrix_fold_sink_test.go | semantics/aggregation-over-binary-dropped",
+    "internal/proxy/matrix_fold_sink_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/matrix_fold_sink_test.go | semantics/series-level-aggregation-bounded-memory",
     "internal/proxy/metadata_edge_refresh_test.go | loki_api_v1_label_name_values",
     "internal/proxy/metadata_edge_refresh_test.go | loki_api_v1_labels",
     "internal/proxy/metadata_edge_refresh_test.go | quality/label-cache-warm",
@@ -1525,6 +1533,9 @@
     "test/e2e-compat/sanitized_json_key_grouping_test.go | profiles/sanitized-json-key-grouping",
     "test/e2e-compat/series_count_aggregation_test.go | metric-series-identity",
     "test/e2e-compat/series_count_aggregation_test.go | series-limits-and-partial-results",
+    "test/e2e-compat/series_level_aggregation_fine_step_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/series_level_aggregation_fine_step_test.go | metric-series-identity",
+    "test/e2e-compat/series_level_aggregation_fine_step_test.go | semantics/series-level-aggregation-bounded-memory",
     "test/e2e-compat/sliding_sum_without_test.go | loki_api_v1_query_range",
     "test/e2e-compat/sliding_sum_without_test.go | metric-series-identity",
     "test/e2e-compat/sliding_sum_without_test.go | semantics/without-sliding-sum-folded-buckets",
@@ -1643,12 +1654,12 @@
       "any": 28,
       "api": 37,
       "drilldown": 40,
-      "explore": 129,
+      "explore": 130,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 302,
+      "go": 304,
       "playwright": 1
     },
     "page_kinds": {
@@ -1665,10 +1676,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 90,
+    "shape_covers_distinct": 91,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 231
+    "wired_items": 232
   },
   "gates": [
     "A/B shape selection",
@@ -2315,6 +2326,10 @@
     "plain-name-after-parser/P7 json rate by level, level regexp",
     "plain-name-after-parser/P8 json count by a name that is no stream label",
     "plain-name-after-parser/P9 instant logfmt by level",
+    "series-level-fine-step/F1 sum by over a ratio of two per-stream metrics, 20s step",
+    "series-level-fine-step/F2 count by service of count_over_time, 20s step",
+    "series-level-fine-step/F3 avg by service of rate, 20s step",
+    "series-level-fine-step/F4 sum of max by service,app, 20s step",
     "sliding-sum-without/SW1 sum without pod, count_over_time",
     "sliding-sum-without/SW2 sum without pod, bytes_over_time",
     "sliding-sum-without/SW3 sum without pod and version, line filter",

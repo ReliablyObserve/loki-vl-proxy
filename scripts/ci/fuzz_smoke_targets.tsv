@@ -46,6 +46,7 @@ smoke	internal/proxy	FuzzQuantileSlider	12s	-	sliding quantile vs window sort
 smoke	internal/proxy	FuzzSortQuantileSamples	12s	-	quantile counts time sort
 smoke	internal/proxy	FuzzRateCounterOneSample	12s	-	rate_counter one-sample proof vs Loki
 smoke	internal/proxy	FuzzFoldBinaryAggregation	12s	-	fold an aggregation over a binary
+smoke	internal/proxy	FuzzMatrixFoldSink	12s	-	bucket matrix folded as it is built vs fold of the encoded matrix
 smoke	internal/proxy	FuzzParserProbeLeavesBinaries	12s	-	parser probe leaves a binary to its operands
 smoke	internal/proxy	FuzzIndexStatsWindowLikeLoki	12s	-	index/stats window like Loki
 smoke	internal/proxy	FuzzAlignQueryRangeToStep	12s	-	query_range step alignment

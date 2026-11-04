@@ -45,6 +45,13 @@ func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query stri
 			t.Fatal(err)
 		}
 	}
+	return binaryAggregationAnswerVia(t, p, orgID, query, start, end, step)
+}
+
+// binaryAggregationAnswerVia is binaryAggregationAnswerFor on a proxy the caller
+// keeps, to send several requests to one.
+func binaryAggregationAnswerVia(t *testing.T, p *Proxy, orgID, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
+	t.Helper()
 	params := url.Values{"query": {query}}
 	target := "/loki/api/v1/query_range?"
 	if step == 0 {

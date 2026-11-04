@@ -63,6 +63,8 @@ type vaScenario struct {
 	withLevel bool
 	// divisor, when set, divides the aggregation by a scalar: `<aggregation> / 2`.
 	divisor float64
+	// budget, when set, is -backend-max-buffered-response-bytes.
+	budget int
 }
 
 var vaStreams = []string{
@@ -267,9 +269,20 @@ func streamLabel(stream, label string) string {
 
 func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
 	t.Helper()
+	return newVectorAggProxyBudget(t, emu, 0)
+}
+
+// newVectorAggProxyBudget is newVectorAggProxy with the response byte bound budget
+// (0: the default).
+func newVectorAggProxyBudget(t *testing.T, emu *vlEmulator, budget int) (*Proxy, func()) {
+	t.Helper()
 	backend := httptest.NewServer(emu.handler())
 	c := cache.New(60*time.Second, 1000)
-	p, err := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second})
+	cfg := Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second}
+	if budget > 0 {
+		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = budget
+	}
+	p, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +309,7 @@ func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
 func runVectorAggScenario(t *testing.T, label string, s vaScenario) {
 	t.Helper()
 	emu := &vlEmulator{t: t, rows: s.rows, version: s.version, field: "amount"}
-	p, closeBackend := newVectorAggProxy(t, emu)
+	p, closeBackend := newVectorAggProxyBudget(t, emu, s.budget)
 	defer closeBackend()
 
 	params := url.Values{"query": {s.query()}}

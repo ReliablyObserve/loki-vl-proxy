@@ -455,55 +455,78 @@ type typedGroup struct {
 // name, and each group takes, at every sample time, the operator's value of
 // the samples there. A vector keeps the time of the first series of a group.
 func (b typedBody) fold(level foldLevel) typedBody {
-	groups := map[string]*typedGroup{}
-	var order []*typedGroup
-	var pairs [][2]string
-	var key strings.Builder
+	acc := newFoldAccumulator(level, b.vector)
 	for _, series := range b.series {
-		pairs = pairs[:0]
-		for name, value := range series.metric {
-			if level.keeps(name) {
-				pairs = append(pairs, [2]string{name, value})
-			}
-		}
-		sort.Slice(pairs, func(i, j int) bool { return pairs[i][0] < pairs[j][0] })
-		key.Reset()
-		for _, pair := range pairs {
-			key.WriteString(strconv.Itoa(len(pair[0])))
-			key.WriteByte(':')
-			key.WriteString(pair[0])
-			key.WriteByte('=')
-			key.WriteString(strconv.Itoa(len(pair[1])))
-			key.WriteByte(':')
-			key.WriteString(pair[1])
-			key.WriteByte(';')
-		}
-		group := groups[key.String()]
-		if group == nil {
-			group = &typedGroup{key: key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, len(series.points))}
-			for _, pair := range pairs {
-				group.metric[pair[0]] = pair[1]
-			}
-			groups[group.key] = group
-			order = append(order, group)
-		}
-		for _, point := range series.points {
-			ts := point.ts
-			if b.vector {
-				ts = 0 // one cell: the group's time is its first series'
-			}
-			i, ok := group.at[ts]
-			if !ok {
-				i = int32(len(group.cells))
-				group.at[ts] = i
-				group.cells = append(group.cells, typedCell{ts: point.ts})
-			}
-			cell := &group.cells[i]
-			cell.n++
-			cell.v = level.merge.combine(cell.v, point.v, cell.n)
+		acc.add(series.metric, series.points)
+	}
+	return acc.result()
+}
+
+// foldAccumulator is fold one series at a time: add takes a series and keeps
+// only the cells of its group, so a caller that builds the series (the bucket
+// matrix builder, matrix_fold_sink.go) never holds more than one of them.
+type foldAccumulator struct {
+	level  foldLevel
+	vector bool
+	groups map[string]*typedGroup
+	order  []*typedGroup
+	pairs  [][2]string
+	key    strings.Builder
+}
+
+func newFoldAccumulator(level foldLevel, vector bool) *foldAccumulator {
+	return &foldAccumulator{level: level, vector: vector, groups: map[string]*typedGroup{}}
+}
+
+func (a *foldAccumulator) add(metric map[string]string, points []typedPoint) {
+	a.pairs = a.pairs[:0]
+	for name, value := range metric {
+		if a.level.keeps(name) {
+			a.pairs = append(a.pairs, [2]string{name, value})
 		}
 	}
-	out := typedBody{vector: b.vector, series: make([]typedSeries, 0, len(order))}
+	pairs := a.pairs
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i][0] < pairs[j][0] })
+	a.key.Reset()
+	for _, pair := range pairs {
+		a.key.WriteString(strconv.Itoa(len(pair[0])))
+		a.key.WriteByte(':')
+		a.key.WriteString(pair[0])
+		a.key.WriteByte('=')
+		a.key.WriteString(strconv.Itoa(len(pair[1])))
+		a.key.WriteByte(':')
+		a.key.WriteString(pair[1])
+		a.key.WriteByte(';')
+	}
+	group := a.groups[a.key.String()]
+	if group == nil {
+		group = &typedGroup{key: a.key.String(), metric: make(map[string]string, len(pairs)), at: make(map[float64]int32, len(points))}
+		for _, pair := range pairs {
+			group.metric[pair[0]] = pair[1]
+		}
+		a.groups[group.key] = group
+		a.order = append(a.order, group)
+	}
+	for _, point := range points {
+		ts := point.ts
+		if a.vector {
+			ts = 0 // one cell: the group's time is its first series'
+		}
+		i, ok := group.at[ts]
+		if !ok {
+			i = int32(len(group.cells))
+			group.at[ts] = i
+			group.cells = append(group.cells, typedCell{ts: point.ts})
+		}
+		cell := &group.cells[i]
+		cell.n++
+		cell.v = a.level.merge.combine(cell.v, point.v, cell.n)
+	}
+}
+
+func (a *foldAccumulator) result() typedBody {
+	order := a.order
+	out := typedBody{vector: a.vector, series: make([]typedSeries, 0, len(order))}
 	// Loki's series order (labels.Compare: pkg/logql/engine.go:569 sorts an
 	// instant vector, :604 sort.Sort a matrix): label by label in name order,
 	// the name and then the value, a shorter set first. The key's

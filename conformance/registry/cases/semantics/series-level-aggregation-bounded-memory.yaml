@@ -1,0 +1,105 @@
+id: semantics/series-level-aggregation-bounded-memory
+title: count, min, max and avg over a range function, and a sum by over a rate/count ratio, answer wide ranges within the response bound, like Loki
+pending: true
+proves:
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (service_name) (rate({env="production"}[5m]) / count_over_time({env="production"}[5m]))`
+  (bench/ab aggregation-over-binary, B2) answered 500 `manual metric response
+  exceeds 67108864 bytes; narrow the query or increase
+  -backend-max-buffered-response-bytes` over 48h at a 120s step, on main and
+  v2.68.0, in every run and both Loki profiles, where Loki 3.7.9 answers 200.
+  It passed over 24h.
+
+  Root cause. The ratio of a rate and a count_over_time over one selector is 1/range
+  for every stream with a line in the window, so the proxy reads the sum by
+  as the number of active streams over the range
+  (internal/proxy/binary_aggregation.go sumRateCountRatio): a `count by
+  (service_name)` of count_over_time divided by 300. There is no binary left to
+  join, and the 48h answer failed in the count. A count, min, max or avg takes one
+  value per Loki series (pkg/logql/evaluator.go VectorAggEvaluator.Next, per
+  step), so the translation keeps the series identity (`stats by (service_name,
+  _stream, level, detected_level)`) and the sliding window needs each stream's
+  window before any fold. VictoriaLogs answered that stats query with a 200; the
+  bucket matrix builder (internal/proxy/range_metric_compat.go
+  buildHitsRangeMetricMatrix) then encoded one series per stream with a sample at
+  every step its window covers, and foldVectorAggregations
+  (internal/proxy/vector_agg_fold.go) folded the encoded matrix. The bytes held at
+  once were (stream, active step) pairs x about 35 bytes, not the groups x steps of
+  the answer: 2,800 streams active all through 48h at a 120s step encode 70 MB and
+  cross the 64 MiB bound. The buffered matrix grows with the number of streams, the
+  range, and window / step for streams that live briefly (15 samples per brief
+  stream at a 20s step against 2.5 at 120s), while the answer grows with the groups.
+  The same held for every count, min, max and avg by on a sliding window
+  (semantics/non-sum-vector-aggregation-unreduced is the same path).
+
+  Fixed: the builder folds each series into the vector aggregations around the
+  range function as it builds it (internal/proxy/matrix_fold_sink.go), through the
+  accumulator typedBody.fold uses (internal/proxy/typed_fold.go), series in the
+  encoder's order and points in time order, so the bytes are the ones the fold of
+  the encoded matrix gave (a differential holds them equal over generated series,
+  windows, steps and chains). It holds the groups of the answer and one series'
+  points. The response bound and the series cap then apply to the folded answer,
+  as Loki counts max_query_series on it. Nothing is added to the VictoriaLogs
+  calls, and no raw row is read: the input is the same aggregated bucket stats.
+
+  Values: B2 already compares `differs` from Loki at 1h, 6h and 24h on main and
+  v2.68.0 (identical to each other: parity_vs_baseline same), so the 500 turning
+  into a 200 does not bring it to `same`. The proxy keeps a stream as one series
+  where Loki splits a stream's series per structured-metadata set
+  (metric-identity/structured-metadata-splits-series, owner-accepted), and this
+  shape's sum is a count of series over 300, so the count differs by that split.
+  The cause is not confirmed on the seed here (the daily summary keeps no
+  signature); the builder's output is byte-identical to the fold of the encoded
+  matrix, so it adds no difference. The new bench/ab rows (series-level-fine-step)
+  therefore compare `differs` the way B2 does until that deviation is closed.
+
+  Not changed: the input of the builder is the stats rows (streams x buckets),
+  bounded by the manual-range-metric row limit and the stats read bound, as before;
+  the raw-row evaluator (unwrap and parser stages that need rows), the sliding
+  recurrence (a bucket grid over 11,000 buckets), the quantile and the coalesced
+  routes still return a matrix per stream and fold it afterwards. A binary of two
+  per-stream operands that are not a rate/count ratio is joined per step on the
+  operands' matrices and keeps its range-splitting retry
+  (internal/proxy/binary_aggregation_range.go).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (rate({env="production"}[5m]) / count_over_time({env="production"}[5m]))'
+    start: 'now-48h'
+    end: 'now'
+    step: '120'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: numeric
+  fields: [data.result]
+  expect: |
+    Status 200, as Loki, over 24h at a 20s step (bench/ab set
+    series-level-fine-step) and over 48h at a 120s step. Series and values are
+    Loki's where no stream's series splits per structured metadata (the e2e
+    fixture has none); where they do, the existing owner-accepted deviation
+    (metric-identity/structured-metadata-splits-series) applies.
+gap:
+  status: fixed
+  fixed_by: "#1056"
+  impact: explore-visible
+  visual: none
+  visual_reason: 'the failure is one query_range wider than the visual ranges (Grafana splits a metric range at 24h, and each chunk fits the bound), and the captured shape compares main = PR (4/4) with a value difference to Loki that is the owner-accepted structured-metadata series split, which a fix proof cannot show; proven by the byte-for-byte differential against the previous fold, the tight-bound handler tests and the 48h check of the A/B run'
+  effort: M
+  area: 'internal/proxy/matrix_fold_sink.go (matrixFold, matrixFoldSink); internal/proxy/range_metric_compat.go buildHitsRangeMetricMatrixFolded; internal/proxy/typed_fold.go foldAccumulator; internal/proxy/vector_agg_fold.go foldVectorAggregations'
+  loki: 'pkg/logql/evaluator.go:400-433 newVectorAggEvaluator, :435-529 VectorAggEvaluator.Next (the groups of a step fold per step; the per-stream samples are not kept); pkg/logql/range_vector.go (count_over_time and rate over the window (t-range, t])'
+  proxy: 'the bucket matrix builder folds each stream into its group as it builds it; the response bound and the series cap apply to the folded answer'
+  planned_test: 'TestCompat_SeriesLevelAggregationFineStep (test/e2e-compat, group core); TestMatrixFoldSinkMatchesFoldedMatrix, TestMatrixFoldSinkBuffersGroupsNotStreams, TestSeriesLevelAggregationStaysWithinResponseBudget, TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget, TestSeriesLevelAggregationRepeatedAndMovedWindows, TestVectorAggregationOverRangeFunctionDifferential (internal/proxy); FuzzMatrixFoldSink (internal/proxy, CI fuzz smoke)'
+  note: 'Found by the 48h perf pass on main 7eaf79ce (B2 answered 500 in all 7 runs and both Loki profiles). The e2e against Loki and the bench/ab 24h-20s set and the 48h B2 check are written, not yet run in a stack window.'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

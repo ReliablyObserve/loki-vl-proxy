@@ -56,6 +56,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Answer `count`, `min`, `max` and `avg` over a range function with a sliding
+  window, and a `sum by` over a `rate` / `count_over_time` ratio of one
+  selector, within `-backend-max-buffered-response-bytes` when the range is wide,
+  as Loki does. `sum by (service_name) (rate({env="production"}[5m]) /
+  count_over_time({env="production"}[5m]))` over 48h at a 120s step answered
+  500 `manual metric response exceeds 67108864 bytes` where Loki answers 200.
+  The bucket matrix builder encoded one series per stream with a sample at every
+  active step before the aggregation folded it, so the bytes held grew with the
+  streams, the range and the step (about 70 MB for 2,800 streams active all
+  through 48h at 120s) while the answer is one series per group. The builder now folds each
+  stream into its group as it builds it, with the accumulator the typed fold
+  uses, so it holds the groups of the answer and one series at a time; the
+  response bound and `-max-stats-query-series` apply to the folded answer. The
+  answers are byte for byte the ones the fold of the encoded matrix gave, with
+  the same VictoriaLogs calls (that query's values still differ from Loki's
+  where structured metadata splits Loki's series, the accepted deviation of
+  `metric-identity/structured-metadata-splits-series`); the builder's CPU and
+  allocations fall (300
+  streams over 24h: 31.5 ms to 4.5 ms, 359,000 to 1,600 allocations). Queries
+  that need raw rows, a bucket grid over 11,000 buckets or a join of two
+  per-stream operands keep their routes.
+
 - A log `query_range` over several windows no longer answers older lines in
   place of newer ones when a later window was read short: a line the proxy
   cannot decode, or label-filter refill pages (Loki-compatible profile) as
