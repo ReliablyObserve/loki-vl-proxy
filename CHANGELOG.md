@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.70.0] - 2026-11-04
+
 ### Performance
 
 - Answer a `| json` metric whose range is shorter than the step from
