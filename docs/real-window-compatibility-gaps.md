@@ -20,25 +20,25 @@ mdx:
 
 <!-- quality-summary:start -->
 
-Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-04 at commit `7eaf79cebe` on the project's A/B stack: the same data, the same hardware, the latest valid daily run of each of 31 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
+Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-04 at commit `69d07019b3` on the project's A/B stack: the same data, the same hardware, the latest valid daily run of each of 34 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
 
 Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too: the distribution table below shows both profiles, the rest of this section the one shown. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
 **Where the proxy is better than Loki**
 
-- First request: **314 of 514** comparable pairs are faster (61%).
-- Drilldown and Explore pages: **79 of 109** faster (72%); median first request **0.12 s** against Loki's **0.48 s**.
-- Metric queries: **217 of 323** faster (67%); median first request **0.09 s** against **0.26 s**.
-- Label and label-value calls: median repeat **0.00 s** against Loki's **0.05 s**, over 36 pairs (36 of them answered by Loki's results cache).
-- Share of rows below Loki, first request: **61.1%** (314 of 514 rows); repeat: **17.2%** (117 of 682). The target is most queries below Loki (above 50%).
+- First request: **365 of 542** comparable pairs are faster (67%).
+- Drilldown and Explore pages: **85 of 112** faster (76%); median first request **0.12 s** against Loki's **0.57 s**.
+- Metric queries: **242 of 348** faster (70%); median first request **0.10 s** against **0.30 s**.
+- Label and label-value calls: median repeat **0.00 s** against Loki's **0.04 s**, over 36 pairs (36 of them answered by Loki's results cache).
+- Share of rows below Loki, first request: **67.3%** (365 of 542 rows); repeat: **22.4%** (159 of 710). The target is most queries below Loki (above 50%).
 
 **Where it is on par**
 
-- First request: **154 of 514** pairs are within noise (30%).
-- Log queries: **39 of 81** on par; metric queries: **95 of 323**; Drilldown and Explore pages: **20 of 109**.
-- Rows close to Loki (within the same noise): **154** on the first request, **553** on a repeat.
-- Repeat of the same query, median p50: Drilldown and Explore pages **0.03 s** against **0.05 s**; metric queries **0.01 s** against **0.03 s**; log queries **0.05 s** against **0.07 s**.
-- Answers: **652 of 698** pairs return the same result as Loki (93%).
+- First request: **166 of 542** pairs are within noise (31%).
+- Log queries: **44 of 81** on par; metric queries: **100 of 348**; Drilldown and Explore pages: **22 of 112**.
+- Rows close to Loki (within the same noise): **166** on the first request, **549** on a repeat.
+- Repeat of the same query, median p50: Drilldown and Explore pages **0.02 s** against **0.05 s**; metric queries **0.01 s** against **0.03 s**; log queries **0.01 s** against **0.07 s**.
+- Answers: **674 of 726** pairs return the same result as Loki (93%).
 - `sum_over_time`, `avg_over_time`, `max_over_time` and `min_over_time` over an unwrapped field answer Loki's window on `query_range` for a range longer or shorter than the step (some outer aggregations of them are still listed as open differences).
 - An unwrap metric moved forward by a refresh or a re-run reads from VictoriaLogs only the buckets it has not read before.
 - A zero divisor of `/` and `%` is NaN, like Loki.
@@ -47,13 +47,12 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 **Where it is worse**
 
-- First request: **46 of 514** pairs are slower (9%): log queries **25 of 81**, Drilldown and Explore pages **10 of 109**, metric queries **11 of 323**.
-- Between 1× and 2× Loki: **16** rows on the first request, **1** on a repeat; above 2× Loki: **30** on the first request and **11** on a repeat (the 2026-11-04 distribution).
-- **60 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **47** on the first request, **13** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 95 covered registry items are locked at the 2× bound.
-- In the run shown, **34** of those rows measured above 2× Loki and **26** within 2×.
-- Largest gaps on that list in the run shown, first request: `X1 json filter level_extracted, by level` over 24h, **19.72 s** against **4.83 s**; `X1 json filter level_extracted, by level` over 6h, **5.35 s** against **1.21 s**; `LS8 json count by level_extracted, collision` over 6h, **2.11 s** against **0.29 s**.
-- Largest gaps on that list in the run shown, repeat: `LS8 json count by level_extracted, collision` over 6h, **0.08 s** against **0.01 s**; `L7 label_replace around a binary of two sums by level` over 6h, **0.08 s** against **0.01 s**.
-- Answers: **46 of 698** pairs return a different result from Loki, and **0** could not be compared.
+- First request: **11 of 542** pairs are slower (2%): log queries **0 of 81**, Drilldown and Explore pages **5 of 112**, metric queries **6 of 348**.
+- Between 1× and 2× Loki: **8** rows on the first request, **2** on a repeat; above 2× Loki: **3** on the first request and **0** on a repeat (the 2026-11-04 distribution).
+- **34 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **26** on the first request, **8** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 95 covered registry items are locked at the 2× bound.
+- In the run shown, **2** of those rows measured above 2× Loki and **32** within 2×.
+- Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.43 s** against **0.20 s**; `G8 bytes() of a number` over 24h, **0.42 s** against **0.21 s**.
+- Answers: **52 of 726** pairs return a different result from Loki, and **0** could not be compared.
 
 **Distribution versus Loki in the run shown, both Loki profiles**
 
@@ -61,10 +60,10 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 
 | Loki profile | Request | Rows compared | Below Loki | Close to Loki | 1–2× Loki | Above 2× Loki | Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |
 |---|---|---:|---:|---:|---:|---:|---|
-| `loki-defaults` | first | 514 | 314 (61.1%) | 154 (30.0%) | 16 (3.1%) | **30 (5.8%)** | 16 / 0 / 168 |
-| `loki-defaults` | repeat | 682 | 117 (17.2%) | 553 (81.1%) | 1 (0.1%) | **11 (1.6%)** | 16 / 0 / — |
-| `aligned` | first | 395 | 287 (72.7%) | 89 (22.5%) | 11 (2.8%) | **8 (2.0%)** | 16 / 0 / 79 |
-| `aligned` | repeat | 474 | 15 (3.2%) | 446 (94.1%) | 2 (0.4%) | **11 (2.3%)** | 16 / 0 / — |
+| `loki-defaults` | first | 542 | 365 (67.3%) | 166 (30.6%) | 8 (1.5%) | **3 (0.6%)** | 16 / 0 / 168 |
+| `loki-defaults` | repeat | 710 | 159 (22.4%) | 549 (77.3%) | 2 (0.3%) | **0 (0.0%)** | 16 / 0 / — |
+| `aligned` | first | 423 | 320 (75.7%) | 92 (21.7%) | 9 (2.1%) | **2 (0.5%)** | 16 / 0 / 79 |
+| `aligned` | repeat | 502 | 41 (8.2%) | 456 (90.8%) | 3 (0.6%) | **2 (0.4%)** | 16 / 0 / — |
 
 **Quality of the Loki read API**
 
