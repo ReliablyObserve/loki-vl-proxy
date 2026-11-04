@@ -53,8 +53,9 @@ why: |
   pushdown reads it, its guard probes restricted to the lines the split counts
   (the lines VictoriaLogs parses, or the lines without a brace for the error
   count), and a line the chain reads differently keeps the row evaluator.
-  Grouping by anything but detected_level, a label filter, an instant query or
-  a step wider than the range keeps the row evaluator.
+  Grouping by anything but detected_level, a label filter or an instant query
+  keeps the row evaluator; a step wider than the range takes the split over
+  the lines inside the windows (semantics/json-metric-step-wider-than-range).
 
   Measured on the shared e2e stack (VictoriaLogs v1.52.0, generator data,
   353,000 lines in the last hour, 785,000 in 24h), main against this change,

@@ -1262,11 +1262,6 @@ func (p *Proxy) orderedJSONStatsBucketsWithReason(ctx context.Context, plan *ord
 		// in (finishOrderedJSONStats).
 		return nil, false, false, nil
 	}
-	if plan.split == jsonSplitStrict && step > plan.window {
-		// The lines between two windows are never evaluated, so the lookup of a
-		// line Loki rejects (unparsedLinePipelineError) does not cover them.
-		return nil, false, false, nil
-	}
 	if plan.derivesLevel && !p.detectedLevelBodyScan {
 		// VictoriaLogs pipes always read the line; without the body scan only
 		// the stored fields decide, which the raw evaluator derives. A plan
@@ -1328,6 +1323,21 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	if pipes.shared != nil {
 		statsCtx = withLevelSharedUnpack(statsCtx, pipes.shared)
 	}
+	// Windows shorter than the step are disjoint, and Loki never evaluates the
+	// lines between them (pkg/logql/range_vector.go batchRangeVectorIterator.load
+	// skips every sample at or before the window start): neither their counts
+	// nor a line its parser rejects there reach the answer. The stats, the
+	// probes and the raw rows then read only the lines inside a window
+	// (windowPhaseFilter), and a bucket per step, (t-step, t], holds exactly the
+	// window (t-window, t], relabelled onto the window it holds, as on the
+	// sliding route. The probes key their verdicts on the filtered base, so a
+	// window found clean of window lines is no verdict for a narrower step.
+	fetchStart, sampleShift, probeBase := windowStart, time.Duration(0), base
+	phased := !instant && plan.window < step
+	if phased {
+		bucket, fetchStart, sampleShift = step, start.Add(-step), step-plan.window
+		probeBase = withWindowPhaseFilter(statsCtx, base, start, step, plan.window)
+	}
 	groupBy, lokiGroupBy, bytesMetric, statsAggFunc, query := pipes.groupBy, pipes.lokiGroupBy, pipes.bytesMetric, pipes.aggFunc, pipes.query
 	if storedLevel && (p.levelNeedsChain(ctx, base) || p.levelNeedsChain(ctx, base+levelShapeSeparator+query)) {
 		return nil, false, false, errLevelNotStored
@@ -1343,7 +1353,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	riskDone := make(chan riskResult, 1)
 	go func() {
 		// A line no filter on detected_level can let through is none the probes need to read.
-		risky, err := p.pushdownParseRisk(riskCtx, plan, base+plan.levelRestriction(), plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
+		risky, err := p.pushdownParseRisk(riskCtx, plan, probeBase+plan.levelRestriction(), plain, extracted, extractedKeys, stored, storedLevel, windowStart, end)
 		riskDone <- riskResult{risky, err}
 	}()
 	// A split plan's stored level is only Loki's when no other stored level
@@ -1351,7 +1361,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	foreignDone := make(chan riskResult, 1)
 	if plan.validOnly && storedLevel {
 		go func() {
-			foreign, err := p.storedLevelForeignFieldRisk(riskCtx, base, windowStart, end)
+			foreign, err := p.storedLevelForeignFieldRisk(riskCtx, probeBase, windowStart, end)
 			foreignDone <- riskResult{foreign, err}
 		}()
 	} else {
@@ -1360,7 +1370,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	hazardDone := make(chan riskResult, 1)
 	if plan.validOnly {
 		go func() {
-			hazard, err := p.jsonLokiRejectHazardRisk(riskCtx, base, windowStart, end)
+			hazard, err := p.jsonLokiRejectHazardRisk(riskCtx, probeBase, windowStart, end)
 			hazardDone <- riskResult{hazard, err}
 		}()
 	} else {
@@ -1372,7 +1382,7 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	unparsedDone := make(chan riskResult, 1)
 	if plan.split == jsonSplitStrict {
 		go func() {
-			unparsed, err := p.jsonUnparsedLineRisk(riskCtx, base, start, end, step, plan.window)
+			unparsed, err := p.jsonUnparsedLineRisk(riskCtx, probeBase, start, end, step, plan.window)
 			unparsedDone <- riskResult{unparsed, err}
 		}()
 	} else {
@@ -1384,12 +1394,19 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 			q, agg = plan.splitStatsQuery(query, bytesMetric, hazard, groupBy)
 			aux = jsonInvalidRowsName
 		}
+		if phased {
+			// Placed with the shared chain's context: after the chain, whose
+			// presence probe keys on the pipes before it.
+			q = withWindowPhaseFilter(statsCtx, q, start, step, plan.window)
+		}
 		if storedLevel {
 			// The spellings of one level are groups here, series in the answer.
 			ctx = guardStatsGroups(ctx)
 		}
-		series, rowEdges, err := p.collectRangeMetricHitsAux(ctx, q, groupBy, lokiGroupBy, false, agg, windowStart, end, bucket, aux)
-		return orderedJSONStatsResult{series, rowEdges, err}
+		series, rowEdges, err := p.collectRangeMetricHitsAux(ctx, q, groupBy, lokiGroupBy, false, agg, fetchStart, end, bucket, aux)
+		// The bucket edges stay where the raw rows are read from; only the
+		// counts move onto the window they hold.
+		return orderedJSONStatsResult{shiftSeriesSamples(series, sampleShift), rowEdges, err}
 	}
 	statsDone := make(chan orderedJSONStatsResult, 1)
 	go func() { statsDone <- runStats(statsCtx, false) }()

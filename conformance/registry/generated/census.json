@@ -370,6 +370,10 @@
     "semantics/json-metric-detected-level-derivation | gap:fixed",
     "semantics/json-metric-detected-level-derivation | perf",
     "semantics/json-metric-detected-level-derivation | query",
+    "semantics/json-metric-step-wider-than-range | compare:exact",
+    "semantics/json-metric-step-wider-than-range | gap:fixed",
+    "semantics/json-metric-step-wider-than-range | perf",
+    "semantics/json-metric-step-wider-than-range | query",
     "semantics/label-browser-latency-cold-and-refresh | compare:exact",
     "semantics/label-browser-latency-cold-and-refresh | perf",
     "semantics/label-browser-latency-cold-and-refresh | perf:locked",
@@ -972,6 +976,10 @@
     "internal/proxy/ordered_json_result_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/ordered_json_result_cache_test.go | parser-error-and-label-collision",
     "internal/proxy/ordered_json_result_cache_test.go | tenant-numeric-routing",
+    "internal/proxy/ordered_json_step_wider_test.go | limits/series-limit-error",
+    "internal/proxy/ordered_json_step_wider_test.go | semantics/json-detected-level-error-split",
+    "internal/proxy/ordered_json_step_wider_test.go | semantics/json-metric-detected-level-derivation",
+    "internal/proxy/ordered_json_step_wider_test.go | semantics/json-metric-step-wider-than-range",
     "internal/proxy/ordered_json_steps_cache_test.go | loki_api_v1_query_range",
     "internal/proxy/ordered_json_steps_cache_test.go | quality/query-range-settled-steps",
     "internal/proxy/ordered_json_steps_cache_test.go | window-bounds-and-step-alignment",
@@ -1377,6 +1385,8 @@
     "test/e2e-compat/json_filter_pushdown_test.go | semantics/json-filter-pushdown-without-error-drop",
     "test/e2e-compat/json_filter_pushdown_test.go | semantics/json-label-spelling-probe",
     "test/e2e-compat/json_instant_volume_stats_test.go | semantics/json-instant-volume-stats",
+    "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-detected-level-error-split",
+    "test/e2e-compat/json_metric_step_wider_test.go | semantics/json-metric-step-wider-than-range",
     "test/e2e-compat/keep_service_name_test.go | loki_api_v1_query_range",
     "test/e2e-compat/keep_service_name_test.go | profiles/keep-removes-derived-service-name",
     "test/e2e-compat/keep_structured_metadata_test.go | loki_api_v1_query_range",
@@ -1605,18 +1615,18 @@
     "case_consumers": {
       "any": 28,
       "api": 37,
-      "drilldown": 39,
+      "drilldown": 40,
       "explore": 126,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 294,
+      "go": 296,
       "playwright": 1
     },
     "page_kinds": {
       "drilldown": 18,
-      "explore": 116,
+      "explore": 117,
       "label-browser": 1,
       "log-context": 1,
       "tail": 2
@@ -1628,10 +1638,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 86,
+    "shape_covers_distinct": 87,
     "shapes_path_only": 8,
     "unwired_items": 85,
-    "wired_items": 227
+    "wired_items": 228
   },
   "gates": [
     "A/B shape selection",
@@ -1682,6 +1692,7 @@
     "explore-extracted-group-metric",
     "explore-extracted-metric",
     "explore-json-count-by-detected-level",
+    "explore-json-count-by-detected-level-short-range",
     "explore-json-error-count-by-detected-level",
     "explore-json-error-filter-metric",
     "explore-json-extraction-list-level",
@@ -2127,6 +2138,7 @@
     "json-detected-level/DLV4 explore json volume, level and detected_level",
     "json-detected-level/DLV5 json error dropped, detected_level",
     "json-detected-level/DLV6 drilldown detected_level breakdown, json",
+    "json-detected-level/DLV7 plain json, detected_level, 30s range (shorter than the 24h step)",
     "json-error-split/J1 json no-error count by service_name, one service",
     "json-error-split/J2 json no-error count by app, namespace",
     "json-error-split/J3 json no-error count by parsed method",

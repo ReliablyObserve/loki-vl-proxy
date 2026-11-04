@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Answer a `| json` metric whose range is shorter than the step from
+  VictoriaLogs stats instead of reading every selected line. `sum by
+  (detected_level) (count_over_time({...} | json [1m]))` over 48 hours at
+  Grafana's 120 s step streamed every line of the window into the proxy (6.4 s
+  against Loki's 0.4-0.65 s); any step longer than the range did the same. Loki
+  evaluates each step over (t-range, t] and never reads the lines between two
+  windows, so a line its JSON parser rejects there does not fail the query.
+  When the range is shorter than the step, the `| json` stats pushdown (the
+  detected_level splits and the plain pushdown) now keeps only the lines inside
+  a window, asks for one bucket per step and relabels it onto the window it
+  holds, as plain range metrics already do; its probes and raw-row reads see
+  the same lines. VictoriaLogs reads fewer lines (half for `[1m]` at 120 s), and
+  a step that is not a multiple of the range no longer needs buckets of their
+  greatest common divisor. A series whose lines all fall between windows no
+  longer counts toward `-max-stats-query-series`: Loki counts only the series
+  of its answer, so such a query answers Loki's series (or its empty matrix)
+  instead of the series limit error. A line within about 256 ns of a window edge, not on it,
+  may fall on either side, as on the plain range metric route.
+
 ## [2.69.0] - 2026-11-03
 
 ### Fixed

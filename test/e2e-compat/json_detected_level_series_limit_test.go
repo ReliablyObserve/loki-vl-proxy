@@ -65,14 +65,29 @@ func TestRangeMetricCompatibilityJSONDetectedLevelSeriesLimit(t *testing.T) {
 				assertSlidingParity(t, tc.query+fmt.Sprintf(" [limit %d]", limit), loki, slidingRangeSeries(t, route, tc.query, start, end, time.Minute, nil))
 			})
 		}
-		// one series past the limit: Loki's error
+		// one series past the limit: Loki's error, at the step the series above
+		// were read with. Loki counts the series of its answer
+		// (pkg/logql/engine.go JoinSampleVector), the ones with a point at some
+		// step. At a 300 s step the stack's Loki aligns the bounds to the step
+		// (align_queries_with_step) and evaluates at s0-5m and s0: the [1m]
+		// window ending at s0 holds only the line exactly at s0, so its answer
+		// has one series and no limit error, while the fixture's other lines lie
+		// between windows; a proxy aligned like it must answer the same.
 		t.Run(tc.name+"/over the limit", func(t *testing.T) {
 			limit := tc.series - 1
 			route, _ := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) { cfg.MaxStatsQuerySeries = limit })
-			status, body, _ := alignLimitRangeQuery(t, route, tc.query, start, end, nil)
+			status, body := stepWiderStatus(t, route, tc.query, start, end, time.Minute)
 			if status != http.StatusBadRequest || !strings.Contains(body, fmt.Sprintf("maximum number of series (%d) reached for a single query", limit)) {
 				t.Fatalf("expected Loki's series limit error for %d series over a limit of %d, got %d %s", tc.series, limit, status, body)
 			}
+			gapLoki := slidingRangeSeries(t, lokiURL, tc.query, start, end, 5*time.Minute, nil)
+			if len(gapLoki) == 0 || len(gapLoki) >= limit {
+				t.Fatalf("Loki sanity: %d series at a 300 s step, want some and fewer than %d: %v", len(gapLoki), limit, gapLoki)
+			}
+			aligned, _ := newJSONVolumeRouteProxyWithConfig(t, func(cfg *proxy.Config) {
+				cfg.MaxStatsQuerySeries, cfg.AlignQueriesWithStep = limit, true
+			})
+			assertSlidingParity(t, tc.query+" [300 s step]", gapLoki, slidingRangeSeries(t, aligned, tc.query, start, end, 5*time.Minute, nil))
 		})
 	}
 }
