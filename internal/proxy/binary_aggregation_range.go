@@ -42,7 +42,7 @@ func (p *Proxy) binaryAggregationResponse(r *http.Request, binary *logqlpkg.BinO
 	merged, err := mergeBinaryAggregationRanges(left.body, right.body, p.limits().BufferedBackendBodyBytes)
 	if err != nil {
 		failed := &bufferedResponseWriter{}
-		p.writeError(failed, http.StatusInternalServerError, err.Error())
+		p.writeErr(failed, r.Context(), err)
 		return failed
 	}
 	merged, err = capSeriesToLimit(r.Context(), merged, p.resolvedMaxStatsQuerySeries(r.Context()))

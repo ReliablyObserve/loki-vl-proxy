@@ -140,7 +140,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		body, contentType, err = mergeMultiTenantResponses(endpoint, successTenants, recorders)
 	}
 	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+		p.writeErr(w, r.Context(), err)
 		return true
 	}
 	if body, err = p.limitMultiTenantMetricSeries(filteredReq, endpoint, recorders, body); err != nil {

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Answer the proxy's own failures with Loki's text instead of the error's: a
+  multi-tenant query whose tenant answer cannot be decoded answered `500`
+  "failed to merge multi-tenant response: invalid character ..." with Go's
+  decoder text; the merge of a binary aggregation's split halves and the
+  `/config/tenant/v1/limits` YAML encoder answered `500` with their error's
+  text. They now answer through the error layer: `500` "Internal Server Error"
+  (Loki's failed call, `pkg/util/server/error.go:124-128`, v3.7.9), the limit
+  text when the error is a proxy limit naming its flag, or `499`/`504` when the
+  request was cancelled or ran out of time; the error goes to the log line.
+  The tenant limits route keeps the `http.Error` shape Loki writes there
+  (`pkg/loki/config_handler.go` `writeYAMLResponse`). A `label_replace` or
+  `without` metric query whose inner query failed sends that answer as the
+  error layer wrote it, instead of running it through the VictoriaLogs
+  message redaction a second time, and its series limit answers through the
+  error layer. The status is unchanged. Registry:
+  `semantics/error-layer-internal-go-text`, `semantics/error-layer-backend-text`.
+
 ## [2.74.0] - 2026-11-04
 
 ### Fixed

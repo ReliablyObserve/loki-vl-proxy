@@ -2701,11 +2701,13 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 		}
 		if capErr != nil {
-			p.writeError(w, sc.code, capErr.Error())
+			sc.code = p.writeErr(w, r.Context(), capErr)
 		} else if sc.code != http.StatusOK {
-			// Rewrite VL error body to Loki-compliant format (Loki's errorType field
-			// uses strings like "execution", "timeout", etc.; VL may use "unavailable").
-			p.writeError(w, sc.code, p.redactBackendError(cacheOut))
+			// The handler answered through the error layer already (Loki's
+			// status and text, no VictoriaLogs text): send it as written.
+			setReplayContentType(w, sc.code)
+			w.WriteHeader(sc.code)
+			_, _ = w.Write(capture.body)
 		} else {
 			_, _ = w.Write(cacheOut)
 		}
@@ -2978,8 +2980,11 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if bw != nil && needsCapture && sc.code != http.StatusOK {
 		// A failed answer is no sample to post-process: send it with its own
 		// status, as query_range does. Sent with 200 it is an error body under
-		// a success status, with no resultType for the client to decode.
-		p.writeError(w, sc.code, p.redactBackendError(bw.body))
+		// a success status, with no resultType for the client to decode. The
+		// handler answered through the error layer already: send it as written.
+		setReplayContentType(w, sc.code)
+		w.WriteHeader(sc.code)
+		_, _ = w.Write(bw.body)
 	} else if bw != nil && needsCapture {
 		result := bw.body
 		if len(withoutLabels) > 0 {
@@ -2996,8 +3001,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			result, capErr = p.capWithoutFold(r.Context(), result)
 		}
 		if capErr != nil {
-			sc.code = http.StatusBadRequest
-			p.writeError(w, sc.code, capErr.Error())
+			sc.code = p.writeErr(w, r.Context(), capErr)
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
