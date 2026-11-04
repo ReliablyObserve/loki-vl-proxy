@@ -267,6 +267,10 @@
     "quality/stats-volume-freshness | compare:observed",
     "quality/stats-volume-freshness | gap:open",
     "quality/stats-volume-freshness | query",
+    "quality/unwrap-logfmt-narrowed-unpack | compare:exact",
+    "quality/unwrap-logfmt-narrowed-unpack | gap:fixed",
+    "quality/unwrap-logfmt-narrowed-unpack | perf",
+    "quality/unwrap-logfmt-narrowed-unpack | query",
     "quality/unwrap-query-range-extent-cache | compare:numeric",
     "quality/unwrap-query-range-extent-cache | gap:fixed",
     "quality/unwrap-query-range-extent-cache | query",
@@ -1408,6 +1412,9 @@
     "internal/translator/unwrap_gate_test.go | semantics/unwrap-duration-seconds",
     "internal/translator/unwrap_gate_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/translator/unwrap_gate_test.go | semantics/unwrap-sample-validity",
+    "internal/translator/unwrap_logfmt_narrow_test.go | metric-series-identity",
+    "internal/translator/unwrap_logfmt_narrow_test.go | parser-logfmt",
+    "internal/translator/unwrap_logfmt_narrow_test.go | quality/unwrap-logfmt-narrowed-unpack",
     "internal/translator/unwrap_ungrouped_sum_test.go | metric-series-identity",
     "internal/translator/unwrap_ungrouped_sum_test.go | semantics/unwrap-rate-ungrouped-sum-per-stream",
     "internal/translator/without_grouping_test.go | metric-series-identity",
@@ -1734,6 +1741,10 @@
     "test/e2e-compat/unwrap_extent_cache_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unwrap_extent_cache_test.go | quality/unwrap-query-range-extent-cache",
     "test/e2e-compat/unwrap_extent_cache_test.go | semantics/unwrap-conversion-error",
+    "test/e2e-compat/unwrap_logfmt_narrowed_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/unwrap_logfmt_narrowed_test.go | metric-series-identity",
+    "test/e2e-compat/unwrap_logfmt_narrowed_test.go | parser-logfmt",
+    "test/e2e-compat/unwrap_logfmt_narrowed_test.go | quality/unwrap-logfmt-narrowed-unpack",
     "test/e2e-compat/unwrap_over_time_short_range_test.go | loki_api_v1_query_range",
     "test/e2e-compat/unwrap_over_time_short_range_test.go | semantics/unwrap-over-time-range-windows",
     "test/e2e-compat/unwrap_over_time_short_range_test.go | window-bounds-and-step-alignment",
@@ -1799,12 +1810,12 @@
       "any": 28,
       "api": 39,
       "drilldown": 47,
-      "explore": 144,
+      "explore": 145,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 327,
+      "go": 329,
       "playwright": 1
     },
     "page_kinds": {
@@ -1821,10 +1832,10 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 102,
+    "shape_covers_distinct": 103,
     "shapes_path_only": 8,
     "unwired_items": 98,
-    "wired_items": 242
+    "wired_items": 243
   },
   "gates": [
     "A/B shape selection",

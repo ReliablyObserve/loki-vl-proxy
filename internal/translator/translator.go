@@ -2453,6 +2453,9 @@ func buildStatsQueryGated(baseQuery, statsExpr, byLabels, alias, gateField, gate
 	if query == "" {
 		query = "*"
 	}
+	if gateField != "" {
+		query = narrowUnwrapLogfmtUnpack(query, byLabels, gateField)
+	}
 	query = resolveStatsKeys(query, byLabels, statsExpr)
 	if gateField != "" {
 		query += UnwrapGateFor(gateField, gateConv)

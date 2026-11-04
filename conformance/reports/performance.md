@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 102 items are locked; 5 carry an effort exception.
+29 of 103 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -127,8 +127,8 @@ Rows the newest daily run measured; rows it does not re-measure are listed under
 | LS8 json count by level_extracted, collision | 1h | 0.08s | 0.03s | 0.03s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | LS8 json count by level_extracted, collision | 6h | 0.31s | 0.11s | 0.03s | 0.01s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
 | D1 logfmt ttl duration_seconds rate by service | 24h | 0.22s | 0.15s | 0.01s | 0.01s | `quality/query-range-settled-steps`, `semantics/unwrap-duration-seconds` |
-| G7 duration() of a unit string | 24h | 0.22s | 0.16s | 0.01s | 0.01s | `metric-series-identity`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error`, `semantics/unwrap-gate-parsefloat-divergences` |
-| G8 bytes() of a number | 24h | 0.24s | 0.14s | 0.01s | 0.01s | `metric-series-identity`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error`, `semantics/unwrap-gate-parsefloat-divergences` |
+| G7 duration() of a unit string | 24h | 0.22s | 0.16s | 0.01s | 0.01s | `metric-series-identity`, `quality/query-range-settled-steps`, `quality/unwrap-logfmt-narrowed-unpack`, `semantics/unwrap-conversion-error`, `semantics/unwrap-gate-parsefloat-divergences` |
+| G8 bytes() of a number | 24h | 0.24s | 0.14s | 0.01s | 0.01s | `metric-series-identity`, `quality/query-range-settled-steps`, `quality/unwrap-logfmt-narrowed-unpack`, `semantics/unwrap-conversion-error`, `semantics/unwrap-gate-parsefloat-divergences` |
 
 5 shape×range slower than Loki beyond noise (25% and 50 ms).
 
@@ -211,6 +211,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `quality/stats-answer-transform-cost` | 3 × 5 ranges | 14 same | worst 2.31s / 0.42s (24h) | 4.27s / 0.47s | differs | not locked |
 | `quality/stats-tumbling-relabel-one-parse` | 2 × 3 ranges | 6 same | worst 0.66s / 0.02s (24h) | 2.98s / 0.03s | same | not locked |
 | `quality/stats-tumbling-relabel-one-pass` | 3 × 5 ranges | 14 same | worst 2.31s / 0.42s (24h) | 4.27s / 0.47s | differs | not locked |
+| `quality/unwrap-logfmt-narrowed-unpack` | 4 × 4 ranges | 16 same | worst 2.07s / 0.01s (24h) | 4.63s / 0.09s | differs; 2 slower than Loki cold | not locked |
 | `range_function-bytes-over-time` | 1 × 4 ranges | 4 same | worst 0.48s / 0.01s (24h) | 3.25s / 0.11s | same | locked 2026-10-27 |
 | `range_function-count-over-time` | 2 × 4 ranges | 7 same | worst 0.31s / 0.01s (24h) | 3.10s / 0.10s | same | locked 2026-10-27 |
 | `range_function-rate` | 5 × 5 ranges | 14 same | worst 0.46s / 0.01s (24h) | 3.22s / 0.12s | differs | not locked |
