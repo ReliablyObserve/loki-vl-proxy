@@ -49,7 +49,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **5 of 549** pairs are slower (1%): log queries **0 of 81**, Drilldown and Explore pages **0 of 112**, metric queries **5 of 354**.
 - Between 1× and 2× Loki: **3** rows on the first request, **0** on a repeat; above 2× Loki: **2** on the first request and **0** on a repeat (the 2026-11-05 distribution).
-- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 100 covered registry items are locked at the 2× bound.
+- **3 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **3** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 101 covered registry items are locked at the 2× bound.
 - In the run shown, **2** of those rows measured above 2× Loki and **1** within 2×.
 - Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.31 s** against **0.11 s**; `LS8 json count by level_extracted, collision` over 1h, **0.08 s** against **0.03 s**.
 - Answers: **51 of 747** pairs return a different result from Loki, and **15** could not be compared.
@@ -74,7 +74,7 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 20 partial, 3 gaps |
-| Known differences from Loki (ranked) | **105**: 82 open, 13 documented, 7 owner-kept, 3 upstream |
+| Known differences from Loki (ranked) | **104**: 81 open, 13 documented, 7 owner-kept, 3 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

@@ -3394,6 +3394,47 @@
      ]
     }
    ]
+  },
+  "vector-aggregation-log-selector": {
+   "description": "A vector aggregation over a log selector (PR for semantics/vector-aggregation-over-log-selector-status): Loki answers a 400 parse error at the closing parenthesis; the proxy sent the selector to VictoriaLogs and answered 500 on query_range and its own 400 text on query. The proxy's parser now rejects it before any VictoriaLogs call. Error shapes: compare the status and text. Run with the control set.",
+   "ranges": [
+    "1h"
+   ],
+   "shapes": [
+    {
+     "name": "VA1 topk over a log selector",
+     "query": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+     "covers": [
+      "semantics/vector-aggregation-over-log-selector-status",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "VA2 sort over a log selector",
+     "query": "sort({app=\"api-gateway\"})",
+     "covers": [
+      "semantics/vector-aggregation-over-log-selector-status",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "VA3 stddev over a log selector",
+     "query": "stddev({namespace=\"prod\"})",
+     "covers": [
+      "semantics/vector-aggregation-over-log-selector-status",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "VA4 topk over a log selector, instant",
+     "query": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+     "covers": [
+      "semantics/vector-aggregation-over-log-selector-status",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    }
+   ]
   }
  }
 }

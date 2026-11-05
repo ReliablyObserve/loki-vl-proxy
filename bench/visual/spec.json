@@ -2046,6 +2046,19 @@
    "fixes": [
     "semantics/ip-label-filter-missing-label"
    ]
+  },
+  {
+   "id": "explore-topk-over-log-selector",
+   "kind": "explore",
+   "query": "topk(2, {app=\"api-gateway\",env=\"production\"})",
+   "ranges": [
+    "1h"
+   ],
+   "covers": [
+    "semantics/vector-aggregation-over-log-selector-status",
+    "status-400",
+    "loki_api_v1_query_range"
+   ]
   }
  ],
  "loki_capture_max_s": 86400,

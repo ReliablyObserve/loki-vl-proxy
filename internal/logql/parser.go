@@ -1345,6 +1345,19 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 	}
 	va.Inner = inner
 
+	// Loki's grammar takes only a metric expression inside a vector
+	// aggregation (pkg/logql/syntax/syntax.y:176-185 vectorAggregationExpr).
+	// A log expression there is read as the left operand of a binary
+	// operation, so the closing parenthesis is the unexpected token:
+	// `topk(5, {app="api"})` fails with "parse error at line 1, col 20:
+	// syntax error: unexpected )".
+	switch inner.(type) {
+	case *LogQuery, *StreamSelector:
+		if p.cur.Typ == TokRParen {
+			return nil, p.syntaxErrorAt("")
+		}
+	}
+
 	if _, err := p.expect(TokRParen); err != nil {
 		return nil, err
 	}

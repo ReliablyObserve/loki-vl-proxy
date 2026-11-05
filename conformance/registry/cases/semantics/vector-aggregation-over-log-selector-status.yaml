@@ -1,5 +1,5 @@
 id: semantics/vector-aggregation-over-log-selector-status
-title: topk, bottomk, sort, sort_desc and stddev over a bare log selector answer 500 where Loki answers a 400 parse error (open)
+title: topk, bottomk, sort, sort_desc and stddev over a bare log selector answer 500 where Loki answers a 400 parse error (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -22,6 +22,15 @@ why: |
   call as 500. The instant route answers 400 with other text
   (semantics/parse-error-text-parity). The fix is to reject the shape in the
   proxy's parser with Loki's parse error, before any VictoriaLogs call.
+
+  Fixed (internal/logql/parser.go parseVectorAggregation): a log expression
+  (a selector, with or without a pipeline or parentheses) inside any vector
+  aggregation followed by its closing parenthesis fails with Loki's
+  `syntax error: unexpected )` at that parenthesis (line and column counted
+  in characters, as Loki's lexer counts them; Loki's own test:
+  pkg/logql/syntax/parser_test.go:689-690). query and query_range answer it
+  as 400 text/plain before any VictoriaLogs call. A log range inside a
+  vector aggregation (`sum({app="x"}[5m])`) keeps its previous text.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -39,16 +48,26 @@ compare:
   expect: |
     Loki's 400 `parse error at line 1, col N: syntax error: unexpected )`.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1106'
   impact: explore-visible
+  visual: none
+  visual_reason: 'a status and error text change: Grafana shows an error panel on the base and on the PR, and the visual comparison compares only the status Grafana returns for a failed panel, which is the same for both. The capture explore-topk-over-log-selector (visual-smoke run 41916596305) shows the base''s "Internal Server Error" and the PR''s and Loki''s "parse error at line 1, col 45: syntax error: unexpected )". The status and text are pinned by TestCompat_VectorAggregationOverLogSelector against Loki and the parser edge table'
   effort: S
-  area: 'internal/logql parser (vector aggregation operand must be a metric expression)'
-  loki: 'pkg/logql/syntax/syntax.y:176-185 (vectorAggregationExpr takes a metricExpr)'
-  proxy: '500 Internal Server Error (VictoriaLogs 422, missing stats pipe)'
-  planned_test: 'TestCompat_VectorAggregationOverLogSelector (test/e2e-compat, group semantics), query and query_range'
+  area: 'internal/logql/parser.go parseVectorAggregation (vector aggregation operand must be a metric expression)'
+  loki: 'pkg/logql/syntax/syntax.y:176-185 (vectorAggregationExpr takes a metricExpr); pkg/logql/syntax/parser_test.go:689-690'
+  proxy: 'Loki''s 400 and text on query and query_range'
+  planned_test: 'TestCompat_VectorAggregationOverLogSelector (test/e2e-compat, group core), query and query_range'
   clusters:
     - 0d1dce34
     - 1b5c3c20
     - 2ae8dfb7
     - 6699189f
     - febe7a5e
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
