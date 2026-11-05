@@ -47,8 +47,10 @@ jobs:
     needs: [scope]
     if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/perf-smoke,')) }}
     runs-on: ubuntu-latest
-    # The smoke selects a handful of shapes; the baseline run measures all of them.
-    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 90 || 30 }}
+    # The smoke measures the shapes the change selects; the baseline run measures all of them
+    # (about 35 minutes on a hosted runner). A change to the translator selects most sets
+    # (32 of them for #1101, cut at 30 minutes), so the smoke gets the full run's time and margin.
+    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 90 || 60 }}
     permissions:
       contents: read
       pull-requests: write
