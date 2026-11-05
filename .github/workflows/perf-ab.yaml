@@ -21,6 +21,13 @@ name: Perf A/B
 # baseline (the above-2x Loki list and the acceptance distribution of this run, a report)
 # as the `perf-baseline-candidate` artifact and a "new baseline candidate"
 # section of the comment. Nothing is committed: a person copies the files in.
+#
+# Shards. perf-plan selects the shapes and splits a large selection into up to
+# four shards of about equal cost (pr_smoke.py --split); each perf-smoke-shard
+# measures its shards' sets on its own runner and fresh stack, the three targets
+# of a shape always on the same one; perf-smoke merges the shards' outputs
+# (pr_smoke.py --merge) into the one comment and verdict a single run would give
+# and is the check. A small selection stays one shard.
 
 on:
   pull_request:
@@ -42,25 +49,24 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
 
-  perf-smoke:
-    name: perf-smoke
+  perf-plan:
+    name: perf-plan
     needs: [scope]
     if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/perf-smoke,')) }}
     runs-on: ubuntu-latest
-    # The smoke measures the shapes the change selects; the baseline run measures all of them
-    # (about 35 minutes on a hosted runner). A change to the translator selects most sets
-    # (32 of them for #1101, cut at 30 minutes), so the smoke gets the full run's time and margin.
-    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 90 || 60 }}
+    timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: write
     env:
-      OUT: /tmp/ab-smoke
+      OUT: /tmp/ab-plan
       BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,') }}
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+      base: ${{ steps.select.outputs.base }}
+      shards: ${{ steps.split.outputs.shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
-          # The base build comes from a worktree of the merge commit's first parent.
           fetch-depth: 0
           persist-credentials: false
 
@@ -81,35 +87,149 @@ jobs:
           echo "run=${RUN}" >> "$GITHUB_OUTPUT"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print({k: len(v) for k, v in d["sets"].items()} or "nothing to run")' "$OUT/selection.json"
 
+      - name: Split the selection into shards
+        id: split
+        run: |
+          set -euo pipefail
+          SHARDS="$(python3 bench/ab/pr_smoke.py --split 4 --selection "$OUT/selection.json" --out "$OUT")"
+          echo "shards=${SHARDS}" >> "$GITHUB_OUTPUT"
+          for f in "$OUT"/shard-*.json; do
+            python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(sys.argv[1].rsplit("/", 1)[-1], {k: len(v) for k, v in d["sets"].items()})' "$f"
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: perf-plan
+          path: ${{ env.OUT }}/*.json
+
+  perf-smoke-shard:
+    name: perf-smoke-shard (${{ matrix.shard }})
+    needs: [scope, perf-plan]
+    if: ${{ !cancelled() && needs.perf-plan.result == 'success' && needs.perf-plan.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    # The baseline run measures every shape (about 35 minutes on one hosted runner before the split); a shard
+    # measures a quarter of a large selection, plus its own stack and seed.
+    timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,')) && 60 || 45 }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.perf-plan.outputs.shards) }}
+    env:
+      OUT: /tmp/ab-smoke
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The base build comes from a worktree of the merge commit's first parent.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: perf-plan
+          path: /tmp/ab-plan
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        if: steps.select.outputs.run == 'true'
         with:
           go-version: "1.27.3"
           cache: true
 
-      - name: Run the A/B smoke
-        id: smoke
-        if: steps.select.outputs.run == 'true'
+      # The fan-in job reads the verdict file this writes; the shard's own exit status is not the check.
+      - name: Run the A/B smoke on this shard
         env:
-          BASE: ${{ steps.select.outputs.base }}
+          BASE: ${{ needs.perf-plan.outputs.base }}
         run: |
           set +e
+          python3 bench/ab/pr_smoke.py --base "$BASE" --selection "/tmp/ab-plan/shard-${SHARD}.json" --out "$OUT" \
+            --over-2x-loki fail --profiles auto
+          echo "pr_smoke.py exited $?"
+
+      - name: Upload the shard's outputs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          # Reruns share a run ID: replace the failed attempt's shard.
+          name: perf-ab-shard-${{ matrix.shard }}
+          overwrite: true
+          path: |
+            ${{ env.OUT }}/*.json
+            ${{ env.OUT }}/*.md
+            ${{ env.OUT }}/*.log
+          if-no-files-found: ignore
+
+      # The fan-in job decides the gate; a shard that did not complete fails it. This step makes the shard itself
+      # red as well, so "Re-run failed jobs" repeats that shard (its artifact is replaced) and the fan-in.
+      - name: Fail the shard when it did not complete
+        run: |
+          CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
+          case "$CODE" in
+            0|1) echo "shard measured (exit ${CODE}); the verdict is the fan-in's" ;;
+            *) echo "::error::A/B smoke shard ${SHARD} did not complete (exit ${CODE}); see its log and artifact"; exit 1 ;;
+          esac
+
+  perf-smoke:
+    name: perf-smoke
+    needs: [scope, perf-plan, perf-smoke-shard]
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/perf-smoke,')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      OUT: /tmp/ab-smoke
+      BASELINE: ${{ needs.scope.outputs.baseline == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',perf-ab/full,') }}
+      RAN: ${{ needs.perf-plan.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          # The over-2x list, the locks and the baseline-candidate day are read as committed on the base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        if: needs.perf-plan.result == 'success'
+        with:
+          name: perf-plan
+          path: /tmp/ab-plan
+
+      # One directory per shard artifact (perf-ab-shard-<i>), also when there is only one.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        if: env.RAN == 'true'
+        continue-on-error: true  # a shard that left nothing is named by the merge as incomplete
+        with:
+          pattern: perf-ab-shard-*
+          path: /tmp/ab-shards
+
+      - name: Merge the shards
+        id: smoke
+        if: env.RAN == 'true'
+        env:
+          SHARDS: ${{ needs.perf-plan.outputs.shards }}
+        run: |
+          set +e
+          mkdir -p "$OUT"
           CANDIDATE=()
           if [ "$BASELINE" = "true" ]; then CANDIDATE=(--baseline-candidate "$OUT/baseline-candidate"); fi
-          python3 bench/ab/pr_smoke.py --base "$BASE" --selection "$OUT/selection.json" --out "$OUT" \
-            --over-2x-loki fail --profiles auto "${CANDIDATE[@]}"
+          # Every planned shard is named, so a shard that uploaded nothing makes the run incomplete.
+          mapfile -t DIRS < <(python3 -c 'import json,sys; [print(f"/tmp/ab-shards/perf-ab-shard-{s}") for s in json.loads(sys.argv[1])]' "$SHARDS")
+          python3 bench/ab/pr_smoke.py --merge "${DIRS[@]}" --selection /tmp/ab-plan/selection.json --out "$OUT" \
+            --over-2x-loki fail "${CANDIDATE[@]}"
           # The verdict file, not the exit status, decides: a crash of the
           # interpreter itself leaves none and is reported as incomplete.
           CODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit"])' "$OUT/verdict.json" 2>/dev/null || echo none)"
           echo "exit=${CODE}" >> "$GITHUB_OUTPUT"
 
       - name: Render the skipped comment
-        if: steps.select.outputs.run != 'true'
+        if: needs.perf-plan.result == 'success' && env.RAN != 'true'
         env:
-          BASE: ${{ steps.select.outputs.base }}
+          BASE: ${{ needs.perf-plan.outputs.base }}
         run: |
+          mkdir -p "$OUT"
           printf '{"base": "%s", "head": "%s"}\n' "$BASE" "$(git rev-parse HEAD)" > "$OUT/meta.json"
-          python3 bench/ab/comment.py --selection "$OUT/selection.json" --meta "$OUT/meta.json" --out "$OUT/comment.md" > /dev/null
+          python3 bench/ab/comment.py --selection /tmp/ab-plan/selection.json --meta "$OUT/meta.json" --out "$OUT/comment.md" > /dev/null
 
       - name: Publish summary
         if: always()
@@ -117,7 +237,7 @@ jobs:
           if [ -f "$OUT/comment.md" ]; then cat "$OUT/comment.md" >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Upload A/B artifacts
-        if: always() && steps.select.outputs.run == 'true'
+        if: always() && env.RAN == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: perf-ab-smoke
@@ -129,7 +249,7 @@ jobs:
 
       - name: Upload the baseline candidate
         # Never committed: the files are what a person would copy into bench/ab/history/ once they accept them.
-        if: always() && steps.select.outputs.run == 'true' && env.BASELINE == 'true'
+        if: always() && env.RAN == 'true' && env.BASELINE == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: perf-baseline-candidate
@@ -141,8 +261,6 @@ jobs:
         # Fork PRs run with a read-only token: the step summary still has the table.
         if: always() && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
-        env:
-          RAN: ${{ steps.select.outputs.run }}
         with:
           script: |
             const fs = require('fs');
@@ -165,15 +283,23 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
+      - name: Fail when the shapes could not be planned
+        if: needs.perf-plan.result != 'success'
+        env:
+          PLAN: ${{ needs.perf-plan.result }}
+        run: |
+          echo "::error::A/B smoke: perf-plan ended '${PLAN}', so nothing was measured; see its log"
+          exit 1
+
       - name: Fail on regression
-        if: steps.select.outputs.run == 'true'
+        if: env.RAN == 'true'
         env:
           CODE: ${{ steps.smoke.outputs.exit }}
         run: |
           case "$CODE" in
             0) echo "no regression" ;;
             1) echo "::error::A/B smoke: a shape broke, got slower on the re-run, differs from Loki where the base did not, or (in fail mode) is newly or further above 2x Loki (see the PR comment)"; exit 1 ;;
-            2) echo "::error::A/B smoke run invalid: VictoriaLogs restarted during the run; re-run the job"; exit 1 ;;
+            2) echo "::error::A/B smoke run invalid: VictoriaLogs restarted during a shard's run; re-run the failed jobs"; exit 1 ;;
             3) echo "::error::A/B smoke did not complete; see the PR comment, the log and the uploaded artifacts"; exit 1 ;;
             *) echo "::error::A/B smoke did not complete (exit ${CODE:-none}); see the log and the uploaded artifacts"; exit 1 ;;
           esac

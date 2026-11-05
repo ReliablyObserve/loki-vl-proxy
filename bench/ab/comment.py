@@ -312,6 +312,14 @@ def profile_lines(meta, summaries):
     return out
 
 
+def restarts_stamp(meta, summaries):
+    """VictoriaLogs restart counts before→after the run; per stack when the run was sharded (each shard has its own)."""
+    shards = [sh for sh in meta.get("shards") or [] if sh.get("restarts")]
+    if len(shards) > 1:
+        return "VictoriaLogs restarts per shard " + ", ".join(f"{a}→{b}" for a, b in (sh["restarts"] for sh in shards))
+    return f"VictoriaLogs restarts {summaries[0].get('restart_before')}→{summaries[-1].get('restart_after')}"
+
+
 def render(summaries, selection, meta, baseline=None, bounds=None):
     """baseline: the above-2× Loki list (over2x.read_baseline / baseline_at); None leaves that check out.
     bounds: the registry's perf: blocks at the base (over2x.bounds_at); None locks no row."""
@@ -441,14 +449,17 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
              f"{meta.get('runs', summaries[0].get('runs'))} runs (first is cold), warm p50",
              f"ranges {', '.join(meta.get('ranges', ['1h']))}",
              f"noise ±{meta.get('noise', 0.25) * 100:.0f}% and {meta.get('min_delta', 0.05) * 1000:.0f} ms",
-             f"VictoriaLogs restarts {summaries[0].get('restart_before')}→{summaries[-1].get('restart_after')}"]
+             restarts_stamp(meta, summaries)]
     if meta.get("elapsed_s"):
-        stamp.append(f"{meta['elapsed_s'] / 60:.1f} min")
+        stamp.append(f"{meta['elapsed_s'] / 60:.1f} min" + (f" (slowest of {len(meta['shards'])} shards)"
+                                                            if len(meta.get("shards") or []) > 1 else ""))
     if meta.get("phases_s"):
         stamp.append("phases " + ", ".join(f"{k} {v}s" for k, v in meta["phases_s"].items()))
     if meta.get("refresh_s"):
         stamp.append(f"refresh p50: windows moving forward {meta['refresh_s']} s per run, informational")
-    lines += ["", "<sub>" + " · ".join(stamp) + ". Same runner, one fresh stack, targets interleaved per request. "
+    where = ("Each shard on its own runner and fresh stack, the three targets of a shape always on the same one"
+             if len(meta.get("shards") or []) > 1 else "Same runner, one fresh stack")
+    lines += ["", "<sub>" + " · ".join(stamp) + f". {where}, targets interleaved per request. "
               "How to read and reproduce: `bench/ab/README.md`.</sub>"]
     exit_code = 2 if not valid else (1 if failed or failed_2x else 0)
     verdict = {"state": state, "failed": failed or failed_2x or not valid, "exit": exit_code, "counts": counts,

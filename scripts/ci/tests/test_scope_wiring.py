@@ -448,18 +448,47 @@ class ScopeWiringTest(unittest.TestCase):
 
     def test_the_perf_workflow_runs_every_shape_on_a_baseline_and_keeps_its_budget_otherwise(self):
         text = (WORKFLOWS / "perf-ab.yaml").read_text()
-        job = parse_jobs(text)["perf-smoke"]
+        jobs = parse_jobs(text)
+        plan, shard, job = jobs["perf-plan"], jobs["perf-smoke-shard"], jobs["perf-smoke"]
         full = sel("perf-ab/full")
-        self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline == 'true' || %s }}" % full, job["body"])
-        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 90 || 60 }}" % full,
-                      job["body"])
-        self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', job["body"])
-        self.assertIn('selection.py --base "$BASE"', job["body"])  # an ordinary pull request keeps the selection
+        for body in (plan["body"], job["body"]):
+            self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline == 'true' || %s }}" % full, body)
+        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 60 || 45 }}" % full,
+                      shard["body"])
+        self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', plan["body"])
+        self.assertIn('selection.py --base "$BASE"', plan["body"])  # an ordinary pull request keeps the selection
         self.assertIn('--baseline-candidate "$OUT/baseline-candidate"', job["body"])
         self.assertIn("name: perf-baseline-candidate", job["body"])
         # A baseline on a non-runtime PR does not run A/B; a change to the A/B harness selects it, in full.
-        self.assertEqual(job["if"], "${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || %s) }}"
-                         % sel("perf-ab/perf-smoke"))
+        for name in ("perf-plan", "perf-smoke"):
+            self.assertEqual(jobs[name]["if"], "${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || %s) }}"
+                             % sel("perf-ab/perf-smoke"))
+
+    def test_the_perf_smoke_shards_measure_and_the_fan_in_decides(self):
+        jobs = parse_jobs((WORKFLOWS / "perf-ab.yaml").read_text())
+        plan, shard, fan_in = jobs["perf-plan"]["body"], jobs["perf-smoke-shard"], jobs["perf-smoke"]
+        self.assertIn("pr_smoke.py --split 4", plan)
+        self.assertIn("shard: ${{ fromJSON(needs.perf-plan.outputs.shards) }}", shard["body"])
+        self.assertEqual(shard["if"], "${{ !cancelled() && needs.perf-plan.result == 'success' && "
+                                      "needs.perf-plan.outputs.run == 'true' }}")
+        self.assertIn('--selection "/tmp/ab-plan/shard-${SHARD}.json"', shard["body"])
+        self.assertIn("name: perf-ab-shard-${{ matrix.shard }}", shard["body"])
+        self.assertIn("overwrite: true", shard["body"])
+        # a shard that did not complete is red itself, so a re-run of failed jobs repeats it
+        self.assertIn("Fail the shard when it did not complete", shard["body"])
+        # the fan-in waits for every shard and names every planned one, so a missing shard is incomplete
+        self.assertEqual(set(fan_in["needs"]), {"scope", "perf-plan", "perf-smoke-shard"})
+        self.assertIn("pattern: perf-ab-shard-*", fan_in["body"])
+        self.assertIn('pr_smoke.py --merge "${DIRS[@]}"', fan_in["body"])
+        self.assertIn("Fail when the shapes could not be planned", fan_in["body"])
+        # the evidence collector reads the merged outputs under the old artifact name
+        self.assertIn("name: perf-ab-smoke", fan_in["body"])
+        # the jobs that run the pull request's code hold a read-only token; only the fan-in comments
+        for name in ("perf-plan", "perf-smoke-shard"):
+            self.assertIn("contents: read", jobs[name]["body"])
+            self.assertNotIn("contents: write", jobs[name]["body"])
+            self.assertNotIn("pull-requests: write", jobs[name]["body"])
+        self.assertIn("pull-requests: write", fan_in["body"])
 
     def test_the_visual_workflow_captures_every_page_on_a_baseline(self):
         text = (WORKFLOWS / "visual-smoke.yaml").read_text()

@@ -67,6 +67,13 @@ either profile, and the comment says which.
 
 Outputs in --out: selection.json, raw-<set>-<profile>.json, summary-<set>-<profile>.json,
 comment.md, verdict.json, meta.json and the proxies' logs.
+
+Shards. A large selection runs on several runners: --split N writes up to N shard selections
+(shard-<i>.json) of about equal cost into --out and prints their numbers; each shard runs this script
+with --selection shard-<i>.json on its own stack, and --merge DIR... renders the one comment and verdict
+from the shards' outputs, as one run would. A selection below SHARD_MIN_COST stays one shard. Loki's
+cold reuse across sets (step 4) only applies within one Loki process, so each shard does it for its own
+sets and the merge leaves it as it is.
 """
 import argparse
 import json
@@ -251,8 +258,16 @@ def main():
     ap.add_argument("--baseline-candidate", default="", metavar="DIR",
                     help="a baseline run: write the above-2x list and the acceptance distribution this run would "
                          "make the baseline into DIR, and add the section to the comment (nothing is committed)")
+    ap.add_argument("--split", type=int, default=0, metavar="N",
+                    help="write up to N shard selections of --selection into --out, print their numbers, and exit")
+    ap.add_argument("--merge", nargs="+", default=[], metavar="DIR",
+                    help="render the comment and verdict of a sharded run from the shards' --out directories")
     stack.stack_args(ap, profile=False)
     args = ap.parse_args()
+    if args.split:
+        if not args.selection:
+            ap.error("--split needs --selection")
+        return split_main(args)
     if not 0 <= args.cold_samples <= cold.SPARE_WINDOWS:
         ap.error(f"--cold-samples must be between 0 and {cold.SPARE_WINDOWS}: the seeded margin holds that many windows")
     args.ranges = [r for r in args.ranges.split(",") if r]
@@ -270,6 +285,8 @@ def main():
             "refresh_s": args.refresh_s, "refresh_runs": args.refresh_runs, "over_2x_loki": args.over_2x_loki,
             "quiet_cap_s": args.quiet_cap_s, "cold_samples": args.cold_samples, "warm_rounds": args.warm_rounds, "cold_budget_s": args.cold_budget_s}
     sel = {"run": True, "sets": {}}
+    if args.merge:
+        return merge_main(args, out, meta, t0)
     try:
         base = args.base or git("merge-base", "origin/main", "HEAD")
         meta["base"] = base_sha = git("rev-parse", base)
@@ -285,32 +302,179 @@ def main():
         if not sel["run"]:
             text, verdict = comment.render([], sel, meta)
         else:
-            if args.over_2x_baseline:
-                baseline, problem = over2x.read_baseline(args.over_2x_baseline)
-                if problem:
-                    raise ValueError(problem)
-            else:
-                baseline = over2x.baseline_at(base_sha)
-            # The locks as committed on the base: a pull request cannot unlock its own rows.
-            bounds = over2x.bounds_at(base_sha)
-            if bounds is None:
-                stack.log("the registry's perf: blocks at the base cannot be read; no row is locked in this run")
+            baseline, bounds = baseline_and_bounds(args, base_sha)
             summaries = measure(args, sel, out, base_sha, meta, baseline, bounds)
             meta["elapsed_s"] = round(time.time() - t0)
-            text, verdict = comment.render(summaries, sel, meta, baseline, bounds)
-            if args.baseline_candidate:
-                section = baseline_candidate.write(
-                    args.baseline_candidate, summaries, baseline or {}, baseline_candidate.committed_day(base_sha),
-                    date=time.strftime("%Y-%m-%d", time.gmtime()), commit=meta["head"], elapsed_s=meta["elapsed_s"])
-                text = baseline_candidate.fit(text, baseline_candidate.COMMENT_LIMIT - len(section)) + section
+            text, verdict = render_run(args, summaries, sel, meta, baseline, bounds, base_sha)
     except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
         traceback.print_exc()
         meta["elapsed_s"] = round(time.time() - t0)
         text, verdict = comment.errored(sel, meta, f"{type(e).__name__}: {e}")
+    return finish_run(args, out, text, verdict, meta)
+
+
+def baseline_and_bounds(args, base_sha):
+    """The above-2x Loki list and the registry's locks, both as committed on the base."""
+    if args.over_2x_baseline:
+        baseline, problem = over2x.read_baseline(args.over_2x_baseline)
+        if problem:
+            raise ValueError(problem)
+    else:
+        baseline = over2x.baseline_at(base_sha)
+    # The locks as committed on the base: a pull request cannot unlock its own rows.
+    bounds = over2x.bounds_at(base_sha)
+    if bounds is None:
+        stack.log("the registry's perf: blocks at the base cannot be read; no row is locked in this run")
+    return baseline, bounds
+
+
+def render_run(args, summaries, sel, meta, baseline, bounds, base_sha):
+    """The comment and verdict of a measured run, with the baseline-candidate section on a baseline run."""
+    text, verdict = comment.render(summaries, sel, meta, baseline, bounds)
+    if args.baseline_candidate:
+        section = baseline_candidate.write(
+            args.baseline_candidate, summaries, baseline or {}, baseline_candidate.committed_day(base_sha),
+            date=time.strftime("%Y-%m-%d", time.gmtime()), commit=meta["head"], elapsed_s=meta["elapsed_s"])
+        text = baseline_candidate.fit(text, baseline_candidate.COMMENT_LIMIT - len(section)) + section
+    return text, verdict
+
+
+def finish_run(args, out, text, verdict, meta):
     finish(out, text, verdict, meta)
     for line in over2x.annotations(verdict.get("over_2x", {}).get("rows", []), args.over_2x_loki):
         print(line)
     return verdict["exit"]
+
+
+# Below this estimated cost (shape x profile passes) a selection runs on one runner: a shard costs a stack
+# and a seed (about 5 minutes on a hosted runner), which a small selection does not win back.
+SHARD_MIN_COST = 40
+
+
+def set_costs(sel, spec):
+    """{set: estimated cost}: one pass per shape in loki-defaults, one more per range-metric shape in aligned."""
+    costs = {}
+    for name, shapes in sel.get("sets", {}).items():
+        by_name = {sh["name"]: sh for sh in spec["sets"][name]["shapes"]}
+        costs[name] = len(shapes) + sum(1 for n in shapes if range_metric(by_name[n]))
+    return costs
+
+
+def split_selection(sel, n, spec=None, min_cost=SHARD_MIN_COST):
+    """Up to n shard selections of `sel`, each a copy with a subset of its sets, every set in exactly one.
+
+    The number of shards is n, at most one per set and per min_cost of the total cost. Sets go, most costly
+    first, to the least loaded shard (ties to the lower shard), and each shard keeps the selection's set order,
+    so the split is the same for the same selection. A selection that does not run is one shard.
+    """
+    if spec is None:
+        with open(os.path.join(HERE, "shapes.json")) as f:
+            spec = json.load(f)
+    sets = sel.get("sets", {})
+    if not sel.get("run") or not sets:
+        return [sel]
+    costs = set_costs(sel, spec)
+    k = max(1, min(n, len(sets), -(-sum(costs.values()) // min_cost)))
+    loads, members = [0] * k, [set() for _ in range(k)]
+    for name in sorted(sets, key=lambda s: (-costs[s], s)):
+        i = min(range(k), key=lambda j: (loads[j], j))
+        loads[i] += costs[name]
+        members[i].add(name)
+    return [dict(sel, sets={name: shapes for name, shapes in sets.items() if name in m}) for m in members]
+
+
+def split_main(args):
+    with open(args.selection) as f:
+        sel = json.load(f)
+    out = os.path.abspath(args.out)
+    os.makedirs(out, exist_ok=True)
+    shards = split_selection(sel, args.split)
+    for i, shard in enumerate(shards, 1):
+        with open(os.path.join(out, f"shard-{i}.json"), "w") as f:
+            json.dump(shard, f, indent=1)
+    print(json.dumps([str(i) for i in range(1, len(shards) + 1)]))
+    return 0
+
+
+def read_shard(path):
+    """(summaries in run order, meta, verdict) of one shard's --out; verdict is None when it wrote none."""
+    def load(name):
+        try:
+            with open(os.path.join(path, name)) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+    verdict, meta, sel = load("verdict.json"), load("meta.json") or {}, load("selection.json") or {}
+    order = {name: i for i, name in enumerate(sel.get("sets", {}))}
+    summaries = [load(name) for name in sorted(os.listdir(path)) if name.startswith("summary-") and name.endswith(".json")] \
+        if os.path.isdir(path) else []
+    summaries = [s for s in summaries if s]
+    summaries.sort(key=lambda s: (EXECUTION.index(s["profile"]) if s.get("profile") in EXECUTION else -1,
+                                  order.get(s["set"], len(order))))
+    return summaries, meta, verdict
+
+
+# Meta a shard measures for itself; the merged meta adds them up over the shards.
+SUMMED_META = ("quiet_wait_s", "cold_resample_s")
+
+
+def merge_meta(metas):
+    """One run's meta from the shards' metas: the settings of the first, the longest elapsed time and the
+    phases of that shard, the sums of SUMMED_META, every cold re-measure, and per profile whether any shard ran it."""
+    merged = dict(metas[0])
+    for key in ("end", "seed_s", "windows", "phases_s", "elapsed_s", "cold_resampled", *SUMMED_META):
+        merged.pop(key, None)
+    slowest = max(metas, key=lambda m: m.get("elapsed_s", 0))
+    for key in ("elapsed_s", "phases_s"):
+        if key in slowest:
+            merged[key] = slowest[key]
+    for key in SUMMED_META:
+        if any(key in m for m in metas):
+            merged[key] = round(sum(m.get(key, 0) for m in metas), 1)
+    resampled = [r for m in metas for r in m.get("cold_resampled", [])]
+    if resampled:
+        merged["cold_resampled"] = resampled
+    profiles = {}
+    for m in metas:
+        for p, entry in (m.get("profiles") or {}).items():
+            if p not in profiles or (entry.get("ran") and not profiles[p].get("ran")):
+                profiles[p] = entry
+    if profiles:
+        merged["profiles"] = profiles
+    return merged
+
+
+def merge_main(args, out, meta, t0):
+    """--merge: the comment and verdict of the shards' outputs, rendered as one run's."""
+    sel = {"run": True, "sets": {}}
+    try:
+        if args.selection:
+            with open(args.selection) as f:
+                sel = json.load(f)
+        shards = [(path, *read_shard(path)) for path in args.merge]
+        metas = [m for _, _, m, _ in shards if m]
+        if metas:
+            meta.update(merge_meta(metas))
+        meta["shards"] = [{"dir": os.path.basename(os.path.normpath(path)), "sets": len({s["set"] for s in summaries}),
+                           "restarts": [summaries[0].get("restart_before"), summaries[-1].get("restart_after")]
+                           if summaries else None,
+                           **{k: m[k] for k in ("elapsed_s", "phases_s", "end", "seed_s", "windows") if k in m}}
+                          for path, summaries, m, _ in shards]
+        incomplete = [os.path.basename(os.path.normpath(path)) for path, _, _, v in shards if not v or v.get("exit") == 3]
+        if incomplete:
+            raise RuntimeError(f"shard(s) {', '.join(incomplete)} did not complete; see their logs and artifacts")
+        summaries = [s for _, shard_summaries, _, _ in shards for s in shard_summaries]
+        # The merged outputs read like one run's: every shard's summaries and the whole selection.
+        write_summaries(summaries, out)
+        with open(os.path.join(out, "selection.json"), "w") as f:
+            json.dump(sel, f, indent=1)
+        baseline, bounds = baseline_and_bounds(args, meta["base"])
+        text, verdict = render_run(args, summaries, sel, meta, baseline, bounds, meta["base"])
+    except Exception as e:  # noqa: BLE001 - any failure must still produce a comment and exit 3
+        traceback.print_exc()
+        meta.setdefault("elapsed_s", round(time.time() - t0))
+        text, verdict = comment.errored(sel, meta, f"{type(e).__name__}: {e}")
+    return finish_run(args, out, text, verdict, meta)
 
 
 # The seed's wait for Loki and VictoriaLogs to agree took well under 900 s for the 86-minute window
