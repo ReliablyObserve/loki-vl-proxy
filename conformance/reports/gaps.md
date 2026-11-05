@@ -140,23 +140,12 @@ newest daily run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
-| `explore-logs-volume-json` | 1 | 6.22s (A explore volume, 2 filters, drop, 24h) | 4.20s | 0.04s | 0.09s | — |
-| `parser-error-and-label-collision` | 2 | 6.22s (A explore volume, 2 filters, drop, 24h) | 4.20s | 0.04s | 0.09s | — |
-| `semantics/json-filter-pushdown-translated-label` | 1 | 6.22s (A explore volume, 2 filters, drop, 24h) | 4.20s | 0.04s | 0.09s | — |
-| `semantics/json-filter-pushdown-underscore-label` | 2 | 6.22s (A explore volume, 2 filters, drop, 24h) | 4.20s | 0.04s | 0.09s | — |
-| `parsed-label-series-identity` | 1 | 6.11s (F field breakdown service_version (explore), 24h) | 4.58s | 0.04s | 0.09s | — |
-| `semantics/json-label-spelling-probe` | 1 | 6.11s (F field breakdown service_version (explore), 24h) | 4.58s | 0.04s | 0.09s | — |
-| `quality/json-label-probe-gates` | 2 | 0.43s (LS8 json count by level_extracted, collision, 6h) | 0.20s | 0.05s | 0.01s | — |
-| `semantics/extracted-suffix-collision` | 2 | 0.43s (LS8 json count by level_extracted, collision, 6h) | 0.20s | 0.05s | 0.01s | — |
-| `semantics/json-extracted-metric-pushdown` | 1 | 0.43s (LS8 json count by level_extracted, collision, 6h) | 0.20s | 0.05s | 0.01s | — |
-| `metric-series-identity` | 3 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.01s | 0.01s | — |
-| `quality/query-range-settled-steps` | 4 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.01s | 0.01s | — |
-| `semantics/unwrap-conversion-error` | 3 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.01s | 0.01s | — |
-| `semantics/unwrap-gate-parsefloat-divergences` | 3 | 0.42s (G8 bytes() of a number, 24h) | 0.21s | 0.01s | 0.01s | — |
-| `semantics/unwrap-duration-seconds` | 1 | 0.41s (D1 logfmt ttl duration_seconds rate by service, 24h) | 0.22s | 0.01s | 0.01s | — |
-| `semantics/pattern-line-filter-anchoring` | 1 | 0.29s (A5 drilldown exclude, volume by detected_level, 24h) | 0.18s | 0.01s | 0.01s | — |
-| `loki-compatible-profile` | 1 | 0.14s (E7 json count by level_extracted, 1h) | 0.07s | 0.05s | 0.01s | — |
-| `profiles/structured-metadata-label-collision` | 1 | 0.14s (E7 json count by level_extracted, 1h) | 0.07s | 0.05s | 0.01s | — |
-| `severity-detected-level-derivation` | 2 | 0.17s (LF14 explore volume, plain-text service, 24h) | 0.12s | 0.01s | 0.01s | — |
-| `severity/detected-level-filter-json-level` | 2 | 0.17s (LF14 explore volume, plain-text service, 24h) | 0.12s | 0.01s | 0.01s | — |
-| `drilldown-service-landing` | 1 | 0.11s (LF10 drilldown logs, level pill multi-select, json service, 1h) | 0.05s | 0.04s | 0.04s | — |
+| `parser-error-and-label-collision` | 2 | 0.31s (LS8 json count by level_extracted, collision, 6h) | 0.11s | 0.03s | 0.01s | — |
+| `quality/json-label-probe-gates` | 2 | 0.31s (LS8 json count by level_extracted, collision, 6h) | 0.11s | 0.03s | 0.01s | — |
+| `semantics/extracted-suffix-collision` | 2 | 0.31s (LS8 json count by level_extracted, collision, 6h) | 0.11s | 0.03s | 0.01s | — |
+| `semantics/json-extracted-metric-pushdown` | 2 | 0.31s (LS8 json count by level_extracted, collision, 6h) | 0.11s | 0.03s | 0.01s | — |
+| `metric-series-identity` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
+| `quality/query-range-settled-steps` | 3 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
+| `semantics/unwrap-conversion-error` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
+| `semantics/unwrap-gate-parsefloat-divergences` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
+| `semantics/unwrap-duration-seconds` | 1 | 0.22s (D1 logfmt ttl duration_seconds rate by service, 24h) | 0.15s | 0.01s | 0.01s | — |

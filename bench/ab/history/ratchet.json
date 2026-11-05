@@ -364,6 +364,20 @@
   "shape": "DB4 json field breakdown batch_id"
  },
  {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "24h",
+  "set": "extracted-pushdown",
+  "shape": "X1 json filter level_extracted, by level"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "6h",
+  "set": "extracted-pushdown",
+  "shape": "X1 json filter level_extracted, by level"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -882,6 +896,13 @@
   "shape": "LF1 count by level, group then comma"
  },
  {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "24h",
+  "set": "label-filter-expression",
+  "shape": "LF1 count by level, group then comma"
+ },
+ {
   "added": "2026-11-04",
   "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
   "range": "6h",
@@ -913,6 +934,13 @@
   "added": "2026-11-04",
   "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
   "range": "1h",
+  "set": "label-filter-expression",
+  "shape": "LF3 explore volume, group, drop"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "24h",
   "set": "label-filter-expression",
   "shape": "LF3 explore volume, group, drop"
  },
@@ -1078,6 +1106,13 @@
   "shape": "L8 label_replace over sum by level count, instant"
  },
  {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF1 logs, detected_level equals"
+ },
+ {
   "added": "2026-10-27",
   "commit": "dfa8d0417d8e9483f298441ca6c75612e3ca961d",
   "range": "24h",
@@ -1090,6 +1125,13 @@
   "range": "6h",
   "set": "level-filter",
   "shape": "LF1 logs, detected_level equals"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF10 drilldown logs, level pill multi-select, json service"
  },
  {
   "added": "2026-10-27",
@@ -1594,6 +1636,13 @@
   "range": "1h",
   "set": "level-filter",
   "shape": "LF8 logs, logfmt then level regexp"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF9 drilldown logs, level pill, logfmt service"
  },
  {
   "added": "2026-11-04",
@@ -2485,6 +2534,13 @@
   "shape": "SW6 max without pod (control)"
  },
  {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF1 logs, json extraction list"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "24h",
@@ -2525,6 +2581,13 @@
   "range": "6h",
   "set": "stage-field-exposure",
   "shape": "SF10 volume, structured-metadata filter"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF2 logs, logfmt extraction list"
  },
  {
   "added": "2026-10-22",
@@ -2602,6 +2665,13 @@
   "range": "6h",
   "set": "stage-field-exposure",
   "shape": "SF4 logs, line_format without a parser"
+ },
+ {
+  "added": "2026-11-05",
+  "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
+  "range": "1h",
+  "set": "stage-field-exposure",
+  "shape": "SF5 logs, regexp capture"
  },
  {
   "added": "2026-10-22",
