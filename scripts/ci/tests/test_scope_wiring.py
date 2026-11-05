@@ -451,7 +451,7 @@ class ScopeWiringTest(unittest.TestCase):
         job = parse_jobs(text)["perf-smoke"]
         full = sel("perf-ab/full")
         self.assertIn("BASELINE: ${{ needs.scope.outputs.baseline == 'true' || %s }}" % full, job["body"])
-        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 90 || 30 }}" % full,
+        self.assertIn("timeout-minutes: ${{ (needs.scope.outputs.baseline == 'true' || %s) && 90 || 60 }}" % full,
                       job["body"])
         self.assertIn('if [ "$BASELINE" = "true" ]; then\n            python3 bench/ab/selection.py --all', job["body"])
         self.assertIn('selection.py --base "$BASE"', job["body"])  # an ordinary pull request keeps the selection

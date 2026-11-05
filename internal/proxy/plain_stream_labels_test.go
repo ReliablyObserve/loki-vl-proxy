@@ -305,11 +305,20 @@ func TestPlainStreamLabel_ShutdownStopsRefresher(t *testing.T) {
 	p := lineFieldsProxy(t, srv.URL, "buffered")
 	ctx := scopedRequest(p, "/").Context()
 	p.tenantStreamLabelNames(ctx) // starts the (blocked) refresh
-	for seen := time.Now().Add(2 * time.Second); refresherGoroutines() == 0; {
-		if time.Now().After(seen) {
-			t.Fatal("the blocked refresh never showed up as a refreshStreamLabelNames goroutine")
+	// Wait for the refresh's request to reach the backend, not for its
+	// goroutine to show up in a stack dump: the refresh ends by itself after
+	// streamLabelNamesRefreshTimeout, which a loaded runner (go test ./...)
+	// can let pass before the first dump.
+	for seen := time.Now().Add(10 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		b.mu.Lock()
+		listed := b.listed
+		b.mu.Unlock()
+		if listed > 0 {
+			break
 		}
-		time.Sleep(5 * time.Millisecond)
+		if time.Now().After(seen) {
+			t.Fatal("the refresh never asked the backend for the stream field names")
+		}
 	}
 	begin := time.Now()
 	if err := p.Shutdown(context.Background()); err != nil {
