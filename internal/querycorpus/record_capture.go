@@ -4,6 +4,7 @@ package querycorpus
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,7 +34,16 @@ var (
 	seen = map[entry]struct{}{}
 	out  *os.File
 	dir  = os.Getenv("LVP_QUERY_CORPUS_DIR")
+	// stacks holds the resolved caller of every distinct call stack seen.
+	// Table-driven tests send many queries from one stack, so each stack is
+	// resolved to function names once.
+	stacks = map[string]caller{}
 )
+
+type caller struct {
+	src, via string
+	direct   bool
+}
 
 // Record appends the query to $LVP_QUERY_CORPUS_DIR/<pid>.jsonl, once per
 // kind, query and calling test function. It does nothing when the variable
@@ -42,10 +52,17 @@ func Record(kind Kind, query string) {
 	if dir == "" {
 		return
 	}
-	src, via, direct := callers()
-	e := entry{Kind: kind, Query: query, Source: src, Via: via, Direct: direct || kind == Client}
+	var pcs [128]uintptr
+	n := runtime.Callers(2, pcs[:])
+	key := stackKey(pcs[:n])
 	mu.Lock()
 	defer mu.Unlock()
+	c, ok := stacks[key]
+	if !ok {
+		c.src, c.via, c.direct = callers(pcs[:n])
+		stacks[key] = c
+	}
+	e := entry{Kind: kind, Query: query, Source: c.src, Via: c.via, Direct: c.direct || kind == Client}
 	if _, ok := seen[e]; ok {
 		return
 	}
@@ -61,15 +78,22 @@ func Record(kind Kind, query string) {
 	_, _ = out.Write(append(line, '\n'))
 }
 
-// callers returns the calling test as "path/x_test.go:TestName" ("" when no
+// stackKey is a map key for a call stack.
+func stackKey(pcs []uintptr) string {
+	b := make([]byte, 0, len(pcs)*8)
+	for _, pc := range pcs {
+		b = binary.LittleEndian.AppendUint64(b, uint64(pc))
+	}
+	return string(b)
+}
+
+// callers returns, for the call stack pcs of Record's caller, the calling test as "path/x_test.go:TestName" ("" when no
 // test file called in), the short name of the function that called into the
 // parser or translator package from outside it, and whether that function
 // is test code. A query an unexported function of the entry package passed
 // in (a sub-query the translator or parser built itself) is never direct.
-func callers() (src, via string, direct bool) {
-	pcs := make([]uintptr, 128)
-	n := runtime.Callers(3, pcs)
-	frames := runtime.CallersFrames(pcs[:n])
+func callers(pcs []uintptr) (src, via string, direct bool) {
+	frames := runtime.CallersFrames(pcs)
 	entry, internalCall := "", false
 	for {
 		f, more := frames.Next()
