@@ -113,7 +113,9 @@ func TestBuildQueryCorpus(t *testing.T) {
 		}
 		sort.Strings(r.Sources)
 		r.Sources = compact(r.Sources)
-		if len(r.Sources) > 1 {
+		// A query many tests send to VictoriaLogs is shared traffic, not a case
+		// defined twice: only client rows count as duplicates.
+		if r.Path == "" && len(r.Sources) > 1 {
 			duplicated++
 		}
 		out = append(out, r)
