@@ -27,8 +27,15 @@ import (
 // (a parser, label_format, drop, unwrap or another conditional keep), is
 // rewritten; the pipeline itself is left as it is, so the labels a keep
 // removed stay removed for every other stage.
+//
+// A query that names an error label (__error__, __error_details__,
+// __preserve_error__) anywhere is left as it is. Keep never removes the error
+// labels, so they are part of the series identity, and a query can read them
+// after the keep: `sum by (__error__) (rate({...} | json | keep __error__
+// [5m]))` is one series per marker in Loki, and a grouping by the kept labels
+// alone would fold them into one.
 func keepSeriesGrouping(query string) (string, bool) {
-	if !strings.Contains(query, "keep") {
+	if !strings.Contains(query, "keep") || strings.Contains(query, "__error") || strings.Contains(query, "__preserve_error__") {
 		return query, false
 	}
 	expr, err := logqlpkg.Parse(query)

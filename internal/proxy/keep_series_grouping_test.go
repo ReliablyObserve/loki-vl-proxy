@@ -36,10 +36,6 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		// Stages after the keep that leave the labels alone.
 		{`rate({app="x"} | json | keep a |= "x" | a="1" | line_format "{{.a}}" | decolorize [1m])`,
 			`sum by (a) (rate({app="x"} | json | keep a |= "x" | a="1" | line_format "{{.a}}" | decolorize[1m]))`},
-		// The error labels survive a keep and fail the metric in Loki; they
-		// are no grouping.
-		{`rate({app="x"} | json | keep level, __error__, __error_details__ [1m])`, `sum by (level) (rate({app="x"} | json | keep level, __error__, __error_details__[1m]))`},
-		{`rate({app="x"} | json | keep __error__ [1m])`, `sum by () (rate({app="x"} | json | keep __error__[1m]))`},
 		// The last keep decides; an earlier one already removed its labels in the pipeline.
 		{`rate({app="x"} | keep a, b | keep b [1m])`, `sum by (b) (rate({app="x"} | keep a, b | keep b[1m]))`},
 		// Both sides of a binary operation.
@@ -65,6 +61,14 @@ func TestKeepSeriesGrouping_Rewrite(t *testing.T) {
 		`max_over_time({app="x"} | logfmt | keep a, n | unwrap n [1m])`, // an unwrap: its series also drop the unwrapped label
 		`rate({app="x"} | logfmt | keep a, n | unwrap n [1m])`,
 		`absent_over_time({app="x"} | keep a [1m])`, // labels from the selector
+		// An error label the query reads: keep never removes it, so a
+		// grouping by the kept labels would fold the markers into one series.
+		`sum by(__error__)(rate({app="x"} | json | keep __error__ [5m]))`,
+		`rate({app="x"} | json | keep level, __error__, __error_details__ [1m])`,
+		`rate({app="x"} | json | keep __error__ [1m])`,
+		`sum by (__error__) (rate({app="x"} | json | keep kind [5m]))`,
+		`rate({app="x"} | json | keep foo | __error__!="" [5m])`,
+		`rate({app="x"} | json | keep foo | drop __preserve_error__ [5m])`,
 		`not a query (`,
 	} {
 		if got, changed := keepSeriesGrouping(q); changed || got != q {
