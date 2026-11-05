@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.80.0] - 2026-11-05
+
+### Fixed
+
+- Answer a vector aggregation over a log selector with Loki's 400 parse
+  error. `topk(2, {app="api-gateway"})`, `sort(...)`, `sort_desc(...)`,
+  `stddev(...)` or `sum(...)` around a log query, with or without a
+  pipeline, answered 500 on `query_range` (VictoriaLogs rejected a query
+  with no stats pipe) and `unsupported instant aggregation target` on
+  `query`. Loki takes only a metric expression there and fails at the
+  closing parenthesis: `parse error at line 1, col 28: syntax error:
+  unexpected )`. The proxy now answers that status and text on both routes,
+  before any VictoriaLogs call.
+
 ## [2.79.0] - 2026-11-05
 
 ### Fixed
