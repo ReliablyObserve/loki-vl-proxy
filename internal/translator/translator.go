@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
@@ -402,6 +403,7 @@ func TranslateLogQLWithCapabilities(logql string, labelFn LabelTranslateFunc, st
 }
 
 func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
+	querycorpus.Record(querycorpus.LogQLTranslate, logql)
 	logql = strings.TrimSpace(logql)
 	if logql == "" {
 		return "*", nil
@@ -634,6 +636,7 @@ const StoredLineField = "_lvp_line"
 // line into StoredLineField before the first line_format rewrites it, so the
 // response carries both the formatted and the stored line.
 func TranslateLogQueryKeepingLine(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
+	querycorpus.Record(querycorpus.LogQLTranslate, logql)
 	return translateLogQueryOpts(strings.TrimSpace(logql), labelFn, caps, sf0(streamFields), true, false)
 }
 

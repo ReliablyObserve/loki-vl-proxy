@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -30,6 +31,7 @@ func newParseError(line, col int, msg string) *ParseError {
 // Parse parses a LogQL expression string and returns the typed AST.
 // It accepts log queries, range aggregations, and vector aggregations.
 func Parse(input string) (Expr, error) {
+	querycorpus.Record(querycorpus.LogQL, input)
 	p := &parser{sc: newScanner(input)}
 	p.advance()
 	expr, err := p.parseExpr()

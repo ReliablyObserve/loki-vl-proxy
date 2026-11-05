@@ -1,0 +1,58 @@
+name: Query Corpus
+
+# Builds the query corpus of main from one full, uncached test run: every query
+# a test or a client sends in, with the tests it comes from. The PR quality
+# report compares a PR's corpus with the one cached here for its base commit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: query-corpus-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  corpus:
+    name: Build the query corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          cache: true
+
+      # The same test run as the PR quality report (go test ./... -count=1), so
+      # a PR's corpus and its base corpus come from the same set of tests.
+      - name: Record the queries the tests send in
+        env:
+          LVP_QUERY_CORPUS_DIR: /tmp/query-corpus-capture
+        run: |
+          mkdir -p "$LVP_QUERY_CORPUS_DIR"
+          go test -tags corpuscapture ./... -count=1
+
+      - name: Build the corpus
+        env:
+          LVP_QUERY_CORPUS_DIR: /tmp/query-corpus-capture
+          LVP_QUERY_CORPUS_OUT: /tmp/query-corpus/query-corpus.jsonl.gz
+        run: |
+          mkdir -p /tmp/query-corpus
+          go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Save the corpus for pull requests based on this commit
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a gzipped list of test queries read as data by the PR quality report; nothing from this job is published
+        with:
+          path: /tmp/query-corpus
+          key: query-corpus-v1-${{ github.sha }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: query-corpus
+          path: /tmp/query-corpus/query-corpus.jsonl.gz

@@ -65,12 +65,24 @@ jobs:
             RUN_PERF=true
           fi
           echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"
+          # A PR that changes query code or the tests and specs that send queries
+          # gets the query corpus built from its uncached test run.
+          QUERY_CORPUS=false
+          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|proxy|querycorpus|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
+            QUERY_CORPUS=true
+          fi
+          echo "query_corpus=${QUERY_CORPUS}" >> "$GITHUB_OUTPUT"
           {
             echo "### PR quality scope"
             if [ "${RUN_PERF}" = "true" ]; then
               echo "- perf smoke: enabled"
             else
               echo "- perf smoke: skipped (no perf-sensitive files changed)"
+            fi
+            if [ "${QUERY_CORPUS}" = "true" ]; then
+              echo "- query corpus: enabled"
+            else
+              echo "- query corpus: skipped (no query code, tests or specs changed)"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -93,6 +105,7 @@ jobs:
           QUALITY_SKIP_PERF: ${{ steps.perf-scope.outputs.run_perf == 'true' && '0' || '1' }}
           # The load test is measured below with base and head alternating, not once per tree.
           QUALITY_SKIP_LOAD: "1"
+          QUALITY_QUERY_CORPUS_OUT: ${{ steps.perf-scope.outputs.query_corpus == 'true' && '/tmp/pr-head-query-corpus.jsonl.gz' || '' }}
           QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head
         run: |
           set -euo pipefail
@@ -109,8 +122,10 @@ jobs:
           git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
           (
             cd /tmp/loki-vl-proxy-base
+            # The base corpus comes from the main-branch run, not from here.
             QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base \
               QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json \
+              QUALITY_QUERY_CORPUS_OUT='' \
               bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
           )
           # The high-concurrency load test runs on both trees alternately (base, head,
@@ -152,6 +167,7 @@ jobs:
             /tmp/pr-head-quality.json
             /tmp/pr-quality-report.md
             /tmp/quality-meta.json
+            /tmp/pr-head-query-corpus.jsonl.gz
 
       - name: Upload quality diagnostics
         if: always()

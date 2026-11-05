@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- Record every query the tests send in, so compatibility checks can run over
+  the queries the test suite really uses. A build with the `corpuscapture` tag
+  records each query a test passes to the LogQL parser, the LogsQL parser or
+  the translator, and each `query` a test sends to a proxy route, together
+  with the test it came from. Queries the proxy builds or parses again by
+  itself are counted separately and are not part of the corpus. The PR quality
+  report builds the corpus from its uncached test run when a pull request
+  changes query code or the tests that send queries, and every push to main
+  builds and caches it as the base for pull requests. Without the tag the
+  recording calls are empty functions and the route wrapper returns the
+  handler unchanged: no behaviour change.
+
 ## [2.82.0] - 2026-11-05
 
 ### Performance
