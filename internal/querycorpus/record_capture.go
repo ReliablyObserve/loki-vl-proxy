@@ -79,7 +79,7 @@ func callers() (src, via string, direct bool) {
 		case entry == "":
 			entry = pkg
 		case via == "" && pkg == entry && !exported(name[len(pkg):]) && !strings.HasSuffix(f.File, "_test.go"):
-			internalCall = true
+			internalCall, via = true, name
 		case via == "" && pkg != entry:
 			via = name
 			direct = strings.HasSuffix(f.File, "_test.go")

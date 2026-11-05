@@ -34,4 +34,9 @@ func TestQueryCorpusMarksTranslatorSubQueriesInternal(t *testing.T) {
 	if _, ok := direct[`rate({app="a"}[5m])`]; !ok {
 		t.Fatalf("inner query not recorded: %+v", got)
 	}
+	for _, e := range got {
+		if e.Query == `rate({app="a"}[5m])` && e.Via != "translator.tryTranslateLabelReplace" {
+			t.Fatalf("inner query via = %q, want the translator function that built it", e.Via)
+		}
+	}
 }
