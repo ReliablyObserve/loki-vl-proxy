@@ -15,6 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 func deriveRequestType(endpoint, route string) string {
@@ -653,6 +654,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	u := *p.backend
 	u.Path = path
 	u.RawQuery = params.Encode()
+	querycorpus.RecordBackend(path, params.Get("query"))
 
 	p.log.Debug("VL request", "method", "GET", "url", u.Path, "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
@@ -766,6 +768,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	params = p.withBackendTimeoutArg(ctx, path, p.scopedTenantParams(ctx, params))
 	u := *p.backend
 	u.Path = path
+	querycorpus.RecordBackend(path, params.Get("query"))
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
 	if err != nil {

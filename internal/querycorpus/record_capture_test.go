@@ -35,3 +35,23 @@ func TestRecordAttributesAndDeduplicates(t *testing.T) {
 		t.Fatalf("direct handler entry = %+v", got[2])
 	}
 }
+
+// RecordBackend records a /select/logsql/ query with its path and leaves
+// other endpoints and empty queries alone.
+func TestRecordBackendRecordsVictoriaLogsQueries(t *testing.T) {
+	got := CaptureForTest(t, func() {
+		RecordBackend("/select/logsql/query", "* | limit 1")
+		RecordBackend("/select/logsql/stats_query_range", "* | stats count()")
+		RecordBackend("/metrics", "ignored")
+		RecordBackend("/select/logsql/query", "")
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want 2: %+v", len(got), got)
+	}
+	if got[0].Kind != VictoriaLogs || got[0].Query != "* | limit 1" || got[0].Path != "/select/logsql/query" {
+		t.Fatalf("first entry = %+v", got[0])
+	}
+	if got[1].Query != "* | stats count()" || got[1].Path != "/select/logsql/stats_query_range" {
+		t.Fatalf("second entry = %+v", got[1])
+	}
+}

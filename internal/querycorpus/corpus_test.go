@@ -21,12 +21,15 @@ type captured struct {
 	Source string `json:"src"`
 	Via    string `json:"via"`
 	Direct bool   `json:"direct"`
+	Path   string `json:"path"`
 }
 
-// Row is one corpus entry: a query a test or client sent in.
+// Row is one corpus entry: a query a test or client sent in, or, with Path
+// set, a LogsQL query the proxy sent to that VictoriaLogs endpoint.
 type Row struct {
 	ID      string   `json:"id"`
 	Lang    string   `json:"lang"`
+	Path    string   `json:"path,omitempty"`
 	Valid   bool     `json:"valid"`
 	Query   string   `json:"q"`
 	Sources []string `json:"sources"`
@@ -67,18 +70,22 @@ func TestBuildQueryCorpus(t *testing.T) {
 			if err := json.Unmarshal(sc.Bytes(), &c); err != nil {
 				t.Fatalf("%s: %v", f, err)
 			}
-			if !c.Direct {
+			if !c.Direct && c.Kind != "vl" {
 				internal[c.Via]++
 				continue
 			}
 			lang := "logql"
-			if c.Kind == "logsql" {
+			if c.Kind == "logsql" || c.Kind == "vl" {
 				lang = "logsql"
 			}
-			id := queryID(lang, c.Query)
+			key := lang
+			if c.Path != "" { // a client row keeps the id it had before sent rows were added
+				key += "\x00" + c.Path
+			}
+			id := queryID(key, c.Query)
 			r := rows[id]
 			if r == nil {
-				r = &Row{ID: id, Lang: lang, Query: c.Query}
+				r = &Row{ID: id, Lang: lang, Path: c.Path, Query: c.Query}
 				rows[id] = r
 			}
 			if c.Source != "" {
@@ -89,7 +96,7 @@ func TestBuildQueryCorpus(t *testing.T) {
 	}
 
 	out := make([]*Row, 0, len(rows))
-	duplicated := 0
+	duplicated, sent, sentValid := 0, 0, 0
 	for _, r := range rows {
 		if r.Lang == "logsql" {
 			_, err := logsql.Parse(r.Query)
@@ -97,6 +104,12 @@ func TestBuildQueryCorpus(t *testing.T) {
 		} else {
 			_, err := logql.Parse(r.Query)
 			r.Valid = err == nil
+		}
+		if r.Path != "" {
+			sent++
+			if r.Valid {
+				sentValid++
+			}
 		}
 		sort.Strings(r.Sources)
 		r.Sources = compact(r.Sources)
@@ -125,7 +138,8 @@ func TestBuildQueryCorpus(t *testing.T) {
 	if err := fh.Close(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("corpus rows=%d defined in more than one test=%d internal parse call sites=%d", len(out), duplicated, len(internal))
+	t.Logf("corpus rows=%d (sent to VictoriaLogs %d, our LogsQL parser reads %d) defined in more than one test=%d internal parse call sites=%d",
+		len(out), sent, sentValid, duplicated, len(internal))
 }
 
 func compact(s []string) []string {

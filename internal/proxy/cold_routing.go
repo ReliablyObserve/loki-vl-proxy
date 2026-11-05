@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 type ColdBackendConfig struct {
@@ -266,6 +268,7 @@ func (cr *ColdRouter) ColdGet(ctx context.Context, path string, params url.Value
 	u := *cr.coldBackend
 	u.Path = path
 	u.RawQuery = params.Encode()
+	querycorpus.RecordBackend(path, params.Get("query"))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
@@ -281,6 +284,7 @@ func (cr *ColdRouter) ColdPost(ctx context.Context, path string, params url.Valu
 func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, params url.Values, headers func(*http.Request), do func(*http.Request, *http.Client) (*http.Response, error)) (*http.Response, error) {
 	u := *cr.coldBackend
 	u.Path = path
+	querycorpus.RecordBackend(path, params.Get("query"))
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(),
 		io.NopCloser(stringReader(params.Encode())))

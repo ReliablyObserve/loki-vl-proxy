@@ -13,4 +13,6 @@ const (
 	LogQL          Kind = "logql"
 	LogQLTranslate Kind = "logql-translate"
 	LogsQL         Kind = "logsql"
+	// VictoriaLogs is a LogsQL query the proxy sent to a VictoriaLogs endpoint.
+	VictoriaLogs Kind = "vl"
 )

@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Record the LogsQL the proxy sends to VictoriaLogs in the query corpus. A
+  build with the `corpuscapture` tag records the query of every request the
+  proxy sends to a VictoriaLogs `/select/logsql/` endpoint (the main backend,
+  native tail and the cold backend) with its endpoint path, at the point where
+  each request is built, from the parameters it is about to send. The tests
+  send about 9,000 such queries. Without the tag the call is an empty function:
+  no behaviour change.
+
 - Record every query the tests send in, so compatibility checks can run over
   the queries the test suite really uses. A build with the `corpuscapture` tag
   records each query a test passes to the LogQL parser, the LogsQL parser or
