@@ -3,6 +3,7 @@
 package querycorpus
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"sync"
 )
+
+// Entry is one recorded query.
+type Entry = entry
 
 type entry struct {
 	Kind   Kind   `json:"kind"`
@@ -60,12 +64,13 @@ func Record(kind Kind, query string) {
 // callers returns the calling test as "path/x_test.go:TestName" ("" when no
 // test file called in), the short name of the function that called into the
 // parser or translator package from outside it, and whether that function
-// is test code.
+// is test code. A query an unexported function of the entry package passed
+// in (a sub-query the translator or parser built itself) is never direct.
 func callers() (src, via string, direct bool) {
 	pcs := make([]uintptr, 128)
 	n := runtime.Callers(3, pcs)
 	frames := runtime.CallersFrames(pcs[:n])
-	entry := ""
+	entry, internalCall := "", false
 	for {
 		f, more := frames.Next()
 		name := f.Function[strings.LastIndex(f.Function, "/")+1:]
@@ -73,6 +78,8 @@ func callers() (src, via string, direct bool) {
 		switch {
 		case entry == "":
 			entry = pkg
+		case via == "" && pkg == entry && !exported(name[len(pkg):]) && !strings.HasSuffix(f.File, "_test.go"):
+			internalCall = true
 		case via == "" && pkg != entry:
 			via = name
 			direct = strings.HasSuffix(f.File, "_test.go")
@@ -88,11 +95,11 @@ func callers() (src, via string, direct bool) {
 			src = testFile(f.File) + ":" + fn
 			// Prefer the test function itself over shared test helpers.
 			if strings.HasPrefix(fn, "Test") || strings.HasPrefix(fn, "Fuzz") || strings.HasPrefix(fn, "Benchmark") {
-				return src, via, direct
+				return src, via, direct && !internalCall
 			}
 		}
 		if !more {
-			return src, via, direct
+			return src, via, direct && !internalCall
 		}
 	}
 }
@@ -104,8 +111,21 @@ func Handler(h http.Handler) http.Handler {
 		if q := r.URL.Query().Get("query"); q != "" {
 			Record(Client, q)
 		}
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), routedKey{}, true)))
 	})
+}
+
+type routedKey struct{}
+
+// RecordRequest records the query a handler read from its request as a
+// client query, for tests that call the handler directly. A request that
+// came through Handler was recorded there, before any middleware could
+// rewrite its query, so it is skipped.
+func RecordRequest(r *http.Request, query string) {
+	if query == "" || r.Context().Value(routedKey{}) != nil {
+		return
+	}
+	Record(Client, query)
 }
 
 // testFile trims a test file path to its repository-relative form.
@@ -116,4 +136,62 @@ func testFile(file string) string {
 		}
 	}
 	return file
+}
+
+// exported reports whether a function name without its package, such as
+// "Parse", "(*Proxy).Handle" or "parse.func1", names an exported function.
+func exported(fn string) bool {
+	if strings.HasPrefix(fn, "(") {
+		if i := strings.Index(fn, ")."); i >= 0 {
+			fn = fn[i+2:]
+		}
+	}
+	return fn != "" && fn[0] >= 'A' && fn[0] <= 'Z'
+}
+
+// CaptureForTest runs fn with recording redirected to a temporary directory
+// and returns what fn recorded. Test helper for the corpuscapture build.
+func CaptureForTest(t interface {
+	TempDir() string
+	Cleanup(func())
+	Fatal(...any)
+}, fn func()) []Entry {
+	d := t.TempDir()
+	mu.Lock()
+	oldDir, oldOut, oldSeen := dir, out, seen
+	dir, out, seen = d, nil, map[entry]struct{}{}
+	mu.Unlock()
+	defer func() {
+		mu.Lock()
+		if out != nil {
+			out.Close()
+		}
+		dir, out, seen = oldDir, oldOut, oldSeen
+		mu.Unlock()
+	}()
+	fn()
+	mu.Lock()
+	if out != nil {
+		out.Sync()
+	}
+	mu.Unlock()
+	files, _ := filepath.Glob(filepath.Join(d, "*.jsonl"))
+	var got []Entry
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if line == "" {
+				continue
+			}
+			var e Entry
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, e)
+		}
+	}
+	return got
 }

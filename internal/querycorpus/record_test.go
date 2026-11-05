@@ -22,4 +22,5 @@ func TestHandlerIsTheHandlerWithoutCapture(t *testing.T) {
 		t.Fatalf("Handler wrapped the handler: %T", got)
 	}
 	Record(LogQL, `{app="a"}`) // must be a no-op
+	RecordRequest(httptest.NewRequest(http.MethodGet, "/", nil), `{app="a"}`)
 }

@@ -118,7 +118,9 @@ collect_tests_and_coverage() {
   fi
   if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
-      LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2
+      # A corpus that fails to build must not cost the report its test count.
+      LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2 \
+        || log_step "query corpus build failed; the report continues without it"
     fi
   else
     local test_status=$?

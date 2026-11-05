@@ -2384,6 +2384,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = withLokiStep(r, wholeMs)
 	}
 	logqlQuery := r.FormValue("query")
+	querycorpus.RecordRequest(r, logqlQuery)
 	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder
 	// emits while the unwrap field picker is open. These are syntactically invalid
 	// and would return 400, leaving the field picker empty.
@@ -2808,6 +2809,7 @@ const lokiInstantLogQueryError = "log queries are not supported as an instant qu
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	querycorpus.RecordRequest(r, logqlQuery)
 	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
 	if !ok {
 		return
