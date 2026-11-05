@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.81.0] - 2026-11-05
+
 ### Fixed
 
 - Leave only the labels `| keep` names, as Loki does. A JSON or logfmt key
