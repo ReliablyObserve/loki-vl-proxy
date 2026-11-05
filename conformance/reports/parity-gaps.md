@@ -146,6 +146,7 @@ Last run: 2026-11-04T17:02:53Z on `69d07019`, window [1793806920, 1793810520].
 | `quality/logfmt-parse-risk-candidates` — A `\| logfmt` metric refreshed over lines that carry the grouped label as a stored field is answered without the line-shape probe (fixed) | perf/logfmt-risk-candidate-gate | 0 | 0 |
 | `quality/query-range-settled-steps` — a window-evaluated metric moved by a refresh or a re-run evaluates only the steps it does not hold, with the same answers, headers and 40... | TBD-PR | 0 | 0 |
 | `quality/stats-tumbling-relabel-one-parse` — A range-equals-step answer within the pooled parser's bound is translated and relabelled in one parse, with the same series limit and answer | #1097 | 0 | 0 |
+| `quality/unwrap-logfmt-narrowed-unpack` — An unwrap metric over `\| logfmt` grouped by plain labels unpacks only the labels it reads (fixed) | perf/unwrap-logfmt-unpack-fields | 0 | 0 |
 | `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
 | `semantics/absent-over-time-semantics` — absent_over_time is the series valued 1 at the steps without data and nothing at the steps with data, after a parser too (fixed) | #737 | 0 | 0 |
 | `semantics/aggregation-over-binary-dropped` — A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed) | #741 | 0 | 0 |

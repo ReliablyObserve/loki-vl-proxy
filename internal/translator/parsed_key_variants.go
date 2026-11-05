@@ -338,6 +338,53 @@ func resolveStatsKeys(query, byLabels, statsExpr string) string {
 	return query + pipes.String()
 }
 
+// narrowUnwrapLogfmtUnpack names the fields of the one bare `| unpack_logfmt`
+// that ends the base query of an unwrap metric (gateField, grouped by
+// byLabels): the unwrapped label and the grouped labels, each in every key
+// spelling resolveStatsKeys reads. Nothing after the unpack reads another
+// field (the key pipes, the unwrap gate and the stats read those alone), so
+// the answer is the same, and VictoriaLogs no longer builds a column for
+// every key of every line, which is most of what such a query costs it.
+// skip_empty_results keeps a field's earlier value when the line has no such
+// key, as the bare unpack does (a named field the line lacks would otherwise
+// be set empty); a key with an empty value keeps it too, as Loki's logfmt
+// parser does (an empty value adds no label). A query with any other unpack,
+// pipe after the unpack, or label that is not a plain name keeps the bare
+// unpack.
+func narrowUnwrapLogfmtUnpack(query, byLabels, gateField string) string {
+	const bare = "| unpack_logfmt"
+	if !strings.HasSuffix(query, " "+bare) || strings.Count(query, "| unpack_") != 1 {
+		return query
+	}
+	labels := []string{gateField}
+	if byLabels != emptyByGrouping {
+		if strings.TrimSpace(byLabels) == "" {
+			return query
+		}
+		for _, label := range strings.Split(byLabels, ",") {
+			labels = append(labels, strings.TrimSpace(label))
+		}
+	}
+	var names []string
+	seen := map[string]bool{}
+	for _, label := range labels {
+		if !labelIdentRE.MatchString(label) || strings.HasPrefix(label, "_") {
+			return query
+		}
+		keys := []string{label}
+		if resolvableLabel(query, label) {
+			keys = parsedKeyVariants(label)
+		}
+		for _, key := range keys {
+			if !seen[key] {
+				seen[key] = true
+				names = append(names, quoteFieldName(key))
+			}
+		}
+	}
+	return query + " fields (" + strings.Join(names, ", ") + ") skip_empty_results"
+}
+
 // resolvableLabel reports whether label can be a sanitized parser key that the
 // query does not define itself.
 func resolvableLabel(query, label string) bool {

@@ -1,0 +1,84 @@
+id: quality/unwrap-logfmt-narrowed-unpack
+title: An unwrap metric over `| logfmt` grouped by plain labels unpacks only the labels it reads (fixed)
+pending: true
+proves:
+  - parser-logfmt
+  - metric-series-identity
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt
+  | unwrap bytes(size_bytes) [5m]))` and the same query with duration(ttl)
+  took 0.41 s cold at 24h against Loki's 0.20 s and 0.22 s (daily run
+  2026-11-04, unwrap-gate set, G8 and G7, both Loki profiles; every daily run
+  since 2026-10-24 shows the same). The whole answer is one VictoriaLogs
+  stats_query_range. Profiled on VictoriaLogs v1.51.1 with the A/B
+  generator's data, most of its time is the bare `| unpack_logfmt`: it makes a
+  field of every key of every line, so the rows of a block change their set
+  of columns and VictoriaLogs rebuilds the block for each change, before the
+  unwrap gate and the stats read two fields of them.
+
+  Loki's answer is unchanged, from v3.7.9's source: `| logfmt` adds each pair
+  as a label, a key the stream or structured metadata already has as
+  name_extracted, the first of a repeated key, and no label for an empty
+  value (pkg/logql/log/parser.go:379-440 LogfmtParser.Process, the empty
+  value at :425); `unwrap` reads the label (pkg/logql/log/metrics_extraction.go:202-231)
+  and sum_over_time sums the samples of each series (pkg/logql/range_vector.go:371).
+
+  The translator now names the fields of that unpack when it is the last
+  stage before the unwrap and the grouping names plain labels:
+  `| unpack_logfmt fields (<the unwrapped label in every key spelling>, <each
+  grouped label, likewise>) skip_empty_results`. Nothing after the unpack
+  reads another field (the key-spelling pipes, the unwrap gate and the stats
+  read those alone), and VictoriaLogs' parser is the same with or without
+  the list (lib/logstorage/pipe_unpack_logfmt.go, v1.50.0 and v1.51.1: the
+  line is parsed whole and the pairs are filtered by name). skip_empty_results
+  keeps a field's earlier value when the line lacks the key, as the bare
+  unpack does; it also keeps it for a key with an empty value, which is
+  Loki's rule (the bare unpack emptied the field). An ungrouped or `without`
+  metric (its series are the line and the stream), another stage after the
+  parser, another parser and a label that is not a plain name keep the bare
+  unpack.
+
+  Measured against VictoriaLogs v1.51.1 with the A/B generator's 25h data
+  profile (proxy caches emptied before each of 9 alternating runs, p50): G8
+  24h 172 ms to 108 ms, G7 177 ms to 123 ms, G1 (logfmt amount) 126 ms to
+  107 ms, G10 (logfmt latency over production) 1652 ms to 785 ms; the warm
+  and refresh answers read the same settled buckets. The values are the same
+  up to the order VictoriaLogs adds floats in (at most 5.6e-16 relative), the
+  series and points identical.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (sum_over_time({service_name="cache-redis"} | logfmt | unwrap bytes(size_bytes) [5m]))'
+    start: now-24h
+    end: now
+    step: 60s
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: exact
+  fields: [status, data]
+  expect: |
+    Loki's series and values; the VictoriaLogs stats query unpacks only the
+    unwrapped and grouped labels.
+gap:
+  status: fixed
+  fixed_by: 'perf/unwrap-logfmt-unpack-fields'
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator/parsed_key_variants.go (narrowUnwrapLogfmtUnpack); internal/translator/translator.go buildStatsQueryGated'
+  loki: 'pkg/logql/log/parser.go:379-440 LogfmtParser.Process (empty value :425); pkg/logql/log/metrics_extraction.go:202-231; pkg/logql/range_vector.go:371 sumOverTime'
+  proxy: 'the bare unpack_logfmt made a field of every key of every line (0.41 s cold at 24h against Loki 0.20 s for G8, 0.22 s for G7)'
+  planned_test: 'translator TestNarrowUnwrapLogfmtUnpackEdgeTable, TestNarrowUnwrapLogfmtUnpackKeepsOtherQueries, TestNarrowUnwrapLogfmtUnpackDifferential, FuzzNarrowUnwrapLogfmtUnpack; e2e TestRangeMetricCompatibilityUnwrapLogfmtNarrowedUnpack'
+  clusters: []
+  visual: none
+  visual_reason: 'a latency change: the series and points are the bare unpack''s (the narrowed-against-bare differential over random metrics and lines), the values equal up to float addition order; the cold time is measured by the A/B pass of the unwrap-gate shapes'
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

@@ -756,9 +756,11 @@ class AcceptanceReplayTest(unittest.TestCase):
         # translated-label, explore-logs-volume-json: the aligned A explore volume 1h cold row is above 2×).
         # quality/logfmt-parse-risk-candidates covers the control logfmt volume, whose aligned 24h warm row is above
         # 2× since the 2026-11-04 daily report; it is locked once a daily run measures it within.
+        # quality/unwrap-logfmt-narrowed-unpack covers G1, G7, G8 and G10 of the unwrap-gate set, whose 24h cold
+        # G8 row is above 2× in the 2026-11-04 daily report; it is locked once a daily run measures it within.
         self.assertEqual(len(locked), 27)
         unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json",
-                          "quality/logfmt-parse-risk-candidates"}
+                          "quality/logfmt-parse-risk-candidates", "quality/unwrap-logfmt-narrowed-unpack"}
         state = {i: {"within": 0, "above": 0} for i in b["blocks"]}
         for set_name, r in seed_lines():
             for mode, pair in over2x.history_pairs(r).items():

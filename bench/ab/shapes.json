@@ -2081,7 +2081,8 @@
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
       "loki_api_v1_query_range",
-      "quality/query-range-settled-steps"
+      "quality/query-range-settled-steps",
+      "quality/unwrap-logfmt-narrowed-unpack"
      ]
     },
     {
@@ -2147,7 +2148,8 @@
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
       "loki_api_v1_query_range",
-      "quality/query-range-settled-steps"
+      "quality/query-range-settled-steps",
+      "quality/unwrap-logfmt-narrowed-unpack"
      ]
     },
     {
@@ -2158,7 +2160,8 @@
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
       "loki_api_v1_query_range",
-      "quality/query-range-settled-steps"
+      "quality/query-range-settled-steps",
+      "quality/unwrap-logfmt-narrowed-unpack"
      ]
     },
     {
@@ -2180,7 +2183,8 @@
       "semantics/unwrap-conversion-error",
       "metric-series-identity",
       "loki_api_v1_query_range",
-      "quality/query-range-settled-steps"
+      "quality/query-range-settled-steps",
+      "quality/unwrap-logfmt-narrowed-unpack"
      ]
     },
     {

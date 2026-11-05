@@ -74,7 +74,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 11 | 1 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
-| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 35 | partial |
+| identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 37 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 10 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
@@ -146,6 +146,7 @@ newest daily run did not re-measure (listed apart in performance.md).
 | `semantics/json-extracted-metric-pushdown` | 2 | 0.31s (LS8 json count by level_extracted, collision, 6h) | 0.11s | 0.03s | 0.01s | — |
 | `metric-series-identity` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
 | `quality/query-range-settled-steps` | 3 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
+| `quality/unwrap-logfmt-narrowed-unpack` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
 | `semantics/unwrap-conversion-error` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
 | `semantics/unwrap-gate-parsefloat-divergences` | 2 | 0.24s (G8 bytes() of a number, 24h) | 0.14s | 0.01s | 0.01s | — |
 | `semantics/unwrap-duration-seconds` | 1 | 0.22s (D1 logfmt ttl duration_seconds rate by service, 24h) | 0.15s | 0.01s | 0.01s | — |

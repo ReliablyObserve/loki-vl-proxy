@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by the kept labels instead of the stream. Answers of keep queries cached
   before the upgrade are not served.
 
+### Performance
+
+- Unpack only the labels an unwrap metric over `| logfmt` reads, such as
+  `sum by (service_name) (sum_over_time({...} | logfmt | unwrap bytes(size_bytes) [5m]))`.
+  The bare `unpack_logfmt` made a VictoriaLogs field of every key of every
+  line, and most of the query's VictoriaLogs time went there: 0.41 s cold at
+  24h on the e2e stack for the bytes() and duration() shapes against Loki's
+  0.20-0.22 s. When the parser is the last stage before the unwrap and the
+  grouping names plain labels, the unpack now names the unwrapped label and
+  the grouped labels, in every key spelling, with `skip_empty_results`, so a
+  field keeps its value when the line lacks the key, as before. A key with an
+  empty value now also keeps the field's earlier value, as Loki's logfmt
+  parser adds no label for it. Cold 24h against VictoriaLogs v1.51.1: bytes()
+  172 to 108 ms, duration() 177 to 123 ms, a plain value 126 to 107 ms.
+
 ## [2.80.0] - 2026-11-05
 
 ### Fixed
