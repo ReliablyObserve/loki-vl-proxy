@@ -3310,6 +3310,38 @@
     }
    ]
   },
+  "drilldown-json-path-breakdown": {
+   "description": "A Logs Drilldown Fields breakdown over a nested JSON field (PR for drilldown/fields-pill-json-path-extracted-empty): the extraction list names the label with a bracket JSON path, which the translation dropped when the path had more than one key, so the label was empty and the filter after it kept no line (an empty panel with the level pill; Loki one series). JP1 is the Drilldown query with the error pill, JP2 without. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "JP1 drilldown fields breakdown, JSON path, level pill",
+     "query": "sum by (service_name_extracted) (count_over_time({service_name=\"api-gateway\"} | detected_level=\"error\" | json service_name_extracted=\"[\\\"service\\\"][\\\"name\\\"]\" | drop __error__, __error_details__ | service_name_extracted!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "drilldown/fields-pill-json-path-extracted-empty",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "JP2 drilldown fields breakdown, JSON path",
+     "query": "sum by (service_name_extracted) (count_over_time({service_name=\"api-gateway\"} | json service_name_extracted=\"[\\\"service\\\"][\\\"name\\\"]\" | drop __error__, __error_details__ | service_name_extracted!=\"\" [$__auto]))",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app"
+     },
+     "covers": [
+      "drilldown/fields-pill-json-path-extracted-empty",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
+  },
   "ip-label-filter": {
    "description": "ip() label filters (PR for semantics/ip-label-filter-missing-label): Loki drops a line without the label under = and !=, keeps a whole address in the pattern under = and the others under !=. IP1 is the run's case (payment-service lines have no addr: Loki no line; before, a single address was sent as a match-all regexp, 99 lines). IP2-IP5 read the generator's ip key (10.0-5.x.y) on api-gateway and auth-service: a CIDR under = and !=, a CIDR and a range under count_over_time. The filter is an ipv4_range on the label with guards for what VictoriaLogs' parser reads and Loki's does not. Run with the control set.",
    "ranges": [

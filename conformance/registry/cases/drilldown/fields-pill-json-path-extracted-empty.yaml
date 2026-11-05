@@ -1,5 +1,5 @@
 id: drilldown/fields-pill-json-path-extracted-empty
-title: A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (open)
+title: A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -18,6 +18,18 @@ why: |
   the proxy none, so the panel is empty. Without the level pill the
   breakdown matches. Related: semantics/json-extracted-metric-pushdown
   (fixed, the name_extracted metric pushdown without a level filter).
+
+  Root cause: the query with the pill is translated by the general LogsQL
+  translation, which gives an extraction-list label its value with `| copy
+  "<path>" as <label>` after unpack_json. It resolved a bracket path only
+  when it had one key; `["service"]["name"]` resolved to nothing, so the
+  label had no value and `service_name_extracted!=""` kept no line.
+
+  Fixed (internal/translator/translator.go resolveJSONBracketPath): a
+  bracket path resolves to the field unpack_json writes for it, the nested
+  keys joined with dots (`service.name`); a path through an array index
+  still resolves to nothing. The breakdown is answered from one VictoriaLogs
+  stats call with or without the pill.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -35,12 +47,20 @@ compare:
   expect: |
     Loki's series and values.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1108'
   impact: drilldown-visible
   effort: M
-  area: 'internal/proxy json extraction-list metric with a detected_level filter before the parser'
+  area: 'internal/translator/translator.go resolveJSONBracketPath (json extraction-list label from a multi-key bracket path)'
   loki: 'pkg/logql/log/parser.go:671 (JSONExpressionParser.Process, JSON path into the named label)'
-  proxy: 'empty result'
-  planned_test: 'TestCompat_DrilldownFieldsPillJSONPathExtracted (test/e2e-compat, group drilldown)'
+  proxy: 'Loki''s series and values, with and without the level pill'
+  planned_test: 'TestCompat_DrilldownFieldsPillJSONPathExtracted (test/e2e-compat, group core)'
   clusters:
     - 640ed4be
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null
