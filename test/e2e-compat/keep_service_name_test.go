@@ -178,9 +178,28 @@ func TestCompat_KeepDropsUnlistedLabels(t *testing.T) {
 	}
 
 	waitForLokiMetricDataSelector(t, fmt.Sprintf(`{probe=%q}`, probe))
+	metricRange := func(query string) url.Values {
+		return url.Values{"query": {query}, "start": window["start"], "end": {strconv.FormatInt(stamp.Add(4*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+	}
+	// The proxy learns the tenant's stream label names in the background and
+	// translates with the plain semantics until it has them (up to a minute
+	// after a new stream label appears): a metric query reads p3's JSON level
+	// until then. Wait until it answers the keep of the stream label like Loki.
+	warm := metricRange(fmt.Sprintf(`count(rate({probe=%q, pod=~"p1|p3"} | json | keep level [5m]))`, probe))
+	for deadline := time.Now().Add(150 * time.Second); ; time.Sleep(2 * time.Second) {
+		_, _, lp := queryRangeGET(t, lokiURL, warm, map[string]string{"X-Scope-OrgID": "0"})
+		_, pb, pp := queryRangeGET(t, proxyURL, warm, map[string]string{"X-Scope-OrgID": "0"})
+		lokiSeries := extractArray(extractMap(lp, "data"), "result")
+		if len(lokiSeries) > 0 && reflect.DeepEqual(extractArray(extractMap(pp, "data"), "result"), lokiSeries) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("proxy never learned the stream label names: %s", pb)
+		}
+	}
 	for _, keep := range []string{"foo", "pod", "level", "zzz"} {
 		query := fmt.Sprintf(`count(rate({probe=%q, pod=~"p1|p3"} | json | keep %s [5m]))`, probe, keep)
-		rangeParams := url.Values{"query": {query}, "start": window["start"], "end": {strconv.FormatInt(stamp.Add(4*time.Minute).UnixNano(), 10)}, "step": {"60"}}
+		rangeParams := metricRange(query)
 		_, lb, lp := queryRangeGET(t, lokiURL, rangeParams, map[string]string{"X-Scope-OrgID": "0"})
 		_, pb, pp := queryRangeGET(t, proxyURL, rangeParams, map[string]string{"X-Scope-OrgID": "0"})
 		lokiSeries := extractArray(extractMap(lp, "data"), "result")
