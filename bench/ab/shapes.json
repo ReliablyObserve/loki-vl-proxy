@@ -3435,6 +3435,73 @@
      "instant": true
     }
    ]
+  },
+  "keep-series-grouping": {
+   "description": "`| keep` leaves only the labels it names (PR for semantics/keep-leaves-labels-loki-drops): a JSON or logfmt key named like a stream label is name_extracted and is gone after `| keep name`, and the streams that keep the same labels are one series. K1 and K2 are log queries (a json and a logfmt key colliding with the level stream label), K3 counts the series over a keep of a key no line has (Loki 1, one series per stream before), K4 is its instant form, K5 a rate over a keep of a stream label, K6 a count grouped by a kept key that a JSON key collides with. The metric shapes are grouped by the kept labels in VictoriaLogs' stats. Run with the control set.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "K1 logs, json, keep level",
+     "query": "{namespace=\"prod\"} | json | keep level",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "K2 logs, logfmt, keep level, msg",
+     "query": "{service_name=\"payment-service\"} | logfmt | keep level, msg",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ],
+     "logs": true
+    },
+    {
+     "name": "K3 count of series, json, keep foo",
+     "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [5m]))",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "K4 count of series, json, keep foo, instant",
+     "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [5m]))",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query"
+     ],
+     "instant": true
+    },
+    {
+     "name": "K5 rate, keep namespace",
+     "query": "rate({service_name=\"api-gateway\"} | keep namespace [5m])",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    },
+    {
+     "name": "K6 count by kept key, json",
+     "query": "sum by (level) (count_over_time({service_name=\"api-gateway\"} | json | keep level [1m]))",
+     "covers": [
+      "semantics/keep-leaves-labels-loki-drops",
+      "operator-keep",
+      "loki_api_v1_query_range"
+     ]
+    }
+   ]
   }
  }
 }

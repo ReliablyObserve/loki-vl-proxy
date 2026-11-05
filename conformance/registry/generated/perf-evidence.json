@@ -94136,6 +94136,7 @@
       "warm_p50": 0.002
     }
   ],
+  "semantics/keep-leaves-labels-loki-drops": [],
   "semantics/label-browser-latency-cold-and-refresh": [
     {
       "baseline": "release",

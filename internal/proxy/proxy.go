@@ -72,11 +72,14 @@ var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-
 var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
 var keepMetadataProjectionStageRE = regexp.MustCompile(`\|\s*keep\s+`)
 
-const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v1:"
+const keepMetadataProjectionResponseVersion = "@keep-metadata-projection-v2:"
 
 // keepMetadataProjectionResponseKeyVersion fences pre-fix keep replies in
-// local and peer-fed response caches. The projection can affect any mapped
-// field name, so the namespace covers all keep stages.
+// local and peer-fed response caches and in the log window fragments
+// (newLogQueryShape). The projection can affect any mapped field name, so the
+// namespace covers all keep stages. v2: a name_extracted label the keep does
+// not name is left out, and a range aggregation over a keep is grouped by the
+// kept labels.
 func keepMetadataProjectionResponseKeyVersion(query string) string {
 	if keepMetadataProjectionStageRE.MatchString(query) {
 		return keepMetadataProjectionResponseVersion
@@ -2388,6 +2391,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, true)
 
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
 	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
@@ -2807,6 +2811,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	logqlQuery = applyKeepSeriesGrouping(r, logqlQuery, false)
 	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	if body, ok := evaluateConstantInstantQuery(logqlQuery, r.FormValue("time")); ok {

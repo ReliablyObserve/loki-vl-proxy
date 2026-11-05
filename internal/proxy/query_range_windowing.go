@@ -104,7 +104,7 @@ func newLogQueryShape(query string) logQueryShape {
 			classifyAsParsed: hasLabelParserStage(query),
 			captureFields:    regexpCaptureFields(query),
 			lineFields:       logQueryLineFields(query),
-			fingerprint:      logQueryShapeFingerprint(query),
+			fingerprint:      logQueryShapeFingerprint(keepMetadataProjectionResponseKeyVersion(query) + query),
 		}
 		shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = extractDropKeepFromAST(query)
 		return shape
@@ -119,7 +119,7 @@ func newLogQueryShape(query string) logQueryShape {
 		parsed:           true,
 		captureFields:    pipelineRegexpCaptureFields(lq.Pipeline),
 		lineFields:       pipelineLineFields(lq.Pipeline),
-		fingerprint:      logQueryShapeFingerprint(strings.Join(stages, "\n")),
+		fingerprint:      logQueryShapeFingerprint(keepMetadataProjectionResponseKeyVersion(query) + strings.Join(stages, "\n")),
 	}
 	shape.dropConditions, shape.keepConditions, shape.bareDropFields, shape.bareKeepFields = dropKeepFromPipeline(lq.Pipeline)
 	return shape

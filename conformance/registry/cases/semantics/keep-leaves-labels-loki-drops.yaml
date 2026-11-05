@@ -1,5 +1,5 @@
 id: semantics/keep-leaves-labels-loki-drops
-title: '`| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (open)'
+title: '`| keep` leaves labels Loki drops: a parsed key renamed name_extracted, the stream labels under a vector aggregation (fixed)'
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -25,9 +25,27 @@ why: |
   The first form is a regression: on 2026-10-05 the proxy answered
   `{app="payment-service",env="production"} | logfmt | level="error" | keep
   level, msg` with `level`, `msg` (and the service_name a later fix removed)
-  and no level_extracted. The name_extracted renaming (#660) runs after the
-  keep the translator sent to VictoriaLogs, so the renamed key survives
-  (internal/proxy/stream_processing.go keepEntryFields).
+  and no level_extracted. The name_extracted renaming (#660, bisected with an
+  emulated VictoriaLogs: correct at its parent, wrong from it on) runs after
+  the keep the translator sent to VictoriaLogs, so the renamed key survived.
+  The second form is older: the series of a range aggregation were the
+  streams whatever the keep.
+
+  Fixed: the renaming leaves out a name_extracted label that the | keep
+  stages after the last parser do not name (internal/proxy/loki_profile.go
+  extractedName), and a range aggregation over a pipeline that ends in a bare
+  keep is grouped by the kept labels: count_over_time, rate, bytes_over_time
+  and bytes_rate under `sum by (<kept>)`, an unwrapped function with a range
+  `by (<kept> less the unwrapped label)` (internal/proxy/keep_series_grouping.go),
+  so VictoriaLogs' stats group by those labels and `count(...)` is the
+  number of kept label sets. On query_range a JSON pipeline under an outer
+  fold (`count(rate({...} | json | keep foo [5m]))`) is not rewritten, as
+  the ordered JSON fold it would take answers over the whole window only,
+  off the settled-steps cache; its inner stats are grouped by the kept labels
+  in the translation (internal/translator/translator.go trailingKeepGrouping)
+  and a repeat of a moving range reads only its new step. A keep with a
+  matcher, or one followed by a parser, label_format or drop, keeps its
+  previous plan.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -45,16 +63,24 @@ compare:
   expect: |
     Loki's label sets: only the names keep lists.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1100'
   impact: explore-visible
   effort: S
-  area: 'internal/proxy/stream_processing.go keepEntryFields (rename after keep), the metric plan of keep under a vector aggregation'
-  loki: 'pkg/logql/log/keep_labels.go:15-45 (exact-name keep)'
-  proxy: 'level_extracted kept after a collision; stream labels kept under count()'
-  planned_test: 'TestCompat_KeepDropsUnlistedLabels (test/e2e-compat, group semantics): log keep after json/logfmt collisions, count over keep'
+  area: 'internal/proxy/loki_profile.go extractedName (rename after keep), internal/proxy/keep_series_grouping.go (series of a range aggregation over a keep)'
+  loki: 'pkg/logql/log/keep_labels.go:15-45 (exact-name keep); pkg/logql/log/metrics_extraction.go:162 (unwrapped label left out of the series)'
+  proxy: 'only the kept labels, on log entries and metric series'
+  planned_test: 'TestCompat_KeepDropsUnlistedLabels (test/e2e-compat, group core): log keep after json/logfmt collisions, count over keep on query_range and query'
   clusters:
     - 4d601482
     - 9925a3bc
     - a70f6707
     - e8b851a4
     - ede6dabd
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

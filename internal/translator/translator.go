@@ -2229,7 +2229,7 @@ func tryTranslateMetricQueryWithout(logql string, labelFn LabelTranslateFunc, ha
 			// series identity and the outer stats aggregates those values.
 			// Loki: count by (pod) (count_over_time(...)) is the number of
 			// series per pod, not the number of lines.
-			innerBy := joinByLabels(normalizeByLabels(byLabels, labelFn), defaultRateInnerGrouping(query, foldWithout))
+			innerBy := joinByLabels(normalizeByLabels(byLabels, labelFn), seriesIdentityGrouping(query, foldWithout, labelFn))
 			innerAliased := buildStatsQuery(logsqlQuery, logsqlFunc, innerBy, "__lvp_inner")
 			result = innerAliased + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: seriesAgg}}}}.String()
 			switch {
@@ -2294,6 +2294,83 @@ func firstLastRowStats(funcName, statsExpr string) (expr, unpack string, ok bool
 	return row + "(_time, " + field + ")", " | unpack_json from __lvp_inner fields (" + UnwrapValueAlias + ") | math " + UnwrapValueAlias + " as __lvp_inner", true
 }
 
+// seriesIdentityGrouping is the series identity of a range aggregation the
+// outer stats pipe folds: the labels a trailing bare | keep leaves
+// (trailingKeepGrouping), else defaultRateInnerGrouping.
+func seriesIdentityGrouping(query string, foldWithout bool, labelFn LabelTranslateFunc) string {
+	if kept, ok := trailingKeepGrouping(query); ok {
+		if kept == "" {
+			return emptyByGrouping
+		}
+		return normalizeByLabels(kept, labelFn)
+	}
+	return defaultRateInnerGrouping(query, foldWithout)
+}
+
+// trailingKeepGrouping returns the labels the last | keep stage of a log
+// query names, comma-separated (Loki's error labels left out: keep never
+// removes them), when that keep decides the labels of every sample: it has no
+// matcher, and only line filters, label filters, line_format and decolorize
+// follow it. Loki deletes every label keep does not name
+// (pkg/logql/log/keep_labels.go:15-45), so the streams that keep the same
+// labels are one series.
+func trailingKeepGrouping(logqlQuery string) (string, bool) {
+	remaining := strings.TrimSpace(logqlQuery)
+	if !strings.HasPrefix(remaining, "{") {
+		return "", false
+	}
+	end := findMatchingBrace(remaining)
+	if end < 0 {
+		return "", false
+	}
+	remaining = strings.TrimSpace(remaining[end+1:])
+	var kept []string
+	found := false
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		if len(remaining) >= 2 && (remaining[0] == '|' || remaining[0] == '!') && strings.ContainsRune("=~>", rune(remaining[1])) {
+			_, remaining = extractPipelineStage(remaining[2:]) // a line filter
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			return "", false
+		}
+		stage, rest := extractPipelineStage(strings.TrimSpace(remaining[1:]))
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		word, _, _ := strings.Cut(stage, " ")
+		switch word {
+		case "keep":
+			kept, found = kept[:0], true
+			for _, item := range splitDropItems(stage[5:]) {
+				item = strings.TrimSpace(item)
+				if !isBareIdentifier(item) {
+					return "", false // a matcher: the labels depend on the value
+				}
+				switch item {
+				case "__error__", "__error_details__", "__preserve_error__":
+					continue
+				}
+				kept = append(kept, item)
+			}
+		case "line_format", "decolorize":
+		case "json", "logfmt", "regexp", "pattern", "unpack", "label_format", "drop", "unwrap":
+			found = false
+		default:
+			if strings.HasPrefix(stage, "json") || strings.HasPrefix(stage, "logfmt") {
+				found = false
+			}
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return strings.Join(kept, ", "), true
+}
+
 // defaultRateInnerGrouping is the series identity of a rate-like function:
 // with a parser, the stream, plus (for the `without` fold only, foldWithout) the
 // labels an extraction list names.
@@ -2316,7 +2393,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 		return "", false
 	}
 
-	innerBy := defaultRateInnerGrouping(originalQuery, foldWithout)
+	innerBy := seriesIdentityGrouping(originalQuery, foldWithout, labelFn)
 	seriesAgg, seriesLevel := seriesLevelOuterAggregation(outerAgg)
 	switch {
 	case seriesLevel:
