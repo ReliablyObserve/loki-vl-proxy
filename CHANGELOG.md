@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call with or without the pill. A path through an array index still names
   no field.
 
+- Leave only the labels `| keep` names, as Loki does. A JSON or logfmt key
+  named like a stream label is exposed as `name_extracted`, and since that
+  renaming ran after the keep, `{namespace="prod"} | json | keep level` still
+  showed `level_extracted` next to the stream's `level`. And a range
+  aggregation over a keep kept one series per stream, so
+  `count(rate({service_name="api-gateway"} | json | keep foo [5m]))` answered
+  166 where Loki answers 1. A `name_extracted` label the keep does not name is
+  now left out, and the series of a range aggregation over a pipeline that
+  ends in a keep are the label sets the keep leaves: VictoriaLogs' stats group
+  by the kept labels instead of the stream. Answers of keep queries cached
+  before the upgrade are not served.
+
 ## [2.78.0] - 2026-11-04
 
 ### Fixed
@@ -51,18 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IPv4 text under an IPv6 pattern). A value with an address inside other
   text (`1.2.3.4:443`) still keeps fewer lines than Loki, never more.
   Answers cached before the upgrade are not served.
-
-- Leave only the labels `| keep` names, as Loki does. A JSON or logfmt key
-  named like a stream label is exposed as `name_extracted`, and since that
-  renaming ran after the keep, `{namespace="prod"} | json | keep level` still
-  showed `level_extracted` next to the stream's `level`. And a range
-  aggregation over a keep kept one series per stream, so
-  `count(rate({service_name="api-gateway"} | json | keep foo [5m]))` answered
-  166 where Loki answers 1. A `name_extracted` label the keep does not name is
-  now left out, and the series of a range aggregation over a pipeline that
-  ends in a keep are the label sets the keep leaves: VictoriaLogs' stats group
-  by the kept labels instead of the stream. Answers of keep queries cached
-  before the upgrade are not served.
 
 ## [2.77.1] - 2026-11-04
 
