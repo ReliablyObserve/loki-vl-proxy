@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -659,3 +660,141 @@ class DailyProfilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def shard_summary(set_name, shape="logs plain", profile="loki-defaults", restarts=("0", "0"), valid=True):
+    return {"set": set_name, "profile": profile, "baseline": "base", "candidate": "pr", "reference": "loki", "runs": 4,
+            "valid": valid, "restart_before": restarts[0], "restart_after": restarts[1],
+            "rows": [{"shape": shape, "range": "1h", "verdict": "same", "p50": {"base": 0.2, "pr": 0.21, "loki": 0.1},
+                      "cold": {"base": 0.4, "pr": 0.42, "loki": 0.3}, "status": {"base": "200", "pr": "200", "loki": "200"},
+                      "parity_vs_reference": "same", "baseline_parity_vs_reference": "same"}]}
+
+
+def write_shard(d, sets, verdict_exit=0, elapsed=300, restarts=("0", "0")):
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "selection.json"), "w") as f:
+        json.dump({"run": True, "sets": {s: ["logs plain"] for s in sets}}, f)
+    for s in sets:
+        pr_smoke.write_summaries([shard_summary(s, restarts=restarts)], d)
+    with open(os.path.join(d, "meta.json"), "w") as f:
+        json.dump({"base": "a" * 40, "head": "b" * 40, "runs": 4, "ranges": ["1h"], "noise": 0.3, "min_delta": 0.1,
+                   "elapsed_s": elapsed, "phases_s": {"stack_up": 30}, "quiet_wait_s": 1.5,
+                   "profiles": {"loki-defaults": {"ran": True}, "aligned": {"ran": False, "why_not": "none"}}}, f)
+    if verdict_exit is not None:
+        with open(os.path.join(d, "verdict.json"), "w") as f:
+            json.dump({"exit": verdict_exit}, f)
+
+
+def merge_args(sel_path, dirs):
+    return type("Args", (), dict(selection=sel_path, merge=dirs, over_2x_baseline="", over_2x_loki="fail",
+                                 baseline_candidate=""))()
+
+
+class ShardTest(unittest.TestCase):
+    def spec(self, sizes):
+        """A shapes.json-like spec with one set per size, each shape a log shape (one pass)."""
+        return {"sets": {name: {"shapes": [{"name": f"s{i}", "logs": True} for i in range(n)]}
+                         for name, n in sizes.items()}}
+
+    def sel(self, sizes):
+        return {"run": True, "why": {}, "sets": {name: [f"s{i}" for i in range(n)] for name, n in sizes.items()}}
+
+    def test_every_set_lands_in_exactly_one_shard_in_selection_order(self):
+        sizes = {"a": 30, "b": 5, "c": 22, "d": 18, "e": 9, "f": 40, "g": 3}
+        shards = pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=10)
+        self.assertEqual(len(shards), 4)
+        names = [n for sh in shards for n in sh["sets"]]
+        self.assertEqual(sorted(names), sorted(sizes))
+        order = list(sizes)
+        for sh in shards:
+            self.assertEqual(list(sh["sets"]), sorted(sh["sets"], key=order.index))
+            self.assertTrue(sh["run"])
+        self.assertEqual(pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=10), shards)
+
+    def test_the_split_is_balanced(self):
+        sizes = {"a": 30, "b": 5, "c": 22, "d": 18, "e": 9, "f": 40, "g": 3, "h": 12}
+        shards = pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=10)
+        loads = [sum(sizes[n] for n in sh["sets"]) for sh in shards]
+        self.assertLessEqual(max(loads) - min(loads), max(sizes.values()))
+
+    def test_a_small_selection_stays_one_shard(self):
+        sizes = {"a": 10, "b": 12}
+        self.assertEqual(len(pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=40)), 1)
+        self.assertEqual(len(pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=11)), 2)
+
+    def test_no_more_shards_than_sets(self):
+        sizes = {"a": 100, "b": 100}
+        self.assertEqual(len(pr_smoke.split_selection(self.sel(sizes), 4, self.spec(sizes), min_cost=10)), 2)
+
+    def test_range_metric_shapes_count_twice(self):
+        spec = {"sets": {"m": {"shapes": [{"name": "s0"}, {"name": "s1", "instant": True}]}}}
+        self.assertEqual(pr_smoke.set_costs({"sets": {"m": ["s0", "s1"]}}, spec), {"m": 3})
+
+    def test_a_selection_that_does_not_run_is_one_shard(self):
+        sel = {"run": False, "sets": {}}
+        self.assertEqual(pr_smoke.split_selection(sel, 4, {"sets": {}}), [sel])
+
+    def test_the_real_shapes_split(self):
+        sel = selection("control", "json-filter-pushdown", "metric-latency-gap", "level-filter")
+        shards = pr_smoke.split_selection(sel, 4, min_cost=1)
+        self.assertEqual(sorted(n for sh in shards for n in sh["sets"]), sorted(sel["sets"]))
+
+
+class MergeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.sel_path = os.path.join(self.tmp, "selection.json")
+        with open(self.sel_path, "w") as f:
+            json.dump({"run": True, "changed": 1, "why": {}, "sets": {s: ["logs plain"] for s in ("control", "level-filter", "label-replace")}}, f)
+        self.out = os.path.join(self.tmp, "out")
+        os.makedirs(self.out)
+
+    def merge(self, dirs):
+        meta = {"runs": 4, "ranges": ["1h"], "noise": 0.3, "min_delta": 0.1, "over_2x_loki": "fail"}
+        with mock.patch.object(pr_smoke, "baseline_and_bounds", return_value=(None, None)), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = pr_smoke.merge_main(merge_args(self.sel_path, dirs), self.out, meta, 0)
+        with open(os.path.join(self.out, "comment.md")) as f:
+            text = f.read()
+        return code, read_json(os.path.join(self.out, "verdict.json")), read_json(os.path.join(self.out, "meta.json")), text
+
+    def test_the_merged_verdict_is_the_one_run_verdict(self):
+        a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
+        write_shard(a, ["control", "label-replace"], elapsed=300, restarts=("0", "0"))
+        write_shard(b, ["level-filter"], elapsed=420, restarts=("2", "2"))
+        code, verdict, meta, text = self.merge([a, b])
+        one = [shard_summary(s) for s in ("control", "label-replace", "level-filter")]
+        _, want = pr_smoke.comment.render(one, read_json(self.sel_path), meta)
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict, want)
+        self.assertEqual(verdict["rows"], 3)
+        self.assertEqual(meta["elapsed_s"], 420)
+        self.assertEqual(meta["quiet_wait_s"], 3.0)
+        self.assertEqual([s["sets"] for s in meta["shards"]], [2, 1])
+        self.assertIn("VictoriaLogs restarts per shard 0→0, 2→2", text)
+        # the evidence collector reads every summary and the selection from the merged outputs
+        self.assertEqual(sorted(n for n in os.listdir(self.out) if n.startswith("summary-")),
+                         ["summary-control-loki-defaults.json", "summary-label-replace-loki-defaults.json",
+                          "summary-level-filter-loki-defaults.json"])
+        self.assertEqual(read_json(os.path.join(self.out, "selection.json")), read_json(self.sel_path))
+        self.assertEqual(meta["shards"][1]["phases_s"], {"stack_up": 30})
+        self.assertIn("slowest of 2 shards", text)
+
+    def test_a_shard_with_no_verdict_makes_the_run_incomplete(self):
+        a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
+        write_shard(a, ["control"])
+        write_shard(b, ["level-filter"], verdict_exit=None)
+        code, verdict, _, text = self.merge([a, b, os.path.join(self.tmp, "shard-3")])
+        self.assertEqual(code, 3)
+        self.assertEqual(verdict["exit"], 3)
+        self.assertIn("shard-2, shard-3", text)
+
+    def test_an_invalid_shard_makes_the_run_invalid(self):
+        a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
+        write_shard(a, ["control"])
+        write_shard(b, ["level-filter"], verdict_exit=2)
+        pr_smoke.write_summaries([shard_summary("level-filter", restarts=("0", "1"), valid=False)], b)
+        code, verdict, _, _ = self.merge([a, b])
+        self.assertEqual(code, 2)
+        self.assertEqual(verdict["state"], "invalid")

@@ -416,6 +416,22 @@ and `-probes.json`.
 1. The shared scope gate skips the job for docs, CI, tests, chart, registry or
    harness-only changes. On product PRs, `selection.py` maps the changed files
    to shapes (below).
+   - **Shards.** `perf-plan` selects the shapes, and `pr_smoke.py --split 4`
+     splits a large selection into up to four shards of about equal cost:
+     one pass per shape in loki-defaults, plus one per range-metric shape in
+     aligned. Each set goes to exactly one shard, most costly first, to the
+     least loaded shard. A selection that costs less than `SHARD_MIN_COST`
+     (40) per shard stays one shard, because a shard costs its own stack and
+     seed.
+   - Each `perf-smoke-shard` runs steps 2 to 5 below for its sets, on its own
+     runner and fresh stack, so a shape's three targets always share one
+     stack.
+   - `perf-smoke` (the check) runs `pr_smoke.py --merge` over every planned
+     shard's outputs and renders the one comment and verdict a single run
+     would give. A shard that wrote no verdict, or did not complete, makes the
+     run incomplete. A shard whose VictoriaLogs restarted makes it invalid.
+   - Loki's cold reuse across sets (step 4) only applies within one Loki
+     process, so each shard does it for its own sets.
 2. A fresh Loki and VictoriaLogs start from the e2e compose file with
    `docker-compose.ab.yml` (own project, container names and ports). While
    the log generator seeds a fixed 86-minute window into both (about 75 lines/s,
