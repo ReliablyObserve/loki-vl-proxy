@@ -29,6 +29,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -1881,14 +1882,14 @@ func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker 
 // routeHandler wraps h with the standard per-route middleware chain:
 // security headers → tenant auth → rate limiter → request logger → compat cache.
 func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Handler {
-	return securityHeaders(
+	return querycorpus.Handler(securityHeaders(
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
 					lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route, h)))))))))
+								p.compatCacheMiddleware(endpoint, route, h))))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
@@ -2383,6 +2384,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		r = withLokiStep(r, wholeMs)
 	}
 	logqlQuery := r.FormValue("query")
+	querycorpus.RecordRequest(r, logqlQuery)
 	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder
 	// emits while the unwrap field picker is open. These are syntactically invalid
 	// and would return 400, leaving the field picker empty.
@@ -2807,6 +2809,7 @@ const lokiInstantLogQueryError = "log queries are not supported as an instant qu
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	querycorpus.RecordRequest(r, logqlQuery)
 	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
 	if !ok {
 		return

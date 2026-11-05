@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 // Parse parses a complete LogsQL query (filter + optional pipe stages).
 // Returns an error if the input is empty or syntactically invalid.
 func Parse(input string) (*Query, error) {
+	querycorpus.Record(querycorpus.LogsQL, input)
 	p := newParser(input)
 	return p.parseQuery()
 }

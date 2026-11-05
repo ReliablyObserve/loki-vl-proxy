@@ -107,8 +107,21 @@ collect_tests_and_coverage() {
   fi
   local cover_file="$TMP_DIR/coverage.out"
   local events_file="$TMP_DIR/go-test-events.json"
-  if go test ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
-    :
+  # With QUALITY_QUERY_CORPUS_OUT set, the same uncached run records every
+  # query the tests send in (internal/querycorpus) and the corpus is built
+  # from it afterwards, so capturing costs no second test run.
+  local tags=()
+  if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
+    export LVP_QUERY_CORPUS_DIR="$TMP_DIR/query-corpus"
+    mkdir -p "$LVP_QUERY_CORPUS_DIR"
+    tags=(-tags corpuscapture)
+  fi
+  if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
+    if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
+      # A corpus that fails to build must not cost the report its test count.
+      LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2 \
+        || log_step "query corpus build failed; the report continues without it"
+    fi
   else
     local test_status=$?
     if [ -n "${QUALITY_DIAGNOSTICS_DIR:-}" ]; then
