@@ -1,0 +1,176 @@
+{
+ "label": "daily-vector-aggregation-log-selector-loki-defaults",
+ "date": "2026-11-06",
+ "set": "vector-aggregation-log-selector",
+ "description": "A vector aggregation over a log selector (PR for semantics/vector-aggregation-over-log-selector-status): Loki answers a 400 parse error at the closing parenthesis; the proxy sent the selector to VictoriaLogs and answered 500 on query_range and its own 400 text on query. The proxy's parser now rejects it before any VictoriaLogs call. Error shapes: compare the status and text. Run with the control set.",
+ "baseline": "release",
+ "candidate": "main",
+ "reference": "loki",
+ "profile": "loki-defaults",
+ "not_like_for_like": [],
+ "runs": 7,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "refresh_s": null,
+ "refresh_runs": null,
+ "timing": "warm",
+ "verdicts": {
+  "same": 4
+ },
+ "result_differs_from_reference": 0,
+ "result_differs_preexisting": 0,
+ "stale_answers": {
+  "release": 0,
+  "main": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "VA1 topk over a log selector",
+   "range": "1h",
+   "p50": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "p95": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "cold": {
+    "release": 0.009,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "status": {
+    "release": "400",
+    "main": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "release": 0,
+    "main": 0,
+    "loki": 0
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "VA2 sort over a log selector",
+   "range": "1h",
+   "p50": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "p95": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "cold": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "status": {
+    "main": "400",
+    "release": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "main": 0,
+    "release": 0,
+    "loki": 0
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "VA3 stddev over a log selector",
+   "range": "1h",
+   "p50": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "p95": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "cold": {
+    "release": 0.001,
+    "main": 0.001,
+    "loki": 0.001
+   },
+   "status": {
+    "release": "400",
+    "main": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "release": 0,
+    "main": 0,
+    "loki": 0
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  },
+  {
+   "shape": "VA4 topk over a log selector, instant",
+   "range": "instant",
+   "p50": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "p95": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "cold": {
+    "main": 0.001,
+    "release": 0.001,
+    "loki": 0.001
+   },
+   "status": {
+    "main": "400",
+    "release": "400",
+    "loki": "400"
+   },
+   "vl_cpu_max": {
+    "main": 0,
+    "release": 0,
+    "loki": 0
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "n/a",
+   "verdict": "same",
+   "speedup": null
+  }
+ ],
+ "baseline_ref": "v2.83.0",
+ "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+ "measured_at": "2026-11-06T03:22:00Z",
+ "run": "42156069488.1",
+ "proxy_align": {
+  "release": "on",
+  "main": "on"
+ },
+ "loki_restarted": false
+}
