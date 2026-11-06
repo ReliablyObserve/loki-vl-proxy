@@ -63,6 +63,9 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if !ok {
 		return nil, false, false
 	}
+	if entries, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok {
+		return entries, true, true
+	}
 	ctx := r.Context()
 	lines := -1
 	err := p.readPatternCountRows(ctx, patternExactCountQuery(scope.filter), scope.startNs, scope.endNs, 1, func(v *fj.Value) bool {

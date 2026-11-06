@@ -45,6 +45,7 @@
     "drilldown/patterns-full-range-counts": [
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_counts_test.go"
     ],
     "drilldown/patterns-mined-differently": [
@@ -53,6 +54,7 @@
       "internal/proxy/pattern_loki_answers_test.go",
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
     "drilldown/patterns-one-series-per-level": [
@@ -285,6 +287,7 @@
       "internal/proxy/pattern_tokenizer_test.go",
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_counts_test.go",
       "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
@@ -2149,6 +2152,11 @@
     "internal/proxy/patterns_persistence_test.go": [
       "peer-cache-replication"
     ],
+    "internal/proxy/patterns_state_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns"
+    ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
     ],
@@ -3254,7 +3262,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 339,
+  "tests_with_markers": 340,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

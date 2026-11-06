@@ -423,6 +423,34 @@
       "sizing": "About 200 bytes of transfer per line, a count query first, and a sort of the lines by stream and time in VictoriaLogs' memory, while the proxy holds only the clusters (a few hundred per stream and level). The default 200000 bounds one request to about 40 MB of transfer; raise it for VictoriaLogs with memory to spare, lower it when its sorts are slow or exceed its memory. 0 turns the reading off."
     },
     {
+      "flag": "patterns-state-max-bytes",
+      "helm_value": "extraArgs.patterns-state-max-bytes",
+      "type": "Int64",
+      "default": "268435456",
+      "unit": "bytes",
+      "bounds": "memory the /patterns state of all tenants holds: each stream's clusters at each level and their 10 s samples over Loki's pattern retention (3h)",
+      "error": "none: past it the least recently used tenant's state is dropped and built again on its next request",
+      "metric": "loki_vl_proxy_internal_operation_total{operation=\"patterns_state\"}",
+      "alert": "none",
+      "loki_parity": "pkg/pattern keeps each stream's clusters in the pattern ingester's memory for retain_for (3h); the state keeps the same for the streams the proxy's selectors read",
+      "per_tenant": false,
+      "sizing": "About 4 KB per active stream and a few hundred bytes per idle stream (-patterns-state-stream-idle): 256 MB holds tens of thousands of active streams. Lower it on small proxies; raise it when many tenants or selectors are refreshed and states are dropped often. 0 turns the state off, so every request reads its range again."
+    },
+    {
+      "flag": "patterns-state-stream-idle",
+      "helm_value": "extraArgs.patterns-state-stream-idle",
+      "type": "Duration",
+      "default": "5 * time.Minute",
+      "unit": "duration",
+      "bounds": "how long a stream of the /patterns state reads no line before only its patterns and samples are kept",
+      "error": "none",
+      "metric": "none",
+      "alert": "none",
+      "loki_parity": "",
+      "per_tenant": false,
+      "sizing": "Short-lived pods stop writing for good; 5 minutes frees their clusters soon after. Raise it when streams pause for longer and should keep training the same clusters when they resume."
+    },
+    {
       "flag": "patterns-second-pass-max-windows",
       "helm_value": "extraArgs.patterns-second-pass-max-windows",
       "type": "Int",

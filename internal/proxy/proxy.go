@@ -237,6 +237,11 @@ type Config struct {
 	// PatternsExactMaxLines is the most lines of a request's range /patterns reads from VictoriaLogs to mine Loki's
 	// patterns exactly (patternsFromLines); a range with more lines is counted (PatternsCounts). 0 turns it off.
 	PatternsExactMaxLines int
+	// PatternsStateMaxBytes is the memory the /patterns state of all tenants may hold (patternStateStore); 0 turns
+	// the state off. PatternsStateStreamIdle is how long a stream may read no line before its clusters are kept as
+	// their patterns and samples alone.
+	PatternsStateMaxBytes   int64
+	PatternsStateStreamIdle time.Duration
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -649,6 +654,7 @@ type Proxy struct {
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
+	patternState                          *patternStateStore
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1328,6 +1334,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
+		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle),
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,
