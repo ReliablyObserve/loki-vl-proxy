@@ -5,8 +5,10 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	fj "github.com/valyala/fastjson"
@@ -20,13 +22,24 @@ import (
 const patternCountsMinStep = 10 * time.Second
 
 // patternCountsLevelFields are the fields the level of a row is read from (levelFieldSlot), grouped by so that
-// each counted group keeps the level its rows have. log.level is quoted as a LogsQL field name.
+// each counted group keeps the level its rows have. Stream labels are fields to VictoriaLogs, so a level stored
+// as a stream label is grouped by too.
 var patternCountsLevelFields = []string{
-	"detected_level", "level", "LEVEL", "Level", `"log.level"`,
+	"detected_level", "level", "LEVEL", "Level", "log.level",
 	"severity", "SEVERITY", "Severity", "SeverityText",
 	"lvl", "LVL", "Lvl",
 	"severity_text", "Severity_Text", "SEVERITY_TEXT", "severity_number",
 }
+
+// patternCountsGroupField holds a row's message with its numbers collapsed (collapse_nums): rows that differ only
+// in numbers form one group.
+const patternCountsGroupField = "_lvp_collapsed"
+
+// patternCountsMaxField is a group's largest message; the smallest is returned as _msg.
+const patternCountsMaxField = "_lvp_max"
+
+// maxPatternCountsRowBytes bounds one row of a counts query: a group's messages with its fields.
+const maxPatternCountsRowBytes = 4 << 20
 
 // patternCountsStep is the step Loki answers /patterns at (pkg/loghttp ParsePatternsQuery, then the pattern
 // samples' resolution): the request's step, or the range over 250 points in whole seconds, and no less than
@@ -48,28 +61,74 @@ func patternCountsStep(startNs, endNs int64, stepParam string) (time.Duration, b
 	return max(step, patternCountsMinStep).Truncate(time.Second), true
 }
 
-// patternCountsQuery is the counts query for a bare stream selector, built as LogsQL nodes: the selector's
-// filter, numbers collapsed in the message, then a count per step, level field and collapsed message. Stream labels
-// are fields to VictoriaLogs, so a level stored as a stream label is grouped by too.
-// The last pipe asks for one row more than maxRows, so a query that has more is told apart.
-func patternCountsQuery(filter logsql.FilterExpr, step time.Duration, maxRows int) *logsql.Query {
-	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+3)
-	by = append(by, logsql.GroupKey{Field: "_time", Bucket: strconv.FormatInt(int64(step/time.Second), 10) + "s"})
+// patternCountsGroupBy is the group of a counted row: the level fields, then the collapsed message.
+func patternCountsGroupBy() []logsql.GroupKey {
+	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+1)
 	for _, field := range patternCountsLevelFields {
+		if strings.Contains(field, ".") {
+			field = logsql.QuoteValue(field)
+		}
 		by = append(by, logsql.GroupKey{Field: field})
 	}
-	by = append(by, logsql.GroupKey{Field: "_msg"})
+	return append(by, logsql.GroupKey{Field: patternCountsGroupField})
+}
+
+// patternCountsQuery is a counts query for a stream selector's filter, built as LogsQL nodes: the message copied
+// with its numbers collapsed, a stats pipe, and one row more than maxRows, so a query that has more is told apart.
+func patternCountsQuery(filter logsql.FilterExpr, stats logsql.PipeStats, maxRows int) *logsql.Query {
 	return logsql.NewQuery(filter,
-		logsql.PipeCollapseNums{},
-		logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}},
+		logsql.PipeCopy{Pairs: [][2]string{{"_msg", patternCountsGroupField}}},
+		logsql.PipeCollapseNums{Field: patternCountsGroupField},
+		stats,
 		logsql.PipeLimit{N: maxRows + 1},
 	)
 }
 
+// patternGroupsQuery counts every group over the range and keeps its smallest and largest message: two real lines
+// that differ where the group's numbers vary, so the miner keeps the numbers that do not as they are.
+func patternGroupsQuery(filter logsql.FilterExpr, maxRows int) *logsql.Query {
+	return patternCountsQuery(filter, logsql.PipeStats{By: patternCountsGroupBy(), Funcs: []logsql.StatsFuncAlias{
+		{Func: logsql.Count{}, Alias: "c"},
+		{Func: logsql.Min{Field: "_msg"}, Alias: "_msg"},
+		{Func: logsql.Max{Field: "_msg"}, Alias: patternCountsMaxField},
+	}}, maxRows)
+}
+
+// patternTimelineQuery counts every group per step.
+func patternTimelineQuery(filter logsql.FilterExpr, step time.Duration, maxRows int) *logsql.Query {
+	by := append([]logsql.GroupKey{{Field: "_time", Bucket: strconv.FormatInt(int64(step/time.Second), 10) + "s"}}, patternCountsGroupBy()...)
+	return patternCountsQuery(filter, logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}}, maxRows)
+}
+
+// patternGroupKey identifies a counted row's group: its level fields and collapsed message.
+func patternGroupKey(v *fj.Value) string {
+	var b strings.Builder
+	for _, field := range patternCountsLevelFields {
+		b.Write(v.GetStringBytes(field))
+		b.WriteByte(0)
+	}
+	b.Write(v.GetStringBytes(patternCountsGroupField))
+	return b.String()
+}
+
+// patternGroup is one row of the groups query.
+type patternGroup struct {
+	key, level, lo, hi string
+	count              int
+}
+
+// patternTimelineCount is one row of the timeline query, its group interned.
+type patternTimelineCount struct {
+	group  int
+	bucket int64
+	count  int
+}
+
 // patternsFromCounts answers /patterns from VictoriaLogs' counts of every line in the range rather than from a
-// sample of lines: one stats query, mined per distinct collapsed message with its count. ok is false when the
-// request is one it does not answer (a query that is not a bare stream selector, bounds it cannot read, more
-// groups than the cap, a row without a message) or VictoriaLogs fails; the caller then samples lines as before.
+// sample of lines. Two typed stats queries run at once: the groups, each with its smallest and largest real
+// message, which are mined; and their counts per step, which become the patterns' samples. ok is false when the
+// request is one it does not answer (a query that is not a bare stream selector, bounds it cannot read, more rows
+// than -patterns-max-counts-rows, a row without a message) or VictoriaLogs fails; the caller then samples lines.
 func (p *Proxy) patternsFromCounts(ctx context.Context, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
 	if !p.patternsCounts {
 		return nil, false
@@ -97,21 +156,114 @@ func (p *Proxy) patternsFromCounts(ctx context.Context, query, startParam, endPa
 		return nil, false
 	}
 	maxRows := p.limits().PatternsCountsRows
+	levels := p.newLogRowLevels()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var groups []patternGroup
+	var timeline []patternTimelineCount
+	var timelineKeys []string
+	var groupsErr, timelineErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		groupsErr = p.readPatternCountRows(ctx, patternGroupsQuery(filter, maxRows), startNs, endNs, maxRows, func(v *fj.Value) bool {
+			lo, hi := v.GetStringBytes("_msg"), v.GetStringBytes(patternCountsMaxField)
+			count, err := strconv.Atoi(string(v.GetStringBytes("c")))
+			if err != nil || count <= 0 || isVLMissingMsgBytes(lo, levels.defaultMsg) {
+				// Not a row of the groups query, or a row without a message, whose line is built from all of its
+				// fields, which a group does not keep.
+				return false
+			}
+			groups = append(groups, patternGroup{key: patternGroupKey(v), level: patternLevelFromFJ(v, &levels), lo: string(lo), hi: string(hi), count: count})
+			return true
+		})
+		if groupsErr != nil {
+			cancel()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		interned := map[string]int{}
+		timelineErr = p.readPatternCountRows(ctx, patternTimelineQuery(filter, step, maxRows), startNs, endNs, maxRows, func(v *fj.Value) bool {
+			at, err := time.Parse(time.RFC3339Nano, string(v.GetStringBytes("_time")))
+			if err != nil {
+				return false
+			}
+			count, err := strconv.Atoi(string(v.GetStringBytes("c")))
+			if err != nil || count <= 0 {
+				return false
+			}
+			key := patternGroupKey(v)
+			group, seen := interned[key]
+			if !seen {
+				group = len(timelineKeys)
+				interned[key] = group
+				timelineKeys = append(timelineKeys, key)
+			}
+			timeline = append(timeline, patternTimelineCount{group: group, bucket: at.Unix(), count: count})
+			return true
+		})
+		if timelineErr != nil {
+			cancel()
+		}
+	}()
+	wg.Wait()
+	if groupsErr != nil || timelineErr != nil || len(groups) == 0 {
+		return nil, false
+	}
+
+	// The miner's clusters depend on the order it sees lines in: the groups go in by count, then key, so an
+	// answer does not depend on the order VictoriaLogs returned them in.
+	sort.Slice(groups, func(i, j int) bool {
+		if groups[i].count != groups[j].count {
+			return groups[i].count > groups[j].count
+		}
+		return groups[i].key < groups[j].key
+	})
+	miner := newPatternMiner()
+	clusters := make(map[string]*patternBucket, len(groups))
+	for _, g := range groups {
+		cluster := miner.observeLine(g.level, g.lo, 0, 0)
+		if g.hi != g.lo {
+			if c := miner.observeLine(g.level, g.hi, 0, 0); c != nil {
+				cluster = c
+			}
+		}
+		if cluster != nil {
+			clusters[g.key] = cluster
+		}
+	}
+	for _, t := range timeline {
+		if cluster := clusters[timelineKeys[t.group]]; cluster != nil {
+			cluster.buckets[t.bucket] += t.count
+			cluster.total += t.count
+		}
+	}
+	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit)), true
+}
+
+// errPatternCounts marks a counts query whose answer the flow does not use.
+type errPatternCounts struct{ reason string }
+
+func (e errPatternCounts) Error() string { return "patterns counts: " + e.reason }
+
+// readPatternCountRows runs a counts query over [startNs, endNs] and hands each row to read, which returns false
+// for a row it cannot use. More than maxRows rows, a row read rejects or a failed request is an error.
+func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, startNs, endNs int64, maxRows int, read func(*fj.Value) bool) error {
 	params := url.Values{}
-	params.Set("query", patternCountsQuery(filter, step, maxRows).String())
+	params.Set("query", q.String())
 	params.Set("start", strconv.FormatInt(startNs, 10))
 	params.Set("end", strconv.FormatInt(endNs, 10))
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
-		return nil, false
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false
+		return errPatternCounts{"status " + strconv.Itoa(resp.StatusCode)}
 	}
-
-	miner := newPatternMiner()
-	levels := p.newLogRowLevels()
 	var parser fj.Parser
 	rows := 0
 	sc := bufio.NewScanner(resp.Body)
@@ -121,35 +273,16 @@ func (p *Proxy) patternsFromCounts(ctx context.Context, query, startParam, endPa
 		if len(line) == 0 {
 			continue
 		}
-		rows++
-		if rows > maxRows {
-			return nil, false
+		if rows++; rows > maxRows {
+			return errPatternCounts{"more rows than -patterns-max-counts-rows"}
 		}
 		v, err := parser.ParseBytes(line)
 		if err != nil {
-			return nil, false
+			return err
 		}
-		msg := v.GetStringBytes("_msg")
-		if isVLMissingMsgBytes(msg, levels.defaultMsg) {
-			// The line of a row without a message is built from all of its fields, which a count does not keep.
-			return nil, false
+		if !read(v) {
+			return errPatternCounts{"unexpected row"}
 		}
-		at, err := time.Parse(time.RFC3339Nano, string(v.GetStringBytes("_time")))
-		if err != nil {
-			return nil, false
-		}
-		count, err := strconv.Atoi(string(v.GetStringBytes("c")))
-		if err != nil || count <= 0 {
-			// Not a row of the counts query.
-			return nil, false
-		}
-		miner.ObserveCollapsed(patternLevelFromFJ(v, &levels), string(msg), at.Unix(), count)
 	}
-	if sc.Err() != nil || rows == 0 {
-		return nil, false
-	}
-	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit)), true
+	return sc.Err()
 }
-
-// maxPatternCountsRowBytes bounds one row of the counts query: a collapsed message with its stream and fields.
-const maxPatternCountsRowBytes = 4 << 20
