@@ -404,6 +404,44 @@
     }
    ]
   },
+  "drilldown-patterns": {
+   "description": "Logs Drilldown's Patterns tab: /loki/api/v1/patterns for a service Loki's pattern ingester mines (cache-redis, plain text) and for the environment selector of the Drilldown landing page, as the plugin sends them (no step: Loki derives it). Loki and the proxy mine different patterns, so the answers compare in lines counted, not in pattern text.",
+   "ranges": [
+    "1h",
+    "6h",
+    "24h"
+   ],
+   "shapes": [
+    {
+     "name": "DP1 patterns of a plain-text service",
+     "path": "/loki/api/v1/patterns",
+     "query": "{service_name=\"cache-redis\"}",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.3.0"
+     },
+     "covers": [
+      "loki_api_v1_patterns",
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-one-series-per-level"
+     ]
+    },
+    {
+     "name": "DP2 patterns of an environment",
+     "path": "/loki/api/v1/patterns",
+     "query": "{env=\"production\"}",
+     "headers": {
+      "X-Query-Tags": "Source=grafana-lokiexplore-app",
+      "User-Agent": "Grafana/13.3.0"
+     },
+     "covers": [
+      "loki_api_v1_patterns",
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-one-series-per-level"
+     ]
+    }
+   ]
+  },
   "drilldown-breakdown-exact": {
    "description": "Logs Drilldown label and field breakdowns as the plugin sends them, answered exactly (every series up to the tenant's max_query_series, the busiest with Loki's warning over it) instead of from sampled /hits top values. High-cardinality labels and fields (pod, user_id, batch_id) and a low-cardinality one (namespace).",
    "ranges": [

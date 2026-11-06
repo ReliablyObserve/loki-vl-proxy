@@ -30,6 +30,7 @@
     "drilldown/logs-footer-query-stats | query",
     "drilldown/patterns-full-range-counts | compare:observed",
     "drilldown/patterns-full-range-counts | gap:fixed",
+    "drilldown/patterns-full-range-counts | perf",
     "drilldown/patterns-full-range-counts | query",
     "drilldown/patterns-mined-differently | compare:observed",
     "drilldown/patterns-mined-differently | gap:documented",
@@ -39,6 +40,7 @@
     "drilldown/patterns-non-selector-query | query",
     "drilldown/patterns-one-series-per-level | compare:observed",
     "drilldown/patterns-one-series-per-level | gap:fixed",
+    "drilldown/patterns-one-series-per-level | perf",
     "drilldown/patterns-one-series-per-level | query",
     "drilldown/plugin-legend-sync-race | compare:observed",
     "drilldown/plugin-legend-sync-race | gap:upstream",
@@ -1847,7 +1849,7 @@
       "metric_points": 55,
       "ranked_values": 2
     },
-    "shape_covers_distinct": 103,
+    "shape_covers_distinct": 106,
     "shapes_path_only": 8,
     "unwired_items": 98,
     "wired_items": 246
@@ -2336,6 +2338,8 @@
     "drilldown-breakdown-exact/DB4 json field breakdown batch_id",
     "drilldown-json-path-breakdown/JP1 drilldown fields breakdown, JSON path, level pill",
     "drilldown-json-path-breakdown/JP2 drilldown fields breakdown, JSON path",
+    "drilldown-patterns/DP1 patterns of a plain-text service",
+    "drilldown-patterns/DP2 patterns of an environment",
     "extracted-pushdown/X1 json filter level_extracted, by level",
     "extracted-pushdown/X2 json group by level_extracted",
     "extracted-pushdown/X3 json rate, level_extracted equality",

@@ -54,3 +54,10 @@ gap:
   proxy: 'every step with lines, counted, at Loki''s step, no zero samples'
   planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternCountsStepIsLokis, TestPatternStepsFollowLoki, TestPatternSamplesHaveNoZeros (internal/proxy)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

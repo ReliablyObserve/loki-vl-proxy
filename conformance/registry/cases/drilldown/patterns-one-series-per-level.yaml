@@ -39,3 +39,10 @@ gap:
   proxy: 'one entry per level and pattern'
   planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternMinerKeepsTheRecordedPatterns (internal/proxy)'
   clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

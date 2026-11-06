@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 103 items are locked; 5 carry an effort exception.
+29 of 106 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -190,6 +190,8 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `data-probing-and-freshness` | 4 × 4 ranges | 16 same | worst 0.01s / 0.00s (24h) | 0.00s † / 0.00s | differs | locked 2026-10-27 |
 | `drilldown-service-landing` | 7 × 5 ranges | 21 same | worst 0.56s / 0.02s (24h) | 4.08s / 0.04s | same | not locked |
 | `drilldown/fields-pill-json-path-extracted-empty` | 2 × 3 ranges | 6 same | worst 0.57s / 0.01s (24h) | 0.62s / 0.01s | same | not locked |
+| `drilldown/patterns-full-range-counts` | — | not measured | | | | not locked |
+| `drilldown/patterns-one-series-per-level` | — | not measured | | | | not locked |
 | `explore-logs-volume-json` | 9 × 5 ranges | 32 same | worst 6.22s / 0.05s (24h) | 4.68s / 0.09s | same; 3 slower than Loki cold | not locked |
 | `limits/concurrent-full-retention-scans-exhaust-backend` | 8 × 4 ranges | 32 same | worst 0.72s / 0.00s (24h) | 0.09s † / 0.10s | same | locked 2026-10-27 |
 | `limits/drilldown-breakdown-exact` | 5 × 5 ranges | 23 same | worst 1.45s / 0.48s (24h) | 17.14s / 0.90s | differs | not locked |
@@ -201,6 +203,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `loki_api_v1_index_volume` | 1 × 4 ranges | 4 same | worst 0.36s / 0.01s (24h) | 0.16s † / 0.12s | differs | not locked |
 | `loki_api_v1_label_name_values` | 6 × 4 ranges | 24 same | worst 0.68s / 0.00s (24h) | 0.10s † / 0.10s | differs | locked 2026-10-27 |
 | `loki_api_v1_labels` | 6 × 4 ranges | 24 same | worst 0.72s / 0.00s (24h) | 0.09s † / 0.10s | differs | locked 2026-10-27 |
+| `loki_api_v1_patterns` | — | not measured | | | | not locked |
 | `loki_api_v1_query` | 30 × 1 ranges | 30 same | worst 0.16s / 0.16s (instant) | 0.52s / 0.47s | same | locked 2026-10-27 |
 | `loki_api_v1_query_range` | 255 × 8 ranges | 8 faster, 4 fixed, 761 same | worst 6.59s / 0.08s (24h) | 5.43s / 0.06s | differs; 16 slower than Loki cold | not locked |
 | `metric-series-identity` | 53 × 6 ranges | 6 faster, 2 fixed, 137 same | worst 2.58s / 0.02s (24h) | 6.70s / 0.07s | differs | not locked |

@@ -2289,6 +2289,8 @@
       "warm_p50": 0.016
     }
   ],
+  "drilldown/patterns-full-range-counts": [],
+  "drilldown/patterns-one-series-per-level": [],
   "explore-logs-volume-json": [
     {
       "baseline": "release",
@@ -12009,6 +12011,7 @@
       "warm_p50": 0.001
     }
   ],
+  "loki_api_v1_patterns": [],
   "loki_api_v1_query": [
     {
       "baseline": "release",
