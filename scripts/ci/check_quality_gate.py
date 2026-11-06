@@ -176,13 +176,23 @@ def check_component_breakdown(failures, track_key, track_label, base_track, head
 def query_corpus_failures(corpus):
     """Queries on both the base corpus and the PR's that got worse: a typed node turned untyped, or a golden our
     LogsQL parser read and no longer reads. New queries never fail it; with no base corpus nothing is checked."""
-    if not isinstance(corpus, dict) or not isinstance(corpus.get("regressions"), dict):
+    if not isinstance(corpus, dict):
         return []
-    reg, out = corpus["regressions"], []
-    for key, what in (("untyped", "turned untyped"), ("golden_unread", "have a golden our LogsQL parser no longer reads")):
-        ids = reg.get(key) or []
-        if ids:
-            out.append(f"query corpus: {len(ids)} queries on both the base and the PR {what}: " + ", ".join(ids[:10]))
+    out = []
+    reg = corpus.get("regressions")
+    if isinstance(reg, dict):
+        for key, what in (("untyped", "turned untyped"), ("golden_unread", "have a golden our LogsQL parser no longer reads")):
+            ids = reg.get(key) or []
+            if ids:
+                out.append(f"query corpus: {len(ids)} queries on both the base and the PR {what}: " + ", ".join(ids[:10]))
+    # VictoriaLogs' own parser (test/oracle/vl), per version: the same queries judged worse than on the base.
+    for r in corpus.get("oracle_regressions") or []:
+        for key, what in (("goldens_rejected", "goldens VictoriaLogs now rejects"),
+                          ("goldens_meaning_lost", "goldens whose printed form no longer means the same to VictoriaLogs"),
+                          ("cases_lost", "VictoriaLogs test cases our LogsQL parser no longer reads the same")):
+            ids = r.get(key) or []
+            if ids:
+                out.append(f"VictoriaLogs {r.get('version')}: {len(ids)} {what}: " + ", ".join(ids[:10]))
     return out
 
 

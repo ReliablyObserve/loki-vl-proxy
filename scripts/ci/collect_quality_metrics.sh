@@ -120,6 +120,10 @@ collect_tests_and_coverage() {
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
       # A corpus that fails to build must not cost the report its test count.
       if LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2; then
+        # VictoriaLogs' own parser on the goldens, the sent LogsQL and its test cases, per matrix version; the
+        # report below reads the verdicts beside the corpus. Without them the report has no oracle section.
+        bash "$SCRIPT_DIR/vl_oracle.sh" "$QUALITY_QUERY_CORPUS_OUT" >&2 \
+          || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
         # Its summary against the committed targets and, with a base corpus, the golden changes and the queries
         # that got worse. The quality gate reads those from the report; a failing check does not stop the collection.
         LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \

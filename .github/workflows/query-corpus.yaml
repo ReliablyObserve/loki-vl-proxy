@@ -29,6 +29,10 @@ jobs:
         with:
           go-version: "1.27.3"
           cache: true
+          # The VictoriaLogs parse oracle is a module of its own; its downloads join the cache.
+          cache-dependency-path: |
+            go.sum
+            test/oracle/vl/go.v*.sum
 
       # The same test run as the PR quality report (go test ./... -count=1), so
       # a PR's corpus and its base corpus come from the same set of tests.
@@ -47,6 +51,11 @@ jobs:
           mkdir -p /tmp/query-corpus
           go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # VictoriaLogs' own parser on the goldens, the sent LogsQL and its test cases, per matrix version. The
+      # verdicts sit beside the corpus, so pull requests based on this commit compare with them.
+      - name: Check the corpus with VictoriaLogs' parser
+        run: scripts/ci/vl_oracle.sh /tmp/query-corpus/query-corpus.jsonl.gz
+
       - name: Save the corpus for pull requests based on this commit
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] a gzipped list of test queries read as data by the PR quality report; nothing from this job is published
         with:
@@ -59,3 +68,4 @@ jobs:
           path: |
             /tmp/query-corpus/query-corpus.jsonl.gz
             /tmp/query-corpus/query-corpus.summary.json
+            /tmp/query-corpus/query-corpus.vl-*.jsonl.gz
