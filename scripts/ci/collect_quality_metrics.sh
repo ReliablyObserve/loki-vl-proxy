@@ -119,8 +119,16 @@ collect_tests_and_coverage() {
   if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
       # A corpus that fails to build must not cost the report its test count.
-      LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2 \
-        || log_step "query corpus build failed; the report continues without it"
+      if LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2; then
+        # Its summary against the committed targets and, with a base corpus, the golden changes and the queries
+        # that got worse. The quality gate reads those from the report; a failing check does not stop the collection.
+        LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
+          LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
+          go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \
+          || log_step "queries in the corpus got worse; see the report"
+      else
+        log_step "query corpus build failed; the report continues without it"
+      fi
     fi
   else
     local test_status=$?
@@ -319,6 +327,8 @@ PY
 }
 
 tests_file="$TMP_DIR/tests_and_coverage.json"
+# Written by collect_tests_and_coverage when QUALITY_QUERY_CORPUS_OUT is set.
+QUERY_CORPUS_REPORT="$TMP_DIR/query_corpus.json"
 compat_file="$TMP_DIR/compat.json"
 benchmarks_file="$TMP_DIR/benchmarks.json"
 load_file="$TMP_DIR/load.json"
@@ -358,8 +368,10 @@ fi
 
 python3 "$SCRIPT_DIR/quality_scope.py" --root "$ROOT_DIR" > "$TMP_DIR/inventory.json"
 
+if [ ! -s "$QUERY_CORPUS_REPORT" ]; then echo 'null' >"$QUERY_CORPUS_REPORT"; fi
 jq -n \
   --slurpfile tests "$tests_file" \
+  --slurpfile corpus "$QUERY_CORPUS_REPORT" \
   --slurpfile compat "$compat_file" \
   --slurpfile benchmarks "$benchmarks_file" \
   --slurpfile load "$load_file" \
@@ -368,6 +380,7 @@ jq -n \
   '{
     tests: $tests[0],
     quality_inventory: $inventory[0],
+    query_corpus: $corpus[0],
     compatibility: $compat[0],
     performance: {
       mode: $perf_mode,

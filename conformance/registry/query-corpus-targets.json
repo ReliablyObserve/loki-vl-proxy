@@ -1,0 +1,11 @@
+{
+  "description": "Counts of the query corpus (internal/querycorpus) at the last update, from the full uncached test run (go test ./... -count=1). The PR quality report shows a pull request's counts beside them; they are targets the AST work moves (max counts down, min counts up), not a gate. They grow with new tests, so a new test never fails on them. The gate is per query: a query on both the base and the PR that turns untyped, or whose golden our LogsQL parser read and no longer reads, fails it (TestQueryCorpusReport).",
+  "max": {
+    "duplicated_client_queries": 1240,
+    "internal_parse_call_sites": 70,
+    "untyped_logql_rows": 10887
+  },
+  "min": {
+    "golden_read": 905
+  }
+}

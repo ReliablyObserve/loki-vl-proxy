@@ -36,6 +36,31 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| Tie-tolerant ranked-step contracts | 0 | 2 | +2 |", report)
         self.assertIn("| Performance-only scenarios | 37 | 29 | -8 |", report)
 
+    def test_query_corpus_section_shows_counts_ratchet_and_golden_changes(self):
+        head = snapshot()
+        head["query_corpus"] = {
+            "summary": {"client_rows": 23022, "internal_parse_call_sites": 70, "golden_read": 610,
+                        "golden_versions": ["v1.53.0", "v1.49.0"]},
+            "base": {"client_rows": 23000, "internal_parse_call_sites": 70, "golden_read": 604},
+            "targets": [{"name": "internal_parse_call_sites", "rule": "max", "want": 70, "got": 70, "state": "held"},
+                        {"name": "golden_read", "rule": "min", "want": 604, "got": 610, "state": "better"}],
+            "regressions": {"untyped": ["q-zzz"], "golden_unread": []},
+            "golden_diffs": [{"version": "v1.53.0", "compared": 22000, "changed": 3, "added": 22, "removed": 0,
+                              "examples": ["q-aaa", "q-bbb", "q-ccc"]}]}
+        report = self.render(base=snapshot(), head=head)
+        self.assertIn("Query corpus: base versus PR", report)
+        self.assertIn("| Client queries (tests and routes) | 23000 | 23022 | +22 | — |", report)
+        self.assertIn("| Goldens our LogsQL parser reads | 604 | 610 | +6 | min 604: better |", report)
+        self.assertIn("| v1.53.0 | 22000 | 3 | 22 | 0 | q-aaa, q-bbb, q-ccc |", report)
+        self.assertIn("Regressions (queries on both sides): 1 turned untyped (q-zzz); 0 goldens no longer read.", report)
+
+    def test_query_corpus_without_a_base_says_so(self):
+        head = snapshot()
+        head["query_corpus"] = {"summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": []}
+        report = self.render(base=snapshot(), head=head)
+        self.assertIn("| Client queries (tests and routes) | no base | 5 | n/a | — |", report)
+        self.assertIn("No base corpus", report)
+
     def test_query_semantics_catalog_and_live_matrix_are_separate(self):
         base, head = snapshot(), snapshot()
         base["quality_inventory"] = {"query_semantics": {"state": "available", "cases": 67,

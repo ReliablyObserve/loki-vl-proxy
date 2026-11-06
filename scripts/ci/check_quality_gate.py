@@ -173,6 +173,19 @@ def check_component_breakdown(failures, track_key, track_label, base_track, head
         )
 
 
+def query_corpus_failures(corpus):
+    """Queries on both the base corpus and the PR's that got worse: a typed node turned untyped, or a golden our
+    LogsQL parser read and no longer reads. New queries never fail it; with no base corpus nothing is checked."""
+    if not isinstance(corpus, dict) or not isinstance(corpus.get("regressions"), dict):
+        return []
+    reg, out = corpus["regressions"], []
+    for key, what in (("untyped", "turned untyped"), ("golden_unread", "have a golden our LogsQL parser no longer reads")):
+        ids = reg.get(key) or []
+        if ids:
+            out.append(f"query corpus: {len(ids)} queries on both the base and the PR {what}: " + ", ".join(ids[:10]))
+    return out
+
+
 def main():
     if len(sys.argv) != 3:
         print("usage: check_quality_gate.py <base-json> <head-json>", file=sys.stderr)
@@ -185,6 +198,8 @@ def main():
 
     if head["tests"].get("execution_state") == "failed":
         failures.append(f"PR unit tests failed (exit={head['tests'].get('test_exit_code', 'unknown')}); retained outcomes are incomplete")
+
+    failures += query_corpus_failures(head.get("query_corpus"))
 
     # Skip test-count and coverage checks when head metrics are zero — this
     # indicates the collection step timed out or failed, not a real regression.
