@@ -143,7 +143,7 @@ func patternMinerCorpusLines(seed int64, n int) []string {
 			return fmt.Sprintf("trace_id=%s span_id=%s %s took %dms", hex(32), hex(16), w(), rng.Intn(3000))
 		},
 		func() string {
-			return fmt.Sprintf("{\"level\":\"%s\",\"msg\":\"%s failed\",\"code\":%d,\"path\":\"/var/lib/%s/%d.db\"}", []string{"error", "warn"}[rng.Intn(2)], w(), rng.Intn(600), w(), rng.Intn(99))
+			return fmt.Sprintf("{\"level\":\"%s\",\"msg\":\"%s failed\",\"code\":%d,\"path\":\"/data/lib/%s/%d.db\"}", []string{"error", "warn"}[rng.Intn(2)], w(), rng.Intn(600), w(), rng.Intn(99))
 		},
 		func() string {
 			return fmt.Sprintf("%s worker %d processed %d items in %.3fs (0x%s)", ts(), rng.Intn(16), rng.Intn(100000), rng.Float64()*10, hex(10))
