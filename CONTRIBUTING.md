@@ -151,6 +151,13 @@ it in this order:
    message, LogsQL or host. A new route or backend call is added to the
    `TestErrorLayer_NoVictoriaLogsLeak` gate; see "Errors: one Loki-shaped layer" in
    `conformance/registry/README.md`.
+5. **No AGPL code.** Grafana Loki is AGPL-3.0. Its code is never added to,
+   copied into or adapted in this repository, including tests and scripts.
+   Loki runs only as a test comparison, from the test-only modules under
+   `test/oracle/loki`. Their recorded answers may be committed as test data;
+   Loki's source may not. The similarity scan in the PR quality gate and
+   `TestProductModuleHasNoOracleDependency` enforce this; see "No AGPL code in
+   the repository" in `AGENTS.md`.
 
 ## Performance Rules
 

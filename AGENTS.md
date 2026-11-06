@@ -1,5 +1,33 @@
 # Repository working rules
 
+## No AGPL code in the repository (hard rule)
+
+Grafana Loki is AGPL-3.0. No AGPL code is added to, copied into or adapted in
+this repository: not in product code, and not in tests, scripts, benchmarks or
+generators either. Loki is used only as a test comparison.
+
+- Loki's packages are imported only by the test-only oracle modules under
+  `test/oracle/loki`, which have their own `go.mod` and are never built into the
+  proxy or anything the project ships. They run Loki on test inputs and record
+  its answers.
+- Recorded answers are data and may be committed (for example
+  `internal/proxy/testdata/step_align_loki_answers.jsonl.gz`). Loki's source is
+  not: never paste, transcribe or port a Loki function, test helper or
+  reference model. Write the proxy's code from the behaviour (the HTTP API,
+  recorded answers, observed responses) and compare it with Loki through an
+  oracle.
+- The gates:
+  - `TestProductModuleHasNoOracleDependency`: the proxy's `go.mod` and `go.sum`
+    never name `github.com/grafana/loki`.
+  - The release workflow's SBOM check, which fails if a published SBOM names
+    `grafana/loki`.
+  - The similarity scan in the PR quality gate (`test/oracle/loki similar`:
+    50-token runs against Loki's `pkg/`, tests included). A file that shares a
+    run fails the gate. `test/oracle/loki/similarity-allowlist.json` holds
+    reviewed exceptions for API names only (such as the template function
+    names a query may call), never code. Its limits are never raised to make a
+    pull request pass.
+
 ## Loki difference registry and query matrix
 
 Every difference discovered between the proxy and Loki must enter the existing
