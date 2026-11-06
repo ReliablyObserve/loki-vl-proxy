@@ -54,6 +54,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| v1.53.0 | 22000 | 3 | 22 | 0 | q-aaa, q-bbb, q-ccc |", report)
         self.assertIn("Regressions (queries on both sides): 1 turned untyped (q-zzz); 0 goldens no longer read.", report)
 
+    def test_query_text_sites_section_compares_base_and_pr(self):
+        base, head = snapshot(), snapshot()
+        base["quality_inventory"] = {"query_text_sites": {"state": "available", "totals": {"parse_calls": 64, "string_reads": 54}}}
+        head["quality_inventory"] = {"query_text_sites": {"state": "available", "totals": {"parse_calls": 60, "string_reads": 54}}}
+        report = self.render(base=base, head=head)
+        self.assertIn("Query text handled as strings: base versus PR", report)
+        self.assertIn("| LogQL/LogsQL parser calls outside the AST packages | 64 | 60 | -4 |", report)
+
     def test_query_corpus_without_a_base_says_so(self):
         head = snapshot()
         head["query_corpus"] = {"summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": []}

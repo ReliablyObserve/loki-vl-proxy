@@ -6,12 +6,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.ci.quality_scope import query_semantics_snapshot, registry_snapshot
+from scripts.ci.quality_scope import query_semantics_snapshot, query_text_sites_snapshot, registry_snapshot
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_query_text_sites_are_read_from_the_committed_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(query_text_sites_snapshot(root), {"state": "unavailable"})
+            (root / "conformance/registry").mkdir(parents=True)
+            (root / "conformance/registry/query-text-sites.json").write_text(json.dumps({"totals": {"parse_calls": 64}}))
+            self.assertEqual(query_text_sites_snapshot(root), {"state": "available", "totals": {"parse_calls": 64}})
+            (root / "conformance/registry/query-text-sites.json").write_text(json.dumps({"totals": {"parse_calls": "x"}}))
+            self.assertEqual(query_text_sites_snapshot(root)["state"], "unavailable")
+
     def test_semantics_catalog_counts_and_rejects_orphan_cases(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
