@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -64,6 +65,15 @@ type Report struct {
 	OracleRegressions []OracleRegressions `json:"oracle_regressions,omitempty"`
 	// Constructs are, per version, the VictoriaLogs constructs scripts/vl-ast-coverage.json does not cover.
 	Constructs []ConstructCoverage `json:"constructs,omitempty"`
+	// Loki is Loki's parser against the proxy's validation (test/oracle/loki), when its verdicts sit beside the
+	// corpus; LokiBase the same for the base corpus, LokiRegressions the queries it now judges worse, and Similar
+	// the proxy files that share token runs with Loki's LogQL sources.
+	Loki            *LokiSummary     `json:"loki,omitempty"`
+	LokiBase        *LokiSummary     `json:"loki_base,omitempty"`
+	LokiRegressions *LokiRegressions `json:"loki_regressions,omitempty"`
+	Similar         []SimilarFile    `json:"similar,omitempty"`
+	// Failures are the gate's findings: the PR quality gate fails on any of them, as this test does.
+	Failures []string `json:"failures"`
 }
 
 func readJSON(t *testing.T, path string, v any) {
@@ -261,6 +271,20 @@ func TestQueryCorpusReport(t *testing.T) {
 			rep.OracleRegressions = append(rep.OracleRegressions, oracleRegressions(v, prev, head))
 		}
 	}
+	lokiVersion := lokiMatrixVersion(t)
+	if head := readLokiVerdicts(t, lokiVerdictsPath(corpus, lokiVersion)); head != nil {
+		sum := summarizeLoki(lokiVersion, head)
+		rep.Loki = &sum
+		if base != "" {
+			if prev := readLokiVerdicts(t, lokiVerdictsPath(base, lokiVersion)); prev != nil {
+				bs := summarizeLoki(lokiVersion, prev)
+				reg := lokiRegressions(prev, head)
+				rep.LokiBase, rep.LokiRegressions = &bs, &reg
+			}
+		}
+	}
+	rep.Similar = similarFiles(t, strings.TrimSuffix(corpus, ".jsonl.gz")+".loki-similar.json")
+	rep.Failures = reportFailures(rep)
 	b, err := json.MarshalIndent(rep, "", " ")
 	if err != nil {
 		t.Fatal(err)
@@ -268,27 +292,61 @@ func TestQueryCorpusReport(t *testing.T) {
 	if err := os.WriteFile(reportPath, append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	for _, f := range rep.Failures {
+		t.Error(f)
+	}
+}
+
+// reportFailures are every finding the gate fails on, from the corpus, both oracles and the similarity scan.
+func reportFailures(rep Report) []string {
+	out := []string{}
+	if r := rep.Regressions; r != nil {
+		if len(r.Untyped) > 0 {
+			out = append(out, fmt.Sprintf("query corpus: %d queries on both the base and the PR turned untyped: %s", len(r.Untyped), strings.Join(first(r.Untyped), ", ")))
+		}
+		if len(r.GoldenUnread) > 0 {
+			out = append(out, fmt.Sprintf("query corpus: %d goldens our LogsQL parser read on the base and no longer reads: %s", len(r.GoldenUnread), strings.Join(first(r.GoldenUnread), ", ")))
+		}
+	}
 	for _, c := range rep.Constructs {
 		if len(c.Missing) > 0 {
-			t.Errorf("VictoriaLogs %s has constructs %s neither covers nor ignores: %v", c.Version, strings.TrimPrefix(coveragePath, "../../"), c.Missing)
+			out = append(out, fmt.Sprintf("VictoriaLogs %s: constructs not covered by internal/logsql (%s): %s", c.Version, strings.TrimPrefix(coveragePath, "../../"), strings.Join(c.Missing, ", ")))
 		}
 	}
 	for _, r := range rep.OracleRegressions {
-		if r.any() {
-			t.Errorf("VictoriaLogs %s: %d goldens it now rejects %v, %d goldens whose printed form lost its meaning %v, "+
-				"%d of its test cases our parser no longer reads the same %v", r.Version,
-				len(r.GoldensRejected), first(r.GoldensRejected), len(r.GoldensMeaningLost), first(r.GoldensMeaningLost),
-				len(r.CasesLost), first(r.CasesLost))
+		for _, x := range []struct {
+			ids  []string
+			what string
+		}{
+			{r.GoldensRejected, "goldens VictoriaLogs now rejects"},
+			{r.GoldensMeaningLost, "goldens whose printed form no longer means the same to VictoriaLogs"},
+			{r.CasesLost, "VictoriaLogs test cases our LogsQL parser no longer reads the same"},
+		} {
+			if len(x.ids) > 0 {
+				out = append(out, fmt.Sprintf("VictoriaLogs %s: %d %s: %s", r.Version, len(x.ids), x.what, strings.Join(first(x.ids), ", ")))
+			}
 		}
 	}
-	if r := rep.Regressions; r != nil {
-		if len(r.Untyped) > 0 {
-			t.Errorf("%d queries on both the base and the PR turned untyped: %v", len(r.Untyped), first(r.Untyped))
-		}
-		if len(r.GoldenUnread) > 0 {
-			t.Errorf("%d goldens our LogsQL parser read on the base and no longer reads: %v", len(r.GoldenUnread), first(r.GoldenUnread))
-		}
+	return append(out, lokiFailures(rep.LokiRegressions, rep.Similar)...)
+}
+
+// lokiVerdictsPath is where the Loki oracle's verdicts for the corpus at corpus go.
+func lokiVerdictsPath(corpus, version string) string {
+	return strings.TrimSuffix(corpus, ".jsonl.gz") + ".loki-" + version + ".jsonl.gz"
+}
+
+// lokiMatrixVersion is the compatibility matrix's pinned Loki version, such as 3.7.9.
+func lokiMatrixVersion(t *testing.T) string {
+	t.Helper()
+	var m struct {
+		Stack struct {
+			Loki struct {
+				Pinned string `json:"pinned_version"`
+			} `json:"loki"`
+		} `json:"stack"`
 	}
+	readJSON(t, matrixPath, &m)
+	return strings.TrimPrefix(m.Stack.Loki.Pinned, "v")
 }
 
 func first(ids []string) []string {

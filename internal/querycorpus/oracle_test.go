@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
 // oracleDir is the VictoriaLogs parse oracle (test/oracle/vl): a module of its own whose go.mod pins the matrix's
@@ -60,74 +63,157 @@ func verdictsPath(corpus, v string) string {
 	return strings.TrimSuffix(corpus, ".jsonl.gz") + ".vl-" + v + ".jsonl.gz"
 }
 
-// TestOracleInputs writes, for every VictoriaLogs version of the compatibility matrix, the oracle's inputs into
-// LVP_ORACLE_DIR: the corpus's goldens of that version, its sent LogsQL (for the newest version only), and
-// VictoriaLogs' own parser test cases
-// (cases-<version>.json there, from the oracle's cases command), each with our LogsQL parser's verdict and printed
-// form. It fails when the oracle does not pin a matrix version.
-func TestOracleInputs(t *testing.T) {
-	corpus, dir := os.Getenv("LVP_QUERY_CORPUS_OUT"), os.Getenv("LVP_ORACLE_DIR")
-	if corpus == "" || dir == "" {
-		t.Skip("LVP_QUERY_CORPUS_OUT and LVP_ORACLE_DIR are not set")
+// oracleModfile is the module file that pins VictoriaLogs version v in the oracle: go.mod for the matrix's pinned
+// version, go.v<version>.mod for any other.
+func oracleModfile(v, pinned string) string {
+	if v == pinned {
+		return "go.mod"
 	}
+	return "go." + v + ".mod"
+}
+
+// TestVLOracle runs the VictoriaLogs parse oracle over the corpus at LVP_QUERY_CORPUS_OUT when LVP_RUN_ORACLES=1.
+// For every VictoriaLogs version of the compatibility matrix it builds the oracle with that version's module file,
+// lists its pipes, stats functions and filters (<corpus>.vl-<version>.constructs.json) and its own parser test
+// cases, writes the inputs (the goldens of that version, the LogsQL the tests sent for the newest version only,
+// and the test cases, each with our LogsQL parser's verdict and printed form) and writes VictoriaLogs' verdicts
+// (<corpus>.vl-<version>.jsonl.gz). It fails when the oracle does not pin a matrix version.
+func TestVLOracle(t *testing.T) {
+	corpus := os.Getenv("LVP_QUERY_CORPUS_OUT")
+	if corpus == "" || os.Getenv("LVP_RUN_ORACLES") != "1" {
+		t.Skip("LVP_QUERY_CORPUS_OUT and LVP_RUN_ORACLES=1 are not set")
+	}
+	corpus, err := filepath.Abs(corpus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
 	versions := goldenVersions(t)
 	rows := allRows(t, corpus)
 	for _, v := range versions {
-		file := "go." + v + ".mod"
-		if v == versions[0] {
-			file = "go.mod"
-		}
+		file := oracleModfile(v, versions[0])
 		b, err := os.ReadFile(filepath.Join(oracleDir, file))
 		pin := "replace github.com/VictoriaMetrics/VictoriaLogs => github.com/VictoriaMetrics/VictoriaLogs " + v + "\n"
 		if err != nil || !strings.Contains(string(b), pin) {
-			t.Fatalf("test/oracle/vl/%s does not pin VictoriaLogs %s, a matrix version: run scripts/ci/vl_oracle.sh --pin %s", file, v, v)
+			t.Fatalf("test/oracle/vl/%s does not pin VictoriaLogs %s, a matrix version: run LVP_ORACLE_PIN=%s go test ./internal/querycorpus -run TestPinVLOracle", file, v, v)
 		}
-		var cases []upstreamCase
-		readJSON(t, filepath.Join(dir, "cases-"+v+".json"), &cases)
-		f, err := os.Create(filepath.Join(dir, "inputs-"+v+".jsonl"))
+		modfile := ""
+		if file != "go.mod" {
+			modfile = file
+		}
+		bin, err := oraclerun.Build(oracleDir, modfile, work, "vl-"+v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := bufio.NewWriter(f)
-		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
-		emit := func(id, kind, q string) {
-			in := oracleInput{ID: id, Kind: kind, Query: q}
-			in.Ours, in.Printed = ours(q)
-			if err := enc.Encode(in); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, r := range rows {
-			switch {
-			case r.Golden != nil:
-				emit(r.ID, "golden", at(r.Golden, v, versions[0]))
-			case r.Path != "" && v == versions[0]:
-				// Tests send with the newest version's capabilities: checking that LogsQL against an older
-				// VictoriaLogs only finds features it is too old for.
-				emit(r.ID, "sent", r.Query)
-			}
-		}
-		seen := map[string]bool{}
-		for _, c := range cases {
-			id := caseID(c.Query)
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			kind := "case-reject"
-			if c.Accept {
-				kind = "case-accept"
-			}
-			emit(id, kind, c.Query)
-		}
-		if err := w.Flush(); err != nil {
+		src, err := oraclerun.SourceDir(oracleDir, modfile, "github.com/VictoriaMetrics/VictoriaLogs")
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := f.Close(); err != nil {
+		casesPath := filepath.Join(work, "cases-"+v+".json")
+		if err := oraclerun.Run(bin, "cases", "-src", src, "-out", casesPath); err != nil {
+			t.Fatal(err)
+		}
+		if err := oraclerun.Run(bin, "constructs", "-src", src, "-out", constructsPath(corpus, v)); err != nil {
+			t.Fatal(err)
+		}
+		inputs := filepath.Join(work, "inputs-"+v+".jsonl")
+		writeVLInputs(t, inputs, casesPath, v, versions[0], rows)
+		verdicts := filepath.Join(work, "verdicts-"+v+".jsonl")
+		if err := oraclerun.Run(bin, "check", "-in", inputs, "-out", verdicts); err != nil {
+			t.Fatal(err)
+		}
+		if err := oraclerun.Gzip(verdicts, verdictsPath(corpus, v)); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+// writeVLInputs writes the oracle's inputs for VictoriaLogs version v.
+func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) {
+	t.Helper()
+	var cases []upstreamCase
+	readJSON(t, casesPath, &cases)
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := bufio.NewWriter(f)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	emit := func(id, kind, q string) {
+		in := oracleInput{ID: id, Kind: kind, Query: q}
+		in.Ours, in.Printed = ours(q)
+		if err := enc.Encode(in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range rows {
+		switch {
+		case r.Golden != nil:
+			emit(r.ID, "golden", at(r.Golden, v, newest))
+		case r.Path != "" && v == newest:
+			// Tests send with the newest version's capabilities: checking that LogsQL against an older
+			// VictoriaLogs only finds features it is too old for.
+			emit(r.ID, "sent", r.Query)
+		}
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		id := caseID(c.Query)
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		kind := "case-reject"
+		if c.Accept {
+			kind = "case-accept"
+		}
+		emit(id, kind, c.Query)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned
+// version, in go.v<version>.mod otherwise. It needs the network.
+func TestPinVLOracle(t *testing.T) {
+	v := os.Getenv("LVP_ORACLE_PIN")
+	if v == "" {
+		t.Skip("LVP_ORACLE_PIN is not set")
+	}
+	const module = "github.com/VictoriaMetrics/VictoriaLogs"
+	file := oracleModfile(v, goldenVersions(t)[0])
+	if file == "go.mod" {
+		if err := oraclerun.Go(oracleDir, "mod", "edit", "-dropreplace="+module, "-droprequire="+module); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		goVersion := strings.TrimPrefix(regexp.MustCompile(`(?m)^go \S+$`).FindString(readFile(t, filepath.Join(oracleDir, "go.mod"))), "go ")
+		header := "module github.com/ReliablyObserve/Loki-VL-proxy/test/oracle/vl\n\ngo " + goVersion + "\n"
+		if err := os.WriteFile(filepath.Join(oracleDir, file), []byte(header), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := oraclerun.Go(oracleDir, "mod", "edit", "-modfile="+file, "-require="+module+"@"+v, "-replace="+module+"="+module+"@"+v); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Go(oracleDir, "mod", "tidy", "-modfile="+file); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("pinned %s %s in test/oracle/vl/%s", module, v, file)
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // allRows reads every row of a corpus file in file order.
@@ -324,20 +410,25 @@ func TestOracleSummaryAndRegressions(t *testing.T) {
 	}
 }
 
-// The oracle's VictoriaLogs dependency stays in its own module: the proxy's go.mod and go.sum never name it, and
-// no package of the proxy imports it.
+// The oracles' dependencies stay in their own modules. Loki is AGPL-3.0 and its parser is used only by the test
+// oracle under test/oracle/loki: the proxy's go.mod and go.sum never name it (nor VictoriaLogs, the other
+// oracle's), so no package of the proxy can import it and no release binary or its SBOM can contain it.
 func TestProductModuleHasNoOracleDependency(t *testing.T) {
 	for _, name := range []string{"go.mod", "go.sum"} {
 		b, err := os.ReadFile(filepath.Join("../..", name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(b), "github.com/VictoriaMetrics/VictoriaLogs") {
-			t.Errorf("%s names github.com/VictoriaMetrics/VictoriaLogs; only test/oracle/vl may depend on it", name)
+		for _, module := range []string{"github.com/grafana/loki", "github.com/VictoriaMetrics/VictoriaLogs"} {
+			if strings.Contains(string(b), module) {
+				t.Errorf("%s names %s; only the test oracles under test/oracle may depend on it", name, module)
+			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(oracleDir, "go.mod")); err != nil {
-		t.Errorf("test/oracle/vl must stay a module of its own: %v", err)
+	for _, dir := range []string{oracleDir, "../../test/oracle/loki"} {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+			t.Errorf("%s must stay a module of its own: %v", dir, err)
+		}
 	}
 }
 
@@ -411,5 +502,33 @@ func TestConstructCoverageFileParses(t *testing.T) {
 	readJSON(t, coveragePath, &coverage)
 	if _, err := missingConstructs(map[string][]string{}, coverage); err != nil {
 		t.Fatalf("%s: %v", coveragePath, err)
+	}
+}
+
+// The oracles pin the compatibility matrix's versions: test/oracle/vl each VictoriaLogs matrix version (go.mod the
+// pinned one), test/oracle/loki the pinned Loki version. A version bump that forgets an oracle fails here, in the
+// unit tests, and not later as a report that quietly leaves the oracle's section out.
+func TestOraclePinsMatchTheMatrix(t *testing.T) {
+	versions := goldenVersions(t)
+	for _, v := range versions {
+		file := oracleModfile(v, versions[0])
+		pin := "replace github.com/VictoriaMetrics/VictoriaLogs => github.com/VictoriaMetrics/VictoriaLogs " + v + "\n"
+		if !strings.Contains(readFile(t, filepath.Join(oracleDir, file)), pin) {
+			t.Errorf("test/oracle/vl/%s does not pin VictoriaLogs %s, a matrix version: run LVP_ORACLE_PIN=%s go test ./internal/querycorpus -run TestPinVLOracle", file, v, v)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(oracleDir, "go.v*.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range matches {
+		v := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), "go."), ".mod")
+		if !slices.Contains(versions, v) {
+			t.Errorf("test/oracle/vl/%s pins %s, which is no longer a matrix version: remove it and its .sum", filepath.Base(m), v)
+		}
+	}
+	loki := lokiMatrixVersion(t)
+	if !strings.Contains(readFile(t, "../../test/oracle/loki/go.mod"), "github.com/grafana/loki/v3 v"+loki+"\n") {
+		t.Errorf("test/oracle/loki/go.mod does not require Loki v%s, the matrix's pinned version", loki)
 	}
 }

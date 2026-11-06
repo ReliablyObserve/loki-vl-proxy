@@ -76,6 +76,20 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Regressions on VictoriaLogs v1.53.0: 1 goldens now rejected; 0 goldens whose meaning changed; 0 test cases no longer read the same.", report)
         self.assertIn("Constructs of VictoriaLogs v1.53.0 not covered by `internal/logsql`: pipes/unroll.", report)
 
+    def test_query_corpus_loki_tables_regressions_and_similarity(self):
+        head = snapshot()
+        head["query_corpus"] = {
+            "summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": [],
+            "loki": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 8, "ours_only": 1}, "case": {"queries": 3, "both_accept": 3}},
+            "loki_base": {"version": "3.7.9", "client": {"queries": 10, "both_accept": 9, "ours_only": 0}, "case": {"queries": 3, "both_accept": 3}},
+            "loki_regressions": {"disagree": ["client/q-a"], "error_lost": [], "meaning_lost": []},
+            "similar": [{"file": "internal/logql/stage_validate.go", "shared": 9, "allowed": 9, "best": "pkg/logql/log/fmt.go"}]}
+        report = self.render(base=snapshot(), head=head)
+        self.assertIn("Loki 3.7.9's own parser", report)
+        self.assertIn("| The proxy accepts, Loki rejects | 0 | 1 | +1 |", report)
+        self.assertIn("Regressions against Loki: 1 no longer agree on accepting; 0 error text no longer Loki's; 0 printed form no longer means the same.", report)
+        self.assertIn("| internal/logql/stage\\_validate.go | 9 | 9 | pkg/logql/log/fmt.go |  |", report)
+
     def test_query_corpus_without_a_base_says_so(self):
         head = snapshot()
         head["query_corpus"] = {"summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": []}

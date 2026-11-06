@@ -8,3 +8,4 @@
 cmd/proxy	exercises the host /proc and cgroup readers on Linux (runtime.GOOS branches), files outside the module
 internal/memlimit	stats /sys/fs/cgroup/memory.max and skips or asserts on what the host has, a file outside the module
 internal/metrics	reads /proc and /sys/fs/cgroup of the host on Linux, files outside the module
+test/oraclerun	builds the oracle modules with the go tool and runs the oracle binaries (child processes) with the host environment
