@@ -5,11 +5,6 @@
       "max_shared": 8,
       "reason": "the names of the template functions line_format and label_format accept (Loki's functionMap and its sprig subset): the API a query may call, listed so templates parse; no Loki code"
     },
-    "internal/proxy/postprocess.go": {
-      "max_shared": 13,
-      "pending_removal": true,
-      "reason": "patternLineTokenizer.Tokenize follows Loki's pkg/pattern/drain/line_tokenizer.go (AGPL-3.0) line for line; to be rewritten"
-    },
     "internal/proxy/step_align_diff_test.go": {
       "max_shared": 34,
       "pending_removal": true,
