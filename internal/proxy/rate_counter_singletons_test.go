@@ -232,7 +232,7 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 func lokiRateCounterLabels(line string) map[string]string {
 	out := map[string]string{}
 	for _, kv := range emuLogfmt(line) {
-		name := lokiLogfmtLabel(kv[0])
+		name := orderedJSONLabelName(kv[0], true)
 		if _, done := out[name]; done || kv[1] == "" {
 			continue
 		}

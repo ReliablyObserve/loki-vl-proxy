@@ -3314,6 +3314,10 @@ func (plan *orderedJSONMetricPlan) acceptExtractedLabel(name, value string) bool
 	return true
 }
 
+// orderedJSONLabelName is the label name Loki gives an extracted key: spaces around it trimmed, every character
+// other than an ASCII letter, digit or underscore replaced by an underscore, and, for the first part of a name
+// (first), an underscore in front of a leading digit. The json parser names a nested key from its parts, the
+// logfmt parser a key from itself, first in both cases.
 func orderedJSONLabelName(name string, first bool) string {
 	name = strings.TrimSpace(name)
 	var out strings.Builder
