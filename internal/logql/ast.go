@@ -36,18 +36,22 @@ type LabelMatcher struct {
 }
 
 func (m LabelMatcher) String() string {
-	var op string
-	switch m.Op {
+	return m.Name + m.Op.String() + strconv.Quote(m.Value)
+}
+
+// String is the operator as LogQL writes it.
+func (o MatchOp) String() string {
+	switch o {
 	case MatchEq:
-		op = "="
+		return "="
 	case MatchNeq:
-		op = "!="
+		return "!="
 	case MatchRe:
-		op = "=~"
+		return "=~"
 	case MatchNotRe:
-		op = "!~"
+		return "!~"
 	}
-	return m.Name + op + strconv.Quote(m.Value)
+	return ""
 }
 
 // StreamSelector is the {label="value",...} part of a log query.

@@ -28,6 +28,16 @@ type TranslateOptions struct {
 	Caps logsql.Capabilities
 }
 
+// SelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes
+// (translator.SelectorFilter): no query text is written or read on the way.
+func SelectorFilter(sel *StreamSelector, opts TranslateOptions) (logsql.FilterExpr, error) {
+	matchers := make([]translator.SelectorMatcher, len(sel.Matchers))
+	for i, m := range sel.Matchers {
+		matchers[i] = translator.SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
+	}
+	return translator.SelectorFilter(matchers, opts.LabelFn, opts.StreamFields)
+}
+
 // errFallthrough signals that translateExpr cannot handle this node and the
 // caller should route to the string-based translator instead.
 var errFallthrough = errors.New("fallthrough to string translator")
