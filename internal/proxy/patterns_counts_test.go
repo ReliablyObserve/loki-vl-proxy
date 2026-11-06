@@ -73,8 +73,8 @@ func TestPatternCountsQueriesAreTyped(t *testing.T) {
 			}
 		}
 	}
-	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _lvp_collapsed`
-	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | collapse_nums at _lvp_collapsed | stats by (`
+	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _lvp_group`
+	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | collapse_nums at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
 	if want := prefix + by + `) count() as c, min(_msg) as _msg, max(_msg) as _lvp_max | limit 10`; groups.String() != want {
 		t.Errorf("groups query\n got %s\nwant %s", groups, want)
 	}
@@ -177,14 +177,14 @@ func patternsRequest(t *testing.T, p *Proxy, query, step string) patternsRespons
 // conformance: drilldown/patterns-full-range-counts, drilldown/patterns-one-series-per-level, loki_api_v1_patterns
 func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 	fake := &fakePatternCounts{
-		groups: `{"level":"info","_lvp_collapsed":"GET /api status=<N> took <N>ms user=alice","c":"5","_msg":"GET /api status=200 took 5ms user=alice","_lvp_max":"GET /api status=200 took 9ms user=alice"}
-{"level":"info","_lvp_collapsed":"GET /api status=<N> took <N>ms user=bob","c":"2","_msg":"GET /api status=200 took 7ms user=bob","_lvp_max":"GET /api status=200 took 8ms user=bob"}
-{"level":"error","_lvp_collapsed":"job failed code=<N> retry later now","c":"3","_msg":"job failed code=7 retry later now","_lvp_max":"job failed code=7 retry later now"}
+		groups: `{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"5","_msg":"GET /api status=200 took 5ms user=alice","_lvp_max":"GET /api status=200 took 9ms user=alice"}
+{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"2","_msg":"GET /api status=200 took 7ms user=bob","_lvp_max":"GET /api status=200 took 8ms user=bob"}
+{"level":"error","_lvp_group":"job failed code=<N> retry later now","c":"3","_msg":"job failed code=7 retry later now","_lvp_max":"job failed code=7 retry later now"}
 `,
-		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_collapsed":"GET /api status=<N> took <N>ms user=alice","c":"3"}
-{"_time":"2026-11-06T18:29:50Z","level":"info","_lvp_collapsed":"GET /api status=<N> took <N>ms user=alice","c":"2"}
-{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_collapsed":"GET /api status=<N> took <N>ms user=bob","c":"2"}
-{"_time":"2026-11-06T18:25:00Z","level":"error","_lvp_collapsed":"job failed code=<N> retry later now","c":"3"}
+		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"3"}
+{"_time":"2026-11-06T18:29:50Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"2"}
+{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"2"}
+{"_time":"2026-11-06T18:25:00Z","level":"error","_lvp_group":"job failed code=<N> retry later now","c":"3"}
 `,
 	}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
@@ -228,14 +228,14 @@ func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
 func TestPatternsFromCountsFallsBackToSampling(t *testing.T) {
 	sample := `{"_time":"2026-11-06T18:20:00Z","_msg":"sampled line one two three","app":"api","level":"info"}` + "\n"
-	group := `{"level":"info","_lvp_collapsed":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"
-	row := `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_collapsed":"a b c d","c":"1"}` + "\n"
+	group := `{"level":"info","_lvp_group":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"
+	row := `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"a b c d","c":"1"}` + "\n"
 	for name, tc := range map[string]struct {
 		groups, timeline, query string
 		maxRows                 int
 	}{
 		"a group row without a count": {`{"_msg":"a b c d"}` + "\n", row, `{app="api"}`, 0},
-		"a row without a message":     {`{"level":"info","_lvp_collapsed":"m","c":"1","_msg":"` + vlDefaultMsgValue + `"}` + "\n", row, `{app="api"}`, 0},
+		"a row without a message":     {`{"level":"info","_lvp_group":"m","c":"1","_msg":"` + vlDefaultMsgValue + `"}` + "\n", row, `{app="api"}`, 0},
 		"more rows than the cap":      {group + group, row, `{app="api"}`, 1},
 		"no groups":                   {"", "", `{app="api"}`, 0},
 	} {
@@ -255,8 +255,8 @@ func TestPatternsFromCountsFallsBackToSampling(t *testing.T) {
 // ParseMatchers): registry case loki/errors/patterns-non-selector-query, open.
 func TestPatternsCountsScopeAQueryToItsSelector(t *testing.T) {
 	fake := &fakePatternCounts{
-		groups:   `{"level":"info","_lvp_collapsed":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
-		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_collapsed":"a b c d","c":"1"}` + "\n",
+		groups:   `{"level":"info","_lvp_group":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
+		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"a b c d","c":"1"}` + "\n",
 	}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
 	resp := patternsRequest(t, p, `{app="api"} |= "x"`, "60s")
@@ -336,8 +336,8 @@ func FuzzPatternCountsStep(f *testing.F) {
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
 func TestPatternsFromCountsReuseSettledWindows(t *testing.T) {
 	fake := &fakePatternCounts{
-		groups:   `{"level":"info","_lvp_collapsed":"a b c d","c":"4","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
-		timeline: `{"_time":"2026-11-06T12:00:00Z","level":"info","_lvp_collapsed":"a b c d","c":"4"}` + "\n",
+		groups:   `{"level":"info","_lvp_group":"a b c d","c":"4","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
+		timeline: `{"_time":"2026-11-06T12:00:00Z","level":"info","_lvp_group":"a b c d","c":"4"}` + "\n",
 	}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
 	p.queryRangeHistoryCacheTTL = time.Hour // settled windows are cached, as with the deployed default
@@ -382,10 +382,10 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 			return
 		}
 		if strings.Contains(q, "stats by (_time:") {
-			_, _ = w.Write([]byte(`{"_time":"2026-11-06T11:00:00Z","level":"info","_lvp_collapsed":"a b c d","c":"2"}` + "\n"))
+			_, _ = w.Write([]byte(`{"_time":"2026-11-06T11:00:00Z","level":"info","_lvp_group":"a b c d","c":"2"}` + "\n"))
 			return
 		}
-		_, _ = w.Write([]byte(`{"level":"info","_lvp_collapsed":"a b c d","c":"2","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"))
+		_, _ = w.Write([]byte(`{"level":"info","_lvp_group":"a b c d","c":"2","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"))
 	}))
 	t.Cleanup(srv.Close)
 	p := newPatternCountsProxy(t, srv.URL, 0)

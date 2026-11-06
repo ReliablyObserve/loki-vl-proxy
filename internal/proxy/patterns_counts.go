@@ -36,6 +36,10 @@ var patternCountsLevelFields = []string{
 // in numbers form one group.
 const patternCountsGroupField = "_lvp_collapsed"
 
+// patternCountsGroupHash is the collapsed message's hash: the timeline names a group by it, so a row of it carries
+// a few bytes rather than the message.
+const patternCountsGroupHash = "_lvp_group"
+
 // patternCountsMaxField is a group's largest message; the smallest is returned as _msg.
 const patternCountsMaxField = "_lvp_max"
 
@@ -71,7 +75,7 @@ func patternCountsGroupBy() []logsql.GroupKey {
 		}
 		by = append(by, logsql.GroupKey{Field: field})
 	}
-	return append(by, logsql.GroupKey{Field: patternCountsGroupField})
+	return append(by, logsql.GroupKey{Field: patternCountsGroupHash})
 }
 
 // patternCountsQuery is a counts query for a stream selector's filter, built as LogsQL nodes: the message copied
@@ -80,6 +84,7 @@ func patternCountsQuery(filter logsql.FilterExpr, stats logsql.PipeStats, maxRow
 	return logsql.NewQuery(filter,
 		logsql.PipeCopy{Pairs: [][2]string{{"_msg", patternCountsGroupField}}},
 		logsql.PipeCollapseNums{Field: patternCountsGroupField},
+		logsql.PipeHash{Fields: []string{patternCountsGroupField}, Result: patternCountsGroupHash},
 		stats,
 		logsql.PipeLimit{N: maxRows + 1},
 	)
@@ -101,14 +106,14 @@ func patternTimelineQuery(filter logsql.FilterExpr, step time.Duration, maxRows 
 	return patternCountsQuery(filter, logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}}, maxRows)
 }
 
-// patternGroupKey identifies a counted row's group: its level fields and collapsed message.
+// patternGroupKey identifies a counted row's group: its level fields and the hash of its collapsed message.
 func patternGroupKey(v *fj.Value) string {
 	var b strings.Builder
 	for _, field := range patternCountsLevelFields {
 		b.Write(v.GetStringBytes(field))
 		b.WriteByte(0)
 	}
-	b.Write(v.GetStringBytes(patternCountsGroupField))
+	b.Write(v.GetStringBytes(patternCountsGroupHash))
 	return b.String()
 }
 
