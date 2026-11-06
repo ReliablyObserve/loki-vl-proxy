@@ -203,6 +203,7 @@ extraArgs:
   # patterns-max-backend-rows: "20000"                  # lines /patterns reads per request
   # patterns-second-pass-max-rows: "8000"               # lines the /patterns second pass reads
   # patterns-second-pass-max-windows: "8"               # windows the /patterns second pass re-reads
+  # patterns-exact-max-lines: "200000"                  # lines of a range /patterns reads for Loki-exact patterns (about 200 bytes each, sorted in VictoriaLogs' memory); more are counted instead; "0" turns it off
   # patterns-max-counts-rows: "250000"                  # rows the /patterns counts query reads before sampling instead
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize

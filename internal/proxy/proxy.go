@@ -234,6 +234,9 @@ type Config struct {
 	// PatternsCounts answers /patterns from VictoriaLogs' counts of every line in the range (patternsFromCounts)
 	// rather than from a sample of lines.
 	PatternsCounts bool
+	// PatternsExactMaxLines is the most lines of a request's range /patterns reads from VictoriaLogs to mine Loki's
+	// patterns exactly (patternsFromLines); a range with more lines is counted (PatternsCounts). 0 turns it off.
+	PatternsExactMaxLines int
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -645,6 +648,7 @@ type Proxy struct {
 	deleteAPIEnabled                      bool
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
+	patternsExactMaxLines                 int
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1323,6 +1327,7 @@ func New(cfg Config) (*Proxy, error) {
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
+		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -32,9 +33,18 @@ var patternCountsLevelFields = []string{
 	"severity_text", "Severity_Text", "SEVERITY_TEXT", "severity_number",
 }
 
-// patternCountsGroupField holds a row's message with its numbers collapsed (collapse_nums): rows that differ only
-// in numbers form one group.
+// patternCountsGroupField holds a row's message with its numbers replaced (patternCountsNumberRegexp): rows that
+// differ only in numbers form one group.
 const patternCountsGroupField = "_lvp_collapsed"
+
+// patternCountsNumberRegexp matches each whole token of a message that holds a digit, with the characters Loki's
+// pattern tokenizer keeps in a token (letters, numbers and _ . : / -): what Loki's drain treats as a number, so
+// 8-digit hex ids with letters only are not numbers but 0x1f or host-3 are. VictoriaLogs' collapse_nums would
+// collapse digit-free hex too. Every match is replaced with patternCountsNumberMark.
+const patternCountsNumberRegexp = `[\p{L}\p{N}_.:/-]*\p{N}[\p{L}\p{N}_.:/-]*`
+
+// patternCountsNumberMark stands for a number in a group's key.
+const patternCountsNumberMark = "0"
 
 // patternCountsGroupHash is the collapsed message's hash: the timeline names a group by it, so a row of it carries
 // a few bytes rather than the message.
@@ -42,10 +52,6 @@ const patternCountsGroupHash = "_lvp_group"
 
 // patternCountsMaxField is a group's largest message; the smallest is returned as _msg.
 const patternCountsMaxField = "_lvp_max"
-
-// patternCountsStreamField names the stream of a counted row: Loki's pattern ingester mines each stream apart, so
-// each stream's groups are counted apart.
-const patternCountsStreamField = "_stream_id"
 
 // patternCountsFirstField is a group's earliest time: a stream's groups are mined in the order they first appear.
 const patternCountsFirstField = "_lvp_first"
@@ -73,16 +79,19 @@ func patternCountsStep(startNs, endNs int64, stepParam string) (time.Duration, b
 	return max(step, patternCountsMinStep).Truncate(time.Second), true
 }
 
-// patternCountsGroupBy is the group of a counted row: the level fields, the stream, then the collapsed message.
+// patternCountsGroupBy is the group of a counted row: the level fields, then the collapsed message. Streams are
+// not part of it: a service that runs thousands of short-lived pods would count thousands of groups for each
+// message, so the counts flow mines the lines of all of a level's streams together, unlike Loki, which mines each
+// stream apart (the exact tier does too).
 func patternCountsGroupBy() []logsql.GroupKey {
-	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+2)
+	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+1)
 	for _, field := range patternCountsLevelFields {
 		if strings.Contains(field, ".") {
 			field = logsql.QuoteValue(field)
 		}
 		by = append(by, logsql.GroupKey{Field: field})
 	}
-	return append(by, logsql.GroupKey{Field: patternCountsStreamField}, logsql.GroupKey{Field: patternCountsGroupHash})
+	return append(by, logsql.GroupKey{Field: patternCountsGroupHash})
 }
 
 // patternCountsQuery is a counts query for a stream selector's filter, built as LogsQL nodes: the message copied
@@ -90,7 +99,7 @@ func patternCountsGroupBy() []logsql.GroupKey {
 func patternCountsQuery(filter logsql.FilterExpr, stats logsql.PipeStats, maxRows int) *logsql.Query {
 	return logsql.NewQuery(filter,
 		logsql.PipeCopy{Pairs: [][2]string{{"_msg", patternCountsGroupField}}},
-		logsql.PipeCollapseNums{Field: patternCountsGroupField},
+		logsql.PipeReplaceRegexp{Field: patternCountsGroupField, Regex: patternCountsNumberRegexp, Replacement: patternCountsNumberMark},
 		logsql.PipeHash{Fields: []string{patternCountsGroupField}, Result: patternCountsGroupHash},
 		stats,
 		logsql.PipeLimit{N: maxRows + 1},
@@ -114,33 +123,42 @@ func patternTimelineQuery(filter logsql.FilterExpr, step time.Duration, maxRows 
 	return patternCountsQuery(filter, logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}}, maxRows)
 }
 
-// patternGroupKey identifies a counted row's group: its level fields, its stream and the hash of its collapsed
-// message.
+// patternGroupKey identifies a counted row's group: its level fields and the hash of its collapsed message.
 func patternGroupKey(v *fj.Value) string {
 	var b strings.Builder
 	for _, field := range patternCountsLevelFields {
 		b.Write(v.GetStringBytes(field))
 		b.WriteByte(0)
 	}
-	b.Write(v.GetStringBytes(patternCountsStreamField))
-	b.WriteByte(0)
 	b.Write(v.GetStringBytes(patternCountsGroupHash))
 	return b.String()
 }
 
-// patternGroup is one row of the groups query.
-type patternGroup struct {
-	key, stream, level, lo, hi string
-	count                      int
-	// firstNs is the time of the group's earliest line, in unix nanoseconds, 0 when the row has none.
-	firstNs int64
+// patternGroupInput is one row of the groups query: a mining input of the counts flow.
+type patternGroupInput struct {
+	Key   string `json:"k"`
+	Level string `json:"v"`
+	Lo    string `json:"lo"`
+	Hi    string `json:"hi"`
+	Count int    `json:"c"`
+	// FirstNs is the time of the group's earliest line, in unix nanoseconds, 0 when the row has none.
+	FirstNs int64 `json:"t"`
 }
 
-// patternTimelineCount is one row of the timeline query, its group interned.
-type patternTimelineCount struct {
-	group  int
-	bucket int64
-	count  int
+// patternTimelineInput is one row of the timeline query, its group named by index into the window's keys.
+type patternTimelineInput struct {
+	Group  int   `json:"g"`
+	Bucket int64 `json:"b"`
+	Count  int   `json:"c"`
+}
+
+// patternWindowInputs are what the counts flow reads from VictoriaLogs for one window: the inputs of mining, not
+// its result, so that a long range is mined in one pass over the lines of all its windows rather than window by
+// window, and cached as such.
+type patternWindowInputs struct {
+	Keys     []string               `json:"keys"`
+	Groups   []patternGroupInput    `json:"groups"`
+	Timeline []patternTimelineInput `json:"timeline"`
 }
 
 // patternCountsWindow is the shortest window a range longer than it is counted in; patternCountsMaxWindows bounds
@@ -164,26 +182,28 @@ func patternCountsWindows(startNs, endNs int64) []queryRangeWindow {
 	return splitQueryRangeWindowsWithOptions(startNs, endNs, window, "backward", true)
 }
 
-// patternsFromCounts answers /patterns from VictoriaLogs' counts of every line in the range rather than from a
-// sample of lines (countPatternsWindow), window by window over a long range, the windows' patterns merged as the
-// sampled windows' are. ok is false when the request is one it does not answer (a query that is not a bare stream
-// selector, bounds it cannot read, more rows than -patterns-max-counts-rows, a row without a message) or
-// VictoriaLogs fails; the caller then samples lines.
-func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
-	if !p.patternsCounts {
-		return nil, false
-	}
+// patternQueryScope is a /patterns request the counts and exact flows answer: the stream selector's filter, the
+// range and Loki's step.
+type patternQueryScope struct {
+	filter         logsql.FilterExpr
+	startNs, endNs int64
+	step           time.Duration
+}
+
+// patternScope reads a request into a patternQueryScope. ok is false for a request they do not answer: a query that
+// is not a bare stream selector, or bounds or a step it cannot read.
+func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (patternQueryScope, bool) {
 	lq, err := parsedLogQuery(strings.TrimSpace(query))
 	if err != nil || len(lq.Pipeline) > 0 {
-		return nil, false
+		return patternQueryScope{}, false
 	}
 	startNs, endNs, ok := parseLokiTimeRangeToUnixNano(startParam, endParam)
 	if !ok || endNs <= startNs {
-		return nil, false
+		return patternQueryScope{}, false
 	}
 	step, ok := patternCountsStep(startNs, endNs, stepParam)
 	if !ok {
-		return nil, false
+		return patternQueryScope{}, false
 	}
 	p.configMu.RLock()
 	opts := logqlpkg.TranslateOptions{StreamFields: p.streamFieldsMap}
@@ -193,43 +213,55 @@ func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam,
 	p.configMu.RUnlock()
 	filter, err := logqlpkg.SelectorFilter(lq.Selector, opts)
 	if err != nil {
-		return nil, false
+		return patternQueryScope{}, false
 	}
-	windows := patternCountsWindows(startNs, endNs)
-	if len(windows) == 1 {
-		entries, ok := p.countPatternsWindow(r.Context(), filter, step, startNs, endNs, patternLimit)
-		return entries, ok && len(entries) > 0
-	}
-	type windowResult struct {
-		entries []patternResultEntry
-		ok      bool
-	}
-	results := make([]windowResult, len(windows))
-	sem := make(chan struct{}, patternCountsParallel)
-	var wg sync.WaitGroup
-	for i, w := range windows {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			results[i].entries, results[i].ok = p.countPatternsWindowCached(r, filter, step, w, i > 0 && i < len(windows)-1)
-		}()
-	}
-	wg.Wait()
-	var merged []patternResultEntry
-	for _, res := range results {
-		if !res.ok {
-			return nil, false
-		}
-		merged = mergePatternResultEntries(merged, res.entries)
-	}
-	return merged, len(merged) > 0
+	return patternQueryScope{filter: filter, startNs: startNs, endNs: endNs, step: step}, true
 }
 
-// countPatternsWindowCached is countPatternsWindow for one window of a long range, its patterns cached when the
-// window is interior and settled (queryRangeWindowTTL), as the sampled windows' are.
-func (p *Proxy) countPatternsWindowCached(r *http.Request, filter logsql.FilterExpr, step time.Duration, w queryRangeWindow, interior bool) ([]patternResultEntry, bool) {
+// patternsFromCounts answers /patterns from VictoriaLogs' counts of every line in the range rather than from a
+// sample of lines, window by window over a long range, the windows' inputs mined together in one pass in the order
+// the groups first appeared in, as the lines of a short range are. ok is false when the request is one it does not
+// answer (a query that is not a bare stream selector, bounds it cannot read, more rows than
+// -patterns-max-counts-rows, a row without a message) or VictoriaLogs fails; the caller then samples lines.
+func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
+	if !p.patternsCounts {
+		return nil, false
+	}
+	scope, ok := p.patternScope(query, startParam, endParam, stepParam)
+	if !ok {
+		return nil, false
+	}
+	windows := patternCountsWindows(scope.startNs, scope.endNs)
+	inputs := make([]patternWindowInputs, len(windows))
+	oks := make([]bool, len(windows))
+	if len(windows) == 1 {
+		inputs[0], oks[0] = p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, scope.startNs, scope.endNs)
+	} else {
+		sem := make(chan struct{}, patternCountsParallel)
+		var wg sync.WaitGroup
+		for i, w := range windows {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				inputs[i], oks[i] = p.patternWindowInputsCached(r, scope.filter, scope.step, w, i > 0 && i < len(windows)-1)
+			}()
+		}
+		wg.Wait()
+	}
+	for _, ok := range oks {
+		if !ok {
+			return nil, false
+		}
+	}
+	entries := minePatternWindowInputs(inputs, patternLimit)
+	return entries, len(entries) > 0
+}
+
+// patternWindowInputsCached is readPatternWindowInputs for one window of a long range, its inputs cached when the
+// window is interior and settled (queryRangeWindowTTL), as the sampled windows' patterns are.
+func (p *Proxy) patternWindowInputsCached(r *http.Request, filter logsql.FilterExpr, step time.Duration, w queryRangeWindow, interior bool) (patternWindowInputs, bool) {
 	ctx := r.Context()
 	ttl := p.queryRangeWindowTTL(w.endNs)
 	cacheKey := ""
@@ -238,35 +270,33 @@ func (p *Proxy) countPatternsWindowCached(r *http.Request, filter logsql.FilterE
 		cacheKey = p.patternWindowCacheKey(r, "counts "+filter.String(), stepParam, maxPatternResponseLimit, p.limits().PatternsCountsRows, w.startNs, w.endNs)
 		lookup := time.Now()
 		if cached, ok := p.cache.Get(cacheKey); ok {
-			var value patternWindowCacheValue
+			var value patternWindowInputs
 			if json.Unmarshal(cached, &value) == nil {
 				p.observeInternalOperation(ctx, "patterns_window_cache", "hit", time.Since(lookup))
-				return value.Entries, true
+				return value, true
 			}
 		}
 		p.observeInternalOperation(ctx, "patterns_window_cache", "miss", time.Since(lookup))
 	}
-	entries, ok := p.countPatternsWindow(ctx, filter, step, w.startNs, w.endNs, maxPatternResponseLimit)
+	inputs, ok := p.readPatternWindowInputs(ctx, filter, step, w.startNs, w.endNs)
 	if ok && cacheKey != "" && ctx.Err() == nil {
-		if encoded, err := json.Marshal(patternWindowCacheValue{Entries: entries, PatternCount: len(entries)}); err == nil {
+		if encoded, err := json.Marshal(inputs); err == nil {
 			p.cache.SetWithTTL(cacheKey, encoded, ttl)
 		}
 	}
-	return entries, ok
+	return inputs, ok
 }
 
-// countPatternsWindow counts every line of [startNs, endNs]: two typed stats queries run at once, the groups,
-// each with its smallest and largest real message, which are mined; and their counts per step, which become the
-// patterns' samples.
-func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExpr, step time.Duration, startNs, endNs int64, patternLimit int) ([]patternResultEntry, bool) {
+// readPatternWindowInputs counts every line of [startNs, endNs]: two typed stats queries run at once, the groups,
+// each with its smallest and largest real message and its earliest time, which are mined; and their counts per
+// step, which become the patterns' samples.
+func (p *Proxy) readPatternWindowInputs(ctx context.Context, filter logsql.FilterExpr, step time.Duration, startNs, endNs int64) (patternWindowInputs, bool) {
 	maxRows := p.limits().PatternsCountsRows
 	levels := p.newLogRowLevels()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var groups []patternGroup
-	var timeline []patternTimelineCount
-	var timelineKeys []string
+	var inputs patternWindowInputs
 	var groupsErr, timelineErr error
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -281,7 +311,7 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 				return false
 			}
 			firstNs, _ := parseLokiTimeToUnixNano(string(v.GetStringBytes(patternCountsFirstField)))
-			groups = append(groups, patternGroup{key: patternGroupKey(v), stream: string(v.GetStringBytes(patternCountsStreamField)), level: patternLevelFromFJ(v, &levels), lo: string(lo), hi: string(hi), count: count, firstNs: firstNs})
+			inputs.Groups = append(inputs.Groups, patternGroupInput{Key: patternGroupKey(v), Level: patternLevelFromFJ(v, &levels), Lo: string(lo), Hi: string(hi), Count: count, FirstNs: firstNs})
 			return true
 		})
 		if groupsErr != nil {
@@ -303,11 +333,11 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 			key := patternGroupKey(v)
 			group, seen := interned[key]
 			if !seen {
-				group = len(timelineKeys)
+				group = len(inputs.Keys)
 				interned[key] = group
-				timelineKeys = append(timelineKeys, key)
+				inputs.Keys = append(inputs.Keys, key)
 			}
-			timeline = append(timeline, patternTimelineCount{group: group, bucket: at.Unix(), count: count})
+			inputs.Timeline = append(inputs.Timeline, patternTimelineInput{Group: group, Bucket: at.Unix(), Count: count})
 			return true
 		})
 		if timelineErr != nil {
@@ -316,39 +346,46 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 	}()
 	wg.Wait()
 	if groupsErr != nil || timelineErr != nil {
-		return nil, false
+		return patternWindowInputs{}, false
+	}
+	return inputs, true
+}
+
+// minePatternWindowInputs mines the windows' groups in one pass, in the order their earliest lines came in (then by
+// key, so an answer does not depend on the order VictoriaLogs returned them in), and adds the timelines' counts to
+// the clusters their groups ended in. A group the windows have more than once is counted in the cluster of its
+// first.
+func minePatternWindowInputs(windows []patternWindowInputs, patternLimit int) []patternResultEntry {
+	var groups []patternGroupInput
+	for _, w := range windows {
+		groups = append(groups, w.Groups...)
 	}
 	if len(groups) == 0 {
-		// No line in the window: an answer, with no patterns.
-		return nil, true
+		return nil
 	}
-
-	// The miner's clusters depend on the order it sees lines in: each stream is mined apart, as Loki does, its
-	// groups in the order they first appear (the earliest first, then by key), so an answer does not depend on the
-	// order VictoriaLogs returned them in.
-	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].stream != groups[j].stream {
-			return groups[i].stream < groups[j].stream
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].FirstNs != groups[j].FirstNs {
+			return groups[i].FirstNs < groups[j].FirstNs
 		}
-		if groups[i].firstNs != groups[j].firstNs {
-			return groups[i].firstNs < groups[j].firstNs
-		}
-		return groups[i].key < groups[j].key
+		return groups[i].Key < groups[j].Key
 	})
 	miner := newPatternMiner()
 	clusters := make(map[string]*patternBucket, len(groups))
 	for _, g := range groups {
-		if cluster := miner.observeStreamGroup(g.stream, g.level, g.lo, g.hi); cluster != nil {
-			clusters[g.key] = cluster
+		cluster := miner.observeGroup(g.Level, g.Lo, g.Hi)
+		if _, seen := clusters[g.Key]; !seen && cluster != nil {
+			clusters[g.Key] = cluster
 		}
 	}
-	for _, t := range timeline {
-		if cluster := clusters[timelineKeys[t.group]]; cluster != nil {
-			cluster.buckets[t.bucket] += t.count
-			cluster.total += t.count
+	for _, w := range windows {
+		for _, t := range w.Timeline {
+			if cluster := clusters[w.Keys[t.Group]]; cluster != nil {
+				cluster.buckets[t.Bucket] += t.Count
+				cluster.total += t.Count
+			}
 		}
 	}
-	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit)), true
+	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit))
 }
 
 // errPatternCounts marks a counts query whose answer the flow does not use.
@@ -371,9 +408,15 @@ func (p *Proxy) readPatternCountRows(ctx context.Context, q *logsql.Query, start
 	if resp.StatusCode != http.StatusOK {
 		return errPatternCounts{"status " + strconv.Itoa(resp.StatusCode)}
 	}
+	return scanPatternRows(resp.Body, maxRows, read)
+}
+
+// scanPatternRows hands each JSON row of r to read, one at a time: the row is valid until read returns, and no
+// more than one row is held. More than maxRows rows or a row read rejects is an error.
+func scanPatternRows(r io.Reader, maxRows int, read func(*fj.Value) bool) error {
 	var parser fj.Parser
 	rows := 0
-	sc := bufio.NewScanner(resp.Body)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), maxPatternCountsRowBytes)
 	for sc.Scan() {
 		line := sc.Bytes()

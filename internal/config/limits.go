@@ -301,6 +301,16 @@ var Limits = []Limit{
 		Sizing:     "Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line.",
 	},
 	{
+		Flag:       "patterns-exact-max-lines",
+		Unit:       "lines",
+		Bounds:     "log lines the /patterns exact reading takes from VictoriaLogs for a stream selector's range, to mine Loki's patterns from the lines themselves, each stream and level apart; a range with more lines is answered from VictoriaLogs' counts instead, which mines a level's streams together",
+		Error:      "none: a range with more lines, or a reading VictoriaLogs fails (its sort of the lines runs out of memory), is answered from the counts as with the reading off",
+		Metric:     "none",
+		Alert:      "none",
+		LokiParity: "pkg/pattern mines every line of every stream it ingested; the exact reading is that mining on the lines VictoriaLogs holds",
+		Sizing:     "About 200 bytes of transfer per line, a count query first, and a sort of the lines by stream and time in VictoriaLogs' memory, while the proxy holds only the clusters (a few hundred per stream and level). The default 200000 bounds one request to about 40 MB of transfer; raise it for VictoriaLogs with memory to spare, lower it when its sorts are slow or exceed its memory. 0 turns the reading off.",
+	},
+	{
 		Flag:       "patterns-second-pass-max-windows",
 		Unit:       "windows",
 		Bounds:     "windows the /patterns second pass re-reads",

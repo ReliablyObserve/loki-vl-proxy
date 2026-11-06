@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (240), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (241), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -108,6 +108,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-patterns-custom` | string | (empty) | `extraArgs.patterns-custom` | patterns-custom-file |
 | `-patterns-custom-file` | string | (empty) | `extraArgs.patterns-custom-file` | Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup |
 | `-patterns-enabled` | bool | `true` | `extraArgs.patterns-enabled` | Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns) |
+| `-patterns-exact-max-lines` | int | `200000` | `extraArgs.patterns-exact-max-lines` | Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off |
 | `-patterns-persist-interval` | duration | `30s` | `extraArgs.patterns-persist-interval` | How often to persist in-memory patterns snapshots to disk |
 | `-patterns-persist-path` | string | (empty) | `extraArgs.patterns-persist-path` | Path to persisted patterns snapshot JSON file. Empty disables persistence. |
 | `-patterns-startup-peer-warm-timeout` | duration | `5s` | `extraArgs.patterns-startup-peer-warm-timeout` | Maximum time to wait for startup patterns snapshot warm from peers |

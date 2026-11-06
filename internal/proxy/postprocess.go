@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net"
 	"regexp"
 	"sort"
@@ -549,8 +550,17 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, leve
 // extractLogPatternsStreamWithStatus exposes scanner failures to callers that
 // persist a mined window. A partial transport read must not become a cache hit.
 func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats, error) {
+	return extractLogPatternsStreamFilled(r, step, limit, levels, false)
+}
+
+// extractLogPatternsStreamFilled is extractLogPatternsStreamWithStatus that, when fill is set, zero-fills the
+// samples of each cluster between its first and last step before equal patterns are merged (patternMiner.fillStep).
+func extractLogPatternsStreamFilled(r io.Reader, step string, limit int, levels logRowLevels, fill bool) ([]map[string]interface{}, patternExtractionStats, error) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	if fill {
+		miner.fillStep = stepSeconds
+	}
 	var seen patternObservations
 	stats := patternExtractionStats{}
 	rows := levels
@@ -1028,6 +1038,29 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 	return result
 }
 
+// zeroFill gives the steps between a cluster's first and last sample that have none a sample of 0, as Loki does for
+// the cluster of each stream and level: the steps outside them have no sample, and the steps where no cluster of
+// a pattern is active have none once equal patterns are summed.
+func (m *patternMiner) zeroFill(c *patternBucket) {
+	if m.fillStep <= 0 || len(c.buckets) < 2 {
+		return
+	}
+	first, last := int64(math.MaxInt64), int64(math.MinInt64)
+	for bucket := range c.buckets {
+		if bucket < first {
+			first = bucket
+		}
+		if bucket > last {
+			last = bucket
+		}
+	}
+	for bucket := first + m.fillStep; bucket < last; bucket += m.fillStep {
+		if _, ok := c.buckets[bucket]; !ok {
+			c.buckets[bucket] = 0
+		}
+	}
+}
+
 // patternEntriesByLevelAndPattern is the miner's clusters as response entries, one per level and pattern: Loki
 // answers one series per level and pattern (pkg/pattern/iter ReadBatch), so clusters the miner kept apart whose
 // patterns read the same, such as two that differ in the same tokens a longer pattern shows as <_>, are one entry
@@ -1037,6 +1070,7 @@ func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
 	clusters := miner.AllClusters()
 	for _, c := range clusters {
 		c.pattern = miner.joinPatternTokens(c.tokens, c.spacesAfter, c.format)
+		miner.zeroFill(c)
 	}
 	entries := make([]*patternBucket, 0, len(clusters))
 	byKey := make(map[[2]string]int, len(clusters))
@@ -1080,6 +1114,10 @@ type patternMiner struct {
 	miners    map[patternMinerKey]*patternClusterer
 	// order is the miners in the order they first read a line.
 	order []*patternClusterer
+	// fillStep, when above 0, is the step in seconds the samples of each cluster are zero-filled at, between the
+	// cluster's own first and last sample, as Loki fills the samples of each stream's cluster before it sums equal
+	// patterns across streams. 0 leaves the samples as counted.
+	fillStep int64
 }
 
 func newPatternMiner() *patternMiner {

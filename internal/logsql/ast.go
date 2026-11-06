@@ -662,7 +662,9 @@ type PipeReplaceRegexp struct {
 }
 
 func (p PipeReplaceRegexp) String() string {
-	return fmt.Sprintf("| replace_regexp (%s, `%s`, %q)", p.Field, p.Regex, p.Replacement)
+	// VictoriaLogs' syntax: replace_regexp ("regexp", "replacement") at field. The regexp is a raw (backquoted)
+	// string, so its backslashes and Unicode classes reach VictoriaLogs as written.
+	return fmt.Sprintf("| replace_regexp (`%s`, %q) at %s", p.Regex, p.Replacement, p.Field)
 }
 func (p PipeReplaceRegexp) pipe() {}
 

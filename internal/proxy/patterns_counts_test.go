@@ -75,8 +75,9 @@ func TestPatternCountsQueriesAreTyped(t *testing.T) {
 			}
 		}
 	}
-	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _stream_id, _lvp_group`
-	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | collapse_nums at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
+	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _lvp_group`
+	numbers := "`" + `[\p{L}\p{N}_.:/-]*\p{N}[\p{L}\p{N}_.:/-]*` + "`"
+	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | replace_regexp (` + numbers + `, "0") at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
 	if want := prefix + by + `) count() as c, min(_msg) as _msg, max(_msg) as _lvp_max, min(_time) as _lvp_first | limit 10`; groups.String() != want {
 		t.Errorf("groups query\n got %s\nwant %s", groups, want)
 	}
@@ -117,7 +118,13 @@ func assertNoRawLogsQL(t *testing.T, f logsql.FilterExpr) {
 // timeline the timeline query's; any other query gets other.
 type fakePatternCounts struct {
 	groups, timeline, other string
-	calls                   atomic.Int32
+	// count and lines answer the exact tier's queries: the lines count and the lines sorted by stream and time. A
+	// linesStatus other than 0 answers the lines query with it, as a VictoriaLogs that ran out of memory sorting.
+	count, lines string
+	linesStatus  int
+	calls        atomic.Int32
+	// countCalls and lineCalls count the exact tier's queries.
+	countCalls, lineCalls atomic.Int32
 }
 
 func (f *fakePatternCounts) server(t *testing.T) *httptest.Server {
@@ -128,9 +135,19 @@ func (f *fakePatternCounts) server(t *testing.T) *httptest.Server {
 		q := r.Form.Get("query")
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		switch {
-		case strings.Contains(q, "| collapse_nums at _lvp_collapsed") && strings.Contains(q, "stats by (_time:"):
+		case strings.Contains(q, "| sort by (_stream_id, _time)"):
+			f.lineCalls.Add(1)
+			if f.linesStatus != 0 {
+				w.WriteHeader(f.linesStatus)
+				return
+			}
+			_, _ = w.Write([]byte(f.lines))
+		case strings.HasSuffix(q, "| stats count() as c"):
+			f.countCalls.Add(1)
+			_, _ = w.Write([]byte(f.count))
+		case strings.Contains(q, "| replace_regexp (") && strings.Contains(q, "stats by (_time:"):
 			_, _ = w.Write([]byte(f.timeline))
-		case strings.Contains(q, "| collapse_nums at _lvp_collapsed"):
+		case strings.Contains(q, "| replace_regexp ("):
 			_, _ = w.Write([]byte(f.groups))
 		default:
 			_, _ = w.Write([]byte(f.other))
@@ -377,7 +394,7 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 		_ = r.ParseForm()
 		start, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
 		q := r.Form.Get("query")
-		if !strings.Contains(q, "| collapse_nums at _lvp_collapsed") {
+		if !strings.Contains(q, "| replace_regexp (") {
 			t.Errorf("a sampling query reached VictoriaLogs: %s", q)
 			return
 		}
@@ -404,17 +421,16 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 	}
 }
 
-// The counts flow mines each stream apart, as Loki's pattern ingester does, its groups in the order their earliest
-// lines came: two streams whose lines differ only in the last token are two patterns, where one stream's lines of
-// them are one; and what a stream's groups read as depends on which came first.
+// The counts flow mines a level's groups together whatever their streams, in the order their earliest lines came:
+// what a level's groups read as depends on which came first.
 //
 // conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns
-func TestPatternsFromCountsMineEachStreamInOrderOfFirstLine(t *testing.T) {
-	group := func(stream, hash, line, first string) string {
-		return `{"level":"info","_stream_id":"` + stream + `","_lvp_group":"` + hash + `","c":"30","_msg":"` + line + `","_lvp_max":"` + line + `","_lvp_first":"` + first + `"}` + "\n"
+func TestPatternsFromCountsMineGroupsInOrderOfFirstLine(t *testing.T) {
+	group := func(hash, line, first string) string {
+		return `{"level":"info","_lvp_group":"` + hash + `","c":"30","_msg":"` + line + `","_lvp_max":"` + line + `","_lvp_first":"` + first + `"}` + "\n"
 	}
-	timeline := func(stream, hash string) string {
-		return `{"_time":"2026-11-06T18:20:00Z","level":"info","_stream_id":"` + stream + `","_lvp_group":"` + hash + `","c":"30"}` + "\n"
+	timeline := func(hash string) string {
+		return `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"` + hash + `","c":"30"}` + "\n"
 	}
 	answer := func(groups, timeline string) []string {
 		fake := &fakePatternCounts{groups: groups, timeline: timeline}
@@ -427,28 +443,22 @@ func TestPatternsFromCountsMineEachStreamInOrderOfFirstLine(t *testing.T) {
 		return got
 	}
 	if got, want := answer(
-		group("pod-a", "g1", "paid order for eur", "2026-11-06T18:20:00Z")+group("pod-b", "g1", "paid order for usd", "2026-11-06T18:20:00Z"),
-		timeline("pod-a", "g1")+timeline("pod-b", "g1")),
-		[]string{"paid order for eur=30", "paid order for usd=30"}; !slices.Equal(got, want) {
-		t.Errorf("two streams: %q, want %q", got, want)
-	}
-	if got, want := answer(
-		group("pod-a", "g1", "paid order for eur", "2026-11-06T18:20:00Z")+group("pod-a", "g2", "paid order for usd", "2026-11-06T18:21:00Z"),
-		timeline("pod-a", "g1")+timeline("pod-a", "g2")),
+		group("g1", "paid order for eur", "2026-11-06T18:20:00Z")+group("g2", "paid order for usd", "2026-11-06T18:21:00Z"),
+		timeline("g1")+timeline("g2")),
 		[]string{"paid order for <_>=60"}; !slices.Equal(got, want) {
-		t.Errorf("one stream: %q, want %q", got, want)
+		t.Errorf("two groups: %q, want %q", got, want)
 	}
 	const x, y, z = "a 1 2 3 4 5 p", "a 6 7 8 9 10 q", "a 1 2 8 9 s t"
-	counts := timeline("s", "gx") + timeline("s", "gy") + timeline("s", "gz")
-	// x is the stream's first group (the keys order gx, gy, gz): z, like x and y alike, joins the one made first.
+	counts := timeline("gx") + timeline("gy") + timeline("gz")
+	// x came first (and its key is first): z, like x and y alike, joins the one made first.
 	if got, want := answer(
-		group("s", "gx", x, "2026-11-06T18:20:00Z")+group("s", "gy", y, "2026-11-06T18:21:00Z")+group("s", "gz", z, "2026-11-06T18:22:00Z"), counts),
+		group("gx", x, "2026-11-06T18:20:00Z")+group("gy", y, "2026-11-06T18:21:00Z")+group("gz", z, "2026-11-06T18:22:00Z"), counts),
 		[]string{"a 1 2 <_> <_> <_> <_>=60", y + "=30"}; !slices.Equal(got, want) {
 		t.Errorf("x first: %q, want %q", got, want)
 	}
 	// y came first, though its key is after x's: z joins y.
 	if got, want := answer(
-		group("s", "gx", x, "2026-11-06T18:21:00Z")+group("s", "gy", y, "2026-11-06T18:20:00Z")+group("s", "gz", z, "2026-11-06T18:22:00Z"), counts),
+		group("gx", x, "2026-11-06T18:21:00Z")+group("gy", y, "2026-11-06T18:20:00Z")+group("gz", z, "2026-11-06T18:22:00Z"), counts),
 		[]string{x + "=30", "a <_> <_> 8 9 <_> <_>=60"}; !slices.Equal(got, want) {
 		t.Errorf("y first: %q, want %q", got, want)
 	}

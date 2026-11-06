@@ -37,6 +37,7 @@ Fleet arithmetic: per-replica limits multiply by the replica count, and every by
 | patterns max backend rows | `-patterns-max-backend-rows` | `extraArgs.patterns-max-backend-rows` | `20000` | rows | log lines /patterns reads from VictoriaLogs for one request | none: pattern mining works on the rows it read | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns second pass max rows | `-patterns-second-pass-max-rows` | `extraArgs.patterns-second-pass-max-rows` | `8000` | rows | log lines the /patterns second pass reads when the first pass mined too few patterns | none | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns max counts rows | `-patterns-max-counts-rows` | `extraArgs.patterns-max-counts-rows` | `250000` | rows | rows the /patterns counts query reads from VictoriaLogs: distinct (step, level fields, collapsed message) groups over the requested range | none: past it the request samples lines as without -patterns-counts | none | none | no | proxy-specific |
+| patterns exact max lines | `-patterns-exact-max-lines` | `extraArgs.patterns-exact-max-lines` | `200000` | lines | log lines the /patterns exact reading takes from VictoriaLogs for a stream selector's range, to mine Loki's patterns from the lines themselves, each stream and level apart; a range with more lines is answered from VictoriaLogs' counts instead, which mines a level's streams together | none: a range with more lines, or a reading VictoriaLogs fails (its sort of the lines runs out of memory), is answered from the counts as with the reading off | none | none | no | pkg/pattern mines every line of every stream it ingested; the exact reading is that mining on the lines VictoriaLogs holds |
 | patterns second pass max windows | `-patterns-second-pass-max-windows` | `extraArgs.patterns-second-pass-max-windows` | `8` | windows | windows the /patterns second pass re-reads | none | none | none | no | proxy-specific |
 | max zero fill buckets | `-max-zero-fill-buckets` | `extraArgs.max-zero-fill-buckets` | `32768` | buckets | buckets the proxy zero-fills in a metric response | none: a wider request is served without zero-fill | none | none | no | the 11,000-point resolution limit bounds a Loki response anyway |
 | stats query range concurrency | `-stats-query-range-concurrency` | `extraArgs.stats-query-range-concurrency` | `0` | concurrent calls | concurrent stats_query_range calls the proxy makes to VictoriaLogs | none: calls wait for a slot | loki_vl_proxy_upstream_requests_total&#123;route="/select/logsql/stats_query_range"&#125; | none | no | proxy-specific |
@@ -160,6 +161,10 @@ Raise it with -patterns-max-backend-rows; the second pass doubles the scan for h
 ### `-patterns-max-counts-rows`
 
 Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line.
+
+### `-patterns-exact-max-lines`
+
+About 200 bytes of transfer per line, a count query first, and a sort of the lines by stream and time in VictoriaLogs' memory, while the proxy holds only the clusters (a few hundred per stream and level). The default 200000 bounds one request to about 40 MB of transfer; raise it for VictoriaLogs with memory to spare, lower it when its sorts are slow or exceed its memory. 0 turns the reading off.
 
 ### `-patterns-second-pass-max-windows`
 

@@ -31,6 +31,8 @@ type lokiPatternAnswerFile struct {
 		Loki    []struct {
 			Pattern string `json:"pattern"`
 			Total   int64  `json:"total"`
+			// Samples are [timestamp, count] pairs, when the recording holds them.
+			Samples [][2]int64 `json:"samples,omitempty"`
 		} `json:"loki"`
 	} `json:"queries"`
 }
@@ -83,8 +85,13 @@ func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 				}
 			}
 		}
-		// VictoriaLogs answers newest first.
-		sort.SliceStable(rows, func(a, b int) bool { return rows[a].offset > rows[b].offset })
+		// The exact tier reads the lines VictoriaLogs sorts by stream and time.
+		sort.SliceStable(rows, func(a, b int) bool {
+			if rows[a].stream != rows[b].stream {
+				return fmt.Sprintf("stream-%d", rows[a].stream) < fmt.Sprintf("stream-%d", rows[b].stream)
+			}
+			return rows[a].offset < rows[b].offset
+		})
 		start := end.Add(time.Duration(q.FromMs) * time.Millisecond)
 		var body strings.Builder
 		for _, r := range rows {
@@ -92,11 +99,20 @@ func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 			body.Write(encoded)
 			body.WriteByte('\n')
 		}
-		mined := extractLogPatterns([]byte(body.String()), "10s", maxPatternResponseLimit, defaultLogRowLevels())
+		miner := newPatternMiner()
+		miner.fillStep = 10
+		if err := readPatternLines(strings.NewReader(body.String()), miner, defaultLogRowLevels(), len(rows)); err != nil {
+			t.Fatalf("%s: %v", q.Name, err)
+		}
+		mined := patternResultEntriesFromMaps(buildPatternResponse(miner, maxPatternResponseLimit))
 		have := map[string]bool{}
 		minedTotal := map[string]int64{}
-		for _, e := range dropPatternsBelowMinLines(patternResultEntriesFromMaps(mined), start.UnixNano(), end.UnixNano()) {
+		minedSamples := map[string][][2]int64{}
+		for _, e := range dropPatternsBelowMinLines(mined, start.UnixNano(), end.UnixNano()) {
 			have[e.Pattern] = true
+			for _, s := range e.Samples {
+				minedSamples[e.Pattern] = append(minedSamples[e.Pattern], [2]int64{patternSampleCount(s[0]), patternSampleCount(s[1])})
+			}
 			for _, s := range e.Samples {
 				// Loki answers the samples of the steps that start inside the range.
 				if ts := patternSampleCount(s[0]); ts >= start.Unix() && ts < end.Unix() {
@@ -150,13 +166,25 @@ func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 				}
 			}
 		}
+		if _, deferred := patternMinerLokiNotExact[q.Name]; !deferred {
+			// The samples, timestamps and values with the zero-filled steps, are Loki's too, where the answer
+			// records them.
+			for _, l := range q.Loki {
+				if len(l.Samples) == 0 {
+					continue
+				}
+				if want, got := fmt.Sprint(l.Samples), fmt.Sprint(minedSamples[l.Pattern]); want != got {
+					t.Errorf("%s: samples of %q\n loki  %s\n miner %s", q.Name, l.Pattern, want, got)
+				}
+			}
+		}
 		if _, deferred := patternMinerLokiNotExact[q.Name]; !deferred && (extra > 0 || sameTotals < len(q.Loki) || answered != len(q.Loki)) {
 			t.Errorf("%s: not Loki's answer: %d patterns answered against %d, %d not Loki's, %d of Loki's with Loki's total", q.Name, answered, len(q.Loki), extra, sameTotals)
 		}
 		if share+1e-9 < patternMinerLokiFloor[q.Name] {
 			var got []string
 			for _, p := range mined {
-				got = append(got, fmt.Sprint(p["pattern"]))
+				got = append(got, p.Pattern)
 			}
 			sort.Strings(got)
 			sort.Strings(missing)

@@ -112,6 +112,7 @@ type proxyRuntimeConfig struct {
 	deleteAPIEnabled                    bool
 	patternsAutodetectFromQueries       bool
 	patternsCounts                      bool
+	patternsExactMaxLines               int
 	exactParserSeriesIdentity           bool
 	alignQueriesWithStep                bool
 	patternsCustomRaw                   string
@@ -594,6 +595,7 @@ func run(
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
+	patternsExactMaxLines := fs.Int("patterns-exact-max-lines", proxy.DefaultPatternsExactMaxLines, "Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off")
 	patternsCounts := fs.Bool("patterns-counts", true, "Answer /loki/api/v1/patterns for a stream selector from VictoriaLogs' counts of every line in the range (one stats query over the whole range), as Loki counts every line it ingested. A request it cannot answer that way (more groups than -patterns-max-counts-rows, rows without a message) falls back to sampling lines. Set false to always sample lines")
 	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
 	patternsCustomFile := fs.String("patterns-custom-file", "", "Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup")
@@ -894,6 +896,7 @@ func run(
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
 			patternsCounts:                      *patternsCounts,
+			patternsExactMaxLines:               *patternsExactMaxLines,
 			exactParserSeriesIdentity:           *exactParserSeriesIdentity,
 			alignQueriesWithStep:                *alignQueriesWithStep,
 			patternsCustomRaw:                   *patternsCustomRaw,
@@ -2141,6 +2144,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		PatternsCounts:                     cfg.patternsCounts,
+		PatternsExactMaxLines:              cfg.patternsExactMaxLines,
 		ExactParserSeriesIdentity:          cfg.exactParserSeriesIdentity,
 		AlignQueriesWithStep:               cfg.alignQueriesWithStep,
 		PatternsCustom:                     customPatterns,
@@ -2298,6 +2302,9 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.patternsExactMaxLines < 0 {
+		return fmt.Errorf("invalid -patterns-exact-max-lines: %d (must be >= 0; 0 turns the exact reading off)", cfg.patternsExactMaxLines)
 	}
 	return nil
 }

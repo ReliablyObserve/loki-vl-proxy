@@ -107,7 +107,8 @@ func TestDrilldown_Patterns_CountEveryLineAtLokisStep(t *testing.T) {
 			msgs = append(msgs, "pc_bravo component=worker action=ship outcome=ok")
 			want[bravo][ts]++
 		}
-		if i%9 == 0 {
+		// Loki answers a pattern only when it holds 30 lines in the range: every third step of the 120 gives 40.
+		if i%3 == 0 {
 			msgs = append(msgs, "pc_charlie component=api code=500 retry later")
 			want[charlie][ts]++
 		}

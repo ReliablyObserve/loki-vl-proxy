@@ -57,7 +57,7 @@ func (p *Proxy) patternWindowCacheKey(r *http.Request, query, step string, patte
 		p.detectedLevelCacheKey(), p.defaultMsgValue(),
 	})
 	digest := sha256.Sum256(identity)
-	return fmt.Sprintf("patterns_window:%s:v3:%x", scope, digest)
+	return fmt.Sprintf("patterns_window:%s:v4:%x", scope, digest)
 }
 
 func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {
@@ -254,6 +254,9 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Set("limit", strconv.Itoa(sourceLimit))
 	diag := patternFetchDiagnostics{}
+	// perStreamFilled is set when the entries' samples were zero-filled per cluster, before equal patterns were
+	// summed (exact tier, one sampled read), as Loki fills them: they are not filled again across the range.
+	perStreamFilled := false
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
 		fetchFromParams := func(queryParams url.Values) ([]patternResultEntry, bool) {
@@ -271,7 +274,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 				return nil, false
 			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
-			extracted, stats, readErr := extractLogPatternsStreamWithStatus(resp.Body, stepParam, patternLimit, p.newLogRowLevels())
+			extracted, stats, readErr := extractLogPatternsStreamFilled(resp.Body, stepParam, patternLimit, p.newLogRowLevels(), true)
 			diag.recordExtraction(requestedLimit, stats, false)
 			if readErr != nil {
 				p.log.Debug("patterns source read failed", "error", readErr)
@@ -287,11 +290,17 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if len(entries) == 0 {
 				return nil, false
 			}
+			perStreamFilled = true
 			return entries, true
 		}
 
 		if endpoint == "/select/logsql/query" {
-			// Counted by VictoriaLogs over the whole range when it can be; a sample of lines otherwise.
+			// The lines of the range mined as Loki mines them when the range is small enough, counted by
+			// VictoriaLogs over the whole range when it can be; a sample of lines otherwise.
+			if entries, ok := p.patternsFromLines(r, query, startParam, endParam, stepParam, patternLimit); ok {
+				perStreamFilled = true
+				return entries, true
+			}
 			if entries, ok := p.patternsFromCounts(r, query, startParam, endParam, stepParam, patternLimit); ok {
 				return entries, true
 			}
@@ -359,6 +368,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	// The last step before the response limit, once equal texts are merged: Loki answers only the patterns that
 	// hold enough lines in the range.
+	minedBeforeFilter := len(entries)
 	startNs, endNs, _ := parseLokiTimeRangeToUnixNano(startParam, endParam)
 	entries = dropPatternsBelowMinLines(entries, startNs, endNs)
 	if entries == nil {
@@ -380,7 +390,9 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	entries = p.prependCustomPatternEntries(entries, startParam, stepParam, patternLimit)
-	entries = fillPatternSamplesAcrossRequestedRange(entries, startParam, endParam, stepParam)
+	if !perStreamFilled {
+		entries = fillPatternSamplesAcrossRequestedRange(entries, startParam, endParam, stepParam)
+	}
 	resultBody, err := json.Marshal(patternsResponse{
 		Status: "success",
 		Data:   entries,
@@ -392,8 +404,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recordPatternResponseMetrics(p.metrics, resultBody)
-	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries.
-	if len(entries) > 0 {
+	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries. An
+	// answer empty because no pattern holds enough lines is an answer, cached like any other: a quiet service
+	// is not read from VictoriaLogs on every refresh.
+	if len(entries) > 0 || minedBeforeFilter > 0 {
 		now := time.Now().UTC()
 		snapshotPayload := snapshotBody
 		if len(snapshotPayload) == 0 {
@@ -732,10 +746,9 @@ func parsePatternSourceLineLimit(raw, startParam, endParam, stepParam string) in
 	return estimate
 }
 
-// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v3 answers are mined per stream
-// and level as Loki's pattern ingester mines them; v2 answers (counted over the whole range at Loki's step, mined
-// across streams) and v1 answers (line samples) are not read.
-const patternsCacheKeyPrefix = "patterns:v3:"
+// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v4 answers are mined per stream
+// and level as Loki's pattern ingester mines them, zero-filled per stream; older answers are not read.
+const patternsCacheKeyPrefix = "patterns:v4:"
 
 // derivePatternStep is the step Loki gives a /patterns request without one (pkg/loghttp step): the range over 250
 // points, in whole seconds and at least one.
