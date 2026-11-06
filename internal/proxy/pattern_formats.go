@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -216,7 +217,26 @@ func wildcardPatterns(clusters []*patternBucket) {
 			}
 			of[i] = j
 		}
-		if !wildcardVaryingFields(distinct) {
+		// The groups depend on the order clusters are seen in; the miner's is a map's.
+		order := make([]int, len(distinct))
+		for j := range order {
+			order[j] = j
+		}
+		sort.Slice(order, func(x, y int) bool {
+			a, b := distinct[order[x]], distinct[order[y]]
+			if a.format != b.format {
+				return a.format < b.format
+			}
+			if a.level != b.level {
+				return a.level < b.level
+			}
+			return a.pattern < b.pattern
+		})
+		sorted := make([]*patternBucket, len(order))
+		for j, k := range order {
+			sorted[j] = distinct[k]
+		}
+		if !wildcardVaryingFields(sorted) {
 			return
 		}
 		for i, c := range clusters {
