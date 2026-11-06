@@ -129,10 +129,11 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 		}
 	}
 
-	// The tested matrix: exactly one entry of the previous line (the floor) and
-	// every minor of the current line from its first one to the newest, each once.
+	// The tested matrix: two versions, the floor (the latest release of the
+	// previous line) and the newest release of the current line, which is the
+	// pin. The releases of the current line in between are supported, not tested.
 	minors := map[int]string{}
-	lowest, highest := 1<<30, 0
+	current := []string{}
 	for _, v := range m.Stack.VL.MatrixVersions {
 		sm := versionRE.FindStringSubmatch(v)
 		if sm == nil {
@@ -149,7 +150,7 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 				t.Fatalf("the only %s entry in matrix_versions must be the floor %s, found %s", w.PreviousFamily, w.MinimumSupported, v)
 			}
 		case curLine:
-			lowest, highest = min(lowest, minor), max(highest, minor)
+			current = append(current, v)
 		default:
 			t.Fatalf("matrix version %s is outside the supported lines %s and %s", v, w.CurrentFamily, w.PreviousFamily)
 		}
@@ -157,13 +158,9 @@ func TestVictoriaLogsSupportPolicy(t *testing.T) {
 	if minors[floorMinor] != w.MinimumSupported {
 		t.Fatalf("matrix_versions %v must contain the floor %s", m.Stack.VL.MatrixVersions, w.MinimumSupported)
 	}
-	if lowest != curLine*10 {
-		t.Fatalf("matrix_versions %v must start the %s line at v1.%d", m.Stack.VL.MatrixVersions, w.CurrentFamily, curLine*10)
-	}
-	for minor := lowest; minor <= highest; minor++ {
-		if _, ok := minors[minor]; !ok {
-			t.Fatalf("matrix_versions %v skips supported minor v1.%d", m.Stack.VL.MatrixVersions, minor)
-		}
+	if len(current) != 1 || current[0] != m.Stack.VL.PinnedVersion {
+		t.Fatalf("matrix_versions %v must hold exactly one %s release, the newest, which is pinned_version %s",
+			m.Stack.VL.MatrixVersions, w.CurrentFamily, m.Stack.VL.PinnedVersion)
 	}
 	pin := versionRE.FindStringSubmatch(m.Stack.VL.PinnedVersion)
 	if pin == nil {
