@@ -4,7 +4,7 @@
   merge.py --plan plan.json --of K --shards DIR --out OUT
 
 DIR holds one directory per shard (`visual-shard-<i>`, the artifact of the shard job: what ci_run.py wrote to its
---out). OUT then holds what a single ci_run.py would have written for the whole plan, and visual_comment.py renders
+--out); with one shard, download-artifact may have put its files in DIR itself, which is read then. OUT then holds what a single ci_run.py would have written for the whole plan, and visual_comment.py renders
 the comment and the gate from it exactly as before:
 
   plan.json      the whole plan
@@ -57,6 +57,10 @@ def merge(plan, k, shards_dir, out, base="", head=""):
     expected = split(plan, k)
     problems = verify(plan, expected)
     dirs = [os.path.join(shards_dir, f"{PREFIX}{i}") for i in range(k)]
+    # download-artifact unpacks each artifact a pattern matches into its own directory, except when the pattern
+    # matches one: then the files land in DIR itself. The one shard of a small plan may be DIR.
+    if k == 1 and not os.path.isdir(dirs[0]) and os.path.exists(os.path.join(shards_dir, "plan.json")):
+        dirs = [shards_dir]
     metas, shard_rows, pixels, montages = [], [], {}, {}
     for i, d in enumerate(dirs):
         if not os.path.isdir(d):

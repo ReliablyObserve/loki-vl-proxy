@@ -260,6 +260,8 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         if: env.RUN == 'true'
+        # One directory per shard when the pattern matches several; a single match lands in /tmp/visual-shards
+        # itself, and merge.py reads it there.
         continue-on-error: true  # a shard that left nothing is named by merge.py
         with:
           pattern: visual-shard-*
