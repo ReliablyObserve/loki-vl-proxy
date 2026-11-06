@@ -222,6 +222,56 @@ def query_semantics_details(base, head):
             "The matrix is the query catalog for quality and later performance scenarios. Visual evidence remains separate."]
 
 
+# The corpus counts the report shows, in order (internal/querycorpus Summary).
+QUERY_CORPUS_COUNTS = (
+    ("client_rows", "Client queries (tests and routes)"),
+    ("duplicated_client_queries", "Client queries defined in more than one test"),
+    ("internal_parse_call_sites", "Internal parse call sites"),
+    ("logql_rows", "Valid LogQL client queries"),
+    ("untyped_logql_rows", "LogQL queries with an untyped node"),
+    ("golden_rows", "Golden LogsQL translations"),
+    ("golden_read", "Goldens our LogsQL parser reads"),
+    ("golden_differ_by_version", "Goldens that differ between VictoriaLogs versions"),
+    ("sent_rows", "LogsQL sent to VictoriaLogs"),
+    ("sent_read", "Sent LogsQL our LogsQL parser reads"),
+)
+
+
+def query_corpus_details(corpus):
+    """The corpus the PR's tests send in: counts against the base corpus and the committed targets, the goldens that
+    changed per VictoriaLogs version, and the queries that got worse (the gate)."""
+    summary, base = mapping(corpus.get("summary")), mapping(corpus.get("base"))
+    limits = {c.get("name"): c for c in corpus.get("targets") or []}
+    rows = []
+    for key, label in QUERY_CORPUS_COUNTS:
+        new, old = summary.get(key), base.get(key)
+        limit = limits.get(key)
+        rows.append([label, fmt(old) if base else "no base", fmt(new),
+                     f"{new - old:+d}" if numeric(old) and numeric(new) else "n/a",
+                     f"{limit['rule']} {fmt(limit['want'])}: {limit['state']}" if limit else "—"])
+    lines = ["Every query the PR's tests send in, the LogsQL the proxy sends to VictoriaLogs, and the translator's LogsQL for each "
+             f"LogQL query on VictoriaLogs {', '.join(cell(v) for v in summary.get('golden_versions') or []) or 'n/a'} (the goldens). "
+             "Targets are in `conformance/registry/query-corpus-targets.json`; counts grow with new tests, so they inform and do not gate. "
+             "The gate is per query: a query on both sides that turned untyped, or whose golden our parser no longer reads, fails it.", "",
+             *table(["Count", "Base", "PR", "Delta", "Target"], rows)]
+    reg = corpus.get("regressions")
+    if isinstance(reg, dict):
+        untyped, unread = reg.get("untyped") or [], reg.get("golden_unread") or []
+        lines += ["", f"Regressions (queries on both sides): {len(untyped)} turned untyped"
+                      + (" (" + ", ".join(cell(x) for x in untyped[:10]) + ")" if untyped else "")
+                      + f"; {len(unread)} goldens no longer read" + (" (" + ", ".join(cell(x) for x in unread[:10]) + ")" if unread else "") + "."]
+    diffs = corpus.get("golden_diffs") or []
+    if diffs:
+        lines += ["", *table(["VictoriaLogs", "Goldens compared", "Changed", "Added", "Removed", "Changed query ids (first 20)"],
+                            [[cell(d.get("version")), fmt(d.get("compared")), fmt(d.get("changed")), fmt(d.get("added")), fmt(d.get("removed")),
+                              ", ".join(cell(x) for x in d.get("examples") or []) or "none"] for d in diffs]),
+                  "", "A changed golden is the translation of an existing query changing: expected for a translation change, a finding otherwise. "
+                      "The rows are in the `pr-quality-report` artifact's corpus (`pr-head-query-corpus.jsonl.gz`)."]
+    elif not base:
+        lines += ["", "No base corpus: main's cached corpus for the base commit is missing or older than goldens, so nothing is compared or gated."]
+    return lines
+
+
 def query_semantics_runtime(sources):
     source = mapping(sources.get("loki"))
     if source.get("state") != "completed":
@@ -589,6 +639,9 @@ def render(base, head, evidence):
                                     [["Matrix cases", *(fmt(semantics_run.get(k)) for k in ("passed", "failed", "skipped"))]]),
                         "", "Failing case IDs: " + (", ".join(cell(x) for x in semantics_run.get("failed_cases", [])[:8]) or "none") + "."]
         lines += section("Query semantics catalog: base versus PR", details, "no catalog counts")
+    corpus = mapping(head.get("query_corpus"))
+    if corpus:
+        lines += section("Query corpus: base versus PR", query_corpus_details(corpus), "no corpus counts")
     if conformance:
         lines += section("Recorded conformance contracts and subtests", conformance_details(conformance), "no conformance outcomes")
     lines += section("API contract coverage and regression changes", comparison["details"], "no test outcomes, coverage or declared inventory in either snapshot")

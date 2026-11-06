@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -33,6 +34,13 @@ type Row struct {
 	Valid   bool     `json:"valid"`
 	Query   string   `json:"q"`
 	Sources []string `json:"sources"`
+	// Golden is the LogsQL of a valid LogQL client row, per VictoriaLogs version:
+	// the newest always, an older one only where it differs (annotate).
+	Golden map[string]string `json:"golden,omitempty"`
+	// GoldenReads is whether our LogsQL parser reads the newest golden.
+	GoldenReads bool `json:"golden_reads,omitempty"`
+	// Untyped lists the kinds of node of the query that hold text, not typed fields.
+	Untyped []string `json:"untyped,omitempty"`
 }
 
 func queryID(lang, q string) string {
@@ -46,7 +54,8 @@ func queryID(lang, q string) string {
 //	LVP_QUERY_CORPUS_DIR=$dir go test -tags corpuscapture -short -p 1 ./internal/...
 //	LVP_QUERY_CORPUS_DIR=$dir LVP_QUERY_CORPUS_OUT=corpus.jsonl.gz go test ./internal/querycorpus -run TestBuildQueryCorpus
 //
-// The corpus is a CI artifact, not a committed file.
+// The corpus is a CI artifact, not a committed file. Its counts go to
+// <corpus>.summary.json beside it, which TestQueryCorpusReport reads.
 func TestBuildQueryCorpus(t *testing.T) {
 	dir, outPath := os.Getenv("LVP_QUERY_CORPUS_DIR"), os.Getenv("LVP_QUERY_CORPUS_OUT")
 	if dir == "" || outPath == "" {
@@ -95,8 +104,9 @@ func TestBuildQueryCorpus(t *testing.T) {
 		fh.Close()
 	}
 
+	versions := goldenVersions(t)
 	out := make([]*Row, 0, len(rows))
-	duplicated, sent, sentValid := 0, 0, 0
+	duplicated := 0
 	for _, r := range rows {
 		if r.Lang == "logsql" {
 			_, err := logsql.Parse(r.Query)
@@ -105,12 +115,7 @@ func TestBuildQueryCorpus(t *testing.T) {
 			_, err := logql.Parse(r.Query)
 			r.Valid = err == nil
 		}
-		if r.Path != "" {
-			sent++
-			if r.Valid {
-				sentValid++
-			}
-		}
+		annotate(r, versions)
 		sort.Strings(r.Sources)
 		r.Sources = compact(r.Sources)
 		// A query many tests send to VictoriaLogs is shared traffic, not a case
@@ -140,8 +145,20 @@ func TestBuildQueryCorpus(t *testing.T) {
 	if err := fh.Close(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("corpus rows=%d (sent to VictoriaLogs %d, our LogsQL parser reads %d) defined in more than one test=%d internal parse call sites=%d",
-		len(out), sent, sentValid, duplicated, len(internal))
+	summary := summarize(out, duplicated, len(internal), versions)
+	b, err := json.MarshalIndent(summary, "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(summaryPath(outPath), append(b, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("corpus summary: %s", b)
+}
+
+// summaryPath is where the summary of the corpus at outPath goes.
+func summaryPath(outPath string) string {
+	return strings.TrimSuffix(outPath, ".jsonl.gz") + ".summary.json"
 }
 
 func compact(s []string) []string {

@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, relative_spread_pct
+from scripts.ci.check_quality_gate import REQUIRED_COMPONENTS, check_component_breakdown, check_samples_threshold, query_corpus_failures, relative_spread_pct
 
 
 class CheckQualityGateComponentTests(unittest.TestCase):
@@ -297,3 +297,16 @@ class PoolOverheadOverrideTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0,
             "gate accepted a 5x growth on a non-overridden bench")
         self.assertIn("Labels cache-hit memory", result.stderr)
+
+
+class QueryCorpusRegressionTests(unittest.TestCase):
+    def test_no_corpus_or_no_base_checks_nothing(self):
+        self.assertEqual(query_corpus_failures(None), [])
+        self.assertEqual(query_corpus_failures({"summary": {}, "targets": [{"state": "worse"}]}), [])
+
+    def test_regressions_fail_and_target_misses_do_not(self):
+        corpus = {"targets": [{"name": "untyped_logql_rows", "rule": "max", "want": 10, "got": 11, "state": "worse"}],
+                  "regressions": {"untyped": ["q-a", "q-b"], "golden_unread": []}}
+        got = query_corpus_failures(corpus)
+        self.assertEqual(got, ["query corpus: 2 queries on both the base and the PR turned untyped: q-a, q-b"])
+        self.assertEqual(query_corpus_failures({"regressions": {"untyped": [], "golden_unread": []}}), [])
