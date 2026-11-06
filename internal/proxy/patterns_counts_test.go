@@ -2,9 +2,11 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -197,10 +199,9 @@ func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 		for _, s := range e.Samples {
 			ts, _ := numberToInt64(s[0])
 			n, _ := numberToInt(s[1])
-			if n == 0 {
-				t.Fatalf("%q has a zero sample", key)
+			if n != 0 {
+				got[key][ts] = n
 			}
-			got[key][ts] = n
 		}
 	}
 	want := map[string]map[int64]int{
@@ -293,16 +294,21 @@ func TestPatternStepsFollowLoki(t *testing.T) {
 	}
 }
 
-// Loki answers only the steps a pattern saw lines in: no zero samples between them.
+// Loki answers every step between a pattern's first and last sample, a step without lines as 0, and none
+// before the first or after the last (measured against Loki 3.7.9 on the compose stack).
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
-func TestPatternSamplesHaveNoZeros(t *testing.T) {
+func TestPatternSamplesFillBetweenFirstAndLastStep(t *testing.T) {
 	entries := fillPatternSamplesAcrossRequestedRange([]patternResultEntry{{
 		Pattern: "a b c d",
-		Samples: [][]interface{}{{int64(100), 2}, {int64(130), 1}},
+		Samples: [][]interface{}{{int64(110), 2}, {int64(140), 1}},
 	}}, "100", "200", "10s")
-	if got := entries[0].Samples; len(got) != 2 {
-		t.Fatalf("samples %v, want the two steps with lines", got)
+	var got []string
+	for _, s := range entries[0].Samples {
+		got = append(got, fmt.Sprint(s[0], ":", s[1]))
+	}
+	if want := "110:2 120:0 130:0 140:1"; strings.Join(got, " ") != want {
+		t.Fatalf("samples %v, want %s", got, want)
 	}
 }
 
@@ -322,4 +328,37 @@ func FuzzPatternCountsStep(f *testing.F) {
 			t.Fatalf("step %s for %d %q is under 10s or not whole seconds", got, span, step)
 		}
 	})
+}
+
+// A long range is counted in aligned windows: a refresh that moves it by a step counts only the windows at its
+// moving ends again; the settled windows between them come from the cache.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+func TestPatternsFromCountsReuseSettledWindows(t *testing.T) {
+	fake := &fakePatternCounts{
+		groups:   `{"level":"info","_lvp_collapsed":"a b c d","c":"4","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
+		timeline: `{"_time":"2026-11-06T12:00:00Z","level":"info","_lvp_collapsed":"a b c d","c":"4"}` + "\n",
+	}
+	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
+	p.queryRangeHistoryCacheTTL = time.Hour // settled windows are cached, as with the deployed default
+	ask := func(start, end int64) {
+		q := url.Values{"query": {`{app="api"}`}, "start": {strconv.FormatInt(start, 10)}, "end": {strconv.FormatInt(end, 10)}, "step": {"60s"}}
+		w := httptest.NewRecorder()
+		p.handlePatterns(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/patterns?"+q.Encode(), nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", w.Code, w.Body)
+		}
+	}
+	const start = int64(1793966400) // 2026-11-06T06:00:00Z, settled long before now
+	ask(start, start+6*3600)
+	cold := fake.calls.Load()
+	if want := int32(2 * 6); cold != want {
+		t.Fatalf("cold: %d VictoriaLogs calls, want %d (two per hour window)", cold, want)
+	}
+	ask(start+60, start+6*3600+60)
+	// The cold range's own edge windows were not cached: the shifted range counts its two new edges and the
+	// cold range's last hour, now between them; the four hours before it are cached.
+	if refresh := fake.calls.Load() - cold; refresh != 2*3 {
+		t.Fatalf("shifted refresh: %d VictoriaLogs calls, want 6 (three windows of seven)", refresh)
+	}
 }

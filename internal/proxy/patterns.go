@@ -292,7 +292,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 		if endpoint == "/select/logsql/query" {
 			// Counted by VictoriaLogs over the whole range when it can be; a sample of lines otherwise.
-			if entries, ok := p.patternsFromCounts(r.Context(), query, startParam, endParam, stepParam, patternLimit); ok {
+			if entries, ok := p.patternsFromCounts(r, query, startParam, endParam, stepParam, patternLimit); ok {
 				return entries, true
 			}
 			denseWindowing := p.supportsDensePatternWindowingForRequest(r)
@@ -1270,12 +1270,12 @@ func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startP
 			continue
 		}
 
-		// Loki answers a pattern's steps that saw lines only: no zero samples.
-		filled := make([][]interface{}, 0, len(sampleMap))
+		// Loki answers every step between a pattern's first and last sample, a step without lines as 0
+		// (pkg/pattern/drain Chunk.ForRange).
+		filledPoints := int(((fillEndBucket - fillStartBucket) / effectiveStepSeconds) + 1)
+		filled := make([][]interface{}, 0, filledPoints)
 		for ts := fillStartBucket; ts <= fillEndBucket; ts += effectiveStepSeconds {
-			if n := sampleMap[ts]; n != 0 {
-				filled = append(filled, []interface{}{ts, n})
-			}
+			filled = append(filled, []interface{}{ts, sampleMap[ts]})
 		}
 		entries[i].Samples = filled
 	}

@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"sort"
@@ -124,12 +125,33 @@ type patternTimelineCount struct {
 	count  int
 }
 
+// patternCountsWindow is the shortest window a range longer than it is counted in; patternCountsMaxWindows bounds
+// the windows, which double in length until it holds. Windows are aligned to their length, so a refresh that moves
+// the range counts only its ends: a settled window's patterns come from the cache.
+const (
+	patternCountsWindow     = time.Hour
+	patternCountsMaxWindows = 16
+	patternCountsParallel   = 8
+)
+
+func patternCountsWindows(startNs, endNs int64) []queryRangeWindow {
+	span := time.Duration(endNs - startNs)
+	if span <= patternCountsWindow {
+		return []queryRangeWindow{{startNs: startNs, endNs: endNs}}
+	}
+	window := patternCountsWindow
+	for span/window > patternCountsMaxWindows {
+		window *= 2
+	}
+	return splitQueryRangeWindowsWithOptions(startNs, endNs, window, "backward", true)
+}
+
 // patternsFromCounts answers /patterns from VictoriaLogs' counts of every line in the range rather than from a
-// sample of lines. Two typed stats queries run at once: the groups, each with its smallest and largest real
-// message, which are mined; and their counts per step, which become the patterns' samples. ok is false when the
-// request is one it does not answer (a query that is not a bare stream selector, bounds it cannot read, more rows
-// than -patterns-max-counts-rows, a row without a message) or VictoriaLogs fails; the caller then samples lines.
-func (p *Proxy) patternsFromCounts(ctx context.Context, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
+// sample of lines (countPatternsWindow), window by window over a long range, the windows' patterns merged as the
+// sampled windows' are. ok is false when the request is one it does not answer (a query that is not a bare stream
+// selector, bounds it cannot read, more rows than -patterns-max-counts-rows, a row without a message) or
+// VictoriaLogs fails; the caller then samples lines.
+func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
 	if !p.patternsCounts {
 		return nil, false
 	}
@@ -155,6 +177,69 @@ func (p *Proxy) patternsFromCounts(ctx context.Context, query, startParam, endPa
 	if err != nil {
 		return nil, false
 	}
+	windows := patternCountsWindows(startNs, endNs)
+	if len(windows) == 1 {
+		return p.countPatternsWindow(r.Context(), filter, step, startNs, endNs, patternLimit)
+	}
+	type windowResult struct {
+		entries []patternResultEntry
+		ok      bool
+	}
+	results := make([]windowResult, len(windows))
+	sem := make(chan struct{}, patternCountsParallel)
+	var wg sync.WaitGroup
+	for i, w := range windows {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i].entries, results[i].ok = p.countPatternsWindowCached(r, filter, step, w, i > 0 && i < len(windows)-1)
+		}()
+	}
+	wg.Wait()
+	var merged []patternResultEntry
+	for _, res := range results {
+		if !res.ok {
+			return nil, false
+		}
+		merged = mergePatternResultEntries(merged, res.entries)
+	}
+	return merged, len(merged) > 0
+}
+
+// countPatternsWindowCached is countPatternsWindow for one window of a long range, its patterns cached when the
+// window is interior and settled (queryRangeWindowTTL), as the sampled windows' are.
+func (p *Proxy) countPatternsWindowCached(r *http.Request, filter logsql.FilterExpr, step time.Duration, w queryRangeWindow, interior bool) ([]patternResultEntry, bool) {
+	ctx := r.Context()
+	ttl := p.queryRangeWindowTTL(w.endNs)
+	cacheKey := ""
+	if interior && ttl > 0 {
+		stepParam := strconv.FormatInt(int64(step/time.Second), 10) + "s"
+		cacheKey = p.patternWindowCacheKey(r, "counts "+filter.String(), stepParam, maxPatternResponseLimit, p.limits().PatternsCountsRows, w.startNs, w.endNs)
+		lookup := time.Now()
+		if cached, ok := p.cache.Get(cacheKey); ok {
+			var value patternWindowCacheValue
+			if json.Unmarshal(cached, &value) == nil {
+				p.observeInternalOperation(ctx, "patterns_window_cache", "hit", time.Since(lookup))
+				return value.Entries, true
+			}
+		}
+		p.observeInternalOperation(ctx, "patterns_window_cache", "miss", time.Since(lookup))
+	}
+	entries, ok := p.countPatternsWindow(ctx, filter, step, w.startNs, w.endNs, maxPatternResponseLimit)
+	if ok && cacheKey != "" && ctx.Err() == nil {
+		if encoded, err := json.Marshal(patternWindowCacheValue{Entries: entries, PatternCount: len(entries)}); err == nil {
+			p.cache.SetWithTTL(cacheKey, encoded, ttl)
+		}
+	}
+	return entries, ok
+}
+
+// countPatternsWindow counts every line of [startNs, endNs]: two typed stats queries run at once, the groups,
+// each with its smallest and largest real message, which are mined; and their counts per step, which become the
+// patterns' samples.
+func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExpr, step time.Duration, startNs, endNs int64, patternLimit int) ([]patternResultEntry, bool) {
 	maxRows := p.limits().PatternsCountsRows
 	levels := p.newLogRowLevels()
 	ctx, cancel := context.WithCancel(ctx)
