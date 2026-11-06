@@ -396,6 +396,16 @@ def split_main(args):
     return 0
 
 
+def shard_dir(path, planned):
+    """The directory a shard's outputs were downloaded to. download-artifact unpacks each artifact a pattern
+    matches into its own directory, except when the pattern matches one: then the files land in the download
+    root itself. So the one planned shard of a small selection may be the parent of the directory named."""
+    parent = os.path.dirname(os.path.normpath(path))
+    if planned == 1 and not os.path.isdir(path) and os.path.exists(os.path.join(parent, "verdict.json")):
+        return parent
+    return path
+
+
 def read_shard(path):
     """(summaries in run order, meta, verdict) of one shard's --out; verdict is None when it wrote none."""
     def load(name):
@@ -451,7 +461,7 @@ def merge_main(args, out, meta, t0):
         if args.selection:
             with open(args.selection) as f:
                 sel = json.load(f)
-        shards = [(path, *read_shard(path)) for path in args.merge]
+        shards = [(path, *read_shard(shard_dir(path, len(args.merge)))) for path in args.merge]
         metas = [m for _, _, m, _ in shards if m]
         if metas:
             meta.update(merge_meta(metas))

@@ -195,7 +195,8 @@ jobs:
           name: perf-plan
           path: /tmp/ab-plan
 
-      # One directory per shard artifact (perf-ab-shard-<i>), also when there is only one.
+      # One directory per shard artifact (perf-ab-shard-<i>) when the pattern matches several; a single match is
+      # unpacked into /tmp/ab-shards itself, and the merge reads it there (pr_smoke.shard_dir).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         if: env.RAN == 'true'
         continue-on-error: true  # a shard that left nothing is named by the merge as incomplete
