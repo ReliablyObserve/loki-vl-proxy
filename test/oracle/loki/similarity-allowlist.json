@@ -1,0 +1,19 @@
+{
+  "_comment": "Repository Go files that share runs of 50 tokens with Loki's pkg/ sources, tests included (the oracle's similar command), each with how many fingerprints it may share and why. Any other file that shares one, or one of these sharing more, fails the PR quality gate. pending_removal marks a copy of Loki code that has to be rewritten: it is held at its size until it is gone.",
+  "files": {
+    "internal/logql/stage_validate.go": {
+      "max_shared": 8,
+      "reason": "the names of the template functions line_format and label_format accept (Loki's functionMap and its sprig subset): the API a query may call, listed so templates parse; no Loki code"
+    },
+    "internal/proxy/postprocess.go": {
+      "max_shared": 13,
+      "pending_removal": true,
+      "reason": "patternLineTokenizer.Tokenize follows Loki's pkg/pattern/drain/line_tokenizer.go (AGPL-3.0) line for line; to be rewritten"
+    },
+    "internal/proxy/step_align_diff_test.go": {
+      "max_shared": 34,
+      "pending_removal": true,
+      "reason": "lokiParseTimestamp is Loki's pkg/loghttp/params.go parseTimestamp, copied as a test reference; to be replaced by recorded Loki answers"
+    }
+  }
+}

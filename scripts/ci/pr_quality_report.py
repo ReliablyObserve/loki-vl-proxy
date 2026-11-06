@@ -295,6 +295,47 @@ def query_corpus_details(corpus):
     elif not base:
         lines += ["", "No base corpus: main's cached corpus for the base commit is missing or older than goldens, so nothing is compared or gated."]
     lines += oracle_details(corpus)
+    lines += loki_details(corpus)
+    return lines
+
+
+# The counts of the Loki parse oracle (internal/querycorpus LokiCounts), in order.
+LOKI_COUNTS = (
+    ("queries", "Queries"),
+    ("both_accept", "Both accept"),
+    ("same_meaning", "… with the same meaning to Loki"),
+    ("both_reject", "Both reject"),
+    ("same_error", "… with Loki's error text"),
+    ("ours_only", "The proxy accepts, Loki rejects"),
+    ("loki_only", "Loki accepts, the proxy rejects"),
+)
+
+
+def loki_details(corpus):
+    """Loki's own parser against the proxy's validation, on the corpus's client queries and on Loki's syntax test
+    queries, base versus PR; the queries it now judges worse; and the proxy files that share code with Loki's."""
+    loki = mapping(corpus.get("loki"))
+    lines = []
+    if loki:
+        base = mapping(corpus.get("loki_base"))
+        lines += ["", f"Loki {cell(loki.get('version'))}'s own parser (`test/oracle/loki`, test-only) against the proxy's query validation:", ""]
+        for kind, title in (("client", "Client queries of the corpus"), ("case", "Loki's syntax test queries")):
+            now, before = mapping(loki.get(kind)), mapping(base.get(kind))
+            rows = [[label, fmt(before.get(k)) if before else "no base", fmt(now.get(k)),
+                     f"{now[k] - before[k]:+d}" if numeric(before.get(k)) and numeric(now.get(k)) else "n/a"] for k, label in LOKI_COUNTS]
+            lines += [f"{title}:", "", *table(["Count", "Base", "PR", "Delta"], rows), ""]
+        reg = corpus.get("loki_regressions")
+        if isinstance(reg, dict):
+            lines.append("Regressions against Loki: " + "; ".join(f"{len(reg.get(k) or [])} {what}" for k, what in (
+                ("disagree", "no longer agree on accepting"), ("error_lost", "error text no longer Loki's"),
+                ("meaning_lost", "printed form no longer means the same"))) + ".")
+    similar = corpus.get("similar")
+    if isinstance(similar, list):
+        lines += ["", "Repository files sharing runs of 50 tokens with Loki's sources (`test/oracle/loki/similarity-allowlist.json` lists the allowed ones, with why):", "",
+                  *(table(["File", "Shared", "Allowed", "Loki file", "Note"],
+                          [[cell(x.get("file")), fmt(x.get("shared")), fmt(x.get("allowed")), cell(x.get("best")),
+                            "copy pending removal" if x.get("pending_removal") else ""] for x in similar])
+                    if similar else ["none"])]
     return lines
 
 

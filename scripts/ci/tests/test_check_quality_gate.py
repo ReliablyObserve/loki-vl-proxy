@@ -299,34 +299,12 @@ class PoolOverheadOverrideTests(unittest.TestCase):
         self.assertIn("Labels cache-hit memory", result.stderr)
 
 
-class QueryCorpusRegressionTests(unittest.TestCase):
-    def test_no_corpus_or_no_base_checks_nothing(self):
+class QueryCorpusFailureTests(unittest.TestCase):
+    def test_no_corpus_checks_nothing(self):
         self.assertEqual(query_corpus_failures(None), [])
-        self.assertEqual(query_corpus_failures({"summary": {}, "targets": [{"state": "worse"}]}), [])
+        self.assertEqual(query_corpus_failures({"summary": {}, "failures": []}), [])
 
-    def test_regressions_fail_and_target_misses_do_not(self):
-        corpus = {"targets": [{"name": "untyped_logql_rows", "rule": "max", "want": 10, "got": 11, "state": "worse"}],
-                  "regressions": {"untyped": ["q-a", "q-b"], "golden_unread": []}}
-        got = query_corpus_failures(corpus)
-        self.assertEqual(got, ["query corpus: 2 queries on both the base and the PR turned untyped: q-a, q-b"])
-        self.assertEqual(query_corpus_failures({"regressions": {"untyped": [], "golden_unread": []}}), [])
-
-
-class QueryCorpusOracleTests(unittest.TestCase):
-    def test_oracle_regressions_fail(self):
-        corpus = {"oracle_regressions": [{"version": "v1.53.0", "goldens_rejected": ["q-a"], "goldens_meaning_lost": [], "cases_lost": ["c-1", "c-2"]}]}
-        self.assertEqual(query_corpus_failures(corpus), [
-            "VictoriaLogs v1.53.0: 1 goldens VictoriaLogs now rejects: q-a",
-            "VictoriaLogs v1.53.0: 2 VictoriaLogs test cases our LogsQL parser no longer reads the same: c-1, c-2"])
-
-    def test_no_oracle_regressions_pass(self):
-        corpus = {"oracle": [{"version": "v1.53.0", "goldens_rejected": 5}], "oracle_regressions": [
-            {"version": "v1.53.0", "goldens_rejected": [], "goldens_meaning_lost": [], "cases_lost": []}]}
-        self.assertEqual(query_corpus_failures(corpus), [])
-
-
-class QueryCorpusConstructTests(unittest.TestCase):
-    def test_uncovered_constructs_fail(self):
-        corpus = {"constructs": [{"version": "v1.53.0", "missing": ["pipes/unroll"]}, {"version": "v1.49.0", "missing": []}]}
-        self.assertEqual(query_corpus_failures(corpus), [
-            "VictoriaLogs v1.53.0: constructs not covered by internal/logsql (scripts/vl-ast-coverage.json): pipes/unroll"])
+    def test_the_reports_failures_fail_the_gate_as_written(self):
+        corpus = {"failures": ["query corpus: 2 queries on both the base and the PR turned untyped: q-a, q-b",
+                               "Loki: 1 queries whose error text is no longer Loki's: client/q-c"]}
+        self.assertEqual(query_corpus_failures(corpus), corpus["failures"])

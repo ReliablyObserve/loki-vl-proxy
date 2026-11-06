@@ -361,17 +361,20 @@ fi
 
 python3 "$SCRIPT_DIR/quality_scope.py" --root "$ROOT_DIR" > "$TMP_DIR/inventory.json"
 
-# Checks on the corpus the test collection built, outside its timeout: VictoriaLogs' own parser on the goldens, the
-# sent LogsQL and its test cases per matrix version, then the summary against the committed targets and, with a
-# base corpus, the golden changes and the queries that got worse. The quality gate reads those from the report;
+# Checks on the corpus the test collection built, outside its timeout: VictoriaLogs' and Loki's own parsers, then the
+# summary against the committed targets and, with a base corpus, the golden changes and the queries that got worse. The quality gate reads those from the report;
 # a failing check never stops the collection.
 check_query_corpus() {
   local corpus="${QUALITY_QUERY_CORPUS_OUT:-}"
   if [ -z "$corpus" ] || [ ! -s "${corpus%.jsonl.gz}.summary.json" ]; then
     return 0
   fi
-  bash "$SCRIPT_DIR/vl_oracle.sh" "$corpus" >&2 \
+  # Both parse oracles (test/oracle/vl and test/oracle/loki, modules of their own) write their verdicts beside the
+  # corpus; the report below reads them. An oracle that does not run leaves its section out.
+  LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/querycorpus -run '^TestVLOracle$' -count=1 -v >&2 \
     || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
+  LVP_RUN_ORACLES=1 LVP_QUERY_CORPUS_OUT="$corpus" go test ./internal/proxy -run '^TestLokiOracle$' -count=1 -v >&2 \
+    || log_step "the Loki parse oracle did not run; the report continues without it"
   LVP_QUERY_CORPUS_OUT="$corpus" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
     LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
     go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \

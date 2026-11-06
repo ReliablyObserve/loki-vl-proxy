@@ -2,7 +2,7 @@
 //
 // It is a module of its own, never part of the proxy build, and runs against one pinned VictoriaLogs version
 // at a time. go.mod pins the compatibility matrix's pinned version and go.v<version>.mod each other one, with a
-// replace so no other module can move it; -modfile picks the file (scripts/ci/vl_oracle.sh runs it):
+// replace so no other module can move it; -modfile picks the file (internal/querycorpus TestVLOracle runs it):
 //
 //	go run -modfile=go.v1.49.0.mod . cases -src "$(go list -modfile=go.v1.49.0.mod -m -f '{{.Replace.Dir}}' github.com/VictoriaMetrics/VictoriaLogs)" -out cases.json
 //	go run -modfile=go.v1.49.0.mod . check -in inputs.jsonl -out verdicts.jsonl
