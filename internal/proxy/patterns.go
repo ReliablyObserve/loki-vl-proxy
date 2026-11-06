@@ -57,7 +57,7 @@ func (p *Proxy) patternWindowCacheKey(r *http.Request, query, step string, patte
 		p.detectedLevelCacheKey(), p.defaultMsgValue(),
 	})
 	digest := sha256.Sum256(identity)
-	return fmt.Sprintf("patterns_window:%s:v2:%x", scope, digest)
+	return fmt.Sprintf("patterns_window:%s:v3:%x", scope, digest)
 }
 
 func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {
@@ -357,6 +357,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordPatternsSnapshotMiss()
 		diag.markLowCoverage()
 	}
+	// The last step before the response limit, once equal texts are merged: Loki answers only the patterns that
+	// hold enough lines in the range.
+	startNs, endNs, _ := parseLokiTimeRangeToUnixNano(startParam, endParam)
+	entries = dropPatternsBelowMinLines(entries, startNs, endNs)
 	if entries == nil {
 		entries = []patternResultEntry{}
 	}
@@ -728,9 +732,10 @@ func parsePatternSourceLineLimit(raw, startParam, endParam, stepParam string) in
 	return estimate
 }
 
-// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v2 answers are counted over the
-// whole range at Loki's step (patternsFromCounts); v1 answers were line samples and are not read.
-const patternsCacheKeyPrefix = "patterns:v2:"
+// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v3 answers are mined per stream
+// and level as Loki's pattern ingester mines them; v2 answers (counted over the whole range at Loki's step, mined
+// across streams) and v1 answers (line samples) are not read.
+const patternsCacheKeyPrefix = "patterns:v3:"
 
 // derivePatternStep is the step Loki gives a /patterns request without one (pkg/loghttp step): the range over 250
 // points, in whole seconds and at least one.
@@ -884,6 +889,36 @@ func customPatternSeedBucket(startParam, stepParam string) int64 {
 		nowBucket = (nowBucket / stepSeconds) * stepSeconds
 	}
 	return nowBucket
+}
+
+// lokiPatternMinLines is the fewest lines a pattern holds in the requested range for Loki to answer it. It is
+// Loki's observed behaviour, not a documented limit: on Loki 3.7.9 with its default pattern_rate_threshold a pattern
+// with 29 lines in the range is left out and one with 30 answered, whatever the stream's volume and the step.
+const lokiPatternMinLines = 30
+
+// dropPatternsBelowMinLines is the entries Loki would answer: those with at least lokiPatternMinLines lines in
+// [startNs, endNs), a line counting in the sample of the step it falls in when the step starts inside the range.
+// A bound that is not a time (startNs or endNs 0) does not limit the range. entries are not changed.
+func dropPatternsBelowMinLines(entries []patternResultEntry, startNs, endNs int64) []patternResultEntry {
+	kept := make([]patternResultEntry, 0, len(entries))
+	for _, e := range entries {
+		lines := 0
+		for _, sample := range e.Samples {
+			if len(sample) < 2 {
+				continue
+			}
+			at, okAt := numberToInt64(sample[0])
+			n, okN := numberToInt(sample[1])
+			if !okAt || !okN || startNs > 0 && at*int64(time.Second) < startNs || endNs > 0 && at*int64(time.Second) >= endNs {
+				continue
+			}
+			lines += n
+		}
+		if lines >= lokiPatternMinLines {
+			kept = append(kept, e)
+		}
+	}
+	return kept
 }
 
 func patternResultEntriesFromMaps(patterns []map[string]interface{}) []patternResultEntry {

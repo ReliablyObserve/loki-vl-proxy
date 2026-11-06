@@ -659,7 +659,10 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		}
 		calls++
 		if calls == 1 {
-			_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+			for i := 0; i < lokiPatternMinLines; i++ {
+				_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+			}
 			return
 		}
 		_, _ = w.Write([]byte{})
@@ -671,7 +674,7 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		_ = p.Shutdown(context.Background())
 	})
 
-	firstReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000000&end=1710000120&step=60s`, nil)
+	firstReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1705314600&end=1705314720&step=60s`, nil)
 	firstRec := httptest.NewRecorder()
 	p.handlePatterns(firstRec, firstReq)
 	if firstRec.Code != http.StatusOK {
@@ -686,7 +689,7 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		t.Fatalf("expected first patterns response to contain data, got %#v", firstResp)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000060&end=1710000180&step=60s`, nil)
+	secondReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1705314660&end=1705314780&step=60s`, nil)
 	secondRec := httptest.NewRecorder()
 	p.handlePatterns(secondRec, secondReq)
 	if secondRec.Code != http.StatusOK {
@@ -744,8 +747,11 @@ func TestPatternsRestoredSnapshotAnswersRequests(t *testing.T) {
 	var calls atomic.Int64
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n" +
-			`{"_time":"2024-01-15T10:30:30Z","_msg":"GET /api/orders 200 12ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n" +
+				`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/orders 200 12ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+		}
 	}))
 	defer backend.Close()
 

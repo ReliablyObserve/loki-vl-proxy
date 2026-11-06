@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -73,9 +75,9 @@ func TestPatternCountsQueriesAreTyped(t *testing.T) {
 			}
 		}
 	}
-	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _lvp_group`
+	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _stream_id, _lvp_group`
 	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | collapse_nums at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
-	if want := prefix + by + `) count() as c, min(_msg) as _msg, max(_msg) as _lvp_max | limit 10`; groups.String() != want {
+	if want := prefix + by + `) count() as c, min(_msg) as _msg, max(_msg) as _lvp_max, min(_time) as _lvp_first | limit 10`; groups.String() != want {
 		t.Errorf("groups query\n got %s\nwant %s", groups, want)
 	}
 	if want := prefix + `_time:14s, ` + by + `) count() as c | limit 10`; timeline.String() != want {
@@ -177,14 +179,14 @@ func patternsRequest(t *testing.T, p *Proxy, query, step string) patternsRespons
 // conformance: drilldown/patterns-full-range-counts, drilldown/patterns-one-series-per-level, loki_api_v1_patterns
 func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 	fake := &fakePatternCounts{
-		groups: `{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"5","_msg":"GET /api status=200 took 5ms user=alice","_lvp_max":"GET /api status=200 took 9ms user=alice"}
-{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"2","_msg":"GET /api status=200 took 7ms user=bob","_lvp_max":"GET /api status=200 took 8ms user=bob"}
-{"level":"error","_lvp_group":"job failed code=<N> retry later now","c":"3","_msg":"job failed code=7 retry later now","_lvp_max":"job failed code=7 retry later now"}
+		groups: `{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"50","_msg":"GET /api status=200 took 5ms user=alice","_lvp_max":"GET /api status=200 took 9ms user=alice"}
+{"level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"20","_msg":"GET /api status=200 took 7ms user=bob","_lvp_max":"GET /api status=200 took 8ms user=bob"}
+{"level":"error","_lvp_group":"job failed code=<N> retry later now","c":"30","_msg":"job failed code=7 retry later now","_lvp_max":"job failed code=7 retry later now"}
 `,
-		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"3"}
-{"_time":"2026-11-06T18:29:50Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"2"}
-{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"2"}
-{"_time":"2026-11-06T18:25:00Z","level":"error","_lvp_group":"job failed code=<N> retry later now","c":"3"}
+		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"30"}
+{"_time":"2026-11-06T18:29:50Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=alice","c":"20"}
+{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"GET /api status=<N> took <N>ms user=bob","c":"20"}
+{"_time":"2026-11-06T18:25:00Z","level":"error","_lvp_group":"job failed code=<N> retry later now","c":"30"}
 `,
 	}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
@@ -205,8 +207,8 @@ func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 		}
 	}
 	want := map[string]map[int64]int{
-		"info GET /api status=200 took <_> user=<_>": {1793989200: 5, 1793989790: 2},
-		"error job failed code=7 retry later now":    {1793989500: 3},
+		"info GET /api status=200 took <_> user=<_>": {1793989200: 50, 1793989790: 20},
+		"error job failed code=7 retry later now":    {1793989500: 30},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("patterns %v, want %v", got, want)
@@ -227,7 +229,8 @@ func TestPatternsFromCountsCountEveryLine(t *testing.T) {
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
 func TestPatternsFromCountsFallsBackToSampling(t *testing.T) {
-	sample := `{"_time":"2026-11-06T18:20:00Z","_msg":"sampled line one two three","app":"api","level":"info"}` + "\n"
+	// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+	sample := strings.Repeat(`{"_time":"2026-11-06T18:20:00Z","_msg":"sampled line one two three","app":"api","level":"info"}`+"\n", lokiPatternMinLines)
 	group := `{"level":"info","_lvp_group":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"
 	row := `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"a b c d","c":"1"}` + "\n"
 	for name, tc := range map[string]struct {
@@ -255,8 +258,8 @@ func TestPatternsFromCountsFallsBackToSampling(t *testing.T) {
 // ParseMatchers): registry case loki/errors/patterns-non-selector-query, open.
 func TestPatternsCountsScopeAQueryToItsSelector(t *testing.T) {
 	fake := &fakePatternCounts{
-		groups:   `{"level":"info","_lvp_group":"a b c d","c":"1","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
-		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"a b c d","c":"1"}` + "\n",
+		groups:   `{"level":"info","_lvp_group":"a b c d","c":"30","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n",
+		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"a b c d","c":"30"}` + "\n",
 	}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
 	resp := patternsRequest(t, p, `{app="api"} |= "x"`, "60s")
@@ -267,7 +270,7 @@ func TestPatternsCountsScopeAQueryToItsSelector(t *testing.T) {
 
 // Without -patterns-counts the proxy samples lines.
 func TestPatternsCountsOffSamples(t *testing.T) {
-	fake := &fakePatternCounts{other: `{"_time":"2026-11-06T18:20:00Z","_msg":"sampled line one two three","app":"api","level":"info"}` + "\n"}
+	fake := &fakePatternCounts{other: strings.Repeat(`{"_time":"2026-11-06T18:20:00Z","_msg":"sampled line one two three","app":"api","level":"info"}`+"\n", lokiPatternMinLines)}
 	p := newPatternCountsProxy(t, fake.server(t).URL, 0)
 	p.patternsCounts = false
 	resp := patternsRequest(t, p, `{app="api"}`, "60s")
@@ -382,10 +385,10 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 			return
 		}
 		if strings.Contains(q, "stats by (_time:") {
-			_, _ = w.Write([]byte(`{"_time":"2026-11-06T11:00:00Z","level":"info","_lvp_group":"a b c d","c":"2"}` + "\n"))
+			_, _ = w.Write([]byte(`{"_time":"2026-11-06T17:30:00Z","level":"info","_lvp_group":"a b c d","c":"30"}` + "\n"))
 			return
 		}
-		_, _ = w.Write([]byte(`{"level":"info","_lvp_group":"a b c d","c":"2","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"))
+		_, _ = w.Write([]byte(`{"level":"info","_lvp_group":"a b c d","c":"30","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"))
 	}))
 	t.Cleanup(srv.Close)
 	p := newPatternCountsProxy(t, srv.URL, 0)
@@ -399,4 +402,63 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 	if n := calls.Load(); n != 12 {
 		t.Fatalf("%d VictoriaLogs calls, want the 12 counts queries of six windows", n)
 	}
+}
+
+// The counts flow mines each stream apart, as Loki's pattern ingester does, its groups in the order their earliest
+// lines came: two streams whose lines differ only in the last token are two patterns, where one stream's lines of
+// them are one; and what a stream's groups read as depends on which came first.
+//
+// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternsFromCountsMineEachStreamInOrderOfFirstLine(t *testing.T) {
+	group := func(stream, hash, line, first string) string {
+		return `{"level":"info","_stream_id":"` + stream + `","_lvp_group":"` + hash + `","c":"30","_msg":"` + line + `","_lvp_max":"` + line + `","_lvp_first":"` + first + `"}` + "\n"
+	}
+	timeline := func(stream, hash string) string {
+		return `{"_time":"2026-11-06T18:20:00Z","level":"info","_stream_id":"` + stream + `","_lvp_group":"` + hash + `","c":"30"}` + "\n"
+	}
+	answer := func(groups, timeline string) []string {
+		fake := &fakePatternCounts{groups: groups, timeline: timeline}
+		resp := patternsRequest(t, newPatternCountsProxy(t, fake.server(t).URL, 0), `{app="api"}`, "")
+		var got []string
+		for _, e := range resp.Data {
+			got = append(got, fmt.Sprintf("%s=%d", e.Pattern, countOf(e)))
+		}
+		sort.Strings(got)
+		return got
+	}
+	if got, want := answer(
+		group("pod-a", "g1", "paid order for eur", "2026-11-06T18:20:00Z")+group("pod-b", "g1", "paid order for usd", "2026-11-06T18:20:00Z"),
+		timeline("pod-a", "g1")+timeline("pod-b", "g1")),
+		[]string{"paid order for eur=30", "paid order for usd=30"}; !slices.Equal(got, want) {
+		t.Errorf("two streams: %q, want %q", got, want)
+	}
+	if got, want := answer(
+		group("pod-a", "g1", "paid order for eur", "2026-11-06T18:20:00Z")+group("pod-a", "g2", "paid order for usd", "2026-11-06T18:21:00Z"),
+		timeline("pod-a", "g1")+timeline("pod-a", "g2")),
+		[]string{"paid order for <_>=60"}; !slices.Equal(got, want) {
+		t.Errorf("one stream: %q, want %q", got, want)
+	}
+	const x, y, z = "a 1 2 3 4 5 p", "a 6 7 8 9 10 q", "a 1 2 8 9 s t"
+	counts := timeline("s", "gx") + timeline("s", "gy") + timeline("s", "gz")
+	// x is the stream's first group (the keys order gx, gy, gz): z, like x and y alike, joins the one made first.
+	if got, want := answer(
+		group("s", "gx", x, "2026-11-06T18:20:00Z")+group("s", "gy", y, "2026-11-06T18:21:00Z")+group("s", "gz", z, "2026-11-06T18:22:00Z"), counts),
+		[]string{"a 1 2 <_> <_> <_> <_>=60", y + "=30"}; !slices.Equal(got, want) {
+		t.Errorf("x first: %q, want %q", got, want)
+	}
+	// y came first, though its key is after x's: z joins y.
+	if got, want := answer(
+		group("s", "gx", x, "2026-11-06T18:21:00Z")+group("s", "gy", y, "2026-11-06T18:20:00Z")+group("s", "gz", z, "2026-11-06T18:22:00Z"), counts),
+		[]string{x + "=30", "a <_> <_> 8 9 <_> <_>=60"}; !slices.Equal(got, want) {
+		t.Errorf("y first: %q, want %q", got, want)
+	}
+}
+
+func countOf(e patternResultEntry) int {
+	total := 0
+	for _, s := range e.Samples {
+		n, _ := numberToInt(s[1])
+		total += n
+	}
+	return total
 }

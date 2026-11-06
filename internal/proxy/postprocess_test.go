@@ -310,7 +310,8 @@ func TestExtractLogPatternsRespectsLimit(t *testing.T) {
 func TestExtractLogPatterns_DefaultAndMaxLimitPaths(t *testing.T) {
 	lines := make([]string, 0, maxPatternResponseLimit+25)
 	for i := 0; i < maxPatternResponseLimit+25; i++ {
-		lines = append(lines, `{"_time":"2026-04-04T10:00:00Z","_msg":"tokA`+strconv.Itoa(i)+` tokB`+strconv.Itoa(i)+` tokC`+strconv.Itoa(i)+` tokD`+strconv.Itoa(i)+`","level":"info"}`)
+		// Each miner (a stream at a level) keeps patternMaxClusters clusters at most: the lines are spread over streams.
+		lines = append(lines, `{"_time":"2026-04-04T10:00:00Z","_stream_id":"s`+strconv.Itoa(i/patternMaxClusters)+`","_msg":"tokA`+strconv.Itoa(i)+` tokB`+strconv.Itoa(i)+` tokC`+strconv.Itoa(i)+` tokD`+strconv.Itoa(i)+`","level":"info"}`)
 	}
 	vlBody := []byte(strings.Join(lines, "\n"))
 

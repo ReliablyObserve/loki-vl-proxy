@@ -43,6 +43,13 @@ const patternCountsGroupHash = "_lvp_group"
 // patternCountsMaxField is a group's largest message; the smallest is returned as _msg.
 const patternCountsMaxField = "_lvp_max"
 
+// patternCountsStreamField names the stream of a counted row: Loki's pattern ingester mines each stream apart, so
+// each stream's groups are counted apart.
+const patternCountsStreamField = "_stream_id"
+
+// patternCountsFirstField is a group's earliest time: a stream's groups are mined in the order they first appear.
+const patternCountsFirstField = "_lvp_first"
+
 // maxPatternCountsRowBytes bounds one row of a counts query: a group's messages with its fields.
 const maxPatternCountsRowBytes = 4 << 20
 
@@ -66,16 +73,16 @@ func patternCountsStep(startNs, endNs int64, stepParam string) (time.Duration, b
 	return max(step, patternCountsMinStep).Truncate(time.Second), true
 }
 
-// patternCountsGroupBy is the group of a counted row: the level fields, then the collapsed message.
+// patternCountsGroupBy is the group of a counted row: the level fields, the stream, then the collapsed message.
 func patternCountsGroupBy() []logsql.GroupKey {
-	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+1)
+	by := make([]logsql.GroupKey, 0, len(patternCountsLevelFields)+2)
 	for _, field := range patternCountsLevelFields {
 		if strings.Contains(field, ".") {
 			field = logsql.QuoteValue(field)
 		}
 		by = append(by, logsql.GroupKey{Field: field})
 	}
-	return append(by, logsql.GroupKey{Field: patternCountsGroupHash})
+	return append(by, logsql.GroupKey{Field: patternCountsStreamField}, logsql.GroupKey{Field: patternCountsGroupHash})
 }
 
 // patternCountsQuery is a counts query for a stream selector's filter, built as LogsQL nodes: the message copied
@@ -91,12 +98,13 @@ func patternCountsQuery(filter logsql.FilterExpr, stats logsql.PipeStats, maxRow
 }
 
 // patternGroupsQuery counts every group over the range and keeps its smallest and largest message: two real lines
-// that differ where the group's numbers vary, so the miner keeps the numbers that do not as they are.
+// that differ where the group's numbers vary, which the miner trains in that order (observeGroup).
 func patternGroupsQuery(filter logsql.FilterExpr, maxRows int) *logsql.Query {
 	return patternCountsQuery(filter, logsql.PipeStats{By: patternCountsGroupBy(), Funcs: []logsql.StatsFuncAlias{
 		{Func: logsql.Count{}, Alias: "c"},
 		{Func: logsql.Min{Field: "_msg"}, Alias: "_msg"},
 		{Func: logsql.Max{Field: "_msg"}, Alias: patternCountsMaxField},
+		{Func: logsql.Min{Field: "_time"}, Alias: patternCountsFirstField},
 	}}, maxRows)
 }
 
@@ -106,21 +114,26 @@ func patternTimelineQuery(filter logsql.FilterExpr, step time.Duration, maxRows 
 	return patternCountsQuery(filter, logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}}, maxRows)
 }
 
-// patternGroupKey identifies a counted row's group: its level fields and the hash of its collapsed message.
+// patternGroupKey identifies a counted row's group: its level fields, its stream and the hash of its collapsed
+// message.
 func patternGroupKey(v *fj.Value) string {
 	var b strings.Builder
 	for _, field := range patternCountsLevelFields {
 		b.Write(v.GetStringBytes(field))
 		b.WriteByte(0)
 	}
+	b.Write(v.GetStringBytes(patternCountsStreamField))
+	b.WriteByte(0)
 	b.Write(v.GetStringBytes(patternCountsGroupHash))
 	return b.String()
 }
 
 // patternGroup is one row of the groups query.
 type patternGroup struct {
-	key, level, lo, hi string
-	count              int
+	key, stream, level, lo, hi string
+	count                      int
+	// firstNs is the time of the group's earliest line, in unix nanoseconds, 0 when the row has none.
+	firstNs int64
 }
 
 // patternTimelineCount is one row of the timeline query, its group interned.
@@ -267,7 +280,8 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 				// fields, which a group does not keep.
 				return false
 			}
-			groups = append(groups, patternGroup{key: patternGroupKey(v), level: patternLevelFromFJ(v, &levels), lo: string(lo), hi: string(hi), count: count})
+			firstNs, _ := parseLokiTimeToUnixNano(string(v.GetStringBytes(patternCountsFirstField)))
+			groups = append(groups, patternGroup{key: patternGroupKey(v), stream: string(v.GetStringBytes(patternCountsStreamField)), level: patternLevelFromFJ(v, &levels), lo: string(lo), hi: string(hi), count: count, firstNs: firstNs})
 			return true
 		})
 		if groupsErr != nil {
@@ -309,18 +323,22 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 		return nil, true
 	}
 
-	// The miner's clusters depend on the order it sees lines in: the groups go in by count, then key, so an
-	// answer does not depend on the order VictoriaLogs returned them in.
+	// The miner's clusters depend on the order it sees lines in: each stream is mined apart, as Loki does, its
+	// groups in the order they first appear (the earliest first, then by key), so an answer does not depend on the
+	// order VictoriaLogs returned them in.
 	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].count != groups[j].count {
-			return groups[i].count > groups[j].count
+		if groups[i].stream != groups[j].stream {
+			return groups[i].stream < groups[j].stream
+		}
+		if groups[i].firstNs != groups[j].firstNs {
+			return groups[i].firstNs < groups[j].firstNs
 		}
 		return groups[i].key < groups[j].key
 	})
 	miner := newPatternMiner()
 	clusters := make(map[string]*patternBucket, len(groups))
 	for _, g := range groups {
-		if cluster := miner.observeGroup(g.level, g.lo, g.hi); cluster != nil {
+		if cluster := miner.observeStreamGroup(g.stream, g.level, g.lo, g.hi); cluster != nil {
 			clusters[g.key] = cluster
 		}
 	}

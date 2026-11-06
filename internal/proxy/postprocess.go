@@ -45,7 +45,6 @@ const (
 	patternMaxTokens       = 80
 	patternSimThreshold    = 0.3
 	patternMaxLineLength   = 3000
-	patternPrefixDepth     = 4
 )
 
 type patternBucket struct {
@@ -57,6 +56,10 @@ type patternBucket struct {
 	spacesAfter []int
 	// format is the format of the lines the cluster was mined from (patternLineTokens).
 	format patternFormat
+	// leaf is the node of the miner's tree the cluster is registered at, and used the stamp of its latest use,
+	// which the miner evicts by (patternClusterer).
+	leaf *patternTreeNode
+	used uint64
 }
 
 type patternExtractionStats struct {
@@ -548,6 +551,7 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, leve
 func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats, error) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	var seen patternObservations
 	stats := patternExtractionStats{}
 	rows := levels
 	if rows.streams == nil {
@@ -573,8 +577,12 @@ func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, lev
 		// Extract all fields before returning the parser — fjVal memory is
 		// owned by the parser's arena and becomes invalid after Put.
 		msg := patternMessageFromFJ(fjVal)
-		var timeStr, level string
+		var timeStr, level, stream string
 		if msg != "" {
+			stream = string(fjVal.GetStringBytes("_stream_id"))
+			if stream == "" {
+				stream = string(fjVal.GetStringBytes("_stream"))
+			}
 			for _, key := range []string{"_time", "time", "timestamp", "ts"} {
 				if b := fjVal.GetStringBytes(key); len(b) > 0 {
 					timeStr = string(b)
@@ -588,19 +596,15 @@ func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, lev
 		if msg == "" || timeStr == "" {
 			continue
 		}
-		unixSeconds, ok := parsePatternUnixSecondsStr(timeStr)
+		timeNs, ok := parseLokiTimeToUnixNano(timeStr)
 		if !ok {
 			continue
 		}
-
-		bucket := unixSeconds
-		if stepSeconds > 0 {
-			bucket = (bucket / stepSeconds) * stepSeconds
-		}
-		miner.Observe(level, msg, bucket)
+		seen = append(seen, patternObservation{stream: stream, level: level, msg: msg, timeNs: timeNs, bucket: patternBucketStart(timeNs, stepSeconds)})
 		stats.observedLines++
 	}
 	if stats.observedLines > 0 {
+		seen.mineInto(miner)
 		patterns := buildPatternResponse(miner, limit)
 		stats.patternCount = len(patterns)
 		return patterns, stats, scanner.Err()
@@ -682,6 +686,7 @@ func extractLogPatternsFromWindowEntriesWithStats(entries []queryRangeWindowEntr
 	}
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	var seen patternObservations
 	stats := patternExtractionStats{}
 	for _, entry := range entries {
 		stats.scannedLines++
@@ -700,16 +705,45 @@ func extractLogPatternsFromWindowEntriesWithStats(entries []queryRangeWindowEntr
 		if level == "" {
 			level = levelUnknown
 		}
-		bucket := unixSeconds
-		if stepSeconds > 0 {
-			bucket = (bucket / stepSeconds) * stepSeconds
-		}
-		miner.Observe(level, msg, bucket)
+		seen = append(seen, patternObservation{stream: entry.Key, level: level, msg: msg, timeNs: unixSeconds * int64(time.Second), bucket: patternBucketStart(unixSeconds*int64(time.Second), stepSeconds)})
 		stats.observedLines++
 	}
+	seen.mineInto(miner)
 	patterns := buildPatternResponse(miner, limit)
 	stats.patternCount = len(patterns)
 	return patterns, stats
+}
+
+// patternBucketStart is the start, in unix seconds, of the step a time falls in.
+func patternBucketStart(timeNs, stepSeconds int64) int64 {
+	bucket := timeNs / int64(time.Second)
+	if stepSeconds > 0 {
+		bucket = (bucket / stepSeconds) * stepSeconds
+	}
+	return bucket
+}
+
+// patternObservation is one line read from a source, to be mined in the order Loki would have read it.
+type patternObservation struct {
+	stream, level, msg string
+	timeNs, bucket     int64
+}
+
+// patternObservations are the lines a source gave, in the order it gave them. VictoriaLogs answers newest first;
+// Loki's pattern ingester mines each stream's lines oldest first, so mineInto sorts them by time within each
+// stream (lines at one time keep the order they came in), and mines the streams in the order of their names.
+type patternObservations []patternObservation
+
+func (o patternObservations) mineInto(miner *patternMiner) {
+	sort.SliceStable(o, func(i, j int) bool {
+		if o[i].stream != o[j].stream {
+			return o[i].stream < o[j].stream
+		}
+		return o[i].timeNs < o[j].timeNs
+	})
+	for _, line := range o {
+		miner.observeStreamLine(line.stream, line.level, line.msg, line.bucket, 1)
+	}
 }
 
 func parsePatternStepSeconds(step string) int64 {
@@ -996,18 +1030,22 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 
 // patternEntriesByLevelAndPattern is the miner's clusters as response entries, one per level and pattern: Loki
 // answers one series per level and pattern (pkg/pattern/iter ReadBatch), so clusters the miner kept apart whose
-// patterns read the same, such as two that differ only in the kind of a value the pattern shows as <_>, are one
-// entry with their samples added up. The miner's clusters are not changed.
+// patterns read the same, such as two that differ in the same tokens a longer pattern shows as <_>, are one entry
+// with their samples added up. A cluster that counted no line is not an entry. The miner's clusters are not
+// changed.
 func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
 	clusters := miner.AllClusters()
 	for _, c := range clusters {
 		c.pattern = miner.joinPatternTokens(c.tokens, c.spacesAfter, c.format)
 	}
-	wildcardPatterns(clusters)
 	entries := make([]*patternBucket, 0, len(clusters))
 	byKey := make(map[[2]string]int, len(clusters))
 	merged := make(map[int]bool)
 	for _, c := range clusters {
+		if c.total == 0 {
+			// A cluster the counts path trained but no group counted: Loki answers no pattern without samples.
+			continue
+		}
 		key := [2]string{c.level, c.pattern}
 		at, seen := byKey[key]
 		if !seen {
@@ -1032,170 +1070,102 @@ func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
 	return entries
 }
 
+// patternMinerKey names one of a patternMiner's miners: Loki mines the lines of each stream at each level apart.
+type patternMinerKey struct {
+	stream, level string
+}
+
 type patternMiner struct {
 	tokenizer *patternLineTokenizer
-	// level -> tokenCount -> structural signature -> clusters
-	groups map[string]map[int]map[string][]*patternBucket
-	// Reused by Observe for the line it reads: each token's placeholder and the line's signature.
-	placeholders []string
-	signature    []byte
+	miners    map[patternMinerKey]*patternClusterer
+	// order is the miners in the order they first read a line.
+	order []*patternClusterer
 }
 
 func newPatternMiner() *patternMiner {
 	return &patternMiner{
 		tokenizer: newPatternLineTokenizer(),
-		groups:    make(map[string]map[int]map[string][]*patternBucket),
+		miners:    make(map[patternMinerKey]*patternClusterer),
 	}
 }
 
+// Observe observes a line of a stream that has no name, such as a sample's: all of them are one stream.
 func (m *patternMiner) Observe(level, line string, bucket int64) {
 	m.observeLine(level, line, bucket, 1)
 }
 
-// observeLine observes a line seen count times in bucket and returns the cluster it joined, or nil when the
-// tokenizer does not read the line. A count of 0 shapes the cluster's template without adding a sample.
+// observeLine is observeStreamLine for the stream with no name.
 func (m *patternMiner) observeLine(level, line string, bucket int64, count int) *patternBucket {
+	return m.observeStreamLine("", level, line, bucket, count)
+}
+
+// observeStreamLine observes a line of a stream seen count times in bucket and returns the cluster it joined, or
+// nil when the tokenizer does not read the line or its miner admits no more lines. A count of 0 shapes the
+// cluster's template without adding a sample.
+func (m *patternMiner) observeStreamLine(stream, level, line string, bucket int64, count int) *patternBucket {
 	tokens, spacesAfter, format, ok := m.patternLineTokens(line)
 	if !ok {
 		return nil
 	}
-	return m.observe(level, tokens, spacesAfter, format, bucket, count)
+	return m.observe(stream, level, tokens, spacesAfter, format, bucket, count)
 }
 
-// observeGroup observes a group of lines that differ only in numbers through two of them, lo and hi, and returns
-// the cluster it joined, or nil when the tokenizer does not read lo. The group's template is lo's tokens with a
-// variable wherever hi's differ: a number that never varies stays, one that does is a variable, however the
-// token around it reads. Lines whose numbers change their tokens' count are observed one by one, hi's cluster
-// kept.
+// observeGroup is observeStreamGroup for the stream with no name.
 func (m *patternMiner) observeGroup(level, lo, hi string) *patternBucket {
-	tokens, spacesAfter, format, ok := m.patternLineTokens(lo)
-	if !ok {
-		return nil
-	}
-	if hi == lo {
-		return m.observe(level, tokens, spacesAfter, format, 0, 0)
-	}
-	hiTokens, _, hiFormat, ok := m.patternLineTokens(hi)
-	if !ok || hiFormat != format || len(hiTokens) != len(tokens) {
-		cluster := m.observe(level, tokens, spacesAfter, format, 0, 0)
-		if c := m.observeLine(level, hi, 0, 0); c != nil {
-			cluster = c
-		}
-		return cluster
-	}
-	for i := range tokens {
-		if tokens[i] != hiTokens[i] {
-			tokens[i] = patternVarPlaceholder
-		}
-	}
-	return m.observe(level, tokens, spacesAfter, format, 0, 0)
+	return m.observeStreamGroup("", level, lo, hi)
 }
 
-func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int, format patternFormat, bucket int64, count int) *patternBucket {
-	tokenCount := len(tokens)
+// observeStreamGroup observes a group of lines of a stream that differ only in numbers through two of them, lo and
+// hi, in that order, and returns the cluster lo ended in once hi was observed, or nil when the tokenizer does not
+// read lo or the miner admits no more lines. The group is counted in that cluster alone: when hi made or joined
+// another cluster, that cluster is not the group's.
+func (m *patternMiner) observeStreamGroup(stream, level, lo, hi string) *patternBucket {
+	cluster := m.observeStreamLine(stream, level, lo, 0, 0)
+	if cluster != nil && hi != lo {
+		m.observeStreamLine(stream, level, hi, 0, 0)
+	}
+	return cluster
+}
 
-	levelGroups := m.groups[level]
-	if levelGroups == nil {
-		levelGroups = make(map[int]map[string][]*patternBucket)
-		m.groups[level] = levelGroups
+func (m *patternMiner) observe(stream, level string, tokens []string, spacesAfter []int, format patternFormat, bucket int64, count int) *patternBucket {
+	key := patternMinerKey{stream: stream, level: level}
+	c := m.miners[key]
+	if c == nil {
+		c = newPatternClusterer(level)
+		m.miners[key] = c
+		m.order = append(m.order, c)
 	}
-	signatureGroups := levelGroups[tokenCount]
-	if signatureGroups == nil {
-		signatureGroups = make(map[string][]*patternBucket)
-		levelGroups[tokenCount] = signatureGroups
-	}
-	// Every check below reads each token's placeholder; it is worked out once for the line.
-	m.placeholders = m.placeholders[:0]
-	for _, token := range tokens {
-		m.placeholders = append(m.placeholders, patternPlaceholderForToken(token))
-	}
-	// Lines of different formats are tokenized differently: they never share a cluster.
-	m.signature = append(m.signature[:0], byte(format), '\x1e')
-	if format == patternFormatLogfmt {
-		m.signature = appendLogfmtStructureSignature(m.signature, tokens, m.placeholders)
-	} else {
-		m.signature = appendPatternStructureSignature(m.signature, tokens, m.placeholders)
-	}
-	candidates := signatureGroups[string(m.signature)]
-	cluster := bestPatternCluster(candidates, tokens, m.placeholders)
-	if cluster == nil {
-		cluster = &patternBucket{
-			level:       level,
-			buckets:     make(map[int64]int),
-			tokens:      cloneTokens(tokens),
-			spacesAfter: cloneInts(spacesAfter),
-			format:      format,
-		}
-		signatureGroups[string(m.signature)] = append(candidates, cluster)
-	} else {
-		cluster.tokens = mergePatternTemplateOf(cluster.tokens, tokens, m.placeholders)
-	}
-	if count != 0 {
+	cluster := c.train(tokens, spacesAfter, format)
+	if cluster != nil && count != 0 {
 		cluster.buckets[bucket] += count
 		cluster.total += count
 	}
 	return cluster
 }
 
+// AllClusters is the miners' clusters in the order the miners first read a line, each miner's in the order they
+// were made.
 func (m *patternMiner) AllClusters() []*patternBucket {
 	out := make([]*patternBucket, 0)
-	for _, byCount := range m.groups {
-		for _, bySignature := range byCount {
-			for _, clusters := range bySignature {
-				out = append(out, clusters...)
-			}
-		}
+	for _, c := range m.order {
+		out = append(out, c.live...)
 	}
 	return out
 }
 
-// bestPatternCluster is the candidate the line's tokens join, if any. placeholders is each token's
-// patternPlaceholderForToken, or nil to work them out.
-func bestPatternCluster(candidates []*patternBucket, tokens, placeholders []string) *patternBucket {
-	var match *patternBucket
-	maxSim := -1.0
-	maxParamCount := -1
-
-	for _, cluster := range candidates {
-		if !patternPrefixCompatibleOf(cluster.tokens, tokens, placeholders) {
-			continue
-		}
-		curSim, paramCount := getPatternSimilarityOf(cluster.tokens, tokens, placeholders)
-		if paramCount < 0 {
-			continue
-		}
-		if curSim > maxSim || (curSim == maxSim && paramCount > maxParamCount) {
-			maxSim = curSim
-			maxParamCount = paramCount
-			match = cluster
-		}
-	}
-	if maxSim >= patternSimThreshold {
-		return match
-	}
-	return nil
-}
+// patternPrefixCompatible and getPatternSimilarity are how mergePatternResultEntries compares the patterns of
+// separate answers: the first patternPrefixDepth tokens must agree or be variables or hold a number, and the rest
+// counts the way the miner's clusters do.
+const patternPrefixDepth = 4
 
 func patternPrefixCompatible(templateTokens, tokens []string) bool {
-	return patternPrefixCompatibleOf(templateTokens, tokens, nil)
-}
-
-func patternPrefixCompatibleOf(templateTokens, tokens, placeholders []string) bool {
 	if len(templateTokens) != len(tokens) || len(tokens) == 0 {
 		return false
 	}
-	depth := patternPrefixDepth
-	if depth > len(tokens) {
-		depth = len(tokens)
-	}
-	for i := 0; i < depth; i++ {
-		templateToken := templateTokens[i]
-		inputToken := tokens[i]
-		if patternPlaceholderMatches(templateToken, patternPlaceholderAt(tokens, placeholders, i)) || templateToken == inputToken {
-			continue
-		}
-		if templateKind := patternPlaceholderKind(templateToken); templateKind != "" && templateKind == patternPlaceholderKindAt(tokens, placeholders, i) ||
-			patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
+	for i := 0; i < min(patternPrefixDepth, len(tokens)); i++ {
+		templateToken, inputToken := templateTokens[i], tokens[i]
+		if templateToken == patternVarPlaceholder || templateToken == inputToken ||
+			patternTokenHasNumber(templateToken) || patternTokenHasNumber(inputToken) {
 			continue
 		}
 		return false
@@ -1203,30 +1173,17 @@ func patternPrefixCompatibleOf(templateTokens, tokens, placeholders []string) bo
 	return true
 }
 
-func patternTokenHasDigits(token string) bool {
-	for _, ch := range token {
-		if unicode.IsDigit(ch) {
-			return true
-		}
-	}
-	return false
-}
-
 func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {
-	return getPatternSimilarityOf(templateTokens, tokens, nil)
-}
-
-func getPatternSimilarityOf(templateTokens, tokens, placeholders []string) (float64, int) {
 	if len(templateTokens) != len(tokens) || len(templateTokens) == 0 {
 		return 0, -1
 	}
 	simTokens := 0
 	paramCount := 0
 	for i := range templateTokens {
-		switch {
-		case patternPlaceholderMatches(templateTokens[i], patternPlaceholderAt(tokens, placeholders, i)):
+		switch templateTokens[i] {
+		case patternVarPlaceholder:
 			paramCount++
-		case templateTokens[i] == tokens[i]:
+		case tokens[i]:
 			simTokens++
 		}
 	}
@@ -1234,20 +1191,12 @@ func getPatternSimilarityOf(templateTokens, tokens, placeholders []string) (floa
 }
 
 func mergePatternTemplate(templateTokens, tokens []string) []string {
-	return mergePatternTemplateOf(templateTokens, tokens, nil)
-}
-
-func mergePatternTemplateOf(templateTokens, tokens, placeholders []string) []string {
 	if len(templateTokens) != len(tokens) {
 		return templateTokens
 	}
 	for i := range templateTokens {
 		if templateTokens[i] != tokens[i] {
-			if kind := patternPlaceholderKind(templateTokens[i]); kind != "" && kind == patternPlaceholderKindAt(tokens, placeholders, i) {
-				templateTokens[i] = kind
-			} else {
-				templateTokens[i] = patternVarPlaceholder
-			}
+			templateTokens[i] = patternVarPlaceholder
 		}
 	}
 	return templateTokens
@@ -1401,29 +1350,6 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 	return deduplicatePlaceholders(sb.String(), patternVarPlaceholder)
 }
 
-func patternStructureSignature(tokens []string) string {
-	return string(appendPatternStructureSignature(nil, tokens, nil))
-}
-
-// appendPatternStructureSignature appends the signature the miner groups a line's clusters by: each token's
-// placeholder kind, or the token itself when it has none, and any value after '=' or ':' as a variable, separated
-// by \x1e. placeholders is each token's patternPlaceholderForToken, or nil to work them out.
-func appendPatternStructureSignature(dst []byte, tokens, placeholders []string) []byte {
-	for i, token := range tokens {
-		if i > 0 {
-			dst = append(dst, '\x1e')
-		}
-		part := token
-		if kind := patternPlaceholderKindAt(tokens, placeholders, i); kind != "" {
-			part = kind
-		} else if i > 0 && (tokens[i-1] == "=" || tokens[i-1] == ":") {
-			part = patternVarPlaceholder
-		}
-		dst = append(dst, part...)
-	}
-	return dst
-}
-
 func isPatternPlaceholder(token string) bool {
 	switch token {
 	case patternVarPlaceholder, patternNumPlaceholder, patternUUIDPlaceholder, patternIPPlaceholder, patternPathPlaceholder, patternHexPlaceholder, patternTSPlaceholder:
@@ -1431,128 +1357,6 @@ func isPatternPlaceholder(token string) bool {
 	default:
 		return false
 	}
-}
-
-func patternPlaceholderKind(token string) string {
-	if isPatternPlaceholder(token) {
-		return token
-	}
-	return patternPlaceholderForToken(token)
-}
-
-func patternPlaceholderMatchesToken(placeholder, token string) bool {
-	return patternPlaceholderMatches(placeholder, patternPlaceholderForToken(token))
-}
-
-// patternPlaceholderMatches is patternPlaceholderMatchesToken for a token whose patternPlaceholderForToken is
-// tokenPlaceholder.
-func patternPlaceholderMatches(placeholder, tokenPlaceholder string) bool {
-	if placeholder == "" {
-		return false
-	}
-	return placeholder == patternVarPlaceholder || placeholder == tokenPlaceholder
-}
-
-// patternPlaceholderAt is patternPlaceholderForToken(tokens[i]), read from placeholders when they are given.
-func patternPlaceholderAt(tokens, placeholders []string, i int) string {
-	if placeholders != nil {
-		return placeholders[i]
-	}
-	return patternPlaceholderForToken(tokens[i])
-}
-
-// patternPlaceholderKindAt is patternPlaceholderKind(tokens[i]), read from placeholders when they are given.
-func patternPlaceholderKindAt(tokens, placeholders []string, i int) string {
-	if isPatternPlaceholder(tokens[i]) {
-		return tokens[i]
-	}
-	return patternPlaceholderAt(tokens, placeholders, i)
-}
-
-// patternQuotePunct is the set of punctuation trimmed from tokens before classification.
-// Stored as a lookup table to avoid strings.Trim's ASCIISet allocation per call.
-var patternQuotePunct = [256]bool{
-	'"': true, '\'': true, '(': true, ')': true, '[': true, ']': true,
-	'{': true, '}': true, '<': true, '>': true, ',': true, ';': true,
-}
-
-func trimPatternPunct(s string) string {
-	start := 0
-	for start < len(s) && patternQuotePunct[s[start]] {
-		start++
-	}
-	end := len(s)
-	for end > start && patternQuotePunct[s[end-1]] {
-		end--
-	}
-	return strings.TrimSpace(s[start:end])
-}
-
-func patternPlaceholderForToken(token string) string {
-	token = trimPatternPunct(token)
-	if token == "" {
-		return ""
-	}
-	switch {
-	case isIPLike(token):
-		return patternIPPlaceholder
-	case isUUIDLike(token):
-		return patternUUIDPlaceholder
-	case isTimestampLike(token):
-		return patternTSPlaceholder
-	case isPathLike(token):
-		return patternPathPlaceholder
-	case isNumericLike(token):
-		return patternNumPlaceholder
-	case len(token) >= 8 && isHexLike(token):
-		return patternHexPlaceholder
-	default:
-		return ""
-	}
-}
-
-func isUUIDLike(token string) bool {
-	if len(token) != 36 {
-		return false
-	}
-	for i, ch := range token {
-		switch i {
-		case 8, 13, 18, 23:
-			if ch != '-' {
-				return false
-			}
-		default:
-			isHex := (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
-			if !isHex {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func isTimestampLike(token string) bool {
-	return strings.Contains(token, "T") && strings.Contains(token, ":")
-}
-
-func isPathLike(token string) bool {
-	return strings.HasPrefix(token, "/") && strings.Count(token, "/") >= 2
-}
-
-func isNumericLike(token string) bool {
-	if token == "" {
-		return false
-	}
-	if token[0] >= '0' && token[0] <= '9' {
-		return true
-	}
-	digitCount := 0
-	for _, ch := range token {
-		if unicode.IsDigit(ch) {
-			digitCount++
-		}
-	}
-	return len(token) > 3 && digitCount > len(token)/2
 }
 
 func deduplicatePlaceholders(line, placeholder string) string {

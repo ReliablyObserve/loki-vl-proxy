@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -70,7 +69,8 @@ func isPatternJSONLine(line string) bool {
 	return len(line) >= 2 && line[0] == '{' && line[len(line)-1] == '}'
 }
 
-// patternJSONMessage is a JSON line's first top-level message field that holds a string.
+// patternJSONMessage is a JSON line's first top-level message field that holds a string, as the line writes it:
+// the text between the string's quotes with its escapes still escaped, which is the text Loki mines.
 func patternJSONMessage(line string) (string, bool) {
 	parser := patternJSONParsers.Get()
 	defer patternJSONParsers.Put(parser)
@@ -80,10 +80,110 @@ func patternJSONMessage(line string) (string, bool) {
 	}
 	for _, field := range patternJSONMessageFields {
 		if x := v.Get(field); x != nil && x.Type() == fj.TypeString {
+			if raw, ok := patternJSONRawString(line, field); ok {
+				return raw, true
+			}
 			return string(x.GetStringBytes()), true
 		}
 	}
 	return "", false
+}
+
+// patternJSONRawString is the text between the quotes of the string a valid JSON object's top-level key holds, as
+// the object writes it. ok is false when the object does not write the key as plain text (an escaped key), where
+// the caller reads the decoded string.
+func patternJSONRawString(object, key string) (string, bool) {
+	s := patternJSONScanner{text: object, at: strings.IndexByte(object, '{') + 1}
+	for {
+		name, ok := s.string()
+		if !ok || !s.expect(':') {
+			return "", false
+		}
+		if s.peek() == '"' {
+			value, ok := s.string()
+			if !ok {
+				return "", false
+			}
+			if name == key {
+				return value, true
+			}
+		} else if !s.skipValue() {
+			return "", false
+		}
+		if !s.expect(',') {
+			return "", false
+		}
+	}
+}
+
+// patternJSONScanner reads the top level of a valid JSON object in place.
+type patternJSONScanner struct {
+	text string
+	at   int
+}
+
+func (s *patternJSONScanner) skipSpace() {
+	for s.at < len(s.text) && (s.text[s.at] == ' ' || s.text[s.at] == '\t' || s.text[s.at] == '\n' || s.text[s.at] == '\r') {
+		s.at++
+	}
+}
+
+// peek is the next byte after any space, 0 at the end.
+func (s *patternJSONScanner) peek() byte {
+	s.skipSpace()
+	if s.at >= len(s.text) {
+		return 0
+	}
+	return s.text[s.at]
+}
+
+// expect moves past c, the next byte after any space.
+func (s *patternJSONScanner) expect(c byte) bool {
+	if s.peek() != c {
+		return false
+	}
+	s.at++
+	return true
+}
+
+// string reads a string and returns the text between its quotes as written.
+func (s *patternJSONScanner) string() (string, bool) {
+	if s.peek() != '"' {
+		return "", false
+	}
+	for i := s.at + 1; i < len(s.text); i++ {
+		switch s.text[i] {
+		case '\\':
+			i++
+		case '"':
+			value := s.text[s.at+1 : i]
+			s.at = i + 1
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// skipValue moves past a value that is not a string: to the byte after it, which is its comma or the object's end.
+func (s *patternJSONScanner) skipValue() bool {
+	depth := 0
+	for s.at < len(s.text) {
+		switch c := s.text[s.at]; {
+		case c == '"':
+			if _, ok := s.string(); !ok {
+				return false
+			}
+			continue
+		case c == '{' || c == '[':
+			depth++
+		case (c == '}' || c == ']') && depth > 0:
+			depth--
+		case c == '}' || c == ']' || c == ',' && depth == 0:
+			return true
+		}
+		s.at++
+	}
+	return false
 }
 
 // isPatternLogfmtLine reports whether Loki reads a line as logfmt for its patterns: the whole line is key=value
@@ -167,380 +267,4 @@ func patternLogfmtValue(value string) string {
 		}
 	}
 	return value
-}
-
-// appendLogfmtStructureSignature is appendPatternStructureSignature for a logfmt line's tokens, its keys and values
-// in turn: a value is a variable, as any value after '=' is on another line, unless it has a placeholder kind.
-func appendLogfmtStructureSignature(dst []byte, tokens, placeholders []string) []byte {
-	for i, token := range tokens {
-		if i > 0 {
-			dst = append(dst, '\x1e')
-		}
-		part := token
-		if i%2 == 1 {
-			part = patternVarPlaceholder
-			if kind := patternPlaceholderKindAt(tokens, placeholders, i); kind != "" {
-				part = kind
-			}
-		}
-		dst = append(dst, part...)
-	}
-	return dst
-}
-
-// patternFamilySimilarity is the share of fields a cluster shares with the first of a group to join it (a field
-// sharing with one its pattern matches), as Loki's drain joins a line to a cluster of lines as similar.
-const patternFamilySimilarity = 0.5
-
-// patternMaxFamilyGroups bounds the groups of a family a cluster is compared with: a cluster like none of them is
-// left as it was mined, so wildcarding stays linear in the clusters however varied the lines.
-const patternMaxFamilyGroups = 64
-
-// patternWildcardPasses is how many times at most wildcardVaryingFields runs over the clusters.
-const patternWildcardPasses = 3
-
-// wildcardPatterns runs wildcardVaryingFields over the clusters' distinct patterns until they stop changing, at most
-// patternWildcardPasses times: lines that shared too little to group before their values were variables may group
-// once they are. Clusters of one level that read the same are wildcarded as one.
-func wildcardPatterns(clusters []*patternBucket) {
-	for pass := 0; pass < patternWildcardPasses; pass++ {
-		at := make(map[[3]string]int, len(clusters))
-		var distinct []*patternBucket
-		of := make([]int, len(clusters))
-		for i, c := range clusters {
-			k := [3]string{string(rune(c.format)), c.level, c.pattern}
-			j, seen := at[k]
-			if !seen {
-				j = len(distinct)
-				at[k] = j
-				distinct = append(distinct, &patternBucket{pattern: c.pattern, level: c.level, format: c.format})
-			}
-			of[i] = j
-		}
-		// The groups depend on the order clusters are seen in; the miner's is a map's.
-		order := make([]int, len(distinct))
-		for j := range order {
-			order[j] = j
-		}
-		sort.Slice(order, func(x, y int) bool {
-			a, b := distinct[order[x]], distinct[order[y]]
-			if a.format != b.format {
-				return a.format < b.format
-			}
-			if a.level != b.level {
-				return a.level < b.level
-			}
-			return a.pattern < b.pattern
-		})
-		sorted := make([]*patternBucket, len(order))
-		for j, k := range order {
-			sorted[j] = distinct[k]
-		}
-		if !wildcardVaryingFields(sorted) {
-			return
-		}
-		for i, c := range clusters {
-			c.pattern = distinct[of[i]].pattern
-		}
-	}
-}
-
-// wildcardVaryingFields makes the clusters' patterns templates rather than lines, as Loki's patterns are, so a kind
-// of line is one pattern rather than one per path, user agent or number. A field is a run of text between spaces, a
-// quoted string being one field. Clusters of one format with as many fields, the same first word (unless it holds a
-// number; for a key=value field its key) and the same keys in the same places form a group when at least
-// patternFamilySimilarity of their fields are the same as the group's first, whatever their level: a field whose
-// value differs within the group becomes a variable, keeping the punctuation its values share at either end (a key=,
-// a bracket, a quote), and a value that never varies (a method, a component, a status that is always 200) or varies
-// only with the level stays, as in Loki. A pattern is changed only if it still matches what it was mined as.
-// Clusters that then read the same are merged by the caller. changed reports whether a pattern changed.
-func wildcardVaryingFields(clusters []*patternBucket) (changed bool) {
-	type group struct {
-		first   []string
-		members [][]string
-		at      []*patternBucket
-	}
-	families := map[string][]*group{}
-	var key strings.Builder
-	for _, c := range clusters {
-		fields := patternFields(c.pattern)
-		key.Reset()
-		key.WriteByte(byte(c.format))
-		key.WriteString(strconv.Itoa(len(fields)))
-		first := fields[0]
-		if eq := strings.IndexByte(first, '='); eq > 0 && isPatternKey(first[:eq]) {
-			// A key=value field: the key is what the lines share.
-			first = first[:eq+1]
-		}
-		if !strings.ContainsAny(first, "0123456789<") {
-			key.WriteByte(0)
-			key.WriteString(first)
-		}
-		for _, field := range fields[1:] {
-			// The keys of key=value fields, in their places, are what a kind of line shares.
-			key.WriteByte(1)
-			if eq := strings.IndexByte(field, '='); eq > 0 && isPatternKey(field[:eq]) {
-				key.WriteString(field[:eq+1])
-			}
-		}
-		k := key.String()
-		var joined *group
-		for _, g := range families[k] {
-			need, same := patternFamilySimilarity*float64(len(fields)), 0
-			for i, field := range fields {
-				if samePatternField(field, g.first[i]) {
-					if same++; float64(same) >= need {
-						break
-					}
-				}
-			}
-			if float64(same) >= need {
-				joined = g
-				break
-			}
-		}
-		if joined == nil {
-			if len(families[k]) >= patternMaxFamilyGroups {
-				continue
-			}
-			joined = &group{first: fields}
-			families[k] = append(families[k], joined)
-		}
-		joined.members = append(joined.members, fields)
-		joined.at = append(joined.at, c)
-	}
-	values := make([]string, 0, 16)
-	for _, family := range families {
-		for _, g := range family {
-			if len(g.members) == 1 {
-				continue
-			}
-			for i := range g.first {
-				values = values[:0]
-				for _, fields := range g.members {
-					values = append(values, fields[i])
-				}
-				if sameButLevel(values, g.at) {
-					continue
-				}
-				if wildcard, ok := wildcardPatternValues(values); ok {
-					for _, fields := range g.members {
-						fields[i] = wildcard
-					}
-				}
-			}
-			wildcarded := make([]string, len(g.at))
-			for j, c := range g.at {
-				wildcarded[j] = deduplicatePlaceholders(strings.Join(g.members[j], " "), patternVarPlaceholder)
-				if !patternMatchesText(wildcarded[j], c.pattern) {
-					// A literal the variables leave would be found earlier in a value than where it is: the
-					// pattern would not match the lines, so the group keeps the patterns as mined.
-					wildcarded = nil
-					break
-				}
-			}
-			for j, pattern := range wildcarded {
-				changed = changed || g.at[j].pattern != pattern
-				g.at[j].pattern = pattern
-			}
-		}
-	}
-	return changed
-}
-
-// sameButLevel reports whether a field's values across a group's clusters differ only by each cluster's level
-// (level=info in the info pattern, level=warn in the warn one): the field then stays as it is in each.
-func sameButLevel(values []string, at []*patternBucket) bool {
-	first := withoutPatternLevel(values[0], at[0].level)
-	for j, v := range values[1:] {
-		if withoutPatternLevel(v, at[j+1].level) != first {
-			return false
-		}
-	}
-	return true
-}
-
-// withoutPatternLevel is a value with its first mention of the level, in any case, marked as the level.
-func withoutPatternLevel(value, level string) string {
-	if level == "" || level == "unknown" || len(level) > len(value) {
-		return value
-	}
-	for i := 0; i+len(level) <= len(value); i++ {
-		if strings.EqualFold(value[i:i+len(level)], level) {
-			return value[:i] + "\x00" + value[i+len(level):]
-		}
-	}
-	return value
-}
-
-// samePatternField reports whether two fields of patterns are the same for grouping: equal, or one a pattern the
-// other matches.
-func samePatternField(a, b string) bool {
-	if a == b {
-		return true
-	}
-	return strings.Contains(b, patternVarPlaceholder) && patternMatchesText(b, a) ||
-		strings.Contains(a, patternVarPlaceholder) && patternMatchesText(a, b)
-}
-
-func isPatternKey(key string) bool {
-	for i := 0; i < len(key); i++ {
-		if c := key[i]; !isPatternWordByte(c) && c != '.' && c != '-' {
-			return false
-		}
-	}
-	return true
-}
-
-// patternFields splits a pattern at its spaces, except within a quoted string.
-func patternFields(text string) []string {
-	fields := make([]string, 0, strings.Count(text, " ")+1)
-	start, quoted := 0, false
-	for i := 0; i < len(text); i++ {
-		switch text[i] {
-		case '\\':
-			i++
-		case '"':
-			quoted = !quoted
-		case ' ':
-			if !quoted {
-				fields = append(fields, text[start:i])
-				start = i + 1
-			}
-		}
-	}
-	return append(fields, text[start:])
-}
-
-// wildcardPatternValues is what a field reads as across a group whose values are values: the value when they are
-// all the same; for quoted strings of as many words, each word wildcarded in turn; otherwise a variable between the
-// punctuation all values start and end with. ok is false when they differ and a variable would match none of a
-// value's text, so the field is left as it is.
-func wildcardPatternValues(values []string) (string, bool) {
-	first := values[0]
-	same := true
-	for _, v := range values[1:] {
-		same = same && v == first
-	}
-	if same {
-		return first, false
-	}
-	if words := quotedPatternWords(first); words > 1 {
-		parts := make([][]string, len(values))
-		ok := true
-		for j, v := range values {
-			if quotedPatternWords(v) != words {
-				ok = false
-				break
-			}
-			parts[j] = strings.Split(v[1:len(v)-1], " ")
-		}
-		if ok {
-			out := make([]string, words)
-			column := make([]string, len(values))
-			for w := range out {
-				for j := range parts {
-					column[j] = parts[j][w]
-				}
-				if wildcard, changed := wildcardPatternValues(column); changed {
-					out[w] = wildcard
-				} else if allPatternValuesEqual(column) {
-					out[w] = column[0]
-				} else {
-					ok = false
-					break
-				}
-			}
-			if ok {
-				return `"` + strings.Join(out, " ") + `"`, true
-			}
-		}
-	}
-	prefix, suffix := len(first), len(first)
-	for _, v := range values[1:] {
-		prefix = min(prefix, commonPrefixLen(first, v))
-		suffix = min(suffix, commonSuffixLen(first, v))
-	}
-	for prefix > 0 && isPatternWordByte(first[prefix-1]) {
-		prefix--
-	}
-	for suffix > 0 && isPatternWordByte(first[len(first)-suffix]) {
-		suffix--
-	}
-	for _, v := range values {
-		if len(v) <= prefix+suffix {
-			// The variable would be empty for this value: drop the shared ends, then give up.
-			prefix, suffix = 0, 0
-			if v == "" {
-				return "", false
-			}
-		}
-	}
-	return first[:prefix] + patternVarPlaceholder + first[len(first)-suffix:], true
-}
-
-func allPatternValuesEqual(values []string) bool {
-	for _, v := range values[1:] {
-		if v != values[0] {
-			return false
-		}
-	}
-	return true
-}
-
-// quotedPatternWords is how many words a quoted string holds between its quotes, 0 for any other field.
-func quotedPatternWords(field string) int {
-	if len(field) < 2 || field[0] != '"' || field[len(field)-1] != '"' {
-		return 0
-	}
-	return strings.Count(field[1:len(field)-1], " ") + 1
-}
-
-func commonPrefixLen(a, b string) int {
-	n := min(len(a), len(b))
-	i := 0
-	for i < n && a[i] == b[i] {
-		i++
-	}
-	return i
-}
-
-func commonSuffixLen(a, b string) int {
-	n := min(len(a), len(b))
-	i := 0
-	for i < n && a[len(a)-1-i] == b[len(b)-1-i] {
-		i++
-	}
-	return i
-}
-
-// patternMatchesText reports whether a pattern matches a text as Loki's pattern line filter (|>) does, the filter
-// Logs Drilldown adds when a pattern is included: each literal is found at its first occurrence after the text
-// before it (a leading literal anywhere), every variable holds at least one character, and a pattern that ends on a
-// literal ends the text there.
-func patternMatchesText(pattern, text string) bool {
-	pos, variable := 0, false
-	for pattern != "" {
-		if strings.HasPrefix(pattern, patternVarPlaceholder) {
-			variable = true
-			pattern = pattern[len(patternVarPlaceholder):]
-			continue
-		}
-		next := strings.Index(pattern, patternVarPlaceholder)
-		if next < 0 {
-			next = len(pattern)
-		}
-		literal := pattern[:next]
-		pattern = pattern[next:]
-		i := strings.Index(text[pos:], literal)
-		if i < 0 || variable && i == 0 {
-			return false
-		}
-		pos += i + len(literal)
-		variable = false
-	}
-	if variable {
-		return pos < len(text)
-	}
-	return pos == len(text)
 }
