@@ -237,6 +237,30 @@ QUERY_CORPUS_COUNTS = (
 )
 
 
+# The categories of TestQueryTextSites, in order.
+QUERY_TEXT_SITES = (
+    ("parse_calls", "LogQL/LogsQL parser calls outside the AST packages"),
+    ("string_reads", "Query text read with strings/regexp"),
+    ("text_built", "Query text built from literals"),
+    ("deferred_raw", "Raw text in the LogsQL AST (DeferredExpr)"),
+    ("translator_string_ops", "strings/regexp calls in the string translator"),
+)
+
+
+def query_text_sites_details(base, head):
+    """Where production code handles query text as strings, base versus PR. The counts may only fall
+    (TestQueryTextSites); the AST work takes each to 0."""
+    before = mapping(mapping(mapping(base.get("quality_inventory")).get("query_text_sites")).get("totals"))
+    after = mapping(mapping(mapping(head.get("quality_inventory")).get("query_text_sites")).get("totals"))
+    rows = []
+    for key, label in QUERY_TEXT_SITES:
+        old, new = before.get(key), after.get(key)
+        rows.append([label, fmt(old) if before else "no base", fmt(new),
+                     f"{new - old:+d}" if numeric(old) and numeric(new) else "n/a"])
+    return ["Counted from the production source by `TestQueryTextSites` and held in `conformance/registry/query-text-sites.json`: "
+            "a count may only fall, and the AST work takes each to 0.", "", *table(["Site", "Base", "PR", "Delta"], rows)]
+
+
 def query_corpus_details(corpus):
     """The corpus the PR's tests send in: counts against the base corpus and the committed targets, the goldens that
     changed per VictoriaLogs version, and the queries that got worse (the gate)."""
@@ -639,6 +663,8 @@ def render(base, head, evidence):
                                     [["Matrix cases", *(fmt(semantics_run.get(k)) for k in ("passed", "failed", "skipped"))]]),
                         "", "Failing case IDs: " + (", ".join(cell(x) for x in semantics_run.get("failed_cases", [])[:8]) or "none") + "."]
         lines += section("Query semantics catalog: base versus PR", details, "no catalog counts")
+    if mapping(mapping(head.get("quality_inventory")).get("query_text_sites")).get("state") == "available":
+        lines += section("Query text handled as strings: base versus PR", query_text_sites_details(base, head), "no site counts")
     corpus = mapping(head.get("query_corpus"))
     if corpus:
         lines += section("Query corpus: base versus PR", query_corpus_details(corpus), "no corpus counts")

@@ -14,6 +14,22 @@ DEPRECATED_READ_ALIASES = {
 }
 
 
+def query_text_sites_snapshot(root):
+    """The committed counts of the places production code handles query text as strings
+    (conformance/registry/query-text-sites.json, held by TestQueryTextSites)."""
+    try:
+        tree = Path(root).resolve()
+        path = tree / "conformance/registry/query-text-sites.json"
+        if not path.resolve().is_relative_to(tree) or path.stat().st_size > 1024 * 1024:
+            raise ValueError("invalid query text sites input")
+        totals = json.loads(path.read_text(encoding="utf-8")).get("totals")
+        if not isinstance(totals, dict) or any(not isinstance(v, int) or isinstance(v, bool) for v in totals.values()):
+            raise ValueError("invalid query text sites totals")
+        return {"state": "available", "totals": totals}
+    except (OSError, ValueError, TypeError, UnicodeError, AttributeError):
+        return {"state": "unavailable"}
+
+
 def query_semantics_snapshot(root):
     """Count the declared matrix and its references without running PR code."""
     try:
@@ -262,6 +278,7 @@ def registry_snapshot(root):
             raise ValueError("error-layer ceiling differs from case/cell links")
         return {"state": "available", "surface_version": version, "endpoints": endpoints, "tracks": tracks,
                 "query_semantics": query_semantics_snapshot(tree),
+                "query_text_sites": query_text_sites_snapshot(tree),
                 "endpoint_scope": "loki-read-api", "deletion_management": deletion,
                 "excluded_write_endpoints": excluded_write_endpoints,
                 "excluded_deprecated_read_endpoints": excluded_deprecated_read_endpoints,
