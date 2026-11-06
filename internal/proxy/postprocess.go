@@ -953,12 +953,7 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 	if limit > maxPatternResponseLimit {
 		limit = maxPatternResponseLimit
 	}
-	clusters := miner.AllClusters()
-	entries := make([]*patternBucket, 0, len(clusters))
-	entries = append(entries, clusters...)
-	for _, e := range entries {
-		e.pattern = miner.tokenizer.Join(e.tokens, e.spacesAfter)
-	}
+	entries := patternEntriesByLevelAndPattern(miner)
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].total != entries[j].total {
 			return entries[i].total > entries[j].total
@@ -995,6 +990,41 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 		result = append(result, item)
 	}
 	return result
+}
+
+// patternEntriesByLevelAndPattern is the miner's clusters as response entries, one per level and pattern: Loki
+// answers one series per level and pattern (pkg/pattern/iter ReadBatch), so clusters the miner kept apart whose
+// patterns read the same, such as two that differ only in the kind of a value the pattern shows as <_>, are one
+// entry with their samples added up. The miner's clusters are not changed.
+func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
+	clusters := miner.AllClusters()
+	entries := make([]*patternBucket, 0, len(clusters))
+	byKey := make(map[[2]string]int, len(clusters))
+	merged := make(map[int]bool)
+	for _, c := range clusters {
+		c.pattern = miner.tokenizer.Join(c.tokens, c.spacesAfter)
+		key := [2]string{c.level, c.pattern}
+		at, seen := byKey[key]
+		if !seen {
+			byKey[key] = len(entries)
+			entries = append(entries, c)
+			continue
+		}
+		if !merged[at] {
+			first := entries[at]
+			buckets := make(map[int64]int, len(first.buckets)+len(c.buckets))
+			for bucket, n := range first.buckets {
+				buckets[bucket] = n
+			}
+			entries[at] = &patternBucket{pattern: first.pattern, level: first.level, buckets: buckets, total: first.total}
+			merged[at] = true
+		}
+		for bucket, n := range c.buckets {
+			entries[at].buckets[bucket] += n
+		}
+		entries[at].total += c.total
+	}
+	return entries
 }
 
 type patternMiner struct {
