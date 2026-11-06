@@ -362,3 +362,41 @@ func TestPatternsFromCountsReuseSettledWindows(t *testing.T) {
 		t.Fatalf("shifted refresh: %d VictoriaLogs calls, want 6 (three windows of seven)", refresh)
 	}
 }
+
+// A window without lines is counted as no patterns: the rest of the range still answers from the counts, not by
+// sampling lines.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = r.ParseForm()
+		start, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		q := r.Form.Get("query")
+		if !strings.Contains(q, "| collapse_nums at _lvp_collapsed") {
+			t.Errorf("a sampling query reached VictoriaLogs: %s", q)
+			return
+		}
+		if start < 1793984400*int64(time.Second) { // before 10:00 the range has no lines
+			return
+		}
+		if strings.Contains(q, "stats by (_time:") {
+			_, _ = w.Write([]byte(`{"_time":"2026-11-06T11:00:00Z","level":"info","_lvp_collapsed":"a b c d","c":"2"}` + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"level":"info","_lvp_collapsed":"a b c d","c":"2","_msg":"a b c d","_lvp_max":"a b c d"}` + "\n"))
+	}))
+	t.Cleanup(srv.Close)
+	p := newPatternCountsProxy(t, srv.URL, 0)
+	q := url.Values{"query": {`{app="api"}`}, "start": {"1793966400"}, "end": {"1793988000"}, "step": {"60s"}}
+	w := httptest.NewRecorder()
+	p.handlePatterns(w, httptest.NewRequest(http.MethodGet, "/loki/api/v1/patterns?"+q.Encode(), nil))
+	var resp patternsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || len(resp.Data) != 1 || resp.Data[0].Pattern != "a b c d" {
+		t.Fatalf("answer %s (%v)", w.Body, err)
+	}
+	if n := calls.Load(); n != 12 {
+		t.Fatalf("%d VictoriaLogs calls, want the 12 counts queries of six windows", n)
+	}
+}

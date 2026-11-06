@@ -179,7 +179,8 @@ func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam,
 	}
 	windows := patternCountsWindows(startNs, endNs)
 	if len(windows) == 1 {
-		return p.countPatternsWindow(r.Context(), filter, step, startNs, endNs, patternLimit)
+		entries, ok := p.countPatternsWindow(r.Context(), filter, step, startNs, endNs, patternLimit)
+		return entries, ok && len(entries) > 0
 	}
 	type windowResult struct {
 		entries []patternResultEntry
@@ -295,8 +296,12 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 		}
 	}()
 	wg.Wait()
-	if groupsErr != nil || timelineErr != nil || len(groups) == 0 {
+	if groupsErr != nil || timelineErr != nil {
 		return nil, false
+	}
+	if len(groups) == 0 {
+		// No line in the window: an answer, with no patterns.
+		return nil, true
 	}
 
 	// The miner's clusters depend on the order it sees lines in: the groups go in by count, then key, so an
