@@ -27,6 +27,8 @@ type entry struct {
 	// Direct is true when Via is test code, so the test passed the query
 	// in. False means the proxy built or parsed the query again itself.
 	Direct bool `json:"direct"`
+	// Path is the VictoriaLogs endpoint a VictoriaLogs record was sent to.
+	Path string `json:"path,omitempty"`
 }
 
 var (
@@ -49,11 +51,17 @@ type caller struct {
 // kind, query and calling test function. It does nothing when the variable
 // is unset.
 func Record(kind Kind, query string) {
+	record(kind, query, "", 3)
+}
+
+// record writes one entry; skip is runtime.Callers' skip that makes the first
+// frame the function that called into this package.
+func record(kind Kind, query, path string, skip int) {
 	if dir == "" {
 		return
 	}
 	var pcs [128]uintptr
-	n := runtime.Callers(2, pcs[:])
+	n := runtime.Callers(skip, pcs[:])
 	key := stackKey(pcs[:n])
 	mu.Lock()
 	defer mu.Unlock()
@@ -62,7 +70,7 @@ func Record(kind Kind, query string) {
 		c.src, c.via, c.direct = callers(pcs[:n])
 		stacks[key] = c
 	}
-	e := entry{Kind: kind, Query: query, Source: c.src, Via: c.via, Direct: c.direct || kind == Client}
+	e := entry{Kind: kind, Query: query, Source: c.src, Via: c.via, Direct: c.direct || kind == Client, Path: path}
 	if _, ok := seen[e]; ok {
 		return
 	}
@@ -104,7 +112,7 @@ func callers(pcs []uintptr) (src, via string, direct bool) {
 			entry = pkg
 		case via == "" && pkg == entry && !exported(name[len(pkg):]) && !strings.HasSuffix(f.File, "_test.go"):
 			internalCall, via = true, name
-		case via == "" && pkg != entry:
+		case via == "" && pkg != entry && pkg != "http.":
 			via = name
 			direct = strings.HasSuffix(f.File, "_test.go")
 		}
@@ -196,7 +204,7 @@ func CaptureForTest(t interface {
 	fn()
 	mu.Lock()
 	if out != nil {
-		out.Sync()
+		_ = out.Sync()
 	}
 	mu.Unlock()
 	files, _ := filepath.Glob(filepath.Join(d, "*.jsonl"))
@@ -218,4 +226,13 @@ func CaptureForTest(t interface {
 		}
 	}
 	return got
+}
+
+// RecordBackend records query as sent to the VictoriaLogs endpoint path, when
+// path is a /select/logsql/ endpoint. The proxy calls it where it builds each
+// backend request, with the parameters it is about to send.
+func RecordBackend(path, query string) {
+	if query != "" && strings.HasPrefix(path, "/select/logsql/") {
+		record(VictoriaLogs, query, path, 3)
+	}
 }

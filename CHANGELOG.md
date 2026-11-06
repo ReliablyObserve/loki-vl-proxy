@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- Record the LogsQL the proxy sends to VictoriaLogs in the query corpus. A
+  build with the `corpuscapture` tag records the query of every request the
+  proxy sends to a VictoriaLogs `/select/logsql/` endpoint (the main backend,
+  native tail and the cold backend) with its endpoint path, at the point where
+  each request is built, from the parameters it is about to send. The tests
+  send about 9,000 such queries. Without the tag the call is an empty function:
+  no behaviour change.
+
 ## [2.83.0] - 2026-11-05
 
 ### Tests

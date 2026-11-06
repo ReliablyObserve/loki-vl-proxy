@@ -23,4 +23,5 @@ func TestHandlerIsTheHandlerWithoutCapture(t *testing.T) {
 	}
 	Record(LogQL, `{app="a"}`) // must be a no-op
 	RecordRequest(httptest.NewRequest(http.MethodGet, "/", nil), `{app="a"}`)
+	RecordBackend("/select/logsql/query", "*")
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
 // handleTail bridges Loki's WebSocket tail to VL's NDJSON streaming tail.
@@ -283,6 +284,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 
 	params := p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}})
 	vlURL := p.backend.String() + "/select/logsql/tail?" + params.Encode()
+	querycorpus.RecordBackend("/select/logsql/tail", params.Get("query"))
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to create native tail request: %w", err)
