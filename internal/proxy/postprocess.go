@@ -18,6 +18,7 @@ import (
 	"text/template"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	fj "github.com/valyala/fastjson"
 
@@ -1141,20 +1142,52 @@ func mergePatternTemplate(templateTokens, tokens []string) []string {
 	return templateTokens
 }
 
-type patternLineTokenizer struct {
-	includeDelimiters [128]rune
-	excludeDelimiters [128]rune
+// patternLineTokenizer splits a log line into the tokens the patterns miner clusters, and joins tokens back into
+// a pattern, with the results of Loki's /patterns tokenizer. A line splits at spaces, at '=' and at punctuation
+// other than '_', '-', '.', ':' and '/'; a split character other than a space is a token of its own.
+type patternLineTokenizer struct{}
+
+// patternTokenClass is how the tokenizer treats one character of a line.
+type patternTokenClass uint8
+
+const (
+	// patternWordChar continues the current token: letters, digits, '_', '-', '.', ':' and '/', and any
+	// character that is neither a space, '=' nor punctuation (symbols such as '+' or '$', tabs, controls).
+	patternWordChar patternTokenClass = iota
+	// patternSpaceChar ends the current token and is remembered as a space after it.
+	patternSpaceChar
+	// patternSplitChar ends the current token and starts one of its own: '=' and the other punctuation.
+	patternSplitChar
+)
+
+func classifyPatternChar(r rune) patternTokenClass {
+	switch {
+	case r == ' ':
+		return patternSpaceChar
+	case r == '=':
+		return patternSplitChar
+	case r == '_' || r == '-' || r == '.' || r == ':' || r == '/', unicode.IsLetter(r), unicode.IsNumber(r):
+		return patternWordChar
+	case unicode.IsPunct(r):
+		return patternSplitChar
+	default:
+		return patternWordChar
+	}
 }
+
+// patternASCIIClass is classifyPatternChar for the ASCII characters, which make up most log lines.
+var patternASCIIClass = func() (classes [utf8.RuneSelf]patternTokenClass) {
+	for r := range classes {
+		classes[r] = classifyPatternChar(rune(r))
+	}
+	return classes
+}()
 
 // tokenizerBuf holds pre-allocated slices reused across Tokenize calls via a pool.
 // The caller must call pool.Put after it is done with the returned slices.
 type tokenizerBuf struct {
 	tokens      []string
 	spacesAfter []int
-}
-
-var patternJoinBuilderPool = sync.Pool{
-	New: func() interface{} { return &strings.Builder{} },
 }
 
 var tokenizerBufPool = sync.Pool{
@@ -1167,18 +1200,7 @@ var tokenizerBufPool = sync.Pool{
 }
 
 func newPatternLineTokenizer() *patternLineTokenizer {
-	var included [128]rune
-	var excluded [128]rune
-	included['='] = 1
-	excluded['_'] = 1
-	excluded['-'] = 1
-	excluded['.'] = 1
-	excluded[':'] = 1
-	excluded['/'] = 1
-	return &patternLineTokenizer{
-		includeDelimiters: included,
-		excludeDelimiters: excluded,
-	}
+	return &patternLineTokenizer{}
 }
 
 func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
@@ -1189,29 +1211,34 @@ func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
 	tokens := buf.tokens[:0]
 	spacesAfter := buf.spacesAfter[:0]
 
-	start := 0
-	for i, char := range line {
-		if len(tokens) >= 127 {
-			break
+	from := 0 // where the current token starts
+	for at, r := range line {
+		if len(tokens) > patternMaxTokens {
+			break // the line is rejected whatever its rest holds
 		}
-		if unicode.IsLetter(char) || unicode.IsNumber(char) || (char < 128 && p.excludeDelimiters[char] != 0) {
+		var class patternTokenClass
+		if r < utf8.RuneSelf {
+			class = patternASCIIClass[r]
+		} else {
+			class = classifyPatternChar(r)
+		}
+		if class == patternWordChar {
 			continue
 		}
-		included := char < 128 && p.includeDelimiters[char] != 0
-		if char == ' ' || included || unicode.IsPunct(char) {
-			if i > start {
-				tokens = append(tokens, line[start:i])
-			}
-			if char == ' ' {
-				spacesAfter = append(spacesAfter, len(tokens)-1)
-			} else {
-				tokens = append(tokens, line[i:i+1])
-			}
-			start = i + 1
+		if at > from {
+			tokens = append(tokens, line[from:at])
 		}
+		if class == patternSpaceChar {
+			spacesAfter = append(spacesAfter, len(tokens)-1)
+		} else {
+			// The split token is the character's first byte, as Loki's is; the rest of a wider character
+			// starts the next token.
+			tokens = append(tokens, line[at:at+1])
+		}
+		from = at + 1
 	}
-	if start < len(line) {
-		tokens = append(tokens, line[start:])
+	if from < len(line) {
+		tokens = append(tokens, line[from:])
 	}
 
 	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
@@ -1236,23 +1263,31 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 	if len(tokens) == 0 {
 		return ""
 	}
-	sb := patternJoinBuilderPool.Get().(*strings.Builder)
-	sb.Reset()
-	spacesIdx := 0
-	for i, token := range tokens {
-		out := token
+	// One allocation for the pattern: the tokens as written and at most every recorded space.
+	size := len(spacesAfter)
+	for _, token := range tokens {
 		if isPatternPlaceholder(token) {
-			out = patternVarPlaceholder
-		}
-		sb.WriteString(out)
-		for spacesIdx < len(spacesAfter) && i == spacesAfter[spacesIdx] {
-			sb.WriteByte(' ')
-			spacesIdx++
+			size += len(patternVarPlaceholder)
+		} else {
+			size += len(token)
 		}
 	}
-	result := deduplicatePlaceholders(sb.String(), patternVarPlaceholder)
-	patternJoinBuilderPool.Put(sb)
-	return result
+	var sb strings.Builder
+	sb.Grow(size)
+	// The spaces still to place, in order. A space recorded before the first token (a line that starts with one)
+	// names no token and so holds back every later space, as in Loki's patterns.
+	pending := spacesAfter
+	for at, token := range tokens {
+		if isPatternPlaceholder(token) {
+			token = patternVarPlaceholder
+		}
+		sb.WriteString(token)
+		for len(pending) > 0 && pending[0] == at {
+			sb.WriteByte(' ')
+			pending = pending[1:]
+		}
+	}
+	return deduplicatePlaceholders(sb.String(), patternVarPlaceholder)
 }
 
 func patternStructureSignature(tokens []string) string {

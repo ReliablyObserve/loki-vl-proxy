@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(patterns): rewrite the `/loki/api/v1/patterns` line tokenizer from its
+  specification instead of following Loki's implementation, and make it faster.
+  A line splits at spaces, at `=` and at punctuation other than `_ - . : /`,
+  and joined patterns keep the spaces. ASCII characters are classified from a
+  table, a line stops being scanned once it has more tokens than a pattern may
+  hold, and a joined pattern is built in one allocation (the pooled builder it
+  replaces dropped its buffer on every reset). Tokenizing and joining 4,034
+  recorded lines takes 14% less time with 54% fewer allocations, and patterns
+  extraction is 3.8-5.6% faster (benchstat, n=12, p=0.000). No behaviour
+  change: the new tokenizer gives the old one's tokens, spaces and joined
+  patterns byte for byte on 200,034 recorded lines, 1,034 of them kept as test
+  data, and a fuzz target checks that every byte of a line is accounted for.
+
 ## [2.83.2] - 2026-11-06
 
 ### Changed
