@@ -219,8 +219,10 @@
       "name": "hash",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/patterns_counts.go"
+      ]
     },
     {
       "kind": "pipe",
