@@ -59,6 +59,7 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-detected-level-body-scan` | — | `true` | Derive `detected_level` like Loki for rows without a stored level field: the log line is read as JSON, then logfmt, then scanned for level keywords, with `unknown` as the fallback. `false` uses only stored fields (a stored `detected_level`, Loki's `log_level_fields` such as `level`, `severity`, `lvl`, `severity_text`, then `severity_number`) and answers `unknown` otherwise, which skips the per-line scan on large plain-text tenants but differs from Loki for lines that carry their level only in the text. Applies to log query responses, tail, `/detected_fields` and patterns collected from log queries; the `/patterns` endpoint's own sample always reads the line, and reads a row whose `_msg` VictoriaLogs replaced with `-backend-default-msg-value` as an ordinary line |
 | `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns an empty successful response (`{"status":"success","data":[]}`) |
 | `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
+| `-patterns-counts` | — | `true` | Answer `/loki/api/v1/patterns` for a stream selector from VictoriaLogs' counts of every line in the range, at Loki's step; `false` samples lines |
 | `-patterns-custom` | — | — | Static custom patterns prepended to every `/patterns` response. Accepts JSON string array or newline-separated text payload |
 | `-patterns-custom-file` | — | — | File path for static custom patterns prepended to every `/patterns` response. Supports JSON string array or newline-separated text with optional `#` comments |
 | `-patterns-persist-path` | — | — | Disk path for persisted patterns snapshot JSON file (empty disables persistence) |
@@ -198,6 +199,7 @@ Behavior:
 - Pattern cache entries are retained long-term and updated in-place by cache key.
 - Every detected pattern response is appended to the in-memory snapshot map (no periodic TTL-based pruning in snapshot state).
 - Optional global autodetect (`-patterns-autodetect-from-queries=true`) passively mines successful `query` and `query_range` responses and pre-warms matching `/patterns` cache keys.
+- With `-patterns-counts` (the default), a stream selector's patterns are counted by VictoriaLogs over the whole range: two stats queries count every line per level and message (numbers collapsed), one per step. Samples sit at Loki's step (the request's, or the range over 250 points, never under 10 s) on the steps that have lines. A request with more rows than `-patterns-max-counts-rows`, or with rows without a message, samples lines instead.
 - Snapshot is persisted to disk periodically and on graceful shutdown.
 - Startup restore order: disk snapshot first, then peer merge (newest entry wins per cache key).
 - Readiness stays `503` during startup warm when patterns persistence is configured.
@@ -1056,6 +1058,7 @@ Each takes `0` to mean "use the built-in default", so a configuration that sets 
 | `-patterns-max-backend-rows` | `0` (uses `20000`) | Log lines `/patterns` reads from VictoriaLogs for one request |
 | `-patterns-second-pass-max-rows` | `0` (uses `8000`) | Log lines the `/patterns` second pass reads when the first pass mined too few patterns |
 | `-patterns-second-pass-max-windows` | `0` (uses `8`) | Windows the `/patterns` second pass re-reads |
+| `-patterns-max-counts-rows` | `0` (uses `250000`) | Rows the `/patterns` counts queries read from VictoriaLogs before the request samples lines instead |
 | `-multi-tenant-max-fanout` | `0` (uses `64`) | Tenants one multi-tenant request may fan out to; more returns `400` naming the flag |
 | `-multi-tenant-max-merged-response-bytes` | `0` (uses `32 MiB`) | Bytes of a merged multi-tenant response; more returns `413` naming the flag |
 

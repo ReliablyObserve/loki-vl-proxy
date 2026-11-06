@@ -134,6 +134,7 @@ extraArgs:
   # --- Patterns ---
   patterns-enabled: "true"
   patterns-autodetect-from-queries: "false"
+  patterns-counts: "true"
 
   # --- Backend connection ---
   # 120s matches the binary default; explicit here so operators can widen it for

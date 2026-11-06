@@ -1708,6 +1708,10 @@
    "service": true,
    "covers": [
     "loki_api_v1_patterns"
+   ],
+   "fixes": [
+    "drilldown/patterns-full-range-counts",
+    "drilldown/patterns-one-series-per-level"
    ]
   },
   {

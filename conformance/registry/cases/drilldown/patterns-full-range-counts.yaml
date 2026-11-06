@@ -1,0 +1,56 @@
+id: drilldown/patterns-full-range-counts
+title: Logs Drilldown pattern charts covered only the end of the range and counted a sample of lines (fixed)
+pending: true
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  Loki counts every line its pattern ingester saw, per step, over the whole
+  range (pkg/pattern/drain Chunk.ForRange at the 10 s TimeResolution). The
+  proxy mined a sample of lines that VictoriaLogs returned newest first: one
+  fetch under 20 minutes, up to ~25 windows of 200-4000 lines beyond, so a
+  chart showed samples only at the end of the range (or of each window) and
+  sample counts. Its step was the range over 120 points (2 s for 5 minutes),
+  re-bucketed with zero samples, so a chart showed spikes with empty steps
+  between them.
+
+  Measured on the compose stack (2026-11-06, Loki v3.7.9, VictoriaLogs
+  v1.53.0), {env="production"} over 5 minutes, 22,540 lines: the proxy's
+  samples covered the last 76 s with 3,661 lines; Loki's covered the range.
+
+  Fixed (internal/proxy/patterns_counts.go patternsFromCounts): for a stream
+  selector, two typed VictoriaLogs stats queries over the whole range count
+  every line per (level fields, message with numbers collapsed): one with the
+  group's smallest and largest message, which are mined (numbers that never
+  vary stay in the pattern), one per step, whose counts are the samples. The
+  step is Loki's (the request's, or the range over 250 points, never under
+  10 s), samples are only the steps with lines, and the selector's filter is
+  built as LogsQL nodes (internal/translator SelectorFilter). A request over
+  -patterns-max-counts-rows rows, or one with rows without a message, samples
+  lines as before; -patterns-counts=false keeps sampling.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{env="production"}'
+    start: 'now-5m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    Samples at Loki's step on every step the selector has lines, and each
+    pattern's samples adding up to the lines it covers (count_over_time of the
+    selector, less lines the tokenizer does not read).
+gap:
+  status: fixed
+  fixed_by: '#pending'
+  impact: drilldown-visible
+  effort: L
+  area: 'internal/proxy/patterns_counts.go patternsFromCounts (typed counts queries), patterns.go derivePatternStep / patternSampleStep / fillPatternSamplesAcrossRequestedRange'
+  loki: 'pkg/loghttp/patterns.go ParsePatternsQuery (step), pkg/pattern/drain/chunk.go (TimeResolution 10 s, ForRange)'
+  proxy: 'every step with lines, counted, at Loki''s step, no zero samples'
+  planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternCountsStepIsLokis, TestPatternStepsFollowLoki, TestPatternSamplesHaveNoZeros (internal/proxy)'
+  clusters: []
