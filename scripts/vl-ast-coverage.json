@@ -1,6 +1,5 @@
 {
-  "_comment": "Registry of VictoriaLogs LogsQL constructs supported by internal/logsql. Update when adding new AST nodes.",
-  "_vl_source": "https://github.com/VictoriaMetrics/VictoriaLogs/tree/master/lib/logstorage",
+  "_comment": "VictoriaLogs LogsQL constructs internal/logsql covers, and the source files of lib/logstorage that are not user-facing constructs. The VictoriaLogs parse oracle (scripts/ci/vl_oracle.sh) lists the pipes, stats functions and filters of every VictoriaLogs version of the compatibility matrix from its pinned source; one that is in neither list fails the PR quality gate. Add the AST node, its String() and tests, then add it here.",
   "pipes": [
     "coalesce",
     "collapse_nums",
@@ -115,5 +114,26 @@
     "time",
     "value_type",
     "week_range"
-  ]
+  ],
+  "ignored": {
+    "pipes": {
+      "local": "pipe_local.go: the generic internal base",
+      "sort_topk": "pipe_sort_topk.go: an internal variant of sort",
+      "block_stats": "pipe_block_stats.go: internal block-level stats",
+      "blocks_count": "pipe_blocks_count.go: internal block counting",
+      "field_values_local": "pipe_field_values_local.go: the local shard variant",
+      "query_stats_local": "pipe_query_stats_local.go: the local shard variant",
+      "uniq_local": "pipe_uniq_local.go: the local shard variant",
+      "pack": "pipe_pack.go: the internal base of pack_json and pack_logfmt",
+      "unpack": "pipe_unpack.go: the internal base of unpack_json, unpack_logfmt and unpack_syslog"
+    },
+    "stats": {
+      "stdvar": "stats_stdvar.go: stddev squared, no separate function upstream"
+    },
+    "filters": {
+      "generic": "filter_generic.go: an internal structural node",
+      "noop": "filter_noop.go: an internal structural node",
+      "stream_id": "filter_stream_id.go: an internal structural node"
+    }
+  }
 }

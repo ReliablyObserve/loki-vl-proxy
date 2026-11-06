@@ -340,3 +340,76 @@ func TestProductModuleHasNoOracleDependency(t *testing.T) {
 		t.Errorf("test/oracle/vl must stay a module of its own: %v", err)
 	}
 }
+
+// coveragePath is the LogsQL constructs internal/logsql covers, and the lib/logstorage source files that are no
+// user-facing construct.
+const coveragePath = "../../scripts/vl-ast-coverage.json"
+
+// ConstructCoverage is, on one VictoriaLogs version, its pipes, stats functions and filters that
+// scripts/vl-ast-coverage.json neither covers nor ignores.
+type ConstructCoverage struct {
+	Version string   `json:"version"`
+	Missing []string `json:"missing"`
+}
+
+// constructsPath is where the oracle's list of version v's constructs for the corpus at corpus goes.
+func constructsPath(corpus, v string) string {
+	return strings.TrimSuffix(corpus, ".jsonl.gz") + ".vl-" + v + ".constructs.json"
+}
+
+// missingConstructs lists, as "<category>/<name>", the constructs of upstream that coverage neither covers nor ignores.
+func missingConstructs(upstream map[string][]string, coverage map[string]json.RawMessage) ([]string, error) {
+	missing := []string{}
+	var ignored map[string]map[string]string
+	if raw, ok := coverage["ignored"]; ok {
+		if err := json.Unmarshal(raw, &ignored); err != nil {
+			return nil, err
+		}
+	}
+	for _, category := range []string{"pipes", "stats", "filters"} {
+		var covered []string
+		if raw, ok := coverage[category]; ok {
+			if err := json.Unmarshal(raw, &covered); err != nil {
+				return nil, err
+			}
+		}
+		known := map[string]bool{}
+		for _, c := range covered {
+			known[c] = true
+		}
+		for _, name := range upstream[category] {
+			if !known[name] && ignored[category][name] == "" {
+				missing = append(missing, category+"/"+name)
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing, nil
+}
+
+func TestMissingConstructsAreThoseNeitherCoveredNorIgnored(t *testing.T) {
+	coverage := map[string]json.RawMessage{
+		"pipes":   json.RawMessage(`["stats", "filter"]`),
+		"stats":   json.RawMessage(`["count"]`),
+		"ignored": json.RawMessage(`{"pipes": {"local": "internal base"}}`),
+	}
+	got, err := missingConstructs(map[string][]string{
+		"pipes": {"filter", "local", "stats", "unroll"}, "stats": {"count", "rate"}, "filters": {"phrase"},
+	}, coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "filters/phrase,pipes/unroll,stats/rate" {
+		t.Errorf("missing = %v", got)
+	}
+}
+
+// The committed coverage file parses, and every construct of every matrix version with a constructs list beside
+// LVP_QUERY_CORPUS_OUT is covered or ignored.
+func TestConstructCoverageFileParses(t *testing.T) {
+	var coverage map[string]json.RawMessage
+	readJSON(t, coveragePath, &coverage)
+	if _, err := missingConstructs(map[string][]string{}, coverage); err != nil {
+		t.Fatalf("%s: %v", coveragePath, err)
+	}
+}

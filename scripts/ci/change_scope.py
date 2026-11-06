@@ -494,7 +494,7 @@ NO_JOB_WORKFLOWS = (
     "auto-release.yaml", "cancel-conflicted-pr-runs.yaml", "changelog-pr.yaml", "codeql.yaml",
     "docs-site.yaml", "ghcr-badges.yaml", "loc-badges.yaml", "parity-refresh.yaml", "perf-daily.yaml",
     "pr-evidence-summary.yaml", "pr-labeler.yaml", "query-corpus.yaml", "release-pr-validation.yaml",
-    "release.yaml", "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml", "vl-ast-coverage.yml",
+    "release.yaml", "scorecard.yaml", "security-heavy.yaml", "visual-smoke-cleanup.yaml",
 )
 
 
@@ -546,7 +546,7 @@ JOB_MAP = [
         "scripts/ci/validate_compose.sh", "scripts/ci/validate_helm_flags.sh",
         "scripts/ci/validate_helm_secrets.sh", "scripts/ci/helm-*.yaml", "scripts/ci/check_scorecard.py",
         "scripts/ci/repro_dense_patterns.sh", "scripts/ci/run_nuclei_scan.sh",
-        "scripts/check-vl-ast-coverage.py", "scripts/vl-ast-coverage.json",
+        "scripts/vl-ast-coverage.json",
         "scripts/bench-cache-tiers.sh", "scripts/test-short.sh",
         "bench/ab/history/**", "bench/ab/results/**", "bench/drilldown-memory/**",
         "conformance/registry/generated/perf-evidence.json", "conformance/reports/performance.md",

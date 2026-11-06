@@ -68,11 +68,13 @@ class ReportTests(unittest.TestCase):
             "summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": [],
             "oracle": [{"version": "v1.53.0", "goldens": 100, "goldens_rejected": 9, "sent_rejected": 2}],
             "oracle_base": [{"version": "v1.53.0", "goldens": 100, "goldens_rejected": 8, "sent_rejected": 2}],
-            "oracle_regressions": [{"version": "v1.53.0", "goldens_rejected": ["q-x"], "goldens_meaning_lost": [], "cases_lost": []}]}
+            "oracle_regressions": [{"version": "v1.53.0", "goldens_rejected": ["q-x"], "goldens_meaning_lost": [], "cases_lost": []}],
+            "constructs": [{"version": "v1.53.0", "missing": ["pipes/unroll"]}]}
         report = self.render(base=snapshot(), head=head)
         self.assertIn("VictoriaLogs v1.53.0:", report)
         self.assertIn("| Goldens VictoriaLogs rejects | 8 | 9 | +1 |", report)
         self.assertIn("Regressions on VictoriaLogs v1.53.0: 1 goldens now rejected; 0 goldens whose meaning changed; 0 test cases no longer read the same.", report)
+        self.assertIn("Constructs of VictoriaLogs v1.53.0 not covered by `internal/logsql`: pipes/unroll.", report)
 
     def test_query_corpus_without_a_base_says_so(self):
         head = snapshot()

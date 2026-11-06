@@ -185,6 +185,12 @@ def query_corpus_failures(corpus):
             ids = reg.get(key) or []
             if ids:
                 out.append(f"query corpus: {len(ids)} queries on both the base and the PR {what}: " + ", ".join(ids[:10]))
+    # The pipes, stats functions and filters of a matrix VictoriaLogs version that scripts/vl-ast-coverage.json
+    # neither covers nor ignores.
+    for c in corpus.get("constructs") or []:
+        if c.get("missing"):
+            out.append(f"VictoriaLogs {c.get('version')}: constructs not covered by internal/logsql "
+                       f"(scripts/vl-ast-coverage.json): " + ", ".join(c["missing"][:20]))
     # VictoriaLogs' own parser (test/oracle/vl), per version: the same queries judged worse than on the base.
     for r in corpus.get("oracle_regressions") or []:
         for key, what in (("goldens_rejected", "goldens VictoriaLogs now rejects"),

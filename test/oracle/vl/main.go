@@ -8,8 +8,9 @@
 //	go run -modfile=go.v1.49.0.mod . check -in inputs.jsonl -out verdicts.jsonl
 //
 // cases writes VictoriaLogs' own parser test cases of that version (TestParseQuery_Success and
-// TestParseQuery_Failure in lib/logstorage/parser_test.go); check parses every input query, and the proxy's
-// printed form of it, and writes whether VictoriaLogs accepts each and whether they mean the same to it.
+// TestParseQuery_Failure in lib/logstorage/parser_test.go); constructs writes its pipes, stats functions and
+// filters, one per pipe_*.go, stats_*.go and filter_*.go source file; check parses every input query, and the
+// proxy's printed form of it, and writes whether VictoriaLogs accepts each and whether they mean the same to it.
 package main
 
 import (
@@ -23,7 +24,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/VictoriaMetrics/VictoriaLogs/lib/logstorage"
@@ -59,10 +62,10 @@ type Verdict struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: vl cases -src DIR -out FILE | vl check -in FILE -out FILE"))
+		fail(fmt.Errorf("usage: vl cases|constructs -src DIR -out FILE | vl check -in FILE -out FILE"))
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	src := fs.String("src", "", "the VictoriaLogs module directory (cases)")
+	src := fs.String("src", "", "the VictoriaLogs module directory (cases, constructs)")
 	in := fs.String("in", "", "inputs, one JSON object per line (check)")
 	out := fs.String("out", "", "output file")
 	_ = fs.Parse(os.Args[2:])
@@ -70,6 +73,8 @@ func main() {
 	switch os.Args[1] {
 	case "cases":
 		err = writeCases(*src, *out)
+	case "constructs":
+		err = writeConstructs(*src, *out)
 	case "check":
 		err = check(*in, *out)
 	default:
@@ -137,6 +142,36 @@ func writeCases(src, out string) error {
 		return fmt.Errorf("no parser test cases in %s", path)
 	}
 	b, err := json.MarshalIndent(cases, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(out, append(b, '\n'), 0o644)
+}
+
+// writeConstructs lists the pipes, stats functions and filters of lib/logstorage by their source files'
+// names: pipe_<name>.go, stats_<name>.go and filter_<name>.go, tests aside.
+func writeConstructs(src, out string) error {
+	entries, err := os.ReadDir(filepath.Join(src, "lib", "logstorage"))
+	if err != nil {
+		return err
+	}
+	constructs := map[string][]string{"pipes": {}, "stats": {}, "filters": {}}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		stem := strings.TrimSuffix(name, ".go")
+		for prefix, category := range map[string]string{"pipe_": "pipes", "stats_": "stats", "filter_": "filters"} {
+			if rest, ok := strings.CutPrefix(stem, prefix); ok && rest != "" {
+				constructs[category] = append(constructs[category], rest)
+			}
+		}
+	}
+	for _, list := range constructs {
+		sort.Strings(list)
+	}
+	b, err := json.MarshalIndent(constructs, "", " ")
 	if err != nil {
 		return err
 	}

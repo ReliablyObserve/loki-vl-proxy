@@ -184,6 +184,7 @@ jobs:
             /tmp/pr-head-query-corpus.jsonl.gz
             /tmp/pr-head-query-corpus.summary.json
             /tmp/pr-head-query-corpus.vl-*.jsonl.gz
+            /tmp/pr-head-query-corpus.vl-*.constructs.json
 
       - name: Upload quality diagnostics
         if: always()
