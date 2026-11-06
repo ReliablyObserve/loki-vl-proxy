@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"hash/fnv"
+	"maps"
 	"net/http"
 	"sort"
 	"strconv"
@@ -26,8 +28,9 @@ const (
 const lokiPatternRetention = 3 * time.Hour
 
 // patternStateOverlap is how far before the end of what a selector's state read a refresh reads again, so a line
-// VictoriaLogs made visible just after the last read is not missed; a line not newer than its stream's newest
-// line read is not mined again, as Loki skips such a line.
+// VictoriaLogs made visible just after the last read is not missed. A line older than its stream's newest line read
+// is not mined, as Loki skips such a line; lines at the newest time are mined unless read already (several lines
+// of a stream often share a time).
 const patternStateOverlap = 10 * time.Second
 
 // patternStateStore keeps, per tenant, the state Loki's pattern ingester keeps: each stream's clusters at each
@@ -66,8 +69,10 @@ type patternTenantState struct {
 	mu sync.Mutex
 	// miner holds each stream's clusterer at each level; its samples are keyed by the start of their 10 s sample.
 	miner *patternMiner
-	// newest is each stream's newest line read, in unix nanoseconds.
-	newest map[string]int64
+	// newest is each stream's newest line read, in unix nanoseconds, and atNewest the lines read at that time, by
+	// the hash of their text: a refresh reads the newest lines again and trains only those not read yet.
+	newest   map[string]int64
+	atNewest map[string]map[uint64]int
 	// folded is the patterns of the streams that went idle, their clusterers freed.
 	folded    map[string][]patternFoldedCluster
 	selectors map[string]*patternSelectorState
@@ -162,6 +167,8 @@ func (p *Proxy) countPatternLines(ctx context.Context, scope patternQueryScope, 
 // first, and trains each stream's clusterers on the lines newer than the newest it read.
 func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState, s *patternSelectorState, scope patternQueryScope, fromNs, toNs int64, maxLines int) error {
 	levels := p.newLogRowLevels()
+	// unread is, per stream, the lines at its newest time this read has not met again yet.
+	unread := map[string]map[uint64]int{}
 	return p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), fromNs, toNs, maxLines, func(v *fj.Value) bool {
 		msg := v.GetStringBytes("_msg")
 		if isVLMissingMsgBytes(msg, levels.defaultMsg) {
@@ -173,10 +180,30 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 		}
 		stream := string(v.GetStringBytes(patternExactStreamField))
 		s.streams[stream] = struct{}{}
-		if timeNs <= t.newest[stream] {
+		newest, seen := t.newest[stream]
+		switch {
+		case seen && timeNs < newest:
 			return true // read already, or older than a line read: Loki skips it
+		case seen && timeNs == newest:
+			left := unread[stream]
+			if left == nil {
+				left = maps.Clone(t.atNewest[stream])
+				if left == nil {
+					left = map[uint64]int{}
+				}
+				unread[stream] = left
+			}
+			h := patternLineHash(msg)
+			if left[h] > 0 {
+				left[h]--
+				return true // read already
+			}
+			t.atNewest[stream][h]++
+		default:
+			t.newest[stream] = timeNs
+			t.atNewest[stream] = map[uint64]int{patternLineHash(msg): 1}
+			unread[stream] = map[uint64]int{}
 		}
-		t.newest[stream] = timeNs
 		if len(msg) > 0 {
 			t.miner.observeStreamLine(stream, patternLevelFromFJ(v, &levels), string(msg), patternSampleStart(timeNs), 1)
 		}
@@ -204,6 +231,7 @@ func (st *patternStateStore) tenant(key string) *patternTenantState {
 		t = &patternTenantState{
 			miner:     newPatternMiner(),
 			newest:    make(map[string]int64),
+			atNewest:  make(map[string]map[uint64]int),
 			folded:    make(map[string][]patternFoldedCluster),
 			selectors: make(map[string]*patternSelectorState),
 		}
@@ -376,6 +404,7 @@ func (st *patternStateStore) age(t *patternTenantState, now time.Time, retainFro
 		if len(kept) == 0 {
 			delete(t.folded, stream)
 			delete(t.newest, stream)
+			delete(t.atNewest, stream)
 		} else {
 			t.folded[stream] = kept
 		}
@@ -410,6 +439,7 @@ func (st *patternStateStore) age(t *patternTenantState, now time.Time, retainFro
 		// The tenant alone holds more than the store may: start it again on its next request.
 		t.miner = newPatternMiner()
 		t.newest = make(map[string]int64)
+		t.atNewest = make(map[string]map[uint64]int)
 		t.folded = make(map[string][]patternFoldedCluster)
 		t.selectors = make(map[string]*patternSelectorState)
 		t.bytes = 0
@@ -437,5 +467,15 @@ func (t *patternTenantState) size() int64 {
 	for _, s := range t.selectors {
 		n += int64(64 + 48*len(s.streams))
 	}
+	for _, lines := range t.atNewest {
+		n += int64(48 + 24*len(lines))
+	}
 	return n + int64(48*len(t.newest))
+}
+
+// patternLineHash names a line's text among the lines of a stream at one time.
+func patternLineHash(msg []byte) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write(msg)
+	return h.Sum64()
 }

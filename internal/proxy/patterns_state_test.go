@@ -308,3 +308,27 @@ func TestPatternStateStreamResumingAfterIdleFillsItsPause(t *testing.T) {
 		t.Fatalf("resumed stream answers\n %s\nas one cluster\n %s", got, want)
 	}
 }
+
+// Lines of a stream that share a time are all mined, as Loki mines them (it skips only lines older than the newest);
+// a refresh that reads them again, and new lines at that time, mines only the new ones.
+//
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternStateMinesLinesThatShareATimeOnce(t *testing.T) {
+	vl := &fakeStateVL{}
+	at := stateNow.Add(-5 * time.Second)
+	for i := 0; i < 30; i++ {
+		vl.add(stateRow{stream: "api/a", level: "info", msg: fmt.Sprintf("order %d shipped to berlin", i), at: at})
+	}
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	if got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now); got != "info order <_> shipped to berlin=30" {
+		t.Fatalf("answer %q: every line at one time mined once", got)
+	}
+	for i := 30; i < 35; i++ {
+		vl.add(stateRow{stream: "api/a", level: "info", msg: fmt.Sprintf("order %d shipped to berlin", i), at: at})
+	}
+	now = stateNow.Add(time.Second)
+	if got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now); got != "info order <_> shipped to berlin=35" {
+		t.Fatalf("refresh answer %q: the lines read again not mined twice, the new ones at that time mined", got)
+	}
+}
