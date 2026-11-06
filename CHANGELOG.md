@@ -26,7 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level `log`, `message`, `msg`, `msg_`, `_msg` or `content` string,
   written `<_>message<_>`, and not at all without one (a raw JSON line is never
   a pattern); a logfmt line as key and value pairs, timestamps and trace ids
-  variable. The answer has one entry per level and pattern, and every pattern
+  variable. A pattern is a template, not a line: patterns of one kind of line
+  (as many space-separated fields, a quoted string being one, the same first
+  word or key, at least 30% of their fields alike, whatever their level) are
+  compared, and a field whose value differs between them becomes `<_>`,
+  keeping the punctuation the values share (`key=<_>`, `[<_>`, `"<_>"`), as
+  Loki's drain does between the lines of a cluster; a value that never varies
+  stays. An access log is one pattern per method rather than one per path and
+  user agent; on the recorded miner corpus the patterns fall from 4,704 to
+  2,548 and the readable ones from 1,450 distinct texts to 9, with no literal
+  number left. The answer has one entry per level and pattern, and every pattern
   without a `limit` parameter, as Loki's `/patterns` has none. New flags
   `-patterns-counts` (default `true`; `false` keeps sampling) and
   `-patterns-max-counts-rows` (default `250000`; past it the request samples

@@ -10,10 +10,12 @@ why: |
   them as history-dependent); on the seeded stack Loki had no patterns for
   most services. Lines are tokenized by format as Loki's pattern ingester
   tokenizes them (internal/proxy/pattern_formats.go: a JSON line from its
-  message field, a logfmt line as pairs); the clustering differs (the proxy
-  merges low-cardinality values Loki keeps apart, and has no per-stream
-  cluster cap or eviction limiter, which empties Loki's patterns for
-  high-cardinality streams).
+  message field, a logfmt line as pairs), and a field whose value varies
+  between patterns of one kind of line is <_> as between the lines of one of
+  Loki's drain clusters (internal/proxy/pattern_formats.go
+  wildcardVaryingFields; every line still matches its pattern under |>). The
+  clustering differs (the proxy has no per-stream cluster cap or eviction
+  limiter, which empties Loki's patterns for high-cardinality streams).
 request:
   method: GET
   path: /loki/api/v1/patterns

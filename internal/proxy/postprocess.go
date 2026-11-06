@@ -1000,11 +1000,14 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 // entry with their samples added up. The miner's clusters are not changed.
 func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
 	clusters := miner.AllClusters()
+	for _, c := range clusters {
+		c.pattern = miner.joinPatternTokens(c.tokens, c.spacesAfter, c.format)
+	}
+	wildcardPatterns(clusters)
 	entries := make([]*patternBucket, 0, len(clusters))
 	byKey := make(map[[2]string]int, len(clusters))
 	merged := make(map[int]bool)
 	for _, c := range clusters {
-		c.pattern = miner.joinPatternTokens(c.tokens, c.spacesAfter, c.format)
 		key := [2]string{c.level, c.pattern}
 		at, seen := byKey[key]
 		if !seen {

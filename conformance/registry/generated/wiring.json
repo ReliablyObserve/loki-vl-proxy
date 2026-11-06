@@ -47,7 +47,8 @@
       "test/e2e-compat/patterns_counts_test.go"
     ],
     "drilldown/patterns-mined-differently": [
-      "internal/proxy/pattern_formats_test.go"
+      "internal/proxy/pattern_formats_test.go",
+      "internal/proxy/pattern_wildcards_test.go"
     ],
     "drilldown/patterns-one-series-per-level": [
       "internal/proxy/patterns_counts_test.go",
@@ -276,6 +277,7 @@
       "internal/proxy/pattern_miner_answers_test.go",
       "internal/proxy/pattern_placeholders_test.go",
       "internal/proxy/pattern_tokenizer_test.go",
+      "internal/proxy/pattern_wildcards_test.go",
       "internal/proxy/patterns_counts_test.go",
       "test/e2e-compat/patterns_counts_test.go"
     ],
@@ -2121,6 +2123,10 @@
     "internal/proxy/pattern_tokenizer_test.go": [
       "loki_api_v1_patterns"
     ],
+    "internal/proxy/pattern_wildcards_test.go": [
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns"
+    ],
     "internal/proxy/patterns_counts_test.go": [
       "drilldown/patterns-full-range-counts",
       "drilldown/patterns-one-series-per-level",
@@ -3230,7 +3236,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 336,
+  "tests_with_markers": 337,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

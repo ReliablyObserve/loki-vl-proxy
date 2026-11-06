@@ -29,6 +29,7 @@ smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
 smoke	internal/proxy	FuzzExtractLogPatternsFromWindowEntries	12s	-	extract log patterns from window entries
 smoke	internal/proxy	FuzzPatternTokenizer	12s	-	patterns line tokenizer
 smoke	internal/proxy	FuzzPatternMinerPlaceholdersAgree	12s	-	patterns miner checks with placeholders read once per line
+smoke	internal/proxy	FuzzPatternWildcardsKeepTheirLines	12s	-	patterns wildcarding keeps every line its pattern matched
 smoke	internal/proxy	FuzzPatternLineTokens	12s	-	patterns lines tokenized by format
 smoke	internal/proxy	FuzzPatternCountsStep	12s	-	patterns counts step
 smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate

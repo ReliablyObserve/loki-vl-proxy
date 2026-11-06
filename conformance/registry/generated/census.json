@@ -1146,6 +1146,8 @@
     "internal/proxy/pattern_miner_answers_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_placeholders_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_tokenizer_test.go | loki_api_v1_patterns",
+    "internal/proxy/pattern_wildcards_test.go | drilldown/patterns-mined-differently",
+    "internal/proxy/pattern_wildcards_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-full-range-counts",
     "internal/proxy/patterns_counts_test.go | drilldown/patterns-one-series-per-level",
     "internal/proxy/patterns_counts_test.go | loki_api_v1_patterns",
@@ -1837,7 +1839,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 335,
+      "go": 336,
       "playwright": 1
     },
     "page_kinds": {
