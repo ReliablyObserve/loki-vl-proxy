@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.83.3] - 2026-11-06
-
 ### Performance
 
 - perf(patterns): the `/loki/api/v1/patterns` miner reads each token's
@@ -22,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extracted and merged across windows; 5,819 of them, recorded before the change, are kept
   as test data, and a fuzz target checks the once-per-line checks against the
   per-check ones.
+
+## [2.83.3] - 2026-11-06
+
+### Performance
 
 - perf(patterns): rewrite the `/loki/api/v1/patterns` line tokenizer from its
   specification instead of following Loki's implementation, and make it faster.
