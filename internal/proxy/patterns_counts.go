@@ -155,7 +155,7 @@ func (p *Proxy) patternsFromCounts(r *http.Request, query, startParam, endParam,
 	if !p.patternsCounts {
 		return nil, false
 	}
-	lq, err := logqlpkg.ParseLogQuery(strings.TrimSpace(query))
+	lq, err := parsedLogQuery(strings.TrimSpace(query))
 	if err != nil || len(lq.Pipeline) > 0 {
 		return nil, false
 	}

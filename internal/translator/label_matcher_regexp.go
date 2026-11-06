@@ -142,11 +142,8 @@ func exactQuotable(literal string) bool {
 }
 
 // exactAlternatives is `(label:="a" OR label:="b")`, negated with '-'.
-func exactAlternatives(label string, values []string, negate bool) string {
-	return exactAlternativesFilter(label, values, negate).String()
-}
-
-// exactAlternativesFilter is exactAlternatives as a filter node: (label:="a" OR label:="b"), excluded when negate.
+// exactAlternativesFilter is the exact filters a literal alternation becomes: (label:="a" OR label:="b"),
+// excluded when negate.
 func exactAlternativesFilter(label string, values []string, negate bool) logsql.FilterExpr {
 	exact := make(logsql.AnyOf, len(values))
 	for i, v := range values {
