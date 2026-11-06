@@ -189,7 +189,7 @@ func appendLogfmtStructureSignature(dst []byte, tokens, placeholders []string) [
 
 // patternFamilySimilarity is the share of fields a cluster shares with the first of a group to join it (a field
 // sharing with one its pattern matches), as Loki's drain joins a line to a cluster of lines as similar.
-const patternFamilySimilarity = 0.3
+const patternFamilySimilarity = 0.5
 
 // patternMaxFamilyGroups bounds the groups of a family a cluster is compared with: a cluster like none of them is
 // left as it was mined, so wildcarding stays linear in the clusters however varied the lines.
@@ -200,19 +200,19 @@ const patternWildcardPasses = 3
 
 // wildcardPatterns runs wildcardVaryingFields over the clusters' distinct patterns until they stop changing, at most
 // patternWildcardPasses times: lines that shared too little to group before their values were variables may group
-// once they are. Clusters that read the same are wildcarded as one.
+// once they are. Clusters of one level that read the same are wildcarded as one.
 func wildcardPatterns(clusters []*patternBucket) {
 	for pass := 0; pass < patternWildcardPasses; pass++ {
-		at := make(map[[2]string]int, len(clusters))
+		at := make(map[[3]string]int, len(clusters))
 		var distinct []*patternBucket
 		of := make([]int, len(clusters))
 		for i, c := range clusters {
-			k := [2]string{string(rune(c.format)), c.pattern}
+			k := [3]string{string(rune(c.format)), c.level, c.pattern}
 			j, seen := at[k]
 			if !seen {
 				j = len(distinct)
 				at[k] = j
-				distinct = append(distinct, &patternBucket{pattern: c.pattern, format: c.format})
+				distinct = append(distinct, &patternBucket{pattern: c.pattern, level: c.level, format: c.format})
 			}
 			of[i] = j
 		}
@@ -227,13 +227,13 @@ func wildcardPatterns(clusters []*patternBucket) {
 
 // wildcardVaryingFields makes the clusters' patterns templates rather than lines, as Loki's patterns are, so a kind
 // of line is one pattern rather than one per path, user agent or number. A field is a run of text between spaces, a
-// quoted string being one field. Clusters of one format with as many fields and the same first word (unless it holds
-// a number; for a key=value field its key) form a group when at least patternFamilySimilarity of their fields are
-// the same as the group's first, whatever their level: a field whose value differs within the group becomes a
-// variable, keeping the punctuation its values share at either end (a key=, a bracket, a quote), and a value that
-// never varies (a method, a component, a status that is always 200) stays, as in Loki. A pattern is changed only if
-// it still matches what it was mined as. Clusters that then read the same are merged by the caller. changed reports
-// whether a pattern changed.
+// quoted string being one field. Clusters of one format with as many fields, the same first word (unless it holds a
+// number; for a key=value field its key) and the same keys in the same places form a group when at least
+// patternFamilySimilarity of their fields are the same as the group's first, whatever their level: a field whose
+// value differs within the group becomes a variable, keeping the punctuation its values share at either end (a key=,
+// a bracket, a quote), and a value that never varies (a method, a component, a status that is always 200) or varies
+// only with the level stays, as in Loki. A pattern is changed only if it still matches what it was mined as.
+// Clusters that then read the same are merged by the caller. changed reports whether a pattern changed.
 func wildcardVaryingFields(clusters []*patternBucket) (changed bool) {
 	type group struct {
 		first   []string
@@ -255,6 +255,13 @@ func wildcardVaryingFields(clusters []*patternBucket) (changed bool) {
 		if !strings.ContainsAny(first, "0123456789<") {
 			key.WriteByte(0)
 			key.WriteString(first)
+		}
+		for _, field := range fields[1:] {
+			// The keys of key=value fields, in their places, are what a kind of line shares.
+			key.WriteByte(1)
+			if eq := strings.IndexByte(field, '='); eq > 0 && isPatternKey(field[:eq]) {
+				key.WriteString(field[:eq+1])
+			}
 		}
 		k := key.String()
 		var joined *group
@@ -293,6 +300,9 @@ func wildcardVaryingFields(clusters []*patternBucket) (changed bool) {
 				for _, fields := range g.members {
 					values = append(values, fields[i])
 				}
+				if sameButLevel(values, g.at) {
+					continue
+				}
 				if wildcard, ok := wildcardPatternValues(values); ok {
 					for _, fields := range g.members {
 						fields[i] = wildcard
@@ -316,6 +326,31 @@ func wildcardVaryingFields(clusters []*patternBucket) (changed bool) {
 		}
 	}
 	return changed
+}
+
+// sameButLevel reports whether a field's values across a group's clusters differ only by each cluster's level
+// (level=info in the info pattern, level=warn in the warn one): the field then stays as it is in each.
+func sameButLevel(values []string, at []*patternBucket) bool {
+	first := withoutPatternLevel(values[0], at[0].level)
+	for j, v := range values[1:] {
+		if withoutPatternLevel(v, at[j+1].level) != first {
+			return false
+		}
+	}
+	return true
+}
+
+// withoutPatternLevel is a value with its first mention of the level, in any case, marked as the level.
+func withoutPatternLevel(value, level string) string {
+	if level == "" || level == "unknown" || len(level) > len(value) {
+		return value
+	}
+	for i := 0; i+len(level) <= len(value); i++ {
+		if strings.EqualFold(value[i:i+len(level)], level) {
+			return value[:i] + "\x00" + value[i+len(level):]
+		}
+	}
+	return value
 }
 
 // samePatternField reports whether two fields of patterns are the same for grouping: equal, or one a pattern the

@@ -131,6 +131,44 @@ func TestPatternsWildcardEveryVaryingValue(t *testing.T) {
 	}
 }
 
+// Keys stay: logfmt lines with different keys in a place are different kinds of line, never key <_>=<_>. A value
+// that differs only with the level (level=info in the info pattern, level=warn in the warn one) stays in each.
+//
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternsKeepKeysAndLevels(t *testing.T) {
+	var body []byte
+	for _, level := range []string{"info", "warn", "error"} {
+		var lines []string
+		for i := 0; i < 30; i++ {
+			lines = append(lines,
+				fmt.Sprintf(`level=%s msg="cache hit" key=k%d ttl=%ds size_bytes=%d op=get`, level, i, i%9+1, 100+i*7),
+				fmt.Sprintf(`level=%s msg="cache write" key=k%d op=set ttl=%ds size_bytes=%d`, level, i, i%9+1, 100+i*7),
+			)
+		}
+		body = append(body, patternRowsOf(level, lines...)...)
+	}
+	patterns := extractLogPatterns(body, "1m", 1000, defaultLogRowLevels())
+	got := map[string]bool{}
+	for _, p := range patterns {
+		text, level := p["pattern"].(string), p["level"].(string)
+		got[level+" "+text] = true
+		if strings.Contains(text, "<_>=") {
+			t.Errorf("%s pattern %q wildcards a key", level, text)
+		}
+		if !strings.HasPrefix(text, "level="+level+" ") {
+			t.Errorf("%s pattern %q does not keep its level", level, text)
+		}
+	}
+	for _, want := range []string{
+		`warn level=warn msg="cache hit" key=<_> ttl=<_> size_bytes=<_> op=get`,
+		`warn level=warn msg="cache write" key=<_> op=set ttl=<_> size_bytes=<_>`,
+	} {
+		if !got[want] {
+			t.Errorf("pattern %q missing from %v", want, got)
+		}
+	}
+}
+
 // Wildcarding never loses a line: every line that reads as its cluster's pattern as mined still matches a pattern
 // once varying values are variables, whatever the lines. (A line the mined pattern matches only because its leading
 // literal may start anywhere, such as a logfmt line with a key twice, can be lost when a variable takes that
