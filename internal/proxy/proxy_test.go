@@ -1802,9 +1802,9 @@ func TestPatternsSnapshotCompaction_DeduplicatesEquivalentScopes(t *testing.T) {
 	payloadA := []byte(`{"status":"success","data":[{"pattern":"a","samples":[[1,2]]}]}`)
 	payloadB := []byte(`{"status":"success","data":[{"pattern":"b","samples":[[1,3]]}]}`)
 
-	keyOld := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=10&step=60"
-	keyNew := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=5&end=15&step=60"
-	keyOther := "patterns:org-a:query=%7Bapp%3D%22worker%22%7D&start=1&end=10&step=60"
+	keyOld := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=10&step=60"
+	keyNew := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22api%22%7D&start=5&end=15&step=60"
+	keyOther := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22worker%22%7D&start=1&end=10&step=60"
 
 	p.patternsSnapshotEntries[keyOld] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now - 10, PatternCount: 1}
 	p.patternsSnapshotEntries[keyNew] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now, PatternCount: 1}
@@ -1852,7 +1852,7 @@ func TestPatternsPersistenceLoop_PersistsAndStopsOnShutdown(t *testing.T) {
 	p.Init()
 
 	payload := []byte(`{"status":"success","data":[{"pattern":"sample","samples":[[1,1]]}]}`)
-	p.recordPatternSnapshotEntry("patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=2", payload, time.Now())
+	p.recordPatternSnapshotEntry(patternsCacheKeyPrefix+"org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=2", payload, time.Now())
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -2082,8 +2082,9 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 }
 
 func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
-	if got := parsePatternLimit(""); got != 50 {
-		t.Fatalf("expected default limit 50, got %d", got)
+	// Loki's /patterns has no limit parameter and answers every pattern.
+	if got := parsePatternLimit(""); got != maxPatternResponseLimit {
+		t.Fatalf("expected default limit %d, got %d", maxPatternResponseLimit, got)
 	}
 	if got := parsePatternLimit("5000"); got != maxPatternResponseLimit {
 		t.Fatalf("expected maxPatternResponseLimit clamp, got %d", got)

@@ -18,6 +18,7 @@ const (
 	DefaultPatternsMaxBackendRows            = 20_000    // -patterns-max-backend-rows
 	DefaultPatternsSecondPassMaxRows         = 8_000     // -patterns-second-pass-max-rows
 	DefaultPatternsSecondPassMaxWindows      = 8         // -patterns-second-pass-max-windows
+	DefaultPatternsMaxCountsRows             = 250_000   // -patterns-max-counts-rows
 	DefaultDrilldownMaxStatsBuckets          = 120       // -drilldown-max-stats-buckets
 	DefaultMaxZeroFillBuckets                = 32_768    // -max-zero-fill-buckets
 	// DefaultLabelValuesMaxResponseBytes matches the per-response budget of
@@ -41,6 +42,7 @@ type executionLimits struct {
 	PatternsBackendRows       int
 	PatternsSecondPassRows    int
 	PatternsSecondPassWindows int
+	PatternsCountsRows        int
 	DrilldownStatsBuckets     int
 	ZeroFillBuckets           int
 	QueryLengthBytes          int
@@ -59,6 +61,7 @@ type ExecutionLimitsConfig struct {
 	PatternsMaxBackendRows            int
 	PatternsSecondPassMaxRows         int
 	PatternsSecondPassMaxWindows      int
+	PatternsMaxCountsRows             int
 	DrilldownMaxStatsBuckets          int
 	MaxZeroFillBuckets                int
 	MaxQueryLengthBytes               int
@@ -77,6 +80,7 @@ func defaultExecutionLimits() executionLimits {
 		PatternsBackendRows:       DefaultPatternsMaxBackendRows,
 		PatternsSecondPassRows:    DefaultPatternsSecondPassMaxRows,
 		PatternsSecondPassWindows: DefaultPatternsSecondPassMaxWindows,
+		PatternsCountsRows:        DefaultPatternsMaxCountsRows,
 		DrilldownStatsBuckets:     DefaultDrilldownMaxStatsBuckets,
 		ZeroFillBuckets:           DefaultMaxZeroFillBuckets,
 		QueryLengthBytes:          DefaultMaxQueryLengthBytes,
@@ -101,6 +105,7 @@ func resolveExecutionLimits(cfg ExecutionLimitsConfig) executionLimits {
 	set(&limits.PatternsBackendRows, cfg.PatternsMaxBackendRows)
 	set(&limits.PatternsSecondPassRows, cfg.PatternsSecondPassMaxRows)
 	set(&limits.PatternsSecondPassWindows, cfg.PatternsSecondPassMaxWindows)
+	set(&limits.PatternsCountsRows, cfg.PatternsMaxCountsRows)
 	set(&limits.DrilldownStatsBuckets, cfg.DrilldownMaxStatsBuckets)
 	set(&limits.ZeroFillBuckets, cfg.MaxZeroFillBuckets)
 	set(&limits.QueryLengthBytes, cfg.MaxQueryLengthBytes)

@@ -231,6 +231,9 @@ type Config struct {
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
+	// PatternsCounts answers /patterns from VictoriaLogs' counts of every line in the range (patternsFromCounts)
+	// rather than from a sample of lines.
+	PatternsCounts bool
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -641,6 +644,7 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	patternsAutodetectFromQueries         bool
+	patternsCounts                        bool
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1318,6 +1322,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
+		patternsCounts:                        cfg.PatternsCounts,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,

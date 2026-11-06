@@ -51,7 +51,7 @@ func TestPatternsRestoreFromDisk_AndWarmStartup(t *testing.T) {
 			},
 		},
 	})
-	cacheKey := "patterns:org:query=%7Bapp%3D%22web%22%7D"
+	cacheKey := patternsCacheKeyPrefix + "org:query=%7Bapp%3D%22web%22%7D"
 	savedAt := time.Now().UTC().UnixNano()
 	snapshot := patternsSnapshot{
 		Version:         1,
@@ -117,7 +117,7 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	})
 
 	peerSavedAt := time.Now().UTC().Add(2 * time.Second).UnixNano()
-	peerCacheKey := "patterns:peer:query=%7Bservice_name%3D%22api%22%7D"
+	peerCacheKey := patternsCacheKeyPrefix + "peer:query=%7Bservice_name%3D%22api%22%7D"
 	peerPayload := mustMarshalJSON(t, map[string]interface{}{
 		"status": "success",
 		"data": []map[string]interface{}{

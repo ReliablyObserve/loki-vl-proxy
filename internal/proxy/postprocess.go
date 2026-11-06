@@ -1034,6 +1034,9 @@ type patternMiner struct {
 	// Reused by Observe for the line it reads: each token's placeholder and the line's signature.
 	placeholders []string
 	signature    []byte
+	// collapsed is the cluster each (level, collapsed line) joined (ObserveCollapsed): the counts of a line
+	// seen again, in another step, go to it without mining the line again.
+	collapsed map[[2]string]*patternBucket
 }
 
 func newPatternMiner() *patternMiner {
@@ -1048,6 +1051,38 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 	if !ok {
 		return
 	}
+	m.observe(level, tokens, spacesAfter, bucket, 1)
+}
+
+// collapsedNumber is how VictoriaLogs' collapse_nums pipe writes a number it collapsed.
+const collapsedNumber = "<N>"
+
+// ObserveCollapsed observes a line that VictoriaLogs' collapse_nums rewrote, seen count times in bucket. A token
+// that holds a collapsed number is a variable of the pattern, whatever else it holds.
+func (m *patternMiner) ObserveCollapsed(level, line string, bucket int64, count int) {
+	key := [2]string{level, line}
+	if cluster := m.collapsed[key]; cluster != nil {
+		cluster.buckets[bucket] += count
+		cluster.total += count
+		return
+	}
+	// The tokenizer would split <N> at its brackets; a NUL keeps it inside the token it is part of.
+	tokens, spacesAfter, ok := m.tokenizer.Tokenize(strings.ReplaceAll(line, collapsedNumber, "\x00"))
+	if !ok {
+		return
+	}
+	for i, token := range tokens {
+		if strings.IndexByte(token, 0) >= 0 {
+			tokens[i] = patternVarPlaceholder
+		}
+	}
+	if m.collapsed == nil {
+		m.collapsed = make(map[[2]string]*patternBucket)
+	}
+	m.collapsed[key] = m.observe(level, tokens, spacesAfter, bucket, count)
+}
+
+func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int, bucket int64, count int) *patternBucket {
 	tokenCount := len(tokens)
 
 	levelGroups := m.groups[level]
@@ -1079,8 +1114,9 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 	} else {
 		cluster.tokens = mergePatternTemplateOf(cluster.tokens, tokens, m.placeholders)
 	}
-	cluster.buckets[bucket]++
-	cluster.total++
+	cluster.buckets[bucket] += count
+	cluster.total += count
+	return cluster
 }
 
 func (m *patternMiner) AllClusters() []*patternBucket {

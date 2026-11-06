@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (238), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (240), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -104,6 +104,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-metadata-default-lookback` | duration | `12h0m0s` | `extraArgs.metadata-default-lookback` | Default time window for /labels, /label/&#123;name&#125;/values, and /series when the client omits start/end. 0 disables (unbounded scan). |
 | `-metadata-field-mode` | string | `"translated"` | `extraArgs.metadata-field-mode` | translate-otel-attributes |
 | `-patterns-autodetect-from-queries` | bool | `false` | `extraArgs.patterns-autodetect-from-queries` | Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect) |
+| `-patterns-counts` | bool | `true` | `extraArgs.patterns-counts` | Answer /loki/api/v1/patterns for a stream selector from VictoriaLogs' counts of every line in the range (one stats query over the whole range), as Loki counts every line it ingested. A request it cannot answer that way (more groups than -patterns-max-counts-rows, rows without a message) falls back to sampling lines. Set false to always sample lines |
 | `-patterns-custom` | string | (empty) | `extraArgs.patterns-custom` | patterns-custom-file |
 | `-patterns-custom-file` | string | (empty) | `extraArgs.patterns-custom-file` | Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup |
 | `-patterns-enabled` | bool | `true` | `extraArgs.patterns-enabled` | Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns) |
@@ -156,6 +157,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-multi-tenant-max-merged-response-bytes` | int | `33554432` | `extraArgs.multi-tenant-max-merged-response-bytes` | Maximum bytes of a merged multi-tenant response; more returns HTTP 413 naming this flag. 0 uses the built-in default of 32 MiB |
 | `-ordered-json-metric-max-bytes` | int64 | `1073741824` | `extraArgs.ordered-json-metric-max-bytes` | Safety cap on the VictoriaLogs raw rows response read, and the response built, by the proxy-side ordered JSON metric evaluator (0 = default 1 GiB, no upper bound). Exceeding it rejects the query instead of returning partial results. Grafana logs volume shapes are computed from VictoriaLogs stats buckets and do not read raw rows. |
 | `-patterns-max-backend-rows` | int | `20000` | `extraArgs.patterns-max-backend-rows` | Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000 |
+| `-patterns-max-counts-rows` | int | `250000` | `extraArgs.patterns-max-counts-rows` | Maximum rows (distinct step, level and collapsed message groups) the /patterns counts query may return; past it the request samples lines instead. 0 uses the built-in default of 250000 |
 | `-patterns-second-pass-max-rows` | int | `8000` | `extraArgs.patterns-second-pass-max-rows` | Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000 |
 | `-patterns-second-pass-max-windows` | int | `8` | `extraArgs.patterns-second-pass-max-windows` | Maximum windows the /patterns second pass re-reads. 0 uses the built-in default of 8 |
 | `-rate-limit-burst` | int | `100` | `extraArgs.rate-limit-burst` | Per-client burst size for request rate limiting (0 disables burst bucket) |

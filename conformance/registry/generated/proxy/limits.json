@@ -395,6 +395,20 @@
       "sizing": "Raise it with -patterns-max-backend-rows; the second pass doubles the scan for hard selectors."
     },
     {
+      "flag": "patterns-max-counts-rows",
+      "helm_value": "extraArgs.patterns-max-counts-rows",
+      "type": "Int",
+      "default": "250000",
+      "unit": "rows",
+      "bounds": "rows the /patterns counts query reads from VictoriaLogs: distinct (step, level fields, collapsed message) groups over the requested range",
+      "error": "none: past it the request samples lines as without -patterns-counts",
+      "metric": "none",
+      "alert": "none",
+      "loki_parity": "",
+      "per_tenant": false,
+      "sizing": "Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line."
+    },
+    {
       "flag": "patterns-second-pass-max-windows",
       "helm_value": "extraArgs.patterns-second-pass-max-windows",
       "type": "Int",

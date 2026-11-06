@@ -36,6 +36,7 @@ Fleet arithmetic: per-replica limits multiply by the replica count, and every by
 | detected fields max scan lines | `-detected-fields-max-scan-lines` | `extraArgs.detected-fields-max-scan-lines` | `2000` | rows | log lines the detected_fields and detected_field values scan reads per request | none: the scan stops at the limit and returns what it found | none | none | no | proxy-specific |
 | patterns max backend rows | `-patterns-max-backend-rows` | `extraArgs.patterns-max-backend-rows` | `20000` | rows | log lines /patterns reads from VictoriaLogs for one request | none: pattern mining works on the rows it read | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns second pass max rows | `-patterns-second-pass-max-rows` | `extraArgs.patterns-second-pass-max-rows` | `8000` | rows | log lines the /patterns second pass reads when the first pass mined too few patterns | none | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
+| patterns max counts rows | `-patterns-max-counts-rows` | `extraArgs.patterns-max-counts-rows` | `250000` | rows | rows the /patterns counts query reads from VictoriaLogs: distinct (step, level fields, collapsed message) groups over the requested range | none: past it the request samples lines as without -patterns-counts | none | none | no | proxy-specific |
 | patterns second pass max windows | `-patterns-second-pass-max-windows` | `extraArgs.patterns-second-pass-max-windows` | `8` | windows | windows the /patterns second pass re-reads | none | none | none | no | proxy-specific |
 | max zero fill buckets | `-max-zero-fill-buckets` | `extraArgs.max-zero-fill-buckets` | `32768` | buckets | buckets the proxy zero-fills in a metric response | none: a wider request is served without zero-fill | none | none | no | the 11,000-point resolution limit bounds a Loki response anyway |
 | stats query range concurrency | `-stats-query-range-concurrency` | `extraArgs.stats-query-range-concurrency` | `0` | concurrent calls | concurrent stats_query_range calls the proxy makes to VictoriaLogs | none: calls wait for a slot | loki_vl_proxy_upstream_requests_total&#123;route="/select/logsql/stats_query_range"&#125; | none | no | proxy-specific |
@@ -155,6 +156,10 @@ Raise it for sparse selectors where patterns are mined from too few lines; every
 ### `-patterns-second-pass-max-rows`
 
 Raise it with -patterns-max-backend-rows; the second pass doubles the scan for hard selectors.
+
+### `-patterns-max-counts-rows`
+
+Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line.
 
 ### `-patterns-second-pass-max-windows`
 

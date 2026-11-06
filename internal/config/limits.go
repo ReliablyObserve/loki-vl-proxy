@@ -291,6 +291,16 @@ var Limits = []Limit{
 		Sizing:     "Raise it with -patterns-max-backend-rows; the second pass doubles the scan for hard selectors.",
 	},
 	{
+		Flag:       "patterns-max-counts-rows",
+		Unit:       "rows",
+		Bounds:     "rows the /patterns counts query reads from VictoriaLogs: distinct (step, level fields, collapsed message) groups over the requested range",
+		Error:      "none: past it the request samples lines as without -patterns-counts",
+		Metric:     "none",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line.",
+	},
+	{
 		Flag:       "patterns-second-pass-max-windows",
 		Unit:       "windows",
 		Bounds:     "windows the /patterns second pass re-reads",
