@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.83.2] - 2026-11-06
+
 ### Changed
 
 - Name the labels of `| logfmt` keys in the `rate_counter` evaluation with the
