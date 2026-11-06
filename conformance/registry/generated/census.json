@@ -1130,6 +1130,8 @@
     "internal/proxy/parser_capture_identity_test.go | semantics/detected-level-missing-from-stats-answers",
     "internal/proxy/pattern_line_filter_test.go | semantics/pattern-line-filter",
     "internal/proxy/pattern_line_filter_test.go | semantics/pattern-line-filter-anchoring",
+    "internal/proxy/pattern_miner_answers_test.go | loki_api_v1_patterns",
+    "internal/proxy/pattern_placeholders_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_tokenizer_test.go | loki_api_v1_patterns",
     "internal/proxy/patterns_persistence_test.go | peer-cache-replication",
     "internal/proxy/peer_push_identity_test.go | peer-cache-replication",
@@ -1816,7 +1818,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 330,
+      "go": 332,
       "playwright": 1
     },
     "page_kinds": {
