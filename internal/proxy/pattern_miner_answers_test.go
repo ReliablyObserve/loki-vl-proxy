@@ -12,10 +12,11 @@ import (
 	"testing"
 )
 
-// patternMinerAnswers holds the patterns the miner gave for patternMinerCorpusLines (seeds 1 to 8, limit 1000), both
-// extracted in one pass and merged from three windows, recorded before the miner read each token's placeholder
-// once per line. Patterns are compared in a canonical order: clusters that join to the same pattern with the same
-// total and level are returned in map order. LVP_PIN_PATTERN_MINER=1 records the file again.
+// patternMinerAnswers holds the patterns the miner gives for patternMinerCorpusLines (seeds 1 to 8, limit 1000), both
+// extracted in one pass and merged from three windows: a lock on the miner, so a change to what it mines shows as a
+// diff here. Recorded with lines mined by format (JSON from the message field, logfmt as pairs) and one entry per
+// level and pattern. Patterns are compared in a canonical order: clusters that join to the same pattern with the
+// same total and level are returned in map order. LVP_PIN_PATTERN_MINER=1 records the file again.
 const patternMinerAnswers = "testdata/pattern_miner_answers.jsonl.gz"
 
 // conformance: loki_api_v1_patterns

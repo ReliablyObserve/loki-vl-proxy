@@ -23,6 +23,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as test data, and a fuzz target checks the once-per-line checks against the
   per-check ones.
 
+### Fixed
+
+- fix(patterns): Logs Drilldown pattern charts cover the whole range with
+  every line counted, at Loki's step. Before, `/loki/api/v1/patterns` mined a
+  sample of lines VictoriaLogs returned newest first, so a chart showed samples
+  only at the end of the range (or of each window), counted that sample, and
+  used a proxy step (the range over 120 points, 2 s for 5 minutes). Now, for a
+  stream selector, two typed VictoriaLogs stats queries count every line per
+  level and message with numbers collapsed: one keeps each group's smallest and
+  largest message, which are mined (a number that never varies stays in the
+  pattern, one that varies is `<_>`), the other counts each group per step. The
+  step is Loki's (the request's, or the range over 250 points, never under
+  10 s), with zero samples between a pattern's first and last step as Loki
+  answers them; ranges over an hour are counted in aligned windows, settled
+  ones cached, so a refresh counts only its moving ends. Lines are mined by
+  format as Loki's pattern ingester mines them: a JSON line from its first
+  top-level `log`, `message`, `msg`, `msg_`, `_msg` or `content` string,
+  written `<_>message<_>`, and not at all without one (a raw JSON line is never
+  a pattern); a logfmt line as key and value pairs, timestamps and trace ids
+  variable. The answer has one entry per level and pattern, and every pattern
+  without a `limit` parameter, as Loki's `/patterns` has none. New flags
+  `-patterns-counts` (default `true`; `false` keeps sampling) and
+  `-patterns-max-counts-rows` (default `250000`; past it the request samples
+  lines). On the compose stack over 5 minutes the samples cover the range
+  where they covered its last 76 s, and on fixture data both backends hold the
+  proxy's samples equal Loki's step for step.
+
 ## [2.83.3] - 2026-11-06
 
 ### Performance
