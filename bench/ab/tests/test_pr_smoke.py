@@ -781,6 +781,23 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(meta["shards"][1]["phases_s"], {"stack_up": 30})
         self.assertIn("slowest of 2 shards", text)
 
+    def test_the_one_shard_of_a_small_selection_is_read_from_the_download_root(self):
+        # download-artifact unpacks a single matching artifact into the download path itself
+        root = os.path.join(self.tmp, "ab-shards")
+        write_shard(root, ["control", "label-replace", "level-filter"])
+        code, verdict, meta, _ = self.merge([os.path.join(root, "perf-ab-shard-1")])
+        self.assertEqual(code, 0)
+        self.assertEqual(verdict["rows"], 3)
+        self.assertEqual(meta["shards"][0]["sets"], 3)
+
+    def test_a_missing_shard_of_several_is_not_read_from_the_root(self):
+        root = os.path.join(self.tmp, "ab-shards")
+        write_shard(root, ["control"])
+        write_shard(os.path.join(root, "perf-ab-shard-2"), ["level-filter"])
+        code, _, _, text = self.merge([os.path.join(root, "perf-ab-shard-1"), os.path.join(root, "perf-ab-shard-2")])
+        self.assertEqual(code, 3)
+        self.assertIn("perf-ab-shard-1", text)
+
     def test_a_shard_with_no_verdict_makes_the_run_incomplete(self):
         a, b = os.path.join(self.tmp, "shard-1"), os.path.join(self.tmp, "shard-2")
         write_shard(a, ["control"])
