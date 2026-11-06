@@ -56,6 +56,11 @@ type Report struct {
 	GoldenDiffs []GoldenDiff  `json:"golden_diffs,omitempty"`
 	// Regressions is set only when there is a base corpus to compare with.
 	Regressions *Regressions `json:"regressions,omitempty"`
+	// Oracle is VictoriaLogs' parser's verdict per version (test/oracle/vl), when its verdicts sit beside the
+	// corpus; OracleBase the same for the base corpus, and OracleRegressions the queries it now judges worse.
+	Oracle            []OracleSummary     `json:"oracle,omitempty"`
+	OracleBase        []OracleSummary     `json:"oracle_base,omitempty"`
+	OracleRegressions []OracleRegressions `json:"oracle_regressions,omitempty"`
 }
 
 func readJSON(t *testing.T, path string, v any) {
@@ -225,12 +230,35 @@ func TestQueryCorpusReport(t *testing.T) {
 			rep.Regressions = &reg
 		}
 	}
+	base := os.Getenv("LVP_QUERY_CORPUS_BASE")
+	for _, v := range rep.Summary.GoldenVersions {
+		head := readVerdicts(t, verdictsPath(corpus, v))
+		if head == nil {
+			continue
+		}
+		rep.Oracle = append(rep.Oracle, summarizeOracle(v, head))
+		if base == "" {
+			continue
+		}
+		if prev := readVerdicts(t, verdictsPath(base, v)); prev != nil {
+			rep.OracleBase = append(rep.OracleBase, summarizeOracle(v, prev))
+			rep.OracleRegressions = append(rep.OracleRegressions, oracleRegressions(v, prev, head))
+		}
+	}
 	b, err := json.MarshalIndent(rep, "", " ")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(reportPath, append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range rep.OracleRegressions {
+		if r.any() {
+			t.Errorf("VictoriaLogs %s: %d goldens it now rejects %v, %d goldens whose printed form lost its meaning %v, "+
+				"%d of its test cases our parser no longer reads the same %v", r.Version,
+				len(r.GoldensRejected), first(r.GoldensRejected), len(r.GoldensMeaningLost), first(r.GoldensMeaningLost),
+				len(r.CasesLost), first(r.CasesLost))
+		}
 	}
 	if r := rep.Regressions; r != nil {
 		if len(r.Untyped) > 0 {

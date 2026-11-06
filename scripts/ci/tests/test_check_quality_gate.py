@@ -310,3 +310,16 @@ class QueryCorpusRegressionTests(unittest.TestCase):
         got = query_corpus_failures(corpus)
         self.assertEqual(got, ["query corpus: 2 queries on both the base and the PR turned untyped: q-a, q-b"])
         self.assertEqual(query_corpus_failures({"regressions": {"untyped": [], "golden_unread": []}}), [])
+
+
+class QueryCorpusOracleTests(unittest.TestCase):
+    def test_oracle_regressions_fail(self):
+        corpus = {"oracle_regressions": [{"version": "v1.53.0", "goldens_rejected": ["q-a"], "goldens_meaning_lost": [], "cases_lost": ["c-1", "c-2"]}]}
+        self.assertEqual(query_corpus_failures(corpus), [
+            "VictoriaLogs v1.53.0: 1 goldens VictoriaLogs now rejects: q-a",
+            "VictoriaLogs v1.53.0: 2 VictoriaLogs test cases our LogsQL parser no longer reads the same: c-1, c-2"])
+
+    def test_no_oracle_regressions_pass(self):
+        corpus = {"oracle": [{"version": "v1.53.0", "goldens_rejected": 5}], "oracle_regressions": [
+            {"version": "v1.53.0", "goldens_rejected": [], "goldens_meaning_lost": [], "cases_lost": []}]}
+        self.assertEqual(query_corpus_failures(corpus), [])

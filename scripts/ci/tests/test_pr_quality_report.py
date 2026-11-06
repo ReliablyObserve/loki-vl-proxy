@@ -62,6 +62,18 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Query text handled as strings: base versus PR", report)
         self.assertIn("| LogQL/LogsQL parser calls outside the AST packages | 64 | 60 | -4 |", report)
 
+    def test_query_corpus_oracle_table_and_regressions(self):
+        head = snapshot()
+        head["query_corpus"] = {
+            "summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": [],
+            "oracle": [{"version": "v1.53.0", "goldens": 100, "goldens_rejected": 9, "sent_rejected": 2}],
+            "oracle_base": [{"version": "v1.53.0", "goldens": 100, "goldens_rejected": 8, "sent_rejected": 2}],
+            "oracle_regressions": [{"version": "v1.53.0", "goldens_rejected": ["q-x"], "goldens_meaning_lost": [], "cases_lost": []}]}
+        report = self.render(base=snapshot(), head=head)
+        self.assertIn("VictoriaLogs v1.53.0:", report)
+        self.assertIn("| Goldens VictoriaLogs rejects | 8 | 9 | +1 |", report)
+        self.assertIn("Regressions on VictoriaLogs v1.53.0: 1 goldens now rejected; 0 goldens whose meaning changed; 0 test cases no longer read the same.", report)
+
     def test_query_corpus_without_a_base_says_so(self):
         head = snapshot()
         head["query_corpus"] = {"summary": {"client_rows": 5, "golden_versions": ["v1.53.0"]}, "targets": []}

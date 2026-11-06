@@ -294,6 +294,43 @@ def query_corpus_details(corpus):
                       "The rows are in the `pr-quality-report` artifact's corpus (`pr-head-query-corpus.jsonl.gz`)."]
     elif not base:
         lines += ["", "No base corpus: main's cached corpus for the base commit is missing or older than goldens, so nothing is compared or gated."]
+    lines += oracle_details(corpus)
+    return lines
+
+
+# The counts of the VictoriaLogs parse oracle (internal/querycorpus OracleSummary), in order.
+ORACLE_COUNTS = (
+    ("goldens", "Goldens"),
+    ("goldens_rejected", "Goldens VictoriaLogs rejects"),
+    ("goldens_read", "Goldens our parser reads"),
+    ("goldens_same_meaning", "… with the same meaning to VictoriaLogs"),
+    ("sent", "Sent LogsQL (newest version only)"),
+    ("sent_rejected", "Sent LogsQL VictoriaLogs rejects"),
+    ("cases_accepted", "VictoriaLogs test cases it accepts"),
+    ("cases_read", "… our parser reads with the same meaning"),
+    ("cases_rejected", "VictoriaLogs test cases it rejects"),
+    ("cases_wrongly_accepted", "… our parser accepts"),
+)
+
+
+def oracle_details(corpus):
+    """VictoriaLogs' own parser on the corpus and on its test cases, per version: base versus PR, and the queries it
+    now judges worse (the gate)."""
+    oracle = corpus.get("oracle") or []
+    if not oracle:
+        return []
+    base = {o.get("version"): o for o in corpus.get("oracle_base") or []}
+    lines = ["", "VictoriaLogs' own parser (`test/oracle/vl`, pinned per version) on the goldens, the LogsQL the tests sent and its own parser test cases:", ""]
+    for o in oracle:
+        v, b = o.get("version"), base.get(o.get("version"), {})
+        rows = [[label, fmt(b.get(k)) if b else "no base", fmt(o.get(k)),
+                 f"{o[k] - b[k]:+d}" if numeric(b.get(k)) and numeric(o.get(k)) else "n/a"] for k, label in ORACLE_COUNTS]
+        lines += [f"VictoriaLogs {cell(v)}:", "", *table(["Count", "Base", "PR", "Delta"], rows), ""]
+    for r in corpus.get("oracle_regressions") or []:
+        parts = [f"{len(r.get(k) or [])} {what}" for k, what in (("goldens_rejected", "goldens now rejected"),
+                                                                  ("goldens_meaning_lost", "goldens whose meaning changed"),
+                                                                  ("cases_lost", "test cases no longer read the same"))]
+        lines.append(f"Regressions on VictoriaLogs {cell(r.get('version'))}: " + "; ".join(parts) + ".")
     return lines
 
 
