@@ -51,7 +51,7 @@ func SourceDir(dir, modfile, module string) (string, error) {
 
 // Run executes an oracle binary.
 func Run(bin string, args ...string) error {
-	cmd := exec.Command(bin, args...)
+	cmd := exec.Command(bin, args...) // #nosec G204 -- test-only: bin is an oracle this package built, args come from the calling test
 	cmd.Env = Env()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -69,7 +69,7 @@ func Go(dir string, args ...string) error {
 }
 
 func goCmd(dir string, args ...string) (string, error) {
-	cmd := exec.Command("go", args...)
+	cmd := exec.Command("go", args...) // #nosec G204 -- test-only: the go tool, with arguments built by this package
 	cmd.Dir = dir
 	cmd.Env = Env()
 	out, err := cmd.CombinedOutput()
