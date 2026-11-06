@@ -7,22 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.83.4] - 2026-11-06
-
-### Performance
-
-- perf(patterns): the `/loki/api/v1/patterns` miner reads each token's
-  placeholder (number, IP, UUID, timestamp, path, hex) once per line instead of
-  once in the structure signature, again for every candidate cluster's prefix
-  and similarity checks and again when merging, and builds the line's
-  signature in a reused buffer. Patterns extraction is 28-31% faster with
-  31-43% less memory and 12-33% fewer allocations (benchstat, n=10, p=0.000;
-  28% faster on a mixed 20,000-line corpus). No behaviour change: the same
-  patterns, levels and samples on 58,738 patterns from 40 mixed corpora,
-  extracted and merged across windows; 5,819 of them, recorded before the change, are kept
-  as test data, and a fuzz target checks the once-per-line checks against the
-  per-check ones.
-
 ### Fixed
 
 - fix(patterns): Logs Drilldown pattern charts cover the whole range with
@@ -49,6 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines). On the compose stack over 5 minutes the samples cover the range
   where they covered its last 76 s, and on fixture data both backends hold the
   proxy's samples equal Loki's step for step.
+
+## [2.83.4] - 2026-11-06
+
+### Performance
+
+- perf(patterns): the `/loki/api/v1/patterns` miner reads each token's
+  placeholder (number, IP, UUID, timestamp, path, hex) once per line instead of
+  once in the structure signature, again for every candidate cluster's prefix
+  and similarity checks and again when merging, and builds the line's
+  signature in a reused buffer. Patterns extraction is 28-31% faster with
+  31-43% less memory and 12-33% fewer allocations (benchstat, n=10, p=0.000;
+  28% faster on a mixed 20,000-line corpus). No behaviour change: the same
+  patterns, levels and samples on 58,738 patterns from 40 mixed corpora,
+  extracted and merged across windows; 5,819 of them, recorded before the change, are kept
+  as test data, and a fuzz target checks the once-per-line checks against the
+  per-check ones.
 
 ## [2.83.3] - 2026-11-06
 
