@@ -257,8 +257,9 @@ def query_text_sites_details(base, head):
         old, new = before.get(key), after.get(key)
         rows.append([label, fmt(old) if before else "no base", fmt(new),
                      f"{new - old:+d}" if numeric(old) and numeric(new) else "n/a"])
-    return ["Counted from the production source by `TestQueryTextSites` and held in `conformance/registry/query-text-sites.json`: "
-            "a count may only fall, and the AST work takes each to 0.", "", *table(["Site", "Base", "PR", "Delta"], rows)]
+    note = ("Counted from the production source by `TestQueryTextSites` and held in `conformance/registry/query-text-sites.json`: "
+            + "a count may only fall, and the AST work takes each to 0.")
+    return [note, "", *table(["Site", "Base", "PR", "Delta"], rows)]
 
 
 def query_corpus_details(corpus):
