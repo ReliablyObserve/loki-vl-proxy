@@ -321,6 +321,16 @@ var Limits = []Limit{
 		Sizing:     "About 4 KB per active stream and a few hundred bytes per idle stream (-patterns-state-stream-idle): 256 MB holds tens of thousands of active streams. Lower it on small proxies; raise it when many tenants or selectors are refreshed and states are dropped often. 0 turns the state off, so every request reads its range again.",
 	},
 	{
+		Flag:       "patterns-state-max-build-lines",
+		Unit:       "lines",
+		Bounds:     "log lines over Loki's pattern retention (3h) the /patterns state of a selector is built from in the background, when they are more than -patterns-exact-max-lines",
+		Error:      "none: a selector with more lines is answered from VictoriaLogs' counts, without the state",
+		Metric:     "loki_vl_proxy_internal_operation_total{operation=\"patterns_state\",outcome=\"build_started\"}",
+		Alert:      "none",
+		LokiParity: "pkg/pattern mines every line of every stream as it is ingested; the background build mines the selector's lines over the same retention once, then refreshes train only new lines",
+		Sizing:     "One build at a time, an hour of lines per VictoriaLogs read (a quarter hour when its sort runs out of memory), about 2 µs of proxy CPU per line; idle streams are folded as the build goes, so memory follows the active streams. The default 2000000 covers a busy selector's 3 hours; 0 leaves such selectors on the counts.",
+	},
+	{
 		Flag:       "patterns-state-stream-idle",
 		Unit:       "duration",
 		Bounds:     "how long a stream of the /patterns state reads no line before only its patterns and samples are kept",

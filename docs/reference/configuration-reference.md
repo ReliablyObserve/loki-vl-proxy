@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (243), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (244), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -113,6 +113,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-patterns-persist-path` | string | (empty) | `extraArgs.patterns-persist-path` | Path to persisted patterns snapshot JSON file. Empty disables persistence. |
 | `-patterns-startup-peer-warm-timeout` | duration | `5s` | `extraArgs.patterns-startup-peer-warm-timeout` | Maximum time to wait for startup patterns snapshot warm from peers |
 | `-patterns-startup-stale-threshold` | duration | `1m0s` | `extraArgs.patterns-startup-stale-threshold` | Treat on-disk patterns snapshot older than this as stale and warm from peers before serving |
+| `-patterns-state-max-build-lines` | int | `2000000` | `extraArgs.patterns-state-max-build-lines` | Build the /loki/api/v1/patterns state in the background for a selector whose lines over Loki's pattern retention (3h) are more than -patterns-exact-max-lines and at most this many: an hour of lines at a time, sorted by stream and time, while the selector's requests are answered from VictoriaLogs' counts until the state is built; one build runs at a time. 0 builds none |
 | `-patterns-state-max-bytes` | int64 | `268435456` | `extraArgs.patterns-state-max-bytes` | Memory the /loki/api/v1/patterns state of all tenants may hold: each stream's clusters at each level trained on every line read since the state was built from Loki's pattern retention (3h), as Loki's pattern ingester keeps them, so a refresh reads only the lines after what was read and templates come from every line; past it the least recently used tenant's state is dropped. A selector whose lines over the retention exceed -patterns-exact-max-lines is answered without the state; 0 turns the state off |
 | `-patterns-state-stream-idle` | duration | `5 * time.Minute` | `extraArgs.patterns-state-stream-idle` | How long a stream may read no line before the /patterns state keeps its clusters as their patterns and samples alone, freeing the rest; a stream that writes again after it starts new clusters |
 | `-stream-fields` | string | (empty) | `extraArgs.stream-fields` | app,env,namespace |

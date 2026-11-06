@@ -242,6 +242,9 @@ type Config struct {
 	// their patterns and samples alone.
 	PatternsStateMaxBytes   int64
 	PatternsStateStreamIdle time.Duration
+	// PatternsStateMaxBuildLines is the most lines over the retention a selector's state is built from in the
+	// background when they are more than PatternsExactMaxLines; 0 builds none.
+	PatternsStateMaxBuildLines int
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -1334,7 +1337,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
-		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle),
+		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle, cfg.PatternsStateMaxBuildLines),
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,
@@ -1832,6 +1835,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 		p.coldRouter.Stop(ctx)
 	}
 	p.stopPatternsPersistenceLoop(ctx)
+	p.patternState.close(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
 	// The proxy creates these two caches itself, so it stops their background
 	// goroutines. The caches handed in through Config belong to the caller.

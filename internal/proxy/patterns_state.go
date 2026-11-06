@@ -21,7 +21,14 @@ const (
 	// DefaultPatternsStateStreamIdle is -patterns-state-stream-idle: how long a stream may read no line before its
 	// clusters are kept as their patterns and samples alone.
 	DefaultPatternsStateStreamIdle = 5 * time.Minute
+	// DefaultPatternsStateMaxBuildLines is -patterns-state-max-build-lines: the most lines over Loki's retention a
+	// selector's state is built from in the background, when they are more than -patterns-exact-max-lines.
+	DefaultPatternsStateMaxBuildLines = 2_000_000
 )
+
+// patternStateBuildWindow is the span of lines a background build reads at a time, holding the tenant's state
+// only while it trains them; a window VictoriaLogs cannot sort is read in quarters.
+const patternStateBuildWindow = time.Hour
 
 // lokiPatternRetention is how far back Loki's pattern ingester holds patterns (pattern_ingester retain_for,
 // default 3h): the pattern state is built from then, and a range that starts earlier is answered without it.
@@ -44,23 +51,53 @@ type patternStateStore struct {
 	maxBytes int64
 	idle     time.Duration
 	clock    uint64
+	// maxBuildLines bounds the selectors built in the background (DefaultPatternsStateMaxBuildLines); 0 builds
+	// none. One build runs at a time (builds), each stopped with the store (ctx, wg).
+	maxBuildLines int
+	builds        chan struct{}
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 	// now is the clock the state ages by; time.Now outside tests.
 	now func() time.Time
 }
 
 // newPatternStateStoreFor is the store for the configured bytes, nil when 0 turns the state off.
-func newPatternStateStoreFor(maxBytes int64, idle time.Duration) *patternStateStore {
+func newPatternStateStoreFor(maxBytes int64, idle time.Duration, maxBuildLines int) *patternStateStore {
 	if maxBytes <= 0 {
 		return nil
 	}
-	return newPatternStateStore(maxBytes, idle)
+	st := newPatternStateStore(maxBytes, idle)
+	st.maxBuildLines = maxBuildLines
+	return st
 }
 
 func newPatternStateStore(maxBytes int64, idle time.Duration) *patternStateStore {
 	if idle <= 0 {
 		idle = DefaultPatternsStateStreamIdle
 	}
-	return &patternStateStore{tenants: make(map[string]*patternTenantState), maxBytes: maxBytes, idle: idle, now: time.Now}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &patternStateStore{
+		tenants: make(map[string]*patternTenantState), maxBytes: maxBytes, idle: idle, now: time.Now,
+		builds: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
+	}
+}
+
+// close stops the store's background builds and waits for them, at most until ctx is done.
+func (st *patternStateStore) close(ctx context.Context) {
+	if st == nil {
+		return
+	}
+	st.cancel()
+	done := make(chan struct{})
+	go func() {
+		st.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // patternTenantState is one tenant's streams. Its lock is held while a request reads lines into it, so requests
@@ -85,6 +122,9 @@ type patternTenantState struct {
 type patternSelectorState struct {
 	fromNs, toNs int64
 	streams      map[string]struct{}
+	// building is true while a background build reads the selector's lines; requests are answered without the
+	// state until it ends.
+	building bool
 }
 
 // patternFoldedCluster is a cluster of a stream that went idle: a finished stream trains nothing more, so its
@@ -115,10 +155,21 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 
 	selector := scope.filter.String()
 	s := t.selectors[selector]
+	if s != nil && s.building {
+		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
+		return nil, false
+	}
 	if s == nil {
 		lines, err := p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
-		if err != nil || lines > maxLines {
-			p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
+		if err != nil {
+			return nil, false
+		}
+		if lines > maxLines {
+			if lines <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
+				p.observeInternalOperation(ctx, "patterns_state", "build_started", 0)
+			} else {
+				p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
+			}
 			return nil, false
 		}
 		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{})}
@@ -145,8 +196,81 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		p.observeInternalOperation(ctx, "patterns_state", "hit", 0)
 	}
 	entries := t.answer(s, scope, patternLimit)
-	store.age(t, now, retainFrom)
+	store.age(t, now, now, retainFrom)
 	return entries, true
+}
+
+// buildPatternStateInBackground builds the selector's state from retainFromNs to now in the background, a window
+// at a time, so the tenant's other requests are answered between windows; false when another build runs. The
+// build reads with the request's identity, outlives the request and stops with the store.
+func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantState, selector string, scope patternQueryScope, retainFromNs int64, now time.Time) bool {
+	store := p.patternState
+	select {
+	case store.builds <- struct{}{}:
+	default:
+		return false
+	}
+	s := &patternSelectorState{fromNs: retainFromNs, toNs: retainFromNs, streams: make(map[string]struct{}), building: true}
+	t.selectors[selector] = s
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	stop := context.AfterFunc(store.ctx, cancel)
+	store.wg.Add(1)
+	go func() {
+		defer store.wg.Done()
+		defer func() { <-store.builds }()
+		defer stop()
+		defer cancel()
+		started := time.Now()
+		ok := p.readPatternStateWindows(ctx, t, selector, s, scope, retainFromNs, now.UnixNano())
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if !ok {
+			delete(t.selectors, selector)
+			p.observeInternalOperation(ctx, "patterns_state", "build_failed", time.Since(started))
+			return
+		}
+		s.building = false
+		p.observeInternalOperation(ctx, "patterns_state", "built", time.Since(started))
+	}()
+	return true
+}
+
+// readPatternStateWindows reads the selector's lines in [fromNs, toNs) a window at a time, oldest first, so each
+// stream's lines are trained in time order, and folds the streams idle by the end of each window.
+func (p *Proxy) readPatternStateWindows(ctx context.Context, t *patternTenantState, selector string, s *patternSelectorState, scope patternQueryScope, fromNs, toNs int64) bool {
+	store := p.patternState
+	window := int64(patternStateBuildWindow)
+	for from := fromNs; from < toNs; {
+		to := from + window
+		if to > toNs {
+			to = toNs
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		t.mu.Lock()
+		err := p.readPatternStateLines(ctx, t, s, scope, from, to, store.maxBuildLines)
+		dropped := false
+		if err == nil {
+			s.toNs = to
+			store.age(t, store.now(), time.Unix(0, to), fromNs)
+			// The tenant alone outgrew -patterns-state-max-bytes and was started again: stop building.
+			dropped = t.selectors[selector] != s
+		}
+		t.mu.Unlock()
+		if dropped {
+			return false
+		}
+		if err != nil {
+			if window <= int64(patternStateBuildWindow)/4 {
+				return false
+			}
+			window /= 4 // VictoriaLogs could not sort as many lines: read less at a time
+			continue
+		}
+		from = to
+	}
+	return true
 }
 
 // countPatternLines is how many lines the scope's filter holds in [fromNs, toNs).
@@ -343,11 +467,11 @@ func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryS
 	return entries
 }
 
-// age folds the tenant's streams that read no line for the store's idle time, drops the samples and selectors
-// older than the retention, and drops the least recently used tenants' states while all of them hold more than
-// the store's bytes.
-func (st *patternStateStore) age(t *patternTenantState, now time.Time, retainFromNs int64) {
-	idleBefore := now.Add(-st.idle).UnixNano()
+// age folds the tenant's streams that read no line for the store's idle time before idleAt (now, or the end of
+// the window a background build read), drops the samples and selectors older than the retention, and drops the
+// least recently used tenants' states while all of them hold more than the store's bytes.
+func (st *patternStateStore) age(t *patternTenantState, now, idleAt time.Time, retainFromNs int64) {
+	idleBefore := idleAt.Add(-st.idle).UnixNano()
 	retainFrom := retainFromNs / int64(time.Second)
 	byStream := map[string][]patternMinerKey{}
 	for mk := range t.miner.miners {
@@ -410,7 +534,7 @@ func (st *patternStateStore) age(t *patternTenantState, now time.Time, retainFro
 		}
 	}
 	for selector, s := range t.selectors {
-		if s.toNs < retainFromNs {
+		if s.toNs < retainFromNs && !s.building {
 			delete(t.selectors, selector)
 		}
 	}

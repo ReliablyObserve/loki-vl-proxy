@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -347,5 +348,66 @@ func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
 	scope, ok := p.patternScope(`{app="api"}`, "1793988900", "1793990100", "")
 	if !ok || !strings.HasSuffix(scope.filter.String(), " "+want) {
 		t.Fatalf("scope filter %s does not leave the lines out", scope.filter.String())
+	}
+}
+
+// A selector with more lines than -patterns-exact-max-lines over the retention, up to
+// -patterns-state-max-build-lines, has its state built in the background an hour at a time: the request that
+// starts the build and those during it are answered without the state, and once built the state answers as one
+// built in a single read does.
+//
+// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternStateBuiltInTheBackgroundForBusySelectors(t *testing.T) {
+	vl := &fakeStateVL{}
+	for h := 0; h < 3; h++ {
+		vl.add(stateLines(fmt.Sprintf("api/p%d", h), "info", "order %d shipped to berlin", stateNow.Add(-time.Duration(170-50*h)*time.Minute), 200)...)
+	}
+	vl.add(stateLines("api/long", "info", "retry %d for payment", stateNow.Add(-150*time.Minute), 4000)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	p.patternState.maxBuildLines = 10_000
+	scope, _ := p.patternScope(`{app="api"}`, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if _, answered := p.patternsFromState(req, scope, 1000, 100); answered {
+		t.Fatal("a selector over the exact cap was answered before its state was built")
+	}
+	p.patternState.wg.Wait()
+	if len(vl.lineRanges) < 3 {
+		t.Fatalf("background build read %d windows, want one per hour of the retention", len(vl.lineRanges))
+	}
+	got, answered := p.patternsFromState(req, scope, 1000, 100)
+	if !answered {
+		t.Fatal("built state did not answer")
+	}
+	direct := newStateProxy(t, vl, &now, 1<<30)
+	want, _ := direct.patternsFromState(req, scope, 100_000, 100)
+	gotJSON, _ := json.Marshal(got)
+	wantJSON, _ := json.Marshal(want)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("background-built state answers\n %s\nbuilt in one read\n %s", gotJSON, wantJSON)
+	}
+}
+
+// Closing the store stops a background build and waits for it.
+//
+// conformance: loki_api_v1_patterns
+func TestPatternStateCloseStopsBuilds(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-2*time.Hour), 3000)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	p.patternState.maxBuildLines = 10_000
+	scope, _ := p.patternScope(`{app="api"}`, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
+	p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 100, 100)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p.patternState.close(ctx)
+	if ctx.Err() != nil {
+		t.Fatal("close did not wait for the build to stop")
+	}
+	select {
+	case p.patternState.builds <- struct{}{}:
+	default:
+		t.Fatal("the build slot was not released")
 	}
 }
