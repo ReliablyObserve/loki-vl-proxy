@@ -263,12 +263,12 @@ func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string
 		if !ok || name == "" || hits == 0 {
 			continue
 		}
-		byLoki[lokiLogfmtLabel(name)]++
+		byLoki[orderedJSONLabelName(name, true)]++
 		names = append(names, named{name, hits})
 	}
 	kept := names[:0]
 	for _, n := range names {
-		loki := lokiLogfmtLabel(n.name)
+		loki := orderedJSONLabelName(n.name, true)
 		if byLoki[loki] == 1 && loki != label && loki+"_extracted" != label {
 			kept = append(kept, n)
 		}
@@ -288,21 +288,6 @@ func (p *Proxy) discoverRateCounterKeys(ctx context.Context, lines, label string
 		keys = append(keys, n.name)
 	}
 	return keys
-}
-
-// lokiLogfmtLabel is the label name Loki's logfmt parser gives a key
-// (pkg/logql/log/util.go:22-39 sanitizeLabelKey with isPrefix).
-func lokiLogfmtLabel(key string) string {
-	key = strings.TrimSpace(key)
-	if key != "" && key[0] >= '0' && key[0] <= '9' {
-		key = "_" + key
-	}
-	return strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (r >= '0' && r <= '9') {
-			return r
-		}
-		return '_'
-	}, key)
 }
 
 // rateCounterStatsRow reads the one row of a stats query.

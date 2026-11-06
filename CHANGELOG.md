@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Name the labels of `| logfmt` keys in the `rate_counter` evaluation with the
+  proxy's one extracted-label naming function, the one the json and unwrap paths
+  use, instead of a second copy of the rule. No behaviour change: both trim the
+  key, replace every character but ASCII letters, digits and underscores, and
+  put an underscore before a leading digit.
+
 ## [2.83.1] - 2026-11-06
 
 ### Tests
