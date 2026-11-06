@@ -1001,6 +1001,9 @@ type patternMiner struct {
 	tokenizer *patternLineTokenizer
 	// level -> tokenCount -> structural signature -> clusters
 	groups map[string]map[int]map[string][]*patternBucket
+	// Reused by Observe for the line it reads: each token's placeholder and the line's signature.
+	placeholders []string
+	signature    []byte
 }
 
 func newPatternMiner() *patternMiner {
@@ -1027,9 +1030,14 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 		signatureGroups = make(map[string][]*patternBucket)
 		levelGroups[tokenCount] = signatureGroups
 	}
-	signature := patternStructureSignature(tokens)
-	candidates := signatureGroups[signature]
-	cluster := bestPatternCluster(candidates, tokens)
+	// Every check below reads each token's placeholder; it is worked out once for the line.
+	m.placeholders = m.placeholders[:0]
+	for _, token := range tokens {
+		m.placeholders = append(m.placeholders, patternPlaceholderForToken(token))
+	}
+	m.signature = appendPatternStructureSignature(m.signature[:0], tokens, m.placeholders)
+	candidates := signatureGroups[string(m.signature)]
+	cluster := bestPatternCluster(candidates, tokens, m.placeholders)
 	if cluster == nil {
 		cluster = &patternBucket{
 			level:       level,
@@ -1037,9 +1045,9 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 			tokens:      cloneTokens(tokens),
 			spacesAfter: cloneInts(spacesAfter),
 		}
-		signatureGroups[signature] = append(signatureGroups[signature], cluster)
+		signatureGroups[string(m.signature)] = append(candidates, cluster)
 	} else {
-		cluster.tokens = mergePatternTemplate(cluster.tokens, tokens)
+		cluster.tokens = mergePatternTemplateOf(cluster.tokens, tokens, m.placeholders)
 	}
 	cluster.buckets[bucket]++
 	cluster.total++
@@ -1057,16 +1065,18 @@ func (m *patternMiner) AllClusters() []*patternBucket {
 	return out
 }
 
-func bestPatternCluster(candidates []*patternBucket, tokens []string) *patternBucket {
+// bestPatternCluster is the candidate the line's tokens join, if any. placeholders is each token's
+// patternPlaceholderForToken, or nil to work them out.
+func bestPatternCluster(candidates []*patternBucket, tokens, placeholders []string) *patternBucket {
 	var match *patternBucket
 	maxSim := -1.0
 	maxParamCount := -1
 
 	for _, cluster := range candidates {
-		if !patternPrefixCompatible(cluster.tokens, tokens) {
+		if !patternPrefixCompatibleOf(cluster.tokens, tokens, placeholders) {
 			continue
 		}
-		curSim, paramCount := getPatternSimilarity(cluster.tokens, tokens)
+		curSim, paramCount := getPatternSimilarityOf(cluster.tokens, tokens, placeholders)
 		if paramCount < 0 {
 			continue
 		}
@@ -1083,6 +1093,10 @@ func bestPatternCluster(candidates []*patternBucket, tokens []string) *patternBu
 }
 
 func patternPrefixCompatible(templateTokens, tokens []string) bool {
+	return patternPrefixCompatibleOf(templateTokens, tokens, nil)
+}
+
+func patternPrefixCompatibleOf(templateTokens, tokens, placeholders []string) bool {
 	if len(templateTokens) != len(tokens) || len(tokens) == 0 {
 		return false
 	}
@@ -1093,10 +1107,11 @@ func patternPrefixCompatible(templateTokens, tokens []string) bool {
 	for i := 0; i < depth; i++ {
 		templateToken := templateTokens[i]
 		inputToken := tokens[i]
-		if patternPlaceholderMatchesToken(templateToken, inputToken) || templateToken == inputToken {
+		if patternPlaceholderMatches(templateToken, patternPlaceholderAt(tokens, placeholders, i)) || templateToken == inputToken {
 			continue
 		}
-		if samePatternPlaceholderKind(templateToken, inputToken) || patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
+		if templateKind := patternPlaceholderKind(templateToken); templateKind != "" && templateKind == patternPlaceholderKindAt(tokens, placeholders, i) ||
+			patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
 			continue
 		}
 		return false
@@ -1114,6 +1129,10 @@ func patternTokenHasDigits(token string) bool {
 }
 
 func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {
+	return getPatternSimilarityOf(templateTokens, tokens, nil)
+}
+
+func getPatternSimilarityOf(templateTokens, tokens, placeholders []string) (float64, int) {
 	if len(templateTokens) != len(tokens) || len(templateTokens) == 0 {
 		return 0, -1
 	}
@@ -1121,7 +1140,7 @@ func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {
 	paramCount := 0
 	for i := range templateTokens {
 		switch {
-		case patternPlaceholderMatchesToken(templateTokens[i], tokens[i]):
+		case patternPlaceholderMatches(templateTokens[i], patternPlaceholderAt(tokens, placeholders, i)):
 			paramCount++
 		case templateTokens[i] == tokens[i]:
 			simTokens++
@@ -1131,12 +1150,20 @@ func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {
 }
 
 func mergePatternTemplate(templateTokens, tokens []string) []string {
+	return mergePatternTemplateOf(templateTokens, tokens, nil)
+}
+
+func mergePatternTemplateOf(templateTokens, tokens, placeholders []string) []string {
 	if len(templateTokens) != len(tokens) {
 		return templateTokens
 	}
 	for i := range templateTokens {
 		if templateTokens[i] != tokens[i] {
-			templateTokens[i] = commonPatternPlaceholder(templateTokens[i], tokens[i])
+			if kind := patternPlaceholderKind(templateTokens[i]); kind != "" && kind == patternPlaceholderKindAt(tokens, placeholders, i) {
+				templateTokens[i] = kind
+			} else {
+				templateTokens[i] = patternVarPlaceholder
+			}
 		}
 	}
 	return templateTokens
@@ -1291,29 +1318,26 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 }
 
 func patternStructureSignature(tokens []string) string {
-	if len(tokens) == 0 {
-		return ""
-	}
-	parts := make([]string, len(tokens))
+	return string(appendPatternStructureSignature(nil, tokens, nil))
+}
+
+// appendPatternStructureSignature appends the signature the miner groups a line's clusters by: each token's
+// placeholder kind, or the token itself when it has none, and any value after '=' or ':' as a variable, separated
+// by \x1e. placeholders is each token's patternPlaceholderForToken, or nil to work them out.
+func appendPatternStructureSignature(dst []byte, tokens, placeholders []string) []byte {
 	for i, token := range tokens {
 		if i > 0 {
-			prev := tokens[i-1]
-			if prev == "=" || prev == ":" {
-				if placeholder := patternPlaceholderKind(token); placeholder != "" {
-					parts[i] = placeholder
-				} else {
-					parts[i] = patternVarPlaceholder
-				}
-				continue
-			}
+			dst = append(dst, '\x1e')
 		}
-		if placeholder := patternPlaceholderKind(token); placeholder != "" {
-			parts[i] = placeholder
-			continue
+		part := token
+		if kind := patternPlaceholderKindAt(tokens, placeholders, i); kind != "" {
+			part = kind
+		} else if i > 0 && (tokens[i-1] == "=" || tokens[i-1] == ":") {
+			part = patternVarPlaceholder
 		}
-		parts[i] = token
+		dst = append(dst, part...)
 	}
-	return strings.Join(parts, "\x1e")
+	return dst
 }
 
 func isPatternPlaceholder(token string) bool {
@@ -1333,28 +1357,32 @@ func patternPlaceholderKind(token string) string {
 }
 
 func patternPlaceholderMatchesToken(placeholder, token string) bool {
+	return patternPlaceholderMatches(placeholder, patternPlaceholderForToken(token))
+}
+
+// patternPlaceholderMatches is patternPlaceholderMatchesToken for a token whose patternPlaceholderForToken is
+// tokenPlaceholder.
+func patternPlaceholderMatches(placeholder, tokenPlaceholder string) bool {
 	if placeholder == "" {
 		return false
 	}
-	if placeholder == patternVarPlaceholder {
-		return true
-	}
-	return placeholder == patternPlaceholderForToken(token)
+	return placeholder == patternVarPlaceholder || placeholder == tokenPlaceholder
 }
 
-func samePatternPlaceholderKind(left, right string) bool {
-	leftKind := patternPlaceholderKind(left)
-	rightKind := patternPlaceholderKind(right)
-	return leftKind != "" && leftKind == rightKind
+// patternPlaceholderAt is patternPlaceholderForToken(tokens[i]), read from placeholders when they are given.
+func patternPlaceholderAt(tokens, placeholders []string, i int) string {
+	if placeholders != nil {
+		return placeholders[i]
+	}
+	return patternPlaceholderForToken(tokens[i])
 }
 
-func commonPatternPlaceholder(left, right string) string {
-	leftKind := patternPlaceholderKind(left)
-	rightKind := patternPlaceholderKind(right)
-	if leftKind != "" && leftKind == rightKind {
-		return leftKind
+// patternPlaceholderKindAt is patternPlaceholderKind(tokens[i]), read from placeholders when they are given.
+func patternPlaceholderKindAt(tokens, placeholders []string, i int) string {
+	if isPatternPlaceholder(tokens[i]) {
+		return tokens[i]
 	}
-	return patternVarPlaceholder
+	return patternPlaceholderAt(tokens, placeholders, i)
 }
 
 // patternQuotePunct is the set of punctuation trimmed from tokens before classification.

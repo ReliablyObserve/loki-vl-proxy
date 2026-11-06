@@ -32,6 +32,11 @@ context:
     - api
   notes: |
     TODO: how each consumer calls it, and how their parameter combinations differ.
+    The proxy mines the patterns itself: the line tokenizer and the miner
+    (patternLineTokenizer, patternMiner) are in internal/proxy/postprocess.go,
+    and mined patterns are kept by internal/proxy/patterns_persistence.go.
+    Naming them here makes the visual smoke capture the patterns pages for any
+    change to them (bench/visual/plan.py).
 examples:
   - consumer: api
     request: |

@@ -85,6 +85,12 @@ class PlanTest(unittest.TestCase):
         out = run(["internal/proxy/proxy.go"])  # the query_range handler: every page reads it
         self.assertEqual(list(out["entries"]), ["core-logs"])
 
+    def test_patterns_code_selects_the_patterns_page(self):
+        # The real spec and registry: any change to the code that mines, joins or keeps patterns captures the
+        # Drilldown patterns page (the miner and tokenizer live in postprocess.go, named in loki_api_v1_patterns).
+        for f in ("internal/proxy/patterns.go", "internal/proxy/postprocess.go", "internal/proxy/patterns_persistence.go"):
+            self.assertIn("dd-patterns", plan.plan([f])["entries"], f)
+
     def test_tail_entry_is_one_live_capture(self):
         out = run(["internal/proxy/tail.go"])
         self.assertEqual(out["entries"]["tail"]["ranges"], ["live"])

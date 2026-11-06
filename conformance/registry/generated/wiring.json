@@ -261,6 +261,8 @@
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
     "loki_api_v1_patterns": [
+      "internal/proxy/pattern_miner_answers_test.go",
+      "internal/proxy/pattern_placeholders_test.go",
       "internal/proxy/pattern_tokenizer_test.go"
     ],
     "loki_api_v1_query": [
@@ -2092,6 +2094,12 @@
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
     ],
+    "internal/proxy/pattern_miner_answers_test.go": [
+      "loki_api_v1_patterns"
+    ],
+    "internal/proxy/pattern_placeholders_test.go": [
+      "loki_api_v1_patterns"
+    ],
     "internal/proxy/pattern_tokenizer_test.go": [
       "loki_api_v1_patterns"
     ],
@@ -3194,7 +3202,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 331,
+  "tests_with_markers": 333,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
