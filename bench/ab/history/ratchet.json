@@ -364,6 +364,48 @@
   "shape": "DB4 json field breakdown batch_id"
  },
  {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "1h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP1 drilldown fields breakdown, JSON path, level pill"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "24h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP1 drilldown fields breakdown, JSON path, level pill"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "6h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP1 drilldown fields breakdown, JSON path, level pill"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "1h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP2 drilldown fields breakdown, JSON path"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "24h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP2 drilldown fields breakdown, JSON path"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "6h",
+  "set": "drilldown-json-path-breakdown",
+  "shape": "JP2 drilldown fields breakdown, JSON path"
+ },
+ {
   "added": "2026-11-05",
   "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
   "range": "24h",
@@ -887,6 +929,27 @@
   "range": "6h",
   "set": "json-filter-pushdown",
   "shape": "I grafana volume of B"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "1h",
+  "set": "keep-series-grouping",
+  "shape": "K5 rate, keep namespace"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "24h",
+  "set": "keep-series-grouping",
+  "shape": "K5 rate, keep namespace"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "6h",
+  "set": "keep-series-grouping",
+  "shape": "K5 rate, keep namespace"
  },
  {
   "added": "2026-11-04",
@@ -3148,6 +3211,13 @@
   "range": "6h",
   "set": "unwrap-gate",
   "shape": "G6 json duration_ms sum by rate"
+ },
+ {
+  "added": "2026-11-06",
+  "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G8 bytes() of a number"
  },
  {
   "added": "2026-10-29",
