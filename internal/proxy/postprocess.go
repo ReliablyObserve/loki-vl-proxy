@@ -55,6 +55,8 @@ type patternBucket struct {
 	total       int
 	tokens      []string
 	spacesAfter []int
+	// format is the format of the lines the cluster was mined from (patternLineTokens).
+	format patternFormat
 }
 
 type patternExtractionStats struct {
@@ -1002,7 +1004,7 @@ func patternEntriesByLevelAndPattern(miner *patternMiner) []*patternBucket {
 	byKey := make(map[[2]string]int, len(clusters))
 	merged := make(map[int]bool)
 	for _, c := range clusters {
-		c.pattern = miner.tokenizer.Join(c.tokens, c.spacesAfter)
+		c.pattern = miner.joinPatternTokens(c.tokens, c.spacesAfter, c.format)
 		key := [2]string{c.level, c.pattern}
 		at, seen := byKey[key]
 		if !seen {
@@ -1044,24 +1046,49 @@ func newPatternMiner() *patternMiner {
 }
 
 func (m *patternMiner) Observe(level, line string, bucket int64) {
-	tokens, spacesAfter, ok := m.tokenizer.Tokenize(line)
-	if !ok {
-		return
-	}
-	m.observe(level, tokens, spacesAfter, bucket, 1)
+	m.observeLine(level, line, bucket, 1)
 }
 
 // observeLine observes a line seen count times in bucket and returns the cluster it joined, or nil when the
 // tokenizer does not read the line. A count of 0 shapes the cluster's template without adding a sample.
 func (m *patternMiner) observeLine(level, line string, bucket int64, count int) *patternBucket {
-	tokens, spacesAfter, ok := m.tokenizer.Tokenize(line)
+	tokens, spacesAfter, format, ok := m.patternLineTokens(line)
 	if !ok {
 		return nil
 	}
-	return m.observe(level, tokens, spacesAfter, bucket, count)
+	return m.observe(level, tokens, spacesAfter, format, bucket, count)
 }
 
-func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int, bucket int64, count int) *patternBucket {
+// observeGroup observes a group of lines that differ only in numbers through two of them, lo and hi, and returns
+// the cluster it joined, or nil when the tokenizer does not read lo. The group's template is lo's tokens with a
+// variable wherever hi's differ: a number that never varies stays, one that does is a variable, however the
+// token around it reads. Lines whose numbers change their tokens' count are observed one by one, hi's cluster
+// kept.
+func (m *patternMiner) observeGroup(level, lo, hi string) *patternBucket {
+	tokens, spacesAfter, format, ok := m.patternLineTokens(lo)
+	if !ok {
+		return nil
+	}
+	if hi == lo {
+		return m.observe(level, tokens, spacesAfter, format, 0, 0)
+	}
+	hiTokens, _, hiFormat, ok := m.patternLineTokens(hi)
+	if !ok || hiFormat != format || len(hiTokens) != len(tokens) {
+		cluster := m.observe(level, tokens, spacesAfter, format, 0, 0)
+		if c := m.observeLine(level, hi, 0, 0); c != nil {
+			cluster = c
+		}
+		return cluster
+	}
+	for i := range tokens {
+		if tokens[i] != hiTokens[i] {
+			tokens[i] = patternVarPlaceholder
+		}
+	}
+	return m.observe(level, tokens, spacesAfter, format, 0, 0)
+}
+
+func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int, format patternFormat, bucket int64, count int) *patternBucket {
 	tokenCount := len(tokens)
 
 	levelGroups := m.groups[level]
@@ -1079,7 +1106,13 @@ func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int,
 	for _, token := range tokens {
 		m.placeholders = append(m.placeholders, patternPlaceholderForToken(token))
 	}
-	m.signature = appendPatternStructureSignature(m.signature[:0], tokens, m.placeholders)
+	// Lines of different formats are tokenized differently: they never share a cluster.
+	m.signature = append(m.signature[:0], byte(format), '\x1e')
+	if format == patternFormatLogfmt {
+		m.signature = appendLogfmtStructureSignature(m.signature, tokens, m.placeholders)
+	} else {
+		m.signature = appendPatternStructureSignature(m.signature, tokens, m.placeholders)
+	}
 	candidates := signatureGroups[string(m.signature)]
 	cluster := bestPatternCluster(candidates, tokens, m.placeholders)
 	if cluster == nil {
@@ -1088,6 +1121,7 @@ func (m *patternMiner) observe(level string, tokens []string, spacesAfter []int,
 			buckets:     make(map[int64]int),
 			tokens:      cloneTokens(tokens),
 			spacesAfter: cloneInts(spacesAfter),
+			format:      format,
 		}
 		signatureGroups[string(m.signature)] = append(candidates, cluster)
 	} else {

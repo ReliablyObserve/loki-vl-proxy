@@ -310,13 +310,7 @@ func (p *Proxy) countPatternsWindow(ctx context.Context, filter logsql.FilterExp
 	miner := newPatternMiner()
 	clusters := make(map[string]*patternBucket, len(groups))
 	for _, g := range groups {
-		cluster := miner.observeLine(g.level, g.lo, 0, 0)
-		if g.hi != g.lo {
-			if c := miner.observeLine(g.level, g.hi, 0, 0); c != nil {
-				cluster = c
-			}
-		}
-		if cluster != nil {
+		if cluster := miner.observeGroup(g.level, g.lo, g.hi); cluster != nil {
 			clusters[g.key] = cluster
 		}
 	}
