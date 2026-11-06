@@ -351,6 +351,9 @@ ORACLE_COUNTS = (
     ("cases_read", "… our parser reads with the same meaning"),
     ("cases_rejected", "VictoriaLogs test cases it rejects"),
     ("cases_wrongly_accepted", "… our parser accepts"),
+    ("typed_selectors", "Stream selectors built as typed filters"),
+    ("typed_selectors_rejected", "… whose string-translator filter VictoriaLogs rejects"),
+    ("typed_selectors_same_meaning", "… VictoriaLogs reads the same as the string translator's"),
 )
 
 
@@ -374,7 +377,8 @@ def oracle_details(corpus):
     for r in corpus.get("oracle_regressions") or []:
         parts = [f"{len(r.get(k) or [])} {what}" for k, what in (("goldens_rejected", "goldens now rejected"),
                                                                   ("goldens_meaning_lost", "goldens whose meaning changed"),
-                                                                  ("cases_lost", "test cases no longer read the same"))]
+                                                                  ("cases_lost", "test cases no longer read the same"),
+                                                                  ("typed_selectors_differ", "typed selector filters that differ"))]
         lines.append(f"Regressions on VictoriaLogs {cell(r.get('version'))}: " + "; ".join(parts) + ".")
     return lines
 

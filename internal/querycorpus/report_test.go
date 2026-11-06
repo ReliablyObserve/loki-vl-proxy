@@ -321,6 +321,7 @@ func reportFailures(rep Report) []string {
 			{r.GoldensRejected, "goldens VictoriaLogs now rejects"},
 			{r.GoldensMeaningLost, "goldens whose printed form no longer means the same to VictoriaLogs"},
 			{r.CasesLost, "VictoriaLogs test cases our LogsQL parser no longer reads the same"},
+			{r.TypedSelectorsDiffer, "stream selectors whose typed filter VictoriaLogs does not read as the string translator's"},
 		} {
 			if len(x.ids) > 0 {
 				out = append(out, fmt.Sprintf("VictoriaLogs %s: %d %s: %s", r.Version, len(x.ids), x.what, strings.Join(first(x.ids), ", ")))
