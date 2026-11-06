@@ -323,3 +323,10 @@ class QueryCorpusOracleTests(unittest.TestCase):
         corpus = {"oracle": [{"version": "v1.53.0", "goldens_rejected": 5}], "oracle_regressions": [
             {"version": "v1.53.0", "goldens_rejected": [], "goldens_meaning_lost": [], "cases_lost": []}]}
         self.assertEqual(query_corpus_failures(corpus), [])
+
+
+class QueryCorpusConstructTests(unittest.TestCase):
+    def test_uncovered_constructs_fail(self):
+        corpus = {"constructs": [{"version": "v1.53.0", "missing": ["pipes/unroll"]}, {"version": "v1.49.0", "missing": []}]}
+        self.assertEqual(query_corpus_failures(corpus), [
+            "VictoriaLogs v1.53.0: constructs not covered by internal/logsql (scripts/vl-ast-coverage.json): pipes/unroll"])

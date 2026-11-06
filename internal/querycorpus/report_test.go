@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,8 @@ type Report struct {
 	Oracle            []OracleSummary     `json:"oracle,omitempty"`
 	OracleBase        []OracleSummary     `json:"oracle_base,omitempty"`
 	OracleRegressions []OracleRegressions `json:"oracle_regressions,omitempty"`
+	// Constructs are, per version, the VictoriaLogs constructs scripts/vl-ast-coverage.json does not cover.
+	Constructs []ConstructCoverage `json:"constructs,omitempty"`
 }
 
 func readJSON(t *testing.T, path string, v any) {
@@ -231,7 +234,20 @@ func TestQueryCorpusReport(t *testing.T) {
 		}
 	}
 	base := os.Getenv("LVP_QUERY_CORPUS_BASE")
+	var coverage map[string]json.RawMessage
+	readJSON(t, coveragePath, &coverage)
 	for _, v := range rep.Summary.GoldenVersions {
+		var upstream map[string][]string
+		if b, err := os.ReadFile(constructsPath(corpus, v)); err == nil {
+			if err := json.Unmarshal(b, &upstream); err != nil {
+				t.Fatal(err)
+			}
+			missing, err := missingConstructs(upstream, coverage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rep.Constructs = append(rep.Constructs, ConstructCoverage{Version: v, Missing: missing})
+		}
 		head := readVerdicts(t, verdictsPath(corpus, v))
 		if head == nil {
 			continue
@@ -251,6 +267,11 @@ func TestQueryCorpusReport(t *testing.T) {
 	}
 	if err := os.WriteFile(reportPath, append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	for _, c := range rep.Constructs {
+		if len(c.Missing) > 0 {
+			t.Errorf("VictoriaLogs %s has constructs %s neither covers nor ignores: %v", c.Version, strings.TrimPrefix(coveragePath, "../../"), c.Missing)
+		}
 	}
 	for _, r := range rep.OracleRegressions {
 		if r.any() {

@@ -71,3 +71,4 @@ jobs:
             /tmp/query-corpus/query-corpus.jsonl.gz
             /tmp/query-corpus/query-corpus.summary.json
             /tmp/query-corpus/query-corpus.vl-*.jsonl.gz
+            /tmp/query-corpus/query-corpus.vl-*.constructs.json

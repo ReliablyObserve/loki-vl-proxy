@@ -326,6 +326,10 @@ def oracle_details(corpus):
         rows = [[label, fmt(b.get(k)) if b else "no base", fmt(o.get(k)),
                  f"{o[k] - b[k]:+d}" if numeric(b.get(k)) and numeric(o.get(k)) else "n/a"] for k, label in ORACLE_COUNTS]
         lines += [f"VictoriaLogs {cell(v)}:", "", *table(["Count", "Base", "PR", "Delta"], rows), ""]
+    for c in corpus.get("constructs") or []:
+        missing = c.get("missing") or []
+        lines.append(f"Constructs of VictoriaLogs {cell(c.get('version'))} not covered by `internal/logsql`: "
+                     + (", ".join(cell(x) for x in missing[:20]) if missing else "none") + ".")
     for r in corpus.get("oracle_regressions") or []:
         parts = [f"{len(r.get(k) or [])} {what}" for k, what in (("goldens_rejected", "goldens now rejected"),
                                                                   ("goldens_meaning_lost", "goldens whose meaning changed"),

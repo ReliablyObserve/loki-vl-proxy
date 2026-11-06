@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the VictoriaLogs parse oracle (test/oracle/vl) over a query corpus.
 #
-#   scripts/ci/vl_oracle.sh <corpus.jsonl.gz>   write <corpus>.vl-<version>.jsonl.gz for every VictoriaLogs
+#   scripts/ci/vl_oracle.sh <corpus.jsonl.gz>   write <corpus>.vl-<version>.jsonl.gz (the verdicts) and
+#                                               <corpus>.vl-<version>.constructs.json for every VictoriaLogs
 #                                               version of the compatibility matrix
 #   scripts/ci/vl_oracle.sh --pin <version>     pin a version: the matrix's pinned version in test/oracle/vl/go.mod
 #                                               and go.sum, any other in go.<version>.mod and .sum
@@ -56,6 +57,8 @@ for v in "${versions[@]}"; do
   (cd "$ORACLE" && go build -modfile="$file" -o "$work/vl-$v" .)
   src="$(cd "$ORACLE" && go list -modfile="$file" -m -f '{{if .Replace}}{{.Replace.Dir}}{{else}}{{.Dir}}{{end}}' "$MODULE")"
   "$work/vl-$v" cases -src "$src" -out "$work/cases-$v.json"
+  # Its pipes, stats functions and filters: the report checks them against scripts/vl-ast-coverage.json.
+  "$work/vl-$v" constructs -src "$src" -out "${corpus%.jsonl.gz}.vl-$v.constructs.json"
 done
 
 (cd "$ROOT_DIR" && LVP_QUERY_CORPUS_OUT="$corpus" LVP_ORACLE_DIR="$work" \
