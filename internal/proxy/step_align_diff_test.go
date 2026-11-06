@@ -1,160 +1,81 @@
 package proxy
 
 import (
-	"errors"
-	"math"
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
-// lokiParseTimestamp is Loki's parseTimestamp (pkg/loghttp/params.go:160-182),
-// verbatim: a decimal is seconds with its fraction rounded to milliseconds, an
-// integer of at most 10 characters is seconds and a longer one nanoseconds,
-// anything else RFC3339Nano.
-func lokiParseTimestamp(value string, def time.Time) (time.Time, error) {
-	if value == "" {
-		return def, nil
-	}
-	if strings.Contains(value, ".") {
-		if t, err := strconv.ParseFloat(value, 64); err == nil {
-			s, ns := math.Modf(t)
-			ns = math.Round(ns*1000) / 1000
-			return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
-		}
-	}
-	nanos, err := strconv.ParseInt(value, 10, 64)
+// stepAlignLokiAnswers holds what a Loki query frontend with align_queries_with_step makes of the requests
+// stepAlignDiffForms generates: whether it decodes each one, the step it keeps in milliseconds and the bounds it
+// passes on. The Loki oracle's align command (test/oracle/loki/align) recorded them with Loki's own range query parser;
+// TestPinStepAlignLokiAnswers records them again. The first line names the Loki version.
+const stepAlignLokiAnswers = "testdata/step_align_loki_answers.jsonl.gz"
+
+// stepAlignReplayNow is the proxy's clock when it replays the recorded requests. A request without a start has
+// its start derived from the earlier of its end and now, so those requests end before this instant, which is
+// before any time the answers are recorded at: Loki's clock and this one then give the same start.
+var stepAlignReplayNow = time.Unix(1750000000, 0)
+
+// stepAlignLokiAnswer is one recorded answer (test/oracle/loki/align AlignAnswer).
+type stepAlignLokiAnswer struct {
+	ID       string `json:"id"`
+	Form     string `json:"form"`
+	Accepted bool   `json:"accepted"`
+	Error    string `json:"error,omitempty"`
+	StepMs   int64  `json:"step_ms"`
+	StartNs  int64  `json:"start_ns"`
+	EndNs    int64  `json:"end_ns"`
+}
+
+type stepAlignLokiHeader struct {
+	Loki string `json:"loki"`
+}
+
+func readStepAlignLokiAnswers(t *testing.T) (string, []stepAlignLokiAnswer) {
+	t.Helper()
+	fh, err := os.Open(stepAlignLokiAnswers)
 	if err != nil {
-		if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
-			return ts, nil
-		}
-		return time.Time{}, err
+		t.Fatal(err)
 	}
-	if len(value) <= 10 {
-		return time.Unix(nanos, 0), nil
-	}
-	return time.Unix(0, nanos), nil
-}
-
-// lokiModelParseDuration is Prometheus' model.ParseDuration
-// (vendor/github.com/prometheus/common/model/time.go:189-259 in Loki v3.7.9),
-// which Loki uses for a step or since that is not a number.
-func lokiModelParseDuration(s string) (time.Duration, error) {
-	units := map[string]struct {
-		pos  int
-		mult uint64
-	}{
-		"ms": {7, uint64(time.Millisecond)}, "s": {6, uint64(time.Second)}, "m": {5, uint64(time.Minute)},
-		"h": {4, uint64(time.Hour)}, "d": {3, uint64(24 * time.Hour)}, "w": {2, uint64(7 * 24 * time.Hour)},
-		"y": {1, uint64(365 * 24 * time.Hour)},
-	}
-	switch s {
-	case "0":
-		return 0, nil
-	case "":
-		return 0, errors.New("empty duration string")
-	}
-	isdigit := func(c byte) bool { return c >= '0' && c <= '9' }
-	var dur uint64
-	lastUnitPos := 0
-	for s != "" {
-		if !isdigit(s[0]) {
-			return 0, errors.New("not a valid duration string")
-		}
-		i := 0
-		for ; i < len(s) && isdigit(s[i]); i++ {
-		}
-		v, err := strconv.ParseUint(s[:i], 10, 0)
-		if err != nil {
-			return 0, err
-		}
-		s = s[i:]
-		for i = 0; i < len(s) && !isdigit(s[i]); i++ {
-		}
-		if i == 0 {
-			return 0, errors.New("not a valid duration string")
-		}
-		unit, ok := units[s[:i]]
-		s = s[i:]
-		if !ok || unit.pos <= lastUnitPos {
-			return 0, errors.New("not a valid duration string")
-		}
-		lastUnitPos = unit.pos
-		if v > 1<<63/unit.mult {
-			return 0, errors.New("duration out of range")
-		}
-		dur += v * unit.mult
-		if dur > 1<<63-1 {
-			return 0, errors.New("duration out of range")
-		}
-	}
-	return time.Duration(dur), nil
-}
-
-// lokiParseSecondsOrDuration is Loki's parseSecondsOrDuration
-// (pkg/loghttp/params.go:198-210), verbatim.
-func lokiParseSecondsOrDuration(value string) (time.Duration, error) {
-	if d, err := strconv.ParseFloat(value, 64); err == nil {
-		ts := d * float64(time.Second)
-		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
-			return 0, errors.New("overflows int64")
-		}
-		return time.Duration(ts), nil
-	}
-	if d, err := lokiModelParseDuration(value); err == nil {
-		return d, nil
-	}
-	return 0, errors.New("cannot parse duration")
-}
-
-// lokiDecodeAndStepAlign is what a Loki query frontend with
-// align_queries_with_step does to the bounds of a metric range request:
-// decode them (pkg/loghttp/query.go:473-512, ParseRangeQuery: bounds, end not
-// before start, step, step > 0, at most 11,000 points), keep the step in
-// milliseconds (pkg/querier/queryrange/codec.go:436), then move both bounds
-// down (pkg/querier/queryrange/queryrangebase/step_align.go:20-24). accepted
-// is false where Loki answers 400 at decode; stepMs is 0 where the step is
-// under a millisecond, which Loki's middleware would divide by.
-func lokiDecodeAndStepAlign(form url.Values, now time.Time) (start, end int64, stepMs int64, accepted bool) {
-	since := time.Hour
-	if raw := form.Get("since"); raw != "" {
-		d, err := lokiModelParseDuration(raw)
-		if err != nil {
-			return 0, 0, 0, false
-		}
-		since = d
-	}
-	e, err := lokiParseTimestamp(form.Get("end"), now)
+	defer func() { _ = fh.Close() }()
+	zr, err := gzip.NewReader(fh)
 	if err != nil {
-		return 0, 0, 0, false
+		t.Fatal(err)
 	}
-	endOrNow := e
-	if e.After(now) {
-		endOrNow = now
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(make([]byte, 1<<16), 1<<20)
+	var header stepAlignLokiHeader
+	var rows []stepAlignLokiAnswer
+	for first := true; sc.Scan(); first = false {
+		if first {
+			if err := json.Unmarshal(sc.Bytes(), &header); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		var row stepAlignLokiAnswer
+		if err := json.Unmarshal(sc.Bytes(), &row); err != nil {
+			t.Fatal(err)
+		}
+		rows = append(rows, row)
 	}
-	s, err := lokiParseTimestamp(form.Get("start"), endOrNow.Add(-since))
-	if err != nil || e.Before(s) {
-		return 0, 0, 0, false
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
 	}
-	if form.Get("step") == "" {
-		return 0, 0, 0, false // the proxy does not evaluate a step-less request on Loki's derived step
-	}
-	step, err := lokiParseSecondsOrDuration(form.Get("step"))
-	if err != nil || step <= 0 || e.Sub(s)/step > 11000 {
-		return 0, 0, 0, false
-	}
-	stepMs = step.Milliseconds()
-	if stepMs == 0 {
-		return 0, 0, 0, true
-	}
-	start = (s.UnixMilli() / stepMs) * stepMs * int64(time.Millisecond)
-	end = (e.UnixMilli() / stepMs) * stepMs * int64(time.Millisecond)
-	return start, end, stepMs, true
+	return header.Loki, rows
 }
 
 // alignDiffBound renders a Unix nanosecond time in one of the forms both Loki
@@ -197,24 +118,16 @@ func alignDiffStep(rng *rand.Rand, ms int64) string {
 	}
 }
 
-// The proxy's alignment, through the proxy's own parsing of the bounds and
-// the step, agrees with Loki's decode-then-align over random requests: the
-// same requests are moved, and to the same nanosecond. Bounds come in every
-// form both read alike (integer seconds, nanoseconds, decimal seconds with up
-// to 9 digits, RFC3339 with offsets), before and after the epoch; steps from
-// sub-millisecond to longer than the range; ranges from equal bounds to past
-// 11,000 points.
-// conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
-func TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode(t *testing.T) {
-	iterations := 20000
-	if testing.Short() {
-		iterations = 4000
-	}
+// stepAlignDiffForms generates the range query requests the alignment is compared with Loki on. Bounds come in
+// every form both read alike (integer seconds, nanoseconds, decimal seconds with up to 9 digits, RFC3339 with
+// offsets), before and after the epoch; steps from sub-millisecond to longer than the range; ranges from equal
+// bounds to past 11,000 points, and ends before starts. Every request has an end and a step: Loki derives a missing
+// end from its clock, and the proxy does not align a step-less request.
+func stepAlignDiffForms(n int) []url.Values {
 	steps := []int64{1, 3, 100, 250, 500, 999, 1000, 1500, 7000, 15000, 60000, 137000, 300000, 3600000, 86400000}
-	now := time.Unix(1700003600, 123456789)
 	rng := rand.New(rand.NewSource(20261028))
-	moved, kept := 0, 0
-	for i := 0; i < iterations; i++ {
+	forms := make([]url.Values, 0, n)
+	for len(forms) < n {
 		var startNs int64
 		switch rng.Intn(4) {
 		case 0:
@@ -244,15 +157,33 @@ func TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode(t *testing.T) {
 		if rng.Intn(10) == 0 {
 			form.Set("step", strconv.FormatFloat(float64(rng.Intn(999)+1)/1e6, 'f', -1, 64)) // sub-millisecond
 		}
-		if rng.Intn(15) == 0 {
+		if rng.Intn(15) == 0 && startNs+span < stepAlignReplayNow.UnixNano() {
 			form.Del("start")
 			form.Set("since", strconv.Itoa(rng.Intn(120)+1)+"m")
 		}
-		wantStart, wantEnd, wantStepMs, accepted := lokiDecodeAndStepAlign(form, now)
+		forms = append(forms, form)
+	}
+	return forms
+}
+
+// The proxy's alignment, through the proxy's own parsing of the bounds and the step, agrees with Loki's
+// decode-then-align on every recorded request: the same requests are moved, and to the same nanosecond.
+// conformance: semantics/query-range-step-alignment, loki_api_v1_query_range
+func TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode(t *testing.T) {
+	version, rows := readStepAlignLokiAnswers(t)
+	if want := lokiMatrixVersion(t); version != want {
+		t.Fatalf("%s was recorded with Loki %s, the compatibility matrix pins %s: record it again (TestPinStepAlignLokiAnswers)", stepAlignLokiAnswers, version, want)
+	}
+	moved, kept := 0, 0
+	for _, row := range rows {
+		form, err := url.ParseQuery(row.Form)
+		if err != nil {
+			t.Fatalf("%s: %v", row.ID, err)
+		}
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+form.Encode(), nil)
-		got, ok := alignQueryRangeToStep(req, now)
-		if wantAlign := accepted && wantStepMs > 0; ok != wantAlign {
-			t.Fatalf("#%d %v: aligned = %v, Loki aligns = %v (accepted %v, step %dms)", i, form, ok, wantAlign, accepted, wantStepMs)
+		got, ok := alignQueryRangeToStep(req, stepAlignReplayNow)
+		if wantAlign := row.Accepted && row.StepMs > 0; ok != wantAlign {
+			t.Fatalf("#%s %v: aligned = %v, Loki aligns = %v (accepted %v %q, step %dms)", row.ID, form, ok, wantAlign, row.Accepted, row.Error, row.StepMs)
 		}
 		if !ok {
 			kept++
@@ -261,37 +192,98 @@ func TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode(t *testing.T) {
 		moved++
 		gs, _ := parseLokiTimeToUnixNano(got.FormValue("start"))
 		ge, _ := parseLokiTimeToUnixNano(got.FormValue("end"))
-		if gs != wantStart || ge != wantEnd {
-			t.Fatalf("#%d %v: bounds [%s, %s] read as [%d, %d], Loki's [%d, %d]", i, form, got.FormValue("start"), got.FormValue("end"), gs, ge, wantStart, wantEnd)
+		if gs != row.StartNs || ge != row.EndNs {
+			t.Fatalf("#%s %v: bounds [%s, %s] read as [%d, %d], Loki's [%d, %d]", row.ID, form, got.FormValue("start"), got.FormValue("end"), gs, ge, row.StartNs, row.EndNs)
 		}
 	}
-	if moved < iterations/2 || kept < iterations/20 {
-		t.Fatalf("the generator must exercise both outcomes: %d moved, %d kept", moved, kept)
+	if moved < len(rows)/2 || kept < len(rows)/20 {
+		t.Fatalf("the recorded requests must exercise both outcomes: %d moved, %d kept", moved, kept)
 	}
+}
+
+// TestPinStepAlignLokiAnswers records stepAlignLokiAnswers again with the Loki oracle, for a new Loki pin or a
+// changed generator: LVP_ORACLE_PIN_STEP_ALIGN=1 go test ./internal/proxy -run TestPinStepAlignLokiAnswers.
+func TestPinStepAlignLokiAnswers(t *testing.T) {
+	if os.Getenv("LVP_ORACLE_PIN_STEP_ALIGN") != "1" {
+		t.Skip("LVP_ORACLE_PIN_STEP_ALIGN=1 is not set")
+	}
+	version := lokiMatrixVersion(t)
+	if mod := readText(t, filepath.Join(lokiOracleDir, "go.mod")); !strings.Contains(mod, "github.com/grafana/loki/v3 v"+version+"\n") {
+		t.Fatalf("test/oracle/loki/go.mod does not require Loki v%s, the compatibility matrix's pinned version", version)
+	}
+	if !time.Now().After(stepAlignReplayNow) {
+		t.Fatal("the answers must be recorded after stepAlignReplayNow")
+	}
+	work := t.TempDir()
+	bin, err := oraclerun.Build(filepath.Join(lokiOracleDir, "align"), "", work, "align")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forms := stepAlignDiffForms(5000)
+	for _, seed := range stepAlignFuzzSeeds {
+		if seed[1] != "" {
+			forms = append(forms, url.Values{"query": {`sum(count_over_time({app="a"}[5m]))`}, "start": {seed[0]}, "end": {seed[1]}, "step": {seed[2]}})
+		}
+	}
+	var inputs []byte
+	for i, form := range forms {
+		line, err := json.Marshal(map[string]string{"id": strconv.Itoa(i), "form": form.Encode()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs = append(append(inputs, line...), '\n')
+	}
+	in, out := filepath.Join(work, "forms.jsonl"), filepath.Join(work, "answers.jsonl")
+	if err := os.WriteFile(in, inputs, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Run(bin, "-in", in, "-out", out); err != nil {
+		t.Fatal(err)
+	}
+	answers, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, err := json.Marshal(stepAlignLokiHeader{Loki: version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := filepath.Join(work, "recorded.jsonl")
+	if err := os.WriteFile(recorded, append(append(header, '\n'), answers...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := oraclerun.Gzip(recorded, stepAlignLokiAnswers); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("recorded %s with Loki %s", stepAlignLokiAnswers, version)
+}
+
+// stepAlignFuzzSeeds are FuzzAlignQueryRangeToStep's seeds: start, end and step. Those with an end are also
+// recorded with Loki (TestPinStepAlignLokiAnswers).
+var stepAlignFuzzSeeds = [][3]string{
+	{"1700000000000000000", "1700003600000000000", "137"},
+	{"1700000000.3", "1700000010.9996", "0.1"},
+	{"-90", "30", "60"},
+	{"2026-03-29T03:00:17+02:00", "2026-03-29T04:00:00+02:00", "1m"},
+	{"1700000010", "1700000030", "10m"},
+	{"1700000017", "1700000017", "60000ms"},
+	{"1700000000", "1700011001", "1"},
+	{"1700000000", "1700000001", "0.0001"},
+	{"", "", "60"},
+	// No start, so Loki derives it an hour before an end near the earliest
+	// int64 nanosecond: that start in nanoseconds is outside int64.
+	{"", "-9223368436854551616", "1000000"},
 }
 
 // FuzzAlignQueryRangeToStep checks the alignment over arbitrary bounds and
 // steps: it never panics or modifies the caller's request; what the
 // middleware passes through unaligned (boundsOnStepGrid) is what alignment
 // leaves at the same instants; a moved request
-// is idempotent (moving it again changes nothing), each bound moves by less
-// than a step toward zero onto a multiple of the step; and wherever Loki's
-// decode reads the bounds as the proxy does, the result is Loki's.
+// is idempotent (moving it again changes nothing), and each bound moves by less
+// than a step toward zero onto a multiple of the step. That the result is
+// Loki's is TestAlignQueryRangeToStep_DifferentialAgainstLokiDecode's.
 func FuzzAlignQueryRangeToStep(f *testing.F) {
-	for _, seed := range [][3]string{
-		{"1700000000000000000", "1700003600000000000", "137"},
-		{"1700000000.3", "1700000010.9996", "0.1"},
-		{"-90", "30", "60"},
-		{"2026-03-29T03:00:17+02:00", "2026-03-29T04:00:00+02:00", "1m"},
-		{"1700000010", "1700000030", "10m"},
-		{"1700000017", "1700000017", "60000ms"},
-		{"1700000000", "1700011001", "1"},
-		{"1700000000", "1700000001", "0.0001"},
-		{"", "", "60"},
-		// No start, so Loki derives it an hour before an end near the earliest
-		// int64 nanosecond: that start in nanoseconds is outside int64.
-		{"", "-9223368436854551616", "1000000"},
-	} {
+	for _, seed := range stepAlignFuzzSeeds {
 		f.Add(seed[0], seed[1], seed[2])
 	}
 	now := time.Unix(1700003600, 123456789)
@@ -351,18 +343,6 @@ func FuzzAlignQueryRangeToStep(f *testing.F) {
 		again, ok := alignQueryRangeToStep(got, now)
 		if !ok || again.FormValue("start") != got.FormValue("start") || again.FormValue("end") != got.FormValue("end") {
 			t.Fatalf("not idempotent: [%s, %s] then [%s, %s] (%v)", got.FormValue("start"), got.FormValue("end"), again.FormValue("start"), again.FormValue("end"), ok)
-		}
-		lokiStart, lokiEnd, lokiStepMs, accepted := lokiDecodeAndStepAlign(form, now)
-		if !accepted || lokiStepMs != stepD.Milliseconds() {
-			return // Loki rejects it, or reads the step differently (a form such as "1.5m" or "100us" only the proxy accepts)
-		}
-		ls, _ := lokiParseTimestamp(start, now)
-		le, _ := lokiParseTimestamp(end, now)
-		if (start != "" && ls.UnixMilli() != rawStart.UnixMilli()) || (end != "" && le.UnixMilli() != rawEnd.UnixMilli()) {
-			return // a form the two read differently (an 11-18 digit integer, "now"); not an alignment question
-		}
-		if got.FormValue("start") != encodeAlignedBound(lokiStart) || got.FormValue("end") != encodeAlignedBound(lokiEnd) {
-			t.Fatalf("bounds [%s, %s], Loki's [%d, %d]", got.FormValue("start"), got.FormValue("end"), lokiStart, lokiEnd)
 		}
 	})
 }
