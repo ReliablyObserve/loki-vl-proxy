@@ -4,11 +4,6 @@
     "internal/logql/stage_validate.go": {
       "max_shared": 8,
       "reason": "the names of the template functions line_format and label_format accept (Loki's functionMap and its sprig subset): the API a query may call, listed so templates parse; no Loki code"
-    },
-    "internal/proxy/step_align_diff_test.go": {
-      "max_shared": 34,
-      "pending_removal": true,
-      "reason": "lokiParseTimestamp is Loki's pkg/loghttp/params.go parseTimestamp, copied as a test reference; to be replaced by recorded Loki answers"
     }
   }
 }
