@@ -33,18 +33,12 @@ var patternCountsLevelFields = []string{
 	"severity_text", "Severity_Text", "SEVERITY_TEXT", "severity_number",
 }
 
-// patternCountsGroupField holds a row's message with its numbers replaced (patternCountsNumberRegexp): rows that
-// differ only in numbers form one group.
+// patternCountsGroupField holds a row's message with its numbers collapsed (collapse_nums): rows that differ only
+// in numbers form one group. VictoriaLogs' collapse_nums takes digit-free hex such as aaabafcb for a number, which
+// Loki's tokenizer does not, so a range counted this way mines such ids as one group; the exact tier does not (a
+// replace_regexp of the tokens that hold a digit would, but costs three to five times the VictoriaLogs time on a
+// large range).
 const patternCountsGroupField = "_lvp_collapsed"
-
-// patternCountsNumberRegexp matches each whole token of a message that holds a digit, with the characters Loki's
-// pattern tokenizer keeps in a token (letters, numbers and _ . : / -): what Loki's drain treats as a number, so
-// 8-digit hex ids with letters only are not numbers but 0x1f or host-3 are. VictoriaLogs' collapse_nums would
-// collapse digit-free hex too. Every match is replaced with patternCountsNumberMark.
-const patternCountsNumberRegexp = `[\p{L}\p{N}_.:/-]*\p{N}[\p{L}\p{N}_.:/-]*`
-
-// patternCountsNumberMark stands for a number in a group's key.
-const patternCountsNumberMark = "0"
 
 // patternCountsGroupHash is the collapsed message's hash: the timeline names a group by it, so a row of it carries
 // a few bytes rather than the message.
@@ -99,7 +93,7 @@ func patternCountsGroupBy() []logsql.GroupKey {
 func patternCountsQuery(filter logsql.FilterExpr, stats logsql.PipeStats, maxRows int) *logsql.Query {
 	return logsql.NewQuery(filter,
 		logsql.PipeCopy{Pairs: [][2]string{{"_msg", patternCountsGroupField}}},
-		logsql.PipeReplaceRegexp{Field: patternCountsGroupField, Regex: patternCountsNumberRegexp, Replacement: patternCountsNumberMark},
+		logsql.PipeCollapseNums{Field: patternCountsGroupField},
 		logsql.PipeHash{Fields: []string{patternCountsGroupField}, Result: patternCountsGroupHash},
 		stats,
 		logsql.PipeLimit{N: maxRows + 1},
@@ -117,7 +111,11 @@ func patternGroupsQuery(filter logsql.FilterExpr, maxRows int) *logsql.Query {
 	}}, maxRows)
 }
 
-// patternTimelineQuery counts every group per step.
+// patternTimelineQuery counts every group per step. VictoriaLogs truncates a line's time to the step from the
+// epoch directly; Loki counts a line into its 10 s sample first and the sample into the step (patternBucketStart,
+// used by the exact tier and the sampled read). The two agree when the step is a multiple of 10 s, which is the
+// default step's case, and differ by the lines near a step's edge otherwise: a documented deviation of the counts
+// flow, which cannot see the samples.
 func patternTimelineQuery(filter logsql.FilterExpr, step time.Duration, maxRows int) *logsql.Query {
 	by := append([]logsql.GroupKey{{Field: "_time", Bucket: strconv.FormatInt(int64(step/time.Second), 10) + "s"}}, patternCountsGroupBy()...)
 	return patternCountsQuery(filter, logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "c"}}}, maxRows)

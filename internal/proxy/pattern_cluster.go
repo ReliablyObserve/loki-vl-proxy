@@ -24,9 +24,34 @@ const (
 // patternTreeNode is a node of the prefix tree that leads a line to the clusters it may join. A child is keyed by
 // the token that leads to it; the child keyed patternVarPlaceholder is the node's variable child, taken by tokens
 // no other child holds. Clusters are registered at the node their first line's tokens lead to.
+//
+// A node holds its first child in the node itself and makes a map only for a second: most nodes lead to one child (a
+// stream's lines mostly share their leading tokens), and a map per node of a 28-token path would cost several times
+// what the clusters do.
 type patternTreeNode struct {
-	children map[string]*patternTreeNode
+	firstKey string
+	first    *patternTreeNode
+	more     map[string]*patternTreeNode
 	clusters []*patternBucket
+}
+
+// get is the node's child for a key, nil when it has none.
+func (n *patternTreeNode) get(key string) *patternTreeNode {
+	if n.first == nil {
+		return nil
+	}
+	if key == n.firstKey {
+		return n.first
+	}
+	return n.more[key]
+}
+
+// count is how many children the node has.
+func (n *patternTreeNode) count() int {
+	if n.first == nil {
+		return 0
+	}
+	return 1 + len(n.more)
 }
 
 // patternTreeKey names one tree of a miner: lines only share clusters with lines of their format and token count.
@@ -123,9 +148,9 @@ func (n *patternTreeNode) candidates() []*patternBucket {
 // of the line's token, else the variable child.
 func (n *patternTreeNode) leaf(tokens []string, depth int) *patternTreeNode {
 	for _, token := range tokens[:depth] {
-		next := n.children[token]
+		next := n.get(token)
 		if next == nil {
-			next = n.children[patternVarPlaceholder]
+			next = n.get(patternVarPlaceholder)
 		}
 		if next == nil {
 			return nil
@@ -141,10 +166,10 @@ func (n *patternTreeNode) leaf(tokens []string, depth int) *patternTreeNode {
 // the variable child itself.
 func (n *patternTreeNode) place(tokens []string, depth int) *patternTreeNode {
 	for _, token := range tokens[:depth] {
-		next := n.children[token]
+		next := n.get(token)
 		if next == nil {
-			variable := n.children[patternVarPlaceholder]
-			children := len(n.children)
+			variable := n.get(patternVarPlaceholder)
+			children := n.count()
 			switch {
 			case patternTokenHasNumber(token):
 				next = n.child(patternVarPlaceholder)
@@ -162,14 +187,18 @@ func (n *patternTreeNode) place(tokens []string, depth int) *patternTreeNode {
 
 // child is the node's child for a key, made when it has none.
 func (n *patternTreeNode) child(key string) *patternTreeNode {
-	if next := n.children[key]; next != nil {
+	if next := n.get(key); next != nil {
 		return next
 	}
-	if n.children == nil {
-		n.children = make(map[string]*patternTreeNode)
-	}
 	next := &patternTreeNode{}
-	n.children[key] = next
+	if n.first == nil {
+		n.firstKey, n.first = key, next
+		return next
+	}
+	if n.more == nil {
+		n.more = make(map[string]*patternTreeNode)
+	}
+	n.more[key] = next
 	return next
 }
 

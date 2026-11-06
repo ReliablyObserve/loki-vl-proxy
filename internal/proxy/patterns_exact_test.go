@@ -337,7 +337,7 @@ func TestPatternSampledSamplesAreZeroFilledPerStreamCluster(t *testing.T) {
 		return []byte(strings.Join(rows, "\n") + "\n")
 	}
 	samples := func(body []byte, fill bool) map[int64]int {
-		patterns, _, err := extractLogPatternsStreamFilled(strings.NewReader(string(body)), "10s", 100, defaultLogRowLevels(), fill)
+		patterns, _, err := extractLogPatternsStreamFilled(strings.NewReader(string(body)), "10s", 100, defaultLogRowLevels(), fill, 0, 0)
 		if err != nil || len(patterns) != 1 {
 			t.Fatalf("%v: %+v", err, patterns)
 		}
@@ -362,5 +362,90 @@ func TestPatternSampledSamplesAreZeroFilledPerStreamCluster(t *testing.T) {
 	}
 	if got, want := samples(quiet, true), (map[int64]int{base: 10, base + 10: 10, base + 20: 0, base + 30: 0, base + 40: 10, base + 50: 10}); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("filled samples %v, want %v", got, want)
+	}
+}
+
+// Loki counts a line into its 10 s sample, keeps the sample only if it starts inside the range, and sums samples
+// into steps: with a 14 s step, a line at T+9.9 s with the range starting at T+5 s is dropped (its sample starts at
+// T), a line at T+21 s counts into the step at T+14 s through the sample at T+20 s, and one at T+14 s is still in
+// the step at T through the sample at T+10 s, where truncating its time to the step would put it at T+14 s.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+func TestPatternSamplesAreCountedInTenSecondSamplesThenSteps(t *testing.T) {
+	const step = 14
+	// T is a multiple of both the step and the sample interval.
+	base := int64(1793989200) / 70 * 70
+	at := func(offset float64) string {
+		return time.Unix(0, base*int64(time.Second)+int64(offset*float64(time.Second))).UTC().Format(time.RFC3339Nano)
+	}
+	row := func(offset float64, msg string) string {
+		encoded, _ := json.Marshal(map[string]string{"_time": at(offset), "_msg": msg, "level": "info", "_stream_id": "s"})
+		return string(encoded) + "\n"
+	}
+	for _, tc := range []struct {
+		name   string
+		offset float64
+		want   map[int64]int
+	}{
+		{"sample before the range start is dropped", 9.9, nil},
+		{"sample after the range start", 10.0, map[int64]int{base: 1}},
+		{"21 s counts in the 14 s step through the 20 s sample", 21, map[int64]int{base + 14: 1}},
+		{"14 s is still in the first step", 14, map[int64]int{base: 1}},
+		{"the last second of a step", 27.9, map[int64]int{base + 14: 1}},
+		{"a sample at the range end is dropped", 100, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			miner := newPatternMiner()
+			miner.fillStep = step
+			miner.sampleFromNs = (base + 5) * int64(time.Second)
+			miner.sampleToNs = (base + 100) * int64(time.Second)
+			if err := readPatternLines(strings.NewReader(row(tc.offset, "paid order for eur")), miner, defaultLogRowLevels(), 10); err != nil {
+				t.Fatal(err)
+			}
+			got := map[int64]int{}
+			for _, c := range miner.AllClusters() {
+				if len(miner.AllClusters()) != 1 {
+					t.Fatalf("%d clusters: the line is mined whether or not it is counted", len(miner.AllClusters()))
+				}
+				for b, n := range c.buckets {
+					got[b] = n
+				}
+			}
+			if tc.want == nil {
+				tc.want = map[int64]int{}
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Errorf("samples %v, want %v", got, tc.want)
+			}
+		})
+	}
+	// The sampled read counts the same way, and the 30-line rule totals the samples inside the range.
+	if got := patternBucketStart((base+14)*int64(time.Second), step); got != base {
+		t.Errorf("the line at 14 s is in the step at %d, want %d", got-base, 0)
+	}
+}
+
+// What the exact tier mined to nothing is its answer: 2 VictoriaLogs calls (the count and the lines), no counts
+// queries, no sampling and no fall back to an older snapshot, and the next request is answered from the cache.
+//
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternsEmptyExactAnswerIsFinalAndCached(t *testing.T) {
+	// Lines of three tokens give no pattern.
+	fake := &fakePatternCounts{
+		count: `{"c":"63"}` + "\n", lines: exactLines("pod-a", "info", "short line here", 0, 63),
+		groups:   `{"level":"info","_lvp_group":"g","c":"63","_msg":"counted pattern of four","_lvp_max":"counted pattern of four"}` + "\n",
+		timeline: `{"_time":"2026-11-06T18:20:00Z","level":"info","_lvp_group":"g","c":"63"}` + "\n",
+		other:    exactLines("pod-a", "info", "sampled pattern of four words", 0, 63),
+	}
+	p := newExactProxy(t, fake, 1000)
+	ask := func() []string { return patternAnswer(patternsRequest(t, p, `{app="api"}`, "")) }
+	if got := ask(); len(got) != 0 {
+		t.Fatalf("answered %q, want the empty exact answer", got)
+	}
+	if fake.calls.Load() != 2 || fake.countCalls.Load() != 1 || fake.lineCalls.Load() != 1 {
+		t.Fatalf("%d VictoriaLogs calls (%d count, %d lines), want 2", fake.calls.Load(), fake.countCalls.Load(), fake.lineCalls.Load())
+	}
+	if got := ask(); len(got) != 0 || fake.calls.Load() != 2 {
+		t.Errorf("second request answered %q after %d calls in all, want none and 2", got, fake.calls.Load())
 	}
 }

@@ -31,8 +31,10 @@
       "name": "collapse_nums",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/patterns_counts.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -366,7 +368,6 @@
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
-        "internal/proxy/patterns_counts.go",
         "internal/translator/unwrap_gate.go",
         "internal/translator/without_pushdown.go"
       ]

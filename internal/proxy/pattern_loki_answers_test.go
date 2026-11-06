@@ -101,6 +101,7 @@ func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 		}
 		miner := newPatternMiner()
 		miner.fillStep = 10
+		miner.sampleFromNs, miner.sampleToNs = start.UnixNano(), end.UnixNano()
 		if err := readPatternLines(strings.NewReader(body.String()), miner, defaultLogRowLevels(), len(rows)); err != nil {
 			t.Fatalf("%s: %v", q.Name, err)
 		}
@@ -108,7 +109,7 @@ func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 		have := map[string]bool{}
 		minedTotal := map[string]int64{}
 		minedSamples := map[string][][2]int64{}
-		for _, e := range dropPatternsBelowMinLines(mined, start.UnixNano(), end.UnixNano()) {
+		for _, e := range dropPatternsBelowMinLines(mined, 0, 0) {
 			have[e.Pattern] = true
 			for _, s := range e.Samples {
 				minedSamples[e.Pattern] = append(minedSamples[e.Pattern], [2]int64{patternSampleCount(s[0]), patternSampleCount(s[1])})

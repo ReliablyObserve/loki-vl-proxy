@@ -76,8 +76,7 @@ func TestPatternCountsQueriesAreTyped(t *testing.T) {
 		}
 	}
 	by := `detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number, _lvp_group`
-	numbers := "`" + `[\p{L}\p{N}_.:/-]*\p{N}[\p{L}\p{N}_.:/-]*` + "`"
-	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | replace_regexp (` + numbers + `, "0") at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
+	prefix := `app:="api" -env:="dev" | copy _msg as _lvp_collapsed | collapse_nums at _lvp_collapsed | hash(_lvp_collapsed) as _lvp_group | stats by (`
 	if want := prefix + by + `) count() as c, min(_msg) as _msg, max(_msg) as _lvp_max, min(_time) as _lvp_first | limit 10`; groups.String() != want {
 		t.Errorf("groups query\n got %s\nwant %s", groups, want)
 	}
@@ -145,9 +144,9 @@ func (f *fakePatternCounts) server(t *testing.T) *httptest.Server {
 		case strings.HasSuffix(q, "| stats count() as c"):
 			f.countCalls.Add(1)
 			_, _ = w.Write([]byte(f.count))
-		case strings.Contains(q, "| replace_regexp (") && strings.Contains(q, "stats by (_time:"):
+		case strings.Contains(q, "| collapse_nums at _lvp_collapsed") && strings.Contains(q, "stats by (_time:"):
 			_, _ = w.Write([]byte(f.timeline))
-		case strings.Contains(q, "| replace_regexp ("):
+		case strings.Contains(q, "| collapse_nums at _lvp_collapsed"):
 			_, _ = w.Write([]byte(f.groups))
 		default:
 			_, _ = w.Write([]byte(f.other))
@@ -394,7 +393,7 @@ func TestPatternsFromCountsAnswerAroundEmptyWindows(t *testing.T) {
 		_ = r.ParseForm()
 		start, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
 		q := r.Form.Get("query")
-		if !strings.Contains(q, "| replace_regexp (") {
+		if !strings.Contains(q, "| collapse_nums at _lvp_collapsed") {
 			t.Errorf("a sampling query reached VictoriaLogs: %s", q)
 			return
 		}

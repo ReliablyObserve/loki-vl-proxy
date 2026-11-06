@@ -254,9 +254,14 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Set("limit", strconv.Itoa(sourceLimit))
 	diag := patternFetchDiagnostics{}
-	// perStreamFilled is set when the entries' samples were zero-filled per cluster, before equal patterns were
-	// summed (exact tier, one sampled read), as Loki fills them: they are not filled again across the range.
+	// perStreamFilled is set when the entries' samples were counted as Loki counts them: in 10 s samples inside the
+	// range, into steps, and zero-filled per cluster before equal patterns were summed (exact tier, one sampled
+	// read). They are not filtered or filled again across the range.
 	perStreamFilled := false
+	// exactAnswered is set when the exact tier answered, which is final even if empty; exactRead when it read
+	// lines to do so (a range without lines is no answer to keep).
+	exactAnswered, exactRead := false, false
+	rangeStartNs, rangeEndNs, _ := parseLokiTimeRangeToUnixNano(startParam, endParam)
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
 		fetchFromParams := func(queryParams url.Values) ([]patternResultEntry, bool) {
@@ -274,7 +279,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 				return nil, false
 			}
 			// Stream the VL NDJSON response directly without io.ReadAll buffering.
-			extracted, stats, readErr := extractLogPatternsStreamFilled(resp.Body, stepParam, patternLimit, p.newLogRowLevels(), true)
+			extracted, stats, readErr := extractLogPatternsStreamFilled(resp.Body, stepParam, patternLimit, p.newLogRowLevels(), true, rangeStartNs, rangeEndNs)
 			diag.recordExtraction(requestedLimit, stats, false)
 			if readErr != nil {
 				p.log.Debug("patterns source read failed", "error", readErr)
@@ -297,8 +302,8 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		if endpoint == "/select/logsql/query" {
 			// The lines of the range mined as Loki mines them when the range is small enough, counted by
 			// VictoriaLogs over the whole range when it can be; a sample of lines otherwise.
-			if entries, ok := p.patternsFromLines(r, query, startParam, endParam, stepParam, patternLimit); ok {
-				perStreamFilled = true
+			if entries, answered, read := p.patternsFromLines(r, query, startParam, endParam, stepParam, patternLimit); answered {
+				perStreamFilled, exactAnswered, exactRead = true, true, read
 				return entries, true
 			}
 			if entries, ok := p.patternsFromCounts(r, query, startParam, endParam, stepParam, patternLimit); ok {
@@ -352,7 +357,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("patterns", status, time.Since(start))
 		return
 	}
-	if len(entries) == 0 {
+	if len(entries) == 0 && !exactAnswered {
 		if fallbackPayload, ok := p.latestPatternSnapshotPayload(cacheWriteKey); ok {
 			p.metrics.RecordPatternsSnapshotHit(true)
 			p.recordPatternFetchDiagnostics(diag)
@@ -369,8 +374,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	// The last step before the response limit, once equal texts are merged: Loki answers only the patterns that
 	// hold enough lines in the range.
 	minedBeforeFilter := len(entries)
-	startNs, endNs, _ := parseLokiTimeRangeToUnixNano(startParam, endParam)
-	entries = dropPatternsBelowMinLines(entries, startNs, endNs)
+	if perStreamFilled {
+		// The samples inside the range are the ones counted: the steps they fall in may start before it.
+		entries = dropPatternsBelowMinLines(entries, 0, 0)
+	} else {
+		entries = dropPatternsBelowMinLines(entries, rangeStartNs, rangeEndNs)
+	}
 	if entries == nil {
 		entries = []patternResultEntry{}
 	}
@@ -407,7 +416,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries. An
 	// answer empty because no pattern holds enough lines is an answer, cached like any other: a quiet service
 	// is not read from VictoriaLogs on every refresh.
-	if len(entries) > 0 || minedBeforeFilter > 0 {
+	if len(entries) > 0 || minedBeforeFilter > 0 || exactRead {
 		now := time.Now().UTC()
 		snapshotPayload := snapshotBody
 		if len(snapshotPayload) == 0 {

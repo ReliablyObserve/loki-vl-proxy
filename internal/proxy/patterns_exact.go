@@ -45,36 +45,42 @@ const patternExactStreamField = "_stream_id"
 
 // patternsFromLines answers /patterns by reading the lines of the range and mining them as Loki's pattern
 // ingester does (exact tier): each stream at each level apart, oldest line first, the samples counted from the
-// same lines at Loki's step with the steps between a cluster's first and last sample as 0. It reads them only
-// when the range holds at most -patterns-exact-max-lines lines (one count query first). ok is false when the
-// tier is off, the request is one it does not answer, the range holds more lines, or VictoriaLogs fails or answers
-// something it cannot use (the sort of a very large range can exceed its memory): the caller then counts the lines,
-// or samples them. A failed backend is never answered from.
-func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, stepParam string, patternLimit int) ([]patternResultEntry, bool) {
+// same lines as Loki counts them (10 s samples inside the range, summed into steps) with the steps between a
+// cluster's first and last sample as 0. It reads them only when the range holds at most -patterns-exact-max-lines
+// lines (one count query first).
+//
+// answered is false when the tier is off, the request is one it does not answer, the range holds more lines, or
+// VictoriaLogs fails or answers something it cannot use (the sort of a very large range can exceed its memory): the
+// caller then counts the lines, or samples them. A failed backend is never answered from. Once the lines were read,
+// what they mined is the answer even if empty, as Loki's is; read is true then, and false for a range without lines
+// (an answer that is not kept, as lines may be on their way).
+func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, stepParam string, patternLimit int) (entries []patternResultEntry, answered, read bool) {
 	maxLines := p.patternsExactMaxLines
 	if maxLines <= 0 {
-		return nil, false
+		return nil, false, false
 	}
 	scope, ok := p.patternScope(query, startParam, endParam, stepParam)
 	if !ok {
-		return nil, false
+		return nil, false, false
 	}
 	ctx := r.Context()
-	lines := 0
+	lines := -1
 	err := p.readPatternCountRows(ctx, patternExactCountQuery(scope.filter), scope.startNs, scope.endNs, 1, func(v *fj.Value) bool {
 		var err error
 		lines, err = strconv.Atoi(string(v.GetStringBytes("c")))
 		return err == nil
 	})
-	if err != nil || lines <= 0 || lines > maxLines {
-		return nil, false
+	if err != nil || lines < 0 || lines > maxLines {
+		return nil, false, false
+	}
+	if lines == 0 {
+		return nil, true, false
 	}
 	miner, err := p.minePatternLines(ctx, scope, maxLines)
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
-	entries := patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit))
-	return entries, len(entries) > 0
+	return patternResultEntriesFromMaps(buildPatternResponse(miner, patternLimit)), true, true
 }
 
 // minePatternLines reads the lines of the scope, sorted by stream and time, and mines them as they come; no more
@@ -82,6 +88,7 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, maxLines int) (*patternMiner, error) {
 	miner := newPatternMiner()
 	miner.fillStep = int64(scope.step / time.Second)
+	miner.sampleFromNs, miner.sampleToNs = scope.startNs, scope.endNs
 	read := newPatternLineReader(miner, p.newLogRowLevels())
 	err := p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), scope.startNs, scope.endNs, maxLines, read)
 	return miner, err
@@ -103,11 +110,7 @@ func newPatternLineReader(miner *patternMiner, levels logRowLevels) func(*fj.Val
 		if !ok {
 			return false
 		}
-		bucket := timeNs / int64(time.Second)
-		if step > 0 {
-			bucket = bucket / step * step
-		}
-		miner.observeStreamLine(string(v.GetStringBytes(patternExactStreamField)), patternLevelFromFJ(v, &levels), string(msg), bucket, 1)
+		miner.observeStreamLine(string(v.GetStringBytes(patternExactStreamField)), patternLevelFromFJ(v, &levels), string(msg), patternBucketStart(timeNs, step), miner.sampleCount(timeNs))
 		return true
 	}
 }

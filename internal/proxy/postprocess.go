@@ -550,16 +550,17 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int, leve
 // extractLogPatternsStreamWithStatus exposes scanner failures to callers that
 // persist a mined window. A partial transport read must not become a cache hit.
 func extractLogPatternsStreamWithStatus(r io.Reader, step string, limit int, levels logRowLevels) ([]map[string]interface{}, patternExtractionStats, error) {
-	return extractLogPatternsStreamFilled(r, step, limit, levels, false)
+	return extractLogPatternsStreamFilled(r, step, limit, levels, false, 0, 0)
 }
 
 // extractLogPatternsStreamFilled is extractLogPatternsStreamWithStatus that, when fill is set, zero-fills the
 // samples of each cluster between its first and last step before equal patterns are merged (patternMiner.fillStep).
-func extractLogPatternsStreamFilled(r io.Reader, step string, limit int, levels logRowLevels, fill bool) ([]map[string]interface{}, patternExtractionStats, error) {
+func extractLogPatternsStreamFilled(r io.Reader, step string, limit int, levels logRowLevels, fill bool, startNs, endNs int64) ([]map[string]interface{}, patternExtractionStats, error) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
 	if fill {
 		miner.fillStep = stepSeconds
+		miner.sampleFromNs, miner.sampleToNs = startNs, endNs
 	}
 	var seen patternObservations
 	stats := patternExtractionStats{}
@@ -724,9 +725,23 @@ func extractLogPatternsFromWindowEntriesWithStats(entries []queryRangeWindowEntr
 	return patterns, stats
 }
 
-// patternBucketStart is the start, in unix seconds, of the step a time falls in.
+// lokiPatternSampleInterval is the interval Loki's pattern ingester counts lines into samples at
+// (pattern_sample_interval, default 10s): a line is counted in the sample that starts at its time truncated to the
+// interval from the epoch.
+const lokiPatternSampleInterval = 10 * time.Second
+
+// patternSampleStart is the start, in unix seconds, of the sample a line at timeNs is counted in.
+func patternSampleStart(timeNs int64) int64 {
+	interval := int64(lokiPatternSampleInterval / time.Second)
+	return timeNs / int64(time.Second) / interval * interval
+}
+
+// patternBucketStart is the start, in unix seconds, of the step a line at timeNs is counted in, as Loki counts it
+// in two stages: into its sample (patternSampleStart), and the sample into the step it falls in, both truncated
+// from the epoch. A step that is not a multiple of the interval therefore differs from truncating the line's time
+// to the step.
 func patternBucketStart(timeNs, stepSeconds int64) int64 {
-	bucket := timeNs / int64(time.Second)
+	bucket := patternSampleStart(timeNs)
 	if stepSeconds > 0 {
 		bucket = (bucket / stepSeconds) * stepSeconds
 	}
@@ -737,6 +752,17 @@ func patternBucketStart(timeNs, stepSeconds int64) int64 {
 type patternObservation struct {
 	stream, level, msg string
 	timeNs, bucket     int64
+}
+
+// sampleCount is the count a line adds to its step: 1, or 0 when the sample the line is counted in starts outside
+// the miner's range (sampleFromNs, sampleToNs; 0 leaves a side open). Loki mines the line either way and answers
+// only the samples inside the range.
+func (m *patternMiner) sampleCount(timeNs int64) int {
+	start := patternSampleStart(timeNs) * int64(time.Second)
+	if m.sampleFromNs > 0 && start < m.sampleFromNs || m.sampleToNs > 0 && start >= m.sampleToNs {
+		return 0
+	}
+	return 1
 }
 
 // patternObservations are the lines a source gave, in the order it gave them. VictoriaLogs answers newest first;
@@ -752,7 +778,7 @@ func (o patternObservations) mineInto(miner *patternMiner) {
 		return o[i].timeNs < o[j].timeNs
 	})
 	for _, line := range o {
-		miner.observeStreamLine(line.stream, line.level, line.msg, line.bucket, 1)
+		miner.observeStreamLine(line.stream, line.level, line.msg, line.bucket, miner.sampleCount(line.timeNs))
 	}
 }
 
@@ -1118,6 +1144,9 @@ type patternMiner struct {
 	// cluster's own first and last sample, as Loki fills the samples of each stream's cluster before it sums equal
 	// patterns across streams. 0 leaves the samples as counted.
 	fillStep int64
+	// sampleFromNs and sampleToNs bound the samples counted, in unix nanoseconds: a line whose 10 s sample starts
+	// before the first or at the second is mined but not counted. 0 leaves a side open.
+	sampleFromNs, sampleToNs int64
 }
 
 func newPatternMiner() *patternMiner {
