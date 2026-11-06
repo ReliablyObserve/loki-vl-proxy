@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.83.3] - 2026-11-06
+
 ### Performance
 
 - perf(patterns): rewrite the `/loki/api/v1/patterns` line tokenizer from its
