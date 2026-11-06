@@ -115,6 +115,23 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(meta["late_requests"], [f"{p1} 15m"])
         self.assertEqual([s["captures"] for s in meta["shards"]], [p["captures"] for p in sp])
 
+    def test_the_one_shard_of_a_small_plan_is_read_from_the_download_root(self):
+        # download-artifact unpacks a single matching artifact into the download path itself
+        sd, out = os.path.join(self.tmp, "root"), os.path.join(self.tmp, "o-root")
+        write_shards(sd, self.plan, 1, self.rows, {})
+        only = os.path.join(sd, f"{merge.PREFIX}0")
+        for name in os.listdir(only):
+            shutil.move(os.path.join(only, name), sd)
+        os.rmdir(only)
+        self.assertIsNone(merge.merge(self.plan, 1, sd, out, "b" * 40, "h" * 40))
+        self.assertEqual(load_json(os.path.join(out, "compare.json")), self.rows)
+
+    def test_a_missing_shard_of_several_is_not_read_from_the_root(self):
+        sd, out = os.path.join(self.tmp, "root2"), os.path.join(self.tmp, "o-root2")
+        write_shards(sd, self.plan, 2, self.rows, {}, skip=(0,))
+        dump_json(os.path.join(sd, "plan.json"), self.plan)
+        self.assertIn("shard 0 left no result", merge.merge(self.plan, 2, sd, out))
+
     def test_a_shard_that_left_nothing_or_died_fails_the_run(self):
         out, problems = self.merged(3, skip=(1,))
         self.assertIn("shard 1 left no result", problems)
