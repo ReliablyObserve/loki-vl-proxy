@@ -3,9 +3,11 @@
 #
 #   scripts/ci/vl_oracle.sh <corpus.jsonl.gz>   write <corpus>.vl-<version>.jsonl.gz for every VictoriaLogs
 #                                               version of the compatibility matrix
-#   scripts/ci/vl_oracle.sh --pin <version>     write test/oracle/vl/go.<version>.mod and .sum for a new version
+#   scripts/ci/vl_oracle.sh --pin <version>     pin a version: the matrix's pinned version in test/oracle/vl/go.mod
+#                                               and go.sum, any other in go.<version>.mod and .sum
 #
-# The oracle is a module of its own: one go.<version>.mod per version, picked with -modfile, pins VictoriaLogs
+# The oracle is a module of its own. go.mod pins the matrix's pinned (newest) version, so the module builds as
+# it is for every tool; each other version has a go.<version>.mod picked with -modfile. Each pins VictoriaLogs
 # with a replace so no other module's requirement moves it. GOPRIVATE fetches it straight from its repository:
 # the module proxy's tags of github.com/VictoriaMetrics/VictoriaLogs predate the repository split and hold
 # VictoriaMetrics' tree.
@@ -15,13 +17,27 @@ ORACLE="$ROOT_DIR/test/oracle/vl"
 MODULE=github.com/VictoriaMetrics/VictoriaLogs
 export GOPRIVATE="$MODULE"
 
+MATRIX="$ROOT_DIR/test/e2e-compat/compatibility-matrix.json"
+PINNED="$(jq -r '.stack.victorialogs.pinned_version' "$MATRIX")"
+
+# modfile names the module file of a version: go.mod for the pinned one, go.<version>.mod for any other.
+modfile() {
+  if [ "$1" = "$PINNED" ]; then echo go.mod; else echo "go.$1.mod"; fi
+}
+
 if [ "${1:-}" = "--pin" ]; then
   v="${2:?usage: $0 --pin <version>}"
   cd "$ORACLE"
-  cp go.mod "go.$v.mod"
-  go mod edit -modfile="go.$v.mod" -require="$MODULE@$v" -replace="$MODULE=$MODULE@$v"
-  GOFLAGS=-mod=mod go mod tidy -modfile="go.$v.mod"
-  echo "pinned $MODULE $v in test/oracle/vl/go.$v.mod"
+  file="$(modfile "$v")"
+  if [ "$file" != go.mod ]; then
+    printf 'module github.com/ReliablyObserve/Loki-VL-proxy/test/oracle/vl\n\ngo %s\n' \
+      "$(go mod edit -json | jq -r .Go)" > "$file"
+  else
+    go mod edit -dropreplace="$MODULE" -droprequire="$MODULE"
+  fi
+  go mod edit -modfile="$file" -require="$MODULE@$v" -replace="$MODULE=$MODULE@$v"
+  GOFLAGS=-mod=mod go mod tidy -modfile="$file"
+  echo "pinned $MODULE $v in test/oracle/vl/$file"
   exit 0
 fi
 
@@ -29,16 +45,16 @@ corpus="$(cd "$(dirname "${1:?usage: $0 <corpus.jsonl.gz>}")" && pwd)/$(basename
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 # The matrix's VictoriaLogs versions, the pin first (internal/querycorpus goldenVersions reads them the same way).
-mapfile -t versions < <(jq -r '.stack.victorialogs | [.pinned_version] + (.matrix_versions - [.pinned_version]) | .[]' \
-  "$ROOT_DIR/test/e2e-compat/compatibility-matrix.json")
+mapfile -t versions < <(jq -r '.stack.victorialogs | [.pinned_version] + (.matrix_versions - [.pinned_version]) | .[]' "$MATRIX")
 
 for v in "${versions[@]}"; do
-  if [ ! -f "$ORACLE/go.$v.mod" ]; then
-    echo "test/oracle/vl has no go.$v.mod for matrix version $v: run $0 --pin $v" >&2
+  file="$(modfile "$v")"
+  if ! grep -q "^replace $MODULE => $MODULE $v\$" "$ORACLE/$file" 2>/dev/null; then
+    echo "test/oracle/vl/$file does not pin $MODULE $v (a matrix version): run $0 --pin $v" >&2
     exit 1
   fi
-  (cd "$ORACLE" && go build -modfile="go.$v.mod" -o "$work/vl-$v" .)
-  src="$(cd "$ORACLE" && go list -modfile="go.$v.mod" -m -f '{{if .Replace}}{{.Replace.Dir}}{{else}}{{.Dir}}{{end}}' "$MODULE")"
+  (cd "$ORACLE" && go build -modfile="$file" -o "$work/vl-$v" .)
+  src="$(cd "$ORACLE" && go list -modfile="$file" -m -f '{{if .Replace}}{{.Replace.Dir}}{{else}}{{.Dir}}{{end}}' "$MODULE")"
   "$work/vl-$v" cases -src "$src" -out "$work/cases-$v.json"
 done
 

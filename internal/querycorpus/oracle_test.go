@@ -15,8 +15,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
-// oracleDir is the VictoriaLogs parse oracle (test/oracle/vl): a module of its own with one go.v<version>.mod
-// per VictoriaLogs version of the compatibility matrix.
+// oracleDir is the VictoriaLogs parse oracle (test/oracle/vl): a module of its own whose go.mod pins the matrix's
+// pinned VictoriaLogs version, with a go.v<version>.mod for each other matrix version.
 const oracleDir = "../../test/oracle/vl"
 
 // oracleInput is one query for the oracle: its LogsQL and what our LogsQL parser makes of it.
@@ -64,7 +64,7 @@ func verdictsPath(corpus, v string) string {
 // LVP_ORACLE_DIR: the corpus's goldens of that version, its sent LogsQL (for the newest version only), and
 // VictoriaLogs' own parser test cases
 // (cases-<version>.json there, from the oracle's cases command), each with our LogsQL parser's verdict and printed
-// form. It fails when a matrix version has no go.v<version>.mod in the oracle.
+// form. It fails when the oracle does not pin a matrix version.
 func TestOracleInputs(t *testing.T) {
 	corpus, dir := os.Getenv("LVP_QUERY_CORPUS_OUT"), os.Getenv("LVP_ORACLE_DIR")
 	if corpus == "" || dir == "" {
@@ -73,8 +73,14 @@ func TestOracleInputs(t *testing.T) {
 	versions := goldenVersions(t)
 	rows := allRows(t, corpus)
 	for _, v := range versions {
-		if _, err := os.Stat(filepath.Join(oracleDir, "go."+v+".mod")); err != nil {
-			t.Fatalf("the oracle has no go.%s.mod for matrix version %s: pin it with scripts/ci/vl_oracle.sh --pin %s", v, v, v)
+		file := "go." + v + ".mod"
+		if v == versions[0] {
+			file = "go.mod"
+		}
+		b, err := os.ReadFile(filepath.Join(oracleDir, file))
+		pin := "replace github.com/VictoriaMetrics/VictoriaLogs => github.com/VictoriaMetrics/VictoriaLogs " + v + "\n"
+		if err != nil || !strings.Contains(string(b), pin) {
+			t.Fatalf("test/oracle/vl/%s does not pin VictoriaLogs %s, a matrix version: run scripts/ci/vl_oracle.sh --pin %s", file, v, v)
 		}
 		var cases []upstreamCase
 		readJSON(t, filepath.Join(dir, "cases-"+v+".json"), &cases)

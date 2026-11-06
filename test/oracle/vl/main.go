@@ -1,11 +1,11 @@
 // Command vl checks LogsQL with VictoriaLogs' own parser (lib/logstorage), as an oracle for the proxy's LogsQL.
 //
 // It is a module of its own, never part of the proxy build, and runs against one pinned VictoriaLogs version
-// at a time: go.v<version>.mod pins it (with a replace, so no other module can move it), and -modfile picks
-// the file:
+// at a time. go.mod pins the compatibility matrix's pinned version and go.v<version>.mod each other one, with a
+// replace so no other module can move it; -modfile picks the file (scripts/ci/vl_oracle.sh runs it):
 //
-//	go run -modfile=go.v1.53.0.mod . cases -src "$(go list -modfile=go.v1.53.0.mod -m -f '{{.Dir}}' github.com/VictoriaMetrics/VictoriaLogs)" -out cases.json
-//	go run -modfile=go.v1.53.0.mod . check -in inputs.jsonl -out verdicts.jsonl
+//	go run -modfile=go.v1.49.0.mod . cases -src "$(go list -modfile=go.v1.49.0.mod -m -f '{{.Replace.Dir}}' github.com/VictoriaMetrics/VictoriaLogs)" -out cases.json
+//	go run -modfile=go.v1.49.0.mod . check -in inputs.jsonl -out verdicts.jsonl
 //
 // cases writes VictoriaLogs' own parser test cases of that version (TestParseQuery_Success and
 // TestParseQuery_Failure in lib/logstorage/parser_test.go); check parses every input query, and the proxy's

@@ -119,20 +119,9 @@ collect_tests_and_coverage() {
   if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
       # A corpus that fails to build must not cost the report its test count.
-      if LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2; then
-        # VictoriaLogs' own parser on the goldens, the sent LogsQL and its test cases, per matrix version; the
-        # report below reads the verdicts beside the corpus. Without them the report has no oracle section.
-        bash "$SCRIPT_DIR/vl_oracle.sh" "$QUALITY_QUERY_CORPUS_OUT" >&2 \
-          || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
-        # Its summary against the committed targets and, with a base corpus, the golden changes and the queries
-        # that got worse. The quality gate reads those from the report; a failing check does not stop the collection.
-        LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
-          LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
-          go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \
-          || log_step "queries in the corpus got worse; see the report"
-      else
-        log_step "query corpus build failed; the report continues without it"
-      fi
+      # The checks on the corpus run after this timed collection (check_query_corpus).
+      LVP_QUERY_CORPUS_OUT="$QUALITY_QUERY_CORPUS_OUT" go test ./internal/querycorpus -run '^TestBuildQueryCorpus$' -count=1 -v >&2 \
+        || log_step "query corpus build failed; the report continues without it"
     fi
   else
     local test_status=$?
@@ -372,6 +361,23 @@ fi
 
 python3 "$SCRIPT_DIR/quality_scope.py" --root "$ROOT_DIR" > "$TMP_DIR/inventory.json"
 
+# Checks on the corpus the test collection built, outside its timeout: VictoriaLogs' own parser on the goldens, the
+# sent LogsQL and its test cases per matrix version, then the summary against the committed targets and, with a
+# base corpus, the golden changes and the queries that got worse. The quality gate reads those from the report;
+# a failing check never stops the collection.
+check_query_corpus() {
+  local corpus="${QUALITY_QUERY_CORPUS_OUT:-}"
+  if [ -z "$corpus" ] || [ ! -s "${corpus%.jsonl.gz}.summary.json" ]; then
+    return 0
+  fi
+  bash "$SCRIPT_DIR/vl_oracle.sh" "$corpus" >&2 \
+    || log_step "the VictoriaLogs parse oracle did not run; the report continues without it"
+  LVP_QUERY_CORPUS_OUT="$corpus" LVP_QUERY_CORPUS_REPORT="$QUERY_CORPUS_REPORT" \
+    LVP_QUERY_CORPUS_BASE="${QUALITY_QUERY_CORPUS_BASE:-}" \
+    go test ./internal/querycorpus -run '^TestQueryCorpusReport$' -count=1 -v >&2 \
+    || log_step "queries in the corpus got worse; see the report"
+}
+check_query_corpus
 if [ ! -s "$QUERY_CORPUS_REPORT" ]; then echo 'null' >"$QUERY_CORPUS_REPORT"; fi
 jq -n \
   --slurpfile tests "$tests_file" \

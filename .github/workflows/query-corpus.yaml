@@ -54,6 +54,8 @@ jobs:
       # VictoriaLogs' own parser on the goldens, the sent LogsQL and its test cases, per matrix version. The
       # verdicts sit beside the corpus, so pull requests based on this commit compare with them.
       - name: Check the corpus with VictoriaLogs' parser
+        # The corpus is still saved when the oracle fails: pull requests then compare without its verdicts.
+        continue-on-error: true
         run: scripts/ci/vl_oracle.sh /tmp/query-corpus/query-corpus.jsonl.gz
 
       - name: Save the corpus for pull requests based on this commit
