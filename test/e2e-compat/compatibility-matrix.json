@@ -48,16 +48,13 @@
       "pinned_version": "v1.53.0",
       "support_window": {
         "policy": "latest_1_4x_release_plus_every_1_5x_release",
-        "description": "Fully support the latest VictoriaLogs v1.4x release (v1.49.0) and every v1.5x release; anything older is unsupported. Test every supported minor at its latest patch that has a published Docker image: v1.49.0 for the v1.4x line and each v1.5x minor. A new minor joins matrix_versions as soon as it is released. The pinned_version (PR CI image) must be one of the tested versions and moves separately, with its own parity proof. Moving the floor also means: update the -backend-min-version default (Go fallback, flag and Helm value), logsql.MinSupportedMinor, the supported-versions table in README.md and, only if a capability boundary moves, the capability profiles below (their names describe where a capability starts, not the support floor).",
+        "description": "Fully support the latest VictoriaLogs v1.4x release (v1.49.0) and every v1.5x release; anything older is unsupported. Test two versions: the latest v1.4x release (v1.49.0) and the newest v1.5x release. A new v1.5x release replaces the newest in matrix_versions as soon as it has a published Docker image; the v1.5x releases in between are supported but not tested. The pinned_version (PR CI image) must be one of the tested versions and moves separately, with its own parity proof. Moving the floor also means: update the -backend-min-version default (Go fallback, flag and Helm value), logsql.MinSupportedMinor, the supported-versions table in README.md and, only if a capability boundary moves, the capability profiles below (their names describe where a capability starts, not the support floor).",
         "current_family": "v1.5x.x",
         "previous_family": "v1.4x.x",
         "minimum_supported_version": "v1.49.0"
       },
       "matrix_versions": [
         "v1.49.0",
-        "v1.50.0",
-        "v1.51.1",
-        "v1.52.0",
         "v1.53.0"
       ],
       "capability_profiles": [
