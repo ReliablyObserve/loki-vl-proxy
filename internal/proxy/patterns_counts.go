@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -182,6 +183,26 @@ func patternCountsWindows(startNs, endNs int64) []queryRangeWindow {
 
 // patternQueryScope is a /patterns request the counts and exact flows answer: the stream selector's filter, the
 // range and Loki's step.
+// patternMinableLines keeps the lines a pattern can be mined from: it leaves out a JSON line (one starting with {
+// and ending with }) whose text holds none of the message fields' keys, which no pattern is mined from
+// (patternJSONMessage reads the raw text for a top-level key the same way), so a service that writes only such lines
+// reads nothing and counts nothing.
+var patternMinableLines = logsql.Exclude{Expr: logsql.Group{Expr: logsql.AllOf{
+	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpPrefix, Value: logsql.QuoteValue("{")},
+	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpRegexp, Value: `\}$`},
+	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpRegexp, Value: patternMessageKeysRegexp(), Negate: true},
+}}}
+
+// patternMessageKeysRegexp matches a message field's key in JSON text: one of patternJSONMessageFields, quoted, then
+// a colon.
+func patternMessageKeysRegexp() string {
+	keys := make([]string, len(patternJSONMessageFields))
+	for i, key := range patternJSONMessageFields {
+		keys[i] = regexp.QuoteMeta(key)
+	}
+	return `"(` + strings.Join(keys, "|") + `)"\s*:`
+}
+
 type patternQueryScope struct {
 	filter         logsql.FilterExpr
 	startNs, endNs int64
@@ -213,6 +234,7 @@ func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (pat
 	if err != nil {
 		return patternQueryScope{}, false
 	}
+	filter = logsql.AllOf{filter, patternMinableLines}
 	return patternQueryScope{filter: filter, startNs: startNs, endNs: endNs, step: step}, true
 }
 

@@ -332,3 +332,20 @@ func TestPatternStateMinesLinesThatShareATimeOnce(t *testing.T) {
 		t.Fatalf("refresh answer %q: the lines read again not mined twice, the new ones at that time mined", got)
 	}
 }
+
+// The patterns queries read only the lines a pattern can be mined from: a JSON line whose text holds none of the
+// message fields' keys is left out by VictoriaLogs, so a service writing only such lines answers no pattern from
+// a count of 0 (Loki mines none from them either).
+//
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
+	want := `-(_msg:"{"* _msg:~"\\}$" NOT _msg:~"\"(log|message|msg|msg_|_msg|content)\"\\s*:")`
+	if got := patternMinableLines.String(); got != want {
+		t.Fatalf("filter\n got %s\nwant %s", got, want)
+	}
+	p := newPatternCountsProxy(t, "http://127.0.0.1:1", 0)
+	scope, ok := p.patternScope(`{app="api"}`, "1793988900", "1793990100", "")
+	if !ok || !strings.HasSuffix(scope.filter.String(), " "+want) {
+		t.Fatalf("scope filter %s does not leave the lines out", scope.filter.String())
+	}
+}
