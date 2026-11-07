@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carriage return is now written as an escaped string so it reads back the
   same; VictoriaLogs answers these queries as before.
 
+## [2.93.0] - 2026-11-07
+
 ### Added
 
 - feat(observability): `-slow-query-log-level` (`warn` default, `info`,
