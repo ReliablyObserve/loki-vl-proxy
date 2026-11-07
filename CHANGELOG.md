@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first loads; rarer than 1 in 50 VictoriaLogs calls on the compose stack). Queries are logged as text, capped at 8 KB
   (`-slow-query-log-raw-queries=false` logs their hashes).
 
-## [2.84.0] - 2026-11-07
+## [2.85.0] - 2026-11-07
 
 ### Added
 
@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   others, and the holder counts the history of 6h, 12h and 24h ahead every 30
   minutes, so a first request and a refresh read no history. Answers are
   summed by step in slices, sorting only the patterns with at least 30 lines.
+
+## [2.84.0] - 2026-11-07
+
+### Added
+
 - feat(patterns): `-patterns-scope=selector` (opt-in; the default `stream` is
   Loki's) mines a selector's `/loki/api/v1/patterns` lines with one miner per
   level across all its streams, so streams that each hold a few lines (a trace
