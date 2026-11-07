@@ -147,7 +147,11 @@ type patternSelectorState struct {
 	// building is true while a background build reads the selector's lines; requests are answered without the
 	// state until it ends.
 	building bool
+	// selector is the selector's LogsQL filter, its key in the tenant state.
+	selector string
 }
+
+func (s *patternSelectorState) key() string { return s.selector }
 
 // patternFoldedCluster is a cluster of a stream that went idle: a finished stream trains nothing more, so its
 // pattern and samples are all an answer needs.
@@ -228,7 +232,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			}
 			return nil, 0, lines, false
 		}
-		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{})}
+		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{}), selector: selector}
 		t.selectors[selector] = s
 	}
 	readTo := scope.endNs
@@ -287,7 +291,7 @@ func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantS
 	default:
 		return false
 	}
-	s := &patternSelectorState{fromNs: retainFromNs, toNs: retainFromNs, streams: make(map[string]struct{}), building: true}
+	s := &patternSelectorState{fromNs: retainFromNs, toNs: retainFromNs, streams: make(map[string]struct{}), building: true, selector: selector}
 	t.selectors[selector] = s
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	stop := context.AfterFunc(store.ctx, cancel)

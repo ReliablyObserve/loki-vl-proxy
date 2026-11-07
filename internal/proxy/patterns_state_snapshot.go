@@ -13,8 +13,9 @@ import (
 
 // patternStateSnapshotEvery is how often at most the holder of a selector's pattern state writes it to the cache
 // as it reads new lines (it writes it at once when the state is built): a peer that takes the selector over, or the
-// holder after a restart, continues from it, reading only the lines after it, with the same patterns.
-const patternStateSnapshotEvery = time.Minute
+// holder after a restart, continues from it, reading only the lines after it (at most this long of them), with the
+// same patterns. A busy selector's snapshot is tens of MB to encode, so it is not written on every refresh.
+const patternStateSnapshotEvery = 10 * time.Minute
 
 // patternStateSnapshotVersion is the format of a snapshot; one of another version is not read.
 const patternStateSnapshotVersion = 1
@@ -173,7 +174,7 @@ func (t *patternTenantState) restore(selector string, snap patternStateSnapshot)
 			t.folded[stream] = append(t.folded[stream], patternFoldedCluster{level: f.Level, pattern: f.Pattern, samples: f.Samples})
 		}
 	}
-	s := &patternSelectorState{fromNs: snap.FromNs, toNs: snap.ToNs, streams: make(map[string]struct{}, len(snap.Streams))}
+	s := &patternSelectorState{fromNs: snap.FromNs, toNs: snap.ToNs, streams: make(map[string]struct{}, len(snap.Streams)), selector: selector}
 	for _, stream := range snap.Streams {
 		s.streams[stream] = struct{}{}
 	}
@@ -237,16 +238,38 @@ func decodePatternStateSnapshot(data []byte, maxBytes int64) (patternStateSnapsh
 const patternStateSnapshotTTL = lokiPatternRetention + time.Hour
 
 // writePatternStateSnapshot writes the selector's state to the cache under its key (memory, disk and its replicas
-// on the peers), at most every patternStateSnapshotEvery unless now; the caller holds the state's lock.
+// on the peers), at most every patternStateSnapshotEvery unless now. The caller holds the state's lock. A
+// snapshot written now (a state just built) is written at once; one of a refreshed state is encoded in the
+// background once the caller releases the lock, so no request waits for it.
 func (p *Proxy) writePatternStateSnapshot(ctx context.Context, key string, t *patternTenantState, s *patternSelectorState, now bool) {
 	if p.cache == nil || key == "" || (!now && time.Since(t.snapshotAt) < patternStateSnapshotEvery) {
 		return
 	}
+	t.snapshotAt = time.Now()
+	store := p.patternState
+	if now || store == nil {
+		p.encodeAndWritePatternStateSnapshot(ctx, key, t, s)
+		return
+	}
+	store.wg.Add(1)
+	go func() {
+		defer store.wg.Done()
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if store.ctx.Err() != nil || t.selectors[s.key()] != s {
+			return
+		}
+		p.encodeAndWritePatternStateSnapshot(ctx, key, t, s)
+	}()
+}
+
+// encodeAndWritePatternStateSnapshot encodes the state and caches it, in parts when large; the caller holds the
+// state's lock.
+func (p *Proxy) encodeAndWritePatternStateSnapshot(ctx context.Context, key string, t *patternTenantState, s *patternSelectorState) {
 	data, err := encodePatternStateSnapshot(t.snapshot(s))
 	if err != nil {
 		return
 	}
-	t.snapshotAt = time.Now()
 	// A peer takes a value of at most a few MB: a larger snapshot is cached in parts, each under its own key
 	// (spread across the ring), with the key holding how many there are.
 	parts := (len(data) + patternStateSnapshotPart - 1) / patternStateSnapshotPart
