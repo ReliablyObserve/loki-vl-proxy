@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (245), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (246), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -112,6 +112,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-patterns-full-range` | bool | `true` | `extraArgs.patterns-full-range` | Answer a /loki/api/v1/patterns range longer than Loki's pattern retention (3h) over all of it: the patterns the state answers (Loki's), their samples before the state's counted from VictoriaLogs a window at a time, each line counted in the pattern it matches as Drilldown's pattern filter (\|&gt;) matches it; settled windows are cached and shared with peers. false answers such a range with the retention's samples alone, as Loki does |
 | `-patterns-persist-interval` | duration | `30s` | `extraArgs.patterns-persist-interval` | How often to persist in-memory patterns snapshots to disk |
 | `-patterns-persist-path` | string | (empty) | `extraArgs.patterns-persist-path` | Path to persisted patterns snapshot JSON file. Empty disables persistence. |
+| `-patterns-scope` | string | `"stream"` | `extraArgs.patterns-scope` | How /loki/api/v1/patterns mines a selector's lines: stream (Loki's pattern ingester: one miner per stream and level, so a pattern needs 30 lines in one stream's clusters) or selector (one miner per level for all the selector's streams, so streams that each hold a few lines, such as a stream label that changes per line or short-lived pods, share patterns, and a JSON line whose message is under Loki's 4 tokens is mined as the whole line; not Loki's answer) |
 | `-patterns-startup-peer-warm-timeout` | duration | `5s` | `extraArgs.patterns-startup-peer-warm-timeout` | Maximum time to wait for startup patterns snapshot warm from peers |
 | `-patterns-startup-stale-threshold` | duration | `1m0s` | `extraArgs.patterns-startup-stale-threshold` | Treat on-disk patterns snapshot older than this as stale and warm from peers before serving |
 | `-patterns-state-max-build-lines` | int | `2000000` | `extraArgs.patterns-state-max-build-lines` | Build the /loki/api/v1/patterns state in the background for a selector whose lines over Loki's pattern retention (3h) are more than -patterns-exact-max-lines and at most this many: an hour of lines at a time, sorted by stream and time, while the selector's requests are answered from VictoriaLogs' counts until the state is built; one build runs at a time. 0 builds none |

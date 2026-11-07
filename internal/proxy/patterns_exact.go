@@ -103,6 +103,8 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 // than a line is held at a time, so memory is that of the clusters.
 func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, maxLines int) (*patternMiner, error) {
 	miner := newPatternMiner()
+	miner.oneStream = p.patternsSelectorScope
+	miner.shortWholeLine = p.patternsSelectorScope
 	miner.fillStep = int64(scope.step / time.Second)
 	miner.sampleFromNs, miner.sampleToNs = scope.startNs, scope.endNs
 	read := newPatternLineReader(miner, p.newLogRowLevels())
