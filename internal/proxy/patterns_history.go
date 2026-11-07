@@ -28,8 +28,9 @@ func (p *Proxy) addPatternHistory(r *http.Request, scope patternQueryScope, entr
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			// Every window of the history lies before the state's samples: all are settled, so all are cached.
-			inputs[i], oks[i] = p.patternWindowInputsCached(r, scope.filter, scope.step, w, true)
+			// Every window of the history lies before the state's samples and is settled; the first, which the
+			// range's moving start cuts, is not cached, so a refresh does not keep one copy per start.
+			inputs[i], oks[i] = p.patternWindowInputsCached(r, scope.filter, scope.step, w, w.startNs != scope.startNs)
 		}()
 	}
 	wg.Wait()

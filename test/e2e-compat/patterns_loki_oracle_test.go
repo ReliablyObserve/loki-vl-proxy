@@ -54,6 +54,10 @@ type lokiRecordedPattern struct {
 	Total   int64  `json:"total"`
 }
 
+// patternOracleNotExact names the requests whose answer may differ from Loki's, each with its reason: none.
+// Every other request must answer Loki's patterns with Loki's totals.
+var patternOracleNotExact = map[string]bool{}
+
 // patternOracleLinesPerStream is how many lines each stream holds, one every 500 ms.
 const patternOracleLinesPerStream = 800
 
@@ -412,6 +416,7 @@ func TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines(t *testing.T) {
 
 	var lokiLines, proxyLines float64
 	exact := 0
+	var different []string
 	for i := range queries {
 		q := &queries[i]
 		start := end.Add(time.Duration(q.FromMs) * time.Millisecond)
@@ -430,6 +435,8 @@ func TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines(t *testing.T) {
 		lines, precision, same := patternAnswerMatch(loki, proxy)
 		if same {
 			exact++
+		} else if !patternOracleNotExact[q.Name] {
+			different = append(different, q.Name)
 		}
 		lokiLines++
 		proxyLines += lines
@@ -449,6 +456,9 @@ func TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines(t *testing.T) {
 		}
 	}
 	t.Logf("mean over %d requests: %.1f%% of Loki's lines in patterns with Loki's text; %d answers the same as Loki's", len(queries), 100*proxyLines/lokiLines, exact)
+	if len(different) > 0 {
+		t.Errorf("answers not the same as Loki's (same texts and totals): %v", different)
+	}
 	if os.Getenv("LVP_RECORD_LOKI_PATTERNS") != "1" {
 		return
 	}
