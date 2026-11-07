@@ -156,6 +156,13 @@ func (f *seriesLimitFakeVL) statsQueryRange(query string, start, end, step, offs
 	}
 	results := map[string]*result{}
 	for _, agg := range strings.Split(m[2], ", ") {
+		// A strict | json split counts the lines VictoriaLogs vouches for and
+		// the ones it reads as raw rows apart; every fixture line is a JSON
+		// object it vouches for, so the first is every line and the second none.
+		if strings.HasSuffix(agg, " if (__vlr:*) as "+jsonInvalidRowsName) {
+			continue
+		}
+		agg = strings.Replace(agg, " if (-__vlr:*)", "", 1)
 		am := seriesLimitAggRE.FindStringSubmatch(agg)
 		if am == nil {
 			f.t.Errorf("fake VL: unsupported aggregate %q in %q", agg, query)

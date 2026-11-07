@@ -553,8 +553,8 @@ func TestOrderedJSONStatsPushdownEligibility(t *testing.T) {
 		{`sum by (detected_level) (count_over_time({env="production"} |= "x" | json | drop __error_details__, __error__[1m]))`, nil},
 		{`sum by (app, level) (bytes_rate({env="production"} | json | drop __error__ [1m]))`, []string{"app", "level"}},
 		{`sum by (level) (rate({env="production"} | json | drop __error__ | json[1m]))`, nil},
-		{`sum by (level) (count_over_time({env="production"} | json [1m]))`, nil},
-		{`sum by (level) (count_over_time({env="production"} | json | drop __error_details__ [1m]))`, nil},
+		{`sum by (level) (count_over_time({env="production"} | json [1m]))`, []string{"level"}},                          // a strict split: the parser errors fail the query
+		{`sum by (level) (count_over_time({env="production"} | json | drop __error_details__ [1m]))`, []string{"level"}}, // __error__ still fails it: strict
 		{`sum by (__error__) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},
 		{`sum without (level) (count_over_time({env="production"} | json | drop __error__ [1m]))`, nil},

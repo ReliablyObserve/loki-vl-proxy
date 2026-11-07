@@ -114,17 +114,11 @@ runs above 2× and removes one after two consecutive runs within 2×; a pull req
 above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;
 rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.
 
-9 rows: cold 9, warm 0, refresh 0; aligned 4, loki-defaults 5.
+3 rows: cold 3, warm 0, refresh 0; aligned 1, loki-defaults 2.
 
 | profile | set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |
 |---|---|---|---|---|---|---|---|---|
-| aligned | keep-series-grouping | K6 count by kept key, json | 1h | cold | 0.18s | 0.05s | 3.38× | 2026-11-06 |
-| aligned | keep-series-grouping | K6 count by kept key, json | 24h | cold | 4.08s | 0.65s | 6.30× | 2026-11-06 |
-| aligned | keep-series-grouping | K6 count by kept key, json | 6h | cold | 1.04s | 0.17s | 6.11× | 2026-11-06 |
 | aligned | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.41s | 0.19s | 2.20× | 2026-10-28 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 1h | cold | 0.17s | 0.06s | 3.00× | 2026-11-06 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 24h | cold | 4.08s | 0.80s | 5.12× | 2026-11-06 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 6h | cold | 1.02s | 0.17s | 6.07× | 2026-11-06 |
 | loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 1h | cold | 0.08s | 0.03s | 2.86× | 2026-11-03 |
 | loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.43s | 0.20s | 2.16× | 2026-10-27 |
 
