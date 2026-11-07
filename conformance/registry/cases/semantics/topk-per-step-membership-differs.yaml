@@ -49,7 +49,4 @@ gap:
   planned_test: 'TestCompat_TopkPerStepMembership (test/e2e-compat, group semantics): compare the operand per step, then the ranking'
   clusters:
     - 0423ae21
-    - 3fc6a3da
-    - '46305354'
-    - 71d9cb75
     - c5f963b0

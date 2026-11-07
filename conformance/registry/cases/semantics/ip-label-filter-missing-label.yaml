@@ -55,8 +55,7 @@ gap:
   loki: 'pkg/logql/log/ip.go:123-145 (absent label: line dropped under = and !=), :183-261 (address scan, pattern forms)'
   proxy: 'Loki''s lines for an absent label and for a whole-address value'
   planned_test: 'TestCompat_IPLabelFilterAbsentLabel (test/e2e-compat, group core)'
-  clusters:
-    - e018ec65
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

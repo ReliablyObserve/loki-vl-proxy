@@ -6,13 +6,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1001210 proxy 195595",
+     "excerpt": "{} @1794058920.0: loki 1132013 proxy 214036",
      "query": "sum(avg_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"warn\"} @1793808780.0: loki 333948 proxy 429",
+     "excerpt": "{\"level\": \"info\"} @1794058920.0: loki 671889 proxy 204",
      "query": "sum by (level) (max_over_time({service_name=\"api-gateway\"} | json | unwrap status | __error__=\"\" [5m]))"
     }
    ],
@@ -40,13 +40,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 67290 series, proxy 13823",
+     "excerpt": "loki 71497 series, proxy 14707",
      "query": "rate({namespace=\"prod\"}[1h])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 50374 series, proxy 10303",
+     "excerpt": "loki 49948 series, proxy 10301",
      "query": "rate({namespace=\"prod\"}[1m])"
     }
    ],
@@ -66,6 +66,40 @@
    "sources": {
     "loki-tests": 38,
     "repo": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 99 entries, proxy 0",
+     "query": "{namespace=\"prod\"} | json | __error__!=\"\""
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 99 entries, proxy 0",
+     "query": "{service_name=\"api-gateway\"} | json | service_name_extracted!=\"\""
+    }
+   ],
+   "id": "bfd206cd",
+   "impact": "explore-visible",
+   "queries": 20,
+   "requests": 40,
+   "shapes": {
+    "logs[json,label-filter]": 40
+   },
+   "signature": [
+    "query_range",
+    "logs[json,label-filter]",
+    "entries",
+    "proxy-empty"
+   ],
+   "sources": {
+    "repo": 2,
+    "seeded": 38
    }
   },
   {
@@ -141,47 +175,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 99 entries, proxy 0",
-     "query": "{namespace=\"prod\"} | json | __error__!=\"\""
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 99 entries, proxy 0",
-     "query": "{service_name=\"auth-service\"} | json | service_name_extracted!=\"\""
-    }
-   ],
-   "id": "bfd206cd",
-   "impact": "explore-visible",
-   "queries": 18,
-   "requests": 36,
-   "shapes": {
-    "logs[json,label-filter]": 36
-   },
-   "signature": [
-    "query_range",
-    "logs[json,label-filter]",
-    "entries",
-    "proxy-empty"
-   ],
-   "sources": {
-    "repo": 2,
-    "seeded": 34
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 59190 series, proxy 12142",
+     "excerpt": "loki 59024 series, proxy 12154",
      "query": "count_over_time({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 59190 series, proxy 12142",
+     "excerpt": "loki 59024 series, proxy 12154",
      "query": "count_over_time({namespace=\"prod\"}[12m]) or count_over_time({namespace=\"prod\"}[12m]) > 1"
     }
    ],
@@ -209,13 +209,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2502 proxy 511",
+     "excerpt": "{} @1794058920.0: loki 2571 proxy 509",
      "query": "count by (baz) (bytes_over_time({namespace=\"prod\"}[3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2502 proxy 511",
+     "excerpt": "{} @1794058920.0: loki 2571 proxy 509",
      "query": "count by (baz) (bytes_rate({namespace=\"prod\"}[3m]))"
     }
    ],
@@ -243,7 +243,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 817 series, proxy 757",
+     "excerpt": "loki 785 series, proxy 746",
      "query": "topk by (container)( 5, count_over_time( {namespace=\"prod\"} [5m] ) )"
     },
     {
@@ -269,40 +269,6 @@
    "sources": {
     "loki-tests": 8,
     "repo": 18
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['level_extracted']; e.g. proxy {\"level\": \"info\", \"level_extracted\": \"info\"}",
-     "query": "{app=\"api-gateway\",env=\"production\"} | json | keep level, __error__"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['level_extracted']; e.g. proxy {\"level\": \"error\", \"level_extracted\": \"error\"}",
-     "query": "{namespace=\"prod\"} | json | keep level"
-    }
-   ],
-   "id": "e8b851a4",
-   "impact": "explore-visible",
-   "queries": 13,
-   "requests": 26,
-   "shapes": {
-    "logs[json,keep]": 26
-   },
-   "signature": [
-    "query_range",
-    "logs[json,keep]",
-    "labels",
-    "proxy-only *_extracted"
-   ],
-   "sources": {
-    "repo": 4,
-    "seeded": 22
    }
   },
   {
@@ -410,13 +376,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"debug\"} @1793808780.0: loki 43382326 proxy 65516",
+     "excerpt": "{\"level\": \"debug\"} @1794058920.0: loki 45353236 proxy 65478",
      "query": "sum by (level) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap size_bytes | __error__=\"\" [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"info\"} @1793808780.0: loki 11721945 proxy 499622",
+     "excerpt": "{\"level\": \"info\"} @1794058920.0: loki 11426177 proxy 493858",
      "query": "sum by (level) (max_over_time({service_name=\"db-postgres\"} | logfmt | unwrap distance | __error__=\"\" [5m]))"
     }
    ],
@@ -443,13 +409,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 53774 series, proxy 10984",
+     "excerpt": "loki 53219 series, proxy 10980",
      "query": "sum without () (rate({namespace=\"prod\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 50374 series, proxy 10303",
+     "excerpt": "loki 49948 series, proxy 10301",
      "query": "sum without (app) (count_over_time({namespace=\"prod\"}[1m]))"
     }
    ],
@@ -511,13 +477,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 59190 series, proxy 12142",
+     "excerpt": "loki 59024 series, proxy 12154",
      "query": "bytes_over_time({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 50374 series, proxy 10303",
+     "excerpt": "loki 49948 series, proxy 10301",
      "query": "bytes_over_time({namespace=\"prod\"}[1m])"
     }
    ],
@@ -578,13 +544,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 8215640.579999991 proxy 1575119.4300000002",
+     "excerpt": "{} @1794058920.0: loki 8488937.649999997 proxy 1660877.61",
      "query": "sum(last_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 8215640.58 proxy 1575119.4299999997",
+     "excerpt": "{} @1794058920.0: loki 8488937.650000019 proxy 1660877.6099999999",
      "query": "sum(first_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))"
     }
    ],
@@ -611,13 +577,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 3.876776919306272 proxy 18.606878781089026",
+     "excerpt": "{} @1794058920.0: loki 3.88247313146173 proxy 18.761453396524594",
      "query": "avg(count_over_time({namespace=\"prod\"}[1h])) by ()"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 3.876776919306272 proxy 18.606878781089026",
+     "excerpt": "{} @1794058920.0: loki 3.88247313146173 proxy 18.761453396524594",
      "query": "avg(count_over_time({namespace=\"prod\"}[1h])) by (bar,foo)"
     }
    ],
@@ -645,13 +611,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2569 proxy 99",
+     "excerpt": "{} @1794058920.0: loki 2659 proxy 100",
      "query": "count by (foo) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2569 proxy 99",
+     "excerpt": "{} @1794058920.0: loki 2659 proxy 100",
      "query": "count by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -678,13 +644,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 5167 series, proxy 4002",
+     "excerpt": "loki 5111 series, proxy 4003",
      "query": "label_replace( label_replace( rate( {namespace=\"prod\"} |= \"err\" [5m] ), \"foo\", \"$1\", \"service\", \"(.*):.*\" ), \"foo\", \"$1\", \"service\", \"(.*):.*\" )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 5167 series, proxy 4002",
+     "excerpt": "loki 5111 series, proxy 4003",
      "query": "label_replace( rate( {namespace=\"prod\"} |= \"err\" [5m] ), \"foo\", \"$1\", \"service\", \"(.*):.*\" )"
     }
    ],
@@ -736,6 +702,39 @@
    ],
    "sources": {
     "repo": 10
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "names ['service_name_extracted']; e.g. loki {\"service_name_extracted\": \"api-gateway\"}",
+     "query": "{service_name=\"api-gateway\"} | json | keep service_name_extracted"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "names ['service_name_extracted']; e.g. loki {\"service_name_extracted\": \"auth-service\"}",
+     "query": "{service_name=\"auth-service\"} | json | keep service_name_extracted"
+    }
+   ],
+   "id": "a9078b6e",
+   "impact": "explore-visible",
+   "queries": 5,
+   "requests": 10,
+   "shapes": {
+    "logs[json,keep]": 10
+   },
+   "signature": [
+    "query_range",
+    "logs[json,keep]",
+    "labels",
+    "loki-only *_extracted"
+   ],
+   "sources": {
+    "seeded": 10
    }
   },
   {
@@ -810,13 +809,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1104 proxy 54",
+     "excerpt": "{} @1794058920.0: loki 1142 proxy 54",
      "query": "count(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1104 proxy 54",
+     "excerpt": "{} @1794058920.0: loki 1142 proxy 54",
      "query": "count(bytes_rate({service_name=\"payment-service\"} | logfmt [3m]))"
     }
    ],
@@ -843,13 +842,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 22232 series, proxy 1095",
+     "excerpt": "loki 22020 series, proxy 1096",
      "query": "count_over_time( {service_name=\"payment-service\"} | logfmt [1m] )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 22232 series, proxy 1095",
+     "excerpt": "loki 22020 series, proxy 1096",
      "query": "count_over_time({service_name=\"payment-service\"}|logfmt[1m])"
     }
    ],
@@ -877,13 +876,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 4871 series, proxy 3790",
+     "excerpt": "loki 5105 series, proxy 4006",
      "query": "count_over_time( {namespace=\"prod\"} |= \"error\" [5m] offset 20m )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 6472 series, proxy 5017",
+     "excerpt": "loki 6832 series, proxy 5366",
      "query": "count_over_time({namespace=\"prod\"} |= \"error\" [1h])"
     }
    ],
@@ -944,13 +943,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 372 proxy 42026",
+     "excerpt": "{} @1794058920.0: loki 371 proxy 38373",
      "query": "max by (baz) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2.066666666666667 proxy 233.4777777777778",
+     "excerpt": "{} @1794058920.0: loki 2.061111111111111 proxy 213.18333333333334",
      "query": "max by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -977,13 +976,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1 proxy 64",
+     "excerpt": "{} @1794058920.0: loki 1 proxy 67",
      "query": "max by (baz) (count_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 143 proxy 8024",
+     "excerpt": "{} @1794058920.0: loki 143 proxy 8420",
      "query": "max(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     }
    ],
@@ -1010,13 +1009,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 67290 series, proxy 13823",
+     "excerpt": "loki 71497 series, proxy 14707",
      "query": "max without () (count_over_time({namespace=\"prod\"}[1h]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 67290 series, proxy 13823",
+     "excerpt": "loki 71497 series, proxy 14707",
      "query": "max without (bar) (count_over_time({namespace=\"prod\"}[1h]))"
     }
    ],
@@ -1044,13 +1043,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 93 proxy 117",
+     "excerpt": "{} @1794058920.0: loki 93 proxy 113",
      "query": "min by (baz) (bytes_over_time({namespace=\"prod\"}[3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 0.5166666666666667 proxy 0.65",
+     "excerpt": "{} @1794058920.0: loki 0.5166666666666667 proxy 0.6277777777777778",
      "query": "min by (baz) (bytes_rate({namespace=\"prod\"}[3m]))"
     }
    ],
@@ -1077,13 +1076,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1 proxy 2",
+     "excerpt": "{} @1794057720.0: loki 1 proxy 2",
      "query": "min by (baz) (count_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 108 proxy 279",
+     "excerpt": "{} @1794058920.0: loki 108 proxy 118",
      "query": "min(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     }
    ],
@@ -1211,39 +1210,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 0 entries, proxy 99",
-     "query": "{service_name=\"payment-service\"}|logfmt|addr=ip(\"1.2.3.4\")"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 0 entries, proxy 99",
-     "query": "{service_name=\"payment-service\"}|logfmt|ip=\"2.3.4.5\"|ip=\"abc\"|ipaddr=ip(\"4.5.6.7\")|ip=ip(\"6.7.8.9\")"
-    }
-   ],
-   "id": "e018ec65",
-   "impact": "explore-visible",
-   "queries": 4,
-   "requests": 8,
-   "shapes": {
-    "logs[logfmt,label-filter]": 8
-   },
-   "signature": [
-    "query_range",
-    "logs[logfmt,label-filter]",
-    "entries",
-    "loki-empty"
-   ],
-   "sources": {
-    "loki-tests": 8
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "loki parse error : stage '|= ip(\"192.168.1.1/33\")' : ip: invalid pattern: \"192.168.1.1/33\" | proxy parse error : ip: invalid pattern: \"192.168.1.1/33\"",
      "query": "{app=\"api-gateway\"} |= ip(\"192.168.1.1/33\")"
     },
@@ -1311,46 +1277,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "names ['service_name_extracted']; e.g. loki {\"service_name_extracted\": \"auth-service\"}",
-     "query": "{service_name=\"auth-service\"} | json | keep service_name_extracted"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['service_name_extracted']; e.g. loki {\"service_name_extracted\": \"batch-etl\"}",
-     "query": "{service_name=\"batch-etl\"} | json | keep service_name_extracted"
-    }
-   ],
-   "id": "a9078b6e",
-   "impact": "explore-visible",
-   "queries": 4,
-   "requests": 8,
-   "shapes": {
-    "logs[json,keep]": 8
-   },
-   "signature": [
-    "query_range",
-    "logs[json,keep]",
-    "labels",
-    "loki-only *_extracted"
-   ],
-   "sources": {
-    "seeded": 8
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 59190 series, proxy 12142",
+     "excerpt": "loki 59024 series, proxy 12154",
      "query": "bytes_rate({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 24879 series, proxy 5140",
+     "excerpt": "loki 24553 series, proxy 5144",
      "query": "bytes_rate({namespace=\"prod\"}[30s])"
     }
    ],
@@ -1377,13 +1310,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 0.011738600341380152 proxy 0.05683589138134593",
+     "excerpt": "{} @1794058920.0: loki 0.011776826755428751 proxy 0.05827450980392156",
      "query": "max(sum by (cluster) (rate({namespace=\"prod\"}[5m]))) / count(rate({namespace=\"prod\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793808780.0: loki 136 proxy 2766",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794058920.0: loki 136 proxy 3001",
      "query": "max by (app) (bytes_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -1411,13 +1344,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 729 series, proxy 602",
+     "excerpt": "loki 703 series, proxy 588",
      "query": "rate( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 729 series, proxy 602",
+     "excerpt": "loki 703 series, proxy 588",
      "query": "rate( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] )>-1"
     }
    ],
@@ -1445,32 +1378,31 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 35: syntax error: unexpected ) | proxy sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "sum by (level) ({namespace=\"prod\"})"
+     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"level\": \"info\", \"namespace\": \"prod\", \"pod\": \"api-gateway-5ca80-2603\", \"service_name\": \"api-gateway\", \"version\": \"v2\"}: lok...",
+     "query": "topk(2, count_over_time({namespace=\"prod\"}[3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 24: syntax error: unexpected ) | proxy sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "sum({app=\"api-gateway\"})"
+     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"level\": \"info\", \"namespace\": \"prod\", \"pod\": \"api-gateway-5ca80-2603\", \"service_name\": \"api-gateway\", \"version\": \"v2\"}: lok...",
+     "query": "topk(3, rate({namespace=\"prod\"}[5m]))"
     }
    ],
-   "id": "b864cc9d",
+   "id": "c5f963b0",
    "impact": "explore-visible",
    "queries": 3,
    "requests": 6,
    "shapes": {
-    "sum": 6
+    "topk": 6
    },
    "signature": [
     "query_range",
-    "sum",
-    "error-text",
-    "400 with different text: sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({..."
+    "topk",
+    "points",
+    "timestamps differ in matched series"
    ],
    "sources": {
-    "loki-tests": 2,
-    "repo": 4
+    "loki-tests": 6
    }
   },
   {
@@ -1512,7 +1444,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 11 series, proxy 5; loki-only [\"{\\\"app\\\": \\\"db-postgres\\\"}\", \"{\\\"app\\\": \\\"inventory-svc\\\"}\"] proxy-only []",
+     "excerpt": "loki 12 series, proxy 5; loki-only [\"{\\\"app\\\": \\\"db-postgres\\\"}\", \"{\\\"app\\\": \\\"inventory-svc\\\"}\"] proxy-only []",
      "query": "bottomk(2, sum by (app) (count_over_time({app=~\".+\"}[5m])))"
     },
     {
@@ -1644,13 +1576,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793808780.0: loki 0 proxy 7.5406986170746455",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794058920.0: loki 0 proxy 7.457338876180084",
      "query": "stddev by (app) (count_over_time({env=\"production\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793808780.0: loki 0 proxy 7.5406986170746455",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794058920.0: loki 0 proxy 7.457338876180084",
      "query": "stddev by(app)(count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -1710,13 +1642,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 9766 series, proxy 9769; loki-only [\"{\\\"duration_s\\\": \\\"0.83\\\"}\", \"{\\\"duration_s\\\": \\\"1.64\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"0.8300000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"1.6400000000000001\\\"}\"]",
+     "excerpt": "loki 9627 series, proxy 9637; loki-only [\"{\\\"duration_s\\\": \\\"0.7\\\"}\", \"{\\\"duration_s\\\": \\\"0.83\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"0.7000000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"0.8300000000000001\\\"}\"]",
      "query": "sum by (duration_s) (count_over_time({service_name=\"batch-etl\"} | json [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 5374 series, proxy 5484; loki-only [\"{\\\"throughput_rps\\\": \\\"0.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.0\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.30000000000000004\\\"}\"]",
+     "excerpt": "loki 5326 series, proxy 5430; loki-only [\"{\\\"throughput_rps\\\": \\\"100.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"1009.0\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.30000000000000004\\\"}\"]",
      "query": "sum by (throughput_rps) (count_over_time({service_name=\"batch-etl\"} | json [5m]))"
     }
    ],
@@ -1736,39 +1668,6 @@
    "sources": {
     "repo": 2,
     "seeded": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 5374 series, proxy 5484; loki-only [\"{\\\"throughput_rps\\\": \\\"0.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.0\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.30000000000000004\\\"}\"]",
-     "query": "sum by (throughput_rps) (count_over_time({service_name=\"batch-etl\"} | json | throughput_rps!=\"\" [5m]))"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 9766 series, proxy 9769; loki-only [\"{\\\"duration_s\\\": \\\"0.83\\\"}\", \"{\\\"duration_s\\\": \\\"1.64\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"0.8300000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"1.6400000000000001\\\"}\"]",
-     "query": "sum by (duration_s) (count_over_time({service_name=\"batch-etl\"} | json | duration_s!=\"\" [5m]))"
-    }
-   ],
-   "id": "8c3eca09",
-   "impact": "explore-visible",
-   "queries": 3,
-   "requests": 6,
-   "shapes": {
-    "sum[json,label-filter]": 6
-   },
-   "signature": [
-    "query_range",
-    "sum[json,label-filter]",
-    "series",
-    "proxy-more"
-   ],
-   "sources": {
-    "seeded": 6
    }
   },
   {
@@ -1799,6 +1698,40 @@
     "logs[detected_level,label-filter]",
     "labels",
     "proxy-only level"
+   ],
+   "sources": {
+    "repo": 2,
+    "seeded": 4
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 5326 series, proxy 5430; loki-only [\"{\\\"throughput_rps\\\": \\\"100.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"1009.0\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.30000000000000004\\\"}\"]",
+     "query": "sum by (throughput_rps) (count_over_time({service_name=\"batch-etl\"} | json | throughput_rps!=\"\" [5m]))"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 9627 series, proxy 9637; loki-only [\"{\\\"duration_s\\\": \\\"0.7\\\"}\", \"{\\\"duration_s\\\": \\\"0.83\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"0.7000000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"0.8300000000000001\\\"}\"]",
+     "query": "sum by (duration_s) (count_over_time({service_name=\"batch-etl\"} | json | duration_s!=\"\" [5m]))"
+    }
+   ],
+   "id": "8c3eca09",
+   "impact": "explore-visible",
+   "queries": 3,
+   "requests": 6,
+   "shapes": {
+    "sum[json,label-filter]": 6
+   },
+   "signature": [
+    "query_range",
+    "sum[json,label-filter]",
+    "series",
+    "proxy-more"
    ],
    "sources": {
     "seeded": 6
@@ -1876,13 +1809,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 6806 series, proxy 11017",
+     "excerpt": "loki 6797 series, proxy 10982",
      "query": "count_over_time({namespace=\"prod\"}[12m]) > 1"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 5770 series, proxy 9348",
+     "excerpt": "loki 5762 series, proxy 9305",
      "query": "count_over_time({namespace=\"prod\"}[1m]) > 1"
     }
    ],
@@ -1943,13 +1876,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 4101 proxy 847",
+     "excerpt": "{} @1794058920.0: loki 4206 proxy 850",
      "query": "max(count(rate({namespace=\"prod\"}[5m])))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 2050.5 proxy 423.5",
+     "excerpt": "{} @1794058920.0: loki 2103 proxy 425",
      "query": "max(count(rate({namespace=\"prod\"}[5m]))) / 2"
     }
    ],
@@ -1976,13 +1909,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 316 proxy 352",
+     "excerpt": "{} @1794058920.0: loki 316 proxy 348",
      "query": "min by (baz) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1.7555555555555555 proxy 1.9555555555555555",
+     "excerpt": "{} @1794058920.0: loki 1.7555555555555555 proxy 1.9333333333333333",
      "query": "min by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -2340,13 +2273,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 68605 series, proxy 14615",
+     "excerpt": "loki 67916 series, proxy 14618",
      "query": "avg without (level, env) (count_over_time({env=\"production\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 68605 series, proxy 14615",
+     "excerpt": "loki 67916 series, proxy 14618",
      "query": "avg without(app)(rate({env=\"production\"}[5m]))"
     }
    ],
@@ -2362,39 +2295,6 @@
     "avg",
     "series",
     "proxy-fewer"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 41: syntax error: unexpected ) | proxy avg() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "avg({app=\"api-gateway\",env=\"production\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 24: syntax error: unexpected ) | proxy avg() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "avg({app=\"api-gateway\"})"
-    }
-   ],
-   "id": "8556e63f",
-   "impact": "explore-visible",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "avg": 4
-   },
-   "signature": [
-    "query_range",
-    "avg",
-    "error-text",
-    "400 with different text: avg() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({..."
    ],
    "sources": {
     "repo": 4
@@ -2538,13 +2438,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "max_over_time({app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "max_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])"
     }
    ],
@@ -2604,13 +2504,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "min_over_time({app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "min_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])"
     }
    ],
@@ -2802,72 +2702,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 25: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "sort({app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 42: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "sort({app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "6699189f",
-   "impact": "explore-visible",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "sort": 4
-   },
-   "signature": [
-    "query_range",
-    "sort",
-    "status",
-    "loki 400 proxy 500: internal server error"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 30: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "sort_desc({app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 47: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "sort_desc({app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "febe7a5e",
-   "impact": "explore-visible",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "sort_desc": 4
-   },
-   "signature": [
-    "query_range",
-    "sort_desc",
-    "status",
-    "loki 400 proxy 500: internal server error"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "loki parse error : invalid aggregation stddev_over_time without unwrap | proxy stddev_over_time requires `| unwrap <field>` for range aggregation",
      "query": "stddev_over_time({app=\"api-gateway\"}[1m])"
     },
@@ -2934,13 +2768,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "sum_over_time({app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 55244 series, proxy 2136",
+     "excerpt": "loki 54627 series, proxy 2146",
      "query": "sum_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])"
     }
    ],
@@ -3000,39 +2834,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 28: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "topk(5, {app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 45: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "topk(2, {app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "2ae8dfb7",
-   "impact": "explore-visible",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "topk": 4
-   },
-   "signature": [
-    "query_range",
-    "topk",
-    "status",
-    "loki 400 proxy 500: internal server error"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "loki 1 series, proxy 2; loki-only [] proxy-only [\"{\\\"service_name\\\": \\\"ml-serving\\\"}\"]",
      "query": "sum by (service_name) (rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))"
     },
@@ -3066,13 +2867,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 18707.68666666667 proxy 21158.82",
+     "excerpt": "{} @1794058920.0: loki 20300.763333333332 proxy 22822.673333333332",
      "query": "sum(rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 546163.7400000001 proxy 1575119.43",
+     "excerpt": "{} @1794058920.0: loki 553060.3899999999 proxy 1660877.6100000003",
      "query": "sum(max_over_time({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))"
     }
    ],
@@ -3105,7 +2906,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 40 series, proxy 40; loki-only [\"{\\\"app\\\": \\\"payment-service\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"payment\\\", \\\"detected_level\\\": \\\"error\\\", \\\"env\\\": \\\"production\\\", \\\"level\\\": \\... proxy-only [\"{\\\"app\\\": \\\"payment-service\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"payment\\\", ...",
+     "excerpt": "loki 41 series, proxy 41; loki-only [\"{\\\"app\\\": \\\"payment-service\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"payment\\\", \\\"detected_level\\\": \\\"error\\\", \\\"env\\\": \\\"production\\\", \\\"level\\\": \\... proxy-only [\"{\\\"app\\\": \\\"payment-service\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"payment\\\", ...",
      "query": "topk without (pod) (1, rate({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))"
     }
    ],
@@ -3124,6 +2925,72 @@
    ],
    "sources": {
     "repo": 4
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 1 series, proxy 0; loki-only [\"{}\"] proxy-only []",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\") [1m]))"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 1 series, proxy 0; loki-only [\"{}\"] proxy-only []",
+     "query": "sum(count_over_time({service_name=\"auth-service\"} | json | ip=ip(\"10.0.0.0-10.2.255.255\") [1m]))"
+    }
+   ],
+   "id": "4ebfd2c5",
+   "impact": "explore-visible",
+   "queries": 2,
+   "requests": 4,
+   "shapes": {
+    "sum[json,label-filter]": 4
+   },
+   "signature": [
+    "query_range",
+    "sum[json,label-filter]",
+    "series",
+    "proxy-empty"
+   ],
+   "sources": {
+    "repo": 4
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "names ['__error__', '__error_details__']; e.g. loki {\"__error__\": \"JSONParserErr\", \"__error_details__\": \"Value looks like object, but can't find closing '}' symbol\", \"app\": \"visual-extraction-list\", \"case\": \"logfmt\", \"detected_level\": \"info\", \"servi...",
+     "query": "{service_name=\"visual-extraction-list\"} | json | drop msg"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "names ['__error__', '__error_details__']; e.g. loki {\"__error__\": \"JSONParserErr\", \"__error_details__\": \"Value looks like object, but can't find closing '}' symbol\", \"app\": \"visual-extraction-list\", \"case\": \"logfmt\", \"detected_level\": \"info\", \"servi...",
+     "query": "{service_name=\"visual-extraction-list\"} | json | drop level"
+    }
+   ],
+   "id": "f7dc6567",
+   "impact": "explore-visible",
+   "queries": 2,
+   "requests": 4,
+   "shapes": {
+    "logs[json,drop]": 4
+   },
+   "signature": [
+    "query_range",
+    "logs[json,drop]",
+    "labels",
+    "loki-only __error__,__error_details__"
+   ],
+   "sources": {
+    "seeded": 4
    }
   },
   {
@@ -3154,39 +3021,6 @@
     "logs[json,label-filter]",
     "entries",
     "proxy-more"
-   ],
-   "sources": {
-    "seeded": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['__error__', '__error_details__']; e.g. loki {\"__error__\": \"JSONParserErr\", \"__error_details__\": \"Value looks like object, but can't find closing '}' symbol\", \"app\": \"visual-extraction-list\", \"case\": \"logfmt\", \"detected_level\": \"info\", \"servi...",
-     "query": "{service_name=\"visual-extraction-list\"} | json | drop level"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['__error__', '__error_details__']; e.g. loki {\"__error__\": \"JSONParserErr\", \"__error_details__\": \"Value looks like object, but can't find closing '}' symbol\", \"app\": \"visual-extraction-list\", \"case\": \"logfmt\", \"detected_level\": \"info\", \"servi...",
-     "query": "{service_name=\"visual-extraction-list\"} | json | drop msg"
-    }
-   ],
-   "id": "f7dc6567",
-   "impact": "explore-visible",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "logs[json,drop]": 4
-   },
-   "signature": [
-    "query_range",
-    "logs[json,drop]",
-    "labels",
-    "loki-only __error__,__error_details__"
    ],
    "sources": {
     "seeded": 4
@@ -3231,17 +3065,17 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki 32 series, proxy 31; loki-only [\"{\\\"level\\\": \\\"info\\\", \\\"service_name\\\": \\\"batch-etl\\\"}\"] proxy-only []",
+     "excerpt": "{\"level\": \"error\", \"service_name\": \"frontend-ssr\"}: loki 8 points, proxy 13",
      "query": "topk by (service_name) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))"
     },
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki 32 series, proxy 31; loki-only [\"{\\\"level\\\": \\\"info\\\", \\\"service_name\\\": \\\"batch-etl\\\"}\"] proxy-only []",
+     "excerpt": "{\"level\": \"error\", \"service_name\": \"frontend-ssr\"}: loki 42 points, proxy 50",
      "query": "topk without (level) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))"
     }
    ],
-   "id": "71d9cb75",
+   "id": "9ec18584",
    "impact": "explore-visible",
    "queries": 2,
    "requests": 3,
@@ -3251,8 +3085,8 @@
    "signature": [
     "grafana:ds_query",
     "topk",
-    "series",
-    "proxy-fewer"
+    "points",
+    "timestamps differ in matched series"
    ],
    "sources": {
     "grafana": 3
@@ -3318,7 +3152,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 0.003333333333333333 proxy 0.08453815261044174",
+     "excerpt": "{} @1794058920.0: loki 0.003333333333333333 proxy 0.08603174603174597",
      "query": "avg(rate({service_name=\"api-gateway\"} | json [5m]))"
     }
    ],
@@ -3372,7 +3206,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 23013 series, proxy 1131",
+     "excerpt": "loki 22751 series, proxy 1132",
      "query": "bytes_over_time({service_name=\"payment-service\"} | logfmt [3m])"
     }
    ],
@@ -3399,7 +3233,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 23013 series, proxy 1131",
+     "excerpt": "loki 22751 series, proxy 1132",
      "query": "bytes_rate({service_name=\"payment-service\"} | logfmt [3m])"
     }
    ],
@@ -3453,34 +3287,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 1 proxy 166",
-     "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [5m]))"
-    }
-   ],
-   "id": "4d601482",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "count[json,keep]": 2
-   },
-   "signature": [
-    "query_range",
-    "count[json,keep]",
-    "values",
-    "values differ (proxy higher)"
-   ],
-   "sources": {
-    "loki-tests": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 4210 proxy 166",
+     "excerpt": "{} @1794058920.0: loki 4336 proxy 168",
      "query": "count(rate({service_name=\"api-gateway\"} | json | label_format foo=bar [5m]))"
     }
    ],
@@ -3912,33 +3719,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 26: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "stddev({namespace=\"prod\"})"
-    }
-   ],
-   "id": "0d1dce34",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "stddev": 2
-   },
-   "signature": [
-    "query_range",
-    "stddev",
-    "status",
-    "loki 400 proxy 500: internal server error"
-   ],
-   "sources": {
-    "loki-tests": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "loki - | proxy failed to parse the log query",
      "query": "sum without(a) ( rate ( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] ) )"
     }
@@ -4047,7 +3827,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 0.0033333333333333335 proxy 0.4266666666666667",
+     "excerpt": "{} @1794058920.0: loki 0.0033333333333333335 proxy 0.44333333333333336",
      "query": "sum(max(rate({service_name=\"api-gateway\"} | json | label_format foo=bar [5m])))"
     }
    ],
@@ -4198,33 +3978,6 @@
     "topk",
     "status",
     "loki 200 proxy 500: manual metric response exceeds N bytes; narrow the query or increase -backend-ma"
-   ],
-   "sources": {
-    "loki-tests": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"level\": \"info\", \"namespace\": \"prod\", \"pod\": \"api-gateway-26136-60a1\", \"service_name\": \"api-gateway\", \"version\": \"v2\"}: lok...",
-     "query": "topk(2, count_over_time({namespace=\"prod\"}[3m]))"
-    }
-   ],
-   "id": "c5f963b0",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "topk": 2
-   },
-   "signature": [
-    "query_range",
-    "topk",
-    "points",
-    "timestamps differ in matched series"
    ],
    "sources": {
     "loki-tests": 2
@@ -4506,7 +4259,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793808780.0: loki 303.65105908584167 proxy 320.53508454265034",
+     "excerpt": "{\"app\": \"api-gateway\"} @1794058920.0: loki 261.07310885608854 proxy 798.4666913046993",
      "query": "avg by(app)(avg_over_time({env=\"production\"} | json | unwrap duration_ms [5m]))"
     }
    ],
@@ -4560,7 +4313,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 68605 series, proxy 14615",
+     "excerpt": "loki 67916 series, proxy 14618",
      "query": "count without (cluster) (count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -4722,7 +4475,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 0 series, proxy 12297",
+     "excerpt": "loki 0 series, proxy 12285",
      "query": "count_over_time({service_name=\"api-gateway\"} | unpack | status >= 400 [5m])"
     }
    ],
@@ -4749,7 +4502,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"warn\"} @1793808780.0: loki 300 proxy 297",
+     "excerpt": "{\"level\": \"info\"} @1794055800.0: loki 300 proxy 299",
      "query": "max by (level)(max_over_time({app=\"api-gateway\",env=\"production\"} | json | unwrap duration_ms [5m]))"
     }
    ],
@@ -4803,7 +4556,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 11022 series, proxy 1624",
+     "excerpt": "loki 10830 series, proxy 1629",
      "query": "max_over_time({app=\"api-gateway\"} | json | method=\"GET\" | unwrap duration_ms [5m])"
     }
    ],
@@ -4857,7 +4610,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"ip\": \"10.5.172.48\", \"level\": \"info\", \"level_extracted\": \"info\", \"method\": \"POST\", \"namespace\": \"prod\", \"path\": \"/api/v1/su...",
+     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"ip\": \"10.3.16.67\", \"level\": \"info\", \"level_extracted\": \"info\", \"method\": \"PATCH\", \"namespace\": \"prod\", \"path\": \"/ready\", \"...",
      "query": "quantile_over_time(2.0, {app=\"api-gateway\"} | json | unwrap duration_ms [5m])"
     }
    ],
@@ -4911,7 +4664,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 22232 series, proxy 1095",
+     "excerpt": "loki 22020 series, proxy 1096",
      "query": "rate({app=\"payment-service\"} | logfmt [1m])"
     }
    ],
@@ -4965,7 +4718,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793808780.0: loki 0 proxy 56.862135633551475",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794058920.0: loki 0 proxy 55.61190311418684",
      "query": "stdvar by(app)(count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -4992,7 +4745,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 50374 series, proxy 10303",
+     "excerpt": "loki 49948 series, proxy 10301",
      "query": "stdvar without (app) (count_over_time({namespace=\"prod\"}[1m]))"
     }
    ],
@@ -5073,7 +4826,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{} @1793808780.0: loki 0 proxy 1939.4266666666676",
+     "excerpt": "{} @1794058920.0: loki 0 proxy 2204.9766666666665",
      "query": "sum(rate_counter({app=\"api-gateway\"} | json | __error__=\"\" | duration_ms!=\"\" | unwrap duration_ms [5m]))"
     }
    ],
@@ -5127,7 +4880,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 0 series, proxy 963",
+     "excerpt": "loki 0 series, proxy 958",
      "query": "sum_over_time({app=\"api-gateway\"} | unwrap duration_ms [5m])"
     }
    ],
@@ -5154,7 +4907,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 18865 series, proxy 779",
+     "excerpt": "loki 18797 series, proxy 778",
      "query": "sum_over_time({app=\"payment-service\",env=\"production\"} | logfmt | unwrap latency_ms [5m])"
     }
    ],
@@ -5181,7 +4934,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 3 series, proxy 50",
+     "excerpt": "loki 3 series, proxy 56",
      "query": "topk(3, avg by(app)(rate({env=\"production\"}[5m])))"
     }
    ],
@@ -5235,7 +4988,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki-only {\"service\": {\"name\": \"api-gateway\"}, \"method\": \"POST\", \"path\": \"/health\", \"status\": 500, \"duration_ms\": 2724, \"trace_...",
+     "excerpt": "loki-only {\"service\": {\"name\": \"api-gateway\"}, \"method\": \"DELETE\", \"path\": \"/metrics\", \"status\": 500, \"duration_ms\": 2355, \"tra...",
      "query": "{app=\"api-gateway\",env=\"production\"} | json | status != 200 | status != 404"
     }
    ],
@@ -5289,60 +5042,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "names ['level_extracted']; e.g. proxy {\"level\": \"error\", \"level_extracted\": \"error\", \"msg\": \"payment failed\"}",
-     "query": "{app=\"payment-service\",env=\"production\"} | logfmt | keep level, msg"
-    }
-   ],
-   "id": "ede6dabd",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "logs[logfmt,keep]": 2
-   },
-   "signature": [
-    "query_range",
-    "logs[logfmt,keep]",
-    "labels",
-    "proxy-only *_extracted"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "names ['level_extracted']; e.g. proxy {\"level\": \"error\", \"level_extracted\": \"error\", \"msg\": \"payment failed\"}",
-     "query": "{app=\"payment-service\",env=\"production\"} | logfmt | level=\"error\" | keep level, msg"
-    }
-   ],
-   "id": "a70f6707",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "logs[logfmt,keep,label-filter]": 2
-   },
-   "signature": [
-    "query_range",
-    "logs[logfmt,keep,label-filter]",
-    "labels",
-    "proxy-only *_extracted"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "loki pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but can't find closing '}' symbol\", app=... | proxy pipeline error: 'JSONParserErr' for series: '{__error__=\"JSONParserErr\", __error_details__=\"Value looks like object, but ca...",
      "query": "rate({app=\"payment-service\",env=\"production\"} | json [5m])"
     }
@@ -5359,33 +5058,6 @@
     "rate[json]",
     "error-text",
     "400 with different text: pipeline error: Q for series: Qt find closing Q symbol\", app=..."
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki parse error at line 1, col 48: syntax error: unexpected ) | proxy Internal Server Error",
-     "query": "bottomk(1, {app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "1b5c3c20",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "bottomk": 2
-   },
-   "signature": [
-    "query_range",
-    "bottomk",
-    "status",
-    "loki 400 proxy 500: internal server error"
    ],
    "sources": {
     "repo": 2
@@ -5424,7 +5096,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"59538s\\\": invalid synta... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"72461s\\\": invalid synta... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
      "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap ttl [1m]))"
     }
    ],
@@ -5451,11 +5123,11 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"78db407d730d\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"542f36a1e26c\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
      "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))"
     }
    ],
-   "id": "3ff1a730",
+   "id": "432b1c5f",
    "impact": "explore-visible",
    "queries": 1,
    "requests": 2,
@@ -5466,7 +5138,7 @@
     "query_range",
     "max[json,unwrap]",
     "error-text",
-    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QcNcNadNfN\\\": inv"
+    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QdNeeNbbNfN\\\": in"
    ],
    "sources": {
     "repo": 2
@@ -5505,34 +5177,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"service_name\": \"checkout-svc\"}: loki 7 points, proxy 9",
-     "query": "topk(5, sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"error\" [5m])))"
-    }
-   ],
-   "id": "3fc6a3da",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "topk[detected_level,label-filter]": 2
-   },
-   "signature": [
-    "query_range",
-    "topk[detected_level,label-filter]",
-    "points",
-    "timestamps differ in matched series"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "{\"service_name\": \"checkout-svc\"} @1793808780.0: loki 2.990000000000042 proxy 0.27",
+     "excerpt": "{\"service_name\": \"pricing-svc\"} @1794058920.0: loki 3.073333333333377 proxy 0.27666666666666667",
      "query": "sum by (service_name) (rate({env=\"production\"}[5m]) / count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -5559,7 +5204,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"service_name\": \"checkout-svc\"} @1793808780.0: loki 1 proxy 34",
+     "excerpt": "{\"service_name\": \"pricing-svc\"} @1794058920.0: loki 1 proxy 27",
      "query": "sum by (service_name) (max by (service_name, app) (count_over_time({env=\"production\"}[5m])))"
     }
    ],
@@ -5586,7 +5231,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 6825 series, proxy 55244",
+     "excerpt": "loki 6805 series, proxy 54627",
      "query": "count_over_time({app=\"api-gateway\"} | regexp \"(?P<mth>GET|POST|PUT)\" [5m])"
     }
    ],
@@ -5613,7 +5258,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"warn\"} @1793808780.0: loki 880 proxy 492",
+     "excerpt": "{\"level\": \"info\"} @1794058920.0: loki 2137 proxy 1684",
      "query": "sum by (level) (count_over_time({env=\"production\"} | json | service_name_extracted!=\"\" [1m]))"
     }
    ],
@@ -5694,7 +5339,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "{\"level\": \"warn\"} @1793808780.0: loki 0 proxy 2.428762830926249",
+     "excerpt": "{\"level\": \"info\"} @1794058920.0: loki 0 proxy 8.498954184028891",
      "query": "stddev by (level) (count_over_time({service_name=\"payment-service\"} | logfmt [5m]))"
     }
    ],
@@ -5775,7 +5420,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 183 series, proxy 183; loki-only [\"{\\\"pod\\\": \\\"api-gateway-56868-e1e3\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-5ac53-0ae7\\\"}\"] proxy-only [\"{\\\"pod\\\": \\\"api-gateway-14c47-a72c\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-38531-ccb7\\\"}\"]",
+     "excerpt": "loki 183 series, proxy 183; loki-only [\"{\\\"pod\\\": \\\"api-gateway-4dae9-7a71\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-6777a-5c0a\\\"}\"] proxy-only [\"{\\\"pod\\\": \\\"api-gateway-2692d-d2b5\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-4ba64-dcf1\\\"}\"]",
      "query": "topk(3, sum by (pod) (count_over_time({service_name=\"api-gateway\"}[60s])))"
     }
    ],
@@ -5829,7 +5474,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment disputed\\\": inv... | proxy -",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment failed\\\": inval... | proxy -",
      "query": "label_replace(sum by (service_name) (sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap msg [5m])), \"x\", \"$1\", \"service_name\", \"(.*)\")"
     }
    ],
@@ -5856,34 +5501,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment retry\\\": invali... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
-     "query": "sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap msg [5m])"
-    }
-   ],
-   "id": "c7a6974a",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "sum_over_time[logfmt,unwrap]": 2
-   },
-   "signature": [
-    "query_range",
-    "sum_over_time[logfmt,unwrap]",
-    "error-text",
-    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=Qpayment retry\\\":"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
-     "excerpt": "loki 20072 series, proxy 1",
+     "excerpt": "loki 19850 series, proxy 1",
      "query": "count without (pod) (max_over_time({service_name=\"payment-service\"} | logfmt | unwrap amount [1m]))"
     }
    ],
@@ -5910,7 +5528,34 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki 778 series, proxy 1",
+     "excerpt": "loki 8 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"cache-redis\\\"}\", \"{\\\"app\\\": \\\"ml-serving\\\"}\"] proxy-only []",
+     "query": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[5m])))"
+    }
+   ],
+   "id": "2572a0e0",
+   "impact": "explore-visible",
+   "queries": 1,
+   "requests": 2,
+   "shapes": {
+    "logs": 2
+   },
+   "signature": [
+    "query_range",
+    "logs",
+    "series",
+    "proxy-fewer"
+   ],
+   "sources": {
+    "repo": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki 780 series, proxy 1",
      "query": "sum without () (max_over_time({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))"
     }
    ],
@@ -5991,33 +5636,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query_range",
-     "excerpt": "loki-only ",
-     "query": "{service_name=\"visual-extraction-list\"} | json | line_format \"{{.level}}\""
-    }
-   ],
-   "id": "8c96e500",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "logs[json,line_format]": 2
-   },
-   "signature": [
-    "query_range",
-    "logs[json,line_format]",
-    "entries",
-    "different entries, same count"
-   ],
-   "sources": {
-    "seeded": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query_range",
      "excerpt": "names ['__error__', '__error_details__']; e.g. loki {\"__error__\": \"JSONParserErr\", \"__error_details__\": \"Value looks like object, but can't find closing '}' symbol\", \"app\": \"visual-extraction-list\", \"case\": \"logfmt\", \"detected_level\": \"info\", \"servi...",
      "query": "{service_name=\"visual-extraction-list\"} | json | line_format \"{{.msg}}\""
     }
@@ -6034,6 +5652,33 @@
     "logs[json,line_format]",
     "labels",
     "loki-only __error__,__error_details__"
+   ],
+   "sources": {
+    "seeded": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki-only ",
+     "query": "{service_name=\"visual-extraction-list\"} | json | line_format \"{{.level}}\""
+    }
+   ],
+   "id": "8c96e500",
+   "impact": "explore-visible",
+   "queries": 1,
+   "requests": 2,
+   "shapes": {
+    "logs[json,line_format]": 2
+   },
+   "signature": [
+    "query_range",
+    "logs[json,line_format]",
+    "entries",
+    "different entries, same count"
    ],
    "sources": {
     "seeded": 2
@@ -6124,9 +5769,36 @@
    "documented": null,
    "examples": [
     {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment processed\\\": in... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "query": "sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap msg [5m])"
+    }
+   ],
+   "id": "426d5c5b",
+   "impact": "explore-visible",
+   "queries": 1,
+   "requests": 1,
+   "shapes": {
+    "sum_over_time[logfmt,unwrap]": 1
+   },
+   "signature": [
+    "query_range",
+    "sum_over_time[logfmt,unwrap]",
+    "error-text",
+    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=Qpayment failed\\\""
+   ],
+   "sources": {
+    "repo": 1
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
      "encoding": "plain",
      "endpoint": "label_values",
-     "excerpt": "loki-only ['api-gateway-009f0-28d1', 'api-gateway-00c29-2d86', 'api-gateway-00cc0-819d', 'api-gateway-00eb4-9af9', 'api-gateway-014f2-e226'] proxy-only []",
+     "excerpt": "loki-only ['api-gateway-000cf-d50c', 'api-gateway-00527-2a1d', 'api-gateway-00b7e-1429', 'api-gateway-01528-4f89', 'api-gateway-02513-5fff'] proxy-only []",
      "query": "values of pod"
     }
    ],
@@ -6153,7 +5825,7 @@
     {
      "encoding": "plain",
      "endpoint": "label_values",
-     "excerpt": "loki-only ['api-gateway-009f0-28d1', 'api-gateway-00c29-2d86', 'api-gateway-00cc0-819d', 'api-gateway-00eb4-9af9', 'api-gateway-014f2-e226'] proxy-only []",
+     "excerpt": "loki-only ['api-gateway-000cf-d50c', 'api-gateway-00527-2a1d', 'api-gateway-00b7e-1429', 'api-gateway-01528-4f89', 'api-gateway-02513-5fff'] proxy-only []",
      "query": "{env=\"production\"}"
     }
    ],
@@ -6169,6 +5841,33 @@
     "logs",
     "values-set",
     "proxy-fewer"
+   ],
+   "sources": {
+    "seeded": 1
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query_range",
+     "excerpt": "structuredMetadata names ['detected_level']",
+     "query": "{service_name=\"visual-detected-level-stage\"} | keep detected_level"
+    }
+   ],
+   "id": "a4c74036",
+   "impact": "explore-visible",
+   "queries": 1,
+   "requests": 1,
+   "shapes": {
+    "logs[keep]": 1
+   },
+   "signature": [
+    "query_range",
+    "logs[keep]",
+    "category",
+    "loki-only structuredMetadata detected_level"
    ],
    "sources": {
     "seeded": 1
@@ -6259,10 +5958,37 @@
    "documented": null,
    "examples": [
     {
+     "encoding": "categorize",
+     "endpoint": "ds_query",
+     "excerpt": "{\"level\": \"info\"}: loki 721 points, proxy 360",
+     "query": "last_over_time({service_name=\"payment-service\"} |= \"latency_ms\" | logfmt | unwrap latency_ms [1m] offset 2s) by (level)"
+    }
+   ],
+   "id": "1ed3ce08",
+   "impact": "explore-visible",
+   "queries": 1,
+   "requests": 1,
+   "shapes": {
+    "last_over_time[logfmt,unwrap,line-filter]": 1
+   },
+   "signature": [
+    "grafana:ds_query",
+    "last_over_time[logfmt,unwrap,line-filter]",
+    "points",
+    "timestamps differ in matched series"
+   ],
+   "sources": {
+    "grafana": 1
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
      "encoding": "plain",
      "endpoint": "labels",
      "excerpt": "['case', 'detected_level']",
-     "query": "labels?start=1793810510500000000&end=1793810510500000000"
+     "query": "labels?start=1794059210500000000&end=1794059210500000000"
     }
    ],
    "id": "0dc359d9",
@@ -6288,11 +6014,11 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki 33 series, proxy 33; loki-only [\"{\\\"level\\\": \\\"info\\\", \\\"service_name\\\": \\\"batch-etl\\\"}\"] proxy-only [\"{\\\"level\\\": \\\"error\\\", \\\"service_name\\\": \\\"notification-svc\\\"}\"]",
-     "query": "topk by (service_name) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))"
+     "excerpt": "loki 31 series, proxy 32; loki-only [] proxy-only [\"{\\\"level\\\": \\\"error\\\", \\\"service_name\\\": \\\"pricing-svc\\\"}\"]",
+     "query": "topk without (level) (2, sum by (service_name, level) (count_over_time({env=\"production\"}[$__auto])))"
     }
    ],
-   "id": "46305354",
+   "id": "91581142",
    "impact": "explore-visible",
    "queries": 1,
    "requests": 1,
@@ -6303,7 +6029,7 @@
     "grafana:ds_query",
     "topk",
     "series",
-    "different series, same count"
+    "proxy-more"
    ],
    "sources": {
     "grafana": 1
@@ -6315,11 +6041,11 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"28776f8eed50\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"edd6e2db3e00\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
      "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))"
     }
    ],
-   "id": "b8fcd972",
+   "id": "05babba7",
    "impact": "explore-visible",
    "queries": 1,
    "requests": 1,
@@ -6330,7 +6056,7 @@
     "grafana:ds_query",
     "max[json,unwrap]",
     "error-text",
-    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QcNfNfN\\\": invali"
+    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QafbNdNbab\\\": inv"
    ],
    "sources": {
     "grafana": 1
@@ -6342,11 +6068,11 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"a7af8bfb83d5\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"d43d3f9d1bf5\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
      "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))"
     }
    ],
-   "id": "f8739894",
+   "id": "ff352d83",
    "impact": "explore-visible",
    "queries": 1,
    "requests": 1,
@@ -6357,7 +6083,7 @@
     "grafana:ds_query",
     "max[json,unwrap]",
     "error-text",
-    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QfNebNca\\\": inval"
+    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QNaNcN\\\": invalid"
    ],
    "sources": {
     "grafana": 1
@@ -6369,34 +6095,7 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "loki 1 series, proxy 0",
-     "query": "sum by (service_name_extracted) (count_over_time({service_name=\"api-gateway\"}  | detected_level=\"error\"    | json service_name_extracted=\"[\\\"service\\\"][\\\"name\\\"]\"  | drop __error__, __error_details__ | service_name_extracted!=\"\"  [$__auto]))"
-    }
-   ],
-   "id": "640ed4be",
-   "impact": "explore-visible",
-   "queries": 1,
-   "requests": 1,
-   "shapes": {
-    "sum[json,drop,detected_level,label-filter]": 1
-   },
-   "signature": [
-    "grafana:ds_query",
-    "sum[json,drop,detected_level,label-filter]",
-    "series",
-    "proxy-empty"
-   ],
-   "sources": {
-    "grafana": 1
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "ds_query",
-     "excerpt": "names ['level_extracted']; e.g. loki {\"app\": \"payment-service\", \"attempt\": \"2\", \"cluster\": \"us-east-1\", \"container\": \"payment\", \"detected_level\": \"warn\", \"env\": \"production\", \"latency_ms\": \"609\", \"level\": \"warn\", \"level_extracted\": \"w...",
+     "excerpt": "names ['level_extracted']; e.g. loki {\"app\": \"payment-service\", \"attempt\": \"4\", \"cluster\": \"us-east-1\", \"container\": \"payment\", \"detected_level\": \"warn\", \"env\": \"production\", \"latency_ms\": \"4747\", \"level\": \"warn\", \"level_extracted\": \"...",
      "query": "{service_name=\"payment-service\"} | detected_level=\"warn\"    | json  | logfmt | drop __error__, __error_details__  "
     }
    ],
@@ -6423,7 +6122,7 @@
     {
      "encoding": "categorize",
      "endpoint": "ds_query",
-     "excerpt": "{\"service_name\": \"checkout-svc\"}: loki 102 points, proxy 136",
+     "excerpt": "{\"service_name\": \"api-gateway\"}: loki 333 points, proxy 347",
      "query": "topk(5, sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"error\" [$__auto])))"
     }
    ],
@@ -6450,14 +6149,14 @@
     {
      "encoding": "plain",
      "endpoint": "index_stats",
-     "excerpt": "loki 11987 proxy 3377 (loki/proxy 3.55)",
-     "query": "index/stats?query=%7Benv%3D%22production%22%7D&start=1793809620000000000&end=1793810520000000000"
+     "excerpt": "loki 13010 proxy 3381 (loki/proxy 3.85)",
+     "query": "index/stats?query=%7Benv%3D%22production%22%7D&start=1794058320000000000&end=1794059220000000000"
     },
     {
      "encoding": "plain",
      "endpoint": "index_stats",
-     "excerpt": "loki 11987 proxy 13489 (loki/proxy 0.89)",
-     "query": "index/stats?query=%7Benv%3D%22production%22%7D&start=1793806920000000000&end=1793810520000000000"
+     "excerpt": "loki 13010 proxy 13487 (loki/proxy 0.96)",
+     "query": "index/stats?query=%7Benv%3D%22production%22%7D&start=1794055620000000000&end=1794059220000000000"
     }
    ],
    "id": "2a68e26c",
@@ -6529,9 +6228,9 @@
    "id": "4a75b280",
    "impact": "drilldown-visible",
    "queries": 14,
-   "requests": 24,
+   "requests": 23,
    "shapes": {
-    "logs": 24
+    "logs": 23
    },
    "signature": [
     "detected_field_values",
@@ -6540,7 +6239,7 @@
     "proxy-empty"
    ],
    "sources": {
-    "seeded": 24
+    "seeded": 23
    }
   },
   {
@@ -6615,22 +6314,22 @@
     {
      "encoding": "plain",
      "endpoint": "detected_field_values",
-     "excerpt": "loki-only ['1', '101', '103', '109', '113'] proxy-only ['102', '106', '108', '110', '111']",
+     "excerpt": "loki-only [] proxy-only ['401', '403', '404']",
      "query": "{service_name=\"api-gateway\"}"
     },
     {
      "encoding": "plain",
      "endpoint": "detected_field_values",
-     "excerpt": "loki-only [] proxy-only ['account_locked', 'invalid_token', 'too_many_attempts']",
+     "excerpt": "loki-only [] proxy-only ['too_many_attempts']",
      "query": "{service_name=\"auth-service\"}"
     }
    ],
    "id": "92699938",
    "impact": "drilldown-visible",
    "queries": 10,
-   "requests": 43,
+   "requests": 40,
    "shapes": {
-    "logs": 43
+    "logs": 40
    },
    "signature": [
     "detected_field_values",
@@ -6639,7 +6338,7 @@
     "proxy-more"
    ],
    "sources": {
-    "seeded": 43
+    "seeded": 40
    }
   },
   {
@@ -6648,22 +6347,22 @@
     {
      "encoding": "plain",
      "endpoint": "detected_field_values",
-     "excerpt": "loki-only ['0025dcaa4d453fdc', '0115968612f42781', '016ad7a86d6fe4a3', '031e578f70e7b58b', '04671c66ada16eed'] proxy-only ['04cd8ba6340a8126', '07e77bce9945ae3a', '0d69d0890e5d8166', '0d884d2739b49bdf', '0f9d3283256f31dd']",
+     "excerpt": "loki-only ['018a503c708d37d3', '04bb7f4a31a58c4e', '06a14de26403ba55', '06da28fac09439d4', '09790a14f951c520'] proxy-only ['013a4f954cd02e0c', '0165c388d7622155', '0240b319856ff90c', '05a74e0531cc0ae4', '0b061dfb05b3209c']",
      "query": "{service_name=\"api-gateway\"}"
     },
     {
      "encoding": "plain",
      "endpoint": "detected_field_values",
-     "excerpt": "loki-only ['015d2d739a92', '027d89f03c23', '03cc50bb376e', '04d8b7184c47', '091762898347'] proxy-only ['001589d8451d', '007e72f20949', '038bf5aca059', '0865d99625b7', '0c1bac0ddb1e']",
+     "excerpt": "loki-only ['10.0.118.203', '10.0.124.150', '10.0.127.236', '10.0.134.49', '10.0.14.238'] proxy-only ['10.0.120.144', '10.0.121.197', '10.0.134.135', '10.0.135.32', '10.0.17.40']",
      "query": "{service_name=\"auth-service\"}"
     }
    ],
    "id": "0e9d9652",
    "impact": "drilldown-visible",
    "queries": 10,
-   "requests": 21,
+   "requests": 24,
    "shapes": {
-    "logs": 21
+    "logs": 24
    },
    "signature": [
     "detected_field_values",
@@ -6672,40 +6371,7 @@
     "different values"
    ],
    "sources": {
-    "seeded": 21
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "plain",
-     "endpoint": "index_stats",
-     "excerpt": "loki 0 proxy 1 (loki/proxy 0.00)",
-     "query": "index/stats?query=%7Bapp%3D%22visual-extraction-list%22%2Ccase%3D%22json%22%7D&start=1793809620000000000&end=1793810520000000000"
-    },
-    {
-     "encoding": "plain",
-     "endpoint": "index_stats",
-     "excerpt": "loki 3 proxy 1 (loki/proxy 3.00)",
-     "query": "index/stats?query=%7Bapp%3D%22visual-extraction-list%22%2Ccase%3D%22json%22%7D&start=1793806920000000000&end=1793810520000000000"
-    }
-   ],
-   "id": "00a34ca2",
-   "impact": "drilldown-visible",
-   "queries": 6,
-   "requests": 6,
-   "shapes": {
-    "-": 6
-   },
-   "signature": [
-    "index_stats",
-    "-",
-    "stats",
-    "entries differ"
-   ],
-   "sources": {
-    "grafana": 6
+    "seeded": 24
    }
   },
   {
@@ -6715,13 +6381,13 @@
      "encoding": "plain",
      "endpoint": "detected_fields",
      "excerpt": "['level_extracted']",
-     "query": "detected_fields?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D%20%20%20%20%20%7C%20json%20%20%7C%20logfmt%20%7C%20drop%20__error__%2C%20__error_details__%20&start=2026-11-04T16%3A27%3A00.000Z"
+     "query": "detected_fields?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D%20%20%20%20%20%7C%20json%20%20%7C%20logfmt%20%7C%20drop%20__error__%2C%20__error_details__%20&start=2026-11-07T13%3A32%3A00.000Z"
     },
     {
      "encoding": "plain",
      "endpoint": "detected_fields",
      "excerpt": "['level_extracted']",
-     "query": "detected_fields?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D%20%20%20%20%20%7C%20json%20%20%7C%20logfmt%20%7C%20drop%20__error__%2C%20__error_details__%20&start=2026-11-04T15%3A42%3A00.000Z"
+     "query": "detected_fields?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D%20%20%20%20%20%7C%20json%20%20%7C%20logfmt%20%7C%20drop%20__error__%2C%20__error_details__%20&start=2026-11-07T12%3A47%3A00.000Z"
     }
    ],
    "id": "f8fa9aa2",
@@ -6748,13 +6414,13 @@
      "encoding": "plain",
      "endpoint": "patterns",
      "excerpt": "loki 0 proxy 6; loki-only []",
-     "query": "patterns?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-04T16%3A27%3A00.000Z&step=2s"
+     "query": "patterns?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-07T13%3A32%3A00.000Z&step=2s"
     },
     {
      "encoding": "plain",
      "endpoint": "patterns",
      "excerpt": "loki 0 proxy 2; loki-only []",
-     "query": "patterns?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-04T15%3A42%3A00.000Z&step=5s"
+     "query": "patterns?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-07T12%3A47%3A00.000Z&step=5s"
     }
    ],
    "id": "7c1a4612",
@@ -6877,6 +6543,39 @@
    "documented": null,
    "examples": [
     {
+     "encoding": "plain",
+     "endpoint": "index_stats",
+     "excerpt": "loki 72112 proxy 72213 (loki/proxy 1.00)",
+     "query": "index/stats?query=%7Bservice_name%3D~%22api-gateway%7Cpayment-service%22%7D&start=1794055620000000000&end=1794059220000000000"
+    },
+    {
+     "encoding": "plain",
+     "endpoint": "index_stats",
+     "excerpt": "loki 104532 proxy 104678 (loki/proxy 1.00)",
+     "query": "index/stats?query=%7Benv%3D%22production%22%2C%20service_name%3D~%22api-gateway%7Cfrontend-ssr%7Ccache-redis%22%7D&start=1794055620000000000&end=1794059220000000000"
+    }
+   ],
+   "id": "00a34ca2",
+   "impact": "drilldown-visible",
+   "queries": 2,
+   "requests": 2,
+   "shapes": {
+    "-": 2
+   },
+   "signature": [
+    "index_stats",
+    "-",
+    "stats",
+    "entries differ"
+   ],
+   "sources": {
+    "grafana": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
      "encoding": "categorize",
      "endpoint": "ds_query",
      "excerpt": "loki 1 series, proxy 0",
@@ -6960,7 +6659,7 @@
     {
      "encoding": "plain",
      "endpoint": "volume_range",
-     "excerpt": "loki 6000 series, proxy 6000; loki-only [\"{\\\"pod\\\": \\\"checkout-svc-003b1-fa6c\\\"}\", \"{\\\"pod\\\": \\\"checkout-svc-01ad1-8991\\\"}\"] proxy-only [\"{\\\"pod\\\": \\\"api-gateway-01fc6-9a82\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-02388-c2a8\\\"}\"]",
+     "excerpt": "loki 6000 series, proxy 6000; loki-only [\"{\\\"pod\\\": \\\"checkout-svc-0165b-ae9c\\\"}\", \"{\\\"pod\\\": \\\"checkout-svc-03212-bb93\\\"}\"] proxy-only [\"{\\\"pod\\\": \\\"api-gateway-00547-d016\\\"}\", \"{\\\"pod\\\": \\\"api-gateway-041a2-6122\\\"}\"]",
      "query": "{env=\"production\"}"
     }
    ],
@@ -7014,8 +6713,8 @@
     {
      "encoding": "plain",
      "endpoint": "patterns",
-     "excerpt": "loki 24 proxy 6; loki-only [\"level=info msg=\\\"payment processed\\\" tx_id=<_> amount=<_> currency=CAD provider=adyen latency_ms=<_> user_id=<_>\", \"level=info msg=\\\"payment processed\\\" tx...",
-     "query": "patterns?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22payment-service%22%7D&start=2026-11-04T15%3A42%3A00.000Z&step=5s"
+     "excerpt": "loki 24 proxy 7; loki-only [\"level=info msg=\\\"payment processed\\\" tx_id=<_> amount=<_> currency=CAD provider=adyen latency_ms=<_> user_id=<_>\", \"level=info msg=\\\"payment processed\\\" tx...",
+     "query": "patterns?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22payment-service%22%7D&start=2026-11-07T12%3A47%3A00.000Z&step=5s"
     }
    ],
    "id": "52dcf85a",
@@ -7039,42 +6738,15 @@
    "documented": null,
    "examples": [
     {
-     "encoding": "plain",
-     "endpoint": "detected_fields",
-     "excerpt": "['api', 'api_ms', 'error', 'event', 'load_ms', 'path', 'region', 'session_id']",
-     "query": "detected_fields?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22frontend-ssr%22%7D%20%7C%20detected_level%3D~%22error%5C%5C%7Cwarn%22%20%20%20%20%7C%20json%20%20%7C%20logfmt%20%7C%20drop%20__error__%2C%20__error_details__%20&start=2026-11-04T15%3A42%3A00.000Z"
-    }
-   ],
-   "id": "3b1319d9",
-   "impact": "drilldown-visible",
-   "queries": 1,
-   "requests": 1,
-   "shapes": {
-    "-": 1
-   },
-   "signature": [
-    "detected_fields",
-    "-",
-    "field",
-    "proxy-only <line-or-metadata-key>"
-   ],
-   "sources": {
-    "grafana": 1
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 948264 proxy 122570.51448632723",
+     "excerpt": "{} @1794059220.0: loki 1072558 proxy 149598.97889024945",
      "query": "sum(avg_over_time({service_name=\"api-gateway\"} | json | unwrap duration_ms | __error__=\"\" [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"warn\"} @1793810520.0: loki 328919 proxy 429",
+     "excerpt": "{\"level\": \"info\"} @1794059220.0: loki 692204 proxy 204",
      "query": "sum by (level) (max_over_time({service_name=\"api-gateway\"} | json | unwrap status | __error__=\"\" [5m]))"
     }
    ],
@@ -7102,13 +6774,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 49486 series, proxy 10136",
+     "excerpt": "loki 49215 series, proxy 10132",
      "query": "rate({namespace=\"prod\"}[1h])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 784 series, proxy 169",
+     "excerpt": "loki 804 series, proxy 172",
      "query": "rate({namespace=\"prod\"}[1m])"
     }
    ],
@@ -7136,13 +6808,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 10172 series, proxy 2037",
+     "excerpt": "loki 10047 series, proxy 2036",
      "query": "count_over_time({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 10172 series, proxy 2037",
+     "excerpt": "loki 10047 series, proxy 2036",
      "query": "count_over_time({namespace=\"prod\"}[12m]) or count_over_time({namespace=\"prod\"}[12m]) > 1"
     }
    ],
@@ -7170,13 +6842,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2582 proxy 506",
+     "excerpt": "{} @1794059220.0: loki 2565 proxy 509",
      "query": "count by (baz) (bytes_over_time({namespace=\"prod\"}[3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2582 proxy 506",
+     "excerpt": "{} @1794059220.0: loki 2565 proxy 509",
      "query": "count by (baz) (bytes_rate({namespace=\"prod\"}[3m]))"
     }
    ],
@@ -7237,13 +6909,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"debug\"} @1793810520.0: loki 44076085 proxy 65519",
+     "excerpt": "{\"level\": \"debug\"} @1794059220.0: loki 44341431 proxy 65480",
      "query": "sum by (level) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap size_bytes | __error__=\"\" [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"info\"} @1793810520.0: loki 10805398 proxy 479132",
+     "excerpt": "{\"level\": \"info\"} @1794059220.0: loki 12189505 proxy 494419",
      "query": "sum by (level) (max_over_time({service_name=\"db-postgres\"} | logfmt | unwrap distance | __error__=\"\" [5m]))"
     }
    ],
@@ -7270,13 +6942,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 4181 series, proxy 842",
+     "excerpt": "loki 4277 series, proxy 852",
      "query": "sum without () (rate({namespace=\"prod\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 784 series, proxy 169",
+     "excerpt": "loki 804 series, proxy 172",
      "query": "sum without (app) (count_over_time({namespace=\"prod\"}[1m]))"
     }
    ],
@@ -7303,15 +6975,49 @@
    "documented": null,
    "examples": [
     {
+     "encoding": "plain",
+     "endpoint": "query",
+     "excerpt": "loki 1 series, proxy 1; loki-only [\"{\\\"app\\\": \\\"api-gateway\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"api\\\", \\\"detected_level\\\": \\\"info\\\", \\\"env\\\": \\\"production\\\", \\\"level\\\": \\\"info\\\", ... proxy-only [\"{\\\"app\\\": \\\"api-gateway\\\", \\\"cluster\\\": \\\"us-east-1\\\", \\\"container\\\": \\\"api\\\", \\\"detected...",
+     "query": "topk(1,rate(({namespace=\"prod\"})[1h]))"
+    },
+    {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 10172 series, proxy 2037",
+     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"ml-serving\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"payment-service\\\"}\"]",
+     "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+    }
+   ],
+   "id": "a6109627",
+   "impact": "grafana-datasource",
+   "queries": 10,
+   "requests": 18,
+   "shapes": {
+    "topk": 18
+   },
+   "signature": [
+    "query",
+    "topk",
+    "series",
+    "different series, same count"
+   ],
+   "sources": {
+    "loki-tests": 1,
+    "repo": 17
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 10047 series, proxy 2036",
      "query": "bytes_over_time({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 784 series, proxy 169",
+     "excerpt": "loki 804 series, proxy 172",
      "query": "bytes_over_time({namespace=\"prod\"}[1m])"
     }
    ],
@@ -7339,46 +7045,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"cache-redis\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"ml-serving\\\"}\"]",
-     "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"nginx-ingress\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"payment-service\\\"}\"]",
-     "query": "topk(3, sum by (app) (rate({env=\"production\"}[5m])))"
-    }
-   ],
-   "id": "a6109627",
-   "impact": "grafana-datasource",
-   "queries": 7,
-   "requests": 12,
-   "shapes": {
-    "topk": 12
-   },
-   "signature": [
-    "query",
-    "topk",
-    "series",
-    "different series, same count"
-   ],
-   "sources": {
-    "repo": 12
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 3.887200420320899 proxy 18.97809786898185",
+     "excerpt": "{} @1794059220.0: loki 3.883693995733008 proxy 18.86458744571654",
      "query": "avg(count_over_time({namespace=\"prod\"}[1h])) by ()"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 3.887200420320899 proxy 18.97809786898185",
+     "excerpt": "{} @1794059220.0: loki 3.883693995733008 proxy 18.86458744571654",
      "query": "avg(count_over_time({namespace=\"prod\"}[1h])) by (bar,foo)"
     }
    ],
@@ -7406,13 +7079,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2667 proxy 98",
+     "excerpt": "{} @1794059220.0: loki 2648 proxy 98",
      "query": "count by (foo) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2667 proxy 98",
+     "excerpt": "{} @1794059220.0: loki 2648 proxy 98",
      "query": "count by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -7439,13 +7112,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 412 series, proxy 306",
+     "excerpt": "loki 395 series, proxy 315",
      "query": "label_replace( label_replace( rate( {namespace=\"prod\"} |= \"err\" [5m] ), \"foo\", \"$1\", \"service\", \"(.*):.*\" ), \"foo\", \"$1\", \"service\", \"(.*):.*\" )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 412 series, proxy 306",
+     "excerpt": "loki 395 series, proxy 315",
      "query": "label_replace( rate( {namespace=\"prod\"} |= \"err\" [5m] ), \"foo\", \"$1\", \"service\", \"(.*):.*\" )"
     }
    ],
@@ -7505,13 +7178,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 1145 proxy 54",
+     "excerpt": "{} @1794059220.0: loki 1138 proxy 54",
      "query": "count(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 1145 proxy 54",
+     "excerpt": "{} @1794059220.0: loki 1138 proxy 54",
      "query": "count(bytes_rate({service_name=\"payment-service\"} | logfmt [3m]))"
     }
    ],
@@ -7538,13 +7211,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 343 series, proxy 18",
+     "excerpt": "loki 354 series, proxy 18",
      "query": "count_over_time( {service_name=\"payment-service\"} | logfmt [1m] )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 343 series, proxy 18",
+     "excerpt": "loki 354 series, proxy 18",
      "query": "count_over_time({service_name=\"payment-service\"}|logfmt[1m])"
     }
    ],
@@ -7572,13 +7245,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 406 series, proxy 313",
+     "excerpt": "loki 388 series, proxy 299",
      "query": "count_over_time( {namespace=\"prod\"} |= \"error\" [5m] offset 20m )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 4776 series, proxy 3692",
+     "excerpt": "loki 4704 series, proxy 3689",
      "query": "count_over_time({namespace=\"prod\"} |= \"error\" [1h])"
     }
    ],
@@ -7639,13 +7312,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 371 proxy 41269",
+     "excerpt": "{} @1794059220.0: loki 372 proxy 42091",
      "query": "max by (baz) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2.061111111111111 proxy 229.2722222222222",
+     "excerpt": "{} @1794059220.0: loki 2.066666666666667 proxy 233.8388888888889",
      "query": "max by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -7672,13 +7345,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 1 proxy 66",
+     "excerpt": "{} @1794059220.0: loki 1 proxy 67",
      "query": "max by (baz) (count_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 143 proxy 8320",
+     "excerpt": "{} @1794059220.0: loki 143 proxy 8407",
      "query": "max(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
     }
    ],
@@ -7705,13 +7378,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 49486 series, proxy 1",
+     "excerpt": "loki 49215 series, proxy 1",
      "query": "max without () (count_over_time({namespace=\"prod\"}[1h]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 49486 series, proxy 10136",
+     "excerpt": "loki 49215 series, proxy 10132",
      "query": "max without (bar) (count_over_time({namespace=\"prod\"}[1h]))"
     }
    ],
@@ -7739,13 +7412,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 93 proxy 118",
+     "excerpt": "{} @1794059220.0: loki 93 proxy 118",
      "query": "min by (baz) (bytes_over_time({namespace=\"prod\"}[3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0.5166666666666667 proxy 0.6555555555555556",
+     "excerpt": "{} @1794059220.0: loki 0.5166666666666667 proxy 0.6555555555555556",
      "query": "min by (baz) (bytes_rate({namespace=\"prod\"}[3m]))"
     }
    ],
@@ -7759,6 +7432,39 @@
    "signature": [
     "query",
     "min",
+    "values",
+    "values differ (proxy higher)"
+   ],
+   "sources": {
+    "loki-tests": 8
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "{} @1794059220.0: loki 1 proxy 2",
+     "query": "min by (baz) (count_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "{} @1794059220.0: loki 108 proxy 273",
+     "query": "min(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
+    }
+   ],
+   "id": "dcf0f4ed",
+   "impact": "grafana-datasource",
+   "queries": 4,
+   "requests": 8,
+   "shapes": {
+    "min[logfmt]": 8
+   },
+   "signature": [
+    "query",
+    "min[logfmt]",
     "values",
     "values differ (proxy higher)"
    ],
@@ -7874,13 +7580,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"info\"} @1793810520.0: loki 7294750.710000002 proxy 9995.35",
+     "excerpt": "{\"level\": \"info\"} @1794059220.0: loki 7596916.540000013 proxy 9998.52",
      "query": "sum by (level) (max_over_time({app=\"payment-service\"} | logfmt | unwrap amount [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"namespace\": \"prod\"} @1793810520.0: loki 8262491.700000004 proxy 518459.39249999996",
+     "excerpt": "{\"namespace\": \"prod\"} @1794059220.0: loki 8598798.21 proxy 531823.778",
      "query": "sum by (namespace) (quantile_over_time(0.95, {app=\"payment-service\"} | logfmt | unwrap amount [5m]))"
     }
    ],
@@ -7907,13 +7613,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 10172 series, proxy 2037",
+     "excerpt": "loki 10047 series, proxy 2036",
      "query": "bytes_rate({namespace=\"prod\"}[12m])"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 380 series, proxy 82",
+     "excerpt": "loki 432 series, proxy 87",
      "query": "bytes_rate({namespace=\"prod\"}[30s])"
     }
    ],
@@ -7940,13 +7646,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0.011777086821334609 proxy 0.058479809976247035",
+     "excerpt": "{} @1794059220.0: loki 0.011782401995167953 proxy 0.0591471048513302",
      "query": "max(sum by (cluster) (rate({namespace=\"prod\"}[5m]))) / count(rate({namespace=\"prod\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 136 proxy 2775",
+     "excerpt": "{\"app\": \"notification-svc\"} @1794059220.0: loki 135 proxy 2766",
      "query": "max by (app) (bytes_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -7974,13 +7680,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 8 series, proxy 7",
+     "excerpt": "loki 12 series, proxy 11",
      "query": "rate( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] )"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 8 series, proxy 7",
+     "excerpt": "loki 12 series, proxy 11",
      "query": "rate( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] )>-1"
     }
    ],
@@ -8042,40 +7748,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 35: syntax error: unexpected ) | proxy sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "sum by (level) ({namespace=\"prod\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 24: syntax error: unexpected ) | proxy sum() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "sum({app=\"api-gateway\"})"
-    }
-   ],
-   "id": "d1da0216",
-   "impact": "grafana-datasource",
-   "queries": 3,
-   "requests": 6,
-   "shapes": {
-    "sum": 6
-   },
-   "signature": [
-    "query",
-    "sum",
-    "error-text",
-    "400 with different text: sum() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({..."
-   ],
-   "sources": {
-    "loki-tests": 2,
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
      "excerpt": "loki 0 series, proxy 1; loki-only [] proxy-only [\"{}\"]",
      "query": "sum(max(bytes_over_time({namespace=\"prod\"}[3s])))"
     },
@@ -8101,39 +7773,6 @@
    ],
    "sources": {
     "loki-tests": 6
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki 2 series, proxy 2; loki-only [\"{\\\"app\\\": \\\"visual-extraction-list\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"visual-bare-json-metric\\\"}\"]",
-     "query": "bottomk(2, sum by (app) (count_over_time({app=~\".+\"}[5m])))"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"inventory-svc\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"batch-etl\\\"}\"]",
-     "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
-    }
-   ],
-   "id": "ab5f6f01",
-   "impact": "grafana-datasource",
-   "queries": 3,
-   "requests": 6,
-   "shapes": {
-    "bottomk": 6
-   },
-   "signature": [
-    "query",
-    "bottomk",
-    "series",
-    "different series, same count"
-   ],
-   "sources": {
-    "repo": 6
    }
   },
   {
@@ -8241,13 +7880,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 0 proxy 7.494101989287997",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794059220.0: loki 0 proxy 7.660156952383376",
      "query": "stddev by (app) (count_over_time({env=\"production\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 0 proxy 7.4941019892880005",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794059220.0: loki 0 proxy 7.6601569523833755",
      "query": "stddev by(app)(count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -8272,15 +7911,15 @@
    "documented": null,
    "examples": [
     {
-     "encoding": "categorize",
+     "encoding": "plain",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 108.65333333333334 proxy 54.32666666666667",
+     "excerpt": "{} @1794059220.0: loki 111.18 proxy 55.59",
      "query": "sum( rate( {namespace=\"prod\"} [5m] ) ) - sum( rate( {namespace=\"prod\"} [5m] ) ) % sum( rate( {namespace=\"prod\"} [5m] ) ) + sum( rate( {namespace=\"prod\"} [5m] ) )"
     },
     {
-     "encoding": "plain",
+     "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 108.65333333333334 proxy 54.32666666666666",
+     "excerpt": "{} @1794059220.0: loki 111.18 proxy 55.589999999999996",
      "query": "sum(rate({namespace=\"prod\"}[5m])) - sum(rate({namespace=\"prod\"}[5m])) % sum(rate({namespace=\"prod\"}[5m])) + sum(rate({namespace=\"prod\"}[5m]))"
     }
    ],
@@ -8300,6 +7939,39 @@
    "sources": {
     "loki-tests": 3,
     "repo": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 2 series, proxy 2; loki-only [\"{\\\"app\\\": \\\"visual-extraction-list\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"visual-bare-json-metric\\\"}\"]",
+     "query": "bottomk(2, sum by (app) (count_over_time({app=~\".+\"}[5m])))"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"inventory-svc\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"checkout-svc\\\"}\"]",
+     "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))"
+    }
+   ],
+   "id": "ab5f6f01",
+   "impact": "grafana-datasource",
+   "queries": 3,
+   "requests": 5,
+   "shapes": {
+    "bottomk": 5
+   },
+   "signature": [
+    "query",
+    "bottomk",
+    "series",
+    "different series, same count"
+   ],
+   "sources": {
+    "repo": 5
    }
   },
   {
@@ -8374,13 +8046,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 1140 series, proxy 1861",
+     "excerpt": "loki 1140 series, proxy 1833",
      "query": "count_over_time({namespace=\"prod\"}[12m]) > 1"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 92 series, proxy 153",
+     "excerpt": "loki 95 series, proxy 153",
      "query": "count_over_time({namespace=\"prod\"}[1m]) > 1"
     }
    ],
@@ -8441,13 +8113,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 4181 proxy 842",
+     "excerpt": "{} @1794059220.0: loki 4277 proxy 852",
      "query": "max(count(rate({namespace=\"prod\"}[5m])))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 2090.5 proxy 421",
+     "excerpt": "{} @1794059220.0: loki 2138.5 proxy 426",
      "query": "max(count(rate({namespace=\"prod\"}[5m]))) / 2"
     }
    ],
@@ -8474,13 +8146,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 317 proxy 345",
+     "excerpt": "{} @1794059220.0: loki 316 proxy 356",
      "query": "min by (baz) (bytes_over_time({service_name=\"api-gateway\"} | json [3m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 1.761111111111111 proxy 1.9166666666666667",
+     "excerpt": "{} @1794059220.0: loki 1.7555555555555555 proxy 1.9777777777777779",
      "query": "min by (foo) (bytes_rate({service_name=\"api-gateway\"} | json [3m]))"
     }
    ],
@@ -8494,39 +8166,6 @@
    "signature": [
     "query",
     "min[json]",
-    "values",
-    "values differ (proxy higher)"
-   ],
-   "sources": {
-    "loki-tests": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 108 proxy 122",
-     "query": "min(bytes_over_time({service_name=\"payment-service\"} | logfmt [3m]))"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0.6 proxy 0.6777777777777778",
-     "query": "min(bytes_rate({service_name=\"payment-service\"} | logfmt [3m]))"
-    }
-   ],
-   "id": "dcf0f4ed",
-   "impact": "grafana-datasource",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "min[logfmt]": 4
-   },
-   "signature": [
-    "query",
-    "min[logfmt]",
     "values",
     "values differ (proxy higher)"
    ],
@@ -8673,13 +8312,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 5332 series, proxy 1123",
+     "excerpt": "loki 5457 series, proxy 1134",
      "query": "avg without (level, env) (count_over_time({env=\"production\"}[5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 5332 series, proxy 1123",
+     "excerpt": "loki 5457 series, proxy 1134",
      "query": "avg without(app)(rate({env=\"production\"}[5m]))"
     }
    ],
@@ -8695,39 +8334,6 @@
     "avg",
     "series",
     "proxy-fewer"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 41: syntax error: unexpected ) | proxy avg() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "avg({app=\"api-gateway\",env=\"production\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 24: syntax error: unexpected ) | proxy avg() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))",
-     "query": "avg({app=\"api-gateway\"})"
-    }
-   ],
-   "id": "54a23828",
-   "impact": "grafana-datasource",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "avg": 4
-   },
-   "signature": [
-    "query",
-    "avg",
-    "error-text",
-    "400 with different text: avg() requires a range metric inside (e.g. rate({...}[Nm]), count_over_time({..."
    ],
    "sources": {
     "repo": 4
@@ -9036,72 +8642,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 25: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "sort({app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 42: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "sort({app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "ea5fa199",
-   "impact": "grafana-datasource",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "sort": 4
-   },
-   "signature": [
-    "query",
-    "sort",
-    "error-text",
-    "400 with different text: unsupported instant aggregation target"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 30: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "sort_desc({app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 47: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "sort_desc({app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "4d13f90a",
-   "impact": "grafana-datasource",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "sort_desc": 4
-   },
-   "signature": [
-    "query",
-    "sort_desc",
-    "error-text",
-    "400 with different text: unsupported instant aggregation target"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
      "excerpt": "loki parse error : invalid aggregation stddev_over_time without unwrap | proxy stddev_over_time requires `| unwrap <field>` for range aggregation",
      "query": "stddev_over_time({app=\"api-gateway\"}[1m])"
     },
@@ -9201,39 +8741,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 28: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "topk(5, {app=\"api-gateway\"})"
-    },
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 45: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "topk(2, {app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "380bfbcd",
-   "impact": "grafana-datasource",
-   "queries": 2,
-   "requests": 4,
-   "shapes": {
-    "topk": 4
-   },
-   "signature": [
-    "query",
-    "topk",
-    "error-text",
-    "400 with different text: unsupported instant aggregation target"
-   ],
-   "sources": {
-    "repo": 4
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
      "excerpt": "loki 1 series, proxy 2; loki-only [] proxy-only [\"{\\\"service_name\\\": \\\"ml-serving\\\"}\"]",
      "query": "sum by (service_name) (rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))"
     },
@@ -9267,13 +8774,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 19878.05 proxy 22322.353333333333",
+     "excerpt": "{} @1794059220.0: loki 20411.536666666667 proxy 22992.11666666667",
      "query": "sum(rate({env=\"production\"} | logfmt | unwrap latency_ms [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 544383.2400000002 proxy 8262491.699999999",
+     "excerpt": "{} @1794059220.0: loki 553736.8900000001 proxy 8598798.21",
      "query": "sum(max_over_time({service_name=\"payment-service\"} | logfmt amount | unwrap amount [5m]))"
     }
    ],
@@ -9300,13 +8807,46 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 835 series, proxy 838; loki-only [\"{\\\"throughput_rps\\\": \\\"0.6\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.9\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0.6000000000000001\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.9000000000000001\\\"}\"]",
+     "excerpt": "loki 1 series, proxy 0; loki-only [\"{}\"] proxy-only []",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\") [1m]))"
+    },
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 1 series, proxy 0; loki-only [\"{}\"] proxy-only []",
+     "query": "sum(count_over_time({service_name=\"auth-service\"} | json | ip=ip(\"10.0.0.0-10.2.255.255\") [1m]))"
+    }
+   ],
+   "id": "e1528358",
+   "impact": "grafana-datasource",
+   "queries": 2,
+   "requests": 4,
+   "shapes": {
+    "sum[json,label-filter]": 4
+   },
+   "signature": [
+    "query",
+    "sum[json,label-filter]",
+    "series",
+    "proxy-empty"
+   ],
+   "sources": {
+    "repo": 4
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 854 series, proxy 856; loki-only [\"{\\\"throughput_rps\\\": \\\"0.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.6\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.6000000000000001\\\"}\"]",
      "query": "sum by (throughput_rps) (count_over_time({service_name=\"batch-etl\"} | json [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 1546 series, proxy 1554; loki-only [\"{\\\"confidence\\\": \\\"0.5025\\\"}\", \"{\\\"confidence\\\": \\\"0.5034\\\"}\"] proxy-only [\"{\\\"confidence\\\": \\\"0.5025000000000001\\\"}\", \"{\\\"confidence\\\": \\\"0.5034000000000001\\\"}\"]",
+     "excerpt": "loki 1578 series, proxy 1580; loki-only [\"{\\\"confidence\\\": \\\"0.5024\\\"}\", \"{\\\"confidence\\\": \\\"0.5025\\\"}\"] proxy-only [\"{\\\"confidence\\\": \\\"0.5024000000000001\\\"}\", \"{\\\"confidence\\\": \\\"0.5025000000000001\\\"}\"]",
      "query": "sum by (confidence) (count_over_time({service_name=\"ml-serving\"} | json [5m]))"
     }
    ],
@@ -9333,13 +8873,13 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 835 series, proxy 838; loki-only [\"{\\\"throughput_rps\\\": \\\"0.6\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.9\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0.6000000000000001\\\"}\", \"{\\\"throughput_rps\\\": \\\"1.9000000000000001\\\"}\"]",
+     "excerpt": "loki 854 series, proxy 856; loki-only [\"{\\\"throughput_rps\\\": \\\"0.0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.6\\\"}\"] proxy-only [\"{\\\"throughput_rps\\\": \\\"0\\\"}\", \"{\\\"throughput_rps\\\": \\\"0.6000000000000001\\\"}\"]",
      "query": "sum by (throughput_rps) (count_over_time({service_name=\"batch-etl\"} | json | throughput_rps!=\"\" [5m]))"
     },
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 1546 series, proxy 1554; loki-only [\"{\\\"confidence\\\": \\\"0.5025\\\"}\", \"{\\\"confidence\\\": \\\"0.5034\\\"}\"] proxy-only [\"{\\\"confidence\\\": \\\"0.5025000000000001\\\"}\", \"{\\\"confidence\\\": \\\"0.5034000000000001\\\"}\"]",
+     "excerpt": "loki 1578 series, proxy 1580; loki-only [\"{\\\"confidence\\\": \\\"0.5024\\\"}\", \"{\\\"confidence\\\": \\\"0.5025\\\"}\"] proxy-only [\"{\\\"confidence\\\": \\\"0.5024000000000001\\\"}\", \"{\\\"confidence\\\": \\\"0.5025000000000001\\\"}\"]",
      "query": "sum by (confidence) (count_over_time({service_name=\"ml-serving\"} | json | confidence!=\"\" [5m]))"
     }
    ],
@@ -9453,7 +8993,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0.003333333333333333 proxy 0.08703030303030297",
+     "excerpt": "{} @1794059220.0: loki 0.0033333333333333335 proxy 0.08740079365079365",
      "query": "avg(rate({service_name=\"api-gateway\"} | json [5m]))"
     }
    ],
@@ -9507,7 +9047,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 1145 series, proxy 54",
+     "excerpt": "loki 1138 series, proxy 54",
      "query": "bytes_over_time({service_name=\"payment-service\"} | logfmt [3m])"
     }
    ],
@@ -9534,7 +9074,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 1145 series, proxy 54",
+     "excerpt": "loki 1138 series, proxy 54",
      "query": "bytes_rate({service_name=\"payment-service\"} | logfmt [3m])"
     }
    ],
@@ -9588,34 +9128,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 1 proxy 165",
-     "query": "count(rate({service_name=\"api-gateway\"} | json | keep foo [5m]))"
-    }
-   ],
-   "id": "9925a3bc",
-   "impact": "grafana-datasource",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "count[json,keep]": 2
-   },
-   "signature": [
-    "query",
-    "count[json,keep]",
-    "values",
-    "values differ (proxy higher)"
-   ],
-   "sources": {
-    "loki-tests": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 4308 proxy 165",
+     "excerpt": "{} @1794059220.0: loki 4405 proxy 168",
      "query": "count(rate({service_name=\"api-gateway\"} | json | label_format foo=bar [5m]))"
     }
    ],
@@ -10047,33 +9560,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 26: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "stddev({namespace=\"prod\"})"
-    }
-   ],
-   "id": "5b4749b3",
-   "impact": "grafana-datasource",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "stddev": 2
-   },
-   "signature": [
-    "query",
-    "stddev",
-    "error-text",
-    "400 with different text: unsupported instant aggregation target"
-   ],
-   "sources": {
-    "loki-tests": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
      "excerpt": "loki - | proxy log queries are not supported as an instant query type, please change your query to a range query type",
      "query": "sum without(a) ( rate ( ( {namespace=\"prod\"} |=\"error\" !=\"timeout\" ) [10s] ) )"
     }
@@ -10182,7 +9668,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0.0033333333333333335 proxy 0.42",
+     "excerpt": "{} @1794059220.0: loki 0.0033333333333333335 proxy 0.4266666666666667",
      "query": "sum(max(rate({service_name=\"api-gateway\"} | json | label_format foo=bar [5m])))"
     }
    ],
@@ -10317,7 +9803,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 49486 series, proxy 10136",
+     "excerpt": "loki 49215 series, proxy 10132",
      "query": "topk(10,count_over_time({namespace=\"prod\"}[1h])) without (bar)"
     }
    ],
@@ -10371,7 +9857,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 297.338779956427 proxy 339.2351177871503",
+     "excerpt": "{\"app\": \"api-gateway\"} @1794059220.0: loki 243.48649262202042 proxy 890.4701124419605",
      "query": "avg by(app)(avg_over_time({env=\"production\"} | json | unwrap duration_ms [5m]))"
     }
    ],
@@ -10425,7 +9911,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 5332 series, proxy 1123",
+     "excerpt": "loki 5457 series, proxy 1134",
      "query": "count without (cluster) (count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -10587,7 +10073,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 0 series, proxy 949",
+     "excerpt": "loki 0 series, proxy 952",
      "query": "count_over_time({service_name=\"api-gateway\"} | unpack | status >= 400 [5m])"
     }
    ],
@@ -10614,7 +10100,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 599 proxy 598.28",
+     "excerpt": "{\"app\": \"api-gateway\"} @1794059220.0: loki 5000 proxy 4992.22",
      "query": "max by(app)(quantile_over_time(0.99, {env=\"production\"} | json | unwrap duration_ms [5m]))"
     }
    ],
@@ -10668,7 +10154,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"warn\", \"env\": \"production\", \"error\": \"rate limit exceeded\", \"ip\": \"10.2.166.141\", \"level\": \"warn\", \"level_extracted\": \"warn\", \"method\": \"GET\", \"namespa...",
+     "excerpt": "{\"app\": \"api-gateway\", \"cluster\": \"us-east-1\", \"container\": \"api\", \"detected_level\": \"info\", \"env\": \"production\", \"ip\": \"10.2.149.195\", \"level\": \"info\", \"level_extracted\": \"info\", \"method\": \"PATCH\", \"namespace\": \"prod\", \"path\": \"/api/v1/...",
      "query": "quantile_over_time(2.0, {app=\"api-gateway\"} | json | unwrap duration_ms [5m])"
     }
    ],
@@ -10722,7 +10208,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 343 series, proxy 18",
+     "excerpt": "loki 354 series, proxy 18",
      "query": "rate({app=\"payment-service\"} | logfmt [1m])"
     }
    ],
@@ -10776,7 +10262,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"app\": \"inventory-svc\"} @1793810520.0: loki 0 proxy 56.1615646258503",
+     "excerpt": "{\"app\": \"inventory-svc\"} @1794059220.0: loki 0 proxy 58.678004535147366",
      "query": "stdvar by(app)(count_over_time({env=\"production\"}[5m]))"
     }
    ],
@@ -10803,7 +10289,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 784 series, proxy 169",
+     "excerpt": "loki 804 series, proxy 172",
      "query": "stdvar without (app) (count_over_time({namespace=\"prod\"}[1m]))"
     }
    ],
@@ -10884,7 +10370,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0 proxy 1869.4699999999998",
+     "excerpt": "{} @1794059220.0: loki 0 proxy 1998.0433333333322",
      "query": "sum(rate_counter({app=\"api-gateway\"} | json | __error__=\"\" | duration_ms!=\"\" | unwrap duration_ms [5m]))"
     }
    ],
@@ -10938,7 +10424,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 0 series, proxy 75",
+     "excerpt": "loki 0 series, proxy 77",
      "query": "sum_over_time({app=\"api-gateway\"} | unwrap duration_ms [5m])"
     }
    ],
@@ -11019,33 +10505,6 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki parse error at line 1, col 48: syntax error: unexpected ) | proxy unsupported instant aggregation target",
-     "query": "bottomk(1, {app=\"api-gateway\",env=\"production\"})"
-    }
-   ],
-   "id": "702df3da",
-   "impact": "grafana-datasource",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "bottomk": 2
-   },
-   "signature": [
-    "query",
-    "bottomk",
-    "error-text",
-    "400 with different text: unsupported instant aggregation target"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
      "excerpt": "loki 1 series, proxy 2; loki-only [] proxy-only [\"{\\\"service_name\\\": \\\"ml-serving\\\"}\"]",
      "query": "max by (service_name) (max_over_time({env=\"production\"} | logfmt | unwrap latency_ms | __error__=\"\" [1m]))"
     }
@@ -11073,7 +10532,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"7152s\\\": invalid syntax... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"45712s\\\": invalid synta... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
      "query": "max by (service_name) (max_over_time({service_name=\"cache-redis\"} | logfmt | unwrap ttl [1m]))"
     }
    ],
@@ -11100,34 +10559,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"34a80bc1f266\\\": invalid... | proxy pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat:...",
-     "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))"
-    }
-   ],
-   "id": "aade82ba",
-   "impact": "grafana-datasource",
-   "queries": 1,
-   "requests": 2,
-   "shapes": {
-    "max[json,unwrap]": 2
-   },
-   "signature": [
-    "query",
-    "max[json,unwrap]",
-    "error-text",
-    "400 with different text: pipeline error: Q for series: '{__error__=Q, __error_details__=QcaNcNd\\\": invali"
-   ],
-   "sources": {
-    "repo": 2
-   }
-  },
-  {
-   "documented": null,
-   "examples": [
-    {
-     "encoding": "categorize",
-     "endpoint": "query",
-     "excerpt": "{} @1793810520.0: loki 0 proxy 17646.617566666668",
+     "excerpt": "{} @1794059220.0: loki 0 proxy 18373.131500000003",
      "query": "sum(rate_counter({service_name=\"payment-service\"} | logfmt | unwrap amount [5m]))"
     }
    ],
@@ -11154,7 +10586,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"service_name\": \"checkout-svc\"} @1793810520.0: loki 1 proxy 27",
+     "excerpt": "{\"service_name\": \"pricing-svc\"} @1794059220.0: loki 1 proxy 28",
      "query": "sum by (service_name) (max by (service_name, app) (count_over_time({env=\"production\"}[5m])))"
     }
    ],
@@ -11181,7 +10613,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 520 series, proxy 4308",
+     "excerpt": "loki 524 series, proxy 4405",
      "query": "count_over_time({app=\"api-gateway\"} | regexp \"(?P<mth>GET|POST|PUT)\" [5m])"
     }
    ],
@@ -11208,7 +10640,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 905 series, proxy 905; loki-only [\"{\\\"duration_s\\\": \\\"1.64\\\"}\", \"{\\\"duration_s\\\": \\\"107.0\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"1.6400000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"107\\\"}\"]",
+     "excerpt": "loki 926 series, proxy 926; loki-only [\"{\\\"duration_s\\\": \\\"1.38\\\"}\", \"{\\\"duration_s\\\": \\\"145.0\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"1.3800000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"145\\\"}\"]",
      "query": "sum by (duration_s) (count_over_time({service_name=\"batch-etl\"} | json [5m]))"
     }
    ],
@@ -11235,7 +10667,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"warn\"} @1793810520.0: loki 845 proxy 461",
+     "excerpt": "{\"level\": \"info\"} @1794059220.0: loki 2074 proxy 1643",
      "query": "sum by (level) (count_over_time({env=\"production\"} | json | service_name_extracted!=\"\" [1m]))"
     }
    ],
@@ -11289,7 +10721,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "{\"level\": \"warn\"} @1793810520.0: loki 0 proxy 3.0515933907095523",
+     "excerpt": "{\"level\": \"info\"} @1794059220.0: loki 0 proxy 9.357646902697043",
      "query": "stddev by (level) (count_over_time({service_name=\"payment-service\"} | logfmt [5m]))"
     }
    ],
@@ -11370,7 +10802,7 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment failed\\\": inval... | proxy -",
+     "excerpt": "loki pipeline error: 'SampleExtractionErr' for series: '{__error__=\"SampleExtractionErr\", __error_details__=\"strconv.ParseFloat: parsing \\\"payment refunded\\\": inv... | proxy -",
      "query": "label_replace(sum by (service_name) (sum_over_time({service_name=\"payment-service\"} | logfmt | unwrap msg [5m])), \"x\", \"$1\", \"service_name\", \"(.*)\")"
     }
    ],
@@ -11451,7 +10883,34 @@
     {
      "encoding": "categorize",
      "endpoint": "query",
-     "excerpt": "loki 905 series, proxy 905; loki-only [\"{\\\"duration_s\\\": \\\"1.64\\\"}\", \"{\\\"duration_s\\\": \\\"107.0\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"1.6400000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"107\\\"}\"]",
+     "excerpt": "loki 3 series, proxy 3; loki-only [\"{\\\"app\\\": \\\"auth-service\\\"}\"] proxy-only [\"{\\\"app\\\": \\\"ml-serving\\\"}\"]",
+     "query": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[5m])))"
+    }
+   ],
+   "id": "4e45c615",
+   "impact": "grafana-datasource",
+   "queries": 1,
+   "requests": 2,
+   "shapes": {
+    "logs": 2
+   },
+   "signature": [
+    "query",
+    "logs",
+    "series",
+    "different series, same count"
+   ],
+   "sources": {
+    "repo": 2
+   }
+  },
+  {
+   "documented": null,
+   "examples": [
+    {
+     "encoding": "categorize",
+     "endpoint": "query",
+     "excerpt": "loki 926 series, proxy 926; loki-only [\"{\\\"duration_s\\\": \\\"1.38\\\"}\", \"{\\\"duration_s\\\": \\\"145.0\\\"}\"] proxy-only [\"{\\\"duration_s\\\": \\\"1.3800000000000001\\\"}\", \"{\\\"duration_s\\\": \\\"145\\\"}\"]",
      "query": "sum by (duration_s) (count_over_time({service_name=\"batch-etl\"} | json | duration_s!=\"\" [5m]))"
     }
    ],
@@ -11484,7 +10943,7 @@
     {
      "encoding": "plain",
      "endpoint": "detected_labels",
-     "excerpt": "pod: loki 2690 proxy 165",
+     "excerpt": "pod: loki 2878 proxy 168",
      "query": "{service_name=\"api-gateway\"}"
     }
    ],
@@ -11511,13 +10970,13 @@
     {
      "encoding": "plain",
      "endpoint": "index_stats",
-     "excerpt": "loki 11987 proxy 13489 (loki/proxy 0.89); Loki's own /series: 13489",
+     "excerpt": "loki 13010 proxy 13487 (loki/proxy 0.96); Loki's own /series: 13487",
      "query": "{env=\"production\"}"
     },
     {
      "encoding": "plain",
      "endpoint": "index_stats",
-     "excerpt": "loki 2690 proxy 1967 (loki/proxy 1.37); Loki's own /series: 1967",
+     "excerpt": "loki 2878 proxy 1979 (loki/proxy 1.45); Loki's own /series: 1979",
      "query": "{service_name=\"api-gateway\"}"
     }
    ],
@@ -11539,19 +10998,52 @@
    }
   },
   {
+   "documented": "quality/index-stats-bytes-and-chunks",
+   "examples": [
+    {
+     "encoding": "plain",
+     "endpoint": "index_stats",
+     "excerpt": "loki 0 proxy 200",
+     "query": "index/stats?query=%7Bapp%3D%22visual-bare-json-metric%22%7D&start=1794055620000000000&end=1794059220000000000"
+    },
+    {
+     "encoding": "plain",
+     "endpoint": "index_stats",
+     "excerpt": "loki 0 proxy 100",
+     "query": "index/stats?query=%7Bapp%3D%22visual-extraction-list%22%2Ccase%3D%22json%22%7D&start=1794058320000000000&end=1794059220000000000"
+    }
+   ],
+   "id": "e55aad89",
+   "impact": "drilldown-visible",
+   "queries": 9,
+   "requests": 9,
+   "shapes": {
+    "-": 9
+   },
+   "signature": [
+    "index_stats",
+    "-",
+    "stats",
+    "bytes differ [quality/index-stats-bytes-and-chunks]"
+   ],
+   "sources": {
+    "grafana": 9
+   }
+  },
+  {
    "documented": "drilldown/detected-labels-sampled-cardinality",
    "examples": [
     {
      "encoding": "plain",
      "endpoint": "detected_labels",
-     "excerpt": "pod: loki 729 proxy 48",
-     "query": "detected_labels?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-04T16%3A27%3A00.000Z"
+     "excerpt": "pod: loki 780 proxy 42",
+     "query": "detected_labels?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-07T13%3A32%3A00.000Z"
     },
     {
      "encoding": "plain",
      "endpoint": "detected_labels",
-     "excerpt": "pod: loki 729 proxy 48",
-     "query": "detected_labels?end=2026-11-04T16%3A42%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-04T15%3A42%3A00.000Z"
+     "excerpt": "pod: loki 780 proxy 42",
+     "query": "detected_labels?end=2026-11-07T13%3A47%3A00.000Z&query=%7Bservice_name%3D%22otel-collector%22%7D&start=2026-11-07T12%3A47%3A00.000Z"
     }
    ],
    "id": "3550bbd8",
@@ -11577,14 +11069,14 @@
     {
      "encoding": "plain",
      "endpoint": "volume",
-     "excerpt": "{\"service_name\": \"cache-redis\"} @1793810520.0: loki 1461504 proxy 450614",
-     "query": "index/volume?end=2026-11-04T16%3A42%3A00.000Z&limit=5000&query=%7Bservice_name%3D~%60.%2B%60%7D&start=2026-11-04T16%3A27%3A00.000Z"
+     "excerpt": "{\"service_name\": \"frontend-ssr\"} @1794059220.0: loki 5210112 proxy 1718347",
+     "query": "index/volume?end=2026-11-07T13%3A47%3A00.000Z&limit=5000&query=%7Bservice_name%3D~%60.%2B%60%7D&start=2026-11-07T13%3A32%3A00.000Z"
     },
     {
      "encoding": "plain",
      "endpoint": "volume",
-     "excerpt": "{\"service_name\": \"cache-redis\"} @1793810520.0: loki 5846016 proxy 1755315",
-     "query": "index/volume?end=2026-11-04T16%3A42%3A00.000Z&limit=5000&query=%7Bservice_name%3D~%60.%2B%60%7D&start=2026-11-04T15%3A42%3A00.000Z"
+     "excerpt": "{\"service_name\": \"frontend-ssr\"} @1794059220.0: loki 20840448 proxy 6706317",
+     "query": "index/volume?end=2026-11-07T13%3A47%3A00.000Z&limit=5000&query=%7Bservice_name%3D~%60.%2B%60%7D&start=2026-11-07T12%3A47%3A00.000Z"
     }
    ],
    "id": "08dc4434",
@@ -11610,7 +11102,7 @@
     {
      "encoding": "plain",
      "endpoint": "volume",
-     "excerpt": "{\"service_name\": \"checkout-svc\"} @1793810520.0: loki 2597888 proxy 1124635",
+     "excerpt": "{\"service_name\": \"worker-service\"} @1794059220.0: loki 2247680 proxy 2067464",
      "query": "{env=\"production\"}"
     }
    ],
@@ -11637,7 +11129,7 @@
     {
      "encoding": "plain",
      "endpoint": "volume_range",
-     "excerpt": "{\"service_name\": \"checkout-svc\"} @1793810279.999: loki 42576 proxy 18321",
+     "excerpt": "{\"service_name\": \"worker-service\"} @1794058679.999: loki 36836 proxy 34286",
      "query": "{env=\"production\"}"
     }
    ],
@@ -11660,11 +11152,11 @@
   }
  ],
  "health": {
-  "lines_loki": 290108,
-  "lines_vl": 290108,
+  "lines_loki": 286925,
+  "lines_vl": 286925,
   "loki_restarts": 0,
   "loki_restarts_after": 0,
-  "not_reproducible": 16,
+  "not_reproducible": 13,
   "ok": true,
   "ok_after": true,
   "services_in_loki_metric": 20,
@@ -11675,40 +11167,40 @@
   "vl_restarts_after": 0
  },
  "passes": {},
- "recorded": "2026-11-04T17:02:53Z",
- "ref": "69d07019",
+ "recorded": "2026-11-07T14:07:01Z",
+ "ref": "a3ad4c1b",
  "summary": {
   "grafana": {
-   "blocked": 5,
-   "diff": 78,
-   "requests": 482,
-   "same": 383,
+   "blocked": 0,
+   "diff": 82,
+   "requests": 493,
+   "same": 395,
    "vacuous": 16
   },
   "loki-tests": {
    "blocked": 24,
-   "diff": 733,
+   "diff": 722,
    "requests": 3592,
-   "same": 723,
-   "vacuous": 2112
+   "same": 726,
+   "vacuous": 2120
   },
   "repo": {
-   "blocked": 16,
-   "diff": 700,
-   "requests": 3306,
-   "same": 2158,
-   "vacuous": 432
+   "blocked": 19,
+   "diff": 661,
+   "requests": 3362,
+   "same": 2244,
+   "vacuous": 438
   },
   "seeded": {
-   "blocked": 12,
-   "diff": 627,
-   "requests": 5482,
-   "same": 4683,
+   "blocked": 11,
+   "diff": 609,
+   "requests": 5484,
+   "same": 4704,
    "vacuous": 160
   }
  },
  "window": [
-  1793806920,
-  1793810520
+  1794055620,
+  1794059220
  ]
 }
