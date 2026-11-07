@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -951,7 +952,7 @@ func FuzzVolumeSegmentsMergeLikeOneWindow(f *testing.F) {
 			if err := p.storeVolumeSegment(key, parts[seg], time.Minute); err != nil {
 				t.Fatalf("store: %v", err)
 			}
-			loaded, ok := p.loadVolumeSegment(key)
+			loaded, ok := p.loadVolumeSegment(context.Background(), key)
 			if !ok {
 				t.Fatalf("segment %d did not load back", seg)
 			}

@@ -45,6 +45,9 @@ type Metrics struct {
 	internalOperationTotal     map[string]*atomic.Int64 // "operation<sep>outcome" → count
 	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
 
+	// Per-request work and phase times, and per-lookup cache times (request_flow.go)
+	flow *flowMetrics
+
 	// Singleflight coalescing stats
 	coalescedTotal         atomic.Int64 // requests served from coalesced results
 	coalescedSaved         atomic.Int64 // backend requests saved by coalescing
@@ -391,6 +394,7 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		upstreamCallsPerRequest:    make(map[string]*histogram),
 		internalOperationTotal:     make(map[string]*atomic.Int64),
 		internalOperationDurations: make(map[string]*histogram),
+		flow:                       newFlowMetrics(),
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
 		clientDurations:            make(map[string]*histogram),
@@ -2150,6 +2154,8 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_sum{operation=%q,outcome=%q} %g\n", parts[0], parts[1], h.loadSum())
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_count{operation=%q,outcome=%q} %d\n", parts[0], parts[1], h.loadCount())
 	}
+
+	m.writeRequestFlowMetrics(&sb)
 
 	// Singleflight coalescing stats
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_total Requests served from coalesced results.\n")

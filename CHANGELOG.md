@@ -7,7 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(observability): every request's query flow in its log line and in
+  metrics: how many LogQL parses, translations, cache lookups (by tier:
+  memory, disk, peer; hit, miss, stale) and VictoriaLogs calls it made, the
+  time each took, the bytes the cache served and VictoriaLogs returned, and the
+  proxy's own time (`flow.*` fields on `request` and `slow_request`; cache
+  lookups as steps of the slow-request trace). New metrics:
+  `loki_vl_proxy_request_phase_seconds{route,phase}`,
+  `loki_vl_proxy_request_fanout{route,kind}` and
+  `loki_vl_proxy_cache_lookup_seconds{tier,result}`. `docs/observability.md`
+  documents every field of the `request`, `request_digest`, `slow_request` and
+  `slow_upstream_request` lines with example lines. The parse count is a lower
+  bound until queries are parsed once per request.
+
+### Changed
+
+- Range and offset durations of a metric query are parsed once with the
+  query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
+  them instead of parsing the text again; the proxy's day/week/year duration
+  reading is the LogQL parser's own. No behaviour change, except that a range
+  longer than about 292 years reads as unusable instead of wrapping around.
+
+## [2.90.0] - 2026-11-07
+
 ### Fixed
+
+- fix: work shared by several requests stops when the last of them leaves, not
+  when the first one does. A coalesced VictoriaLogs call (`/series`,
+  `index/stats`, volume hits, metadata) failed every waiting client with 499
+  the moment the first client gave up; now the others get the answer. The
+  Drilldown burst scan (one VictoriaLogs scan for a tab's breakdowns) ran on
+  for up to 30 seconds after every client had left; now it is cancelled when
+  the last one leaves, so VictoriaLogs stops scanning for nobody.
 
 - fix(patterns): with the selector's pattern-state owner stopped or frozen, a
   `/loki/api/v1/patterns` request on another peer waited up to 30 seconds (the

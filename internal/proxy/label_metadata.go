@@ -283,8 +283,8 @@ func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params ur
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
 	key := p.vlMetadataCoalesceKey(ctx, path, params)
-	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
-		return p.vlGetInner(ctx, path, params)
+	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, p.breaker.Allow, func(callCtx context.Context) (*http.Response, error) {
+		return p.vlGetInner(callCtx, path, params)
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
 		return 0, nil, fmt.Errorf("circuit breaker open — backend unavailable")
@@ -341,7 +341,7 @@ type labelCacheBypassKey struct{}
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := p.metadataFieldNamesCacheKey(ctx, "sfn:", params)
 	if ctx.Value(labelCacheBypassKey{}) == nil {
-		if fields, ok := p.cachedFieldNames(cacheKey); ok {
+		if fields, ok := p.cachedFieldNames(ctx, cacheKey); ok {
 			return fields, nil
 		}
 	}
@@ -378,8 +378,8 @@ func (p *Proxy) storeFieldNames(cacheKey string, fields []string) {
 	p.streamFieldNamesCache.Set(cacheKey, encoded)
 }
 
-func (p *Proxy) cachedFieldNames(cacheKey string) ([]string, bool) {
-	cached, ok := p.streamFieldNamesCache.Get(cacheKey)
+func (p *Proxy) cachedFieldNames(ctx context.Context, cacheKey string) ([]string, bool) {
+	cached, ok := p.cacheGet(ctx, p.streamFieldNamesCache, cacheKey)
 	if !ok {
 		return nil, false
 	}
@@ -433,7 +433,7 @@ func capMetadataStartOnly(params url.Values, maxWindow time.Duration) url.Values
 func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := p.metadataFieldNamesCacheKey(ctx, "afn:", params)
 	if ctx.Value(labelCacheBypassKey{}) == nil {
-		if fields, ok := p.cachedFieldNames(cacheKey); ok {
+		if fields, ok := p.cachedFieldNames(ctx, cacheKey); ok {
 			return fields, nil
 		}
 	}
@@ -504,7 +504,7 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 			cacheKey += ":auth:" + fp
 		}
 	}
-	if cached, ok := p.cache.Get(cacheKey); ok {
+	if cached, ok := p.cacheGet(ctx, p.cache, cacheKey); ok {
 		var labels []string
 		if err := json.Unmarshal(cached, &labels); err == nil {
 			return labels, nil
@@ -702,7 +702,7 @@ func (p *Proxy) shouldBypassStaleEntry(endpoint string, ttl, remaining, age time
 // max-staleness; an empty answer is stored with the negative TTL, which only
 // matters when the entry's age is unknown.
 func (p *Proxy) metadataCacheLookup(endpoint, cacheKey string, ttl time.Duration, r *http.Request) (cached []byte, remaining time.Duration, serve, freshFetch bool) {
-	cached, remaining, age, _, hit := p.endpointReadCacheEntryAge(endpoint, cacheKey)
+	cached, remaining, age, _, hit := p.endpointReadCacheEntryAge(r.Context(), endpoint, cacheKey)
 	window, enabled := p.nearNowWindow(endpoint)
 	nearNow := enabled && requestEndsWithin(r, window)
 	stale := false
@@ -1147,7 +1147,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 			continue
 		}
 		cacheKey := p.canonicalReadCacheKey("labels", "", req)
-		if _, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok && remaining > minRemaining {
+		if _, remaining, _, ok := p.endpointReadCacheEntry(ctx, "labels", cacheKey); ok && remaining > minRemaining {
 			continue // still sufficiently fresh
 		}
 		stale = append(stale, labelWarmupWindow{window: window, startStr: startStr, endStr: endStr, cacheKey: cacheKey, req: req})
@@ -1388,7 +1388,7 @@ func (p *Proxy) mergeLabelsIntoCache(endpoint, cacheKey string, newLabels []stri
 		// valid UTF-8, and it returns them in sort.Strings byte order.)
 		merged[jsonSafeLabel(l)] = struct{}{}
 	}
-	if cached, _, _, ok := p.endpointReadCacheEntry(endpoint, cacheKey); ok {
+	if cached, _, _, ok := p.endpointReadCacheEntry(noFlowCtx, endpoint, cacheKey); ok {
 		var existing struct {
 			Data []string `json:"data"`
 		}

@@ -345,7 +345,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 	if !p.lokiCompatibleProfile() {
 		return nil
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return nil
 	}
@@ -369,7 +369,7 @@ func (p *Proxy) backendLogQuery(query string) (string, bool) {
 	if !strings.Contains(query, "line_format") || !p.lokiCompatibleProfile() {
 		return query, false
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return query, false
 	}
@@ -386,6 +386,17 @@ func (p *Proxy) backendLogQuery(query string) (string, bool) {
 		return stripped, false
 	}
 	return query, true
+}
+
+// labelFormatMentionsLine reports whether a label_format stage names the log
+// line: __line__ in a template, as a rename source or as a target.
+func labelFormatMentionsLine(s *logqlpkg.LabelFormatStage) bool {
+	for _, f := range s.Formats {
+		if strings.Contains(f.Name, "__line__") || strings.Contains(f.Value, "__line__") {
+			return true
+		}
+	}
+	return false
 }
 
 // stripUnreadLineFormat returns query without its only line_format stage
@@ -408,7 +419,7 @@ func stripUnreadLineFormat(query string, pipeline []logqlpkg.Stage) (string, boo
 				return "", false
 			}
 		case *logqlpkg.LabelFormatStage:
-			if seen && strings.Contains(s.Raw, "__line__") {
+			if seen && labelFormatMentionsLine(s) {
 				return "", false
 			}
 		}
@@ -419,7 +430,7 @@ func stripUnreadLineFormat(query string, pipeline []logqlpkg.Stage) (string, boo
 	}
 	stripped := strings.TrimSpace(strings.TrimSpace(query[:loc[0]]) + " " + strings.TrimSpace(query[loc[1]:]))
 	// The text removed must be the line_format stage and nothing else.
-	check, err := logqlpkg.ParseLogQuery(stripped)
+	check, err := parseLogQLQuery(noFlowCtx, stripped)
 	if err != nil || len(check.Pipeline) != len(kept) {
 		return "", false
 	}

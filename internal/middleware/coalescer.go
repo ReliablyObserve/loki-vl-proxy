@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -11,8 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 )
 
 // ErrGuardRejected is returned by DoWithGuard when guard() returns false and no
@@ -69,11 +68,16 @@ func bodyReadLimit(body io.Reader) int64 {
 // When N clients send the same query simultaneously, only 1 request
 // goes to the backend. All N clients share the single response.
 //
+// The shared call runs on its own context (SharedContext), cancelled when the
+// last waiting client leaves. A client that cancels stops waiting at once, and
+// the call goes on for the clients that still wait.
+//
 // When disabled (NewCoalescerDisabled), Do and DoWithGuard call fn directly
-// without singleflight deduplication — every request is a separate backend call.
+// without deduplication — every request is a separate backend call.
 // This is used for benchmarking to isolate raw translation overhead from coalescing gains.
 type Coalescer struct {
-	group          singleflight.Group
+	flightMu       sync.Mutex
+	flights        map[string]*flight // calls in progress, one per key
 	inflightMu     sync.Mutex
 	inflight       map[string]int // reference count of goroutines inside DoWithGuard for each key
 	disabled       bool           // when true, bypass singleflight (raw passthrough)
@@ -86,6 +90,7 @@ type Coalescer struct {
 
 func NewCoalescer() *Coalescer {
 	return &Coalescer{
+		flights:  make(map[string]*flight),
 		inflight: make(map[string]int),
 	}
 }
@@ -94,6 +99,7 @@ func NewCoalescer() *Coalescer {
 // deduplication. Every concurrent request makes its own backend call.
 func NewCoalescerDisabled() *Coalescer {
 	return &Coalescer{
+		flights:  make(map[string]*flight),
 		inflight: make(map[string]int),
 		disabled: true,
 	}
@@ -104,63 +110,110 @@ type coalescedResponse struct {
 	body   []byte
 }
 
+// flight is one shared upstream call and the result its waiters read once done
+// is closed.
+type flight struct {
+	shared *SharedContext
+	done   chan struct{}
+	resp   *coalescedResponse
+	err    error
+	joined int // callers that took part in the call, the leader included
+}
+
 // Do executes the request, deduplicating identical concurrent requests.
 // The key should uniquely identify the request (e.g., method + path + query).
 // When the coalescer is disabled, fn is called directly for every request.
 func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
-	status, headers, body, _, err := c.do(key, fn)
+	status, headers, body, _, err := c.do(context.Background(), key, func(context.Context) (*http.Response, error) { return fn() })
 	return status, headers, body, err
 }
 
-func (c *Coalescer) do(key string, fn func() (*http.Response, error)) (int, http.Header, []byte, bool, error) {
+// do runs fn once per key for all concurrent callers. fn gets the shared
+// context of the call, not the context of the caller that started it.
+func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, bool, error) {
 	if c.disabled {
-		status, headers, body, err := c.callDirect(fn)
+		status, headers, body, err := c.callDirect(func() (*http.Response, error) { return fn(ctx) })
 		return status, headers, body, false, err
 	}
 
+	// A caller that has already left starts no shared call: nobody would wait for it.
+	if err := ctx.Err(); err != nil {
+		return 0, nil, nil, false, err
+	}
 	started := time.Now()
+	c.flightMu.Lock()
+	f := c.flights[key]
 	executed := false
-	result, err, shared := c.group.Do(key, func() (interface{}, error) {
+	if f != nil && f.shared.Join() {
+		f.joined++
+	} else {
+		// No call to join, or its last waiter already left and cancelled it:
+		// a cancelled call is never handed to a later caller.
 		executed = true
-		resp, err := fn()
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = resp.Body.Close() }()
+		f = &flight{shared: NewSharedContext(ctx, true), done: make(chan struct{}), joined: 1}
+		c.flights[key] = f
+		go c.run(key, f, fn)
+	}
+	c.flightMu.Unlock()
 
-		// Limit response body to 256MB to prevent unbounded memory allocation
-		body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
-		if err != nil {
-			return nil, err
-		}
+	select {
+	case <-f.done:
+	case <-ctx.Done():
+		f.shared.Leave()
+		return 0, nil, nil, false, ctx.Err()
+	}
 
-		return &coalescedResponse{
-			status: resp.StatusCode,
-			body:   body,
-		}, nil
-	})
-
-	// singleflight's shared flag includes the leader. Only a caller whose
-	// closure did not execute avoided a backend call, even on shared failure.
+	c.flightMu.Lock()
+	shared := f.joined > 1
+	c.flightMu.Unlock()
+	// A caller whose call did not execute avoided a backend call, even on shared failure.
 	if shared && !executed {
 		c.CoalescedSaved.Add(1)
 		c.WaitCount.Add(1)
 		c.WaitNanos.Add(time.Since(started).Nanoseconds())
 	}
-	if err != nil {
-		return 0, nil, nil, shared, err
+	if f.err != nil {
+		return 0, nil, nil, shared, f.err
 	}
 	if shared {
 		c.CoalescedTotal.Add(1)
 		c.ActiveShared.Add(1)
 		defer c.ActiveShared.Add(-1)
 	}
-
-	cr := result.(*coalescedResponse)
-	return cr.status, nil, cr.body, shared, nil
+	return f.resp.status, nil, f.resp.body, shared, nil
 }
 
-// callDirect calls fn without singleflight — used when coalescer is disabled.
+// run executes the shared call and publishes its result to every waiter.
+func (c *Coalescer) run(key string, f *flight, fn func(context.Context) (*http.Response, error)) {
+	defer func() {
+		if r := recover(); r != nil {
+			f.resp, f.err = nil, fmt.Errorf("coalesced call panicked: %v", r)
+		}
+		f.shared.Close()
+		c.flightMu.Lock()
+		if c.flights[key] == f {
+			delete(c.flights, key)
+		}
+		c.flightMu.Unlock()
+		close(f.done)
+	}()
+	resp, err := fn(f.shared.Context())
+	if err != nil {
+		f.err = err
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Limit response body to 256MB to prevent unbounded memory allocation
+	body, err := readBodyPooled(resp.Body, bodyReadLimit(resp.Body))
+	if err != nil {
+		f.err = err
+		return
+	}
+	f.resp = &coalescedResponse{status: resp.StatusCode, body: body}
+}
+
+// callDirect calls fn without deduplication — used when coalescer is disabled.
 // Headers are not cloned since all current callers discard the header return value.
 func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
 	resp, err := fn()
@@ -188,11 +241,19 @@ func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Hea
 //
 // Typical usage: pass p.breaker.Allow as guard and vlGetInner (no CB check) as fn.
 func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
+	return c.DoWithGuardCtx(context.Background(), key, guard, func(context.Context) (*http.Response, error) { return fn() })
+}
+
+// DoWithGuardCtx is DoWithGuard for a caller that can stop waiting: when ctx is
+// done the caller returns ctx's error at once, and the shared call is cancelled
+// only if no other caller still waits for it. fn gets the context of the shared
+// call, which carries ctx's values (and deadline) but not its cancellation.
+func (c *Coalescer) DoWithGuardCtx(ctx context.Context, key string, guard func() bool, fn func(context.Context) (*http.Response, error)) (int, http.Header, []byte, error) {
 	if c.disabled {
 		if !guard() {
 			return 0, nil, nil, ErrGuardRejected
 		}
-		return c.callDirect(fn)
+		return c.callDirect(func() (*http.Response, error) { return fn(ctx) })
 	}
 
 	c.inflightMu.Lock()
@@ -204,7 +265,7 @@ func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.
 	c.inflight[key]++
 	c.inflightMu.Unlock()
 
-	status, headers, body, _, err := c.do(key, fn)
+	status, headers, body, _, err := c.do(ctx, key, fn)
 
 	c.inflightMu.Lock()
 	c.inflight[key]--

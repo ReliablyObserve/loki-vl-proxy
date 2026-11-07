@@ -23,7 +23,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -97,7 +96,7 @@ type logQueryShape struct {
 }
 
 func newLogQueryShape(query string) logQueryShape {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		// Each helper keeps its own fallback for queries the parser rejects.
 		shape := logQueryShape{
@@ -502,7 +501,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 	// with fewer rows, as an earlier version read later windows, cannot
 	// answer a request which needs more rows from the same aligned window.
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, windowLimit, window, shape, categorizedLabels, emitStructuredMetadata)
-	if cached, _, _, ok := p.cache.GetSharedWithTTL(cacheKey); ok {
+	if cached, _, _, ok := p.cacheGetShared(ctx, p.cache, cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
 			if err := json.Unmarshal(decompressed, &entry); err == nil {
@@ -675,7 +674,7 @@ func (p *Proxy) queryRangeWindowHitEstimate(
 	window queryRangeWindow,
 ) (int64, error) {
 	cacheKey := p.queryRangeWindowHasHitsCacheKey(r, logsqlQuery, window)
-	if cached, ok := p.cache.Get(cacheKey); ok && len(cached) > 0 {
+	if cached, ok := p.cacheGet(ctx, p.cache, cacheKey); ok && len(cached) > 0 {
 		if est, err := strconv.ParseInt(strings.TrimSpace(string(cached)), 10, 64); err == nil && est >= 0 {
 			return est, nil
 		}

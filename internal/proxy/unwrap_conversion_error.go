@@ -98,11 +98,11 @@ func unwrapErrorProbes(expr logqlpkg.Expr) []unwrapErrorProbe {
 // semantics/unwrap-conversion-error-postfilter-forms).
 func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation) (unwrapErrorProbe, bool) {
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
-	if !ok || ra.Offset != "" {
+	if !ok || ra.HasOffset() {
 		return unwrapErrorProbe{}, false
 	}
-	window, ok := parsePositiveStepDuration(ra.Range)
-	if !ok {
+	window := ra.RangeDuration
+	if window <= 0 {
 		return unwrapErrorProbe{}, false
 	}
 	at := -1
@@ -1520,7 +1520,7 @@ func (p *Proxy) startUnwrapConversionCheck(w http.ResponseWriter, r *http.Reques
 	if !strings.Contains(logql, "unwrap") || unwrapCheckFrom(r.Context()) != nil {
 		return r, nil
 	}
-	expr, err := logqlpkg.Parse(logql)
+	expr, err := parseLogQLExpr(r.Context(), logql)
 	if err != nil {
 		return r, nil
 	}
@@ -1562,7 +1562,7 @@ func (l *unwrapLookupWriter) setQuery(logql string) {
 	if l == nil {
 		return
 	}
-	if expr, err := logqlpkg.Parse(logql); err == nil {
+	if expr, err := parseLogQLExpr(noFlowCtx, logql); err == nil {
 		if probes := unwrapErrorProbes(expr); len(probes) > 0 {
 			l.check.probes = probes
 		}

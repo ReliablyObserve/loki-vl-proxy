@@ -240,7 +240,7 @@ func queryStepsShape(query string, step time.Duration) bool {
 		// results out of generic fragments produced before ordered evaluation.
 		return false
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return false
 	}
@@ -258,7 +258,7 @@ func queryStepsShape(query string, step time.Duration) bool {
 	if ra.Op == logqlpkg.RangeQuantileOverTime || ra.Op == logqlpkg.RangeRateCounter {
 		return true
 	}
-	window := parseLokiDuration(ra.Range)
+	window := ra.RangeDuration
 	if window > 0 && window < step {
 		// sum, avg, max and min over time with unwrap and a shorter range are
 		// read from VictoriaLogs' step buckets (the phase filter and the
@@ -318,7 +318,7 @@ func (p *Proxy) serveQueryRangeSteps(w http.ResponseWriter, r *http.Request, log
 	lastStored := statsExtentFloorDiv(horizon-grid.phase, grid.step)
 	var chunks map[int64]*statsExtentChunk
 	if lastStored >= grid.first {
-		chunks = p.loadStatsExtentChunks(req, lastStored)
+		chunks = p.loadStatsExtentChunks(r.Context(), req, lastStored)
 	}
 	var covered [][2]int64
 	for _, c := range chunks {
@@ -502,7 +502,7 @@ func (p *Proxy) queryStepsGapsLight(r *http.Request, grid queryStepsGrid, gaps [
 // queryStepsWindow is the range of the range aggregation of a query the
 // steps cache keeps (queryStepsShape).
 func queryStepsWindow(query string) (time.Duration, bool) {
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return 0, false
 	}
@@ -517,7 +517,7 @@ func queryStepsWindow(query string) (time.Duration, bool) {
 	if !ok {
 		return 0, false
 	}
-	window := parseLokiDuration(ra.Range)
+	window := ra.RangeDuration
 	return window, window > 0
 }
 
@@ -655,7 +655,7 @@ func (p *Proxy) renderQuerySteps(ctx context.Context, key string, pieces, fresh 
 	if limit := p.requestQueryLimits(ctx).MaxQuerySeries; limit > 0 && len(order) > limit {
 		return nil, false // Loki's series limit applies to the whole window
 	}
-	if order, ok = p.orderQuerySteps(key, order, fresh); !ok {
+	if order, ok = p.orderQuerySteps(ctx, key, order, fresh); !ok {
 		return nil, false
 	}
 	limit := p.limits().BufferedBackendBodyBytes
@@ -758,13 +758,13 @@ func mergeQuerySteps(pieces []*statsExtentFragment) ([]string, []*statsExtentSer
 // orderQuerySteps puts the merged series in the order the evaluator writes
 // them: the orders its own answers with several series were written in (one
 // kept per key, those of the fresh answers), all giving the same order here.
-func (p *Proxy) orderQuerySteps(key string, order []*statsExtentSeries, fresh []*statsExtentFragment) ([]*statsExtentSeries, bool) {
+func (p *Proxy) orderQuerySteps(ctx context.Context, key string, order []*statsExtentSeries, fresh []*statsExtentFragment) ([]*statsExtentSeries, bool) {
 	if len(order) < 2 {
 		return order, true
 	}
 	rules := queryStepsOrderLabels | queryStepsOrderFold
 	known := false
-	if raw, ok := p.cache.Get(key + ":order"); ok {
+	if raw, ok := p.cacheGet(ctx, p.cache, key+":order"); ok {
 		if n, err := strconv.Atoi(string(raw)); err == nil {
 			rules, known = n, true
 		}

@@ -138,7 +138,7 @@ func TestMergeLabelsIntoCache_EmptyExisting(t *testing.T) {
 	const key = "test-merge-empty"
 	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry after merge into empty")
 	}
@@ -159,7 +159,7 @@ func TestMergeLabelsIntoCache_UnionsWithExisting(t *testing.T) {
 	// Merge in a new label "namespace" — existing ones must survive.
 	p.mergeLabelsIntoCache("labels", key, []string{"namespace"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry after second merge")
 	}
@@ -178,7 +178,7 @@ func TestMergeLabelsIntoCache_DeduplicatesLabels(t *testing.T) {
 	p.mergeLabelsIntoCache("labels", key, []string{"app", "env"}, 5*time.Minute)
 	p.mergeLabelsIntoCache("labels", key, []string{"app", "env", "app"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry")
 	}
@@ -203,7 +203,7 @@ func TestMergeLabelsIntoCache_ResultIsSorted(t *testing.T) {
 	// Insert in reverse alphabetical order.
 	p.mergeLabelsIntoCache("labels", key, []string{"zoo", "mid", "aaa"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry")
 	}
@@ -226,7 +226,7 @@ func TestMergeLabelsIntoCache_RefreshesTTL(t *testing.T) {
 	p.mergeLabelsIntoCache("labels", key, []string{"env"}, 5*time.Minute)
 
 	time.Sleep(300 * time.Millisecond)
-	_, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	_, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Error("expected entry to survive after TTL refresh")
 	}
@@ -282,7 +282,7 @@ func TestHandleLabels_UserQueryMergesIntoCache(t *testing.T) {
 	// Merge new request result.
 	p.mergeLabelsIntoCache("labels", key, []string{"namespace"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected merged entry")
 	}
@@ -425,7 +425,7 @@ func TestMergeLabelsIntoCache_InvalidUTF8IsDedupedAndByteSorted(t *testing.T) {
 			p, _ := newBehaviorProxy(t, "http://127.0.0.1:1", 0)
 			for pass := 0; pass < 2; pass++ { // a second merge of the same labels is a no-op
 				p.mergeLabelsIntoCache("labels", "key", tc.labels, 5*time.Minute)
-				cached, _, _, ok := p.endpointReadCacheEntry("labels", "key")
+				cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", "key")
 				if !ok {
 					t.Fatal("nothing cached")
 				}
@@ -470,7 +470,7 @@ func FuzzMergeLabelsIntoCache(f *testing.F) {
 		p.mergeLabelsIntoCache("labels", key, labels, 5*time.Minute)
 		p.mergeLabelsIntoCache("labels", key, labels, 5*time.Minute)
 
-		cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+		cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 		if !ok {
 			return
 		}
@@ -517,7 +517,7 @@ func TestMergeLabelsIntoCache_LargeRandomSets(t *testing.T) {
 		_ = round
 	}
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry after large random merge")
 	}
@@ -551,7 +551,7 @@ func TestMergeLabelsIntoCache_SingleLabel(t *testing.T) {
 	const key = "single-label"
 	p.mergeLabelsIntoCache("labels", key, []string{"only"}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry")
 	}
@@ -572,7 +572,7 @@ func TestMergeLabelsIntoCache_ZeroLabels(t *testing.T) {
 	// Merge empty slice — existing labels must survive.
 	p.mergeLabelsIntoCache("labels", key, []string{}, 5*time.Minute)
 
-	cached, _, _, ok := p.endpointReadCacheEntry("labels", key)
+	cached, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key)
 	if !ok {
 		t.Fatal("expected cache entry")
 	}

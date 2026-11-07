@@ -140,7 +140,7 @@ func (p *Proxy) writeRankedRangeFromBuckets(w http.ResponseWriter, ctx context.C
 	}
 	overLimitKey := "ranked-over-limit:" + getOrgID(ctx) + ":" + strconv.Itoa(p.resolvedMaxStatsQuerySeries(ctx)) + ":" + spec.BaseQuery + "|" + strings.Join(spec.GroupBy, ",") + "|" + statsAggFunc
 	if p.cache != nil {
-		if _, seen := p.cache.Get(overLimitKey); seen {
+		if _, seen := p.cacheGet(ctx, p.cache, overLimitKey); seen {
 			return false
 		}
 	}

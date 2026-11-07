@@ -77,7 +77,7 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	}
 	var aggs []*logqlpkg.VectorAggregation
 	var absent *logqlpkg.RangeAggregation
-	if expr, err := logqlpkg.Parse(query); err == nil {
+	if expr, err := parseLogQLExpr(noFlowCtx, query); err == nil {
 		node := expr
 		for {
 			agg, ok := node.(*logqlpkg.VectorAggregation)
@@ -144,7 +144,7 @@ func (s absentOverTimeCompatSpec) presenceQuery() string {
 // deletes the label.
 func absentOverTimeLabels(baseQuery string) map[string]string {
 	labels := map[string]string{}
-	lq, err := logqlpkg.ParseLogQuery(strings.TrimSpace(baseQuery))
+	lq, err := parseLogQLQuery(noFlowCtx, strings.TrimSpace(baseQuery))
 	if err != nil {
 		return labels
 	}

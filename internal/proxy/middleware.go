@@ -437,12 +437,12 @@ func (p *Proxy) compatCacheResponseEncoding(r *http.Request) (string, int) {
 	})
 }
 
-func (p *Proxy) compatCacheEncodedVariant(cacheKey string, body []byte, ttl time.Duration, encoding string, minBytes int) ([]byte, string, bool) {
+func (p *Proxy) compatCacheEncodedVariant(ctx context.Context, cacheKey string, body []byte, ttl time.Duration, encoding string, minBytes int) ([]byte, string, bool) {
 	if encoding == "" || len(body) == 0 || len(body) < minBytes {
 		return body, "", true
 	}
 	variantKey := compatCacheVariantKey(cacheKey, encoding)
-	if cachedVariant, ok := p.compatCache.Get(variantKey); ok {
+	if cachedVariant, ok := p.cacheGet(ctx, p.compatCache, variantKey); ok {
 		return cachedVariant, encoding, true
 	}
 	encoded, err := mw.EncodeResponseBody(encoding, body)
@@ -652,7 +652,7 @@ func (p *Proxy) compatCacheShouldBypassForFreshness(endpoint string, r *http.Req
 // shared cache for completed query and series replies. The same freshness
 // rule applies to both tiers, including replies recovered from disk or peers.
 func (p *Proxy) compatCacheLookup(endpoint string, r *http.Request, key string, ttl time.Duration) ([]byte, time.Duration, string, bool) {
-	value, remaining, age, ok := p.compatCache.GetWithAge(key)
+	value, remaining, age, ok := p.cacheGetWithAge(r.Context(), p.compatCache, key)
 	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
 		return value, remaining, "", true
 	}
@@ -665,7 +665,7 @@ func (p *Proxy) compatCacheLookup(endpoint string, r *http.Request, key string, 
 		return nil, 0, "", false
 	}
 	sharedKey := key + ":routing:" + p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID"))
-	value, remaining, age, _, ok = p.cache.GetSharedWithAge(sharedKey)
+	value, remaining, age, _, ok = p.cacheGetSharedWithAge(r.Context(), p.cache, sharedKey)
 	if ok && !p.compatCacheShouldBypassForFreshness(endpoint, r, ttl, remaining, age) {
 		return value, remaining, sharedKey, true
 	}
@@ -706,7 +706,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			w.Header().Set("Content-Type", "application/json")
 			body := cached
 			if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
-				if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
+				if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(r.Context(), cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
 					w.Header().Set("Content-Encoding", encodedAs)
 					w.Header().Set("Vary", "Accept-Encoding")
 					body = encodedBody

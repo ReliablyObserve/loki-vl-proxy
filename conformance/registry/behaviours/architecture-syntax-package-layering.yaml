@@ -86,3 +86,19 @@ decisions:
     code: [internal/proxy/drilldown.go, internal/proxy/loki_profile.go, internal/proxy/unwrap_conversion_error.go, internal/proxy/postprocess.go]
     tests: [TestLabelFilterReadersMatchTextReaders, TestLabelFilterReadersNumericLiterals, TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback, TestQueryTextSites]
     quality: 'Real queries read exactly as before; equivalent spellings read alike; query-text sites only fall (parse_calls 63 -> 62, text_built 214 -> 213).'
+  - id: range-durations-typed
+    chosen: 'RangeAggregation carries RangeDuration and OffsetDuration (and HasOffset) from the parser; the proxy handlers read them, and the proxy day/week/year reading delegates to logql.ParseUnitDuration'
+    over: [each handler parsing Range/Offset text with one of three helpers, a second copy of the unit-sum parser in the syntax package]
+    why: |
+      Part of removing string handling of queries outside the syntax packages
+      (owner 2026-11-05/07). A differential over every range and offset in the
+      corpus and a synthetic set (250 range aggregations, 69 literals) equals
+      the helpers each handler used. One literal class differs on purpose: a
+      range over about 292 years, which parseLokiDuration wrapped to a negative
+      value, reads as 0 (unusable); every caller treats both the same.
+      Presence of an offset stays its own fact (HasOffset): `offset 0s` is an
+      offset with a zero duration.
+    evidence: 'internal/proxy/range_duration_differential_test.go, internal/logql/duration_test.go (2026-11-07)'
+    code: [internal/logql/duration.go, internal/logql/parser.go, internal/proxy/time_utils.go, internal/proxy/query_range_steps.go, internal/proxy/ordered_json_metric.go, internal/proxy/unwrap_conversion_error.go, internal/proxy/binary_aggregation.go, internal/proxy/rate_counter_singletons.go, internal/proxy/limits_enforcement.go, internal/proxy/query_translation.go]
+    tests: [TestRangeAggregationDurations, TestRangeAggregationDurationsMatchOldHelpers, TestCorpusRangeAggregationDurationsMatchOldHelpers, TestOldLokiDurationOverflowIsTheOnlyDisagreement, TestLabelFormatMentionsLineMatchesRawCheck]
+    quality: 'Every handler reads the same window and offset presence as before; one unit-sum parser for the whole tree.'

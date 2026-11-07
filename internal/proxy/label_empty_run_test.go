@@ -348,7 +348,7 @@ func TestMetadataInventory_RescanDecisionSurvivesAnotherListingConfirmingTheEntr
 	}
 	// Listing B confirms the entry as empty and fresh.
 	key := inventoryBucketKey(base, seg)
-	entry, _ := p.loadInventoryEntry(key)
+	entry, _ := p.loadInventoryEntry(context.Background(), key)
 	entry.Rows, entry.Checked = 0, cache.Now().UnixNano()
 	if err := p.storeInventoryEntry(key, entry); err != nil {
 		t.Fatal(err)

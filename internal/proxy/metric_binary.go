@@ -181,7 +181,7 @@ func (p *Proxy) proxyStatsQueryRangeDirectAnchored(w http.ResponseWriter, r *htt
 			// entry costs only the ranking.
 			overLimitKey = "drilldown-over-limit:" + getOrgID(ctx) + ":" + strconv.Itoa(limit) + ":" + logsqlQuery
 			if p.cache != nil {
-				if _, seen := p.cache.Get(overLimitKey); seen {
+				if _, seen := p.cacheGet(r.Context(), p.cache, overLimitKey); seen {
 					// At most limit+1 series: the limit+1st says the limit was passed.
 					logsqlQuery, rankable, maxSeries = ranked, false, limit+1
 				}
@@ -852,7 +852,7 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 		return
 	}
 	stripped := stripOuterLabelReplace(originalLogql)
-	expr, err := logqlpkg.Parse(stripped)
+	expr, err := parseLogQLExpr(r.Context(), stripped)
 	if err != nil {
 		return
 	}

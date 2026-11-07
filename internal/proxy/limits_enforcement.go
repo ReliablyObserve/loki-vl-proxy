@@ -529,7 +529,7 @@ func parseLimitedQuery(r *http.Request, endpoint string) (logqlpkg.Expr, bool) {
 		return nil, false
 	}
 	query := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(r.Context(), query)
 	return expr, err == nil
 }
 
@@ -594,8 +594,8 @@ func maxQueryRangeError(expr logqlpkg.Expr, maxRange time.Duration) string {
 	}
 	// Loki walks every range selector and reports the last one over the limit.
 	var msg string
-	check := func(raw string) {
-		if interval := parseLokiDuration(raw); interval > maxRange {
+	check := func(interval time.Duration) {
+		if interval > maxRange {
 			msg = fmt.Sprintf("[interval] value exceeds limit: [%s] > [%s]", formatLokiDuration(interval), formatLokiDuration(maxRange))
 		}
 	}
@@ -603,7 +603,7 @@ func maxQueryRangeError(expr logqlpkg.Expr, maxRange time.Duration) string {
 	visit = func(e logqlpkg.Expr) {
 		switch n := e.(type) {
 		case *logqlpkg.RangeAggregation:
-			check(n.Range)
+			check(n.RangeDuration)
 		case *logqlpkg.VectorAggregation:
 			visit(n.Inner)
 		case *logqlpkg.BinOpExpr:
@@ -613,7 +613,7 @@ func maxQueryRangeError(expr logqlpkg.Expr, maxRange time.Duration) string {
 			// label_replace(...) and the other functions kept as text: parse
 			// their inner metric expressions from the raw form.
 			for _, m := range opaqueRangeSelectorRE.FindAllStringSubmatch(n.String(), -1) {
-				check(m[1])
+				check(parseLokiDuration(m[1]))
 			}
 		}
 	}

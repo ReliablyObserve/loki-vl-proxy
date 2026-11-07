@@ -38,7 +38,7 @@ func keepSeriesGrouping(query string) (string, bool) {
 	if !strings.Contains(query, "keep") || strings.Contains(query, "__error") || strings.Contains(query, "__preserve_error__") {
 		return query, false
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return query, false
 	}

@@ -68,7 +68,7 @@ const rateCounterMaxKeys = 64
 // would make Loki's series coarser than the parsed fields). ungrouped is true
 // for a bare sum; label is the unwrapped label.
 func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
-	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
 		return "", false, false
 	}
@@ -77,7 +77,7 @@ func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
 		return "", false, false
 	}
 	ra, isRange := agg.Inner.(*logqlpkg.RangeAggregation)
-	if !isRange || ra.Op != logqlpkg.RangeRateCounter || ra.Grouping != nil || ra.Offset != "" {
+	if !isRange || ra.Op != logqlpkg.RangeRateCounter || ra.Grouping != nil || ra.HasOffset() {
 		return "", false, false
 	}
 	lq, isLog := ra.Inner.(*logqlpkg.LogQuery)
