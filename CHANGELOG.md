@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The response cache keys' version tags are built by one function for every
+  key (compat edge, inner query_range, log windows) instead of three copies;
+  every key is byte-identical to before. No behaviour change.
+
 - Range and offset durations of a metric query are parsed once with the
   query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
   them instead of parsing the text again; the proxy's day/week/year duration
