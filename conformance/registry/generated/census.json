@@ -1236,6 +1236,7 @@
     "internal/proxy/sliding_without_cut_test.go | metric-series-identity",
     "internal/proxy/sliding_without_cut_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/sliding_without_cut_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/proxy/slow_query_log_test.go | observability-slow-query-log",
     "internal/proxy/stage_field_exposure_test.go | loki-compatible-profile",
     "internal/proxy/stage_field_exposure_test.go | loki_api_v1_detected_fields",
     "internal/proxy/stage_field_exposure_test.go | loki_api_v1_query_range",
@@ -1867,7 +1868,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 342,
+      "go": 343,
       "playwright": 1
     },
     "page_kinds": {
@@ -1887,7 +1888,7 @@
     "shape_covers_distinct": 106,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 250
+    "wired_items": 251
   },
   "gates": [
     "A/B shape selection",

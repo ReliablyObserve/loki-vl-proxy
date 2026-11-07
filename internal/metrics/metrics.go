@@ -131,6 +131,7 @@ type Metrics struct {
 	connectionTransitions     map[string]*atomic.Int64 // "state" -> transition count
 	connectionRotations       map[string]*atomic.Int64 // "reason" -> rotation count
 	parserMetricEvaluators    map[string]*atomic.Int64 // "evaluator" -> parser-dependent range metric evaluations
+	slowRequests              map[string]*atomic.Int64 // "system<sep>route" -> requests at or over the slow threshold
 	connectionLastStateByConn sync.Map                 // net.Conn -> state label
 
 	// Circuit breaker state function (injected)
@@ -401,6 +402,7 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		connectionTransitions:      make(map[string]*atomic.Int64),
 		connectionRotations:        make(map[string]*atomic.Int64),
 		parserMetricEvaluators:     make(map[string]*atomic.Int64),
+		slowRequests:               make(map[string]*atomic.Int64),
 		windowFetch:                newHistogram(),
 		windowMerge:                newHistogram(),
 		windowCount:                newHistogram(),
@@ -1100,6 +1102,24 @@ func isLiveConnState(state string) bool {
 // `| json` or `| logfmt` pipeline under a range function) by the evaluator
 // that answered it (VictoriaLogs stats buckets, or the raw-row evaluator)
 // and the reason it was chosen.
+// RecordSlowRequest counts a request at or over its slow threshold: system "loki" for a client request
+// (-slow-query-threshold), "vl" for one VictoriaLogs call (-slow-upstream-threshold).
+func (m *Metrics) RecordSlowRequest(system, route string) {
+	key := joinMetricKey(system, route)
+	m.mu.RLock()
+	counter, ok := m.slowRequests[key]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		if counter, ok = m.slowRequests[key]; !ok {
+			counter = &atomic.Int64{}
+			m.slowRequests[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
 func (m *Metrics) RecordParserMetricEvaluator(evaluator, reason string) {
 	evaluator, reason = strings.TrimSpace(evaluator), strings.TrimSpace(reason)
 	if evaluator == "" {
@@ -1599,6 +1619,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sConnectionTransitions := snapshotAtomicMap(m.connectionTransitions)
 	sConnectionRotations := snapshotAtomicMap(m.connectionRotations)
 	sRangeMetricEvaluators := snapshotAtomicMap(m.parserMetricEvaluators)
+	sSlowRequests := snapshotAtomicMap(m.slowRequests)
 	sClientErrors := snapshotAtomicMap(m.clientErrors)
 	sEndpointCacheHits := snapshotAtomicMap(m.endpointCacheHits)
 	sEndpointCacheMisses := snapshotAtomicMap(m.endpointCacheMisses)
@@ -1868,6 +1889,21 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(connRotationReasons)
 	for _, reason := range connRotationReasons {
 		fmt.Fprintf(&sb, "loki_vl_proxy_http_connection_rotations_total{reason=%q} %d\n", reason, sConnectionRotations[reason].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_slow_requests_total Requests at or over their slow threshold (system loki: a client request over -slow-query-threshold; vl: one VictoriaLogs call, to the end of its body, over -slow-upstream-threshold), by route.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_slow_requests_total counter\n")
+	slowKeys := make([]string, 0, len(sSlowRequests))
+	for key := range sSlowRequests {
+		slowKeys = append(slowKeys, key)
+	}
+	sort.Strings(slowKeys)
+	for _, key := range slowKeys {
+		parts := strings.SplitN(key, metricKeySep, 2)
+		if len(parts) != 2 {
+			continue
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_slow_requests_total{system=%q,route=%q} %d\n", parts[0], parts[1], sSlowRequests[key].Load())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_parser_metric_evaluations_total Metric queries over a | json or | logfmt pipeline by the evaluator that answered them (vl_stats_buckets: VictoriaLogs stats over unpacked fields; raw_rows: the exact row evaluator) and the reason (pushdown; probe: a line the two parsers read differently; ineligible: a pipeline the pushdown does not cover; grid: no bucket grid for the step and range).\n")

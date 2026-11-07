@@ -42,6 +42,13 @@ type requestTelemetry struct {
 	// inventoryAdmissionDeadline bounds the total time one request's inventory
 	// bucket scans wait for metadata-scan slots.
 	inventoryAdmissionDeadline time.Time
+	// The slow-query log's trace of the request (slow_query_log.go): kept when traceOn, from start, until
+	// traceClosed (the request's log line).
+	start        time.Time
+	traceOn      bool
+	traceClosed  bool
+	trace        []slowTraceStep
+	traceDropped int
 }
 
 type requestTelemetrySnapshot struct {
@@ -185,6 +192,9 @@ func recordInternalOperation(ctx context.Context, operation, outcome string, dur
 	}
 	if duration < 0 {
 		duration = 0
+	}
+	if operation != "backend_body_read" { // the upstream step carries the body read
+		traceStep(ctx, slowTraceStep{kind: "operation", route: operation, outcome: outcome, duration: duration})
 	}
 	rt.mu.Lock()
 	key := internalOperationBreakdownKey(operation, outcome)

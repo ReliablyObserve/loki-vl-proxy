@@ -527,6 +527,14 @@ type Config struct {
 	// backend query params in debug-level logs. Intended for local development
 	// only. Default is false (redacted).
 	DebugLogRawQueries bool
+	// SlowQueryThreshold is the duration at or over which a client request is slow: counted and logged with
+	// its LogQL and trace (slow_query_log.go). 0 turns it off.
+	SlowQueryThreshold time.Duration
+	// SlowUpstreamThreshold is the duration (to the end of its body) at or over which one VictoriaLogs call is
+	// slow: counted and logged with its LogsQL. 0 turns it off.
+	SlowUpstreamThreshold time.Duration
+	// SlowQueryLogRawQueries puts the queries' text in slow lines; false puts their sha256 and length.
+	SlowQueryLogRawQueries bool
 
 	// MetadataCacheFreshness is Loki's max_metadata_cache_freshness: a /labels,
 	// /label/{name}/values or /series request ending within it of now does not
@@ -810,6 +818,9 @@ type Proxy struct {
 	cacheTTLLabelValues                  time.Duration // per-instance TTL for label_values endpoint
 	metadataNegativeCacheTTL             time.Duration // TTL for empty label lists; see effectiveMetadataNegativeTTL
 	debugLogRawQueries                   bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	slowQueryThreshold                   time.Duration
+	slowUpstreamThreshold                time.Duration
+	slowQueryLogRawQueries               bool
 	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
 	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
 	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
@@ -1435,6 +1446,9 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabelValues:                   labelCacheTTL,
 		metadataNegativeCacheTTL:              effectiveMetadataNegativeTTL(cfg.Cache.DiskMinTTL(), cfg.PeerCache.WriteThroughMinTTL()),
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
+		slowQueryThreshold:                    cfg.SlowQueryThreshold,
+		slowUpstreamThreshold:                 cfg.SlowUpstreamThreshold,
+		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
 		maxStatsCacheFreshness:                max(cfg.MaxStatsCacheFreshness, 0),

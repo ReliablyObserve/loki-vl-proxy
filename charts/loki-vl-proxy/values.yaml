@@ -234,6 +234,9 @@ extraArgs:
   # log-stats-interval: "10s"       # how often to print a request statistics summary
   # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
   # debug-log-raw-queries: "false"  # when true, debug logs include raw LogQL/LogsQL and backend params verbatim (default false: redacted to sha256+len)
+  # slow-query-threshold: "3s"        # client requests at or over this are counted and logged (slow_request) with their LogQL, LogsQL and steps; "0" off
+  # slow-upstream-threshold: "2s"     # one VictoriaLogs call at or over this (to the end of its body) is counted and logged (slow_upstream_request); "0" off
+  # slow-query-log-raw-queries: "true" # "false": slow lines carry the queries' sha256 and length instead of their text
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"

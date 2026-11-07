@@ -224,6 +224,7 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 		switch {
 		case served:
 			p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
+			traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorStats + "/" + rangeMetricReasonPushdown})
 			if isRange && err == nil && (plan.split == jsonSplitStrict || plan.split == jsonSplitErrors) {
 				// The split's answer is exact per evaluation time, like a raw
 				// answer: its steps are kept under their own route.
@@ -240,6 +241,7 @@ func (p *Proxy) serveOrderedJSONMetric(w http.ResponseWriter, r *http.Request, r
 	if err == nil && !served {
 		readAt := time.Now().UnixNano()
 		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorRawRows, reason)
+		traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorRawRows + "/" + reason})
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
@@ -1992,6 +1994,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 	body, served, parseDisagreement, err := p.orderedJSONStatsBucketsWithReason(r.Context(), plan, start, end, step, false)
 	if served {
 		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorStats, rangeMetricReasonPushdown)
+		traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorStats + "/" + rangeMetricReasonPushdown})
 	}
 	if err == nil && !served {
 		if !parseDisagreement || plan.parser == "" {
@@ -2001,6 +2004,7 @@ func (p *Proxy) serveLevelVolumeStatsBuckets(w http.ResponseWriter, r *http.Requ
 		// neither the buckets nor the stored-field routes can answer it exactly.
 		// Evaluate the pipeline over the rows instead, as the JSON plans do.
 		p.metrics.RecordParserMetricEvaluator(rangeMetricEvaluatorRawRows, rangeMetricReasonProbe)
+		traceStep(r.Context(), slowTraceStep{kind: "operation", route: "json_metric_evaluator", outcome: rangeMetricEvaluatorRawRows + "/" + rangeMetricReasonProbe})
 		var series map[string]manualSeriesSamples
 		series, err = p.collectOrderedJSONMetric(r.Context(), plan, start, end, step)
 		if err == nil {
