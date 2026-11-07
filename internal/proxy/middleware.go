@@ -403,14 +403,11 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 		// Align final-response cache invalidation with the exact and windowed
 		// log-query keys after an output-semantic change.
 		prefix += logLineCacheKeyVersion + ":"
-		prefix += orderedJSONVectorResponseKeyVersion(r, r.FormValue("query"))
-		prefix += bareJSONMetricResponseKeyVersion(r, r.FormValue("query"))
-		prefix += detectedLevelMutationResponseKeyVersion(r.FormValue("query"))
-		prefix += keepMetadataProjectionResponseKeyVersion(r.FormValue("query"))
-		prefix += ipLabelFilterResponseKeyVersion(r.FormValue("query"))
+		site := responseKeyCompatQuery
 		if endpoint == "query_range" {
-			prefix += logfmtPresenceResponseKeyVersion(r, r.FormValue("query"))
+			site = responseKeyCompatQueryRange
 		}
+		prefix += responseKeyFences(r, r.FormValue("query"), site)
 	}
 	if version := readCacheKeyVersion(endpoint); version != "" {
 		prefix += version + ":"

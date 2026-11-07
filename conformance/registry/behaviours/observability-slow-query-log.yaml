@@ -25,7 +25,9 @@ proxy: |
   slow_upstream_request with the LogsQL and the client route it served
   (proxy.background when it outlived its request). Live tail is exempt. The
   queries are the text, capped at 8 KB (-slow-query-log-raw-queries=false
-  hashes them). 0 turns a threshold off.
+  hashes them). 0 turns a threshold off. -slow-query-log-level sets the
+  level of the slow lines (warn, info, debug) or turns them off: no lines and
+  no per-request trace, while loki_vl_proxy_slow_requests_total still counts.
 
 implementation:
   - internal/proxy/slow_query_log.go
@@ -60,3 +62,14 @@ decisions:
     performance:
       tracked: ['request path: allocations per request with the trace on (benchstat)', 'perf-smoke: no shape slower than its base']
       bound: 'a request under the thresholds formats nothing; steps hold references until a line is written'
+  - id: slow-query-log-level-and-off
+    chosen: '-slow-query-log-level warn (default) | info | debug | off; off writes no slow lines and keeps no trace but still counts loki_vl_proxy_slow_requests_total'
+    over: [disabling only through -slow-query-threshold=0 and -slow-upstream-threshold=0 (also stops the metric), a fixed WARN level]
+    why: |
+      Owner 2026-11-07: operators must be able to turn the slow lines off when
+      they log too much, and choose the level they are logged at, without
+      losing the slow-request counts.
+    evidence: 'TestSlowQueryLogLevelAndOff: info writes the lines at INFO; off writes none, keeps no trace, and the loki and vl counters still increment'
+    code: [internal/proxy/slow_query_log.go, internal/proxy/proxy.go, cmd/proxy/main.go]
+    tests: [TestSlowQueryLogLevelAndOff, TestParseSlowQueryLogLevel]
+    quality: 'An invalid level fails at startup with the accepted values; the default stays warn.'

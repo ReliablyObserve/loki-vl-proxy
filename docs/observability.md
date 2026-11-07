@@ -398,6 +398,7 @@ timed to headers; above the 99.9th timed to the end of their bodies).
 | `-slow-query-threshold` | `3s` | Client request duration at or over which it is slow; `0` turns it off |
 | `-slow-upstream-threshold` | `2s` | VictoriaLogs call duration (to the end of its body) at or over which it is slow; `0` turns it off |
 | `-slow-query-log-raw-queries` | `true` | Slow lines carry the queries' text (capped at 8 KB); `false` carries their sha256 and length |
+| `-slow-query-log-level` | `warn` | Level of the slow lines: `warn`, `info`, `debug` (written only when `-log-level` lets it through), or `off` (no lines and no trace; the metric still counts) |
 
 ### OpenTelemetry Fields Used in Logs
 

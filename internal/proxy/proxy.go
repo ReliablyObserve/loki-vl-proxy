@@ -537,6 +537,9 @@ type Config struct {
 	SlowUpstreamThreshold time.Duration
 	// SlowQueryLogRawQueries puts the queries' text in slow lines; false puts their sha256 and length.
 	SlowQueryLogRawQueries bool
+	// SlowQueryLogLevel is the level slow lines are logged at: warn (also when empty), info, debug, or off, which
+	// logs none and still counts the slow requests (ParseSlowQueryLogLevel).
+	SlowQueryLogLevel string
 
 	// MetadataCacheFreshness is Loki's max_metadata_cache_freshness: a /labels,
 	// /label/{name}/values or /series request ending within it of now does not
@@ -823,6 +826,8 @@ type Proxy struct {
 	slowQueryThreshold                   time.Duration
 	slowUpstreamThreshold                time.Duration
 	slowQueryLogRawQueries               bool
+	slowLogLevel                         slog.Level
+	slowLogOff                           bool
 	metadataCacheFreshness               time.Duration // Loki max_metadata_cache_freshness: labels/label_values/series ending within it of now skip stale cache hits; 0 disables
 	maxStatsCacheFreshness               time.Duration // Loki max_stats_cache_freshness: instant volume segments ending within it of now are read live
 	metadataDefaultLookback              time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
@@ -984,6 +989,10 @@ func New(cfg Config) (*Proxy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid ruler backend URL: %w", err)
 		}
+	}
+	slowLogLevel, slowLogOff, err := ParseSlowQueryLogLevel(cfg.SlowQueryLogLevel)
+	if err != nil {
+		return nil, err
 	}
 	var alertsURL *url.URL
 	if strings.TrimSpace(cfg.AlertsBackendURL) != "" {
@@ -1451,6 +1460,8 @@ func New(cfg Config) (*Proxy, error) {
 		slowQueryThreshold:                    cfg.SlowQueryThreshold,
 		slowUpstreamThreshold:                 cfg.SlowUpstreamThreshold,
 		slowQueryLogRawQueries:                cfg.SlowQueryLogRawQueries,
+		slowLogLevel:                          slowLogLevel,
+		slowLogOff:                            slowLogOff,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 		metadataCacheFreshness:                max(cfg.MetadataCacheFreshness, 0),
 		maxStatsCacheFreshness:                max(cfg.MaxStatsCacheFreshness, 0),
@@ -2808,12 +2819,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	var key strings.Builder
 	key.Grow(len(logqlQuery) + 256)
 	key.WriteString("query_range:v3:" + logLineCacheKeyVersion + ":")
-	key.WriteString(orderedJSONVectorResponseKeyVersion(r, logqlQuery))
-	key.WriteString(bareJSONMetricResponseKeyVersion(r, logqlQuery))
-	key.WriteString(logfmtPresenceResponseKeyVersion(r, logqlQuery))
-	key.WriteString(detectedLevelMutationResponseKeyVersion(logqlQuery))
-	key.WriteString(keepMetadataProjectionResponseKeyVersion(logqlQuery))
-	key.WriteString(ipLabelFilterResponseKeyVersion(logqlQuery))
+	key.WriteString(responseKeyFences(r, logqlQuery, responseKeyInnerQueryRange))
 	writePart := func(value string) {
 		var digits [20]byte
 		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))
