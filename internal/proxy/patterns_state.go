@@ -148,8 +148,8 @@ type patternFoldedCluster struct {
 //
 // fromNs is where the answer's samples start: Loki's retention (3h back), or with -patterns-full-range the hour
 // the state's samples start at, the range before it left to the caller (addPatternHistory). lines is the range's
-// count of lines when the state counted it (the request that finds no state for the selector, counted along with
-// the retention's), -1 otherwise.
+// count of lines when the state counted it (a range inside the retention, on the request that finds no state for
+// the selector, counted along with the retention's), -1 otherwise.
 func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) (entries []patternResultEntry, fromNs int64, lines int, ok bool) {
 	store := p.patternState
 	if store == nil {
@@ -173,16 +173,19 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	}
 	lines = -1
 	if s == nil {
-		// The range's lines are counted with the retention's, for the caller to answer the request without the
-		// state when the retention holds too many.
+		// A range inside the retention is counted with it, for the caller to answer the request without the
+		// state when the retention holds too many; a longer range costs more to count than the retention and is
+		// counted only then, by the caller.
 		var retained int
 		var retainedErr, rangeErr error
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs)
-		}()
+		if scope.startNs >= retainFrom {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs)
+			}()
+		}
 		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
 		wg.Wait()
 		if rangeErr != nil {

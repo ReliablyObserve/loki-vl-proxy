@@ -147,7 +147,7 @@ decisions:
     code: [internal/proxy/patterns_exact.go]
     tests: [TestPatternExactQueriesAreTyped, TestVLCapability_PatternLinesFilterAndTieOrder, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
   - id: patterns-cold-request-before-build
-    chosen: Count the range with the retention at once, and start a background build's reads once the request that started it is answered
+    chosen: Count a range inside the retention with the retention at once, and start a background build's reads once the request that started it is answered
     over: [counting the retention then the range, the build reading alongside the request's own read]
     why: |
       The first request for a busy selector counts the retention (to choose a
@@ -155,10 +155,13 @@ decisions:
       the other they cost both, and the build's first window competed with the
       request's own read of the same hour on VictoriaLogs. env=production cold
       1h: 0.65 s to 0.47 s (1.12 s before the phrase filter; Loki 0.72-0.97 s on
-      the same stack). The build waits at most 30 s for the answer.
+      the same stack). The build waits at most 30 s for the answer. A range
+      longer than the retention is not counted alongside: its count costs more
+      than the retention's and a selector built at once never needs it
+      (payment-service cold 24h: 0.85 s to 1.14 s when it was).
     evidence: 'compose stack A/B, VictoriaLogs v1.53.0, Loki 3.7.9, 2026-11-07'
     code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go]
-    tests: [TestPatternStateBuiltInTheBackgroundForBusySelectors, TestPatternStateRefreshReadsOnlyNewLines]
+    tests: [TestPatternStateBuiltInTheBackgroundForBusySelectors, TestPatternStateCountsOnlyARangeInsideTheRetentionAlongside, TestPatternStateRefreshReadsOnlyNewLines]
 
 implementation:
   - internal/proxy/pattern_cluster.go

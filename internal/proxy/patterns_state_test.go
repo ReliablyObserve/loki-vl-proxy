@@ -226,6 +226,38 @@ func TestPatternStateRefreshReadsOnlyNewLines(t *testing.T) {
 	}
 }
 
+// The request that finds no state for a selector counts the range with the retention only when the range lies
+// inside it: a longer range costs more to count than the retention, and a selector the state is built for at once
+// never needs its count.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternStateCountsOnlyARangeInsideTheRetentionAlongside(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 100)...)
+	for _, c := range []struct {
+		name   string
+		start  time.Time
+		counts int
+	}{
+		{"1h", stateNow.Add(-time.Hour), 2},
+		{"24h", stateNow.Add(-24 * time.Hour), 1},
+	} {
+		now := stateNow
+		vl.mu.Lock()
+		vl.counts = 0
+		vl.mu.Unlock()
+		p := newStateProxy(t, vl, &now, 1<<30)
+		scope, _ := p.patternScope(`{app="api"}`, strconv.FormatInt(c.start.UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
+		_, _, lines, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 1000, 100)
+		vl.mu.Lock()
+		counts := vl.counts
+		vl.mu.Unlock()
+		if !answered || counts != c.counts || (c.counts == 2) != (lines == 100) || (c.counts == 1) != (lines == -1) {
+			t.Fatalf("%s: answered %v with %d counts and range lines %d, want %d counts", c.name, answered, counts, lines, c.counts)
+		}
+	}
+}
+
 // A pattern's text is its cluster's template trained on every line the state read, as Loki's is, the samples
 // being those inside the range: the lines before the range, whose last token varies, make it <_> in the template
 // of a range whose lines all end the same.
