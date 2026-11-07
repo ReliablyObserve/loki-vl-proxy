@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(observability): slow requests are counted and logged with their
+  queries. A client request at or over `-slow-query-threshold` (default `3s`)
+  logs `slow_request` at `WARN` with its LogQL and its steps in order, each
+  with its offset from the request's start: every VictoriaLogs call with its
+  LogsQL, window, status, bytes and time, every proxy-side operation and route
+  decision (such as the pattern state's reads or the `| json` metric evaluator
+  and why), every rewrite of the LogQL. One VictoriaLogs call at or over
+  `-slow-upstream-threshold` (default `2s`, to the end of its body) logs
+  `slow_upstream_request` with its LogsQL and the client route it served. Both
+  are counted in `loki_vl_proxy_slow_requests_total{system,route}` and logged
+  whatever the request-log sampling; live tail is exempt. The defaults come
+  from measured timings (the 99th percentile of the daily benchmark's cold
+  first loads; rarer than 1 in 50 VictoriaLogs calls on the compose stack). Queries are logged as text, capped at 8 KB
+  (`-slow-query-log-raw-queries=false` logs their hashes).
+
 ## [2.84.0] - 2026-11-07
 
 ### Added

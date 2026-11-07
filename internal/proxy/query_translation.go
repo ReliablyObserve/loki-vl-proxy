@@ -37,6 +37,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
 		rt := newRequestTelemetry()
+		rt.start, rt.traceOn = start, p.slowTraceOn()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
 		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
@@ -48,6 +49,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 
 		elapsed := time.Since(start)
 		telemetry := snapshotTelemetry(reqWithTelemetry.Context())
+		p.logSlowRequest(reqWithTelemetry.Context(), endpoint, route, query, sc.code, elapsed, telemetry)
 		proxyOverhead := elapsed - telemetry.upstreamDuration
 		if proxyOverhead < 0 {
 			proxyOverhead = 0

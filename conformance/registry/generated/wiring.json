@@ -527,6 +527,9 @@
     "numeric-and-response-formatting": [
       "internal/proxy/manual_metric_encoding_test.go"
     ],
+    "observability-slow-query-log": [
+      "internal/proxy/slow_query_log_test.go"
+    ],
     "operator-configurable-limits": [
       "cmd/proxy/main_test.go",
       "internal/config/registry_test.go",
@@ -1555,7 +1558,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 422,
+  "registry_items": 423,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2288,6 +2291,9 @@
       "metric-series-identity",
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
+    ],
+    "internal/proxy/slow_query_log_test.go": [
+      "observability-slow-query-log"
     ],
     "internal/proxy/stage_field_exposure_test.go": [
       "loki-compatible-profile",
@@ -3298,7 +3304,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 343,
+  "tests_with_markers": 344,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3399,5 +3405,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 250
+  "wired_items": 251
 }

@@ -82,6 +82,7 @@ func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 // setRequestQuery replaces the query parameter of a parsed request wherever a
 // handler reads it.
 func setRequestQuery(r *http.Request, query string) {
+	traceRewrite(r.Context(), r.Form.Get("query"), query)
 	r.Form.Set("query", query)
 	if r.PostForm.Has("query") {
 		r.PostForm.Set("query", query)
