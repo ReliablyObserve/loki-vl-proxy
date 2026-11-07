@@ -523,9 +523,19 @@ class AcceptanceTest(unittest.TestCase):
     def test_distribution(self):
         d = over2x.distribution([("cold", "below"), ("cold", "below"), ("cold", "close"), ("cold", "above"),
                                  ("warm", "between")])
-        self.assertEqual(d["cold"], {"rows": 4, "below": 2, "close": 1, "between": 0, "above": 1, "share_below": 50.0})
+        self.assertEqual(d["cold"], {"rows": 4, "below": 2, "close": 1, "between": 0, "above": 1, "share_below": 50.0,
+                                     "green": 2, "share_green": 50.0})
         self.assertEqual(list(d), ["cold", "warm"])
         self.assertEqual(over2x.distribution([]), {})
+
+    def test_green_is_at_most_one_percent_above_loki(self):
+        # Owner 2026-11-07: a row at Loki's speed or below it is green, at most 1% above Loki.
+        self.assertTrue(over2x.band(1.01, 1.0).green)
+        self.assertFalse(over2x.band(1.02, 1.0).green)
+        self.assertTrue(over2x.band(0.2, 1.0).green)
+        self.assertEqual(over2x.band(1.02, 1.0), "close")  # the bands themselves are unchanged
+        d = over2x.distribution([("cold", over2x.band(1.0, 1.0))] * 99 + [("cold", over2x.band(1.5, 1.0))])
+        self.assertEqual((d["cold"]["green"], d["cold"]["share_green"]), (99, 99.0))
 
     def test_ratchet_moves_need_both_margins(self):
         def dist(below, above, rows=100):
