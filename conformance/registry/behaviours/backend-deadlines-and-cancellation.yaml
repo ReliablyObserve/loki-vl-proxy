@@ -29,6 +29,9 @@ proxy: |
   sibling call the proxy cancelled), it is sent once more on a new connection.
 
 implementation:
+  - internal/middleware/shared_context.go
+  - internal/middleware/coalescer.go
+  - internal/proxy/drilldown_burst_coalescer.go
   - internal/proxy/backend.go
   - internal/proxy/backend_heavy.go
   - internal/proxy/backend_response_guard.go
@@ -39,3 +42,31 @@ cases:
   - semantics/client-cancellation-propagates
   - semantics/backend-aborted-response
   - semantics/live-request-not-cancelled-by-sibling
+
+decisions:
+  - id: shared-calls-stop-with-their-last-waiter
+    chosen: |
+      A call several requests share (the request coalescer's upstream call, the
+      Drilldown burst coalescer's fused scan) runs on its own context, with the
+      first caller's values and no cancellation of its own, that is cancelled
+      when the last waiter leaves; a waiter that leaves gets its own
+      cancellation at once. The burst scan keeps its 30 s cap.
+    over: [the first caller's context (one client leaving failed every other waiter), a context detached from every client (VictoriaLogs scanned for nobody until the 30 s cap)]
+    why: |
+      Owner 2026-11-07: make VictoriaLogs less overloaded; the first cut of the
+      approved cache plan. On the compose stack the Drilldown fields tab at 6h
+      left VictoriaLogs scanning after Grafana cancelled (it logged writes on
+      hijacked connections), and a second client of a coalesced /series call
+      got 499 the moment the first gave up.
+    evidence: 'compose stack 2026-11-07, VictoriaLogs behind a 5 s delay: two identical /series requests, the first client leaving at 1 s — main: the second client 499 "the request was cancelled by the client" at 0.7 s; this change: the second client 200 with the series at 5.1 s'
+    code: [internal/middleware/shared_context.go, internal/middleware/coalescer.go, internal/proxy/drilldown_burst_coalescer.go, internal/proxy/backend.go, internal/proxy/label_metadata.go]
+    tests: [TestCoalescerLeaderCancelKeepsCallForFollower, TestCoalescerCancelsCallWhenLastWaiterLeaves, TestCoalescerSharedCallKeepsLeaderValues, TestDrilldownBurstCancelsVLScanWhenAllWaitersLeave, TestDrilldownBurstKeepsVLScanWhileAWaiterRemains, TestDrilldownBurstFirstWaiterLeavingKeepsGroup, TestDrilldownBurstLeavesNoGoroutines]
+    history:
+      - date: '2026-11-07'
+        what: 'Drilldown fields tab, 6h, env=production; coalesced /series with two clients'
+        measured: 'VictoriaLogs kept scanning after Grafana cancelled (up to the 30 s cap); a waiting second client got 499 when the first left'
+        cause: 'the burst coalescer ran its fused scan on context.WithoutCancel(first caller); the request coalescer ran the shared call on the first caller''s context'
+        effect: 'VictoriaLogs load for nobody during Drilldown browsing; spurious 499s for waiting clients'
+        fixed_by: 'fix/vl-work-stops-with-clients'
+        after: 'the shared call stops when its last waiter leaves; waiting clients get the answer; a cancelled call is not a breaker failure (shouldRecordBreakerFailure skips a done context)'
+    quality: 'No shared call outlives all of its waiters; no waiter fails because another left; no goroutine is left behind (synctest).'

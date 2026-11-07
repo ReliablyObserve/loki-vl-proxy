@@ -11,6 +11,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
 var (
@@ -109,7 +111,7 @@ type fieldResult struct {
 }
 
 type burstGroup struct {
-	ctx    context.Context
+	shared *mw.SharedContext // cancelled when the last waiter leaves
 	fields []string
 	chans  []chan fieldResult
 }
@@ -139,7 +141,9 @@ func newDrilldownBurstCoalescer(windowMs, maxFields int) *DrilldownBurstCoalesce
 }
 
 // Submit registers field in the burst group for key, waits for the window to
-// close, and returns the per-field result from the fused fireFn call.
+// close, and returns the per-field result from the fused fireFn call. The fused
+// call stops with its last waiter: a waiter whose ctx is done returns at once,
+// and when none is left the VictoriaLogs scan is cancelled.
 func (c *DrilldownBurstCoalescer) Submit(
 	ctx context.Context,
 	key burstKey,
@@ -154,9 +158,14 @@ func (c *DrilldownBurstCoalescer) Submit(
 		delete(c.pending, key)
 		g = nil
 	}
+	// A group whose waiters all left is cancelled; a later field starts its own.
+	if g != nil && !g.shared.Join() {
+		delete(c.pending, key)
+		g = nil
+	}
 	if g == nil {
 		g = &burstGroup{
-			ctx:    context.WithoutCancel(ctx),
+			shared: mw.NewSharedContext(ctx, false),
 			fields: []string{field},
 			chans:  []chan fieldResult{ch},
 		}
@@ -173,6 +182,7 @@ func (c *DrilldownBurstCoalescer) Submit(
 	case res := <-ch:
 		return res.series, res.err
 	case <-ctx.Done():
+		g.shared.Leave()
 		return nil, ctx.Err()
 	}
 }
@@ -188,10 +198,15 @@ func (c *DrilldownBurstCoalescer) fire(
 	}
 	c.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(g.ctx, 30*time.Second)
+	defer g.shared.Close()
+	ctx, cancel := context.WithTimeout(g.shared.Context(), 30*time.Second)
 	defer cancel()
 
-	results, err := fireFn(ctx, g.fields)
+	var results map[string]fieldResult
+	err := ctx.Err() // every waiter left during the window: nothing to scan for
+	if err == nil {
+		results, err = fireFn(ctx, g.fields)
+	}
 	if err != nil {
 		err = fmt.Errorf("burst coalescer fused query: %w", err)
 	}
