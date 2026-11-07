@@ -106,7 +106,9 @@ func TestLabelReplaceOverJSONMetricUsesTheOrderedJSONEvaluator(t *testing.T) {
 		if failed.code != 400 || !strings.Contains(failed.body, "JSONParserErr") {
 			t.Errorf("%s without a filter: HTTP %d, want Loki's 400 JSONParserErr\n%s", endpoint, failed.code, failed.body)
 		}
-		if rowQueries.Load() == 0 || statsQueries.Load() != 0 {
+		// The error comes from the row evaluator's lookup of the unparsed line; a
+		// strict split's stats may start alongside it and are discarded.
+		if rowQueries.Load() == 0 {
 			t.Errorf("%s: the ordered JSON evaluator was not used (row queries %d, stats queries %d)", endpoint, rowQueries.Load(), statsQueries.Load())
 		}
 		ok := ask(endpoint, `| __error__=""`)

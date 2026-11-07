@@ -49,8 +49,8 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **12 of 557** pairs are slower (2%): log queries **0 of 77**, Drilldown and Explore pages **5 of 118**, metric queries **7 of 360**.
 - Between 1× and 2× Loki: **6** rows on the first request, **1** on a repeat; above 2× Loki: **6** on the first request and **0** on a repeat (the 2026-11-07 distribution).
-- **5 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **5** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 106 covered registry items are locked at the 2× bound.
-- Largest gaps on that list in the run shown, first request: `K6 count by kept key, json` over 24h, **4.08 s** against **0.80 s**; `K6 count by kept key, json` over 6h, **1.02 s** against **0.17 s**; `LS8 json count by level_extracted, collision` over 6h, **0.39 s** against **0.14 s**.
+- **2 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **2** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 106 covered registry items are locked at the 2× bound.
+- Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.39 s** against **0.14 s**; `LS8 json count by level_extracted, collision` over 1h, **0.10 s** against **0.03 s**.
 - Answers: **53 of 773** pairs return a different result from Loki, and **15** could not be compared.
 
 **Distribution versus Loki in the run shown, both Loki profiles**

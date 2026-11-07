@@ -772,11 +772,19 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.day(timed(cold=0.4), timed(shape="t", cold=3.0, p50=1.0))
         a = self.run_alerts(shapes=(SHAPE, "t"))
         self.assertEqual(a["distribution"]["aligned"]["cold"], {"rows": 2, "below": 1, "close": 0, "between": 0, "above": 1,
-                                                     "share_below": 50.0})
+                                                     "share_below": 50.0, "green": 1, "share_green": 50.0})
         text = history.render_alerts(a)
         self.assertIn("## Acceptance versus Loki", text)
-        self.assertIn("| aligned | cold | 2 | 1 (50.0%) | 0 | 0 | 1 | ❌ | ❌ |", text)
-        self.assertNotIn("## Acceptance versus Loki", history.render_alerts(alerts(self.dir)))  # no blocks: off
+        self.assertIn("| aligned | cold | 2 | 1 (50.0%) | 0 | 0 | 1 | 1 (50.0%) | ❌ | ❌ |", text)
+
+    def test_the_green_target_ticks_at_95_percent(self):
+        names = [f"s{i}" for i in range(100)]
+        self.day(*[timed(shape=n, cold=0.4 if i > 4 else 3.0) for i, n in enumerate(names)])  # 5 rows above 2×
+        text = history.render_alerts(self.run_alerts(shapes=names))
+        self.assertIn("| 95 (95.0%) | ✅ | ❌ |", text)
+        self.day(*[timed(shape=n, cold=0.4 if i > 5 else 3.0) for i, n in enumerate(names)])  # 6 rows
+        text = history.render_alerts(self.run_alerts(shapes=names))
+        self.assertIn("| 94 (94.0%) | ❌ | ❌ |", text)
 
     def test_acceptance_history_is_written_per_day(self):
         self.day(timed(cold=0.4))

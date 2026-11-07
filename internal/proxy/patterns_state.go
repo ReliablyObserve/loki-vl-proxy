@@ -36,6 +36,9 @@ const patternStateBuildWindow = time.Hour
 // it at once. Aging walks every cluster's samples, a fifth of a busy selector's warm answer when done each time.
 const patternStateAgeEvery = 15 * time.Second
 
+// patternStateFutureSteps is how many steps after now a range may end and still be answered from the state.
+const patternStateFutureSteps = 3
+
 // patternStateBuildWait is how long a background build waits at most for the request that started it to be
 // answered before it reads: until then its reads would slow that request's own.
 var patternStateBuildWait = 30 * time.Second
@@ -153,7 +156,7 @@ type patternFoldedCluster struct {
 // read when the range ends later. A range that starts before the retention is answered with the retention's
 // samples alone, as Loki's pattern ingester answers it (it holds no older ones), and one that ends before it with
 // none. answered is false when the state cannot be built within maxLines (or is being built in the background),
-// the range ends in the future, or VictoriaLogs fails: the caller answers without the state.
+// the range ends more than patternStateFutureSteps steps after now, or VictoriaLogs fails: the caller answers without the state.
 //
 // fromNs is where the answer's samples start: Loki's retention (3h back), or with -patterns-full-range the hour
 // the state's samples start at, the range before it left to the caller (addPatternHistory). lines is the range's
@@ -166,7 +169,9 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	}
 	now := store.now()
 	retainFrom := now.Add(-lokiPatternRetention).Truncate(time.Hour).UnixNano()
-	if scope.endNs > now.Add(time.Minute).UnixNano() {
+	// A range may end a few steps after now (Drilldown's moving window); one that ends later is answered from its
+	// own lines (the caller), not from a state read up to now.
+	if scope.endNs > now.Add(max(time.Minute, patternStateFutureSteps*scope.step)).UnixNano() {
 		return nil, 0, -1, false
 	}
 	ctx := r.Context()

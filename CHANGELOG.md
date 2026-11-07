@@ -63,6 +63,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a range) the proxy answers the same patterns with the same totals for all
   27 (it answered 47% of their lines with Loki's text before).
 
+## [2.83.5] - 2026-11-07
+
+### Performance
+
+- perf(query): a `| json` metric that keeps the parser errors (no
+  `__error__` filter) and is grouped by a parsed key or a stored label, such as
+  `sum by (level) (count_over_time({...} | json [1m]))`, and one whose
+  pipeline ends in a `| keep` of the grouped labels under an outer `sum`, such
+  as `sum by (level) (count_over_time({...} | json | keep level [1m]))`, are
+  answered from VictoriaLogs stats instead of reading every selected line as a
+  raw row. Only `sum by (detected_level)` had taken that route. A line Loki's
+  parser rejects still fails the query with Loki's pipeline error. On the
+  compose stack the keep query over 1h of an API gateway's JSON logs answers
+  in 0.14 s instead of reading 41 MB of rows (daily benchmark: 3-6x Loki cold at
+  1h, 6h and 24h), with the same answer as Loki point for point.
+
 ## [2.83.4] - 2026-11-06
 
 ### Performance

@@ -469,7 +469,7 @@ func TestOrderedJSONInstantVolumeFallbacksReadRawRows(t *testing.T) {
 		}
 	})
 	t.Run("ineligible plan", func(t *testing.T) {
-		query := `sum by (level) (count_over_time({app="api"} | json [1m]))` // parser errors are kept: no pushdown
+		query := `sum by (level) (count_over_time({app="api"} | json | keep level, app=~".+" [1m]))` // a keep with a matcher: no pushdown
 		if plan, ok := compileOrderedJSONMetric(query); !ok || plan.pushdown {
 			t.Fatalf("%s: want an ordered JSON plan without pushdown", query)
 		}

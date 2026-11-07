@@ -81,12 +81,15 @@ Warm repeat row. Below or above Loki means beyond 25% and 50 ms; close is within
 Each row is counted in the Loki profile of the run it comes from (`aligned`: the stack's Loki; `loki-defaults`:
 Loki with its own defaults, preferred when both ran); a locked row's bound holds in each profile.
 
-| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |
-|---|---|---|---|---|---|---|---|---|---|
-| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 133 | yes | **no** |
-| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 257 | **no** | **no** |
-| loki-defaults | cold | 557 | 360 (64.6%) | 185 | 6 | 6 | 133 | yes | **no** |
-| loki-defaults | warm | 753 | 168 (22.3%) | 584 | 1 | 0 | 257 | **no** | yes |
+A row is green below Loki or within the noise of it (below + close); the target is
+95% of a mode's rows green.
+
+| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (below + close) | 95% green | Worst case ≤ 2× |
+|---|---|---|---|---|---|---|---|---|---|---|
+| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 133 | 20 (76.9%) | **no** | **no** |
+| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 257 | 31 (77.5%) | **no** | **no** |
+| loki-defaults | cold | 557 | 360 (64.6%) | 185 | 6 | 6 | 133 | 545 (97.8%) | yes | **no** |
+| loki-defaults | warm | 753 | 168 (22.3%) | 584 | 1 | 0 | 257 | 752 (99.9%) | yes | yes |
 
 ### Between 1× and 2× Loki
 
@@ -111,17 +114,11 @@ runs above 2× and removes one after two consecutive runs within 2×; a pull req
 above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;
 rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.
 
-9 rows: cold 9, warm 0, refresh 0; aligned 4, loki-defaults 5.
+3 rows: cold 3, warm 0, refresh 0; aligned 1, loki-defaults 2.
 
 | profile | set | shape | range | mode | proxy | Loki | proxy ÷ Loki | since |
 |---|---|---|---|---|---|---|---|---|
-| aligned | keep-series-grouping | K6 count by kept key, json | 1h | cold | 0.18s | 0.05s | 3.38× | 2026-11-06 |
-| aligned | keep-series-grouping | K6 count by kept key, json | 24h | cold | 4.08s | 0.65s | 6.30× | 2026-11-06 |
-| aligned | keep-series-grouping | K6 count by kept key, json | 6h | cold | 1.04s | 0.17s | 6.11× | 2026-11-06 |
 | aligned | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.41s | 0.19s | 2.20× | 2026-10-28 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 1h | cold | 0.17s | 0.06s | 3.00× | 2026-11-06 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 24h | cold | 4.08s | 0.80s | 5.12× | 2026-11-06 |
-| loki-defaults | keep-series-grouping | K6 count by kept key, json | 6h | cold | 1.02s | 0.17s | 6.07× | 2026-11-06 |
 | loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 1h | cold | 0.08s | 0.03s | 2.86× | 2026-11-03 |
 | loki-defaults | level-filter-stored | LS8 json count by level_extracted, collision | 6h | cold | 0.43s | 0.20s | 2.16× | 2026-10-27 |
 

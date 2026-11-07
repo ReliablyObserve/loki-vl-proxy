@@ -52,8 +52,8 @@ func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T
 	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
 	end := start.Add(cfg.rangeWindow)
 	t.Logf("long-range patterns fixture service=%s start=%s end=%s", serviceName, start.Format(time.RFC3339), end.Format(time.RFC3339))
-	seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
-	waitForDrilldownServiceVisible(t, serviceName, start, end)
+	written := seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
+	waitForDrilldownServiceVisible(t, serviceName, start, end, written)
 
 	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy patterns autodetect)")
 	query := fmt.Sprintf(`{service_name="%s"}`, serviceName)
@@ -333,8 +333,8 @@ func TestDrilldown_LongRangeVolume_SplitQueriesStayDense(t *testing.T) {
 	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
 	end := start.Add(cfg.rangeWindow)
 	t.Logf("long-range volume fixture service=%s start=%s end=%s", serviceName, start.Format(time.RFC3339), end.Format(time.RFC3339))
-	seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
-	waitForDrilldownServiceVisible(t, serviceName, start, end)
+	written := seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
+	waitForDrilldownServiceVisible(t, serviceName, start, end, written)
 
 	expr := fmt.Sprintf(`sum by (detected_level) (count_over_time({service_name="%s"}[%ds]))`, serviceName, int(cfg.step/time.Second))
 
@@ -404,8 +404,8 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 	serviceName := longRangeServiceName(longRangeVolumeService)
 	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
 	end := start.Add(cfg.rangeWindow)
-	seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
-	waitForDrilldownServiceVisible(t, serviceName, start, end)
+	written := seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
+	waitForDrilldownServiceVisible(t, serviceName, start, end, written)
 
 	queryStep := time.Hour
 	expr := fmt.Sprintf(`sum by (detected_level) (count_over_time({service_name="%s"}[1h]))`, serviceName)
@@ -429,7 +429,8 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 	_ = waitForLongRangeSplitVolumeCoverage(t, expr, windows, start, end, queryStep)
 }
 
-func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, end time.Time, cfg longRangeDrilldownSeedConfig) {
+// seedLongRangeDrilldownServiceData writes the fixture straight to VictoriaLogs and returns how many lines it wrote.
+func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, end time.Time, cfg longRangeDrilldownSeedConfig) int {
 	t.Helper()
 
 	if cfg.step <= 0 {
@@ -446,7 +447,7 @@ func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, 
 	}
 
 	insertURL := vlURL + "/insert/jsonline?_stream_fields=" + url.QueryEscape("app,service_name,cluster,namespace,level,detected_level")
-	linesInBatch := 0
+	linesInBatch, written := 0, 0
 	var body strings.Builder
 	body.Grow(cfg.batchSize * 256)
 	flush := func() {
@@ -504,6 +505,7 @@ func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, 
 				body.WriteString(level)
 				body.WriteString("\"}\n")
 				linesInBatch++
+				written++
 				if linesInBatch >= cfg.batchSize {
 					flush()
 				}
@@ -512,13 +514,17 @@ func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, 
 		bucketIndex++
 	}
 	flush()
+	return written
 }
 
 func longRangeServiceName(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UTC().UnixNano())
 }
 
-func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end time.Time) {
+// waitForDrilldownServiceVisible waits until the service shows in index/stats and, given how many lines were
+// written, until VictoriaLogs counts every one of them: it makes the rows of each day's partition visible on
+// their own, and a pattern or volume answer read before that (whose settled windows are cached) misses some.
+func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end time.Time, written ...int) {
 	t.Helper()
 
 	params := url.Values{}
@@ -532,7 +538,7 @@ func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end
 	var last map[string]interface{}
 	for {
 		last = getJSON(t, proxyURL+"/loki/api/v1/index/stats?"+params.Encode())
-		if entries, ok := last["entries"].(float64); ok && entries > 0 {
+		if entries, ok := last["entries"].(float64); ok && entries > 0 && (len(written) == 0 || vlServiceLineCount(t, serviceName, start, end) >= written[0]) {
 			return
 		}
 		now := time.Now()
@@ -552,6 +558,25 @@ func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end
 			}
 		}
 	}
+}
+
+// vlServiceLineCount is the number of lines VictoriaLogs holds for the service over [start, end].
+func vlServiceLineCount(t *testing.T, serviceName string, start, end time.Time) int {
+	t.Helper()
+	form := url.Values{"query": {fmt.Sprintf(`service_name:=%q | stats count() as c`, serviceName)}, "start": {start.Add(-time.Minute).Format(time.RFC3339Nano)}, "end": {end.Add(time.Hour).Format(time.RFC3339Nano)}}
+	resp, err := http.PostForm(vlURL+"/select/logsql/query", form)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	var row struct {
+		C string `json:"c"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&row) != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(row.C)
+	return n
 }
 
 func patternSampleStats(samples [][]interface{}) (nonzero int, firstTS int64, lastTS int64, maxGapSeconds int64) {

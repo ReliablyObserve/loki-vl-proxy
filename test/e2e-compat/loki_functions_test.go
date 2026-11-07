@@ -438,14 +438,15 @@ func TestLokiFunctions_PatternsAutodetectFromQueryRange(t *testing.T) {
 		"limit":     {"200"},
 		"step":      {"60"},
 	}
-	resp := getJSON(t, patternsAutodetectProxyURL+"/loki/api/v1/query_range?"+queryRangeParams.Encode())
-	if resp["status"] != "success" {
-		t.Fatalf("expected query_range success on autodetect proxy, got %v", resp)
-	}
-
+	// The lines were just pushed: VictoriaLogs may not show them all to this proxy's first read, so the query is
+	// sent again until the proxy has mined patterns from an answer that holds them.
 	deadline := time.Now().Add(20 * time.Second)
 	var metricAfter float64
 	for {
+		resp := getJSON(t, patternsAutodetectProxyURL+"/loki/api/v1/query_range?"+queryRangeParams.Encode())
+		if resp["status"] != "success" {
+			t.Fatalf("expected query_range success on autodetect proxy, got %v", resp)
+		}
 		metricAfter = readPromMetric(t, patternsAutodetectProxyURL, "loki_vl_proxy_patterns_detected_total")
 		if metricAfter > metricBefore {
 			break
