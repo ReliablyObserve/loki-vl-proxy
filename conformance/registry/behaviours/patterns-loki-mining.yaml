@@ -117,6 +117,21 @@ decisions:
     evidence: 'live table in the patterns PR'
     code: [internal/proxy/patterns_counts.go]
     tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage]
+  - id: patterns-message-keys-as-phrases
+    chosen: Find a message field's key with phrase filters of its quoted name ("\"msg\"" OR ...)
+    over: [a regexp of the quoted key and its colon ("(log|message|...)"\s*:)]
+    why: |
+      Phrases are looked up through VictoriaLogs' token index; the regexp scans
+      every line. Every count and read of the state's flow carries the filter:
+      env=production over 3h counted in 95 ms instead of 230 ms; a cold 1h answer
+      in 0.58 s instead of 0.94 s, a cold 5m one in 0.17 s instead of 0.35 s.
+      The phrases keep every line the regexp keeps (a key followed by a colon
+      holds its quoted name), and a line with the name as a value only is read
+      and mined to nothing, as before; measured over 3 days of stack data, 0
+      lines kept by one and not the other.
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
+    code: [internal/proxy/patterns_counts.go]
+    tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage]
 
 implementation:
   - internal/proxy/pattern_cluster.go

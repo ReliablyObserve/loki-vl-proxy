@@ -409,7 +409,7 @@ func TestPatternStateMinesLinesThatShareATimeOnce(t *testing.T) {
 func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
 	// _msg:="{"* is the line starting with {: a line with a { inside, such as zap's console lines ending in a JSON
 	// object, is mined as Loki mines it.
-	want := `-(_msg:="{"* _msg:~"\\}$" NOT _msg:~"\"(log|message|msg|msg_|_msg|content)\"\\s*:")`
+	want := `-(_msg:="{"* _msg:~"\\}$" -("\"log\"" OR "\"message\"" OR "\"msg\"" OR "\"msg_\"" OR "\"_msg\"" OR "\"content\""))`
 	if got := patternMinableLines.String(); got != want {
 		t.Fatalf("filter\n got %s\nwant %s", got, want)
 	}
