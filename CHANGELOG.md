@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy reads label filter stages from their parsed expression instead of
+  matching their text with regular expressions (detected_fields and Drilldown
+  relaxed scans, field exposure, unwrap conversion errors, the `line_format`
+  error filter). Spellings Loki reads as the same filter are now read alike:
+  a filter in parentheses (`(status>=500)`), `and` or a space between filters,
+  a backquoted empty `__error__` value, numbers and durations the old reading
+  missed (`1h30m`, `1e5`, `.5`, `0x10`), and non-ASCII label names. Stages the
+  parser keeps opaque are read as before.
+
 ## [2.88.0] - 2026-11-07
 
 ### Fixed
@@ -20,17 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kind), the plan sends the same address filter log queries use to
   VictoriaLogs (`ipv4_range`, no raw-row read), and answers cached before this
   release for queries with `ip()` are not served.
-
-### Changed
-
-- The proxy reads label filter stages from their parsed expression instead of
-  matching their text with regular expressions (detected_fields and Drilldown
-  relaxed scans, field exposure, unwrap conversion errors, the `line_format`
-  error filter). Spellings Loki reads as the same filter are now read alike:
-  a filter in parentheses (`(status>=500)`), `and` or a space between filters,
-  a backquoted empty `__error__` value, numbers and durations the old reading
-  missed (`1h30m`, `1e5`, `.5`, `0x10`), and non-ASCII label names. Stages the
-  parser keeps opaque are read as before.
 
 ## [2.87.0] - 2026-11-07
 
