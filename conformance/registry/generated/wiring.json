@@ -287,6 +287,7 @@
       "internal/proxy/pattern_tokenizer_test.go",
       "internal/proxy/patterns_counts_test.go",
       "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_counts_test.go",
       "test/e2e-compat/patterns_loki_oracle_test.go"
@@ -587,6 +588,7 @@
     "patterns-loki-mining": [
       "internal/proxy/pattern_cluster_test.go",
       "internal/proxy/pattern_loki_answers_test.go",
+      "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_state_test.go",
       "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
@@ -600,6 +602,8 @@
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-patterns": [
+      "internal/proxy/patterns_owner_test.go",
+      "internal/proxy/patterns_state_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-query-range-windows": [
@@ -2163,6 +2167,11 @@
       "drilldown/patterns-mined-differently",
       "loki_api_v1_patterns"
     ],
+    "internal/proxy/patterns_owner_test.go": [
+      "loki_api_v1_patterns",
+      "patterns-loki-mining",
+      "peer-cache-patterns"
+    ],
     "internal/proxy/patterns_persistence_test.go": [
       "peer-cache-replication"
     ],
@@ -2170,7 +2179,8 @@
       "drilldown/patterns-full-range-counts",
       "drilldown/patterns-mined-differently",
       "loki_api_v1_patterns",
-      "patterns-loki-mining"
+      "patterns-loki-mining",
+      "peer-cache-patterns"
     ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"

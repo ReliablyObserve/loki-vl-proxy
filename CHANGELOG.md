@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat(patterns): one pattern state per tenant and selector across the
+  fleet, so every peer answers a selector with the same patterns. A
+  `/loki/api/v1/patterns` request goes to the peer that owns the selector's
+  state in the peers' ring (then its replica), with the client's headers and
+  the peers' token; that peer answers from its own state and never forwards
+  again, and a peer answers locally when both fail. The holder writes the state
+  to the cache (memory, disk and its replica on the peers, in parts of at most
+  4 MB) when it is built and at most every minute as it refreshes; a peer that
+  takes the selector over, or the holder after a restart, continues from it,
+  reading only the lines after it, with the same patterns. A range's first
+  request reads its missing history windows in one VictoriaLogs read (a groups
+  and a timeline query) instead of two per window; the windows are cached and
+  shared as before.
 - feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps
   one. A selector's lines over Loki's pattern retention (3h) are read once,
   sorted by stream and time, and each stream's clusters kept with their 10 s
