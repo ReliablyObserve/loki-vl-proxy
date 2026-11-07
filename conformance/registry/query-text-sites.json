@@ -2,9 +2,9 @@
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
     "deferred_raw": 9,
-    "parse_calls": 63,
+    "parse_calls": 62,
     "string_reads": 54,
-    "text_built": 214,
+    "text_built": 213,
     "translator_string_ops": 656
   },
   "files": {
@@ -21,7 +21,7 @@
       "internal/proxy/keep_series_grouping.go": 1,
       "internal/proxy/limits_enforcement.go": 1,
       "internal/proxy/log_line.go": 1,
-      "internal/proxy/loki_profile.go": 4,
+      "internal/proxy/loki_profile.go": 3,
       "internal/proxy/manual_metric_budget.go": 1,
       "internal/proxy/metric_agg.go": 8,
       "internal/proxy/metric_binary.go": 1,
@@ -84,7 +84,7 @@
       "internal/proxy/sliding_window_stats.go": 2,
       "internal/proxy/stream_processing.go": 2,
       "internal/proxy/tail.go": 2,
-      "internal/proxy/unwrap_conversion_error.go": 19,
+      "internal/proxy/unwrap_conversion_error.go": 18,
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {

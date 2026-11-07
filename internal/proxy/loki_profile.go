@@ -468,7 +468,7 @@ func pipelineAddsLabels(pipeline []logqlpkg.Stage) lineFieldExposure {
 				exposure.unpack = true
 			}
 		case *logqlpkg.LabelFilterStage:
-			exposure.filters = append(exposure.filters, labelFilterConditions(s.Raw, exposureBefore(pipeline[:i]))...)
+			exposure.filters = append(exposure.filters, labelFilterConditions(s.Expr, exposureBefore(pipeline[:i]))...)
 		case *logqlpkg.LabelFormatStage:
 			before := exposureBefore(pipeline[:i])
 			for _, f := range s.Formats {
@@ -494,25 +494,43 @@ func exposureBefore(prefix []logqlpkg.Stage) lineFieldExposure {
 }
 
 // labelFilterConditions returns the conditions of a label filter stage that
-// names labels with plain matchers (a, b, ... are ANDed). A stage with "or",
-// parentheses or another form returns none, so it is left to VictoriaLogs.
-func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilter {
-	if m := numericLabelFilterRE.FindStringSubmatch(raw); m != nil {
-		return []lineFieldFilter{{name: m[1], before: before}}
-	}
-	if m := ipLabelFilterRE.FindStringSubmatch(raw); m != nil {
-		// An ip() filter drops a line without the label under = and !=
-		// (pkg/logql/log/ip.go:128-131).
-		return []lineFieldFilter{{name: m[1], before: before}}
-	}
-	parsed, err := logqlpkg.ParseLogQuery("{" + raw + "}")
-	if err != nil {
+// names labels with plain matchers (a, b, ... are ANDed). A stage with "or" or
+// another form returns none, so it is left to VictoriaLogs.
+func labelFilterConditions(expr *logqlpkg.LabelFilterExpr, before lineFieldExposure) []lineFieldFilter {
+	if expr == nil {
 		return nil
 	}
-	conditions := make([]lineFieldFilter, 0, len(parsed.Selector.Matchers))
-	for _, m := range parsed.Selector.Matchers {
-		op := [...]string{"=", "!=", "=~", "!~"}[m.Op]
-		condition, err := translator.NewLabelFilterCondition(m.Name, op, m.Value)
+	if expr.IsLeaf() && isLokiLabelName(expr.Name) {
+		switch expr.Kind {
+		case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
+			// A numeric, duration or bytes comparison (status >= 500).
+			if expr.Cmp != "=" {
+				return []lineFieldFilter{{name: expr.Name, before: before}}
+			}
+		case logqlpkg.LabelFilterValueIP:
+			// An ip() filter drops a line without the label under = and !=
+			// (pkg/logql/log/ip.go:128-131).
+			if ipLabelFilterRE.MatchString(expr.Leaf) {
+				return []lineFieldFilter{{name: expr.Name, before: before}}
+			}
+		}
+	}
+	leaves, ok := labelFilterMatchers(expr, nil)
+	if !ok {
+		return nil
+	}
+	conditions := make([]lineFieldFilter, 0, len(leaves))
+	for _, m := range leaves {
+		value := m.Value
+		if m.Kind == logqlpkg.LabelFilterValueIP {
+			// Any other spelling of an ip() filter is read as a matcher on the
+			// text `ip(pattern)`, which holds an address pattern.
+			if _, err := translator.NewIPLabelFilterCondition(m.Name, m.Value, false); err != nil {
+				return nil
+			}
+			value = "ip(" + m.Value + ")"
+		}
+		condition, err := translator.NewLabelFilterCondition(m.Name, m.Cmp, value)
 		if err != nil {
 			return nil
 		}
@@ -521,12 +539,26 @@ func labelFilterConditions(raw string, before lineFieldExposure) []lineFieldFilt
 	return conditions
 }
 
-// ipLabelFilterRE matches an ip() label filter, e.g. addr != ip("10.0.0.0/8").
-var ipLabelFilterRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*!?=\s*ip\(\s*"[^"]*"\s*\)\s*$`)
+// ipLabelFilterRE matches the text of an ip() label filter written the plain
+// way, e.g. addr != ip("10.0.0.0/8").
+var ipLabelFilterRE = regexp.MustCompile(`(?i)^\s*[A-Za-z_][A-Za-z0-9_]*\s*!?=\s*ip\s*\(\s*"[^"]*"\s*\)\s*$`)
 
-// numericLabelFilterRE matches a numeric, duration or bytes label filter
-// (an unquoted value), e.g. status >= 500 or latency > 250ms.
-var numericLabelFilterRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9][0-9A-Za-z.]*\s*$`)
+// labelFilterMatchers appends the string and ip() comparisons (=, !=, =~, !~)
+// that expr joins with "and", and reports false for an "or" or a filter of
+// another kind (a string value takes only those four operators).
+func labelFilterMatchers(expr *logqlpkg.LabelFilterExpr, out []*logqlpkg.LabelFilterExpr) ([]*logqlpkg.LabelFilterExpr, bool) {
+	switch {
+	case expr.IsLeaf():
+		return append(out, expr), expr.Kind == logqlpkg.LabelFilterValueString || expr.Kind == logqlpkg.LabelFilterValueIP
+	case expr.Op == logqlpkg.LabelFilterAnd:
+		out, ok := labelFilterMatchers(expr.Left, out)
+		if !ok {
+			return nil, false
+		}
+		return labelFilterMatchers(expr.Right, out)
+	}
+	return nil, false
+}
 
 // exposesJSONLine reports whether the stages expose every key of a JSON line
 // with these top-level keys: a full | json, or | unpack on a packed line.

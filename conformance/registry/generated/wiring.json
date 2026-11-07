@@ -702,6 +702,7 @@
       "test/e2e-compat/sanitized_json_key_grouping_test.go"
     ],
     "profiles/stage-field-exposure": [
+      "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/stage_field_exposure_test.go",
       "internal/translator/label_format_rename_test.go",
       "test/e2e-compat/stage_field_exposure_test.go"
@@ -873,6 +874,7 @@
     ],
     "semantics/detected-fields-empty-answer": [
       "internal/proxy/detected_fields_empty_answer_test.go",
+      "internal/proxy/label_filter_readers_differential_test.go",
       "test/e2e-compat/detected_fields_empty_answer_test.go"
     ],
     "semantics/detected-fields-no-logfmt-token-fields": [
@@ -1097,6 +1099,7 @@
       "test/e2e-compat/parenthesized_range_or_filters_test.go"
     ],
     "semantics/line-format-template-error-keeps-entry": [
+      "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/line_format_error_test.go",
       "test/e2e-compat/line_format_error_test.go"
     ],
@@ -1269,6 +1272,7 @@
       "internal/proxy/sliding_window_stats_test.go"
     ],
     "semantics/unwrap-conversion-error": [
+      "internal/proxy/label_filter_readers_differential_test.go",
       "internal/proxy/query_range_steps_harden_test.go",
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/unwrap_conversion_error_differential_test.go",
@@ -1900,6 +1904,12 @@
     "internal/proxy/label_filter_expression_test.go": [
       "loki_api_v1_query_range",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/proxy/label_filter_readers_differential_test.go": [
+      "profiles/stage-field-exposure",
+      "semantics/detected-fields-empty-answer",
+      "semantics/line-format-template-error-keeps-entry",
+      "semantics/unwrap-conversion-error"
     ],
     "internal/proxy/label_matcher_regexp_routes_test.go": [
       "loki_api_v1_detected_labels",
@@ -3322,7 +3332,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 346,
+  "tests_with_markers": 347,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
