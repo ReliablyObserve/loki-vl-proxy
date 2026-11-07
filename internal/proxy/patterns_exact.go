@@ -65,6 +65,12 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if !ok {
 		return nil, false, false
 	}
+	if p.patternState != nil {
+		// One peer holds a selector's state, so every peer answers it with the same patterns.
+		if entries, ok := p.patternsFromOwner(r, scope); ok {
+			return entries, true, true
+		}
+	}
 	entries, fromNs, lines, ok := p.patternsFromState(r, scope, maxLines, patternLimit)
 	if ok && (!p.patternsFullRange || len(entries) > 0 || scope.startNs >= fromNs) {
 		// (With -patterns-full-range, a range the state has no pattern for, such as one before its samples or a
@@ -103,6 +109,8 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 // than a line is held at a time, so memory is that of the clusters.
 func (p *Proxy) minePatternLines(ctx context.Context, scope patternQueryScope, maxLines int) (*patternMiner, error) {
 	miner := newPatternMiner()
+	miner.oneStream = p.patternsSelectorScope
+	miner.shortWholeLine = p.patternsSelectorScope
 	miner.fillStep = int64(scope.step / time.Second)
 	miner.sampleFromNs, miner.sampleToNs = scope.startNs, scope.endNs
 	read := newPatternLineReader(miner, p.newLogRowLevels())

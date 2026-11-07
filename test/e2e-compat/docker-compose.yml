@@ -547,6 +547,11 @@ services:
       - "-emit-structured-metadata=true"
       - "-patterns-enabled=true"
       - "-patterns-autodetect-from-queries=true"
+      # stream (default) is Loki's per-stream pattern mining, which CI's
+      # Drilldown comparisons need. For an interactive playground that should
+      # also show patterns of streams holding a few lines each (a trace id as
+      # a stream label, short-lived pods), set PATTERNS_SCOPE=selector.
+      - "-patterns-scope=${PATTERNS_SCOPE:-stream}"
       - "-patterns-persist-path=/cache/patterns-snapshot.json"
       - "-patterns-persist-interval=5s"
       - "-patterns-startup-stale-threshold=30s"

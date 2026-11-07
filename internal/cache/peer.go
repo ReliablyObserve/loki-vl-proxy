@@ -387,6 +387,15 @@ func (pc *PeerCache) replicasOf(key string) []string {
 	return pc.ring.getN(key, pc.replication)
 }
 
+// Replicas is the key's replicas in ring order, the owner first, or nil when no peers are known: the peers a
+// request about the key goes to, in that order.
+func (pc *PeerCache) Replicas(key string) []string {
+	if pc == nil {
+		return nil
+	}
+	return pc.replicasOf(key)
+}
+
 // IsReplica reports whether this instance is one of the key's replicas (true
 // without peers). It does not allocate.
 func (pc *PeerCache) IsReplica(key string) bool {

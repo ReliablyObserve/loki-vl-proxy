@@ -249,6 +249,10 @@ type Config struct {
 	// patterns the state answers, their samples before the state's counted from VictoriaLogs (addPatternHistory).
 	// Off, such a range has the retention's samples alone, as Loki's.
 	PatternsFullRange bool
+	// PatternsSelectorScope mines a selector's /patterns lines with one miner per level across all its streams,
+	// rather than Loki's one per stream and level: streams that each hold a few lines (a stream label that changes
+	// per line, a short-lived pod) then share patterns. Off is Loki's answer.
+	PatternsSelectorScope bool
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -671,6 +675,7 @@ type Proxy struct {
 	patternsExactMaxLines                 int
 	patternState                          *patternStateStore
 	patternsFullRange                     bool
+	patternsSelectorScope                 bool
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1355,6 +1360,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
 		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle, cfg.PatternsStateMaxBuildLines),
 		patternsFullRange:                     cfg.PatternsFullRange,
+		patternsSelectorScope:                 cfg.PatternsSelectorScope,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,

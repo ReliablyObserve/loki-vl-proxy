@@ -46,6 +46,12 @@ func (m *patternMiner) patternLineTokens(line string) (tokens []string, spacesAf
 			return nil, nil, patternFormatJSON, false
 		}
 		tokens, spacesAfter, ok = m.tokenizer.Tokenize(text)
+		if !ok && m.shortWholeLine {
+			// -patterns-scope=selector: a message too short for Loki to mine (under patternMinTokens) is mined as
+			// the whole line, so such a service still shows its patterns. Not Loki's answer.
+			tokens, spacesAfter, ok = m.tokenizer.Tokenize(line)
+			return tokens, spacesAfter, patternFormatPlain, ok
+		}
 		return tokens, spacesAfter, patternFormatJSON, ok
 	case isPatternLogfmtLine(line):
 		tokens = make([]string, 0, 16)
