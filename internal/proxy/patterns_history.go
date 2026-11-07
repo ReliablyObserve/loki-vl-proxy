@@ -1,11 +1,14 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // addPatternHistory counts the lines of the scope's range (the part of a request before the pattern state's
@@ -106,6 +109,49 @@ func (p *Proxy) addPatternHistory(r *http.Request, scope patternQueryScope, entr
 	return entries
 }
 
+// patternHistoryRanges are the ranges whose history the holder of a selector's state counts ahead, Logs
+// Drilldown's longer time pickers: Drilldown asks /patterns without a step, so a range's step follows from its
+// length (patternCountsStep) and the windows counted ahead are the ones its request reads.
+var patternHistoryRanges = []time.Duration{6 * time.Hour, 12 * time.Hour, 24 * time.Hour}
+
+// patternHistoryPrewarmEvery is how often at most the holder counts a selector's history ahead: a settled window
+// is added every hour, the others are cached.
+const patternHistoryPrewarmEvery = 30 * time.Minute
+
+// prewarmPatternHistory counts, in the background, the history of patternHistoryRanges before the state's samples
+// (retainFromNs), so the first request for such a range reads only the window its start cuts. One runs at a time;
+// it reads with the request's identity, outlives it and stops with the store.
+func (p *Proxy) prewarmPatternHistory(r *http.Request, filter logsql.FilterExpr, now time.Time, retainFromNs int64) {
+	store := p.patternState
+	select {
+	case store.prewarms <- struct{}{}:
+	default:
+		return
+	}
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	stop := context.AfterFunc(store.ctx, cancel)
+	req := r.Clone(ctx)
+	store.wg.Add(1)
+	go func() {
+		defer store.wg.Done()
+		defer func() { <-store.prewarms }()
+		defer stop()
+		defer cancel()
+		for _, span := range patternHistoryRanges {
+			startNs := now.Add(-span).UnixNano()
+			if startNs >= retainFromNs || ctx.Err() != nil {
+				continue
+			}
+			step, _ := patternCountsStep(startNs, now.UnixNano(), "")
+			if _, ok := p.patternHistoryInputs(req, patternQueryScope{filter: filter, startNs: startNs, endNs: retainFromNs, step: step}); !ok {
+				p.observeInternalOperation(ctx, "patterns_history", "prewarm_failed", 0)
+				return
+			}
+		}
+		p.observeInternalOperation(ctx, "patterns_history", "prewarmed", 0)
+	}()
+}
+
 // patternHistoryInputs is the counted inputs of the history's windows: the settled ones from the cache (memory,
 // disk, the peers), and those missing counted together in one VictoriaLogs read (a groups and a timeline query)
 // over their span, split into windows and cached, so a range's first request reads VictoriaLogs twice whatever
@@ -127,61 +173,92 @@ func (p *Proxy) patternHistoryInputs(r *http.Request, scope patternQueryScope) (
 	if len(missing) == 0 {
 		return inputs, true
 	}
-	from, to := windows[missing[0]].startNs, windows[missing[0]].endNs
-	for _, i := range missing[1:] {
-		from, to = min64(from, windows[i].startNs), max64(to, windows[i].endNs)
-	}
-	all, ok := p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, from, to)
-	if !ok {
-		return nil, false
-	}
-	groupOf := make(map[string]patternGroupInput, len(all.Groups))
-	for _, g := range all.Groups {
-		groupOf[g.Key] = g
-	}
-	for _, i := range missing {
-		w := windows[i]
-		var part patternWindowInputs
-		index := map[int]int{}
-		for _, row := range all.Timeline {
-			if at := row.Bucket * int64(time.Second); at < w.startNs || at >= w.endNs || row.Group < 0 || row.Group >= len(all.Keys) {
-				continue
-			}
-			local, seen := index[row.Group]
-			if !seen {
-				local = len(part.Keys)
-				index[row.Group] = local
-				key := all.Keys[row.Group]
-				part.Keys = append(part.Keys, key)
-				if g, ok := groupOf[key]; ok {
-					part.Groups = append(part.Groups, g)
-				}
-			}
-			part.Timeline = append(part.Timeline, patternTimelineInput{Group: local, Bucket: row.Bucket, Count: row.Count})
+	// Each run of adjacent missing windows is read once over its span: a step that starts before the run counts,
+	// in this read, only the lines inside it, which belong to the run's first window; a run never covers a cached
+	// window, whose lines its own read counted.
+	sort.Slice(missing, func(a, b int) bool { return windows[missing[a]].startNs < windows[missing[b]].startNs })
+	for len(missing) > 0 {
+		run := 1
+		// Windows are inclusive of their end (the next starts a nanosecond later) or end where the next starts.
+		for run < len(missing) && windows[missing[run]].startNs-windows[missing[run-1]].endNs <= 1 {
+			run++
 		}
-		inputs[i] = part
-		if keys[i] != "" {
-			if encoded, err := json.Marshal(part); err == nil {
-				p.cache.SetWithTTL(keys[i], encoded, p.queryRangeWindowTTL(w.endNs))
-			}
+		if !p.readPatternHistoryRun(r, scope, windows, missing[:run], inputs, keys) {
+			return nil, false
 		}
+		missing = missing[run:]
 	}
 	p.observeInternalOperation(r.Context(), "patterns_history", "read", 0)
 	return inputs, true
 }
 
-func min64(a, b int64) int64 {
-	if a < b {
-		return a
+// readPatternHistoryRun reads the run of adjacent windows (indexes into windows, oldest first) in one groups and
+// one timeline query, splits the counts into the windows (a step into the window it starts in, or the run's first
+// window when it starts before the run) and caches the windows that have a key.
+func (p *Proxy) readPatternHistoryRun(r *http.Request, scope patternQueryScope, windows []queryRangeWindow, run []int, inputs []patternWindowInputs, keys []string) bool {
+	// A step belongs to the window it starts in, whole: the read starts at the run's first step and ends where its
+	// last step does (the history's end at most), so a step that crosses into the next window is counted here in
+	// full and the next window's read, starting at its own first step, does not count it again.
+	step := int64(scope.step)
+	from := ceilToStep(windows[run[0]].startNs, step)
+	to := ceilToStep(windows[run[len(run)-1]].endNs+1, step)
+	if to > scope.endNs {
+		to = scope.endNs
 	}
-	return b
+	if from >= to {
+		return true
+	}
+	all, ok := p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, from, to)
+	if !ok {
+		return false
+	}
+	groupOf := make(map[string]patternGroupInput, len(all.Groups))
+	for _, g := range all.Groups {
+		groupOf[g.Key] = g
+	}
+	parts := make([]patternWindowInputs, len(run))
+	index := make([]map[int]int, len(run))
+	for k := range index {
+		index[k] = map[int]int{}
+	}
+	for _, row := range all.Timeline {
+		if row.Group < 0 || row.Group >= len(all.Keys) {
+			continue
+		}
+		at := row.Bucket * int64(time.Second)
+		k := 0
+		for k+1 < len(run) && at >= windows[run[k+1]].startNs {
+			k++
+		}
+		local, seen := index[k][row.Group]
+		if !seen {
+			local = len(parts[k].Keys)
+			index[k][row.Group] = local
+			key := all.Keys[row.Group]
+			parts[k].Keys = append(parts[k].Keys, key)
+			if g, ok := groupOf[key]; ok {
+				parts[k].Groups = append(parts[k].Groups, g)
+			}
+		}
+		parts[k].Timeline = append(parts[k].Timeline, patternTimelineInput{Group: local, Bucket: row.Bucket, Count: row.Count})
+	}
+	for k, i := range run {
+		inputs[i] = parts[k]
+		if keys[i] != "" {
+			if encoded, err := json.Marshal(parts[k]); err == nil {
+				p.cache.SetWithTTL(keys[i], encoded, p.queryRangeWindowTTL(windows[i].endNs))
+			}
+		}
+	}
+	return true
 }
 
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
+// ceilToStep is ns rounded up to a multiple of step from the epoch.
+func ceilToStep(ns, step int64) int64 {
+	if step <= 0 {
+		return ns
 	}
-	return b
+	return (ns + step - 1) / step * step
 }
 
 // patternMatchesLine reports whether a pattern matches a line as Loki's pattern line filter (|>) does, the filter

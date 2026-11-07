@@ -68,9 +68,11 @@ type patternStateStore struct {
 	// none. One build runs at a time (builds), each stopped with the store (ctx, wg).
 	maxBuildLines int
 	builds        chan struct{}
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
+	// prewarms is the one history count ahead that runs at a time.
+	prewarms chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 	// now is the clock the state ages by; time.Now outside tests.
 	now func() time.Time
 }
@@ -92,7 +94,7 @@ func newPatternStateStore(maxBytes int64, idle time.Duration) *patternStateStore
 	ctx, cancel := context.WithCancel(context.Background())
 	return &patternStateStore{
 		tenants: make(map[string]*patternTenantState), maxBytes: maxBytes, idle: idle, now: time.Now,
-		builds: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
+		builds: make(chan struct{}, 1), prewarms: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
 	}
 }
 
@@ -131,8 +133,10 @@ type patternTenantState struct {
 	// agedAt and agedFrom are when the state was last aged and the retention's start then.
 	agedAt   time.Time
 	agedFrom int64
-	// snapshotAt is when the state was last written to the cache or read from it.
-	snapshotAt time.Time
+	// snapshotAt is when the state was last written to the cache or read from it, prewarmedAt when its holder
+	// last counted its selector's history ahead (prewarmPatternHistory).
+	snapshotAt  time.Time
+	prewarmedAt time.Time
 }
 
 // patternSelectorState is what the state read for a selector: its lines from fromNs up to toNs, and the streams
@@ -265,6 +269,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	if built || retainFrom != t.agedFrom || now.Sub(t.agedAt) >= patternStateAgeEvery {
 		store.age(t, now, now, retainFrom)
 		t.agedAt, t.agedFrom = now, retainFrom
+	}
+	if p.patternsFullRange && !s.building && now.Sub(t.prewarmedAt) >= patternHistoryPrewarmEvery {
+		t.prewarmedAt = now
+		p.prewarmPatternHistory(r, scope.filter, now, retainFrom)
 	}
 	return entries, fromNs, lines, true
 }

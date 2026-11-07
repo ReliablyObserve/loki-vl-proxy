@@ -576,6 +576,9 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	p := newStateProxy(t, vl, &now, 1<<30)
 	p.patternsFullRange = true
 	p.queryRangeHistoryCacheTTL = time.Hour // settled windows are cached, as with the deployed default
+	ranges := patternHistoryRanges
+	patternHistoryRanges = nil // no history counted ahead: this test counts the request's own reads
+	t.Cleanup(func() { patternHistoryRanges = ranges })
 	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-12*time.Hour), now)
 	if want := "info order <_> shipped to berlin=3100"; got != want {
 		t.Fatalf("12h answer %q, want %q: the state's pattern with every line of the range", got, want)
@@ -741,5 +744,32 @@ func TestPatternStateSnapshotIsCachedInParts(t *testing.T) {
 	p.cache.Invalidate("patterns_state:test#1")
 	if got := p.loadPatternStateSnapshot(context.Background(), "patterns_state:test", "sel", &patternTenantState{}); got != nil {
 		t.Fatal("a snapshot with a part gone was restored")
+	}
+}
+
+// The holder of a selector's state counts the history of Drilldown's longer ranges ahead, so a first request for
+// one reads only the window its start cuts.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternHistoryIsCountedAhead(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-23*time.Hour), 4000)...)
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	p.patternsFullRange = true
+	p.queryRangeHistoryCacheTTL = time.Hour
+	statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	p.patternState.wg.Wait()
+	if vl.countsCalls == 0 {
+		t.Fatal("no history was counted ahead")
+	}
+	before := vl.countsCalls
+	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-24*time.Hour), now)
+	if again := vl.countsCalls - before; again > 2 {
+		t.Fatalf("a first 24h request counted %d queries, want the window its start cuts alone", again)
+	}
+	if !strings.Contains(got, "berlin=4100") {
+		t.Fatalf("24h answer %q", got)
 	}
 }
