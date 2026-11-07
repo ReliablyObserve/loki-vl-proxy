@@ -6,6 +6,7 @@ package e2e_compat
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -491,18 +492,18 @@ func ingestPatternData(t *testing.T) {
 	t.Helper()
 	patternDataOnce.Do(func() {
 		now := time.Now()
+		// Loki answers a pattern only when it holds at least 30 lines in the range: 40 lines of each kind.
+		var lines []string
+		for i := 0; i < 40; i++ {
+			lines = append(lines,
+				fmt.Sprintf("GET /api/v1/users 200 %dms", 10+i),
+				fmt.Sprintf("POST /api/v1/orders 201 %dms", 140+i),
+				fmt.Sprintf("DELETE /api/v1/orders/%d 403 %dms", 100+i, 2+i%5),
+			)
+		}
 		pushStream(t, now, streamDef{
 			Labels: map[string]string{"app": "pattern-test", "level": "info"},
-			Lines: []string{
-				"GET /api/v1/users 200 15ms",
-				"GET /api/v1/users 200 22ms",
-				"GET /api/v1/users 200 18ms",
-				"POST /api/v1/orders 201 142ms",
-				"POST /api/v1/orders 201 155ms",
-				"GET /api/v1/products 200 8ms",
-				"DELETE /api/v1/orders/123 403 3ms",
-				"DELETE /api/v1/orders/456 403 2ms",
-			},
+			Lines:  lines,
 		})
 	})
 

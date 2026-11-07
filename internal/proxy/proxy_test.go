@@ -973,15 +973,15 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePattern
 }
 
 func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
-	var queryRangeCalls, queryCalls int
+	var queryRangeCalls, queryCalls atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query_range":
-			queryRangeCalls++
+			queryRangeCalls.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		case "/select/logsql/query":
-			queryCalls++
+			queryCalls.Add(1)
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
 			for i := 0; i < lokiPatternMinLines; i++ {
@@ -1001,11 +1001,11 @@ func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if queryCalls == 0 {
+	if queryCalls.Load() == 0 {
 		t.Fatalf("expected query endpoint to be used for patterns extraction")
 	}
-	if queryRangeCalls != 0 {
-		t.Fatalf("expected query_range to be skipped for patterns extraction, got %d calls", queryRangeCalls)
+	if queryRangeCalls.Load() != 0 {
+		t.Fatalf("expected query_range to be skipped for patterns extraction, got %d calls", queryRangeCalls.Load())
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
@@ -2045,13 +2045,13 @@ func TestContract_Patterns_DisabledReturnsEmpty(t *testing.T) {
 }
 
 func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	// The first probe may take several backend calls (sampling windows, a fallback): they all see the empty answer.
-	secondProbe := false
+	var secondProbe atomic.Bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		switch {
-		case !secondProbe:
+		case !secondProbe.Load():
 			// First probe: query is empty.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
@@ -2079,7 +2079,7 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 		t.Fatalf("expected first patterns probe to be empty, got %v", first)
 	}
 
-	secondProbe = true
+	secondProbe.Store(true)
 	w2 := httptest.NewRecorder()
 	r2 := httptest.NewRequest("GET", reqURL, nil)
 	p.handlePatterns(w2, r2)
@@ -2089,8 +2089,8 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 	if len(secondData) == 0 {
 		t.Fatalf("expected second patterns probe to return data (empty response must not be sticky), got %v", second)
 	}
-	if callCount < 2 {
-		t.Fatalf("expected backend to be queried again after empty probe; got callCount=%d", callCount)
+	if callCount.Load() < 2 {
+		t.Fatalf("expected backend to be queried again after empty probe; got callCount.Load()=%d", callCount.Load())
 	}
 }
 

@@ -63,7 +63,7 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if !ok {
 		return nil, false, false
 	}
-	if entries, fromNs, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok && !(p.patternsFullRange && len(entries) == 0 && scope.startNs < fromNs) {
+	if entries, fromNs, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok && (!p.patternsFullRange || len(entries) > 0 || scope.startNs >= fromNs) {
 		// (With -patterns-full-range, a range the state has no pattern for, such as one before its samples or a
 		// service quiet since, is mined from the range's own lines below, so its chart is not empty.)
 		if p.patternsFullRange && scope.startNs < fromNs {
