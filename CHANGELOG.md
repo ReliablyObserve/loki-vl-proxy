@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.92.0] - 2026-11-07
+
 ### Added
 
 - feat(observability): every request's query flow in its log line and in
