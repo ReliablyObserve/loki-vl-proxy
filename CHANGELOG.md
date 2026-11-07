@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reading is the LogQL parser's own. No behaviour change, except that a range
   longer than about 292 years reads as unusable instead of wrapping around.
 
+## [2.90.0] - 2026-11-07
+
 ### Fixed
 
 - fix: work shared by several requests stops when the last of them leaves, not
