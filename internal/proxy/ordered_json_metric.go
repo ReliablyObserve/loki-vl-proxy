@@ -371,7 +371,7 @@ func compileOrderedJSONMetric(query string) (*orderedJSONMetricPlan, bool) {
 	if !strings.Contains(query, "json") && !strings.Contains(query, "detected_level") {
 		return nil, false
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return nil, false
 	}

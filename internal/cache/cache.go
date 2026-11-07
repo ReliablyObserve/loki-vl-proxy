@@ -417,9 +417,16 @@ func (c *Cache) GetRecoverableStaleWithTTLMatching(key string, usable func([]byt
 	return nil, 0, "", false
 }
 
+// Get returns the value for a key from the first tier that has it.
 func (c *Cache) Get(key string) ([]byte, bool) {
+	v, _, ok := c.GetWithTier(key)
+	return v, ok
+}
+
+// GetWithTier is Get plus the tier that answered: l1_memory, l2_disk or l3_peer ("" on a miss).
+func (c *Cache) GetWithTier(key string) ([]byte, string, bool) {
 	if c == nil || c.disabled {
-		return nil, false
+		return nil, "", false
 	}
 	c.recordTierRequest("l1")
 	c.mu.RLock()
@@ -434,7 +441,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 		case c.promoteBuf <- key:
 		default:
 		}
-		return v, true
+		return v, "l1_memory", true
 	}
 	c.mu.RUnlock()
 	c.layerL1[c.layer(key)].lookup(nil, false, false)
@@ -447,7 +454,7 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 		if v, _, ok := c.getDiskWithTTL(key); ok {
 			c.recordTierHit("l2")
 			c.Hits.Add(1)
-			return v, true
+			return v, "l2_disk", true
 		}
 		c.recordTierMiss("l2")
 	}
@@ -465,14 +472,14 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 			c.storePeerCopy(key, v, shadowTTL, memOnly)
 			c.recordTierHit("l3")
 			c.Hits.Add(1)
-			return v, true
+			return v, "l3_peer", true
 		}
 		c.recordTierMiss("l3")
 	}
 
 	c.backendFallthrough.Add(1)
 	c.Misses.Add(1)
-	return nil, false
+	return nil, "", false
 }
 
 // Set stores a value with the default TTL.

@@ -55,6 +55,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			proxyOverhead = 0
 		}
 		p.metrics.RecordUpstreamCallsPerRequestWithRoute(endpoint, route, telemetry.upstreamCalls)
+		p.metrics.RecordRequestFlow(endpoint, route, telemetry.flow.metricsFlow(elapsed))
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
@@ -148,7 +149,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		for key, value := range telemetry.internalDurationByType {
 			internalDurationByTypeMs[key] = value.Milliseconds()
 		}
-		logAttrs := make([]interface{}, 0, 40)
+		logAttrs := make([]interface{}, 0, 80)
 		logAttrs = append(logAttrs,
 			"http.route", route,
 			"url.path", r.URL.Path,
@@ -170,6 +171,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
 		)
+		logAttrs = append(logAttrs, telemetry.flow.logAttrs(elapsed)...)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}
@@ -537,7 +539,7 @@ func pipelineHasParserStageOf(pipeline []logqlpkg.Stage, jsonStage, logfmtStage 
 }
 
 func removeParserStage(query, parser string) string {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		// Fall back to regex on parse failure.
 		re := jsonParserStageRE
@@ -623,7 +625,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 // that needs it, and the text rewrite of a metric query (removeParserStage)
 // cuts everything after a stage that is the last before its range.
 func operandsKeepTheirParsers(logql string) bool {
-	expr, err := logqlpkg.Parse(stripLabelTransforms(logql))
+	expr, err := parseLogQLExpr(noFlowCtx, stripLabelTransforms(logql))
 	if err != nil {
 		return false
 	}
@@ -801,7 +803,7 @@ func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, 
 // (spec, false) on any parse or validation failure, signalling the caller to
 // fall back to the regex implementation.
 func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpec, bool) {
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return bareParserMetricCompatSpec{}, false
 	}
@@ -1261,7 +1263,7 @@ func (p *Proxy) bareParserMetricExposure(originalQuery, baseQuery string) *lineF
 	}
 	// ParseLogQuery rejects unwrap outside a range function. The bare parser
 	// metric has that range function, so read its pipeline there.
-	expr, err := logqlpkg.Parse(originalQuery)
+	expr, err := parseLogQLExpr(noFlowCtx, originalQuery)
 	if err != nil {
 		return nil
 	}

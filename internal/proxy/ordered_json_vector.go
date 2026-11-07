@@ -38,7 +38,7 @@ func affectedOrderedJSONVectorQuery(query string) bool {
 		}
 		query = stripped
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	return err == nil && containsOrderedJSONVectorExpr(expr)
 }
 
@@ -50,7 +50,7 @@ func orderedJSONVectorPlan(query string) (*orderedJSONMetricPlan, []*logqlpkg.Ve
 	if !orderedJSONVectorCandidate(query) {
 		return nil, nil, false
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return nil, nil, false
 	}

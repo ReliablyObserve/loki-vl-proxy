@@ -811,6 +811,7 @@
     "cmd/proxy/main_test.go | operator-configurable-limits",
     "cmd/proxy/main_test.go | semantics/query-range-step-alignment",
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
+    "internal/cache/cache_coverage_test.go | observability-query-flow",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
     "internal/cache/peer_test.go | peer-cache-patterns",
@@ -827,6 +828,7 @@
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "internal/metrics/request_flow_test.go | observability-query-flow",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/absent_over_time_differential_test.go | metric-series-identity",
@@ -1198,6 +1200,8 @@
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/quantile_slider_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_slider_harden_test.go | semantics/unwrap-quantile-response-limit",
+    "internal/proxy/query_flow_test.go | observability-query-flow",
+    "internal/proxy/query_flow_test.go | observability-slow-query-log",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-over-time-range-windows",
@@ -1886,7 +1890,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 350,
+      "go": 353,
       "playwright": 1
     },
     "page_kinds": {
@@ -1906,7 +1910,7 @@
     "shape_covers_distinct": 107,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 253
+    "wired_items": 254
   },
   "gates": [
     "A/B shape selection",

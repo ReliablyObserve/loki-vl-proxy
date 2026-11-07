@@ -30,6 +30,9 @@ const (
 const (
 	// slowTraceMaxSteps bounds a request's trace; further steps are counted, not kept.
 	slowTraceMaxSteps = 64
+	// slowTraceMaxCacheSteps bounds the cache lookups among them, so a request that reads the cache many times
+	// (an inventory scan) keeps room for its VictoriaLogs calls.
+	slowTraceMaxCacheSteps = 16
 	// slowQueryMaxBytes caps a query's text in a slow line (a split's LogsQL runs to several KB).
 	slowQueryMaxBytes = 8 << 10
 	// slowLineQueryBudget caps all the query text of one slow_request line (log pipelines cut long lines; Loki's
@@ -39,11 +42,11 @@ const (
 
 // slowTraceStep is one step of a request's trace.
 type slowTraceStep struct {
-	kind     string // upstream, operation, rewrite
+	kind     string // upstream, operation, rewrite, cache
 	at       time.Duration
 	duration time.Duration
-	route    string // upstream path; operation name
-	outcome  string // operation outcome; upstream body outcome
+	route    string // upstream path; operation name; cache tier
+	outcome  string // operation outcome; upstream body outcome; cache result
 	query    string // upstream LogsQL; the rewritten LogQL
 	from     string // rewrite: the LogQL before
 	start    string // upstream: start, end and step as sent
@@ -73,6 +76,13 @@ func traceStep(ctx context.Context, step slowTraceStep) bool {
 	step.at = time.Since(rt.start) - step.duration
 	if step.at < 0 {
 		step.at = 0
+	}
+	if step.kind == "cache" {
+		if rt.traceCache >= slowTraceMaxCacheSteps {
+			rt.traceDropped++
+			return true
+		}
+		rt.traceCache++
 	}
 	if len(rt.trace) >= slowTraceMaxSteps {
 		rt.traceDropped++
@@ -127,7 +137,11 @@ func slowUpstreamWindow(start, end, step string) string {
 // observeUpstreamDone records a VictoriaLogs call once its body is read (or the call failed): a step of the
 // request's trace and, at or over -slow-upstream-threshold, a slow line and count.
 func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url.Values, status int, outcome string, bytes int64, total time.Duration) {
-	if !p.slowTraceOn() || path == "/select/logsql/tail" { // a tail stream lasts as long as its session
+	if path == "/select/logsql/tail" { // a tail stream lasts as long as its session
+		return
+	}
+	recordFlowVL(ctx, total, bytes)
+	if !p.slowTraceOn() {
 		return
 	}
 	query := params.Get("query")
@@ -209,6 +223,11 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		case "rewrite":
 			entry["from"] = text(i, s.from)
 			entry["to"] = text(i, s.query)
+		case "cache":
+			entry["tier"] = s.route
+			entry["result"] = s.outcome
+			entry["bytes"] = s.bytes
+			entry["duration_ms"] = s.duration.Milliseconds()
 		}
 		trace = append(trace, entry)
 	}
@@ -227,6 +246,7 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		"upstream.duration_ms", telemetry.upstreamDuration.Milliseconds(),
 		"proxy.steps", trace,
 	}
+	attrs = append(attrs, telemetry.flow.logAttrs(elapsed)...)
 	if dropped > 0 {
 		attrs = append(attrs, "proxy.steps_dropped", dropped)
 	}

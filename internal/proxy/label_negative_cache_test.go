@@ -288,7 +288,7 @@ func TestMetadataNegativeTTL_RisesWithDiskAndWriteThroughMinimums(t *testing.T) 
 			req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels?start=1703980800000000000&end=1704067200000000000", nil)
 			key := p.canonicalReadCacheKey("labels", "", req)
 			p.setMetadataListCache("labels", key, lokiLabelsResponse([]string{}), 0, time.Hour)
-			if _, remaining, _, ok := p.endpointReadCacheEntry("labels", key); !ok || remaining <= tc.want-time.Second || remaining > tc.want {
+			if _, remaining, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", key); !ok || remaining <= tc.want-time.Second || remaining > tc.want {
 				t.Fatalf("empty labels entry remaining = %v (ok=%v), want about %v", remaining, ok, tc.want)
 			}
 		})

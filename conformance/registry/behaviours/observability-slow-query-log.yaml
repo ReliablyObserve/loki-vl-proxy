@@ -20,7 +20,8 @@ proxy: |
   WARN whatever the request-log sampling: slow_request with the LogQL and its
   steps (each VictoriaLogs call with its LogsQL, window, status, bytes and
   time; each proxy-side operation and route decision; each rewrite of the
-  LogQL; every step with its offset from the request's start, at most 64),
+  LogQL; each cache lookup with its tier, result, bytes and time, at most 16
+  of them; every step with its offset from the request's start, at most 64),
   slow_upstream_request with the LogsQL and the client route it served
   (proxy.background when it outlived its request). Live tail is exempt. The
   queries are the text, capped at 8 KB (-slow-query-log-raw-queries=false

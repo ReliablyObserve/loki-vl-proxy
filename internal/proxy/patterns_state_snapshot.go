@@ -299,7 +299,7 @@ func (p *Proxy) loadPatternStateSnapshot(ctx context.Context, key, selector stri
 	if p.cache == nil || key == "" {
 		return nil
 	}
-	raw, ok := p.cache.Get(key)
+	raw, ok := p.cacheGet(ctx, p.cache, key)
 	if !ok {
 		return nil
 	}
@@ -309,7 +309,7 @@ func (p *Proxy) loadPatternStateSnapshot(ctx context.Context, key, selector stri
 	}
 	data := make([]byte, 0, manifest.Bytes)
 	for i := 0; i < manifest.Parts; i++ {
-		part, ok := p.cache.Get(key + "#" + strconv.Itoa(i))
+		part, ok := p.cacheGet(ctx, p.cache, key+"#"+strconv.Itoa(i))
 		if !ok {
 			return nil // a part is gone: the state is built again
 		}

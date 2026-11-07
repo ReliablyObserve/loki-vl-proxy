@@ -65,7 +65,7 @@ func binaryExprForRequest(r *http.Request) *logqlpkg.BinOpExpr {
 
 // binaryRequestExpr parses the request's query.
 func binaryRequestExpr(r *http.Request) logqlpkg.Expr {
-	expr, err := logqlpkg.Parse(binaryRequestQuery(r))
+	expr, err := parseLogQLExpr(r.Context(), binaryRequestQuery(r))
 	if err != nil {
 		return nil
 	}

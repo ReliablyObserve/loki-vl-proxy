@@ -3,8 +3,6 @@ package proxy
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 // extractQuery reads the "query" form parameter from r, validates it as
@@ -17,7 +15,7 @@ func extractQuery(r *http.Request) (string, error) {
 	if q == "" {
 		return "", fmt.Errorf("parse error : syntax error: unexpected $end")
 	}
-	if err := logql.ParseAndValidate(q); err != nil {
+	if err := validateLogQL(r.Context(), q); err != nil {
 		return "", err
 	}
 	return q, nil

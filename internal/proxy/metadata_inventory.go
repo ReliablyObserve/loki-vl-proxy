@@ -517,7 +517,7 @@ func (p *Proxy) fetchVLListing(ctx context.Context, path string, params url.Valu
 	}
 	_, countable := inventoryQueryShape(params.Get("query"))
 	base := p.inventoryKeyBase(ctx, path, params)
-	if _, oversize := p.cache.Get(base + ":oversize"); oversize {
+	if _, oversize := p.cacheGet(ctx, p.cache, base+":oversize"); oversize {
 		return p.fetchVLListingOnce(ctx, path, params)
 	}
 	// The day bucket scans of a long-range listing go through the
@@ -648,7 +648,7 @@ func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params u
 		return items, "scanned", err
 	}
 	key := inventoryBucketKey(base, seg)
-	entry, ok := p.loadInventoryEntry(key)
+	entry, ok := p.loadInventoryEntry(ctx, key)
 	if ok && !forced && p.inventoryEntryFresh(path, seg, entry) {
 		return entry.items(), "cached", nil
 	}
@@ -670,7 +670,7 @@ func (p *Proxy) fetchInventorySegment(ctx context.Context, path string, params u
 					return result{entry.items(), "revalidated"}, nil
 				}
 			}
-		} else if merged, composed := p.composeInventoryEntry(path, base, seg); composed {
+		} else if merged, composed := p.composeInventoryEntry(ctx, path, base, seg); composed {
 			if err := p.storeInventoryEntry(key, merged); err != nil {
 				return nil, err
 			}
@@ -772,7 +772,7 @@ func (p *Proxy) revalidateEmptyRuns(ctx context.Context, path string, params url
 		ok := false
 		if seg.level >= 0 {
 			key := inventoryBucketKey(base, seg)
-			if e, found := p.loadInventoryEntry(key); found && len(e.Values) == 0 && e.Rows <= 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
+			if e, found := p.loadInventoryEntry(ctx, key); found && len(e.Values) == 0 && e.Rows <= 0 && seg.end > now-int64(p.inventoryLiveWindow()) {
 				bucket, ok = emptyRunBucket{key: key, seg: seg, entry: e}, true
 			}
 		}
@@ -889,8 +889,8 @@ func (p *Proxy) inventoryBaseTTL(path string) time.Duration {
 	return CacheTTLs["labels"]
 }
 
-func (p *Proxy) loadInventoryEntry(key string) (inventoryEntry, bool) {
-	raw, ok := p.cache.Get(key)
+func (p *Proxy) loadInventoryEntry(ctx context.Context, key string) (inventoryEntry, bool) {
+	raw, ok := p.cacheGet(ctx, p.cache, key)
 	if !ok {
 		return inventoryEntry{}, false
 	}
@@ -921,7 +921,7 @@ func (p *Proxy) storeInventoryEntry(key string, e inventoryEntry) error {
 // composeInventoryEntry builds a bucket from its children at the next finer
 // level when every child is cached locally and none is due for revalidation.
 // Its row count is the sum of the children's, when all of them carry one.
-func (p *Proxy) composeInventoryEntry(path, base string, seg inventorySegment) (inventoryEntry, bool) {
+func (p *Proxy) composeInventoryEntry(ctx context.Context, path, base string, seg inventorySegment) (inventoryEntry, bool) {
 	child := seg.level + 1
 	if child >= len(metadataInventoryLevels) {
 		return inventoryEntry{}, false
@@ -932,7 +932,7 @@ func (p *Proxy) composeInventoryEntry(path, base string, seg inventorySegment) (
 	checked := cache.Now().UnixNano()
 	for start := seg.start; start < seg.end; start += size {
 		c := inventorySegment{start: start, end: start + size, level: child}
-		raw, _, ok := p.cache.GetWithTTL(inventoryBucketKey(base, c))
+		raw, _, ok := p.cacheGetWithTTL(ctx, p.cache, inventoryBucketKey(base, c))
 		if !ok {
 			return inventoryEntry{}, false
 		}
@@ -1019,7 +1019,7 @@ type inventoryCount struct {
 func (p *Proxy) countInventoryRows(ctx context.Context, query string, seg inventorySegment, notBefore int64) (int64, int64, error) {
 	key := p.metadataFieldNamesCacheKey(ctx, metadataInventoryKeyVersion+":count:", url.Values{"query": {strings.TrimSpace(query)}}) +
 		":" + strconv.FormatInt(seg.start, 10) + ":" + strconv.FormatInt(seg.end, 10)
-	if raw, ok := p.cache.Get(key); ok {
+	if raw, ok := p.cacheGet(ctx, p.cache, key); ok {
 		var c inventoryCount
 		if json.Unmarshal(raw, &c) == nil && c.At >= notBefore {
 			return c.Rows, c.At, nil

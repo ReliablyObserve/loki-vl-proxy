@@ -437,7 +437,7 @@ func TestLabelsStaleOnError_SkipsExpiredEmptyList(t *testing.T) {
 			if tc.diskAnswer {
 				// Checked at the stale lookup itself: a regular cache read on the
 				// miss path already evicts expired disk entries.
-				body, _, tier, ok := p.staleEndpointCacheEntry(tc.endpoint, key)
+				body, _, tier, ok := p.staleEndpointCacheEntry(context.Background(), tc.endpoint, key)
 				if !ok || tier != "l2_disk" || !strings.Contains(string(body), "last-good") {
 					t.Fatalf("want the last non-empty disk answer, got ok=%v tier=%q body=%s", ok, tier, body)
 				}

@@ -2455,7 +2455,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// the beginning" cluster). Scoped to metric exprs via the AST so a log query
 	// (streams, not a matrix) is never blanked.
 	if isQuerySplitResidual(r) {
-		if parsed, perr := logqlpkg.Parse(logqlQuery); perr == nil {
+		if parsed, perr := parseLogQLExpr(r.Context(), logqlQuery); perr == nil {
 			switch parsed.(type) {
 			case *logqlpkg.RangeAggregation, *logqlpkg.VectorAggregation, *logqlpkg.BinOpExpr, *logqlpkg.OpaqueMetricExpr, *logqlpkg.LiteralExpr:
 				w.Header().Set("Content-Type", "application/json")
@@ -2482,7 +2482,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	cacheable := !p.streamResponse && !compatCacheIsActive(r.Context()) && stepsRun == nil
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
-		if cached, remaining, age, ok := p.cache.GetWithAge(cacheKey); ok {
+		if cached, remaining, age, ok := p.cacheGetWithAge(r.Context(), p.cache, cacheKey); ok {
 			if !p.shouldBypassStaleEntry("query_range", queryRangeResponseCacheTTL, remaining, age, r) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(cached)
@@ -2537,7 +2537,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			// "some range vectors have offset, others do not" AND the query is a
 			// top-level binary op (Loki handles these by evaluating sides independently).
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
-			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			parsedForOffset, _ := parseLogQLExpr(r.Context(), logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
 			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
 				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
@@ -2689,7 +2689,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		// that one operand needs (preferWorkingParser).
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
-	parsedForRouting, _ := logqlpkg.Parse(routedQuery)
+	parsedForRouting, _ := parseLogQLExpr(r.Context(), routedQuery)
 	if _, _, aggregated := binaryAggregationChain(parsedForRouting); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRouting)) {
 		// The label transforms belong to an operand, which applies its own.
 		labelReplaceSpecs = nil
@@ -2894,7 +2894,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
-			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			parsedForOffset, _ := parseLogQLExpr(r.Context(), logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
 			if _, _, aggregated := binaryAggregationChain(parsedForOffset); aggregated {
 				isBinaryForOffset = true // an aggregation over one evaluates its sides the same way
@@ -3005,7 +3005,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		// that one operand needs (preferWorkingParser).
 		r = cloneMetricQueryRequest(r, stripLabelTransforms(binaryRequestQuery(r)))
 	}
-	parsedForRoutingQ, _ := logqlpkg.Parse(routedQuery)
+	parsedForRoutingQ, _ := parseLogQLExpr(r.Context(), routedQuery)
 	if _, _, aggregated := binaryAggregationChain(parsedForRoutingQ); routedQuery == logqlQuery && (aggregated || isBinaryExpr(parsedForRoutingQ)) {
 		// The label transforms belong to an operand, which applies its own.
 		labelReplaceSpecs = nil

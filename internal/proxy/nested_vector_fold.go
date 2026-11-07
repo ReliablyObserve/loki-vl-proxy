@@ -72,7 +72,7 @@ func withoutAggregationChain(logql string) ([]*logqlpkg.VectorAggregation, bool)
 	if !translator.HasNestedVectorKeywords(logql) {
 		return nil, false
 	}
-	expr, err := logqlpkg.Parse(translator.PeelWithoutWrappers(logql))
+	expr, err := parseLogQLExpr(noFlowCtx, translator.PeelWithoutWrappers(logql))
 	if err != nil {
 		return nil, false
 	}
@@ -133,7 +133,7 @@ func nestedVectorRange(logql string) (string, bool) {
 		return "", false
 	}
 	text := translator.PeelWithoutWrappers(logql)
-	expr, err := logqlpkg.Parse(text)
+	expr, err := parseLogQLExpr(noFlowCtx, text)
 	if err != nil {
 		return "", false
 	}
@@ -227,7 +227,7 @@ func (p *Proxy) withSlidingWithoutCut(r *http.Request, spec statsCompatSpec, ori
 // lineFiltersOnly reports whether a log query is a stream selector with line
 // filters at most: no stage that changes the labels of a series.
 func lineFiltersOnly(logql string) bool {
-	q, err := logqlpkg.ParseLogQuery(logql)
+	q, err := parseLogQLQuery(noFlowCtx, logql)
 	if err != nil {
 		return false
 	}

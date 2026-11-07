@@ -34,7 +34,7 @@ func extractDropKeepFromAST(query string) (
 	bareDropFields []string,
 	bareKeepFields []string,
 ) {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		// Metric expressions or unparseable queries: fall back to regex-based extraction.
 		dropConds = translator.ParseDropConditions(query)

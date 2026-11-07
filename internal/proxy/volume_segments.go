@@ -161,7 +161,7 @@ func (p *Proxy) computeVolumeSegmented(ctx context.Context, req volumeRequest, l
 		return nil, false, nil
 	}
 	base := p.volumeSegmentKeyBase(ctx, statsQuery)
-	if _, oversize := p.cache.Get(base + ":oversize"); oversize {
+	if _, oversize := p.cacheGet(ctx, p.cache, base+":oversize"); oversize {
 		return nil, false, nil
 	}
 	// Every segment's rows are folded into one sum as soon as they are read,
@@ -177,7 +177,7 @@ func (p *Proxy) computeVolumeSegmented(ctx context.Context, req volumeRequest, l
 			continue
 		}
 		lookups.Go(func() error {
-			rows, ok := p.loadVolumeSegment(volumeSegmentKey(base, seg))
+			rows, ok := p.loadVolumeSegment(ctx, volumeSegmentKey(base, seg))
 			if !ok {
 				return nil
 			}
@@ -408,8 +408,8 @@ func sortVolumeLabelPairs(kv []string) {
 	}
 }
 
-func (p *Proxy) loadVolumeSegment(key string) ([]volumeSegmentRow, bool) {
-	raw, _, _, ok := p.cache.GetSharedWithTTL(key)
+func (p *Proxy) loadVolumeSegment(ctx context.Context, key string) ([]volumeSegmentRow, bool) {
+	raw, _, _, ok := p.cacheGetShared(ctx, p.cache, key)
 	if !ok {
 		return nil, false
 	}

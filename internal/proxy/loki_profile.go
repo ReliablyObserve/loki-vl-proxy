@@ -345,7 +345,7 @@ func (p *Proxy) lineFieldExposure(query string) *lineFieldExposure {
 	if !p.lokiCompatibleProfile() {
 		return nil
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return nil
 	}
@@ -369,7 +369,7 @@ func (p *Proxy) backendLogQuery(query string) (string, bool) {
 	if !strings.Contains(query, "line_format") || !p.lokiCompatibleProfile() {
 		return query, false
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return query, false
 	}
@@ -430,7 +430,7 @@ func stripUnreadLineFormat(query string, pipeline []logqlpkg.Stage) (string, boo
 	}
 	stripped := strings.TrimSpace(strings.TrimSpace(query[:loc[0]]) + " " + strings.TrimSpace(query[loc[1]:]))
 	// The text removed must be the line_format stage and nothing else.
-	check, err := logqlpkg.ParseLogQuery(stripped)
+	check, err := parseLogQLQuery(noFlowCtx, stripped)
 	if err != nil || len(check.Pipeline) != len(kept) {
 		return "", false
 	}

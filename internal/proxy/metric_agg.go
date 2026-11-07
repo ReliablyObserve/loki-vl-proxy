@@ -25,7 +25,7 @@ var (
 // instead reduces all labels. Evaluate the operand once, retaining the number
 // of wrappers because removing empty labels can merge groups on a later pass.
 func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return nil, 0
 	}
@@ -50,7 +50,7 @@ func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
 // literal, or a binary operation of literals, is a scalar (evalLiteral), whose
 // sample time is integer milliseconds (see constantInstantMillis).
 func evaluateConstantInstantQuery(expr, timeParam string) ([]byte, bool) {
-	parsed, err := logqlpkg.Parse(strings.TrimSpace(expr))
+	parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(expr))
 	if err != nil {
 		return nil, false
 	}
@@ -146,7 +146,7 @@ type instantMetricPostAgg struct {
 // of each group (pkg/logql/evaluator.go VectorAggEvaluator.Next). The operand
 // is sliced from the query as written, the way the translator reads it.
 func parseStddevStdvarQuery(logql string) (instantMetricPostAgg, bool) {
-	expr, err := logqlpkg.Parse(logql)
+	expr, err := parseLogQLExpr(noFlowCtx, logql)
 	if err != nil {
 		return instantMetricPostAgg{}, false
 	}
@@ -306,7 +306,7 @@ func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	// A query the typed parser reads is not topk here (a binary expression
 	// around it, say); only one it rejects keeps the textual split, and only
 	// when the name's own parenthesis is the last character.
-	if _, err := logqlpkg.Parse(logql); err == nil {
+	if _, err := parseLogQLExpr(noFlowCtx, logql); err == nil {
 		return instantMetricPostAgg{}, false
 	}
 	for _, name := range []string{"topk", "bottomk"} {
@@ -346,7 +346,7 @@ func parseTopKPostAgg(logql string) (instantMetricPostAgg, bool) {
 			continue
 		}
 		comma := topLevelCommaIndex(args)
-		parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+		parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
 		va, ok := parsed.(*logqlpkg.VectorAggregation)
 		if err != nil || !ok || comma <= 0 || !va.HasParam || int(va.Param) <= 0 {
 			return instantMetricPostAgg{}, false
@@ -406,7 +406,7 @@ func parseAggregationOverRanking(logql string) (instantMetricPostAgg, bool) {
 	if !strings.Contains(lower, "topk") && !strings.Contains(lower, "bottomk") && !strings.Contains(lower, "sort") {
 		return instantMetricPostAgg{}, false
 	}
-	expr, err := logqlpkg.Parse(logql)
+	expr, err := parseLogQLExpr(noFlowCtx, logql)
 	if err != nil {
 		return instantMetricPostAgg{}, false
 	}
@@ -629,7 +629,7 @@ func addStatsByStreamClause(logsqlQuery string, captureLabels []string) string {
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	// Parse the inner LogQL expression to drive routing via typed AST.
-	parsedInner, _ := logqlpkg.Parse(postAgg.inner)
+	parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner)
 
 	translatedInner, err := p.translatePostAggOperand(r.Context(), postAgg)
 	if err != nil {
@@ -780,7 +780,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
 	r = p.withRequestScope(r)
-	if parsedInner, _ := logqlpkg.Parse(postAgg.inner); parsedInner != nil {
+	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
 		if _, binary := parsedInner.(*logqlpkg.BinOpExpr); binary {
 			// The operands of a binary expression fold on their own.
 			withoutLabels = nil

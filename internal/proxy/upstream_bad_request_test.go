@@ -239,7 +239,7 @@ func TestUpstreamBadRequest_NeverServesStaleCache(t *testing.T) {
 			cacheKey := p.canonicalReadCacheKey(tc.endpoint, "", req, tc.extra...)
 			p.setEndpointReadCacheWithTTL(tc.endpoint, cacheKey, []byte(tc.payload), time.Millisecond)
 			time.Sleep(5 * time.Millisecond)
-			if _, _, _, ok := p.staleEndpointCacheEntry(tc.endpoint, cacheKey); !ok {
+			if _, _, _, ok := p.staleEndpointCacheEntry(context.Background(), tc.endpoint, cacheKey); !ok {
 				t.Fatalf("test setup: expected a stale cache entry for %s", tc.endpoint)
 			}
 

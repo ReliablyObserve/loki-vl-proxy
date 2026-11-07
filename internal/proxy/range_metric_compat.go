@@ -612,7 +612,7 @@ func parseTopKWrapper(logql string) (k int, descending bool, group *logqlpkg.Gro
 	if strings.TrimSpace(logql) == "" {
 		return 0, false, nil, false
 	}
-	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
 	if err != nil {
 		return 0, false, nil, false
 	}
@@ -982,7 +982,7 @@ func (p *Proxy) writeHitsRangeMetricMatrixFolded(w http.ResponseWriter, manualFu
 // range aggregation yields into one series per step
 // (pkg/logql/evaluator.go newVectorAggEvaluator, VectorAggEvaluator.Next).
 func ungroupedSumRange(query string) (*logqlpkg.RangeAggregation, bool) {
-	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
 		return nil, false
 	}
