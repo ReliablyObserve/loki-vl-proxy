@@ -150,6 +150,10 @@ func (c *DrilldownBurstCoalescer) Submit(
 	field string,
 	fireFn func(ctx context.Context, fields []string) (map[string]fieldResult, error),
 ) (map[string]manualSeriesSamples, error) {
+	// A caller that has already left joins no group: nobody would wait for its scan.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ch := make(chan fieldResult, 1)
 
 	c.mu.Lock()

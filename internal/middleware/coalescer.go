@@ -136,6 +136,10 @@ func (c *Coalescer) do(ctx context.Context, key string, fn func(context.Context)
 		return status, headers, body, false, err
 	}
 
+	// A caller that has already left starts no shared call: nobody would wait for it.
+	if err := ctx.Err(); err != nil {
+		return 0, nil, nil, false, err
+	}
 	started := time.Now()
 	c.flightMu.Lock()
 	f := c.flights[key]
