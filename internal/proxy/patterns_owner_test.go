@@ -22,7 +22,8 @@ type statePeers struct {
 	servers []*http.Server
 }
 
-func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *statePeers {
+// newStatePeers starts n peers; peerTimeout, when given, is their peer request timeout.
+func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int, peerTimeout ...time.Duration) *statePeers {
 	t.Helper()
 	backend := vl.server(t)
 	listeners := make([]net.Listener, n)
@@ -36,7 +37,11 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *stateP
 		sp.addrs = append(sp.addrs, l.Addr().String())
 	}
 	for i, l := range listeners {
-		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: sp.addrs[i], DiscoveryType: "static", StaticPeers: strings.Join(sp.addrs, ","), AuthToken: "peer-secret", ReplicationFactor: 2})
+		cfg := cache.PeerConfig{SelfAddr: sp.addrs[i], DiscoveryType: "static", StaticPeers: strings.Join(sp.addrs, ","), AuthToken: "peer-secret", ReplicationFactor: 2}
+		if len(peerTimeout) > 0 {
+			cfg.Timeout = peerTimeout[0]
+		}
+		pc := cache.NewPeerCache(cfg)
 		t.Cleanup(pc.Close)
 		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", PeerCache: pc, PeerAuthToken: "peer-secret", PatternsCounts: true})
 		if err != nil {
@@ -141,6 +146,56 @@ func TestPatternsAnsweredLocallyWhenTheOwnersAreDown(t *testing.T) {
 	}
 	if got := sp.patternsVia(t, survivor, "0", `{app="api"}`, now.Add(-time.Hour), now); !strings.Contains(got, "shipped to berlin") {
 		t.Fatalf("survivor answered %s", got)
+	}
+}
+
+// A state owner that accepts connections and never answers (a frozen container) costs a /patterns request at
+// most the peer timeout: the peer skips it after a presence check and asks the replica, instead of waiting
+// patternsOwnerTimeout on the forward.
+//
+// conformance: peer-cache-patterns, loki_api_v1_patterns
+func TestPatternsSkipAFrozenOwnerWithinThePeerTimeout(t *testing.T) {
+	const peerTimeout = 300 * time.Millisecond
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-40*time.Minute), 200)...)
+	now := stateNow
+	sp := newStatePeers(t, vl, &now, 3, peerTimeout)
+	scope, _ := sp.proxies[0].patternScope(`{app="api"}`, "1", "2", "")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Scope-OrgID", "0")
+	replicas := sp.proxies[0].peerCache.Replicas(sp.proxies[0].patternStateKey(req, scope))
+	owner, asker := -1, -1
+	for i, addr := range sp.addrs {
+		switch {
+		case addr == replicas[0]:
+			owner = i
+		case addr != replicas[1]:
+			asker = i
+		}
+	}
+	// The owner's port keeps accepting connections and never answers.
+	_ = sp.servers[owner].Close()
+	frozen, err := net.Listen("tcp", sp.addrs[owner])
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = frozen.Close() })
+	go func() {
+		for {
+			conn, err := frozen.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+		}
+	}()
+	started := time.Now()
+	got := sp.patternsVia(t, asker, "0", `{app="api"}`, now.Add(-time.Hour), now)
+	if elapsed := time.Since(started); elapsed > 3*peerTimeout {
+		t.Fatalf("a frozen owner cost %s, want at most about the peer timeout (%s)", elapsed, peerTimeout)
+	}
+	if !strings.Contains(got, "shipped to berlin") {
+		t.Fatalf("answered %s", got)
 	}
 }
 
