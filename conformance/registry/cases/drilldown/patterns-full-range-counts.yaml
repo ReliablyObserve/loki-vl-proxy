@@ -46,7 +46,7 @@ compare:
     the whole range (Loki answers the retention's alone).
 gap:
   status: fixed
-  fixed_by: '#pending'
+  fixed_by: '#1142'
   impact: drilldown-visible
   effort: L
   area: 'internal/proxy/patterns_state.go (pattern state), patterns_history.go (counts before the state), patterns_exact.go, patterns_counts.go'

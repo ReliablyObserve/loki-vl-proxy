@@ -199,8 +199,8 @@ Last run: 2026-11-04T17:02:53Z on `69d07019`, window [1793806920, 1793810520].
 | `versions/rejected-stats-query-wording-vl-1.47` — The proxy did not recognise VictoriaLogs v1.47 parse errors, so a rejected query was not Loki's 400 (fixed) | #659 | 0 | 0 |
 | `drilldown/fields-pill-json-path-extracted-empty` — A Logs Drilldown field breakdown over a JSON path named service_name_extracted, with a level pill, is empty on the proxy (fixed) | #1108 | 1 | 1 |
 | `semantics/detected-fields-empty-answer` — detected_fields of a query that matches no line answers Loki's empty body (fixed) | TBD-PR | 1 | 1 |
-| `drilldown/patterns-full-range-counts` — Logs Drilldown pattern charts covered only the end of the range and counted a sample of lines (fixed) | #pending | 0 | 0 |
-| `drilldown/patterns-one-series-per-level` — The proxy answered two /patterns entries with the same pattern and level (fixed) | #pending | 0 | 0 |
+| `drilldown/patterns-full-range-counts` — Logs Drilldown pattern charts covered only the end of the range and counted a sample of lines (fixed) | #1142 | 0 | 0 |
+| `drilldown/patterns-one-series-per-level` — The proxy answered two /patterns entries with the same pattern and level (fixed) | #1142 | 0 | 0 |
 | `quality/index-volume-settled-segments` — An instant /index/volume moved by a refresh reads only its edges from VictoriaLogs, with the answer of one whole-window call (fixed) | perf/segmented-volume-cache | 0 | 0 |
 | `semantics/detected-fields-no-logfmt-token-fields` — detected_fields with a level pill or a field filter lists Loki's fields, not the words of each line (fixed) | #1032 | 0 | 0 |
 | `semantics/json-detected-level-error-split` — `sum by (detected_level)` over `\| json` with the parser errors kept, or `\| json \| __error__!=""`, is answered from VictoriaLogs stats,... | perf/detected-level-native-count | 0 | 0 |

@@ -31,7 +31,7 @@ compare:
     No two entries with the same pattern and level.
 gap:
   status: fixed
-  fixed_by: '#pending'
+  fixed_by: '#1142'
   impact: drilldown-visible
   effort: S
   area: 'internal/proxy/postprocess.go patternEntriesByLevelAndPattern'
