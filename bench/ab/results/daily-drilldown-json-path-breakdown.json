@@ -1,6 +1,6 @@
 {
  "label": "daily-drilldown-json-path-breakdown-aligned",
- "date": "2026-11-06",
+ "date": "2026-11-07",
  "set": "drilldown-json-path-breakdown",
  "description": "A Logs Drilldown Fields breakdown over a nested JSON field (PR for drilldown/fields-pill-json-path-extracted-empty): the extraction list names the label with a bracket JSON path, which the translation dropped when the path had more than one key, so the label was empty and the filter after it kept no line (an empty panel with the level pill; Loki one series). JP1 is the Drilldown query with the error pill, JP2 without. Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "JP1 drilldown fields breakdown, JSON path, level pill",
    "range": "1h",
    "p50": {
-    "release": 0.007,
-    "main": 0.006,
-    "loki": 0.006
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.005
    },
    "p95": {
-    "release": 0.086,
-    "main": 0.011,
+    "release": 0.103,
+    "main": 0.01,
     "loki": 0.006
    },
    "cold": {
-    "release": 0.021,
+    "release": 0.018,
     "main": 0.012,
-    "loki": 0.034
+    "loki": 0.023
    },
    "status": {
     "release": "200",
@@ -51,9 +51,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 125.37,
-    "main": 125.37,
-    "loki": 125.37
+    "release": 0,
+    "main": 0,
+    "loki": 0
    },
    "cache": {
     "loki": {
@@ -130,25 +130,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.17
+   "speedup": 1.0
   },
   {
    "shape": "JP1 drilldown fields breakdown, JSON path, level pill",
    "range": "6h",
    "p50": {
-    "main": 0.017,
-    "release": 0.016,
-    "loki": 0.009
+    "main": 0.011,
+    "release": 0.007,
+    "loki": 0.008
    },
    "p95": {
-    "main": 0.048,
-    "release": 0.017,
-    "loki": 0.01
+    "main": 0.069,
+    "release": 0.025,
+    "loki": 0.009
    },
    "cold": {
-    "main": 0.053,
-    "release": 0.045,
-    "loki": 0.109
+    "main": 0.035,
+    "release": 0.031,
+    "loki": 0.085
    },
    "status": {
     "main": "200",
@@ -156,9 +156,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 125.37,
-    "release": 125.37,
-    "loki": 125.37
+    "main": 47.51,
+    "release": 47.51,
+    "loki": 47.51
    },
    "cache": {
     "loki": {
@@ -171,7 +171,7 @@
       "statsResult": {
        "entriesFound": 8,
        "entriesRequested": 8,
-       "bytesReceived": 1968
+       "bytesReceived": 2440
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -198,12 +198,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 103938
+       "bytesReceived": 103982
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1830
+       "bytesReceived": 2538
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -235,25 +235,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.94
+   "speedup": 0.64
   },
   {
    "shape": "JP1 drilldown fields breakdown, JSON path, level pill",
    "range": "24h",
    "p50": {
-    "release": 0.018,
-    "main": 0.017,
-    "loki": 0.01
+    "release": 0.005,
+    "main": 0.006,
+    "loki": 0.008
    },
    "p95": {
-    "release": 0.018,
-    "main": 0.076,
-    "loki": 0.024
+    "release": 0.006,
+    "main": 0.114,
+    "loki": 0.008
    },
    "cold": {
-    "release": 0.189,
-    "main": 0.142,
-    "loki": 0.419
+    "release": 0.112,
+    "main": 0.102,
+    "loki": 0.379
    },
    "status": {
     "release": "200",
@@ -261,9 +261,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 125.37,
-    "main": 125.37,
-    "loki": 125.37
+    "release": 47.51,
+    "main": 47.51,
+    "loki": 47.51
    },
    "cache": {
     "loki": {
@@ -276,7 +276,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 7458
+       "bytesReceived": 10054
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -303,7 +303,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 247951
+       "bytesReceived": 247843
       },
       "statsResult": {
        "entriesFound": 6,
@@ -340,25 +340,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.06
+   "speedup": 0.83
   },
   {
    "shape": "JP2 drilldown fields breakdown, JSON path",
    "range": "1h",
    "p50": {
-    "main": 0.022,
-    "release": 0.005,
-    "loki": 0.006
+    "main": 0.028,
+    "release": 0.003,
+    "loki": 0.005
    },
    "p95": {
-    "main": 0.05,
-    "release": 0.021,
-    "loki": 0.007
+    "main": 0.091,
+    "release": 0.014,
+    "loki": 0.005
    },
    "cold": {
-    "main": 0.028,
-    "release": 0.026,
-    "loki": 0.042
+    "main": 0.021,
+    "release": 0.017,
+    "loki": 0.034
    },
    "status": {
     "main": "200",
@@ -366,9 +366,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 125.37,
-    "release": 125.37,
-    "loki": 125.37
+    "main": 47.51,
+    "release": 47.51,
+    "loki": 47.51
    },
    "cache": {
     "loki": {
@@ -408,7 +408,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 20399
+       "bytesReceived": 20393
       },
       "statsResult": {
        "entriesFound": 6,
@@ -445,25 +445,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.23
+   "speedup": 0.11
   },
   {
    "shape": "JP2 drilldown fields breakdown, JSON path",
    "range": "6h",
    "p50": {
-    "release": 0.015,
-    "main": 0.015,
-    "loki": 0.009
+    "release": 0.005,
+    "main": 0.005,
+    "loki": 0.007
    },
    "p95": {
-    "release": 0.053,
-    "main": 0.016,
-    "loki": 0.01
+    "release": 0.084,
+    "main": 0.024,
+    "loki": 0.008
    },
    "cold": {
-    "release": 0.195,
-    "main": 0.14,
-    "loki": 0.159
+    "release": 0.106,
+    "main": 0.094,
+    "loki": 0.112
    },
    "status": {
     "release": "200",
@@ -471,9 +471,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 297.65,
-    "main": 297.65,
-    "loki": 297.65
+    "release": 149.71,
+    "main": 149.71,
+    "loki": 149.71
    },
    "cache": {
     "loki": {
@@ -513,7 +513,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 102860
+       "bytesReceived": 102878
       },
       "statsResult": {
        "entriesFound": 6,
@@ -556,19 +556,19 @@
    "shape": "JP2 drilldown fields breakdown, JSON path",
    "range": "24h",
    "p50": {
-    "main": 0.016,
-    "release": 0.015,
-    "loki": 0.011
+    "main": 0.005,
+    "release": 0.005,
+    "loki": 0.009
    },
    "p95": {
-    "main": 0.074,
-    "release": 0.016,
-    "loki": 0.011
+    "main": 0.108,
+    "release": 0.006,
+    "loki": 0.009
    },
    "cold": {
-    "main": 0.558,
-    "release": 0.561,
-    "loki": 0.629
+    "main": 0.371,
+    "release": 0.36,
+    "loki": 0.507
    },
    "status": {
     "main": "200",
@@ -576,9 +576,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 297.65,
-    "release": 297.65,
-    "loki": 297.65
+    "main": 149.71,
+    "release": 149.71,
+    "loki": 149.71
    },
    "cache": {
     "loki": {
@@ -618,7 +618,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 243122
+       "bytesReceived": 243103
       },
       "statsResult": {
        "entriesFound": 6,
@@ -655,13 +655,13 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.94
+   "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.0",
- "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
- "measured_at": "2026-11-06T03:22:00Z",
- "run": "42156069488.1",
+ "baseline_ref": "v2.83.4",
+ "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+ "measured_at": "2026-11-07T03:21:07Z",
+ "run": "42333584371.1",
  "proxy_align": {
   "release": "on",
   "main": "on"

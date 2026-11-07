@@ -406,6 +406,13 @@
   "shape": "JP2 drilldown fields breakdown, JSON path"
  },
  {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "1h",
+  "set": "extracted-pushdown",
+  "shape": "X1 json filter level_extracted, by level"
+ },
+ {
   "added": "2026-11-05",
   "commit": "fd723ff0a3437870705201bf898a7cfee4949547",
   "range": "24h",
@@ -773,6 +780,13 @@
   "added": "2026-11-04",
   "commit": "69d07019b344a30d28e0211a4680852ce35e812b",
   "range": "1h",
+  "set": "json-filter-pushdown",
+  "shape": "A explore volume, 2 filters, drop"
+ },
+ {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "6h",
   "set": "json-filter-pushdown",
   "shape": "A explore volume, 2 filters, drop"
  },
@@ -2352,6 +2366,13 @@
   "shape": "PR7 instant, parenthesised line filter"
  },
  {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "1h",
+  "set": "pattern-line-filter",
+  "shape": "P2 api-gateway not empty pattern, line filter"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -3211,6 +3232,27 @@
   "range": "6h",
   "set": "unwrap-gate",
   "shape": "G6 json duration_ms sum by rate"
+ },
+ {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G7 duration() of a unit string"
+ },
+ {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G7 duration() of a unit string"
+ },
+ {
+  "added": "2026-11-07",
+  "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+  "range": "1h",
+  "set": "unwrap-gate",
+  "shape": "G8 bytes() of a number"
  },
  {
   "added": "2026-11-06",

@@ -1,6 +1,6 @@
 {
  "label": "daily-unwrap-ungrouped-sum-loki-defaults",
- "date": "2026-11-06",
+ "date": "2026-11-07",
  "set": "unwrap-ungrouped-sum",
  "description": "An ungrouped sum over rate or sum_over_time with unwrap (PR for semantics/unwrap-rate-ungrouped-sum-per-stream): Loki answers one series; a sliding window ([5m] over a smaller step) answered one series per stream and parsed label set, from per-stream stats or raw rows. U1-U4 are sliding range queries over logfmt and JSON streams (U4 broad: every production stream), U5-U7 are instant queries (U6 the `| json` route that read raw rows), U8 is the grouped form that was already one series per group (it must not move), U9 folds a function taken per series. Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "U1 logfmt amount rate",
    "range": "1h",
    "p50": {
-    "release": 0.005,
-    "main": 0.005,
+    "release": 0.003,
+    "main": 0.003,
     "loki": 0.009
    },
    "p95": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.009
+    "release": 0.003,
+    "main": 0.004,
+    "loki": 0.011
    },
    "cold": {
-    "release": 0.024,
-    "main": 0.016,
-    "loki": 0.024
+    "release": 0.017,
+    "main": 0.011,
+    "loki": 0.026
    },
    "status": {
     "release": "200",
@@ -93,12 +93,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85858
+       "bytesReceived": 85865
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1704
+       "bytesReceived": 1707
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -136,19 +136,19 @@
    "shape": "U1 logfmt amount rate",
    "range": "6h",
    "p50": {
-    "main": 0.014,
-    "release": 0.014,
-    "loki": 0.014
+    "main": 0.005,
+    "release": 0.005,
+    "loki": 0.013
    },
    "p95": {
-    "main": 0.015,
-    "release": 0.015,
-    "loki": 0.017
+    "main": 0.006,
+    "release": 0.005,
+    "loki": 0.015
    },
    "cold": {
-    "main": 0.073,
-    "release": 0.072,
-    "loki": 0.088
+    "main": 0.047,
+    "release": 0.049,
+    "loki": 0.078
    },
    "status": {
     "main": "200",
@@ -156,9 +156,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 186.3,
-    "release": 186.3,
-    "loki": 186.3
+    "main": 122.05,
+    "release": 122.05,
+    "loki": 122.05
    },
    "cache": {
     "loki": {
@@ -203,7 +203,7 @@
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1692
+       "bytesReceived": 1719
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -241,19 +241,19 @@
    "shape": "U1 logfmt amount rate",
    "range": "24h",
    "p50": {
-    "release": 0.02,
-    "main": 0.015,
-    "loki": 0.017
+    "release": 0.005,
+    "main": 0.004,
+    "loki": 0.013
    },
    "p95": {
-    "release": 0.025,
-    "main": 0.037,
-    "loki": 0.036
+    "release": 0.005,
+    "main": 0.004,
+    "loki": 0.015
    },
    "cold": {
-    "release": 0.238,
-    "main": 0.239,
-    "loki": 0.41
+    "release": 0.171,
+    "main": 0.17,
+    "loki": 0.27
    },
    "status": {
     "release": "200",
@@ -261,9 +261,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 186.3,
-    "main": 186.3,
-    "loki": 186.3
+    "release": 122.05,
+    "main": 122.05,
+    "loki": 122.05
    },
    "cache": {
     "loki": {
@@ -276,7 +276,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 8324
+       "bytesReceived": 7496
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -303,12 +303,12 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 216000
+       "bytesReceived": 216071
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 3084
+       "bytesReceived": 1719
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -340,235 +340,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.33
+   "speedup": 1.25
   },
   {
    "shape": "U2 json duration_ms rate",
    "range": "1h",
    "p50": {
-    "main": 0.006,
-    "release": 0.005,
-    "loki": 0.012
-   },
-   "p95": {
-    "main": 0.006,
-    "release": 0.007,
-    "loki": 0.013
-   },
-   "cold": {
-    "main": 0.033,
-    "release": 0.032,
-    "loki": 0.061
-   },
-   "status": {
-    "main": "200",
-    "release": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "main": 186.3,
-    "release": 186.3,
-    "loki": 186.3
-   },
-   "cache": {
-    "loki": {
-     "cold": {
-      "result": {
-       "entriesFound": 0,
-       "entriesRequested": 2,
-       "bytesReceived": 0
-      },
-      "statsResult": {
-       "entriesFound": 2,
-       "entriesRequested": 2,
-       "bytesReceived": 374
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     },
-     "warm": {
-      "result": {
-       "entriesFound": 12,
-       "entriesRequested": 12,
-       "bytesReceived": 85960
-      },
-      "statsResult": {
-       "entriesFound": 6,
-       "entriesRequested": 6,
-       "bytesReceived": 1122
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     }
-    }
-   },
-   "reference_skipped": {
-    "cache": 6
-   },
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 0.83
-  },
-  {
-   "shape": "U2 json duration_ms rate",
-   "range": "6h",
-   "p50": {
-    "release": 0.015,
-    "main": 0.015,
+    "main": 0.003,
+    "release": 0.003,
     "loki": 0.015
    },
    "p95": {
-    "release": 0.016,
-    "main": 0.015,
+    "main": 0.004,
+    "release": 0.003,
     "loki": 0.017
    },
    "cold": {
-    "release": 0.172,
-    "main": 0.169,
-    "loki": 0.19
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 294.27,
-    "main": 294.27,
-    "loki": 294.27
-   },
-   "cache": {
-    "loki": {
-     "cold": {
-      "result": {
-       "entriesFound": 0,
-       "entriesRequested": 7,
-       "bytesReceived": 0
-      },
-      "statsResult": {
-       "entriesFound": 8,
-       "entriesRequested": 8,
-       "bytesReceived": 4316
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     },
-     "warm": {
-      "result": {
-       "entriesFound": 42,
-       "entriesRequested": 42,
-       "bytesReceived": 252447
-      },
-      "statsResult": {
-       "entriesFound": 6,
-       "entriesRequested": 6,
-       "bytesReceived": 5352
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     }
-    }
-   },
-   "reference_skipped": {
-    "cache": 6
-   },
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "U2 json duration_ms rate",
-   "range": "24h",
-   "p50": {
-    "main": 0.015,
-    "release": 0.021,
-    "loki": 0.026
-   },
-   "p95": {
-    "main": 0.023,
-    "release": 0.025,
-    "loki": 0.038
-   },
-   "cold": {
-    "main": 0.619,
-    "release": 0.807,
-    "loki": 0.93
+    "main": 0.022,
+    "release": 0.024,
+    "loki": 0.046
    },
    "status": {
     "main": "200",
@@ -576,114 +366,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 294.27,
-    "release": 294.27,
-    "loki": 294.27
-   },
-   "cache": {
-    "loki": {
-     "cold": {
-      "result": {
-       "entriesFound": 0,
-       "entriesRequested": 25,
-       "bytesReceived": 0
-      },
-      "statsResult": {
-       "entriesFound": 26,
-       "entriesRequested": 26,
-       "bytesReceived": 20372
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     },
-     "warm": {
-      "result": {
-       "entriesFound": 150,
-       "entriesRequested": 150,
-       "bytesReceived": 216999
-      },
-      "statsResult": {
-       "entriesFound": 6,
-       "entriesRequested": 6,
-       "bytesReceived": 5352
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     }
-    }
-   },
-   "reference_skipped": {
-    "cache": 6
-   },
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.4
-  },
-  {
-   "shape": "U3 json duration_ms rate, error filter",
-   "range": "1h",
-   "p50": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.013
-   },
-   "p95": {
-    "release": 0.006,
-    "main": 0.006,
-    "loki": 0.013
-   },
-   "cold": {
-    "release": 0.035,
-    "main": 0.034,
-    "loki": 0.061
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 33.95,
-    "main": 33.95,
-    "loki": 33.95
+    "main": 122.05,
+    "release": 122.05,
+    "loki": 122.05
    },
    "cache": {
     "loki": {
@@ -723,7 +408,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 86140
+       "bytesReceived": 85967
       },
       "statsResult": {
        "entriesFound": 6,
@@ -763,32 +448,32 @@
    "speedup": 1.0
   },
   {
-   "shape": "U3 json duration_ms rate, error filter",
+   "shape": "U2 json duration_ms rate",
    "range": "6h",
    "p50": {
-    "main": 0.015,
-    "release": 0.015,
-    "loki": 0.017
+    "release": 0.009,
+    "main": 0.008,
+    "loki": 0.029
    },
    "p95": {
-    "main": 0.017,
-    "release": 0.015,
-    "loki": 0.019
+    "release": 0.01,
+    "main": 0.011,
+    "loki": 0.041
    },
    "cold": {
-    "main": 0.164,
-    "release": 0.17,
-    "loki": 0.225
+    "release": 0.112,
+    "main": 0.113,
+    "loki": 0.172
    },
    "status": {
-    "main": "200",
     "release": "200",
+    "main": "200",
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 359.86,
-    "release": 359.86,
-    "loki": 359.86
+    "release": 122.05,
+    "main": 122.05,
+    "loki": 122.05
    },
    "cache": {
     "loki": {
@@ -801,7 +486,7 @@
       "statsResult": {
        "entriesFound": 8,
        "entriesRequested": 8,
-       "bytesReceived": 4320
+       "bytesReceived": 3856
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -828,112 +513,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 252963
-      },
-      "statsResult": {
-       "entriesFound": 6,
-       "entriesRequested": 6,
-       "bytesReceived": 5358
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     }
-    }
-   },
-   "reference_skipped": {
-    "cache": 6
-   },
-   "parity_vs_reference": "same",
-   "baseline_parity_vs_reference": "same",
-   "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 1.0
-  },
-  {
-   "shape": "U3 json duration_ms rate, error filter",
-   "range": "24h",
-   "p50": {
-    "release": 0.024,
-    "main": 0.016,
-    "loki": 0.021
-   },
-   "p95": {
-    "release": 0.027,
-    "main": 0.024,
-    "loki": 0.05
-   },
-   "cold": {
-    "release": 0.605,
-    "main": 0.627,
-    "loki": 1.204
-   },
-   "status": {
-    "release": "200",
-    "main": "200",
-    "loki": "200"
-   },
-   "vl_cpu_max": {
-    "release": 359.86,
-    "main": 359.86,
-    "loki": 359.86
-   },
-   "cache": {
-    "loki": {
-     "cold": {
-      "result": {
-       "entriesFound": 0,
-       "entriesRequested": 25,
-       "bytesReceived": 0
-      },
-      "statsResult": {
-       "entriesFound": 26,
-       "entriesRequested": 26,
-       "bytesReceived": 20394
-      },
-      "volumeResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "seriesResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "labelResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      },
-      "instantMetricResult": {
-       "entriesFound": 0,
-       "entriesRequested": 0,
-       "bytesReceived": 0
-      }
-     },
-     "warm": {
-      "result": {
-       "entriesFound": 150,
-       "entriesRequested": 150,
-       "bytesReceived": 219120
+       "bytesReceived": 252423
       },
       "statsResult": {
        "entriesFound": 6,
@@ -970,25 +550,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.5
+   "speedup": 1.12
   },
   {
-   "shape": "U4 logfmt latency_ms rate, production",
-   "range": "1h",
+   "shape": "U2 json duration_ms rate",
+   "range": "24h",
    "p50": {
-    "main": 0.008,
-    "release": 0.008,
-    "loki": 0.049
+    "main": 0.005,
+    "release": 0.005,
+    "loki": 0.021
    },
    "p95": {
-    "main": 0.009,
-    "release": 0.008,
-    "loki": 0.054
+    "main": 0.006,
+    "release": 0.005,
+    "loki": 0.023
    },
    "cold": {
-    "main": 0.148,
-    "release": 0.147,
-    "loki": 0.33
+    "main": 0.439,
+    "release": 0.429,
+    "loki": 0.639
    },
    "status": {
     "main": "200",
@@ -996,9 +576,429 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 391.11,
-    "release": 391.11,
-    "loki": 391.11
+    "main": 122.05,
+    "release": 122.05,
+    "loki": 122.05
+   },
+   "cache": {
+    "loki": {
+     "cold": {
+      "result": {
+       "entriesFound": 0,
+       "entriesRequested": 25,
+       "bytesReceived": 0
+      },
+      "statsResult": {
+       "entriesFound": 26,
+       "entriesRequested": 26,
+       "bytesReceived": 17842
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     },
+     "warm": {
+      "result": {
+       "entriesFound": 150,
+       "entriesRequested": 150,
+       "bytesReceived": 217133
+      },
+      "statsResult": {
+       "entriesFound": 6,
+       "entriesRequested": 6,
+       "bytesReceived": 4662
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     }
+    }
+   },
+   "reference_skipped": {
+    "cache": 6
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "U3 json duration_ms rate, error filter",
+   "range": "1h",
+   "p50": {
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.016
+   },
+   "p95": {
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.017
+   },
+   "cold": {
+    "release": 0.025,
+    "main": 0.023,
+    "loki": 0.056
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 94.32,
+    "main": 94.32,
+    "loki": 94.32
+   },
+   "cache": {
+    "loki": {
+     "cold": {
+      "result": {
+       "entriesFound": 0,
+       "entriesRequested": 2,
+       "bytesReceived": 0
+      },
+      "statsResult": {
+       "entriesFound": 2,
+       "entriesRequested": 2,
+       "bytesReceived": 374
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     },
+     "warm": {
+      "result": {
+       "entriesFound": 12,
+       "entriesRequested": 12,
+       "bytesReceived": 86147
+      },
+      "statsResult": {
+       "entriesFound": 6,
+       "entriesRequested": 6,
+       "bytesReceived": 1122
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     }
+    }
+   },
+   "reference_skipped": {
+    "cache": 6
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "U3 json duration_ms rate, error filter",
+   "range": "6h",
+   "p50": {
+    "main": 0.007,
+    "release": 0.006,
+    "loki": 0.02
+   },
+   "p95": {
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.022
+   },
+   "cold": {
+    "main": 0.117,
+    "release": 0.118,
+    "loki": 0.356
+   },
+   "status": {
+    "main": "200",
+    "release": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 337.85,
+    "release": 337.85,
+    "loki": 337.85
+   },
+   "cache": {
+    "loki": {
+     "cold": {
+      "result": {
+       "entriesFound": 0,
+       "entriesRequested": 7,
+       "bytesReceived": 0
+      },
+      "statsResult": {
+       "entriesFound": 8,
+       "entriesRequested": 8,
+       "bytesReceived": 3856
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     },
+     "warm": {
+      "result": {
+       "entriesFound": 42,
+       "entriesRequested": 42,
+       "bytesReceived": 252951
+      },
+      "statsResult": {
+       "entriesFound": 6,
+       "entriesRequested": 6,
+       "bytesReceived": 4662
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     }
+    }
+   },
+   "reference_skipped": {
+    "cache": 6
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.86
+  },
+  {
+   "shape": "U3 json duration_ms rate, error filter",
+   "range": "24h",
+   "p50": {
+    "release": 0.005,
+    "main": 0.005,
+    "loki": 0.016
+   },
+   "p95": {
+    "release": 0.005,
+    "main": 0.006,
+    "loki": 0.017
+   },
+   "cold": {
+    "release": 0.422,
+    "main": 0.425,
+    "loki": 0.739
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 337.85,
+    "main": 337.85,
+    "loki": 337.85
+   },
+   "cache": {
+    "loki": {
+     "cold": {
+      "result": {
+       "entriesFound": 0,
+       "entriesRequested": 25,
+       "bytesReceived": 0
+      },
+      "statsResult": {
+       "entriesFound": 26,
+       "entriesRequested": 26,
+       "bytesReceived": 17842
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     },
+     "warm": {
+      "result": {
+       "entriesFound": 150,
+       "entriesRequested": 150,
+       "bytesReceived": 219169
+      },
+      "statsResult": {
+       "entriesFound": 6,
+       "entriesRequested": 6,
+       "bytesReceived": 5370
+      },
+      "volumeResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "seriesResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "labelResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      },
+      "instantMetricResult": {
+       "entriesFound": 0,
+       "entriesRequested": 0,
+       "bytesReceived": 0
+      }
+     }
+    }
+   },
+   "reference_skipped": {
+    "cache": 6
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "U4 logfmt latency_ms rate, production",
+   "range": "1h",
+   "p50": {
+    "main": 0.007,
+    "release": 0.005,
+    "loki": 0.069
+   },
+   "p95": {
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.076
+   },
+   "cold": {
+    "main": 0.088,
+    "release": 0.089,
+    "loki": 0.367
+   },
+   "status": {
+    "main": "200",
+    "release": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 337.85,
+    "release": 337.85,
+    "loki": 337.85
    },
    "cache": {
     "loki": {
@@ -1075,25 +1075,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.71
   },
   {
    "shape": "U4 logfmt latency_ms rate, production",
    "range": "6h",
    "p50": {
-    "release": 0.017,
-    "main": 0.017,
-    "loki": 0.076
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.071
    },
    "p95": {
-    "release": 0.019,
-    "main": 0.017,
-    "loki": 0.082
+    "release": 0.01,
+    "main": 0.009,
+    "loki": 0.072
    },
    "cold": {
-    "release": 0.68,
-    "main": 0.66,
-    "loki": 1.585
+    "release": 0.509,
+    "main": 0.489,
+    "loki": 1.265
    },
    "status": {
     "release": "200",
@@ -1101,9 +1101,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 391.11,
-    "main": 391.11,
-    "loki": 391.11
+    "release": 394.11,
+    "main": 394.11,
+    "loki": 394.11
    },
    "cache": {
     "loki": {
@@ -1143,7 +1143,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 252446
+       "bytesReceived": 252424
       },
       "statsResult": {
        "entriesFound": 6,
@@ -1186,19 +1186,19 @@
    "shape": "U4 logfmt latency_ms rate, production",
    "range": "24h",
    "p50": {
-    "main": 0.017,
-    "release": 0.018,
-    "loki": 0.075
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.07
    },
    "p95": {
-    "main": 0.018,
-    "release": 0.018,
-    "loki": 0.1
+    "main": 0.009,
+    "release": 0.007,
+    "loki": 0.075
    },
    "cold": {
-    "main": 2.58,
-    "release": 2.607,
-    "loki": 6.698
+    "main": 1.928,
+    "release": 1.93,
+    "loki": 5.406
    },
    "status": {
     "main": "200",
@@ -1206,9 +1206,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 396.01,
-    "release": 396.01,
-    "loki": 260.17
+    "main": 398.1,
+    "release": 398.1,
+    "loki": 398.1
    },
    "cache": {
     "loki": {
@@ -1248,7 +1248,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 217541
+       "bytesReceived": 217605
       },
       "statsResult": {
        "entriesFound": 6,
@@ -1285,25 +1285,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.06
+   "speedup": 1.0
   },
   {
    "shape": "U5 logfmt amount rate, instant",
    "range": "instant",
    "p50": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.007
+    "release": 0.003,
+    "main": 0.003,
+    "loki": 0.009
    },
    "p95": {
-    "release": 0.006,
-    "main": 0.006,
-    "loki": 0.007
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.009
    },
    "cold": {
-    "release": 0.005,
-    "main": 0.004,
-    "loki": 0.007
+    "release": 0.004,
+    "main": 0.003,
+    "loki": 0.009
    },
    "status": {
     "release": "200",
@@ -1311,9 +1311,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 121.85,
-    "main": 121.85,
-    "loki": 121.85
+    "release": 159.09,
+    "main": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1326,7 +1326,7 @@
       "statsResult": {
        "entriesFound": 1,
        "entriesRequested": 1,
-       "bytesReceived": 307
+       "bytesReceived": 309
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1358,7 +1358,7 @@
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1842
+       "bytesReceived": 1854
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1393,19 +1393,19 @@
    "shape": "U6 json duration_ms rate, instant",
    "range": "instant",
    "p50": {
-    "main": 0.007,
-    "release": 0.005,
-    "loki": 0.01
+    "main": 0.005,
+    "release": 0.004,
+    "loki": 0.014
    },
    "p95": {
-    "main": 0.007,
-    "release": 0.006,
-    "loki": 0.011
+    "main": 0.006,
+    "release": 0.005,
+    "loki": 0.015
    },
    "cold": {
-    "main": 0.005,
-    "release": 0.005,
-    "loki": 0.011
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.016
    },
    "status": {
     "main": "200",
@@ -1413,9 +1413,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 121.85,
-    "release": 121.85,
-    "loki": 121.85
+    "main": 159.09,
+    "release": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1489,25 +1489,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.71
+   "speedup": 0.8
   },
   {
    "shape": "U7 json duration_ms sum_over_time, instant",
    "range": "instant",
    "p50": {
-    "release": 0.007,
-    "main": 0.007,
-    "loki": 0.01
+    "release": 0.005,
+    "main": 0.005,
+    "loki": 0.014
    },
    "p95": {
-    "release": 0.008,
-    "main": 0.009,
-    "loki": 0.01
-   },
-   "cold": {
     "release": 0.006,
     "main": 0.006,
-    "loki": 0.01
+    "loki": 0.014
+   },
+   "cold": {
+    "release": 0.005,
+    "main": 0.005,
+    "loki": 0.014
    },
    "status": {
     "release": "200",
@@ -1515,9 +1515,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 121.85,
-    "main": 121.85,
-    "loki": 121.85
+    "release": 159.09,
+    "main": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1597,19 +1597,19 @@
    "shape": "U8 logfmt amount rate by service (grouped)",
    "range": "1h",
    "p50": {
-    "main": 0.005,
-    "release": 0.005,
-    "loki": 0.008
+    "main": 0.003,
+    "release": 0.003,
+    "loki": 0.009
    },
    "p95": {
-    "main": 0.005,
-    "release": 0.005,
-    "loki": 0.008
+    "main": 0.003,
+    "release": 0.003,
+    "loki": 0.01
    },
    "cold": {
-    "main": 0.015,
-    "release": 0.015,
-    "loki": 0.027
+    "main": 0.011,
+    "release": 0.013,
+    "loki": 0.024
    },
    "status": {
     "main": "200",
@@ -1617,9 +1617,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 121.85,
-    "release": 121.85,
-    "loki": 121.85
+    "main": 159.09,
+    "release": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1632,7 +1632,7 @@
       "statsResult": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 614
+       "bytesReceived": 618
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1659,12 +1659,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 86554
+       "bytesReceived": 86558
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1842
+       "bytesReceived": 1854
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1702,19 +1702,19 @@
    "shape": "U8 logfmt amount rate by service (grouped)",
    "range": "6h",
    "p50": {
-    "release": 0.015,
-    "main": 0.014,
+    "release": 0.005,
+    "main": 0.005,
     "loki": 0.01
    },
    "p95": {
-    "release": 0.017,
-    "main": 0.014,
+    "release": 0.005,
+    "main": 0.006,
     "loki": 0.011
    },
    "cold": {
-    "release": 0.064,
-    "main": 0.068,
-    "loki": 0.096
+    "release": 0.045,
+    "main": 0.047,
+    "loki": 0.073
    },
    "status": {
     "release": "200",
@@ -1722,9 +1722,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 121.85,
-    "main": 121.85,
-    "loki": 121.85
+    "release": 159.09,
+    "main": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1737,7 +1737,7 @@
       "statsResult": {
        "entriesFound": 8,
        "entriesRequested": 8,
-       "bytesReceived": 3364
+       "bytesReceived": 2460
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1764,12 +1764,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 254426
+       "bytesReceived": 254463
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 3900
+       "bytesReceived": 2520
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1801,25 +1801,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.07
+   "speedup": 1.0
   },
   {
    "shape": "U8 logfmt amount rate by service (grouped)",
    "range": "24h",
    "p50": {
-    "main": 0.015,
-    "release": 0.021,
-    "loki": 0.01
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.017
    },
    "p95": {
-    "main": 0.023,
-    "release": 0.024,
-    "loki": 0.012
+    "main": 0.01,
+    "release": 0.009,
+    "loki": 0.023
    },
    "cold": {
-    "main": 0.217,
-    "release": 0.222,
-    "loki": 0.507
+    "main": 0.157,
+    "release": 0.159,
+    "loki": 0.364
    },
    "status": {
     "main": "200",
@@ -1827,9 +1827,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 121.85,
-    "release": 121.85,
-    "loki": 121.85
+    "main": 159.09,
+    "release": 159.09,
+    "loki": 159.09
    },
    "cache": {
     "loki": {
@@ -1842,7 +1842,7 @@
       "statsResult": {
        "entriesFound": 26,
        "entriesRequested": 26,
-       "bytesReceived": 15064
+       "bytesReceived": 10476
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1869,12 +1869,12 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 224330
+       "bytesReceived": 224228
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 4596
+       "bytesReceived": 3228
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -1906,25 +1906,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.4
+   "speedup": 1.0
   },
   {
    "shape": "U9 logfmt amount rate_counter (folded per series)",
    "range": "1h",
    "p50": {
-    "release": 0.006,
-    "main": 0.005,
-    "loki": 0.017
+    "release": 0.004,
+    "main": 0.004,
+    "loki": 0.018
    },
    "p95": {
-    "release": 0.007,
-    "main": 0.007,
+    "release": 0.005,
+    "main": 0.004,
     "loki": 0.018
    },
    "cold": {
-    "release": 0.024,
-    "main": 0.023,
-    "loki": 0.097
+    "release": 0.019,
+    "main": 0.019,
+    "loki": 0.075
    },
    "status": {
     "release": "200",
@@ -1932,9 +1932,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 121.85,
-    "main": 121.85,
-    "loki": 121.85
+    "release": 159.09,
+    "main": 159.09,
+    "loki": 159.09
    },
    "stale": [
     "release",
@@ -1979,7 +1979,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 45212
+       "bytesReceived": 45226
       },
       "statsResult": {
        "entriesFound": 0,
@@ -2016,25 +2016,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.2
+   "speedup": 1.0
   },
   {
    "shape": "U9 logfmt amount rate_counter (folded per series)",
    "range": "6h",
    "p50": {
-    "main": 0.016,
-    "release": 0.017,
-    "loki": 0.018
+    "main": 0.006,
+    "release": 0.006,
+    "loki": 0.017
    },
    "p95": {
-    "main": 0.017,
-    "release": 0.018,
-    "loki": 0.021
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.017
    },
    "cold": {
-    "main": 0.109,
-    "release": 0.083,
-    "loki": 0.376
+    "main": 0.061,
+    "release": 0.061,
+    "loki": 0.28
    },
    "status": {
     "main": "200",
@@ -2042,9 +2042,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 108.3,
-    "release": 108.3,
-    "loki": 108.3
+    "main": 169.88,
+    "release": 169.88,
+    "loki": 169.88
    },
    "stale": [
     "main",
@@ -2089,7 +2089,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 134092
+       "bytesReceived": 134098
       },
       "statsResult": {
        "entriesFound": 0,
@@ -2126,25 +2126,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.06
+   "speedup": 1.0
   },
   {
    "shape": "U9 logfmt amount rate_counter (folded per series)",
    "range": "24h",
    "p50": {
-    "release": 0.022,
-    "main": 0.016,
-    "loki": 0.018
+    "release": 0.005,
+    "main": 0.005,
+    "loki": 0.016
    },
    "p95": {
-    "release": 0.026,
-    "main": 0.034,
-    "loki": 0.04
+    "release": 0.005,
+    "main": 0.007,
+    "loki": 0.018
    },
    "cold": {
-    "release": 0.303,
-    "main": 0.3,
-    "loki": 1.575
+    "release": 0.218,
+    "main": 0.223,
+    "loki": 1.231
    },
    "status": {
     "release": "200",
@@ -2152,9 +2152,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 108.3,
-    "main": 108.3,
-    "loki": 108.3
+    "release": 169.88,
+    "main": 169.88,
+    "loki": 169.88
    },
    "stale": [
     "release",
@@ -2199,7 +2199,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 136207
+       "bytesReceived": 136099
       },
       "statsResult": {
        "entriesFound": 0,
@@ -2236,13 +2236,13 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.38
+   "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.0",
- "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
- "measured_at": "2026-11-06T03:22:00Z",
- "run": "42156069488.1",
+ "baseline_ref": "v2.83.4",
+ "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+ "measured_at": "2026-11-07T03:21:07Z",
+ "run": "42333584371.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
