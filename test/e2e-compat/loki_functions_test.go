@@ -6,6 +6,7 @@ package e2e_compat
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -437,14 +438,15 @@ func TestLokiFunctions_PatternsAutodetectFromQueryRange(t *testing.T) {
 		"limit":     {"200"},
 		"step":      {"60"},
 	}
-	resp := getJSON(t, patternsAutodetectProxyURL+"/loki/api/v1/query_range?"+queryRangeParams.Encode())
-	if resp["status"] != "success" {
-		t.Fatalf("expected query_range success on autodetect proxy, got %v", resp)
-	}
-
+	// The lines were just pushed: VictoriaLogs may not show them all to this proxy's first read, so the query is
+	// sent again until the proxy has mined patterns from an answer that holds them.
 	deadline := time.Now().Add(20 * time.Second)
 	var metricAfter float64
 	for {
+		resp := getJSON(t, patternsAutodetectProxyURL+"/loki/api/v1/query_range?"+queryRangeParams.Encode())
+		if resp["status"] != "success" {
+			t.Fatalf("expected query_range success on autodetect proxy, got %v", resp)
+		}
 		metricAfter = readPromMetric(t, patternsAutodetectProxyURL, "loki_vl_proxy_patterns_detected_total")
 		if metricAfter > metricBefore {
 			break
@@ -490,19 +492,20 @@ func readPromMetric(t *testing.T, baseURL, metricName string) float64 {
 func ingestPatternData(t *testing.T) {
 	t.Helper()
 	patternDataOnce.Do(func() {
-		now := time.Now()
+		// Loki answers a pattern only when it holds at least 30 lines in the range: 40 lines of each kind, one a
+		// second (pushStream), ending before now so every range that ends now holds them all.
+		now := time.Now().Add(-5 * time.Minute)
+		var lines []string
+		for i := 0; i < 40; i++ {
+			lines = append(lines,
+				fmt.Sprintf("GET /api/v1/users 200 %dms", 10+i),
+				fmt.Sprintf("POST /api/v1/orders 201 %dms", 140+i),
+				fmt.Sprintf("DELETE /api/v1/orders/%d 403 %dms", 100+i, 2+i%5),
+			)
+		}
 		pushStream(t, now, streamDef{
 			Labels: map[string]string{"app": "pattern-test", "level": "info"},
-			Lines: []string{
-				"GET /api/v1/users 200 15ms",
-				"GET /api/v1/users 200 22ms",
-				"GET /api/v1/users 200 18ms",
-				"POST /api/v1/orders 201 142ms",
-				"POST /api/v1/orders 201 155ms",
-				"GET /api/v1/products 200 8ms",
-				"DELETE /api/v1/orders/123 403 3ms",
-				"DELETE /api/v1/orders/456 403 2ms",
-			},
+			Lines:  lines,
 		})
 	})
 

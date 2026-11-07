@@ -172,9 +172,35 @@ func cachedQueryValidation(query string) queryValidation {
 	return result
 }
 
+// parsedLogQueryKey keys a parsed log query in validationCache, apart from its validation result.
+type parsedLogQueryKey string
+
+type parsedLogQueryResult struct {
+	lq  *logql.LogQuery
+	err error
+}
+
+// parsedLogQuery is a log query's AST, parsed once per distinct query string while it is at most
+// validationCacheMaxQueryBytes long. The AST is shared between callers: they read it and never change it.
+func parsedLogQuery(query string) (*logql.LogQuery, error) {
+	cacheable := len(query) <= validationCacheMaxQueryBytes
+	if cacheable {
+		if v, ok := validationCache.Load(parsedLogQueryKey(query)); ok {
+			if cached, ok := v.(parsedLogQueryResult); ok {
+				return cached.lq, cached.err
+			}
+		}
+	}
+	lq, err := logql.ParseLogQuery(query)
+	if cacheable {
+		storeValidationResult(parsedLogQueryKey(query), parsedLogQueryResult{lq: lq, err: err})
+	}
+	return lq, err
+}
+
 // storeValidationResult adds a validation result while the cache is below
 // validationCacheMaxSize entries.
-func storeValidationResult(key string, result any) {
+func storeValidationResult(key any, result any) {
 	if validationCacheSize.Load() < validationCacheMaxSize {
 		if _, loaded := validationCache.LoadOrStore(key, result); !loaded {
 			validationCacheSize.Add(1)

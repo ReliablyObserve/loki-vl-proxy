@@ -403,11 +403,13 @@ class ExplainedVsLokiTest(unittest.TestCase):
         self.assertEqual(compare.bounded(None), "null")
         self.assertEqual(compare.stats_numbers({"streams": 1}), "streams 1, chunks None, entries None, bytes None")
 
-    def test_patterns_are_history_dependent_not_counted(self):
-        pr = resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>"}]}))
+    def test_patterns_set_is_compared_counts_are_not(self):
+        pr = resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>", "samples": [[1, 3]]}]}))
         row = self.check(pr, resources(("patterns?q=1", {"status": "success", "data": []}), uid="vp-loki"))
-        self.assertEqual((row["loki_diffs"], row["loki_new"]), ([], []))
-        self.assertEqual(len(row["loki_nondet"]), 1)
+        self.assertEqual(len(row["loki_diffs"]), 1)
+        self.assertEqual(row.get("loki_nondet") or [], [])
+        same = self.check(pr, resources(("patterns?q=1", {"status": "success", "data": [{"pattern": "a <_>", "samples": [[1, 5]]}]}), uid="vp-loki"))
+        self.assertEqual(same["loki_diffs"], [])
 
     def test_log_labels_extracted_suffix_explained_parsed_extra_not(self):
         loki = log_capture({"level": "info", "level_extracted": "info", "service_name": "svc", "service_name_extracted": "svc"},
@@ -540,9 +542,10 @@ class OneSidedTest(unittest.TestCase):
 
 
 class NondeterministicTest(unittest.TestCase):
-    def test_only_patterns_resources_are_history_dependent(self):
+    def test_only_unreadable_captures_are_history_dependent(self):
         import compare
-        self.assertTrue(compare.nondeterministic("resource /api/datasources/uid/*/resources/patterns?x: body differs"))
+        self.assertTrue(compare.nondeterministic("resource /api/datasources/uid/*/resources/labels: capture body unreadable"))
+        self.assertFalse(compare.nondeterministic("resource /api/datasources/uid/*/resources/patterns?x: body differs"))
         self.assertFalse(compare.nondeterministic("query ('A', 'sum(...)'): value differs"))
         self.assertFalse(compare.nondeterministic("resource /api/datasources/uid/*/resources/labels: body differs"))
 

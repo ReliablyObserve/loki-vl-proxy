@@ -4,11 +4,22 @@ proves:
   - loki_api_v1_patterns
 consumer: drilldown
 why: |
-  Loki's pattern ingester mines the lines pushed to it; the proxy (with
-  -patterns-autodetect-from-queries) mines the lines its queries returned. The
-  pattern sets differ by design and depend on history (bench/visual compares
-  them as history-dependent); on the seeded stack Loki had no patterns for
-  most services.
+  Loki's pattern ingester mines the lines pushed to it; the proxy mines the
+  lines VictoriaLogs holds, the same way (internal/proxy/pattern_cluster.go,
+  patterns_state.go): each stream and level apart, oldest line first, Loki's
+  tokens, prefix tree, 30% similarity, 300 clusters, 30-line answer rule and
+  10 s samples. On 27 recorded Loki answers
+  (internal/proxy/testdata/loki_pattern_answers.json.gz, live in
+  TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines) the proxy answers the
+  same patterns and totals for all 27. The differences that remain, documented:
+  Loki skips a line older than its stream's newest when it arrives, which
+  VictoriaLogs (sorted by time) cannot tell, so a step's count can differ by
+  such lines; a state is per proxy and starts over on restart (from the
+  retention's start, an hour boundary, where Loki's clusters were trained on
+  every line since the ingester started); selectors above the state's bounds
+  are mined across a level's streams from VictoriaLogs' counts; with
+  -patterns-full-range a range longer than the retention has samples Loki no
+  longer holds.
 request:
   method: GET
   path: /loki/api/v1/patterns
@@ -31,7 +42,7 @@ gap:
   area: 'internal/proxy/patterns.go'
   loki: 'pkg/pattern (ingester-side mining)'
   proxy: 'query-side mining'
-  planned_test: 'bench/visual history-dependent comparison (exists)'
+  planned_test: 'TestPatternMinerMatchesLokisRecordedPatterns (internal/proxy, recorded Loki answers); TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines (test/e2e-compat, live)'
   clusters:
     - 2c8e8dca
     - 52dcf85a

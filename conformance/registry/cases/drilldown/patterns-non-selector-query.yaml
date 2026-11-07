@@ -1,0 +1,35 @@
+id: drilldown/patterns-non-selector-query
+title: /patterns with a query that is not a bare stream selector answers patterns for its selector; Loki answers 400 (open)
+proves:
+  - loki_api_v1_patterns
+consumer: api
+why: |
+  Loki reads the /patterns query with syntax.ParseMatchers (pkg/pattern
+  ingester_querier.go): anything but a stream selector is a 400 with the
+  parse error. The proxy scopes the query to its stream selector
+  (patternScopeQuery) and answers patterns for it. Logs Drilldown sends a
+  bare selector, so its pages are not affected; an API client sending a
+  pipeline gets an answer where Loki rejects the request.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{env="production"} |= "error"'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    Loki's 400 and its parse error.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/proxy/patterns.go handlePatterns / patternScopeQuery'
+  loki: 'pkg/pattern/ingester_querier.go (syntax.ParseMatchers)'
+  proxy: 'the patterns of the query''s stream selector'
+  planned_test: 'TestPatternsCountsScopeAQueryToItsSelector (internal/proxy) pins the current scoping'
+  clusters: []

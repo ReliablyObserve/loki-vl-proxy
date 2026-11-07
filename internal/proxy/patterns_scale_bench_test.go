@@ -66,11 +66,13 @@ func patternBypassRequests(requestCount int) []*http.Request {
 	}
 	requests := make([]*http.Request, 0, requestCount)
 	for i := range requestCount {
+		// Loki answers a pattern only for the lines in the range, so each request's range starts before the lines
+		// (the first at 2026-04-04T10:00:00Z) and ends after them.
 		req := benchmarkRequest(
 			fmt.Sprintf(
 				`/loki/api/v1/patterns?query={app="api"}&start=%d&end=%d&step=1m&limit=50`,
-				i+1,
-				i+2,
+				1775296800-60-i%2000,
+				1775300400,
 			),
 		)
 		_ = req.ParseForm()
@@ -128,7 +130,7 @@ func BenchmarkProxy_Patterns_Scale_CacheHit(b *testing.B) {
 				_, _ = w.Write(body)
 			}, false)
 
-			rawURL := `/loki/api/v1/patterns?query={app="api"}&start=1&end=2&step=1m&limit=50`
+			rawURL := `/loki/api/v1/patterns?query={app="api"}&start=1775296740&end=1775300400&step=1m&limit=50`
 			warmRoute(mux, rawURL, nil)
 			req := benchmarkRequest(rawURL)
 			_ = req.ParseForm()

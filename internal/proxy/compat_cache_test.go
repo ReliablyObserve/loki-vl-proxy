@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"fmt"
 	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,7 +226,10 @@ func TestCompatCacheMiddleware_DoesNotCacheEmptyPatterns(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+			for i := 0; i < lokiPatternMinLines; i++ {
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 ` + strconv.Itoa(15+i) + `ms","app":"web","level":"info"}` + "\n"))
+			}
 			return
 		case "/select/logsql/query_range":
 			w.Header().Set("Content-Type", "application/json")
@@ -237,7 +242,7 @@ func TestCompatCacheMiddleware_DoesNotCacheEmptyPatterns(t *testing.T) {
 	defer backend.Close()
 
 	p := newCompatTestProxy(t, backend.URL)
-	target := "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2"
+	target := "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T10:00:00Z&end=2026-04-04T10:05:00Z"
 
 	first := doCompatProxyRequest(p, target, nil)
 	if first.Code != http.StatusOK {

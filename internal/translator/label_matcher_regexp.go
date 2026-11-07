@@ -16,7 +16,12 @@ import (
 // vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76), so it
 // matches the whole value and '.' matches newlines.
 func selectorRegexpFieldFilter(label, pattern string, negate bool) string {
-	return wholeValueRegexpFilter(label, pattern, negate, true)
+	return selectorRegexpFilter(label, pattern, negate).String()
+}
+
+// selectorRegexpFilter is selectorRegexpFieldFilter as a filter node.
+func selectorRegexpFilter(label, pattern string, negate bool) logsql.FilterExpr {
+	return wholeValueRegexpFilterExpr(label, pattern, negate, true)
 }
 
 // labelFilterRegexpFieldFilter is the LogsQL filter for a label filter
@@ -62,14 +67,19 @@ func NewLabelFilterCondition(field, op, value string) (DropCondition, error) {
 //   - a plain literal becomes an exact filter (field:="v");
 //   - ".*v.*" with a plain literal v becomes the substring regexp v.
 func wholeValueRegexpFilter(label, pattern string, negate, dotNL bool) string {
+	return wholeValueRegexpFilterExpr(label, pattern, negate, dotNL).String()
+}
+
+// wholeValueRegexpFilterExpr is wholeValueRegexpFilter as a filter node.
+func wholeValueRegexpFilterExpr(label, pattern string, negate, dotNL bool) logsql.FilterExpr {
 	switch {
 	case pattern == ".*" || pattern == keepAllPattern:
-		return buildFieldFilterStr(label, logsql.FieldOpRegexp, ".*", negate)
+		return buildFieldFilter(label, logsql.FieldOpRegexp, ".*", negate)
 	case pattern == ".+" || pattern == nonEmptyPattern:
-		return buildFieldFilterStr(label, logsql.FieldOpRegexp, ".+", negate)
+		return buildFieldFilter(label, logsql.FieldOpRegexp, ".+", negate)
 	case pattern != "" && regexp.QuoteMeta(pattern) == pattern && exactQuotable(pattern):
 		// No metacharacter: the literal itself, without parsing it.
-		return buildFieldFilterStr(label, logsql.FieldOpExact, pattern, negate)
+		return buildFieldFilter(label, logsql.FieldOpExact, pattern, negate)
 	}
 	flags := syntax.Perl
 	if dotNL {
@@ -79,16 +89,16 @@ func wholeValueRegexpFilter(label, pattern string, negate, dotNL bool) string {
 		reg = reg.Simplify()
 		switch {
 		case isAnyCharRepeat(reg, syntax.OpStar):
-			return buildFieldFilterStr(label, logsql.FieldOpRegexp, ".*", negate)
+			return buildFieldFilter(label, logsql.FieldOpRegexp, ".*", negate)
 		case isAnyCharRepeat(reg, syntax.OpPlus):
-			return buildFieldFilterStr(label, logsql.FieldOpRegexp, ".+", negate)
+			return buildFieldFilter(label, logsql.FieldOpRegexp, ".+", negate)
 		}
 		if literal, ok := plainLiteral(reg); ok {
-			return buildFieldFilterStr(label, logsql.FieldOpExact, literal, negate)
+			return buildFieldFilter(label, logsql.FieldOpExact, literal, negate)
 		}
 		if reg.Op == syntax.OpConcat && len(reg.Sub) == 3 && isAnyCharRepeat(reg.Sub[0], syntax.OpStar) && isAnyCharRepeat(reg.Sub[2], syntax.OpStar) {
 			if literal, ok := plainLiteral(reg.Sub[1]); ok {
-				return buildFieldFilterStr(label, logsql.FieldOpRegexp, regexp.QuoteMeta(literal), negate)
+				return buildFieldFilter(label, logsql.FieldOpRegexp, regexp.QuoteMeta(literal), negate)
 			}
 		}
 		if !dotNL && strings.Contains(pattern, "|") {
@@ -96,7 +106,7 @@ func wholeValueRegexpFilter(label, pattern string, negate, dotNL bool) string {
 			// checks; VictoriaLogs compares the unpacked values faster than it
 			// runs the anchored regexp on each.
 			if values, ok := literalSet(reg, maxExactAlternatives); ok {
-				return exactAlternatives(label, values, negate)
+				return exactAlternativesFilter(label, values, negate)
 			}
 		}
 	}
@@ -104,7 +114,7 @@ func wholeValueRegexpFilter(label, pattern string, negate, dotNL bool) string {
 	if !dotNL {
 		anchored = anchorLabelFilterPattern(pattern)
 	}
-	return buildFieldFilterStr(label, logsql.FieldOpRegexp, anchored, negate)
+	return buildFieldFilter(label, logsql.FieldOpRegexp, anchored, negate)
 }
 
 // anchorLabelFilterPattern anchors a lokiLabelFilterPattern result the way
@@ -132,14 +142,16 @@ func exactQuotable(literal string) bool {
 }
 
 // exactAlternatives is `(label:="a" OR label:="b")`, negated with '-'.
-func exactAlternatives(label string, values []string, negate bool) string {
-	exact := make([]string, len(values))
+// exactAlternativesFilter is the exact filters a literal alternation becomes: (label:="a" OR label:="b"),
+// excluded when negate.
+func exactAlternativesFilter(label string, values []string, negate bool) logsql.FilterExpr {
+	exact := make(logsql.AnyOf, len(values))
 	for i, v := range values {
-		exact[i] = buildFieldFilterStr(label, logsql.FieldOpExact, v, false)
+		exact[i] = buildFieldFilter(label, logsql.FieldOpExact, v, false)
 	}
-	filter := "(" + strings.Join(exact, " OR ") + ")"
+	filter := logsql.FilterExpr(logsql.Group{Expr: exact})
 	if negate {
-		return "-" + filter
+		return logsql.Exclude{Expr: filter}
 	}
 	return filter
 }

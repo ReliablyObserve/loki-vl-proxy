@@ -31,8 +31,10 @@
       "name": "collapse_nums",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/patterns_counts.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -43,6 +45,7 @@
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
+        "internal/proxy/patterns_counts.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
@@ -153,6 +156,7 @@
         "internal/proxy/detected_level_presence.go",
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_valid_split.go",
+        "internal/proxy/patterns_exact.go",
         "internal/translator/translator.go"
       ]
     },
@@ -216,8 +220,10 @@
       "name": "hash",
       "present_in_latest": true,
       "since": "v1.40.0",
-      "used_by_proxy": false,
-      "used_in": []
+      "used_by_proxy": true,
+      "used_in": [
+        "internal/proxy/patterns_counts.go"
+      ]
     },
     {
       "kind": "pipe",
@@ -269,6 +275,7 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
+        "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
@@ -399,6 +406,7 @@
         "internal/proxy/cold_dispatch.go",
         "internal/proxy/drilldown.go",
         "internal/proxy/metric_binary.go",
+        "internal/proxy/patterns_exact.go",
         "internal/proxy/query_range_windowing.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
@@ -612,6 +620,8 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/ordered_json_metric.go",
+        "internal/proxy/patterns_counts.go",
+        "internal/proxy/patterns_exact.go",
         "internal/proxy/quantile_histogram.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/range_metric_compat.go",
@@ -707,6 +717,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/backend_response_guard.go",
+        "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
         "internal/translator/translator.go"
       ]
@@ -726,6 +737,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/proxy/patterns_counts.go",
         "internal/proxy/query_translation.go",
         "internal/translator/translator.go"
       ]

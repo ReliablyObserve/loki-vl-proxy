@@ -238,17 +238,27 @@ func (p *Proxy) applyPatternsSnapshot(snapshot patternsSnapshot, source string) 
 	return appliedEntries, appliedPatterns
 }
 
+// splitPatternsCacheKey is the tenant and the encoded parameters of a /patterns cache key
+// (patternsCacheKeyPrefix + org + ":" + params). ok is false for any other key, a v1 key among them.
+func splitPatternsCacheKey(cacheKey string) (orgID, params string, ok bool) {
+	rest, ok := strings.CutPrefix(cacheKey, patternsCacheKeyPrefix)
+	if !ok {
+		return "", "", false
+	}
+	orgID, params, ok = strings.Cut(rest, ":")
+	return strings.TrimSpace(orgID), params, ok
+}
+
 func patternSnapshotIdentityFromCacheKey(cacheKey string) string {
 	cacheKey = strings.TrimSpace(cacheKey)
 	if cacheKey == "" {
 		return ""
 	}
-	parts := strings.SplitN(cacheKey, ":", 3)
-	if len(parts) != 3 || parts[0] != "patterns" {
+	orgID, rawParams, ok := splitPatternsCacheKey(cacheKey)
+	if !ok {
 		return ""
 	}
-	orgID := strings.TrimSpace(parts[1])
-	params, err := url.ParseQuery(parts[2])
+	params, err := url.ParseQuery(rawParams)
 	if err != nil {
 		return ""
 	}
@@ -264,12 +274,11 @@ func canonicalPatternSnapshotCacheKey(cacheKey string) string {
 	if cacheKey == "" {
 		return ""
 	}
-	parts := strings.SplitN(cacheKey, ":", 3)
-	if len(parts) != 3 || parts[0] != "patterns" {
+	orgID, rawParams, ok := splitPatternsCacheKey(cacheKey)
+	if !ok {
 		return cacheKey
 	}
-	orgID := strings.TrimSpace(parts[1])
-	params, err := url.ParseQuery(parts[2])
+	params, err := url.ParseQuery(rawParams)
 	if err != nil {
 		return cacheKey
 	}
@@ -279,7 +288,7 @@ func canonicalPatternSnapshotCacheKey(cacheKey string) string {
 	}
 	canonical := url.Values{}
 	canonical.Set("query", query)
-	return "patterns:" + orgID + ":" + canonical.Encode()
+	return patternsCacheKeyPrefix + orgID + ":" + canonical.Encode()
 }
 
 func normalizePatternSnapshotPayload(payload []byte) []byte {
@@ -325,7 +334,10 @@ func compactPatternSnapshotSamples(samples [][]interface{}) [][]interface{} {
 		}
 		ts, okTS := numberToInt64(pair[0])
 		count, okCount := numberToInt(pair[1])
-		if !okTS || !okCount || count <= 0 {
+		// A 0 is a sample of the answer (Loki fills the steps between a
+		// cluster's samples with 0): the snapshot keeps it, so an answer
+		// served from it equals the one computed.
+		if !okTS || !okCount || count < 0 {
 			continue
 		}
 		if _, seen := byTimestamp[ts]; !seen {

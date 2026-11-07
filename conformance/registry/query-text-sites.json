@@ -5,7 +5,7 @@
     "parse_calls": 64,
     "string_reads": 54,
     "text_built": 214,
-    "translator_string_ops": 662
+    "translator_string_ops": 658
   },
   "files": {
     "deferred_raw": {
@@ -16,6 +16,7 @@
       "internal/proxy/absent_over_time.go": 2,
       "internal/proxy/binary_logql.go": 1,
       "internal/proxy/drilldown.go": 6,
+      "internal/proxy/http_utils.go": 1,
       "internal/proxy/keep_series_grouping.go": 1,
       "internal/proxy/limits_enforcement.go": 1,
       "internal/proxy/log_line.go": 1,
@@ -33,7 +34,7 @@
       "internal/proxy/query_extract.go": 1,
       "internal/proxy/query_range_steps.go": 2,
       "internal/proxy/query_range_windowing.go": 1,
-      "internal/proxy/query_translation.go": 5,
+      "internal/proxy/query_translation.go": 4,
       "internal/proxy/range_metric_compat.go": 2,
       "internal/proxy/rate_counter_singletons.go": 1,
       "internal/proxy/regexp_capture_fields.go": 1,
@@ -89,14 +90,15 @@
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
       "internal/translator/label_filter_expr.go": 18,
-      "internal/translator/label_matcher_regexp.go": 10,
+      "internal/translator/label_matcher_regexp.go": 9,
       "internal/translator/nested_vector_chain.go": 17,
       "internal/translator/normalize.go": 6,
       "internal/translator/parsed_key_variants.go": 71,
       "internal/translator/pipeline_capture_labels.go": 2,
       "internal/translator/plain_stream_labels.go": 21,
+      "internal/translator/selector_filter.go": 1,
       "internal/translator/series_identity.go": 16,
-      "internal/translator/translator.go": 437,
+      "internal/translator/translator.go": 433,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

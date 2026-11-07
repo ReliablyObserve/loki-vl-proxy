@@ -1,0 +1,48 @@
+id: drilldown/patterns-one-series-per-level
+title: The proxy answered two /patterns entries with the same pattern and level (fixed)
+pending: true
+proves:
+  - loki_api_v1_patterns
+consumer: drilldown
+why: |
+  Loki answers one series per level and pattern (pkg/pattern/iter ReadBatch
+  keys series by level, then pattern; the merge iterator sums samples of the
+  same timestamp, pattern and level). The proxy's miner can keep two clusters
+  apart that join to the same text, such as two that differ only in the kind
+  of a value shown as <_>, and answered both: Logs Drilldown listed the same
+  row twice. Over 40 mixed corpora, 603 of 58,738 entries were duplicates.
+
+  Fixed (internal/proxy/postprocess.go patternEntriesByLevelAndPattern): the
+  entries are merged per level and pattern, their samples added up, before the
+  response is ranked and limited.
+request:
+  method: GET
+  path: /loki/api/v1/patterns
+  params:
+    query: '{env="production"}'
+    start: 'now-1h'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [data]
+  expect: |
+    No two entries with the same pattern and level.
+gap:
+  status: fixed
+  fixed_by: '#1142'
+  impact: drilldown-visible
+  effort: S
+  area: 'internal/proxy/postprocess.go patternEntriesByLevelAndPattern'
+  loki: 'pkg/pattern/iter/batch.go ReadBatch, pkg/pattern/iter/merge.go'
+  proxy: 'one entry per level and pattern'
+  planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternMinerKeepsTheRecordedPatterns (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

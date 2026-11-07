@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
 
@@ -25,7 +27,7 @@ const oracleDir = "../../test/oracle/vl"
 // oracleInput is one query for the oracle: its LogsQL and what our LogsQL parser makes of it.
 type oracleInput struct {
 	ID      string `json:"id"`
-	Kind    string `json:"kind"` // golden, sent, case-accept or case-reject
+	Kind    string `json:"kind"` // golden, sent, typed-selector, case-accept or case-reject
 	Query   string `json:"q"`
 	Ours    bool   `json:"ours"`              // our parser reads it
 	Printed string `json:"printed,omitempty"` // our parser's printed form
@@ -156,6 +158,12 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 			// VictoriaLogs only finds features it is too old for.
 			emit(r.ID, "sent", r.Query)
 		}
+		if typed, built, ok := typedSelectorPair(r, v); ok {
+			in := oracleInput{ID: r.ID, Kind: "typed-selector", Query: built, Ours: true, Printed: typed}
+			if err := enc.Encode(in); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	seen := map[string]bool{}
 	for _, c := range cases {
@@ -176,6 +184,29 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// typedSelectorPair is, for a client LogQL row that is a bare stream selector, the filter the typed selector
+// translation builds (logql.SelectorFilter) and the one the string translator writes for it, both for version v:
+// VictoriaLogs' parser must read the two the same.
+func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
+	if r.Lang != "logql" || !r.Valid || r.Path != "" {
+		return "", "", false
+	}
+	lq, err := logql.ParseLogQuery(r.Query)
+	if err != nil || len(lq.Pipeline) > 0 {
+		return "", "", false
+	}
+	identity := func(s string) string { return s }
+	f, err := logql.SelectorFilter(lq.Selector, logql.TranslateOptions{LabelFn: identity})
+	if err != nil {
+		return "", "", false
+	}
+	built, err = translator.TranslateLogQLWithCapabilities(r.Query, identity, nil, logsql.CapabilitiesFor(strings.TrimPrefix(v, "v")))
+	if err != nil {
+		return "", "", false
+	}
+	return f.String(), built, true
 }
 
 // TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned
@@ -296,6 +327,11 @@ type OracleSummary struct {
 	// CasesWronglyAccepted are VictoriaLogs' rejected test cases our parser accepts.
 	CasesRejected        int `json:"cases_rejected"`
 	CasesWronglyAccepted int `json:"cases_wrongly_accepted"`
+	// TypedSelectors are the corpus's bare stream selectors: the string translator's filter VictoriaLogs rejects,
+	// and the typed translation's filter it reads the same.
+	TypedSelectors            int `json:"typed_selectors"`
+	TypedSelectorsRejected    int `json:"typed_selectors_rejected"`
+	TypedSelectorsSameMeaning int `json:"typed_selectors_same_meaning"`
 }
 
 func summarizeOracle(v string, verdicts map[string]map[string]oracleVerdict) OracleSummary {
@@ -331,6 +367,15 @@ func summarizeOracle(v string, verdicts map[string]map[string]oracleVerdict) Ora
 			s.CasesWronglyAccepted++
 		}
 	}
+	for _, x := range verdicts["typed-selector"] {
+		s.TypedSelectors++
+		if !x.Accept {
+			s.TypedSelectorsRejected++
+		}
+		if same(x) {
+			s.TypedSelectorsSameMeaning++
+		}
+	}
 	return s
 }
 
@@ -343,14 +388,17 @@ type OracleRegressions struct {
 	GoldensMeaningLost []string `json:"goldens_meaning_lost"`
 	// CasesLost: an accepted VictoriaLogs test case our parser read with the same meaning on the base and does not now.
 	CasesLost []string `json:"cases_lost"`
+	// TypedSelectorsDiffer: bare stream selectors whose typed filter VictoriaLogs does not read as the string
+	// translator's, on the PR whatever the base was: the typed translation must always mean the same.
+	TypedSelectorsDiffer []string `json:"typed_selectors_differ"`
 }
 
 func (r OracleRegressions) any() bool {
-	return len(r.GoldensRejected)+len(r.GoldensMeaningLost)+len(r.CasesLost) > 0
+	return len(r.GoldensRejected)+len(r.GoldensMeaningLost)+len(r.CasesLost)+len(r.TypedSelectorsDiffer) > 0
 }
 
 func oracleRegressions(v string, base, head map[string]map[string]oracleVerdict) OracleRegressions {
-	reg := OracleRegressions{Version: v, GoldensRejected: []string{}, GoldensMeaningLost: []string{}, CasesLost: []string{}}
+	reg := OracleRegressions{Version: v, GoldensRejected: []string{}, GoldensMeaningLost: []string{}, CasesLost: []string{}, TypedSelectorsDiffer: []string{}}
 	same := func(x oracleVerdict) bool { return x.SameMeaning != nil && *x.SameMeaning }
 	for id, h := range head["golden"] {
 		b, ok := base["golden"][id]
@@ -369,9 +417,15 @@ func oracleRegressions(v string, base, head map[string]map[string]oracleVerdict)
 			reg.CasesLost = append(reg.CasesLost, id)
 		}
 	}
+	for id, h := range head["typed-selector"] {
+		if !h.Accept || !same(h) {
+			reg.TypedSelectorsDiffer = append(reg.TypedSelectorsDiffer, id)
+		}
+	}
 	sort.Strings(reg.GoldensRejected)
 	sort.Strings(reg.GoldensMeaningLost)
 	sort.Strings(reg.CasesLost)
+	sort.Strings(reg.TypedSelectorsDiffer)
 	return reg
 }
 
@@ -396,15 +450,20 @@ func TestOracleSummaryAndRegressions(t *testing.T) {
 		"case-accept": {"c1": {Accept: true}},
 		"case-reject": {"c9": {Accept: false, Ours: true}},
 		"sent":        {"s1": {Accept: false}},
+		"typed-selector": {
+			"t1": {Accept: true, Ours: true, SameMeaning: boolp(true)},
+			"t2": {Accept: true, Ours: true, SameMeaning: boolp(false)}, // new, and still a failure
+		},
 	}
 	got := oracleRegressions("v1.53.0", base, head)
 	if strings.Join(got.GoldensRejected, ",") != "g2" || strings.Join(got.GoldensMeaningLost, ",") != "g3" ||
-		strings.Join(got.CasesLost, ",") != "c1" || !got.any() {
+		strings.Join(got.CasesLost, ",") != "c1" || strings.Join(got.TypedSelectorsDiffer, ",") != "t2" || !got.any() {
 		t.Errorf("regressions = %+v", got)
 	}
 	s := summarizeOracle("v1.53.0", head)
 	want := OracleSummary{Version: "v1.53.0", Goldens: 4, GoldensRejected: 2, GoldensRead: 2, GoldensSameMeaning: 1,
-		Sent: 1, SentRejected: 1, CasesAccepted: 1, CasesRejected: 1, CasesWronglyAccepted: 1}
+		Sent: 1, SentRejected: 1, CasesAccepted: 1, CasesRejected: 1, CasesWronglyAccepted: 1,
+		TypedSelectors: 2, TypedSelectorsSameMeaning: 1}
 	if s != want {
 		t.Errorf("summary = %+v, want %+v", s, want)
 	}

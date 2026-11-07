@@ -231,6 +231,24 @@ type Config struct {
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
+	// PatternsCounts answers /patterns from VictoriaLogs' counts of every line in the range (patternsFromCounts)
+	// rather than from a sample of lines.
+	PatternsCounts bool
+	// PatternsExactMaxLines is the most lines of a request's range /patterns reads from VictoriaLogs to mine Loki's
+	// patterns exactly (patternsFromLines); a range with more lines is counted (PatternsCounts). 0 turns it off.
+	PatternsExactMaxLines int
+	// PatternsStateMaxBytes is the memory the /patterns state of all tenants may hold (patternStateStore); 0 turns
+	// the state off. PatternsStateStreamIdle is how long a stream may read no line before its clusters are kept as
+	// their patterns and samples alone.
+	PatternsStateMaxBytes   int64
+	PatternsStateStreamIdle time.Duration
+	// PatternsStateMaxBuildLines is the most lines over the retention a selector's state is built from in the
+	// background when they are more than PatternsExactMaxLines; 0 builds none.
+	PatternsStateMaxBuildLines int
+	// PatternsFullRange answers a /patterns range longer than Loki's pattern retention (3h) over all of it: the
+	// patterns the state answers, their samples before the state's counted from VictoriaLogs (addPatternHistory).
+	// Off, such a range has the retention's samples alone, as Loki's.
+	PatternsFullRange bool
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -641,6 +659,10 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	patternsAutodetectFromQueries         bool
+	patternsCounts                        bool
+	patternsExactMaxLines                 int
+	patternState                          *patternStateStore
+	patternsFullRange                     bool
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1318,6 +1340,10 @@ func New(cfg Config) (*Proxy, error) {
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
+		patternsCounts:                        cfg.PatternsCounts,
+		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
+		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle, cfg.PatternsStateMaxBuildLines),
+		patternsFullRange:                     cfg.PatternsFullRange,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,
@@ -1815,6 +1841,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 		p.coldRouter.Stop(ctx)
 	}
 	p.stopPatternsPersistenceLoop(ctx)
+	p.patternState.close(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
 	// The proxy creates these two caches itself, so it stops their background
 	// goroutines. The caches handed in through Config belong to the caller.

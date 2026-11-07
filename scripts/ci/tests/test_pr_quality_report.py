@@ -73,7 +73,7 @@ class ReportTests(unittest.TestCase):
         report = self.render(base=snapshot(), head=head)
         self.assertIn("VictoriaLogs v1.53.0:", report)
         self.assertIn("| Goldens VictoriaLogs rejects | 8 | 9 | +1 |", report)
-        self.assertIn("Regressions on VictoriaLogs v1.53.0: 1 goldens now rejected; 0 goldens whose meaning changed; 0 test cases no longer read the same.", report)
+        self.assertIn("Regressions on VictoriaLogs v1.53.0: 1 goldens now rejected; 0 goldens whose meaning changed; 0 test cases no longer read the same; 0 typed selector filters that differ.", report)
         self.assertIn("Constructs of VictoriaLogs v1.53.0 not covered by `internal/logsql`: pipes/unroll.", report)
 
     def test_query_corpus_loki_tables_regressions_and_similarity(self):

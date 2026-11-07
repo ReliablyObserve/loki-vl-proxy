@@ -175,6 +175,7 @@ const (
 	FieldOpJSONArrayContainsAny                // :json_array_contains_any("v1","v2")
 	FieldOpContainsCommonCase                  // :contains_common_case("p1","p2")
 	FieldOpEqualsCommonCase                    // :equals_common_case("p1","p2")
+	FieldOpNotExact                            // :!"val" (the field has a value other than val)
 )
 
 // FieldFilter matches a named field using the given operator and value.
@@ -183,13 +184,20 @@ type FieldFilter struct {
 	Op     FieldOp
 	Value  string
 	Negate bool
+	// GoQuoted quotes an exact value as Go does (control characters escaped) rather than escaping only
+	// backslashes and double quotes.
+	GoQuoted bool
 }
 
 func (f FieldFilter) String() string {
 	var core string
 	switch f.Op {
 	case FieldOpExact:
-		core = f.Field + ":=" + quoteLogsQL(f.Value)
+		if f.GoQuoted {
+			core = f.Field + ":=" + quoteLogsQLPattern(f.Value)
+		} else {
+			core = f.Field + ":=" + quoteLogsQL(f.Value)
+		}
 	case FieldOpRegexp:
 		core = f.Field + ":~" + quoteLogsQLPattern(f.Value)
 	case FieldOpPrefix:
@@ -232,6 +240,8 @@ func (f FieldFilter) String() string {
 		core = f.Field + ":contains_common_case(" + f.Value + ")"
 	case FieldOpEqualsCommonCase:
 		core = f.Field + ":equals_common_case(" + f.Value + ")"
+	case FieldOpNotExact:
+		core = f.Field + ":!" + quoteLogsQL(f.Value)
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
@@ -310,6 +320,42 @@ func (o OrExpr) String() string {
 }
 
 func (o OrExpr) filterExpr() {}
+
+// Exclude is LogsQL's "-" negation of a filter: -level:*, -(a OR b).
+type Exclude struct{ Expr FilterExpr }
+
+func (e Exclude) String() string { return "-" + e.Expr.String() }
+func (e Exclude) filterExpr()    {}
+
+// Group is a filter in parentheses.
+type Group struct{ Expr FilterExpr }
+
+func (g Group) String() string { return "(" + g.Expr.String() + ")" }
+func (g Group) filterExpr()    {}
+
+// AllOf is filters written one after another, which LogsQL reads as their AND.
+type AllOf []FilterExpr
+
+func (a AllOf) String() string {
+	parts := make([]string, len(a))
+	for i, f := range a {
+		parts[i] = f.String()
+	}
+	return strings.Join(parts, " ")
+}
+func (a AllOf) filterExpr() {}
+
+// AnyOf is the OR of filters.
+type AnyOf []FilterExpr
+
+func (a AnyOf) String() string {
+	parts := make([]string, len(a))
+	for i, f := range a {
+		parts[i] = f.String()
+	}
+	return strings.Join(parts, " OR ")
+}
+func (a AnyOf) filterExpr() {}
 
 // NotExpr negates a filter expression.
 type NotExpr struct {
@@ -491,7 +537,18 @@ func (p PipeLimit) pipe()          {}
 // --- Helper types for PipeStats and PipeSort ---
 
 // GroupKey is a single field used in a "by (f1, f2)" grouping clause.
-type GroupKey struct{ Field string }
+type GroupKey struct {
+	Field string
+	// Bucket groups by the field's value rounded down to a bucket, such as a step for _time ("_time:60s").
+	Bucket string
+}
+
+func (k GroupKey) String() string {
+	if k.Bucket != "" {
+		return k.Field + ":" + k.Bucket
+	}
+	return k.Field
+}
 
 // StatsFuncAlias pairs a StatsFunc with its output alias.
 type StatsFuncAlias struct {
@@ -605,7 +662,9 @@ type PipeReplaceRegexp struct {
 }
 
 func (p PipeReplaceRegexp) String() string {
-	return fmt.Sprintf("| replace_regexp (%s, `%s`, %q)", p.Field, p.Regex, p.Replacement)
+	// VictoriaLogs' syntax: replace_regexp ("regexp", "replacement") at field. The regexp is a raw (backquoted)
+	// string, so its backslashes and Unicode classes reach VictoriaLogs as written.
+	return fmt.Sprintf("| replace_regexp (`%s`, %q) at %s", p.Regex, p.Replacement, p.Field)
 }
 func (p PipeReplaceRegexp) pipe() {}
 
@@ -1081,7 +1140,7 @@ func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) stri
 	if len(by) > 0 {
 		keys := make([]string, len(by))
 		for i, k := range by {
-			keys[i] = k.Field
+			keys[i] = k.String()
 		}
 		b.WriteString(" by (")
 		b.WriteString(strings.Join(keys, ", "))

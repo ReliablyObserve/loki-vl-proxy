@@ -282,11 +282,11 @@ def pairs(a, b):
     return out
 
 
-# Drilldown's patterns come from the patterns-autodetect proxy, which mines them from
-# the queries that proxy has already served: two processes running the same code
-# answer differently depending on their request history, so a patterns difference
-# between base and PR is reported, never gated.
-NONDETERMINISTIC = ("/resources/patterns", "capture body unreadable", f"capture {CANCELLED}")
+# A capture whose body was unreadable or cancelled says nothing about the build: it is
+# reported, never gated. Drilldown's patterns are compared as their set of pattern texts
+# (above): the proxy mines them from the lines VictoriaLogs holds, as Loki's ingester
+# does, so two processes on the same data answer alike.
+NONDETERMINISTIC = ("capture body unreadable", f"capture {CANCELLED}")
 # Resources whose answer is the proxy's deployment configuration (its
 # -tenant-default-limits / -tenant-limits flags), not data: a base-vs-PR
 # difference there comes from the stack's flags, so it is reported, never gated.

@@ -1,0 +1,24 @@
+id: vl-sort-ties-by-text
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  sort by (_stream_id, _time) returns a stream's lines in time order, the
+  streams one after another, but lines that share a stream and a time in any
+  order: two reads of the same settled hour of env=production (153,878 such
+  neighbours) returned 21,774 streams' lines in different orders. With _msg as
+  the last key the order is the same on every read, at the same sort time.
+  TestVLCapability_PatternLinesFilterAndTieOrder reads lines pushed at one time
+  in three parts eleven times and requires one order, and runs in the vl-pinned
+  check and the version matrix.
+proxy_usage: |
+  patternExactLinesQuery sorts by (_stream_id, _time, _msg): the order a
+  stream's lines are mined in decides which cluster some lines join, so the
+  pattern state, the exact read, a rebuild and every peer mine a selector's lines
+  alike (two cold answers of the same hour had differed by 1-4 lines a pattern).
+fallback: |
+  None on a supported version; a release that broke the order would fail the
+  live test, and answers would again differ by a few lines between reads.
+proves: []

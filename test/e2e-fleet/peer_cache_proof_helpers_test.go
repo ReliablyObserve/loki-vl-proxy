@@ -773,7 +773,9 @@ func ingestFleetFixture(t *testing.T) fleetFixture {
 			} else if status >= 400 {
 				level = "warn"
 			}
-			line := fmt.Sprintf(`{"level":%q,"method":%q,"status":%d,"path":"/v1/items/%d","msg":"request served"}`, level, methods[i%len(methods)], status, i%7)
+			// The message holds enough tokens for Loki's pattern mining (at least 4) and each level at least 30 lines
+			// in the range, so /patterns answers patterns from it as Loki would.
+			line := fmt.Sprintf(`{"level":%q,"method":%q,"status":%d,"path":"/v1/items/%d","msg":"request served for item %d"}`, level, methods[i%len(methods)], status, i%7, i%7)
 			values = append(values, []string{strconv.FormatInt(at.UnixNano(), 10), line})
 			row := map[string]string{"_time": at.Format(time.RFC3339Nano), "_msg": line}
 			for k, v := range labels {

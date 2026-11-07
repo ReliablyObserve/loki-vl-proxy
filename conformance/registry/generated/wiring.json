@@ -42,6 +42,25 @@
     "drilldown/index_volume/single-sample-returns-vector": [
       "internal/proxy/volume_test.go"
     ],
+    "drilldown/patterns-full-range-counts": [
+      "internal/proxy/patterns_counts_test.go",
+      "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
+      "test/e2e-compat/patterns_counts_test.go"
+    ],
+    "drilldown/patterns-mined-differently": [
+      "internal/proxy/pattern_cluster_test.go",
+      "internal/proxy/pattern_formats_test.go",
+      "internal/proxy/pattern_loki_answers_test.go",
+      "internal/proxy/patterns_counts_test.go",
+      "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
+      "test/e2e-compat/patterns_loki_oracle_test.go"
+    ],
+    "drilldown/patterns-one-series-per-level": [
+      "internal/proxy/patterns_counts_test.go",
+      "test/e2e-compat/patterns_counts_test.go"
+    ],
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/range_metric_row_limit_error_test.go",
@@ -261,9 +280,16 @@
       "test/e2e-compat/metadata_scan_admission_test.go"
     ],
     "loki_api_v1_patterns": [
+      "internal/proxy/pattern_cluster_test.go",
+      "internal/proxy/pattern_formats_test.go",
+      "internal/proxy/pattern_loki_answers_test.go",
       "internal/proxy/pattern_miner_answers_test.go",
-      "internal/proxy/pattern_placeholders_test.go",
-      "internal/proxy/pattern_tokenizer_test.go"
+      "internal/proxy/pattern_tokenizer_test.go",
+      "internal/proxy/patterns_counts_test.go",
+      "internal/proxy/patterns_exact_test.go",
+      "internal/proxy/patterns_state_test.go",
+      "test/e2e-compat/patterns_counts_test.go",
+      "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
     "loki_api_v1_query": [
       "internal/proxy/binary_aggregation_differential_test.go",
@@ -557,6 +583,12 @@
     ],
     "parser-regexp": [
       "test/e2e-compat/query_semantics_matrix_test.go"
+    ],
+    "patterns-loki-mining": [
+      "internal/proxy/pattern_cluster_test.go",
+      "internal/proxy/pattern_loki_answers_test.go",
+      "internal/proxy/patterns_state_test.go",
+      "test/e2e-compat/patterns_loki_oracle_test.go"
     ],
     "peer-cache-fleet-recovery": [
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -1479,6 +1511,12 @@
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
+    "vl-phrase-filter-quoted-names": [
+      "test/e2e-compat/vl_pattern_lines_test.go"
+    ],
+    "vl-sort-ties-by-text": [
+      "test/e2e-compat/vl_pattern_lines_test.go"
+    ],
     "vl-zstd-response-window": [
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
@@ -1511,7 +1549,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 416,
+  "registry_items": 422,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2090,21 +2128,49 @@
       "parsed-label-series-identity",
       "semantics/detected-level-missing-from-stats-answers"
     ],
+    "internal/proxy/pattern_cluster_test.go": [
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
+    ],
+    "internal/proxy/pattern_formats_test.go": [
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns"
+    ],
     "internal/proxy/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
     ],
-    "internal/proxy/pattern_miner_answers_test.go": [
-      "loki_api_v1_patterns"
+    "internal/proxy/pattern_loki_answers_test.go": [
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
-    "internal/proxy/pattern_placeholders_test.go": [
+    "internal/proxy/pattern_miner_answers_test.go": [
       "loki_api_v1_patterns"
     ],
     "internal/proxy/pattern_tokenizer_test.go": [
       "loki_api_v1_patterns"
     ],
+    "internal/proxy/patterns_counts_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-mined-differently",
+      "drilldown/patterns-one-series-per-level",
+      "loki_api_v1_patterns"
+    ],
+    "internal/proxy/patterns_exact_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns"
+    ],
     "internal/proxy/patterns_persistence_test.go": [
       "peer-cache-replication"
+    ],
+    "internal/proxy/patterns_state_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
@@ -2954,6 +3020,16 @@
       "semantics/pattern-line-filter",
       "semantics/pattern-line-filter-anchoring"
     ],
+    "test/e2e-compat/patterns_counts_test.go": [
+      "drilldown/patterns-full-range-counts",
+      "drilldown/patterns-one-series-per-level",
+      "loki_api_v1_patterns"
+    ],
+    "test/e2e-compat/patterns_loki_oracle_test.go": [
+      "drilldown/patterns-mined-differently",
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
+    ],
     "test/e2e-compat/plain_name_after_parser_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -3171,6 +3247,10 @@
       "semantics/unwrap-sample-validity",
       "status-400"
     ],
+    "test/e2e-compat/vl_pattern_lines_test.go": [
+      "vl-phrase-filter-quoted-names",
+      "vl-sort-ties-by-text"
+    ],
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
@@ -3202,7 +3282,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 333,
+  "tests_with_markers": 341,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3218,7 +3298,7 @@
     "drilldown/detected-labels-lists-stored-field",
     "drilldown/detected-labels-sampled-cardinality",
     "drilldown/logs-footer-query-stats",
-    "drilldown/patterns-mined-differently",
+    "drilldown/patterns-non-selector-query",
     "drilldown/plugin-legend-sync-race",
     "drilldown/volume-detected-level-not-normalised",
     "limits/drilldown-7d-breakdown-response-limit",
@@ -3303,5 +3383,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 244
+  "wired_items": 250
 }
