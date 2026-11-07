@@ -92,11 +92,13 @@ func keepMetadataProjectionResponseKeyVersion(query string) string {
 // label filter (not the `|= ip(...)` line filter).
 var ipLabelFilterStageRE = regexp.MustCompile(`[A-Za-z0-9_]\s*!?=\s*ip\s*\(`)
 
-const ipLabelFilterResponseVersion = "@ip-label-filter-v1:"
+const ipLabelFilterResponseVersion = "@ip-label-filter-v2:"
 
 // ipLabelFilterResponseKeyVersion fences the replies cached before an ip()
-// label filter answered like Loki (an absent label matches neither
-// operator) in local and peer-fed response caches.
+// label filter answered like Loki in local and peer-fed response caches: v1
+// before an absent label matched neither operator, v2 before the `| json` and
+// `| logfmt` metric plans compared the label with the text ip(...) and so
+// answered no series.
 func ipLabelFilterResponseKeyVersion(query string) string {
 	if ipLabelFilterStageRE.MatchString(query) {
 		return ipLabelFilterResponseVersion

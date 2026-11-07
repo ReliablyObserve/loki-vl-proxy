@@ -1195,6 +1195,19 @@
    ]
   },
   {
+   "id": "explore-ip-filter-json-metric",
+   "kind": "explore",
+   "query": "sum by (method) (count_over_time({service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\") [$__auto]))",
+   "covers": [
+    "semantics/ip-filter-json-stats-pushdown",
+    "filter-ip",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/ip-filter-json-stats-pushdown"
+   ]
+  },
+  {
    "id": "explore-unwrap-conversion-error",
    "kind": "explore",
    "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))",

@@ -264,52 +264,58 @@ func exactFor(pattern, value string) bool {
 	return !ok || p.empty || !regexp.MustCompile(p.textOf()).MatchString(value)
 }
 
+// absent marks the value of a line without the label in ipEdgeTable.
+const absent = "\x00absent"
+
+// ipEdgeTable is the patterns and values the edge tests run: whether Loki keeps
+// the line under = and under !=.
+var ipEdgeTable = []struct {
+	pattern, value string
+	eq, ne         bool
+}{
+	// An absent label: dropped under both operators (ip.go:128-131).
+	{"1.2.3.4", absent, false, false},
+	{"1.2.3.0/24", absent, false, false},
+	{"2001:db8::/32", absent, false, false},
+	// Whole IPv4 values.
+	{"1.2.3.4", "1.2.3.4", true, false},
+	{"1.2.3.4", "1.2.3.5", false, true},
+	{"1.2.3.0/24", "1.2.3.255", true, false},
+	{"1.2.3.0/24", "1.2.4.0", false, true},
+	{"1.2.3.7/24", "1.2.3.200", true, false}, // host bits set in the pattern
+	{"0.0.0.0/0", "255.255.255.255", true, false},
+	{"1.2.3.4/32", "1.2.3.4", true, false},
+	{"1.2.3.4-1.2.4.9", "1.2.4.9", true, false},
+	{"1.2.3.4-1.2.4.9", "1.2.3.3", false, true},
+	// Leading zeros: Loki's netip parser reads no address.
+	{"1.2.3.4", "01.2.3.4", false, true},
+	{"1.2.3.0/24", "1.2.3.04", false, true},
+	// VictoriaLogs reads "1.2.3.4a" as 1.2.3.89 and "1.2.3.0004" as
+	// 1.2.3.4; Loki scans 1.2.3.4 out of the first and nothing out of the
+	// second.
+	{"1.2.3.89", "1.2.3.4a", false, true},
+	{"1.2.3.4", "1.2.3.0004", false, true},
+	// The other family never matches.
+	{"::ffff:1.2.3.4", "1.2.3.4", false, true},
+	{"1.2.3.0/24", "::ffff:1.2.3.4", false, true},
+	// IPv6.
+	{"2001:db8::1", "2001:db8::1", true, false},
+	{"2001:db8::/32", "2001:db8:0:1::5", true, false},
+	{"2001:db8::/32", "2001:db9::1", false, true},
+	{"::1", "::1", false, true}, // shorter than five characters: never scanned
+	{"fe80::1", "fe80::1%eth0", true, false},
+	{"fe80::1%eth0", "fe80::1", false, true}, // no scanned address has a zone
+	{"::", "::%00000", false, true},          // the scan starts no address at "::%"
+	// Plain text and the empty value.
+	{"1.2.3.4", "abc", false, true},
+	{"1.2.3.4", "", false, true},
+}
+
 // Loki's ip() label filter on whole-address values, other families, leading
 // zeros, absent labels and plain text, against the LogsQL it is translated to.
 // conformance: semantics/ip-label-filter-missing-label
 func TestIPLabelFilter_EdgeTable(t *testing.T) {
-	const absent = "\x00absent"
-	for _, tc := range []struct {
-		pattern, value string
-		eq, ne         bool // Loki: kept under = and under !=
-	}{
-		// An absent label: dropped under both operators (ip.go:128-131).
-		{"1.2.3.4", absent, false, false},
-		{"1.2.3.0/24", absent, false, false},
-		{"2001:db8::/32", absent, false, false},
-		// Whole IPv4 values.
-		{"1.2.3.4", "1.2.3.4", true, false},
-		{"1.2.3.4", "1.2.3.5", false, true},
-		{"1.2.3.0/24", "1.2.3.255", true, false},
-		{"1.2.3.0/24", "1.2.4.0", false, true},
-		{"1.2.3.7/24", "1.2.3.200", true, false}, // host bits set in the pattern
-		{"0.0.0.0/0", "255.255.255.255", true, false},
-		{"1.2.3.4/32", "1.2.3.4", true, false},
-		{"1.2.3.4-1.2.4.9", "1.2.4.9", true, false},
-		{"1.2.3.4-1.2.4.9", "1.2.3.3", false, true},
-		// Leading zeros: Loki's netip parser reads no address.
-		{"1.2.3.4", "01.2.3.4", false, true},
-		{"1.2.3.0/24", "1.2.3.04", false, true},
-		// VictoriaLogs reads "1.2.3.4a" as 1.2.3.89 and "1.2.3.0004" as
-		// 1.2.3.4; Loki scans 1.2.3.4 out of the first and nothing out of the
-		// second.
-		{"1.2.3.89", "1.2.3.4a", false, true},
-		{"1.2.3.4", "1.2.3.0004", false, true},
-		// The other family never matches.
-		{"::ffff:1.2.3.4", "1.2.3.4", false, true},
-		{"1.2.3.0/24", "::ffff:1.2.3.4", false, true},
-		// IPv6.
-		{"2001:db8::1", "2001:db8::1", true, false},
-		{"2001:db8::/32", "2001:db8:0:1::5", true, false},
-		{"2001:db8::/32", "2001:db9::1", false, true},
-		{"::1", "::1", false, true}, // shorter than five characters: never scanned
-		{"fe80::1", "fe80::1%eth0", true, false},
-		{"fe80::1%eth0", "fe80::1", false, true}, // no scanned address has a zone
-		{"::", "::%00000", false, true},          // the scan starts no address at "::%"
-		// Plain text and the empty value.
-		{"1.2.3.4", "abc", false, true},
-		{"1.2.3.4", "", false, true},
-	} {
+	for _, tc := range ipEdgeTable {
 		present := tc.value != absent
 		value := tc.value
 		if !present {
@@ -477,5 +483,141 @@ func FuzzIPLabelFilterNeverKeepsWhatLokiDrops(f *testing.F) {
 		if exactFor(pattern, value) && got != want && value != "" {
 			t.Fatalf("ip(%q) negate=%v on %q: %v, Loki %v\n%s", pattern, negate, value, got, want, filter)
 		}
+	})
+}
+
+// conditionMatchesLogsQL checks that the Go condition of ip(pattern) answers
+// what the LogsQL ipLabelFilter writes answers on VictoriaLogs for one value.
+func conditionMatchesLogsQL(t testing.TB, pattern, value string, negate bool) {
+	t.Helper()
+	cond, err := NewIPLabelFilterCondition("addr", pattern, negate)
+	filter, ok := ipLabelFilter("addr", pattern, negate)
+	if (err == nil) != ok {
+		t.Fatalf("ip(%q): condition error %v, translated %v", pattern, err, ok)
+	}
+	if !ok {
+		return
+	}
+	if got, want := cond.Matches(value), evalVLFilter(t, filter, value); got != want {
+		t.Fatalf("ip(%q) negate=%v on %q: condition %v, LogsQL %v\n%s", pattern, negate, value, got, want, filter)
+	}
+	if got, ok := cond.IPFilter("addr"); !ok || got != filter {
+		t.Fatalf("ip(%q) negate=%v: IPFilter = %q, %v; want %q", pattern, negate, got, ok, filter)
+	}
+}
+
+// The condition a plan evaluates on rows answers like the filter it pushes down,
+// on every pattern and value of the edge table and of the random run, under
+// both operators and for the absent value.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestIPLabelFilterCondition_MatchesLogsQL(t *testing.T) {
+	for _, tc := range ipEdgeTable {
+		value := tc.value
+		if value == absent {
+			value = ""
+		}
+		for _, negate := range []bool{false, true} {
+			conditionMatchesLogsQL(t, tc.pattern, value, negate)
+			conditionMatchesLogsQL(t, tc.pattern, "", negate)
+		}
+	}
+	rng := rand.New(rand.NewSource(1))
+	for i := 0; i < 20000; i++ {
+		pattern := randomIPPattern(rng)
+		value, _ := randomIPValue(rng)
+		for _, negate := range []bool{false, true} {
+			conditionMatchesLogsQL(t, pattern, value, negate)
+		}
+	}
+	for _, bad := range []string{"999.1.1.1", "1.2.3.4/33", "1.2.3.4-1.2.3.1", "abc", ""} {
+		if _, err := NewIPLabelFilterCondition("addr", bad, false); err == nil {
+			t.Errorf("%q: no error for a pattern Loki rejects", bad)
+		}
+	}
+}
+
+// The values that probe the text form of a pattern (lokiIPPattern.textOf): the
+// shared octets of the bounds, partial and over-long octets, the address inside
+// other text, and colons with and without address characters between them.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestIPLabelFilterCondition_TextForm(t *testing.T) {
+	patterns := []string{
+		"1.2.3.4", "1.2.3.0/24", "1.2.0.0/16", "10.0.0.0/8", "1.2.3.4-1.2.4.9", "1.2.3.4-1.9.3.4", "0.0.0.0/0",
+		"1.2.3.4-1.2.3.200", "2001:db8::/32", "::1", "fe80::1", "::ffff:1.2.3.4",
+	}
+	values := []string{
+		"", "x 1.2.3.4 y", "1.2.3.4:443", "1.2.3.", "1.2.3.45", "1.2.3.4567", "11.2.3.4", "a1.2.3.4", "1.2.3", "1.2.3.4.5",
+		"1.2.9.9:80", "1.2.3.999", "1.2.3.1234", "1.2.1234.5", "1.2.4.", "1.2.4.9x", "11.2.3.4.5", "ip=1.2.3.4", "0.0.0.0",
+		"1234.1.1.1", "1.2.3.4a", "10.1.2.3 and 10.4.5.6", "1.2.3.0/24", "12345.1.1.1", "9.1.2.3.4", "1.1.2.3 1.2.3.4",
+		"[2001:db8::1]:443", "x:y:z", "a::b", "::", ":", "::.:", "a:.:b", "a:g:b", "x :1: y", ":1.2:", "foo:bar::baz", ":::",
+		"a:b", "ab:cd:ef", "1:2", "gg:hh:", "::1", "fe80::1%eth0", "x::%", ":.:", "\n:1:\n", "a:\n:b",
+	}
+	for _, pattern := range patterns {
+		for _, value := range values {
+			for _, negate := range []bool{false, true} {
+				conditionMatchesLogsQL(t, pattern, value, negate)
+			}
+		}
+	}
+}
+
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestNewIPLabelFilterCondition_Shape(t *testing.T) {
+	eq, err := NewIPLabelFilterCondition("ip", "10.2.0.0/16", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ne, err := NewIPLabelFilterCondition("ip", "10.2.0.0/16", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eq.Field != "ip" || eq.Op != "=" || eq.Value != `ip("10.2.0.0/16")` || ne.Op != "!=" || ne.Value != eq.Value {
+		t.Errorf("conditions %+v, %+v", eq, ne)
+	}
+	// An absent label (the empty value) is dropped under both operators.
+	if eq.Matches("") || ne.Matches("") {
+		t.Error("the empty value is kept")
+	}
+	if !eq.Matches("10.2.3.4") || eq.Matches("10.3.0.1") || !ne.Matches("10.3.0.1") {
+		t.Error("10.2.0.0/16 membership is wrong")
+	}
+	// A condition that is no ip() one has no ip filter.
+	plain, _ := NewLabelFilterCondition("ip", "=", "x")
+	if _, ok := plain.IPFilter("ip"); ok {
+		t.Error("a string condition has an ip filter")
+	}
+}
+
+// parseVLIPv4 and the test emulation of VictoriaLogs' IPv4 reader are two
+// writings of the same rules, kept apart so the differential above checks one
+// against the other.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestParseVLIPv4_MatchesEmulation(t *testing.T) {
+	for _, s := range []string{"1.2.3.4", "1.2.3.4a", "1.2.3.0004", "01.2.3.4", "1.2.3.04", "255.255.255.255", "256.1.1.1", "1.2.3.", "1..2.3", "a.b.c.d", "1.2.3.4.5", "1234.1.1.1", "1.2.3.123456789", "1.2.3.1234567890", "1.2.3.:", "1.2.3.0.", "1.2.3.0/", "1.2.3.9 ", "9.9.9.9 ", ""} {
+		want, wantOK := vlParseIPv4(s)
+		got, gotOK := parseVLIPv4(s)
+		if got != want || gotOK != wantOK {
+			t.Errorf("%q: %d, %v; emulation %d, %v", s, got, gotOK, want, wantOK)
+		}
+	}
+}
+
+// For any pattern and value, the condition answers like the filter it
+// mirrors.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func FuzzIPLabelFilterConditionMatchesLogsQL(f *testing.F) {
+	for _, tc := range ipEdgeTable {
+		value := tc.value
+		if value == absent {
+			value = ""
+		}
+		f.Add(tc.pattern, value, false)
+		f.Add(tc.pattern, value, true)
+	}
+	f.Fuzz(func(t *testing.T, pattern, value string, negate bool) {
+		if strings.ContainsAny(value, "\x00") {
+			return
+		}
+		conditionMatchesLogsQL(t, pattern, value, negate)
 	})
 }

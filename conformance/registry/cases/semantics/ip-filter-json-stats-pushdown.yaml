@@ -1,5 +1,5 @@
 id: semantics/ip-filter-json-stats-pushdown
-title: An ip() label filter after | json in a metric query matches no line on the stats pushdown; Loki counts the lines in range (open)
+title: An ip() label filter after | json in a metric query matches no line on the stats pushdown; Loki counts the lines in range (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -36,7 +36,8 @@ compare:
   expect: |
     The count of the lines the log query with the same filter returns.
 gap:
-  status: open
+  status: fixed
+  fixed_by: '#1156'
   impact: explore-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go logsQLLabelCondition (stats pushdown label filters)'
@@ -46,3 +47,10 @@ gap:
   clusters:
     - 4ebfd2c5
     - e1528358
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

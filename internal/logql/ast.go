@@ -216,6 +216,9 @@ func quoteParserArgument(value string) string {
 // LabelFilterStage is a `| level="error"` stage (raw expression).
 type LabelFilterStage struct {
 	Raw string
+	// Expr is the parsed filter, nil for a stage that is not a filter Loki
+	// accepts.
+	Expr *LabelFilterExpr
 }
 
 func (s *LabelFilterStage) String() string {

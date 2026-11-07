@@ -3424,6 +3424,7 @@
      "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | ip=ip(\"10.2.0.0/16\") [1m]))",
      "covers": [
       "semantics/ip-label-filter-missing-label",
+      "semantics/ip-filter-json-stats-pushdown",
       "loki_api_v1_query_range"
      ]
     },
@@ -3432,6 +3433,7 @@
      "query": "sum(count_over_time({service_name=\"auth-service\"} | json | ip=ip(\"10.0.0.0-10.2.255.255\") [1m]))",
      "covers": [
       "semantics/ip-label-filter-missing-label",
+      "semantics/ip-filter-json-stats-pushdown",
       "loki_api_v1_query_range"
      ]
     }

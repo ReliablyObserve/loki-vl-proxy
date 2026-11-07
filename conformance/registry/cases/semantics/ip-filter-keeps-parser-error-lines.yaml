@@ -1,0 +1,52 @@
+id: semantics/ip-filter-keeps-parser-error-lines
+title: An ip() label filter keeps a line its parser rejected; the proxy drops it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Observed 2026-11-07 on the compose stack (Loki 3.7.9, VictoriaLogs v1.53.0)
+  with one stream of JSON lines and one line that is not JSON
+  (`not json ip=10.2.3.4`), ingested alike:
+
+  | query after `{probe=...} \| json \|` | Loki | proxy |
+  |---|---|---|
+  | `ip=ip("10.2.0.0/16")` (log query) | 4 lines, the rejected one with `__error__=JSONParserErr` | 3 lines |
+  | `ip!=ip("10.2.0.0/16")` (log query) | 3 lines, the rejected one included | 2 lines |
+  | `sum(count_over_time(... ip=ip("10.2.0.0/16") [10m]))` | 400 pipeline error JSONParserErr | 200, 3 |
+  | `sum(count_over_time(... ip!=ip("10.2.0.0/16") [10m]))` | 400 pipeline error | 200, 2 |
+  | `... method="GET"` (string filter) | 200, 4 (rejected line dropped) | 200, 4 |
+  | `... ip=ip(...) \| __error__=""` | 200, 3 | 200, 3 |
+
+  Loki's ip() filter passes a line that carries a parser error under both
+  operators, where a string filter that rejects the empty value drops it. The
+  proxy treats ip() like the string filter: its LogsQL (and the metric plan's
+  row match) drops a line without the field. Only streams with lines their
+  parser rejects show it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} | json | ip=ip("10.2.0.0/16")'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    Loki's lines, the ones the parser rejected included with their __error__
+    labels; a metric over them answers Loki's pipeline error.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator/ip_label_filter.go ipLabelFilter (log path) and the ordered-JSON metric plan (internal/proxy/ordered_json_metric.go: error filters and row match of an ip() condition)'
+  loki: 'the observed answers above (compose stack, Loki 3.7.9, 2026-11-07)'
+  proxy: 'drops the rejected line under both operators'
+  planned_test: 'TestCompat_IPLabelFilterKeepsParserErrorLines (test/e2e-compat, group core)'
+  clusters: []

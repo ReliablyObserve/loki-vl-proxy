@@ -1515,7 +1515,7 @@ func TestOrderedJSONKeySpellingProbeParts(t *testing.T) {
 // The pushdown admits a label filter without `drop __error__` only when the
 // filter rejects the empty value, and reads labels through their parsed key
 // unless Loki never yields them from one.
-// conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum
+// conformance: parser-error-and-label-collision, semantics/json-filter-pushdown-without-error-drop, semantics/json-filter-pushdown-ungrouped-sum, semantics/ip-filter-json-stats-pushdown
 func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		query        string
@@ -1550,6 +1550,12 @@ func TestOrderedJSONFilterPushdownEligibility(t *testing.T) {
 		{`sum by (level, detected_level) (count_over_time({env="production"} | logfmt | level_extracted!="" [1m]))`, true, []string{"level"}, []string{"level_extracted"}},
 		{`sum by (level_extracted, detected_level) (count_over_time({env="production"} | drop __error__ [1m]))`, false, nil, nil},
 		{`sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [1m]))`, false, nil, nil},
+		// An ip() filter rejects the empty value under both operators, so it needs no error drop.
+		{`sum(count_over_time({env="production"} | json | ip=ip("10.2.0.0/16") [1m]))`, true, nil, []string{"ip"}},
+		{`sum by (method) (count_over_time({env="production"} | json | ip!=ip("10.2.0.0/16") [1m]))`, true, []string{"method"}, []string{"ip"}},
+		{`sum by (method) (count_over_time({env="production"} | json | ip=ip("10.2.1.0-10.2.3.255") | drop __error__ [1m]))`, true, []string{"method"}, nil},
+		// ip() on detected_level and compound filters keep the other routes.
+		{`sum by (level) (count_over_time({env="production"} | json | detected_level=ip("10.2.0.0/16") | drop __error__ [1m]))`, false, nil, nil},
 		// A filter on detected_level compares the derived value after the pipes that compute it.
 		{`sum by (level) (count_over_time({env="production"} | json | detected_level="error" | drop __error__ [1m]))`, true, []string{"level"}, nil},
 		// The same filter before the parser holds the same value (the parser cannot set detected_level).

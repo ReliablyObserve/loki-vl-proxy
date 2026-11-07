@@ -962,7 +962,8 @@ func isLabelFilterOperator(t TokType) bool {
 func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
 	raw := kw + p.consumeRestOfStage(prev)
 	text := p.sc.src[start:p.pos()]
-	if _, serr := ParseLabelFilterExpr(text); serr != nil {
+	expr, serr := ParseLabelFilterExpr(text)
+	if serr != nil {
 		if serr.Offset >= len(text) {
 			// The stage ended too early: the token that ends it is the unexpected one.
 			return nil, p.syntaxErrorAt(serr.Expecting)
@@ -972,7 +973,7 @@ func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stag
 		}
 		return nil, p.errorAt(start+serr.Offset, serr.Token, serr.Expecting, zeroLineToken(serr.Token))
 	}
-	return &LabelFilterStage{Raw: raw}, nil
+	return &LabelFilterStage{Raw: raw, Expr: expr}, nil
 }
 
 // zeroLineToken reports whether Loki prints line 0 for a parse error at this
