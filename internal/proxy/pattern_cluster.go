@@ -98,6 +98,7 @@ func (c *patternClusterer) train(tokens []string, spacesAfter []int, format patt
 		for i, token := range tokens {
 			if cluster.tokens[i] != token {
 				cluster.tokens[i] = patternVarPlaceholder
+				cluster.text = "" // the template changed: its pattern is written again
 			}
 		}
 		cluster.used = c.clock

@@ -61,6 +61,8 @@ type patternBucket struct {
 	// which the miner evicts by (patternClusterer).
 	leaf *patternTreeNode
 	used uint64
+	// text is the cluster's pattern as the pattern state last wrote it, "" when its template changed since.
+	text string
 }
 
 type patternExtractionStats struct {

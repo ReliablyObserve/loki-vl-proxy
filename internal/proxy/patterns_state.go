@@ -417,97 +417,138 @@ func (st *patternStateStore) tenant(key string) *patternTenantState {
 // summed across streams, the most lines first, at most patternLimit. A stream's samples of a pattern are zero-filled
 // together, whether one cluster or several hold them (one folded when the stream went idle and one it started when
 // it wrote again), as Loki's one cluster would be.
+//
+// Counts are kept in slices indexed by step (a range has a few hundred steps), a stream's patterns gathered in a
+// buffer reused across streams, and a live cluster's pattern written again only when its template changed.
 func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryScope, patternLimit int) []patternResultEntry {
 	step := int64(scope.step / time.Second)
-	type key struct{ level, pattern string }
-	type streamKey struct {
-		stream string
-		key
+	if step <= 0 {
+		step = 1
 	}
-	perStream := map[streamKey]map[int64]int{}
-	collect := func(stream, level, pattern string, samples map[int64]int) {
-		k := streamKey{stream, key{level, pattern}}
-		steps := perStream[k]
+	startSec, endSec := scope.startNs/int64(time.Second), (scope.endNs-1)/int64(time.Second)
+	base := startSec / step * step
+	steps := int((endSec/step*step-base)/step) + 1
+	type key struct{ level, pattern string }
+	type acc struct {
+		counts  []int
+		present []bool
+		total   int
+	}
+	sums := map[key]*acc{}
+	// One stream's patterns, gathered before they are added up: each with its steps' counts and the span it
+	// covers, so it is zero-filled once however many of the stream's clusters hold it.
+	type group struct {
+		key         key
+		counts      []int
+		first, last int
+	}
+	var groups []group
+	var spare [][]int
+	add := func(level, pattern string, samples map[int64]int) {
 		for at, n := range samples {
-			if at*int64(time.Second) < scope.startNs || at*int64(time.Second) >= scope.endNs {
+			ns := at * int64(time.Second)
+			if ns < scope.startNs || ns >= scope.endNs || n == 0 {
 				continue
 			}
-			if steps == nil {
-				steps = map[int64]int{}
-				perStream[k] = steps
+			idx := int((at/step*step - base) / step)
+			if idx < 0 || idx >= steps {
+				continue
 			}
-			steps[at/step*step] += n
+			k := key{level, pattern}
+			g := -1
+			for i := range groups {
+				if groups[i].key == k {
+					g = i
+					break
+				}
+			}
+			if g < 0 {
+				var counts []int
+				if len(spare) > 0 {
+					counts, spare = spare[len(spare)-1], spare[:len(spare)-1]
+				} else {
+					counts = make([]int, steps)
+				}
+				groups = append(groups, group{key: k, counts: counts, first: idx, last: idx})
+				g = len(groups) - 1
+			}
+			groups[g].counts[idx] += n
+			groups[g].first = min(groups[g].first, idx)
+			groups[g].last = max(groups[g].last, idx)
 		}
 	}
+	flush := func() {
+		for _, g := range groups {
+			a := sums[g.key]
+			if a == nil {
+				a = &acc{counts: make([]int, steps), present: make([]bool, steps)}
+				sums[g.key] = a
+			}
+			for idx := g.first; idx <= g.last; idx++ {
+				a.counts[idx] += g.counts[idx]
+				a.total += g.counts[idx]
+				a.present[idx] = true
+				g.counts[idx] = 0
+			}
+			spare = append(spare, g.counts)
+		}
+		groups = groups[:0]
+	}
+	byStream := make(map[string][]*patternClusterer, len(t.miner.miners))
 	for mk, c := range t.miner.miners {
-		if _, ok := s.streams[mk.stream]; !ok {
-			continue
-		}
-		for _, cluster := range c.live {
-			collect(mk.stream, c.level, t.miner.joinPatternTokens(cluster.tokens, cluster.spacesAfter, cluster.format), cluster.buckets)
+		if _, ok := s.streams[mk.stream]; ok {
+			byStream[mk.stream] = append(byStream[mk.stream], c)
 		}
 	}
-	for stream, clusters := range t.folded {
-		if _, ok := s.streams[stream]; !ok {
-			continue
+	for stream := range s.streams {
+		for _, cluster := range t.folded[stream] {
+			add(cluster.level, cluster.pattern, cluster.samples)
 		}
-		for _, cluster := range clusters {
-			collect(stream, cluster.level, cluster.pattern, cluster.samples)
-		}
-	}
-	sums := map[key]map[int64]int{}
-	totals := map[key]int{}
-	for k, steps := range perStream {
-		first, last := int64(-1), int64(-1)
-		for at := range steps {
-			if first < 0 || at < first {
-				first = at
-			}
-			if at > last {
-				last = at
+		for _, c := range byStream[stream] {
+			for _, cluster := range c.live {
+				if cluster.text == "" {
+					cluster.text = t.miner.joinPatternTokens(cluster.tokens, cluster.spacesAfter, cluster.format)
+				}
+				add(c.level, cluster.text, cluster.buckets)
 			}
 		}
-		sum := sums[k.key]
-		if sum == nil {
-			sum = map[int64]int{}
-			sums[k.key] = sum
-		}
-		for at := first; at <= last; at += step {
-			sum[at] += steps[at]
-			totals[k.key] += steps[at]
+		flush()
+	}
+	// The patterns with fewer lines in the range than Loki answers are left out before sorting (the answer's
+	// 30-line rule would drop them), then the rest sorted by their totals, held beside them.
+	type ranked struct {
+		key key
+		acc *acc
+	}
+	items := make([]ranked, 0, len(sums))
+	for k, a := range sums {
+		if a.total >= lokiPatternMinLines {
+			items = append(items, ranked{k, a})
 		}
 	}
-	keys := make([]key, 0, len(sums))
-	for k := range sums {
-		if totals[k] > 0 {
-			keys = append(keys, k)
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].acc.total != items[j].acc.total {
+			return items[i].acc.total > items[j].acc.total
 		}
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if totals[keys[i]] != totals[keys[j]] {
-			return totals[keys[i]] > totals[keys[j]]
+		if items[i].key.level != items[j].key.level {
+			return items[i].key.level < items[j].key.level
 		}
-		if keys[i].level != keys[j].level {
-			return keys[i].level < keys[j].level
-		}
-		return keys[i].pattern < keys[j].pattern
+		return items[i].key.pattern < items[j].key.pattern
 	})
 	if patternLimit <= 0 || patternLimit > maxPatternResponseLimit {
 		patternLimit = maxPatternResponseLimit
 	}
-	if len(keys) > patternLimit {
-		keys = keys[:patternLimit]
+	if len(items) > patternLimit {
+		items = items[:patternLimit]
 	}
-	entries := make([]patternResultEntry, 0, len(keys))
-	for _, k := range keys {
-		times := make([]int64, 0, len(sums[k]))
-		for at := range sums[k] {
-			times = append(times, at)
-		}
-		sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
-		samples := make([][]interface{}, 0, len(times))
-		for _, at := range times {
-			samples = append(samples, []interface{}{at, sums[k][at]})
+	entries := make([]patternResultEntry, 0, len(items))
+	for _, item := range items {
+		k, a := item.key, item.acc
+		samples := make([][]interface{}, 0, steps)
+		for idx, present := range a.present {
+			if present {
+				samples = append(samples, []interface{}{base + int64(idx)*step, a.counts[idx]})
+			}
 		}
 		entries = append(entries, patternResultEntry{Pattern: k.pattern, Level: k.level, Samples: samples})
 	}
