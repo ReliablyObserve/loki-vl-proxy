@@ -58,12 +58,7 @@ gap:
   loki: 'pkg/logql/syntax/syntax.y:176-185 (vectorAggregationExpr takes a metricExpr); pkg/logql/syntax/parser_test.go:689-690'
   proxy: 'Loki''s 400 and text on query and query_range'
   planned_test: 'TestCompat_VectorAggregationOverLogSelector (test/e2e-compat, group core), query and query_range'
-  clusters:
-    - 0d1dce34
-    - 1b5c3c20
-    - 2ae8dfb7
-    - 6699189f
-    - febe7a5e
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

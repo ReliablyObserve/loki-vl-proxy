@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(observability): slow requests are counted and logged with their
+  queries. A client request at or over `-slow-query-threshold` (default `3s`)
+  logs `slow_request` at `WARN` with its LogQL and its steps in order, each
+  with its offset from the request's start: every VictoriaLogs call with its
+  LogsQL, window, status, bytes and time, every proxy-side operation and route
+  decision (such as the pattern state's reads or the `| json` metric evaluator
+  and why), every rewrite of the LogQL. One VictoriaLogs call at or over
+  `-slow-upstream-threshold` (default `2s`, to the end of its body) logs
+  `slow_upstream_request` with its LogsQL and the client route it served. Both
+  are counted in `loki_vl_proxy_slow_requests_total{system,route}` and logged
+  whatever the request-log sampling; live tail is exempt. The defaults come
+  from measured timings (the 99th percentile of the daily benchmark's cold
+  first loads; rarer than 1 in 50 VictoriaLogs calls on the compose stack). Queries are logged as text, capped at 8 KB
+  (`-slow-query-log-raw-queries=false` logs their hashes).
+
 ## [2.85.0] - 2026-11-07
 
 ### Added
@@ -33,23 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- feat(patterns): one pattern state per tenant and selector across the
-  fleet, so every peer answers a selector with the same patterns. A
-  `/loki/api/v1/patterns` request goes to the peer that owns the selector's
-  state in the peers' ring (then its replica), with the client's headers and
-  the peers' token; that peer answers from its own state and never forwards
-  again, and a peer answers locally when both fail. The holder writes the state
-  to the cache (memory, disk and its replica on the peers, in parts of at most
-  4 MB) when it is built and, in the background, every 10 minutes as it
-  refreshes; a peer that takes the selector over, or the holder after a
-  restart, continues from it, reading only the lines after it, with the same
-  patterns. The history of a range longer than the retention is read in one
-  VictoriaLogs read per run of missing windows (a groups and a timeline query)
-  instead of two per window, each step counted whole in the window it starts
-  in; the window a range's start cuts is counted whole and cached like the
-  others, and the holder counts the history of 6h, 12h and 24h ahead every 30
-  minutes, so a first request and a refresh read no history. Answers are
-  summed by step in slices, sorting only the patterns with at least 30 lines.
 - feat(patterns): `-patterns-scope=selector` (opt-in; the default `stream` is
   Loki's) mines a selector's `/loki/api/v1/patterns` lines with one miner per
   level across all its streams, so streams that each hold a few lines (a trace

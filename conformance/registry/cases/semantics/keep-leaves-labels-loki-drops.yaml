@@ -71,12 +71,7 @@ gap:
   loki: 'pkg/logql/log/keep_labels.go:15-45 (exact-name keep); pkg/logql/log/metrics_extraction.go:162 (unwrapped label left out of the series)'
   proxy: 'only the kept labels, on log entries and metric series'
   planned_test: 'TestCompat_KeepDropsUnlistedLabels (test/e2e-compat, group core): log keep after json/logfmt collisions, count over keep on query_range and query'
-  clusters:
-    - 4d601482
-    - 9925a3bc
-    - a70f6707
-    - e8b851a4
-    - ede6dabd
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

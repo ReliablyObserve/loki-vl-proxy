@@ -257,6 +257,9 @@ type proxyRuntimeConfig struct {
 	drilldownFieldBatchMaxFields        int
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
+	slowQueryThreshold                  time.Duration
+	slowUpstreamThreshold               time.Duration
+	slowQueryLogRawQueries              bool
 	metadataDefaultLookback             time.Duration
 	metadataCacheFreshness              time.Duration
 	maxStatsCacheFreshness              time.Duration
@@ -457,6 +460,9 @@ func run(
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
+	slowQueryThreshold := fs.Duration("slow-query-threshold", proxy.DefaultSlowQueryThreshold, "A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total{system=\"loki\"} and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off")
+	slowUpstreamThreshold := fs.Duration("slow-upstream-threshold", proxy.DefaultSlowUpstreamThreshold, "One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total{system=\"vl\"} and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off")
+	slowQueryLogRawQueries := fs.Bool("slow-query-log-raw-queries", true, "Slow lines carry the LogQL and LogsQL text (capped at 8 KB each); false carries their sha256 and length instead, as debug logs do without -debug-log-raw-queries")
 	metadataCacheFreshness := fs.Duration("max-metadata-cache-freshness", 24*time.Hour, "Loki max_metadata_cache_freshness, applied to all tenants: a /labels, /label/{name}/values or /series request that ends within this window of now does not reuse a cached answer older than -recent-tail-refresh-max-staleness, so streams written in the window appear like in Loki. Sealed non-empty inventory buckets still come from the cache; the newest minute, buckets due for revalidation and a row count over each run of empty buckets (stream and field filters only; cheap for * and stream filters, but with a field filter it reads the filtered column of every row in the run's range) are read live. A bucket stored empty with rows that lack the listed field follows the normal schedule. 0 keeps the previous caching for every range.")
 	maxStatsCacheFreshness := fs.Duration("max-stats-cache-freshness", proxy.DefaultMaxStatsCacheFreshness, "Loki max_stats_cache_freshness, applied to all tenants. An instant /index/volume over at least 10 minutes is summed from UTC-aligned day, hour, 5-minute and minute segments kept in the read cache (memory, disk and peers), so a window moved by seconds reads only its edges from VictoriaLogs; segments that end within this window of now are read from VictoriaLogs on every request, like Loki, which does not cache a volume ending within it. 0 caches every segment but the newest minute. -metadata-inventory-parallelism=0 turns the segments off.")
 	metadataMaxStaleness := fs.Duration("metadata-max-staleness", 10*time.Second, "Longest a near-now /labels or /label/{name}/values answer may lag VictoriaLogs while its edge refresh runs in the background, measured from the start of the VictoriaLogs read behind it. A request ending within -max-metadata-cache-freshness of now whose cached answer is older than -recent-tail-refresh-max-staleness waits -metadata-edge-refresh-budget for the refresh, then gets the last answer if this replica read it within this bound (marked X-Proxy-Stale-Response); past it, the request waits for VictoriaLogs. Loki reads its index and never lags; 0 keeps that exactness at the cost of waiting for VictoriaLogs under load.")
@@ -1055,6 +1061,9 @@ func run(
 			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
+			slowQueryThreshold:                  *slowQueryThreshold,
+			slowUpstreamThreshold:               *slowUpstreamThreshold,
+			slowQueryLogRawQueries:              *slowQueryLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
 			metadataCacheFreshness:              *metadataCacheFreshness,
 			maxStatsCacheFreshness:              *maxStatsCacheFreshness,
@@ -2289,6 +2298,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DrilldownFieldBatchMaxFields:        cfg.drilldownFieldBatchMaxFields,
 		StatsQueryRangeInterQueryDelayMs:    cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:                  cfg.debugLogRawQueries,
+		SlowQueryThreshold:                  cfg.slowQueryThreshold,
+		SlowUpstreamThreshold:               cfg.slowUpstreamThreshold,
+		SlowQueryLogRawQueries:              cfg.slowQueryLogRawQueries,
 		MetadataDefaultLookback:             cfg.metadataDefaultLookback,
 		MetadataCacheFreshness:              cfg.metadataCacheFreshness,
 		MaxStatsCacheFreshness:              cfg.maxStatsCacheFreshness,
