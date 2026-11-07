@@ -8,11 +8,20 @@ generated:
     - internal/logql/parser.go
 
 semantics: |
-  TODO: Loki's exact semantics, including how it treats missing labels,
-  parse errors, ordering and empty input.
+  `| keep a, b` deletes every label it does not name, stream labels and
+  structured metadata included; the error labels (__error__,
+  __error_details__) are never removed, so a parser error still reaches the
+  aggregation and fails a metric query. A named label a line does not have
+  stays absent. Samples of streams left with the same labels fall into one
+  series. A keep with a matcher (`keep a, b="x"`) keeps a label only when the
+  matcher holds.
 victorialogs: |
-  TODO: the native LogsQL construct used, or the proxy-side
-  transformation and the VictoriaLogs limitation that forces it.
+  Log queries: a fields pipe. Metrics: the series identity VictoriaLogs and
+  the proxy build is the stream, so a range aggregation over a pipeline ending
+  in a bare keep is grouped by the kept labels (keepSeriesGrouping). Under an
+  outer sum grouped by kept labels the keep changes nothing the sum answers
+  (count_over_time, rate and bytes_* add up per series), so a `| json` plan
+  takes the VictoriaLogs stats pushdown as without it (keepLeavesGrouping).
 consumers: []   # explore, drilldown, datasource, api
 cases: []       # case ids proving the semantics match
 perf:
@@ -22,6 +31,39 @@ perf:
   locked: true
   locked_since: '2026-10-27'
   effort_exception: null
+decisions:
+  - id: keep-under-sum-takes-the-json-stats-pushdown
+    chosen: |
+      A bare keep under an outer sum grouped by kept labels, over count_over_time,
+      rate or bytes_*, takes the | json stats pushdown; and a strict | json plan
+      (parser errors kept) groups by parsed keys and stored labels like the valid
+      split, not only by detected_level.
+    over: [reading every selected line as a raw row and evaluating json and keep in the proxy]
+    why: |
+      The keep folds series whose samples the sum adds up anyway, and keep never
+      removes __error__, so errors fail the query as before (the unparsed-line probe
+      and the row evaluator answer Loki's error). The strict split was scoped to
+      detected_level when it was added (#996) for Drilldown's volume; it counts the
+      same lines as the valid split while no line fails Loki's parser.
+    evidence: 'compose stack, Loki 3.7.9 and VictoriaLogs v1.53.0, 2026-11-07: K6 0 points differing from Loki at 1h, 6h, 24h'
+    code: [internal/proxy/ordered_json_metric.go]
+    tests: [TestJSONDetectedLevelSplitMatchesRawEvaluator, TestJSONDetectedLevelSplitEligibility, TestKeepSeriesGrouping_Differential]
+    history:
+      - date: '2026-11-06'
+        what: 'keep-series-grouping K6 `sum by (level) (count_over_time({service_name="api-gateway"} | json | keep level [1m]))` cold above 2x Loki from its first daily runs'
+        measured: 'cold 1h 0.18 s vs Loki 0.05 s (3.0-3.4x); 6h 1.0 s vs 0.17 s (6.1x); 24h 4.1 s vs 0.65-0.80 s (5.1-6.3x); warm at Loki speed'
+        cause: 'the strict | json split covered only sum by (detected_level) and a keep stage left any | json plan; both read every selected line as a raw row (41 MB an hour of api-gateway)'
+        effect: 'the over-2x list gained six K6 cold rows on a locked item; the conformance gate and every pull request lint job failed'
+        fixed_by: 'perf/keep-count-pushdown'
+        after: 'cold 1h 0.14 s (stats pushdown, one stats query and three cheap probes), same answer as Loki point for point'
+    quality: |
+      Answers equal Loki's point for point (status, series, values) on every shape of
+      the keep and strict families, both encodings of status, stored and parsed level
+      colliding; a line Loki's parser rejects keeps Loki's pipeline error text;
+      split answers equal the row evaluator's (differential, seeded).
+    performance:
+      tracked: ['keep-series-grouping K1-K6', 'json-detected-level', 'json-error-split']
+      bound: 'perf block max_ratio 2.0, target 1.0, all modes; green at Loki speed or below'
 victorialogs_candidates:
   - id: pipe-fields
     since: v1.40.0

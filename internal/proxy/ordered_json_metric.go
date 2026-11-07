@@ -1059,11 +1059,13 @@ func (plan *orderedJSONMetricPlan) setStatsPushdown() {
 		return
 	}
 	validOnly := split != jsonSplitNone
-	if split == jsonSplitStrict || split == jsonSplitErrors {
+	if split == jsonSplitErrors {
 		// Only detected_level, which no parser yields (Loki's ingest gives every
 		// line the structured metadata, so a body key of that name becomes
 		// detected_level_extracted): every line keeps its stored level whatever
-		// the parser makes of it.
+		// the parser makes of it. A strict plan groups like a valid one: while
+		// no line fails Loki's parser (the unparsed-line probe and the row
+		// evaluator answer Loki's error otherwise) it counts the same lines.
 		if len(filters) > 0 || plan.grouping != nil && slices.ContainsFunc(plan.grouping.Labels, func(label string) bool { return label != detectedLevelLabel }) {
 			return
 		}
@@ -1146,9 +1148,10 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 			filters = append(filters, filter)
 		}
 	}
+	kept := false
 	for _, stage := range plan.stages {
-		if split == jsonSplitErrors && stage.line == nil {
-			// Only line filters may follow the error filter.
+		if (split == jsonSplitErrors || kept) && stage.line == nil {
+			// Only line filters may follow the error filter or a keep.
 			return nil, nil, jsonSplitNone, false
 		}
 		switch {
@@ -1167,6 +1170,8 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 			if !plan.addPushdownFilter(stage.filter, parsed, &filters, &errorFilters) {
 				return nil, nil, jsonSplitNone, false
 			}
+		case stage.keep && plan.keepLeavesGrouping(stage):
+			kept = true
 		case stage.keep || len(stage.match) != 0:
 			return nil, nil, jsonSplitNone, false
 		default:
@@ -1188,6 +1193,26 @@ func (plan *orderedJSONMetricPlan) pushdownLabelFilters() (filters []translator.
 		return nil, nil, jsonSplitStrict, true
 	}
 	return filters, errorFilters, jsonSplitNone, len(errorFilters) > 0
+}
+
+// keepLeavesGrouping reports whether a keep stage (with no matcher) changes
+// nothing the plan answers: the plan sums its range samples (count_over_time,
+// rate and bytes_* add up per series) into groups of labels the keep names, so
+// the series a keep folds together add up into the same groups they would
+// without it. Keep never removes the error labels, so the parser errors reach
+// the aggregation as they do without it.
+func (plan *orderedJSONMetricPlan) keepLeavesGrouping(stage orderedJSONStage) bool {
+	if len(stage.match) != 0 || !plan.aggregated || plan.grouping != nil && plan.grouping.Without {
+		return false
+	}
+	if plan.grouping != nil {
+		for _, label := range plan.grouping.Labels {
+			if !stage.fields[label] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // addPushdownFilter adds a string label filter stage to the pushdown's filters,
@@ -1508,6 +1533,13 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	statsDone := make(chan orderedJSONStatsResult, 1)
 	go func() { statsDone <- runStats(statsCtx, false) }()
+	// A strict split's unparsed-line lookup is read first: a line Loki's parser rejects decides the answer (Loki's
+	// error, from the row evaluator) without waiting for the scans the other checks and the stats run.
+	unparsed := <-unparsedDone
+	if unparsed.err != nil || unparsed.risky {
+		cancelStats()
+		return nil, false, false, unparsed.err
+	}
 	risk := <-riskDone
 	if risk.err != nil || risk.risky {
 		cancelStats()
@@ -1522,11 +1554,6 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		// Not provably Loki's level: the row evaluator derives it.
 		cancelStats()
 		return nil, false, false, nil
-	}
-	unparsed := <-unparsedDone
-	if unparsed.err != nil || unparsed.risky {
-		cancelStats()
-		return nil, false, false, unparsed.err
 	}
 	hazard := <-hazardDone
 	if hazard.err != nil {
