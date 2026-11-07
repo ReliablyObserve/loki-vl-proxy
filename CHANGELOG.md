@@ -21,8 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are counted in `loki_vl_proxy_slow_requests_total{system,route}` and logged
   whatever the request-log sampling; live tail is exempt. The defaults come
   from measured timings (the 99th percentile of the daily benchmark's cold
-  first loads; about the slowest 2% of VictoriaLogs calls on the compose
-  stack). Queries are logged as text, capped at 8 KB
+  first loads; rarer than 1 in 50 VictoriaLogs calls on the compose stack). Queries are logged as text, capped at 8 KB
   (`-slow-query-log-raw-queries=false` logs their hashes).
 
 - feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps

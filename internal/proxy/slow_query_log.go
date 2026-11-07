@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,8 +19,9 @@ import (
 // DefaultSlowQueryThreshold and DefaultSlowUpstreamThreshold are -slow-query-threshold and
 // -slow-upstream-threshold's defaults, set from measured timings (2026-11-07): a client request is slow at 3 s,
 // the 99th percentile of the daily A/B benchmark's cold first loads (3.1 s over 1,334 shape×range rows; 95th 1.0 s)
-// and about the slowest 4% of the compose stack's client requests; a VictoriaLogs call is slow at 2 s, about the
-// slowest 2% of the stack's VictoriaLogs calls (98th percentile 1.96 s, 99th 3.3 s over 2,511 calls).
+// and about the slowest 4% of the compose stack's client requests; a VictoriaLogs call is slow at 2 s, rarer than
+// 1 in 50 calls on the stack: the 98th percentile of 2,511 calls over 24h of heavy Drilldown use timed to their
+// headers (1.96 s), above the 99.9th of 11,458 calls timed to the end of their bodies (99.99% under 2.5 s).
 const (
 	DefaultSlowQueryThreshold    = 3 * time.Second
 	DefaultSlowUpstreamThreshold = 2 * time.Second
@@ -30,6 +32,9 @@ const (
 	slowTraceMaxSteps = 64
 	// slowQueryMaxBytes caps a query's text in a slow line (a split's LogsQL runs to several KB).
 	slowQueryMaxBytes = 8 << 10
+	// slowLineQueryBudget caps all the query text of one slow_request line (log pipelines cut long lines; Loki's
+	// max_line_size defaults to 256 KB): past it, a query is its hash.
+	slowLineQueryBudget = 32 << 10
 )
 
 // slowTraceStep is one step of a request's trace.
@@ -41,7 +46,9 @@ type slowTraceStep struct {
 	outcome  string // operation outcome; upstream body outcome
 	query    string // upstream LogsQL; the rewritten LogQL
 	from     string // rewrite: the LogQL before
-	window   string // upstream: start, end and step as sent
+	start    string // upstream: start, end and step as sent
+	end      string
+	step     string
 	status   int
 	bytes    int64
 }
@@ -107,11 +114,11 @@ func (p *Proxy) slowQueryText(q string) string {
 }
 
 // slowUpstreamWindow is the start, end and step a VictoriaLogs call was sent with.
-func slowUpstreamWindow(params url.Values) string {
+func slowUpstreamWindow(start, end, step string) string {
 	var parts []string
-	for _, k := range []string{"start", "end", "step"} {
-		if v := params.Get(k); v != "" {
-			parts = append(parts, k+"="+v)
+	for _, kv := range [][2]string{{"start", start}, {"end", end}, {"step", step}} {
+		if kv[1] != "" {
+			parts = append(parts, kv[0]+"="+kv[1])
 		}
 	}
 	return strings.Join(parts, " ")
@@ -120,12 +127,12 @@ func slowUpstreamWindow(params url.Values) string {
 // observeUpstreamDone records a VictoriaLogs call once its body is read (or the call failed): a step of the
 // request's trace and, at or over -slow-upstream-threshold, a slow line and count.
 func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url.Values, status int, outcome string, bytes int64, total time.Duration) {
-	if !p.slowTraceOn() {
+	if !p.slowTraceOn() || path == "/select/logsql/tail" { // a tail stream lasts as long as its session
 		return
 	}
 	query := params.Get("query")
-	inRequest := traceStep(ctx, slowTraceStep{kind: "upstream", route: path, query: query, window: slowUpstreamWindow(params),
-		status: status, outcome: outcome, bytes: bytes, duration: total})
+	inRequest := traceStep(ctx, slowTraceStep{kind: "upstream", route: path, query: query, start: params.Get("start"),
+		end: params.Get("end"), step: params.Get("step"), status: status, outcome: outcome, bytes: bytes, duration: total})
 	if p.slowUpstreamThreshold <= 0 || total < p.slowUpstreamThreshold {
 		return
 	}
@@ -141,7 +148,7 @@ func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url
 		"slow.threshold_ms", p.slowUpstreamThreshold.Milliseconds(),
 		"loki.tenant.id", getOrgID(ctx),
 		"vl.query", p.slowQueryText(query),
-		"vl.window", slowUpstreamWindow(params),
+		"vl.window", slowUpstreamWindow(params.Get("start"), params.Get("end"), params.Get("step")),
 		"vl.body_bytes", bytes,
 		"vl.body_outcome", outcome,
 	}
@@ -166,14 +173,31 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		return
 	}
 	p.metrics.RecordSlowRequest("loki", route)
+	// Steps are added as they finish; the line lists them as they started. A query is written once (a split's
+	// checks repeat its base query): a step repeating one names the step that holds it; past the line's budget a
+	// query is its hash.
+	sort.SliceStable(steps, func(i, j int) bool { return steps[i].at < steps[j].at })
+	budget := slowLineQueryBudget - len(query)
+	seen := map[string]int{}
+	text := func(step int, q string) any {
+		if j, ok := seen[q]; ok {
+			return map[string]int{"same_as_step": j}
+		}
+		seen[q] = step
+		t := p.slowQueryText(q)
+		if budget -= len(t); budget < 0 {
+			return redactQuery(q, false)
+		}
+		return t
+	}
 	trace := make([]map[string]any, 0, len(steps))
-	for _, s := range steps {
+	for i, s := range steps {
 		entry := map[string]any{"kind": s.kind, "at_ms": s.at.Milliseconds()}
 		switch s.kind {
 		case "upstream":
 			entry["route"] = s.route
-			entry["query"] = p.slowQueryText(s.query)
-			entry["window"] = s.window
+			entry["query"] = text(i, s.query)
+			entry["window"] = slowUpstreamWindow(s.start, s.end, s.step)
 			entry["status"] = s.status
 			entry["bytes"] = s.bytes
 			entry["outcome"] = s.outcome
@@ -183,8 +207,8 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 			entry["outcome"] = s.outcome
 			entry["duration_ms"] = s.duration.Milliseconds()
 		case "rewrite":
-			entry["from"] = p.slowQueryText(s.from)
-			entry["to"] = p.slowQueryText(s.query)
+			entry["from"] = text(i, s.from)
+			entry["to"] = text(i, s.query)
 		}
 		trace = append(trace, entry)
 	}

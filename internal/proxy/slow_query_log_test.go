@@ -90,8 +90,9 @@ func TestSlowQueryLogCarriesTheQueriesAndTheSteps(t *testing.T) {
 			t.Fatalf("rewrite step %v", step)
 		}
 	}
-	if strings.Join(kinds, ",") != "rewrite,operation,upstream" {
-		t.Fatalf("steps %v, want rewrite, operation, upstream", kinds)
+	// Listed as they started: the 3 ms operation started before the rewrite recorded at once, the call last.
+	if strings.Join(kinds, ",") != "operation,rewrite,upstream" {
+		t.Fatalf("steps %v, want operation, rewrite, upstream", kinds)
 	}
 	up := slowLogLines(t, buf, "slow_upstream_request")
 	if len(up) != 1 || up[0]["vl.query"] != `app:="api" | stats count() c` || up[0]["http.parent_route"] != "/loki/api/v1/query_range" || up[0]["proxy.background"] != nil {
@@ -166,5 +167,57 @@ func TestSlowQueryLogTraceBoundsAndBackgroundWork(t *testing.T) {
 	up := slowLogLines(t, buf, "slow_upstream_request")
 	if len(up) != 1 || up[0]["proxy.background"] != true {
 		t.Fatalf("background call's slow line %v", up)
+	}
+}
+
+// A query repeated by later steps is written once, the others naming the step that holds it; past the line's
+// budget a query is its hash; a VictoriaLogs tail stream is never a slow call.
+//
+// conformance: observability-slow-query-log
+func TestSlowQueryLogLineStaysBounded(t *testing.T) {
+	p, buf := slowLogProxy(t, 0)
+	p.slowUpstreamThreshold = time.Nanosecond
+	big := strings.Repeat("x", 7<<10)
+	serveSlowLog(p, "query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < 8; i++ {
+			q := `app:="api" ` + big + strings.Repeat("y", i) // distinct, 7 KB each: six of them pass the 32 KB budget
+			if i == 1 || i == 3 {
+				q = `app:="api" | stats count() c` // repeated
+			}
+			p.observeUpstreamDone(r.Context(), "/select/logsql/query", url.Values{"query": {q}}, 200, "eof", 1, time.Millisecond)
+		}
+		p.observeUpstreamDone(r.Context(), "/select/logsql/tail", url.Values{"query": {"*"}}, 200, "eof", 1, time.Hour)
+		time.Sleep(35 * time.Millisecond)
+	})
+	slow := slowLogLines(t, buf, "slow_request")
+	if len(slow) != 1 {
+		t.Fatalf("slow_request lines %d", len(slow))
+	}
+	steps := slow[0]["proxy.steps"].([]any)
+	if len(steps) != 8 {
+		t.Fatalf("steps %d, want 8 (the tail stream is no step)", len(steps))
+	}
+	repeats, hashed := 0, 0
+	for _, s := range steps {
+		switch q := s.(map[string]any)["query"].(type) {
+		case map[string]any:
+			if q["same_as_step"] != float64(1) {
+				t.Fatalf("a repeat names step %v, want 1", q["same_as_step"])
+			}
+			repeats++
+		case string:
+			if strings.HasPrefix(q, "sha256:") {
+				hashed++
+			}
+		}
+	}
+	line, _ := json.Marshal(slow[0])
+	if repeats != 1 || hashed == 0 || len(line) > 40<<10 {
+		t.Fatalf("repeats %d (want 1), hashed %d (want some), slow_request line %d bytes", repeats, hashed, len(line))
+	}
+	for _, l := range slowLogLines(t, buf, "slow_upstream_request") {
+		if l["vl.window"] == nil || strings.Contains(l["http.route"].(string), "tail") {
+			t.Fatalf("slow_upstream_request for %v", l["http.route"])
+		}
 	}
 }

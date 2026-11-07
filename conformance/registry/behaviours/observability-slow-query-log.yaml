@@ -43,12 +43,14 @@ decisions:
       from what is slow for the proxy. 3s is the 99th percentile of the daily
       A/B benchmark's cold first loads (3.1s over 1,334 shape x range rows; 95th
       1.0s), about the slowest 4% of the compose stack's client requests; 2s is
-      about the slowest 2% of the stack's VictoriaLogs calls (98th percentile
-      1.96s, 99th 3.3s over 2,511 calls). Queries are text because the owner
+      rarer than 1 in 50 VictoriaLogs calls on the stack (the 98th percentile of
+      2,511 calls over 24h of heavy Drilldown use timed to their headers, 1.96s;
+      above the 99.9th of 11,458 calls timed to the end of their bodies, 99.99%
+      under 2.5s). Queries are text because the owner
       asked for them; -slow-query-log-raw-queries=false hashes them.
     evidence: 'bench/ab/results/daily-*.json (2026-11-07); compose stack proxy logs, 24h, 2026-11-07'
     code: [internal/proxy/slow_query_log.go, cmd/proxy/main.go]
-    tests: [TestSlowQueryLogCarriesTheQueriesAndTheSteps, TestSlowQueryLogThresholdsTailAndRedaction, TestSlowQueryLogTraceBoundsAndBackgroundWork]
+    tests: [TestSlowQueryLogCarriesTheQueriesAndTheSteps, TestSlowQueryLogThresholdsTailAndRedaction, TestSlowQueryLogTraceBoundsAndBackgroundWork, TestSlowQueryLogLineStaysBounded]
     quality: |
       One slow_request per slow client request (never for live tail), one
       slow_upstream_request per slow VictoriaLogs call, the steps in order with

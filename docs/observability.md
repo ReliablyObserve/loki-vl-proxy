@@ -151,8 +151,9 @@ sampling above, and counted in `loki_vl_proxy_slow_requests_total`:
   build).
 
 The defaults come from measured timings: 3s is the 99th percentile of the
-daily A/B benchmark's cold first loads, 2s about the slowest 2% of
-VictoriaLogs calls on the compose stack.
+daily A/B benchmark's cold first loads, 2s rarer than 1 in 50 VictoriaLogs
+calls on the compose stack (98th percentile over 24h of heavy Drilldown use,
+timed to headers; above the 99.9th timed to the end of their bodies).
 
 | Flag | Default | Effect |
 |---|---|---|
