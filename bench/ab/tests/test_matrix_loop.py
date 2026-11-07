@@ -143,6 +143,14 @@ class RankedSignatureTest(unittest.TestCase):
         self.assertEqual(proxy, again)  # a different tied pick with the same values is the same answer
         self.assertEqual(report.parity(proxy, again, 0.01), "same")
 
+    def test_a_patterns_answer_is_its_lines_and_steps(self):
+        # Loki and the proxy mine different patterns: the lines they count, per step, are what compares.
+        body = json.dumps({"status": "success", "data": [
+            {"pattern": "a <_>", "samples": [[10, 2], [20, 3]]}, {"pattern": "b", "level": "info", "samples": [[20, 1]]}]}).encode()
+        self.assertEqual(perf_matrix.signature(200, body, False), "patterns lines=6 steps=2")
+        other_text = json.dumps({"status": "success", "data": [{"pattern": "a b", "samples": [[10, 2], [20, 4]]}]}).encode()
+        self.assertEqual(perf_matrix.signature(200, other_text, False), "patterns lines=6 steps=2")
+
     def test_other_answers_keep_the_series_count(self):
         self.assertEqual(perf_matrix.signature(200, self.body(("a", "5"), ("b", "4")), False), "series=2 points=4 sum=18")
         wrong = perf_matrix.signature(200, self.body(("a", "5"), ("b", "9")), False, True)

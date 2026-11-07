@@ -134,6 +134,7 @@ extraArgs:
   # --- Patterns ---
   patterns-enabled: "true"
   patterns-autodetect-from-queries: "false"
+  patterns-counts: "true"
 
   # --- Backend connection ---
   # 120s matches the binary default; explicit here so operators can widen it for
@@ -202,6 +203,13 @@ extraArgs:
   # patterns-max-backend-rows: "20000"                  # lines /patterns reads per request
   # patterns-second-pass-max-rows: "8000"               # lines the /patterns second pass reads
   # patterns-second-pass-max-windows: "8"               # windows the /patterns second pass re-reads
+  # patterns-exact-max-lines: "200000"                  # lines of a range /patterns reads for Loki-exact patterns (about 200 bytes each, sorted in VictoriaLogs' memory); more are counted instead; "0" turns it off
+  # patterns-state-max-bytes: "268435456"              # memory of the /patterns state (each stream's clusters over Loki's 3h retention, so refreshes read only new lines); "0" turns it off
+  # patterns-state-stream-idle: "5m"                      # a stream idle this long keeps only its patterns and samples in the /patterns state
+  # patterns-state-max-build-lines: "2000000"            # selectors with more lines than -patterns-exact-max-lines over 3h get their /patterns state built in the background, up to this; "0" builds none
+  # patterns-full-range: "true"                          # /patterns ranges longer than Loki's 3h retention charted over all of the range (older samples counted onto Loki's patterns); "false" answers the last 3h alone, as Loki
+  # patterns-scope: "stream"                             # selector: mine all a selector's streams together (not Loki's answer)
+  # patterns-max-counts-rows: "250000"                  # rows the /patterns counts query reads before sampling instead
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize
   # label-values-max-response-bytes: "67108864"         # 64 MiB read from one VictoriaLogs label values response; HTTP 500 ResourceExhausted (Loki's text) above it

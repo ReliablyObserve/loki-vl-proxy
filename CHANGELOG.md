@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.84.0] - 2026-11-07
+
+### Added
+
+- feat(patterns): one pattern state per tenant and selector across the
+  fleet, so every peer answers a selector with the same patterns. A
+  `/loki/api/v1/patterns` request goes to the peer that owns the selector's
+  state in the peers' ring (then its replica), with the client's headers and
+  the peers' token; that peer answers from its own state and never forwards
+  again, and a peer answers locally when both fail. The holder writes the state
+  to the cache (memory, disk and its replica on the peers, in parts of at most
+  4 MB) when it is built and, in the background, every 10 minutes as it
+  refreshes; a peer that takes the selector over, or the holder after a
+  restart, continues from it, reading only the lines after it, with the same
+  patterns. The history of a range longer than the retention is read in one
+  VictoriaLogs read per run of missing windows (a groups and a timeline query)
+  instead of two per window, each step counted whole in the window it starts
+  in; the window a range's start cuts is counted whole and cached like the
+  others, and the holder counts the history of 6h, 12h and 24h ahead every 30
+  minutes, so a first request and a refresh read no history. Answers are
+  summed by step in slices, sorting only the patterns with at least 30 lines.
+- feat(patterns): `-patterns-scope=selector` (opt-in; the default `stream` is
+  Loki's) mines a selector's `/loki/api/v1/patterns` lines with one miner per
+  level across all its streams, so streams that each hold a few lines (a trace
+  id as a stream label, short-lived pods) show their patterns, where Loki shows
+  none, and a JSON line whose message is under Loki's 4-token minimum is mined
+  as the whole line. Answers are cached under their own key. The compose stack's
+  patterns-autodetect proxy takes it from `PATTERNS_SCOPE` (default `stream`).
+
+- feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps
+  one. A selector's lines over Loki's pattern retention (3h) are read once,
+  sorted by stream and time, and each stream's clusters kept with their 10 s
+  samples; a refresh reads only the lines after what was read, and a pattern's
+  text is its template from every line read. A selector with more lines than
+  `-patterns-exact-max-lines` (default `200000`), up to
+  `-patterns-state-max-build-lines` (default `2000000`), has its state built in
+  the background an hour of lines at a time and is answered from VictoriaLogs'
+  counts until then. Idle streams (`-patterns-state-stream-idle`, default
+  `5m`) keep only their patterns and samples; the states of all tenants hold at
+  most `-patterns-state-max-bytes` (default 256 MB, `0` turns the state off),
+  the least recently used dropped past it. A range longer than the retention is
+  charted over all of it with `-patterns-full-range` (default `true`): Loki's
+  patterns from the state, their samples before the state's counted from
+  VictoriaLogs a window at a time onto the pattern each line matches as
+  Drilldown's `|>` filter does, settled windows cached and shared with peers;
+  `false` answers the last 3h alone, as Loki does. JSON lines with no message
+  field are left out in VictoriaLogs, so a service writing only such lines
+  answers from one count. Ranges above the state's bounds are counted by
+  VictoriaLogs (`-patterns-counts`, default `true`; `-patterns-max-counts-rows`,
+  default `250000`, past which lines are sampled), mined across a level's
+  streams, a documented difference from Loki's per-stream patterns.
+
+### Fixed
+
+- fix(patterns): `/loki/api/v1/patterns` answers Loki's patterns. Before, it
+  mined a sample of the lines VictoriaLogs returned newest first, with its own
+  clustering, so Logs Drilldown showed many more patterns than Loki (one per
+  path, user agent or number, and raw JSON lines), with different texts, and
+  charts that covered only the end of the range at a proxy step. Now lines are
+  mined as Loki's pattern ingester mines them, from the lines' tokens: each
+  stream at each level apart, oldest line first, a line joining the cluster of
+  as many tokens it shares at least 30% of its tokens with (a token holding a
+  digit always taking the variable branch of the prefix tree), the tokens that
+  differ becoming `<_>`, at most 300 clusters per stream and level; JSON lines
+  from their raw `log`, `message`, `msg`, `msg_`, `_msg` or `content` field and
+  not at all without one; logfmt lines as key and value pairs. A pattern is
+  answered when it has at least 30 lines in the range, its samples counted into
+  Loki's 10 s samples and then into Loki's step (the request's, or the range
+  over 250 points, never under 10 s), zero-filled per stream. Equal patterns
+  are summed across streams and levels, one entry per level and pattern, every
+  pattern without a `limit`. On 27 recorded Loki answers (21 kinds of log lines
+  and edge cases, one stream, a service, a regexp selector, several pods, part
+  of a range) the proxy answers the same patterns with the same totals for all
+  27 (it answered 47% of their lines with Loki's text before).
+
+## [2.83.5] - 2026-11-07
+
 ### Performance
 
 - perf(query): a `| json` metric that keeps the parser errors (no

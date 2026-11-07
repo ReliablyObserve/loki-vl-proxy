@@ -51,7 +51,7 @@ func TestPatternsRestoreFromDisk_AndWarmStartup(t *testing.T) {
 			},
 		},
 	})
-	cacheKey := "patterns:org:query=%7Bapp%3D%22web%22%7D"
+	cacheKey := patternsCacheKeyPrefix + "org:query=%7Bapp%3D%22web%22%7D"
 	savedAt := time.Now().UTC().UnixNano()
 	snapshot := patternsSnapshot{
 		Version:         1,
@@ -117,7 +117,7 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	})
 
 	peerSavedAt := time.Now().UTC().Add(2 * time.Second).UnixNano()
-	peerCacheKey := "patterns:peer:query=%7Bservice_name%3D%22api%22%7D"
+	peerCacheKey := patternsCacheKeyPrefix + "peer:query=%7Bservice_name%3D%22api%22%7D"
 	peerPayload := mustMarshalJSON(t, map[string]interface{}{
 		"status": "success",
 		"data": []map[string]interface{}{
@@ -539,8 +539,10 @@ func TestPatternSnapshotEntry_CanonicalizesRangeKeysAndCompactsSamples(t *testin
 	if len(stored.Data) != 1 {
 		t.Fatalf("expected one persisted pattern entry, got %#v", stored.Data)
 	}
-	if got := stored.Data[0].Samples; len(got) != 1 || got[0][0] != float64(120) || got[0][1] != float64(4) {
-		t.Fatalf("expected compacted non-zero samples only, got %#v", got)
+	// The zero-filled steps are samples of the answer: an answer served from the
+	// snapshot equals the one computed (it is not filled again on serve).
+	if got := stored.Data[0].Samples; len(got) != 3 || got[0][1] != float64(0) || got[1][0] != float64(120) || got[1][1] != float64(4) || got[2][1] != float64(0) {
+		t.Fatalf("expected the samples with their zeros, got %#v", got)
 	}
 
 	p.patternsPersistDirty.Store(false)
@@ -659,7 +661,10 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		}
 		calls++
 		if calls == 1 {
-			_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+			for i := 0; i < lokiPatternMinLines; i++ {
+				_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+			}
 			return
 		}
 		_, _ = w.Write([]byte{})
@@ -671,7 +676,7 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		_ = p.Shutdown(context.Background())
 	})
 
-	firstReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000000&end=1710000120&step=60s`, nil)
+	firstReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1705314600&end=1705314720&step=60s`, nil)
 	firstRec := httptest.NewRecorder()
 	p.handlePatterns(firstRec, firstReq)
 	if firstRec.Code != http.StatusOK {
@@ -686,7 +691,7 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 		t.Fatalf("expected first patterns response to contain data, got %#v", firstResp)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000060&end=1710000180&step=60s`, nil)
+	secondReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1705314660&end=1705314780&step=60s`, nil)
 	secondRec := httptest.NewRecorder()
 	p.handlePatterns(secondRec, secondReq)
 	if secondRec.Code != http.StatusOK {
@@ -744,8 +749,11 @@ func TestPatternsRestoredSnapshotAnswersRequests(t *testing.T) {
 	var calls atomic.Int64
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n" +
-			`{"_time":"2024-01-15T10:30:30Z","_msg":"GET /api/orders 200 12ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n" +
+				`{"_time":"2024-01-15T10:30:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/orders 200 12ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+		}
 	}))
 	defer backend.Close()
 

@@ -1,0 +1,210 @@
+id: patterns-loki-mining
+kind: semantics
+title: /loki/api/v1/patterns answers the patterns Loki's pattern ingester mines, from the lines VictoriaLogs holds
+
+loki: |
+  Loki mines patterns at ingest, in its pattern ingesters (measured on Loki 3.7.9
+  with the default pattern_ingester config: retain_for 3h, max_clusters 300,
+  pattern_sample_interval 10s, pattern_rate_threshold 1; persistence off):
+  - Tokens: a run of letters, digits and _ - . : / is a token; a space ends one
+    and is not a token; = and every other punctuation character is a token of its
+    own. JSON lines are mined from the raw (still escaped) text of their first
+    top-level string field among log, message, msg, msg_, _msg, content, written
+    <_>message<_>, and not at all without one; logfmt lines as key, value, key,
+    value, the values of ts, t, traceID, time, timestamp variable. Lines with
+    fewer than 4 or more than 80 tokens are not mined.
+  - One miner per stream and per level (the level structured metadata, unknown
+    without one); a line older than its stream's newest is skipped, lines that
+    share a time are all mined.
+  - A line only joins a cluster of as many tokens. A prefix tree over at most 28
+    leading tokens (never the last) leads to candidate clusters: a token holding
+    a digit takes the variable branch, a node has at most 15 children. The best
+    candidate (share of equal tokens, a variable never equal; ties to the one
+    with more variables) is joined when its share is at least 0.3, the tokens
+    that differ becoming <_>; otherwise a new cluster. At most 300 clusters per
+    miner (least recently used evicted); past 25% evictions of the lines admitted
+    the miner stops for 10 minutes.
+  - An answer lists each cluster's template now (trained on every line held)
+    with its samples in the range: lines are counted into 10 s samples, a sample
+    kept when it starts inside the range, the samples summed into the step (the
+    request's, or the range over 250 points, at least 10 s), steps between a
+    stream cluster's first and last sample 0, equal patterns summed across
+    streams and levels; a pattern is answered with at least 30 lines in the range
+    after that sum. A range older than the retention has no samples.
+
+victorialogs: |
+  VictoriaLogs has no pattern mining. It returns a selector's lines sorted by
+  (_stream_id, _time) (the sort bounded by its memory: about 1.7M lines failed at
+  614 MB on the stack), counts lines and groups (stats, collapse_nums, hash), and
+  keeps the whole history, not 3h.
+
+proxy: |
+  internal/proxy/pattern_cluster.go mines as Loki's ingester does (the rules
+  above, implemented from this description; no Loki code). The pattern state
+  (patterns_state.go) keeps each tenant's streams' clusters and 10 s samples,
+  built from the hour 3h back, refreshed with the lines after what was read;
+  busy selectors are built in the background; idle streams folded; bounded by
+  -patterns-state-max-bytes. Answers apply Loki's sample, zero-fill and 30-line
+  rules. With -patterns-full-range a longer range is charted over all of it
+  (patterns_history.go). JSON lines without a message field are left out in
+  VictoriaLogs (patternMinableLines).
+  Proof: 27 recorded Loki answers (internal/proxy/testdata/loki_pattern_answers.json.gz;
+  21 kinds of lines and edge cases, one stream, a service, a regexp selector,
+  several pods, part of a range) answered with the same patterns and totals, live
+  (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines: 27 of 27) and offline
+  (TestPatternMinerMatchesLokisRecordedPatterns).
+
+decisions:
+  - id: patterns-mine-like-loki-ingest
+    chosen: Mine with Loki's ingest clustering (prefix tree, 0.3 similarity, digit routing, per stream and level)
+    over: [proxy field-level wildcarding of patterns of one kind, sampling the newest lines with the earlier miner]
+    why: |
+      Pattern texts are what Drilldown shows and filters with; only Loki's own
+      clustering gives Loki's texts. Measured on the 27 recorded answers (share
+      of Loki's lines in patterns with Loki's text): earlier miner 46.9%, field
+      wildcarding 24.6% (it merged words Loki keeps literal), ingest clustering
+      100%.
+    evidence: 'oracle table in the patterns PR; internal/proxy/testdata/loki_pattern_answers.json.gz'
+    code: [internal/proxy/pattern_cluster.go, internal/proxy/postprocess.go]
+    tests: [TestPatternMinerMatchesLokisRecordedPatterns, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
+  - id: patterns-state-per-tenant
+    chosen: Keep a pattern state per tenant (each stream's clusters and 10 s samples), refreshed with new lines only
+    over: [mining each request's range from scratch (exact read per request), VictoriaLogs counts mined across streams]
+    why: |
+      Loki's templates come from every line its ingester held and its clusters
+      are per stream; a request-scoped read gives other templates on narrow
+      ranges and re-reads every line on each refresh, and cross-stream counts
+      give other patterns on short-lived pods (env=production 1h: 310 patterns vs
+      Loki's 53; with the state: Loki's 53). Refresh cost with the state: 0-2
+      VictoriaLogs calls.
+    evidence: 'live table in the patterns PR (Loki 3.7.9, VictoriaLogs v1.53.0, compose stack)'
+    code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go]
+    tests: [TestPatternStateRefreshReadsOnlyNewLines, TestPatternStateTemplatesComeFromEveryLineRead, TestPatternStateBuiltInTheBackgroundForBusySelectors]
+  - id: patterns-full-range-history
+    chosen: Chart ranges longer than Loki's 3h retention over all of the range (-patterns-full-range, default true)
+    over: [answering the retention's samples alone as Loki 3.7.9 does]
+    why: |
+      Loki's 3h is a memory bound of its ingester, not of the pattern model;
+      VictoriaLogs holds the history. The pattern list stays Loki's (from the
+      state); older samples are VictoriaLogs counts per settled window, each group
+      counted in the pattern its line matches as Drilldown's |> filter matches
+      it, windows cached and shared with peers. Measured: 24h charts cover 14.9h
+      of data where Loki covers 2.7h. false keeps Loki's answer.
+    evidence: 'live table in the patterns PR'
+    code: [internal/proxy/patterns_history.go]
+    tests: [TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns]
+  - id: patterns-counts-group-key-collapse-nums
+    chosen: Group the counts path's lines with VictoriaLogs collapse_nums
+    over: [a replace_regexp of every token holding a digit (Loki's notion of a number)]
+    why: |
+      The counts path serves selectors above the state's bounds, where speed
+      matters most: on env=production 6h collapse_nums costs 0.31 s of
+      VictoriaLogs time, the regexp 1.06-1.48 s. The state, which serves every
+      selector within its bounds, mines exact tokens.
+    evidence: 'VictoriaLogs v1.53.0 timings on the compose stack, 2026-11-07'
+    code: [internal/proxy/patterns_counts.go]
+    tests: [TestPatternCountsQueriesAreTyped]
+  - id: patterns-leave-out-json-without-message
+    chosen: Leave out, in VictoriaLogs, JSON lines whose text holds none of the message fields' keys
+    over: [reading such lines and mining nothing from them]
+    why: |
+      They never yield a pattern on Loki or the proxy (the key is matched on the
+      raw text in both), so leaving them out changes no answer and lets a
+      service writing only such lines answer from one count: api-gateway 6h from
+      27 calls and 663 ms to 1 call. The filter is an exact prefix (_msg:="{"*);
+      a word-prefix filter would also drop lines with a { inside (zap's console
+      lines).
+    evidence: 'live table in the patterns PR'
+    code: [internal/proxy/patterns_counts.go]
+    tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage]
+  - id: patterns-message-keys-as-phrases
+    chosen: Find a message field's key with phrase filters of its quoted name ("\"msg\"" OR ...)
+    over: [a regexp of the quoted key and its colon ("(log|message|...)"\s*:)]
+    why: |
+      Phrases are looked up through VictoriaLogs' token index; the regexp scans
+      every line. Every count and read of the state's flow carries the filter:
+      env=production over 3h counted in 95 ms instead of 230 ms; a cold 1h answer
+      in 0.58 s instead of 0.94 s, a cold 5m one in 0.17 s instead of 0.35 s.
+      The phrases keep every line the regexp keeps (a key followed by a colon
+      holds its quoted name), and a line with the name as a value only is read
+      and mined to nothing, as before; measured over 3 days of stack data, 0
+      lines kept by one and not the other.
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07; vl/capabilities/vl-phrase-filter-quoted-names'
+    code: [internal/proxy/patterns_counts.go]
+    tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage, TestVLCapability_PatternLinesFilterAndTieOrder]
+  - id: patterns-ties-in-text-order
+    chosen: Read a stream's lines that share a time in their text's order (sort by _stream_id, _time, _msg)
+    over: [sorting by stream and time only, VictoriaLogs returning ties in any order]
+    why: |
+      The order a stream's lines are mined in decides which cluster some lines
+      join, and a push's lines often share a time (153,878 such neighbours in
+      1h of env=production). Ordered by stream and time only, two reads of the
+      same settled hour returned them in different orders and two cold answers
+      differed by 1-4 lines a pattern; with the text as the last key every read,
+      rebuild and peer mines them alike (0 differing streams; sort time the
+      same). Loki mines them in push order, which VictoriaLogs does not keep.
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07; vl/capabilities/vl-sort-ties-by-text'
+    code: [internal/proxy/patterns_exact.go]
+    tests: [TestPatternExactQueriesAreTyped, TestVLCapability_PatternLinesFilterAndTieOrder, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
+  - id: patterns-cold-request-before-build
+    chosen: Count a range inside the retention with the retention at once, and start a background build's reads once the request that started it is answered
+    over: [counting the retention then the range, the build reading alongside the request's own read]
+    why: |
+      The first request for a busy selector counts the retention (to choose a
+      background build) and the range (to choose the exact read); run one after
+      the other they cost both, and the build's first window competed with the
+      request's own read of the same hour on VictoriaLogs. env=production cold
+      1h: 0.65 s to 0.47 s (1.12 s before the phrase filter; Loki 0.72-0.97 s on
+      the same stack). The build waits at most 30 s for the answer. A range
+      longer than the retention is not counted alongside: its count costs more
+      than the retention's and a selector built at once never needs it
+      (payment-service cold 24h: 0.85 s to 1.14 s when it was).
+    evidence: 'compose stack A/B, VictoriaLogs v1.53.0, Loki 3.7.9, 2026-11-07'
+    code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go]
+    tests: [TestPatternStateBuiltInTheBackgroundForBusySelectors, TestPatternStateCountsOnlyARangeInsideTheRetentionAlongside, TestPatternStateRefreshReadsOnlyNewLines]
+  - id: patterns-warm-answer-step-grid
+    chosen: Answer from the state on a step grid, sorting only the patterns with 30 lines, and age the state at most every 15 s
+    over: [summing samples through maps and sorting every pattern, aging (fold, retention, bounds) on every request]
+    why: |
+      A busy selector's state holds thousands of streams' clusters; a warm
+      answer is computed again on every refresh. env=production 1h warm (6 s
+      apart, 15 requests): 227 ms to 139 ms (main's cross-stream counts 110 ms,
+      Loki 460 ms in CI). A read from the retention's start or a new retention
+      hour ages it at once, so bounds hold after a build.
+    evidence: 'compose stack A/B, VictoriaLogs v1.53.0, 2026-11-07; perf-smoke DP2'
+    code: [internal/proxy/patterns_state.go]
+    tests: [TestPatternStateFoldsIdleStreams, TestPatternStateAnswersOnlyInsideItsBounds]
+  - id: patterns-selector-scope-opt-in
+    chosen: An opt-in -patterns-scope=selector that mines a selector's lines with one miner per level across its streams; the default stays Loki's per-stream mining
+    over: [only Loki's per-stream mining, changing the default]
+    why: |
+      A stream that holds a few lines (a trace or span id as a stream label, a
+      short-lived pod) never reaches 30 lines in one stream's clusters, so Loki
+      answers no pattern for it: otel-collector on the compose stack has a stream
+      per line, and Loki and the proxy answer none. Mining the selector's lines
+      together answers their patterns (one pattern for otel-collector's 60 lines in
+      the unit test). A JSON line whose message is under Loki's 4 tokens is mined
+      as the whole line in this scope: otel-collector's messages ('pipeline
+      traces/otlp flushed') are three tokens, which is why Loki shows none for it.
+      It is not Loki's answer, so it is off by default and on only
+      where it is asked for: the playground's patterns-autodetect proxy with
+      PATTERNS_SCOPE=selector; CI's Drilldown comparisons keep stream.
+    evidence: 'owner decision 2026-11-07; compose stack otel-collector: Loki 0 patterns at 15m-6h'
+    code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go, internal/proxy/postprocess.go, cmd/proxy/main.go]
+    tests: [TestPatternsSelectorScopeMinesAcrossStreams, TestPatternsSelectorScopeKeepsSelectorsApart, TestPatternsSelectorScopeMinesShortJSONMessagesAsTheWholeLine]
+    quality: |
+      stream scope answers equal Loki's (the 27 recorded answers); selector scope
+      answers each selector from its own lines only, every line once, and its
+      answers are cached under their own key (patterns:v4-selector:).
+    performance:
+      tracked: ['patterns DP2 (stream scope)']
+      bound: 'selector scope reads the same lines as stream scope; no extra VictoriaLogs call'
+
+implementation:
+  - internal/proxy/pattern_cluster.go
+  - internal/proxy/pattern_formats.go
+  - internal/proxy/patterns_state.go
+  - internal/proxy/patterns_history.go
+  - internal/proxy/patterns_exact.go
+  - internal/proxy/patterns_counts.go
+  - internal/proxy/patterns.go

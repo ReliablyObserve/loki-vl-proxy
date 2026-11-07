@@ -361,6 +361,12 @@ def signature(status, body, logs, ranked=False):
         data = parsed["data"] if isinstance(parsed, dict) and "data" in parsed else parsed
     except (ValueError, KeyError, TypeError):
         return "unparseable"
+    if isinstance(data, list) and data and isinstance(data[0], dict) and "pattern" in data[0]:
+        # /patterns: Loki and the proxy mine different patterns (registry drilldown/patterns-mined-differently);
+        # what both answer is how many lines they counted, per step.
+        lines = sum(int(s[1]) for p in data for s in p.get("samples") or [] if len(s) > 1)
+        steps = len({s[0] for p in data for s in p.get("samples") or [] if s})
+        return f"patterns lines={lines} steps={steps}"
     if isinstance(data, list):
         # /labels, /label/<name>/values: the sorted set of names is the answer.
         # detected_fields answers a list of objects: the field names are the

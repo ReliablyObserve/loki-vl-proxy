@@ -10,22 +10,123 @@ victorialogs: |
   VictoriaLogs has no pattern mining; the proxy mines the lines it reads.
 
 proxy: |
-  A mined, non-empty answer is stored with SetWithTTL (handlePatterns):
-  memory and a write-through push to the key's replicas; patterns: keys skip
-  the generic disk tier (skipL2WriteForKey) and are kept instead in a snapshot
-  file (-patterns-persist-path) whose latest copy each replica publishes in
-  its memory under __patterns_snapshot:v1 (persistPatternsNow). A replica
-  reads with Get: memory, then the replicas in ring order. On start a replica
-  restores the snapshot from its disk and from every peer
-  (warmPatternsOnStartup), under the keys its requests read.
-  Fleet proof (TestFleetPeerCacheProof): patterns mined on A are answered by
-  B and C with no VictoriaLogs call, by B after a restart with none, and by B
-  after it lost its disk with none, after it restored the peers' snapshot
-  (loki_vl_proxy_patterns_restored_from_peers_total); with A stopped or
-  paused B and C answer them from the backup replica with none. Compared
-  with the first answer only: Loki mines patterns with its own algorithm.
+  A selector's pattern state (patterns-loki-mining) has one holder in the
+  fleet: the owner of its key (tenant scope and identity, and the selector's
+  LogsQL filter) in the peers' ring, then its replica. A peer forwards a
+  /patterns request to it (patternsFromOwner: the client's headers, the peers'
+  X-Peer-Token and X-Loki-VL-Patterns-Forwarded; the holder answers it from its
+  own state and never forwards it again; a forward mark without the token is a
+  client's header) and answers locally when both fail. The holder writes the
+  state to the cache under the same key (memory, disk, and write-through to its
+  replica; in parts of at most 4 MB, a manifest under the key) when it is built
+  and at most every minute as it refreshes; a peer without the state reads it
+  from there (memory, disk, then the key's replicas) and continues it, reading
+  only the lines after it. Answers are cached under patterns:v5: and pushed to
+  their replicas as before, served as they were made.
+  Proof: three peers answer payment-service, cache-redis and env=production at
+  1h, 6h and 24h identically on the compose stack, the selector's lines read
+  once (TestPatternStateIsHeldByOnePeer); a peer continues the holder's state
+  from its snapshot line for line (TestPatternStateContinuesFromItsSnapshot);
+  owners down, a peer answers locally (TestPatternsAnsweredLocallyWhenTheOwnersAreDown).
+
+decisions:
+  - id: patterns-state-held-by-the-owner
+    chosen: One holder per selector's state (the key's owner, then its replica); other peers forward the request to it
+    over: [each peer keeping its own state and sharing only answers]
+    why: |
+      A pattern's text depends on which lines its clusters were trained on and
+      when the state was built, so states built on different peers differ:
+      measured on the compose stack, payment-service 1h answered the same 24
+      patterns with different samples on three peers. One holder gives one set
+      of patterns, and reads a selector's lines once for the fleet.
+    evidence: 'compose stack, 2026-11-07: three peers identical on 9 of 9 shape x range requests after, 0 of 2 checked before'
+    code: [internal/proxy/patterns_owner.go]
+    tests: [TestPatternStateIsHeldByOnePeer, TestPatternsForwardMarkNeedsThePeerToken, TestPatternsAnsweredLocallyWhenTheOwnersAreDown]
+  - id: patterns-forward-through-the-public-route
+    chosen: Forward to the holder's own /loki/api/v1/patterns with the client's headers
+    over: [a peer-only route that would carry the tenant's identity itself]
+    why: |
+      The holder reads the request through its own tenant and auth middleware,
+      as it would the client's, so the state it answers from is the client's
+      tenant's and nothing new carries an identity a client could forge; the
+      peers' token only marks the request as forwarded (no second hop).
+    evidence: 'design; TestPatternStateKeysKeepTenantsApart, TestPatternsForwardMarkNeedsThePeerToken'
+    code: [internal/proxy/patterns_owner.go]
+    tests: [TestPatternStateKeysKeepTenantsApart, TestPatternsForwardMarkNeedsThePeerToken]
+  - id: patterns-state-per-selector
+    chosen: A pattern state per tenant and selector
+    over: [one state per tenant shared by its selectors]
+    why: |
+      Shared streams made a selector's templates depend on which other
+      selectors the same peer had read before; per selector, the holder's
+      answer is the same whoever holds it. Memory for selectors that share
+      streams is spent twice, bounded by -patterns-state-max-bytes.
+    evidence: 'design'
+    code: [internal/proxy/patterns_state.go]
+    tests: [TestPatternStateSelectorsShareStreams]
+  - id: patterns-state-snapshot-with-its-trees
+    chosen: Snapshot the state with its clusterers' prefix trees, gzipped, in parts of at most 4 MB
+    over: [snapshotting the clusters alone and rebuilding the trees, one value per snapshot]
+    why: |
+      Rebuilt trees route the next lines differently, so a peer continuing the
+      state would drift from the holder; with the trees a restored state trains
+      on exactly as the original (round trip and continuation tests). A peer
+      takes at most 8 MB per value; env=production's 3h state is 23 MB gzipped
+      (112k streams), so it is cached in parts.
+    evidence: 'live measurement on the compose stack, 2026-11-07 (cache-redis 2.2 MB, payment-service 4.4 MB, env=production 23 MB gzipped)'
+    code: [internal/proxy/patterns_state_snapshot.go]
+    tests: [TestPatternStateSnapshotRoundTrips, TestPatternStateContinuesFromItsSnapshot, TestPatternStateSnapshotIsCachedInParts]
+  - id: patterns-history-one-read
+    chosen: Read each run of missing history windows in one groups and one timeline query, aligned to the step, split into the cached windows
+    over: [two queries per window]
+    why: |
+      A range's first request made 19-23 VictoriaLogs calls (12h, 7d), 1.1-2.5x
+      Loki; one read per run covers them. A step belongs whole to the window it
+      starts in (the read starts at the run's first step and ends where its last
+      step does), so windows filled by different reads never lose or double a
+      step's lines (a test that read 24h through two reads lost 120 of 4,100
+      lines before).
+    evidence: 'patterns bench in the PR; TestPatternHistoryIsCountedAhead'
+    code: [internal/proxy/patterns_history.go]
+    tests: [TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns, TestPatternHistoryIsCountedAhead]
+  - id: patterns-history-counted-ahead
+    chosen: The holder counts the history of 6h, 12h and 24h ahead every 30 minutes, and counts the window a range's start cuts whole
+    over: [counting history on a range's first request; re-reading the cut window on each refresh]
+    why: |
+      Drilldown asks /patterns without a step, so a range's step follows from its
+      length and the windows its request reads are known in advance. Measured on
+      env=production (1.6M lines over the history): a first 24h request went
+      from 3.8x Loki to below it, and refreshes of 6h-24h from re-reading a
+      partial hour of ~355k lines to reading no history at all (the cut window's
+      steps before the range are left out, as Loki answers only steps inside it).
+    evidence: 'patterns bench in the PR'
+    code: [internal/proxy/patterns_history.go]
+    tests: [TestPatternHistoryIsCountedAhead, TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns]
+  - id: patterns-state-snapshot-every-10-minutes
+    chosen: Snapshot a refreshed state in the background every 10 minutes (a built one at once)
+    over: [every minute, encoded on the request]
+    why: |
+      env=production's snapshot is 23 MB gzipped; encoding it on the request
+      every minute made one refresh a minute take ~1.3 s. A takeover now reads at
+      most 10 minutes of lines once (a few hundred ms).
+    evidence: 'compose stack, 2026-11-07'
+    code: [internal/proxy/patterns_state_snapshot.go]
+    tests: [TestPatternStateContinuesFromItsSnapshot]
+  - id: patterns-state-answer-step-grid
+    chosen: Sum the state's samples in step-indexed slices and sort only the patterns with at least 30 lines
+    over: [maps keyed by pattern text per sample, sorting every pattern]
+    why: |
+      A warm env=production answer (112k streams) spent most of its time hashing
+      pattern texts and sorting thousands of patterns the 30-line rule then
+      dropped: in process, 6h 629 ms to 261 ms, 24h 625 ms to 277 ms, 7d 558 ms
+      to 166 ms.
+    evidence: 'in-process measurement against the compose stack VictoriaLogs, 2026-11-07'
+    code: [internal/proxy/patterns_state.go]
+    tests: [TestPatternStateRefreshReadsOnlyNewLines, TestPatternStateStreamResumingAfterIdleFillsItsPause]
 
 implementation:
+  - internal/proxy/patterns_owner.go
+  - internal/proxy/patterns_state_snapshot.go
   - internal/proxy/patterns.go
   - internal/proxy/patterns_persistence.go
   - internal/cache/cache.go

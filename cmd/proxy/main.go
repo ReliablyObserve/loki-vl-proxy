@@ -111,6 +111,13 @@ type proxyRuntimeConfig struct {
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
 	patternsAutodetectFromQueries       bool
+	patternsCounts                      bool
+	patternsExactMaxLines               int
+	patternsStateMaxBytes               int64
+	patternsStateStreamIdle             time.Duration
+	patternsStateMaxBuildLines          int
+	patternsFullRange                   bool
+	patternsSelectorScope               bool
 	exactParserSeriesIdentity           bool
 	alignQueriesWithStep                bool
 	patternsCustomRaw                   string
@@ -232,6 +239,7 @@ type proxyRuntimeConfig struct {
 	patternsMaxBackendRows              int
 	patternsSecondPassMaxRows           int
 	patternsSecondPassMaxWindows        int
+	patternsMaxCountsRows               int
 	drilldownMaxStatsBuckets            int
 	maxZeroFillBuckets                  int
 	maxQueryLengthBytes                 int
@@ -558,6 +566,7 @@ func run(
 	patternsMaxBackendRows := fs.Int("patterns-max-backend-rows", proxy.DefaultPatternsMaxBackendRows, "Maximum log lines /patterns reads from VictoriaLogs for one request. 0 uses the built-in default of 20000")
 	patternsSecondPassMaxRows := fs.Int("patterns-second-pass-max-rows", proxy.DefaultPatternsSecondPassMaxRows, "Maximum log lines the /patterns second pass reads when the first pass mined too few patterns. 0 uses the built-in default of 8000")
 	patternsSecondPassMaxWindows := fs.Int("patterns-second-pass-max-windows", proxy.DefaultPatternsSecondPassMaxWindows, "Maximum windows the /patterns second pass re-reads. 0 uses the built-in default of 8")
+	patternsMaxCountsRows := fs.Int("patterns-max-counts-rows", proxy.DefaultPatternsMaxCountsRows, "Maximum rows (distinct step, level and collapsed message groups) the /patterns counts query may return; past it the request samples lines instead. 0 uses the built-in default of 250000")
 	drilldownMaxStatsBuckets := fs.Int("drilldown-max-stats-buckets", proxy.DefaultDrilldownMaxStatsBuckets, "Deprecated, no effect: Logs Drilldown breakdowns are answered on the requested step, as Loki answers them. Accepted so existing command lines keep working")
 	maxZeroFillBuckets := fs.Int("max-zero-fill-buckets", proxy.DefaultMaxZeroFillBuckets, "Maximum buckets the proxy zero-fills in a metric response. 0 uses the built-in default of 32768")
 	labelValuesMaxResponseBytes := fs.Int("label-values-max-response-bytes", proxy.DefaultLabelValuesMaxResponseBytes, "Maximum bytes of the VictoriaLogs answer to a /loki/api/v1/label/{name}/values request: one response, or the size the merged listing would have as one response when the metadata inventory lists it from time buckets. Above it the request fails like Loki's querier above grpc_server_max_send_msg_size: HTTP 500 `rpc error: code = ResourceExhausted desc = grpc: trying to send message larger than max (N vs. LIMIT)` naming this flag, and nothing is cached. Per tenant as label_values_max_response_bytes in -tenant-limits and -tenant-default-limits. 0 uses the built-in default of 64 MiB")
@@ -591,6 +600,13 @@ func run(
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
+	patternsExactMaxLines := fs.Int("patterns-exact-max-lines", proxy.DefaultPatternsExactMaxLines, "Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off")
+	patternsStateMaxBytes := fs.Int64("patterns-state-max-bytes", proxy.DefaultPatternsStateMaxBytes, "Memory the /loki/api/v1/patterns state of all tenants may hold: each stream's clusters at each level trained on every line read since the state was built from Loki's pattern retention (3h), as Loki's pattern ingester keeps them, so a refresh reads only the lines after what was read and templates come from every line; past it the least recently used tenant's state is dropped. A selector whose lines over the retention exceed -patterns-exact-max-lines is answered without the state; 0 turns the state off")
+	patternsStateStreamIdle := fs.Duration("patterns-state-stream-idle", proxy.DefaultPatternsStateStreamIdle, "How long a stream may read no line before the /patterns state keeps its clusters as their patterns and samples alone, freeing the rest; a stream that writes again after it starts new clusters")
+	patternsStateMaxBuildLines := fs.Int("patterns-state-max-build-lines", proxy.DefaultPatternsStateMaxBuildLines, "Build the /loki/api/v1/patterns state in the background for a selector whose lines over Loki's pattern retention (3h) are more than -patterns-exact-max-lines and at most this many: an hour of lines at a time, sorted by stream and time, while the selector's requests are answered from VictoriaLogs' counts until the state is built; one build runs at a time. 0 builds none")
+	patternsFullRange := fs.Bool("patterns-full-range", true, "Answer a /loki/api/v1/patterns range longer than Loki's pattern retention (3h) over all of it: the patterns the state answers (Loki's), their samples before the state's counted from VictoriaLogs a window at a time, each line counted in the pattern it matches as Drilldown's pattern filter (|>) matches it; settled windows are cached and shared with peers. false answers such a range with the retention's samples alone, as Loki does")
+	patternsScope := fs.String("patterns-scope", "stream", "How /loki/api/v1/patterns mines a selector's lines: stream (Loki's pattern ingester: one miner per stream and level, so a pattern needs 30 lines in one stream's clusters) or selector (one miner per level for all the selector's streams, so streams that each hold a few lines, such as a stream label that changes per line or short-lived pods, share patterns, and a JSON line whose message is under Loki's 4 tokens is mined as the whole line; not Loki's answer)")
+	patternsCounts := fs.Bool("patterns-counts", true, "Answer /loki/api/v1/patterns for a stream selector from VictoriaLogs' counts of every line in the range (one stats query over the whole range), as Loki counts every line it ingested. A request it cannot answer that way (more groups than -patterns-max-counts-rows, rows without a message) falls back to sampling lines. Set false to always sample lines")
 	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
 	patternsCustomFile := fs.String("patterns-custom-file", "", "Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup")
 	queryRangeWindowing := fs.Bool("query-range-windowing", true, "Enable query_range window splitting and window-level cache reuse for log queries")
@@ -738,6 +754,9 @@ func run(
 	}
 	if *responseCompressionMinBytes < 0 {
 		return fmt.Errorf("invalid -response-compression-min-bytes: must be >= 0")
+	}
+	if *patternsScope != "stream" && *patternsScope != "selector" {
+		return fmt.Errorf("invalid -patterns-scope: %q (must be 'stream' or 'selector')", *patternsScope)
 	}
 	resolvedBackendCompression, err := normalizeCompressionSetting(*backendCompression)
 	if err != nil {
@@ -889,6 +908,13 @@ func run(
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
+			patternsCounts:                      *patternsCounts,
+			patternsExactMaxLines:               *patternsExactMaxLines,
+			patternsStateMaxBytes:               *patternsStateMaxBytes,
+			patternsStateStreamIdle:             *patternsStateStreamIdle,
+			patternsStateMaxBuildLines:          *patternsStateMaxBuildLines,
+			patternsFullRange:                   *patternsFullRange,
+			patternsSelectorScope:               *patternsScope == "selector",
 			exactParserSeriesIdentity:           *exactParserSeriesIdentity,
 			alignQueriesWithStep:                *alignQueriesWithStep,
 			patternsCustomRaw:                   *patternsCustomRaw,
@@ -1011,6 +1037,7 @@ func run(
 			patternsMaxBackendRows:              *patternsMaxBackendRows,
 			patternsSecondPassMaxRows:           *patternsSecondPassMaxRows,
 			patternsSecondPassMaxWindows:        *patternsSecondPassMaxWindows,
+			patternsMaxCountsRows:               *patternsMaxCountsRows,
 			drilldownMaxStatsBuckets:            *drilldownMaxStatsBuckets,
 			maxZeroFillBuckets:                  *maxZeroFillBuckets,
 			maxQueryLengthBytes:                 *maxQueryLengthBytes,
@@ -2134,6 +2161,13 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
+		PatternsCounts:                     cfg.patternsCounts,
+		PatternsExactMaxLines:              cfg.patternsExactMaxLines,
+		PatternsStateMaxBytes:              cfg.patternsStateMaxBytes,
+		PatternsStateStreamIdle:            cfg.patternsStateStreamIdle,
+		PatternsStateMaxBuildLines:         cfg.patternsStateMaxBuildLines,
+		PatternsFullRange:                  cfg.patternsFullRange,
+		PatternsSelectorScope:              cfg.patternsSelectorScope,
 		ExactParserSeriesIdentity:          cfg.exactParserSeriesIdentity,
 		AlignQueriesWithStep:               cfg.alignQueriesWithStep,
 		PatternsCustom:                     customPatterns,
@@ -2236,6 +2270,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			PatternsMaxBackendRows:            cfg.patternsMaxBackendRows,
 			PatternsSecondPassMaxRows:         cfg.patternsSecondPassMaxRows,
 			PatternsSecondPassMaxWindows:      cfg.patternsSecondPassMaxWindows,
+			PatternsMaxCountsRows:             cfg.patternsMaxCountsRows,
 			DrilldownMaxStatsBuckets:          cfg.drilldownMaxStatsBuckets,
 			MaxZeroFillBuckets:                cfg.maxZeroFillBuckets,
 			MaxQueryLengthBytes:               cfg.maxQueryLengthBytes,
@@ -2281,6 +2316,7 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		{"-patterns-max-backend-rows", cfg.patternsMaxBackendRows},
 		{"-patterns-second-pass-max-rows", cfg.patternsSecondPassMaxRows},
 		{"-patterns-second-pass-max-windows", cfg.patternsSecondPassMaxWindows},
+		{"-patterns-max-counts-rows", cfg.patternsMaxCountsRows},
 		{"-drilldown-max-stats-buckets", cfg.drilldownMaxStatsBuckets},
 		{"-max-zero-fill-buckets", cfg.maxZeroFillBuckets},
 		{"-max-query-length-bytes", cfg.maxQueryLengthBytes},
@@ -2289,6 +2325,18 @@ func validateExecutionLimits(cfg proxyRuntimeConfig) error {
 		if limit.value < 0 {
 			return fmt.Errorf("invalid %s: %d (must be >= 0; 0 uses the built-in default)", limit.flag, limit.value)
 		}
+	}
+	if cfg.patternsExactMaxLines < 0 {
+		return fmt.Errorf("invalid -patterns-exact-max-lines: %d (must be >= 0; 0 turns the exact reading off)", cfg.patternsExactMaxLines)
+	}
+	if cfg.patternsStateMaxBytes < 0 {
+		return fmt.Errorf("invalid -patterns-state-max-bytes: %d (must be >= 0; 0 turns the pattern state off)", cfg.patternsStateMaxBytes)
+	}
+	if cfg.patternsStateMaxBuildLines < 0 {
+		return fmt.Errorf("invalid -patterns-state-max-build-lines: %d (must be >= 0; 0 builds no state in the background)", cfg.patternsStateMaxBuildLines)
+	}
+	if cfg.patternsStateStreamIdle < 0 {
+		return fmt.Errorf("invalid -patterns-state-stream-idle: %s (must be > 0)", cfg.patternsStateStreamIdle)
 	}
 	return nil
 }

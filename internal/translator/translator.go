@@ -1419,12 +1419,16 @@ var logqlSingleFilterOps = []struct {
 // (rather than "NOT ") so downstream string-matching in canonicalLabelFilterStage
 // and translatedFilterFieldOp continues to work without change.
 func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
+	return buildFieldFilter(field, op, value, negate).String()
+}
+
+// buildFieldFilter is a field filter, excluded (-field:...) when negate.
+func buildFieldFilter(field string, op logsql.FieldOp, value string, negate bool) logsql.FilterExpr {
 	ff := logsql.FieldFilter{Field: field, Op: op, Value: value}
-	core := ff.String()
 	if negate {
-		return "-" + core
+		return logsql.Exclude{Expr: ff}
 	}
-	return core
+	return ff
 }
 
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
@@ -4228,55 +4232,62 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	for _, op := range streamMatcherOps {
 		idx := matcherOperatorIndex(matcher, op.logql)
 		if idx > 0 {
-			origLabel := sanitizeFieldIdentifier(matcher[:idx])
-			label := origLabel
-			value := strings.TrimSpace(matcher[idx+len(op.logql):])
-			if label == "" {
-				return ""
+			label := sanitizeFieldIdentifier(matcher[:idx])
+			value := streamMatcherValue(matcher[idx+len(op.logql):], op.isRe)
+			if f := matcherFieldFilter(label, op.negate, op.isRe, value, labelFn); f != nil {
+				return f.String()
 			}
-
-			// service_name is derived from stream fields on the read path;
-			// match exactly the streams the proxy labels with that value.
-			if origLabel == "service_name" {
-				return serviceNameMatcherFilter(value, op.negate, op.isRe)
-			}
-			if labelFn != nil {
-				label = sanitizeFieldIdentifier(labelFn(label))
-				if label == "" {
-					return ""
-				}
-			}
-
-			// VL requires quoting for dotted field names. Quote the field name
-			// before passing to buildFieldFilterStr so FieldFilter uses it as-is.
-			if strings.Contains(label, ".") {
-				label = `"` + label + `"`
-			}
-
-			value = streamMatcherValue(value, op.isRe)
-			if op.isRe {
-				// A selector matcher is anchored to the whole value.
-				return selectorRegexpFieldFilter(label, value, op.negate)
-			}
-
-			if value == "" && !op.isRe {
-				// level="" matches entries where level is absent or empty.
-				// -level:* covers both cases; level:="" would only match
-				// explicit empty strings.
-				if label == "level" && !op.negate {
-					return `-level:*`
-				}
-				if op.negate {
-					// field:!"" means "field exists and is non-empty"; keep literal form.
-					return fmt.Sprintf(`%s:!""`, label)
-				}
-				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false)
-			}
-
-			return buildFieldFilterStr(label, op.vlOp, value, op.negate)
+			return ""
 		}
 	}
 	return ""
+}
+
+// matcherFieldFilter is the field filter for a selector matcher on label, with its value as Loki reads it
+// (unquoted), or nil when the label is no field name.
+func matcherFieldFilter(label string, negate, isRe bool, value string, labelFn LabelTranslateFunc) logsql.FilterExpr {
+	if label == "" {
+		return nil
+	}
+	// service_name is derived from stream fields on the read path;
+	// match exactly the streams the proxy labels with that value.
+	if label == "service_name" {
+		return serviceNameMatcherFilterExpr(value, negate, isRe)
+	}
+	if labelFn != nil {
+		label = sanitizeFieldIdentifier(labelFn(label))
+		if label == "" {
+			return nil
+		}
+	}
+
+	// VL requires quoting for dotted field names. Quote the field name
+	// before building the FieldFilter so it uses it as-is.
+	if strings.Contains(label, ".") {
+		label = `"` + label + `"`
+	}
+
+	if isRe {
+		// A selector matcher is anchored to the whole value.
+		return selectorRegexpFilter(label, value, negate)
+	}
+
+	if value == "" {
+		// level="" matches entries where level is absent or empty.
+		// -level:* covers both cases; level:="" would only match
+		// explicit empty strings.
+		if label == "level" && !negate {
+			return logsql.Exclude{Expr: logsql.FieldFilter{Field: "level", Op: logsql.FieldOpAny}}
+		}
+		if negate {
+			// field:!"" means "field exists and is non-empty"; keep literal form.
+			return logsql.FieldFilter{Field: label, Op: logsql.FieldOpNotExact}
+		}
+		return buildFieldFilter(label, logsql.FieldOpExact, "", false)
+	}
+
+	op := logsql.FieldOpExact
+	return buildFieldFilter(label, op, value, negate)
 }
 
 const (
@@ -4393,6 +4404,9 @@ const (
 	matchNoStreamsFilter = "-*"
 )
 
+// matchNoStreams is matchNoStreamsFilter as a filter node.
+var matchNoStreams = logsql.Exclude{Expr: logsql.Wildcard{}}
+
 // serviceNameMatcherFilter translates a `service_name` stream matcher.
 //
 // Loki assigns service_name at ingest: an existing service_name, else the
@@ -4413,12 +4427,16 @@ const (
 // Plain field filters keep VictoriaLogs on its bloom-filter path and stay
 // valid wherever the proxy strips pipes from the base query.
 func serviceNameMatcherFilter(rawValue string, neg, isRegex bool) string {
-	value := streamMatcherValue(rawValue, false)
+	return serviceNameMatcherFilterExpr(streamMatcherValue(rawValue, false), neg, isRegex).String()
+}
+
+// serviceNameMatcherFilterExpr is serviceNameMatcherFilter for the matcher's value as Loki reads it.
+func serviceNameMatcherFilterExpr(value string, neg, isRegex bool) logsql.FilterExpr {
 	if isRegex {
 		// Loki selector regexps are fully anchored and '.' matches newlines.
 		value = logsql.AnchorLabelMatcherRegex(value)
 	}
-	return serviceNameDerivedFilter(value, neg, isRegex)
+	return serviceNameDerivedFilterExpr(value, neg, isRegex)
 }
 
 // serviceNameLabelFilter translates a `| service_name op "v"` stage. Loki
@@ -4438,58 +4456,64 @@ func serviceNameLabelFilter(rawValue string, neg, isRegex bool) string {
 // serviceNameDerivedFilter builds the filter for an already-effective value:
 // an exact value, or a fully anchored regexp.
 func serviceNameDerivedFilter(value string, neg, isRegex bool) string {
+	return serviceNameDerivedFilterExpr(value, neg, isRegex).String()
+}
+
+// serviceNameDerivedFilterExpr matches the rows whose derived service_name the matcher accepts: the first
+// non-empty field of syntheticServiceNameFields, or unknownServiceNameValue when they are all empty.
+func serviceNameDerivedFilterExpr(value string, neg, isRegex bool) logsql.FilterExpr {
 	var re *regexp.Regexp
 	if isRegex {
 		// An invalid regexp is left for VictoriaLogs to reject.
 		re, _ = regexp.Compile(value)
 	}
-	branches := make([]string, 0, len(syntheticServiceNameFields)+1)
-	emptyPrefix := make([]string, 0, len(syntheticServiceNameFields))
+	branches := make(logsql.AnyOf, 0, len(syntheticServiceNameFields)+1)
+	emptyPrefix := make(logsql.AllOf, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
 		name := field
 		if strings.Contains(name, ".") {
 			name = `"` + name + `"`
 		}
-		var terms []string
+		var terms logsql.AllOf
 		switch {
 		case isRegex:
-			terms = append(terms, name+":~"+strconv.Quote(value))
+			terms = append(terms, logsql.FieldFilter{Field: name, Op: logsql.FieldOpRegexp, Value: value})
 			if re == nil || re.MatchString("") {
 				// A missing field reads as empty and would satisfy an
 				// empty-compatible regexp; derivation needs a non-empty value.
-				terms = append(terms, "-"+name+`:=""`)
+				terms = append(terms, logsql.Exclude{Expr: logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact}})
 			}
 		case value != "":
-			terms = append(terms, name+":="+strconv.Quote(value))
+			terms = append(terms, logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact, Value: value, GoQuoted: true})
 		}
 		if len(terms) > 0 {
-			terms = append(append(make([]string, 0, len(emptyPrefix)+len(terms)), emptyPrefix...), terms...)
+			terms = append(append(make(logsql.AllOf, 0, len(emptyPrefix)+len(terms)), emptyPrefix...), terms...)
 			if len(terms) == 1 {
 				branches = append(branches, terms[0])
 			} else {
-				branches = append(branches, "("+strings.Join(terms, " ")+")")
+				branches = append(branches, logsql.Group{Expr: terms})
 			}
 		}
-		emptyPrefix = append(emptyPrefix, name+`:=""`)
+		emptyPrefix = append(emptyPrefix, logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact})
 	}
 	unknownMatches := value == unknownServiceNameValue
 	if isRegex {
 		unknownMatches = re != nil && re.MatchString(unknownServiceNameValue)
 	}
 	if unknownMatches {
-		branches = append(branches, "("+strings.Join(emptyPrefix, " ")+")")
+		branches = append(branches, logsql.Group{Expr: emptyPrefix})
 	}
 	if len(branches) == 0 {
 		// Every row has a non-empty service_name, so `service_name=""`
 		// matches nothing and `service_name!=""` matches everything.
 		if neg {
-			return "*"
+			return logsql.Wildcard{}
 		}
-		return matchNoStreamsFilter
+		return matchNoStreams
 	}
-	filter := "(" + strings.Join(branches, " OR ") + ")"
+	filter := logsql.FilterExpr(logsql.Group{Expr: branches})
 	if neg {
-		return "-" + filter
+		return logsql.Exclude{Expr: filter}
 	}
 	return filter
 }

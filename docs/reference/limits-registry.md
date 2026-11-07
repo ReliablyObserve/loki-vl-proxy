@@ -36,6 +36,11 @@ Fleet arithmetic: per-replica limits multiply by the replica count, and every by
 | detected fields max scan lines | `-detected-fields-max-scan-lines` | `extraArgs.detected-fields-max-scan-lines` | `2000` | rows | log lines the detected_fields and detected_field values scan reads per request | none: the scan stops at the limit and returns what it found | none | none | no | proxy-specific |
 | patterns max backend rows | `-patterns-max-backend-rows` | `extraArgs.patterns-max-backend-rows` | `20000` | rows | log lines /patterns reads from VictoriaLogs for one request | none: pattern mining works on the rows it read | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
 | patterns second pass max rows | `-patterns-second-pass-max-rows` | `extraArgs.patterns-second-pass-max-rows` | `8000` | rows | log lines the /patterns second pass reads when the first pass mined too few patterns | none | loki_vl_proxy_patterns_lines_scanned_total | none | no | proxy-specific |
+| patterns max counts rows | `-patterns-max-counts-rows` | `extraArgs.patterns-max-counts-rows` | `250000` | rows | rows the /patterns counts query reads from VictoriaLogs: distinct (step, level fields, collapsed message) groups over the requested range | none: past it the request samples lines as without -patterns-counts | none | none | no | proxy-specific |
+| patterns exact max lines | `-patterns-exact-max-lines` | `extraArgs.patterns-exact-max-lines` | `200000` | lines | log lines the /patterns exact reading takes from VictoriaLogs for a stream selector's range, to mine Loki's patterns from the lines themselves, each stream and level apart; a range with more lines is answered from VictoriaLogs' counts instead, which mines a level's streams together | none: a range with more lines, or a reading VictoriaLogs fails (its sort of the lines runs out of memory), is answered from the counts as with the reading off | none | none | no | pkg/pattern mines every line of every stream it ingested; the exact reading is that mining on the lines VictoriaLogs holds |
+| patterns state max bytes | `-patterns-state-max-bytes` | `extraArgs.patterns-state-max-bytes` | `268435456` | bytes | memory the /patterns state of all tenants holds: each stream's clusters at each level and their 10 s samples over Loki's pattern retention (3h) | none: past it the least recently used tenant's state is dropped and built again on its next request | loki_vl_proxy_internal_operation_total&#123;operation="patterns_state"&#125; | none | no | pkg/pattern keeps each stream's clusters in the pattern ingester's memory for retain_for (3h); the state keeps the same for the streams the proxy's selectors read |
+| patterns state max build lines | `-patterns-state-max-build-lines` | `extraArgs.patterns-state-max-build-lines` | `2000000` | lines | log lines over Loki's pattern retention (3h) the /patterns state of a selector is built from in the background, when they are more than -patterns-exact-max-lines | none: a selector with more lines is answered from VictoriaLogs' counts, without the state | loki_vl_proxy_internal_operation_total&#123;operation="patterns_state",outcome="build_started"&#125; | none | no | pkg/pattern mines every line of every stream as it is ingested; the background build mines the selector's lines over the same retention once, then refreshes train only new lines |
+| patterns state stream idle | `-patterns-state-stream-idle` | `extraArgs.patterns-state-stream-idle` | `5 * time.Minute` | duration | how long a stream of the /patterns state reads no line before only its patterns and samples are kept | none | none | none | no | proxy-specific |
 | patterns second pass max windows | `-patterns-second-pass-max-windows` | `extraArgs.patterns-second-pass-max-windows` | `8` | windows | windows the /patterns second pass re-reads | none | none | none | no | proxy-specific |
 | max zero fill buckets | `-max-zero-fill-buckets` | `extraArgs.max-zero-fill-buckets` | `32768` | buckets | buckets the proxy zero-fills in a metric response | none: a wider request is served without zero-fill | none | none | no | the 11,000-point resolution limit bounds a Loki response anyway |
 | stats query range concurrency | `-stats-query-range-concurrency` | `extraArgs.stats-query-range-concurrency` | `0` | concurrent calls | concurrent stats_query_range calls the proxy makes to VictoriaLogs | none: calls wait for a slot | loki_vl_proxy_upstream_requests_total&#123;route="/select/logsql/stats_query_range"&#125; | none | no | proxy-specific |
@@ -155,6 +160,26 @@ Raise it for sparse selectors where patterns are mined from too few lines; every
 ### `-patterns-second-pass-max-rows`
 
 Raise it with -patterns-max-backend-rows; the second pass doubles the scan for hard selectors.
+
+### `-patterns-max-counts-rows`
+
+Rows grow with distinct collapsed messages times steps; a templated service needs a few thousand per hour, a high-cardinality generator about 100000 per hour. Each row is a few hundred bytes from VictoriaLogs and one map lookup in the proxy (a message is mined once), so raising it costs transfer, not memory per raw line.
+
+### `-patterns-exact-max-lines`
+
+About 200 bytes of transfer per line, a count query first, and a sort of the lines by stream and time in VictoriaLogs' memory, while the proxy holds only the clusters (a few hundred per stream and level). The default 200000 bounds one request to about 40 MB of transfer; raise it for VictoriaLogs with memory to spare, lower it when its sorts are slow or exceed its memory. 0 turns the reading off.
+
+### `-patterns-state-max-bytes`
+
+About 4 KB per active stream and a few hundred bytes per idle stream (-patterns-state-stream-idle): 256 MB holds tens of thousands of active streams. Lower it on small proxies; raise it when many tenants or selectors are refreshed and states are dropped often. 0 turns the state off, so every request reads its range again.
+
+### `-patterns-state-max-build-lines`
+
+One build at a time, an hour of lines per VictoriaLogs read (a quarter hour when its sort runs out of memory), about 2 µs of proxy CPU per line; idle streams are folded as the build goes, so memory follows the active streams. The default 2000000 covers a busy selector's 3 hours; 0 leaves such selectors on the counts.
+
+### `-patterns-state-stream-idle`
+
+Short-lived pods stop writing for good; 5 minutes frees their clusters soon after. Raise it when streams pause for longer and should keep training the same clusters when they resume.
 
 ### `-patterns-second-pass-max-windows`
 

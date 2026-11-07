@@ -516,7 +516,7 @@ func hasLabelParserStage(query string) bool {
 }
 
 func hasParserStageOf(query string, jsonStage, logfmtStage bool) bool {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parsedLogQuery(query)
 	if err != nil {
 		return (jsonStage && jsonParserStageRE.MatchString(query)) ||
 			(logfmtStage && logfmtParserStageRE.MatchString(query))

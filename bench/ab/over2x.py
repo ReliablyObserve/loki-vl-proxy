@@ -58,7 +58,8 @@ fails on it only in --over-2x-loki fail mode. A row between 1× and max_ratio (b
 with an effort_exception on an item that covers it; without one it is listed, flagged, for review. A row that
 was below Loki and is now above it beyond noise is flagged as "lost below-Loki" (never a failure). band() and
 distribution() give the share of comparable rows below Loki, close to it, between 1× and 2× and above 2×;
-history.py ratchets the share below Loki and the count above 2×.
+history.py ratchets the share below Loki and the count above 2×. A row below Loki or close to it is green (owner
+2026-11-07), and a mode meets the target when GREEN_SHARE percent of its rows are green.
 
   over2x.py locks seed [--results bench/ab/results]
       Writes a perf: block into every covered item that has none, locked when every comparable row of its
@@ -129,6 +130,9 @@ def judge(proxy, loki, proxy_status, loki_status, cache_served, bound=RATIO):
 DIST_NOISE = 0.25
 BANDS = ("below", "close", "between", "above")
 BAND_LABEL = {"below": "below Loki", "close": "close to Loki", "between": "1–2× Loki", "above": "above 2× Loki"}
+# owner 2026-11-07: below Loki or close to it (within the noise) is green; 95% of a mode's rows should be.
+GREEN = ("below", "close")
+GREEN_SHARE = 95.0
 # The distribution ratchet: the share below Loki may not fall, the count above 2× may not rise, beyond both
 # margins (percentage points of the rows compared, and rows). Replayed on the daily history of 2026-10-21 to
 # 2026-10-27: day-to-day moves of the share below were at most 2.0 points (6 rows). history.py counts a move to a
@@ -150,14 +154,17 @@ def band(proxy, loki, noise=DIST_NOISE, min_delta=MIN_GAP):
 
 
 def distribution(pairs):
-    """mode -> {rows, below, close, between, above, share_below (percent)} from (mode, band) pairs."""
+    """mode -> {rows, below, close, between, above, share_below, green, share_green (percents)} from (mode, band)
+    pairs."""
     out = {}
     for mode, b in pairs:
-        d = out.setdefault(mode, {"rows": 0, **{k: 0 for k in BANDS}})
+        d = out.setdefault(mode, {"rows": 0, **{k: 0 for k in BANDS}, "green": 0})
         d["rows"] += 1
         d[b] += 1
+        d["green"] += b in GREEN
     for d in out.values():
         d["share_below"] = round(100 * d["below"] / d["rows"], 1) if d["rows"] else 0.0
+        d["share_green"] = round(100 * d["green"] / d["rows"], 1) if d["rows"] else 0.0
     return {m: out[m] for m in MODES if m in out}
 
 
@@ -732,7 +739,7 @@ def locks(cmd, ids, results, root=ROOT, spec=None):
     for profile, ps in pairs.items():
         for mode, d in distribution(ps).items():
             print(f"{profile} {mode}: {d['rows']} comparable: " + ", ".join(f"{BAND_LABEL[k]} {d[k]}" for k in BANDS) +
-                  f"; share below Loki {d['share_below']:.1f}%")
+                  f"; share below Loki {d['share_below']:.1f}%; green (below + close) {d['share_green']:.1f}%")
     return 0
 
 

@@ -500,7 +500,10 @@ func TestHandlePatternsReuseCachedResponse(t *testing.T) {
 		}
 		backendCalls++
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms"}`)
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms"}`)
+		}
 	}))
 	defer backend.Close()
 

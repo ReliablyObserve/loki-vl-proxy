@@ -1105,14 +1105,16 @@ func TestDelete_VLReturns500_PropagatesError(t *testing.T) {
 func TestPatterns_VLReturnsLines_ExtractsPatterns(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"nginx","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T10:00:10Z","_msg":"GET /api/users 200 22ms","app":"nginx","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			w.Write([]byte(`{"_time":"2026-04-04T10:00:` + fmt.Sprintf("%02d", i) + `Z","_msg":"GET /api/users 200 ` + strconv.Itoa(15+i) + `ms","app":"nginx","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	q := url.Values{"query": {`{app="nginx"}`}, "start": {"1"}, "end": {"2"}, "step": {"15s"}}
+	q := url.Values{"query": {`{app="nginx"}`}, "start": {"2026-04-04T10:00:00Z"}, "end": {"2026-04-04T10:05:00Z"}, "step": {"15s"}}
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?"+q.Encode(), nil)
 	p.handlePatterns(w, r)
 

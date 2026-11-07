@@ -1,0 +1,27 @@
+id: vl-phrase-filter-quoted-names
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  A phrase filter whose phrase starts and ends with a double quote ("\"msg\"")
+  matches a line holding that text, quotes included, anywhere: {"msg":...},
+  {"msg" : ...}, a nested {"data":{"msg":...}} and a value {"kind":"msg"} match;
+  {"msgs":...}, {"xmsg":...} and {"Msg":...} do not. VictoriaLogs finds it
+  through its token index (the phrase's word), where a regexp of the same text
+  scans every line. TestVLCapability_PatternLinesFilterAndTieOrder checks the
+  lines kept and dropped, and runs in the vl-pinned check and the version
+  matrix.
+proxy_usage: |
+  patternMinableLines leaves out of every patterns count and read a JSON line
+  (starting with { and ending with }) that holds none of the message fields'
+  quoted names (log, message, msg, msg_, _msg, content), which no pattern is
+  mined from. Over 3 days of stack data it keeps the same lines as the regexp
+  "(log|message|msg|msg_|_msg|content)"\s*: it replaced, at 95 ms against 230 ms
+  for env=production over 3h.
+fallback: |
+  None on a supported version. A release whose phrase filter dropped a line
+  holding a quoted name would fail the live test before it is supported; the fix
+  is the regexp, which keeps the same lines more slowly.
+proves: []

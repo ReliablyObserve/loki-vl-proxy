@@ -818,14 +818,16 @@ func TestContract_DetectedFields_ResponseFormat(t *testing.T) {
 func TestContract_Patterns_ResponseFormat(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7B%7D&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z", nil)
 	p.handlePatterns(w, r)
 
 	if w.Code != http.StatusOK {
@@ -853,14 +855,16 @@ func TestContract_Patterns_DoesNotAppendSortClause(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z", nil)
 	p.handlePatterns(w, r)
 
 	if w.Code != http.StatusOK {
@@ -875,22 +879,31 @@ func TestContract_Patterns_DoesNotAppendSortClause(t *testing.T) {
 }
 
 func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
-	var gotQuery string
+	var (
+		mu       sync.Mutex
+		gotQuery string
+	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		mu.Lock()
 		gotQuery = r.FormValue("query")
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D+%7C+json+%7C+filter+source_message_bytes%3A%3D89+%7C+extract+%60%28.%2A%29%60&start=1&end=2", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D+%7C+json+%7C+filter+source_message_bytes%3A%3D89+%7C+extract+%60%28.%2A%29%60&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z", nil)
 	p.handlePatterns(w, r)
+	mu.Lock()
+	defer mu.Unlock()
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
@@ -967,18 +980,20 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePattern
 }
 
 func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
-	var queryRangeCalls, queryCalls int
+	var queryRangeCalls, queryCalls atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query_range":
-			queryRangeCalls++
+			queryRangeCalls.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		case "/select/logsql/query":
-			queryCalls++
+			queryCalls.Add(1)
 			w.Header().Set("Content-Type", "application/x-ndjson")
-			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}` + "\n"))
-			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:01:00Z","_msg":"GET /api/users 200 22ms","level":"info"}` + "\n"))
+			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+			for i := 0; i < lokiPatternMinLines; i++ {
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}` + "\n"))
+			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -987,17 +1002,17 @@ func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1712311200&end=1712311800&step=1m", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z&step=1m", nil)
 	p.handlePatterns(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if queryCalls == 0 {
+	if queryCalls.Load() == 0 {
 		t.Fatalf("expected query endpoint to be used for patterns extraction")
 	}
-	if queryRangeCalls != 0 {
-		t.Fatalf("expected query_range to be skipped for patterns extraction, got %d calls", queryRangeCalls)
+	if queryRangeCalls.Load() != 0 {
+		t.Fatalf("expected query_range to be skipped for patterns extraction, got %d calls", queryRangeCalls.Load())
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
@@ -1802,9 +1817,9 @@ func TestPatternsSnapshotCompaction_DeduplicatesEquivalentScopes(t *testing.T) {
 	payloadA := []byte(`{"status":"success","data":[{"pattern":"a","samples":[[1,2]]}]}`)
 	payloadB := []byte(`{"status":"success","data":[{"pattern":"b","samples":[[1,3]]}]}`)
 
-	keyOld := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=10&step=60"
-	keyNew := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=5&end=15&step=60"
-	keyOther := "patterns:org-a:query=%7Bapp%3D%22worker%22%7D&start=1&end=10&step=60"
+	keyOld := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=10&step=60"
+	keyNew := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22api%22%7D&start=5&end=15&step=60"
+	keyOther := patternsCacheKeyPrefix + "org-a:query=%7Bapp%3D%22worker%22%7D&start=1&end=10&step=60"
 
 	p.patternsSnapshotEntries[keyOld] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now - 10, PatternCount: 1}
 	p.patternsSnapshotEntries[keyNew] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now, PatternCount: 1}
@@ -1852,7 +1867,7 @@ func TestPatternsPersistenceLoop_PersistsAndStopsOnShutdown(t *testing.T) {
 	p.Init()
 
 	payload := []byte(`{"status":"success","data":[{"pattern":"sample","samples":[[1,1]]}]}`)
-	p.recordPatternSnapshotEntry("patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=2", payload, time.Now())
+	p.recordPatternSnapshotEntry(patternsCacheKeyPrefix+"org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=2", payload, time.Now())
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -2037,25 +2052,29 @@ func TestContract_Patterns_DisabledReturnsEmpty(t *testing.T) {
 }
 
 func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
+	// The first probe may take several backend calls (sampling windows, a fallback): they all see the empty answer.
+	var secondProbe atomic.Bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		switch {
-		case callCount <= 1:
+		case !secondProbe.Load():
 			// First probe: query is empty.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		default:
 			// Subsequent probe has data and should not be blocked by sticky empty cache.
 			w.Header().Set("Content-Type", "application/x-ndjson")
-			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
-			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+			// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+			for i := 0; i < lokiPatternMinLines; i++ {
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+			}
 		}
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	reqURL := "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2"
+	reqURL := "/loki/api/v1/patterns?query=%7B%7D&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z"
 
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest("GET", reqURL, nil)
@@ -2067,6 +2086,7 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 		t.Fatalf("expected first patterns probe to be empty, got %v", first)
 	}
 
+	secondProbe.Store(true)
 	w2 := httptest.NewRecorder()
 	r2 := httptest.NewRequest("GET", reqURL, nil)
 	p.handlePatterns(w2, r2)
@@ -2076,14 +2096,15 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 	if len(secondData) == 0 {
 		t.Fatalf("expected second patterns probe to return data (empty response must not be sticky), got %v", second)
 	}
-	if callCount < 2 {
-		t.Fatalf("expected backend to be queried again after empty probe; got callCount=%d", callCount)
+	if callCount.Load() < 2 {
+		t.Fatalf("expected backend to be queried again after empty probe; got callCount.Load()=%d", callCount.Load())
 	}
 }
 
 func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
-	if got := parsePatternLimit(""); got != 50 {
-		t.Fatalf("expected default limit 50, got %d", got)
+	// Loki's /patterns has no limit parameter and answers every pattern.
+	if got := parsePatternLimit(""); got != maxPatternResponseLimit {
+		t.Fatalf("expected default limit %d, got %d", maxPatternResponseLimit, got)
 	}
 	if got := parsePatternLimit("5000"); got != maxPatternResponseLimit {
 		t.Fatalf("expected maxPatternResponseLimit clamp, got %d", got)
@@ -2127,7 +2148,10 @@ func TestContract_Patterns_UsesObservedSpanInsteadOfRequestedTailFill(t *testing
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		// Native Loki patterns do not pad the whole requested range with zero buckets.
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:04:58Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:04:58Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 
@@ -2166,11 +2190,10 @@ func TestContract_Patterns_RelativeNowRangeDoesNotInventZeroBuckets(t *testing.T
 	now := time.Now().UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = fmt.Fprintf(
-			w,
-			`{"_time":"%s","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}`+"\n",
-			now.Format(time.RFC3339Nano),
-		)
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}`+"\n", now.Format(time.RFC3339Nano))
+		}
 	}))
 	defer vlBackend.Close()
 
@@ -2219,7 +2242,10 @@ func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testi
 		}
 		ts := time.Unix(0, endNs).Add(-time.Second).UTC().Format(time.RFC3339)
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}`+"\n", ts)
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range: the windows give three each.
+		for i := 0; i < 3; i++ {
+			_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}`+"\n", ts)
+		}
 	}))
 	defer vlBackend.Close()
 
@@ -2295,7 +2321,10 @@ func TestContract_Patterns_FloatSecondStepRespectsRequestedBuckets(t *testing.T)
 		receivedStep = r.FormValue("step")
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		_, _ = w.Write([]byte(`{"_time":"2026-04-04T12:59:59Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
+		for i := 0; i < lokiPatternMinLines; i++ {
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T12:59:59Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		}
 	}))
 	defer vlBackend.Close()
 

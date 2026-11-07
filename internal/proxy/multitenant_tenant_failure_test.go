@@ -43,7 +43,8 @@ func newTenantFailureBackend(t *testing.T, fail *atomic.Pointer[tenantFailure]) 
 		switch r.URL.Path {
 		case "/select/logsql/query":
 			w.Header().Set("Content-Type", "application/stream+json")
-			for _, id := range []string{"1", "2", "3", "4"} {
+			// Eight lines of each id: Loki answers a pattern only when it holds lokiPatternMinLines lines.
+			for _, id := range strings.Split(strings.Repeat("1234", 8), "") {
 				_, _ = w.Write([]byte(`{"_time":"2024-01-01T00:00:0` + id + `Z","_stream":"{app=\"api\"}","app":"api","_msg":"` + name + `_pattern request id=` + id + ` done","` + name + `_field":"v"}` + "\n"))
 			}
 		case "/select/logsql/stats_query_range":
