@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The response cache keys' version tags are built by one function for every
-  key (compat edge, inner query_range, log windows) instead of three copies;
-  every key is byte-identical to before. No behaviour change.
-
 ### Added
 
 - feat(observability): `-slow-query-log-level` (`warn` default, `info`,
@@ -21,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no slow lines and keeps no per-request trace, while
   `loki_vl_proxy_slow_requests_total` still counts slow requests. Helm: the
   `slow-query-log-level` key of `extraArgs`.
+
+## [2.92.1] - 2026-11-07
+
+### Changed
+
+- The response cache keys' version tags are built by one function for every
+  key (compat edge, inner query_range, log windows) instead of three copies;
+  every key is byte-identical to before. No behaviour change.
 
 ## [2.92.0] - 2026-11-07
 
