@@ -1,0 +1,65 @@
+id: architecture-syntax-package-layering
+kind: architecture
+title: The LogQL and LogsQL syntax packages depend on nothing but the standard library
+pending: true
+
+loki: |
+  Not client-visible: Loki's own LogQL syntax package (pkg/logql/syntax) holds
+  the scanner, parser and printer apart from its engine.
+
+victorialogs: |
+  Not client-visible: VictoriaLogs keeps its LogsQL parser in lib/logstorage.
+
+proxy: |
+  internal/logql (LogQL scanner, parser, typed AST, printer, the label filter
+  expression parser) and internal/logsql (LogsQL parser, typed AST, builder,
+  capabilities) import only the standard library and internal/querycorpus;
+  logql may import logsql, logsql imports neither. Lowering LogQL to LogsQL
+  lives in internal/translator (the string translator and the typed lowering
+  in ast_translate.go). depguard holds the imports and dupl the duplication
+  in the two packages' non-test code.
+
+implementation:
+  - .golangci.yml
+  - internal/logql/label_filter_expr.go
+  - internal/translator/ast_translate.go
+
+decisions:
+  - id: syntax-packages-stdlib-only
+    chosen: 'logql and logsql import the standard library and internal/querycorpus only; the translator imports them'
+    over: [logql importing the translator for the label filter parser and FirstArgumentLen, one combined syntax-and-lowering package]
+    why: |
+      Owner 2026-11-05/07: both ASTs are libraries every layer reuses without
+      duplication, and the AST work (typed label filters, parse once) comes
+      before visual and performance work. A syntax package that imports the
+      lowering cannot be reused below it, and the label filter parser lived in
+      the translator, so the LogQL parser called back into it.
+    evidence: 'go list -deps ./internal/logql ./internal/logsql (2026-11-07); depguard rejects a probe import of internal/metrics from each package'
+    code: [.golangci.yml, internal/logql/label_filter_expr.go, internal/logql/canonical.go, internal/translator/ast_translate.go]
+    tests: [TestParseLabelFilterExpr_Precedence, TestLabelFilterExpressionMatchesLokiGolden, TestQueryTextSites]
+    quality: 'No behaviour change: every test, the conformance gate and the corpus goldens unchanged.'
+    performance:
+      tracked: ['benchstat: internal/translator and internal/logql benchmarks, main vs branch', 'perf-smoke: no shape slower than its base']
+  - id: querycorpus-allowed-leaf
+    chosen: 'internal/querycorpus is the one internal import the syntax packages keep'
+    over: [a capture hook the proxy sets]
+    why: |
+      querycorpus imports only the standard library and its Record is an empty
+      function without the corpuscapture build tag. A hook set by the proxy
+      would stop the parsers' own package tests (which do not link the proxy)
+      feeding the query corpus.
+    evidence: 'internal/querycorpus/record.go (no-op build); TestQueryCorpusReport'
+    code: [internal/logql/parser.go, internal/logsql/parser.go]
+    tests: [TestQueryCorpusReport]
+  - id: query-text-sites-reclassified
+    chosen: 'Recount conformance/registry/query-text-sites.json after the move: deferred_raw 7 -> 9, translator_string_ops 658 -> 656'
+    over: [keeping the typed lowering in internal/logql, outside the count]
+    why: |
+      The count covers internal/translator and internal/proxy, not the syntax
+      packages. The typed lowering (two DeferredExpr literals, ten string
+      operations) moved into internal/translator, so the count now sees it;
+      the label filter parser's twelve string operations moved out of it into
+      internal/logql. Neither is new or removed code: a move, recounted.
+    evidence: 'git diff of conformance/registry/query-text-sites.json in this change'
+    code: [conformance/registry/query-text-sites.json]
+    tests: [TestQueryTextSites]

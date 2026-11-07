@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
@@ -936,7 +937,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 		remaining = rest
 		if strings.HasPrefix(stage, "(") {
 			// A parenthesized single filter is that filter.
-			if expr, err := ParseLabelFilterExpr(stage); err == nil && expr.IsLeaf() {
+			if expr, err := logqlpkg.ParseLabelFilterExpr(stage); err == nil && expr.IsLeaf() {
 				stage = expr.Leaf
 			}
 		}
@@ -1366,9 +1367,9 @@ func isNoopPatternExpression(expr string) bool {
 // "| "` branch added alongside the `wrap with "| filter "` branch), not here.
 func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) string {
 	if mayBeCompound(stage) {
-		if expr, err := ParseLabelFilterExpr(stage); err == nil {
+		if expr, err := logqlpkg.ParseLabelFilterExpr(stage); err == nil {
 			if !expr.IsLeaf() {
-				if translated, ok := expr.translate(labelFn, caps); ok {
+				if translated, ok := translateLabelFilterExpr(expr, labelFn, caps); ok {
 					return translated
 				}
 			} else {
@@ -1794,7 +1795,7 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
 	if mayBeCompound(stage) {
-		if expr, err := ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
+		if expr, err := logqlpkg.ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
 			// Several filters have no single field identity to deduplicate on.
 			return "", "", false
 		}
@@ -1916,7 +1917,7 @@ func convertGoTemplate(tmpl string) string {
 // returning (firstArg, rest, ok). rest is the text after the first comma at depth 0.
 // Input starts right after the opening '(' of the outer function.
 func splitFuncFirstArg(s string) (first, rest string, ok bool) {
-	n := FirstArgumentLen(s)
+	n := logqlpkg.FirstArgumentLen(s)
 	if n == len(s) {
 		return "", "", false
 	}
@@ -1924,38 +1925,6 @@ func splitFuncFirstArg(s string) (first, rest string, ok bool) {
 		return strings.TrimSpace(s[:n]), strings.TrimSpace(s[n+1:]), true
 	}
 	return strings.TrimSpace(s[:n]), "", true
-}
-
-// FirstArgumentLen is the length of the first argument of a call, given the
-// text after its '(': up to the first comma or unmatched ')' outside strings
-// (double-quoted with escapes, or backtick-quoted) and nested brackets. It is
-// len(s) when the call is not closed.
-func FirstArgumentLen(s string) int {
-	depth := 0
-	var quote byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case quote != 0:
-			if c == '\\' && quote == '"' {
-				i++
-			} else if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '`':
-			quote = c
-		case c == '(' || c == '[' || c == '{':
-			depth++
-		case c == ')' || c == ']' || c == '}':
-			if depth == 0 {
-				return i
-			}
-			depth--
-		case c == ',' && depth == 0:
-			return i
-		}
-	}
-	return len(s)
 }
 
 // parseAllStringArgs parses all quoted string arguments (double- or back-tick-quoted)
@@ -3638,7 +3607,7 @@ func extractPipelineStage(s string) (stage, rest string) {
 			prefix := strings.TrimSpace(s[:i])
 			complete := isBareParserKeyword(prefix)
 			if !complete {
-				_, err := ParseLabelFilterExpr(prefix)
+				_, err := logqlpkg.ParseLabelFilterExpr(prefix)
 				complete = err == nil
 				// A prefix that fails before its end fails the same way with
 				// anything appended: no later operator can follow a complete stage.
@@ -4848,8 +4817,8 @@ func resolveJSONBracketPath(orig string) string {
 // E.g., "http_code=\"200\"" with alias {"http_code":"status"} → "status=\"200\""
 func rewriteJSONAliasedFilter(stage string, aliases map[string]string) string {
 	if mayBeCompound(stage) {
-		if expr, err := ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
-			return expr.render(func(leaf string) string { return rewriteJSONAliasedFilter(leaf, aliases) })
+		if expr, err := logqlpkg.ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
+			return expr.Render(func(leaf string) string { return rewriteJSONAliasedFilter(leaf, aliases) })
 		}
 	}
 	for alias, orig := range aliases {

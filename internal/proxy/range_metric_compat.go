@@ -156,7 +156,7 @@ func stripOuterCalls(logql string, prefixes ...string) string {
 				inner, ok = logqlpkg.FirstArgument(args)
 				end := len(inner)
 				for end < len(args) && args[end] == ',' {
-					end += 1 + translator.FirstArgumentLen(args[end+1:])
+					end += 1 + logqlpkg.FirstArgumentLen(args[end+1:])
 				}
 				ok = ok && end < len(args) && strings.TrimSpace(args[end+1:]) == ""
 				break

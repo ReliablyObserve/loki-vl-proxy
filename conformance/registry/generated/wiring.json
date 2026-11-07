@@ -1050,6 +1050,7 @@
     ],
     "semantics/label-filter-expression-syntax": [
       "internal/logql/label_filter_expr_golden_test.go",
+      "internal/logql/label_filter_expr_syntax_test.go",
       "internal/logql/label_filter_expr_test.go",
       "internal/proxy/label_filter_expression_test.go",
       "internal/translator/label_filter_expr_test.go",
@@ -1558,7 +1559,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 425,
+  "registry_items": 426,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1586,6 +1587,9 @@
       "profiles/dotted-name-parse-error"
     ],
     "internal/logql/label_filter_expr_golden_test.go": [
+      "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/label_filter_expr_syntax_test.go": [
       "semantics/label-filter-expression-syntax"
     ],
     "internal/logql/label_filter_expr_test.go": [
@@ -3304,7 +3308,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 344,
+  "tests_with_markers": 345,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3313,6 +3317,7 @@
     "api_prom_query",
     "api_prom_series",
     "api_prom_tail",
+    "architecture-syntax-package-layering",
     "data-density-and-chart-quality",
     "drilldown/detected-field-values",
     "drilldown/detected-fields-metadata-reported-as-json",

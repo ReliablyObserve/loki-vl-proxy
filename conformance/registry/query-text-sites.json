@@ -1,14 +1,15 @@
 {
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
-    "deferred_raw": 7,
+    "deferred_raw": 9,
     "parse_calls": 64,
     "string_reads": 54,
     "text_built": 214,
-    "translator_string_ops": 658
+    "translator_string_ops": 656
   },
   "files": {
     "deferred_raw": {
+      "internal/translator/ast_translate.go": 2,
       "internal/translator/translator.go": 7
     },
     "parse_calls": {
@@ -87,9 +88,10 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
+      "internal/translator/ast_translate.go": 10,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
-      "internal/translator/label_filter_expr.go": 18,
+      "internal/translator/label_filter_expr.go": 6,
       "internal/translator/label_matcher_regexp.go": 9,
       "internal/translator/nested_vector_chain.go": 17,
       "internal/translator/normalize.go": 6,

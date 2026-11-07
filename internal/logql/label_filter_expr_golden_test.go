@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // lokiFilterShape reads the String() Loki prints for a label filter ("( a , b )"
@@ -46,11 +44,11 @@ func lokiFilterShape(s string) string {
 	return expr()
 }
 
-func filterShape(e *translator.LabelFilterExpr) string {
+func filterShape(e *LabelFilterExpr) string {
 	switch e.Op {
-	case translator.LabelFilterAnd:
+	case LabelFilterAnd:
 		return "(" + filterShape(e.Left) + " , " + filterShape(e.Right) + ")"
-	case translator.LabelFilterOr:
+	case LabelFilterOr:
 		return "(" + filterShape(e.Left) + " or " + filterShape(e.Right) + ")"
 	}
 	return "x"
@@ -115,7 +113,7 @@ func TestLabelFilterExpressionMatchesLokiGolden(t *testing.T) {
 		}
 		_, text, _ := strings.Cut(query, "} | ")
 		text = strings.TrimPrefix(strings.TrimPrefix(text, "json | "), "logfmt | ")
-		expr, serr := translator.ParseLabelFilterExpr(text)
+		expr, serr := ParseLabelFilterExpr(text)
 		if serr != nil {
 			t.Errorf("%s: %q: %v", query, text, serr)
 			continue

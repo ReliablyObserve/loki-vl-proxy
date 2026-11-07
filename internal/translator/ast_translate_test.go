@@ -1,4 +1,4 @@
-package logql_test
+package translator
 
 import (
 	"strings"
@@ -39,7 +39,7 @@ func TestTranslate_StreamSelector(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse error: %v", err)
 			}
-			got, err := logql.Translate(expr, logql.TranslateOptions{})
+			got, err := TranslateAST(expr, ASTTranslateOptions{})
 			if err != nil {
 				t.Fatalf("Translate error: %v", err)
 			}
@@ -78,7 +78,7 @@ func TestTranslate_LineFilter(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse error: %v", err)
 			}
-			got, err := logql.Translate(expr, logql.TranslateOptions{})
+			got, err := TranslateAST(expr, ASTTranslateOptions{})
 			if err != nil {
 				t.Fatalf("Translate error: %v", err)
 			}
@@ -101,7 +101,7 @@ func TestTranslate_WithLabelFn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{LabelFn: labelFn})
+	got, err := TranslateAST(expr, ASTTranslateOptions{LabelFn: labelFn})
 	if err != nil {
 		t.Fatalf("Translate error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestTranslate_ParserStages(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse error: %v", err)
 			}
-			_, err = logql.Translate(expr, logql.TranslateOptions{})
+			_, err = TranslateAST(expr, ASTTranslateOptions{})
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
@@ -141,7 +141,7 @@ func TestTranslate_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	out1, err := logql.Translate(expr1, logql.TranslateOptions{})
+	out1, err := TranslateAST(expr1, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("Translate error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestTranslate_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-Parse error: %v", err)
 	}
-	out2, err := logql.Translate(expr2, logql.TranslateOptions{})
+	out2, err := TranslateAST(expr2, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("re-Translate error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestTranslate_OpaqueMetricExpr_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	_, err = logql.Translate(expr, logql.TranslateOptions{})
+	_, err = TranslateAST(expr, ASTTranslateOptions{})
 	// error is acceptable; panic is not
 	_ = err
 }
@@ -176,7 +176,7 @@ func TestTranslate_RangeAgg_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Logf("translate returned error (acceptable for metric path): %v", err)
 		return
@@ -191,7 +191,7 @@ func TestTranslate_Parser_JSON_Bare(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestTranslate_Parser_Logfmt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestTranslate_Parser_Regexp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestTranslate_DropStage_BareLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestTranslate_DropStage_WithMatchers_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestTranslate_KeepStage_BareLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestTranslate_LineFormatStage_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestTranslate_LineFormatStage_Complex_FallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	got, err := TranslateAST(expr, ASTTranslateOptions{})
 	if err != nil {
 		t.Logf("translate returned error: %v (acceptable from string translator)", err)
 	}
@@ -316,7 +316,7 @@ func TestTranslate_LabelFn_Applied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	opts := logql.TranslateOptions{
+	opts := ASTTranslateOptions{
 		LabelFn: func(label string) string {
 			if label == "app" {
 				return "service"
@@ -324,7 +324,7 @@ func TestTranslate_LabelFn_Applied(t *testing.T) {
 			return label
 		},
 	}
-	got, err := logql.Translate(expr, opts)
+	got, err := TranslateAST(expr, opts)
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -338,10 +338,10 @@ func TestTranslate_StreamFields_UsesStreamFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	opts := logql.TranslateOptions{
+	opts := ASTTranslateOptions{
 		StreamFields: map[string]bool{"app": true, "level": true},
 	}
-	got, err := logql.Translate(expr, opts)
+	got, err := TranslateAST(expr, opts)
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}

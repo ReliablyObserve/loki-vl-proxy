@@ -67,6 +67,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 0 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 8 | 6 | proven |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |

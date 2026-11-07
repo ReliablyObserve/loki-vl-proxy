@@ -17,6 +17,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // Loki's /patterns step: the request's step, or the range over 250 points in whole seconds, and never under the
@@ -57,7 +58,7 @@ func TestPatternCountsQueriesAreTyped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filter, err := logqlpkg.SelectorFilter(lq.Selector, logqlpkg.TranslateOptions{})
+	filter, err := translator.ASTSelectorFilter(lq.Selector, translator.ASTTranslateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

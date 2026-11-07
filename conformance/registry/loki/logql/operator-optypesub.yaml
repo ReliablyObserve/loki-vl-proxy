@@ -7,7 +7,7 @@ generated:
   seen_in:
     - internal/logql/ip_filter.go
     - internal/logql/scanner.go
-    - internal/logql/translate.go
+    - internal/translator/ast_translate.go
     - internal/proxy/binary_matching.go
     - internal/proxy/metric_agg.go
     - internal/proxy/metric_binary.go

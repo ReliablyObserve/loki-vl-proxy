@@ -1,4 +1,4 @@
-package logql
+package translator
 
 import (
 	"errors"
@@ -6,15 +6,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// TranslateOptions controls how LogQL is translated to LogsQL.
-type TranslateOptions struct {
+// ASTTranslateOptions controls how LogQL is translated to LogsQL.
+type ASTTranslateOptions struct {
 	// LabelFn translates a Loki label name to a VictoriaLogs field name.
 	// If nil, label names are passed through unchanged.
-	LabelFn translator.LabelTranslateFunc
+	LabelFn LabelTranslateFunc
 
 	// StreamFields is the set of VL _stream_fields labels for which the
 	// translator can emit the faster stream-selector syntax.
@@ -28,30 +28,30 @@ type TranslateOptions struct {
 	Caps logsql.Capabilities
 }
 
-// SelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes
-// (translator.SelectorFilter): no query text is written or read on the way.
-func SelectorFilter(sel *StreamSelector, opts TranslateOptions) (logsql.FilterExpr, error) {
-	matchers := make([]translator.SelectorMatcher, len(sel.Matchers))
+// ASTSelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes
+// (SelectorFilter): no query text is written or read on the way.
+func ASTSelectorFilter(sel *logql.StreamSelector, opts ASTTranslateOptions) (logsql.FilterExpr, error) {
+	matchers := make([]SelectorMatcher, len(sel.Matchers))
 	for i, m := range sel.Matchers {
-		matchers[i] = translator.SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
+		matchers[i] = SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
 	}
-	return translator.SelectorFilter(matchers, opts.LabelFn, opts.StreamFields)
+	return SelectorFilter(matchers, opts.LabelFn, opts.StreamFields)
 }
 
 // errFallthrough signals that translateExpr cannot handle this node and the
 // caller should route to the string-based translator instead.
 var errFallthrough = errors.New("fallthrough to string translator")
 
-// Translate converts a parsed LogQL expression to a LogsQL query string.
+// TranslateAST converts a parsed LogQL expression to a LogsQL query string.
 //
-// For log queries (LogQuery), it uses a typed AST-to-AST mapping that reads
+// For log queries (logql.LogQuery), it uses a typed AST-to-AST mapping that reads
 // LogQL AST nodes and constructs the corresponding logsql.Query.
 // For metric queries, VectorAggregation, RangeAggregation, and OpaqueMetricExpr,
 // it falls through to the existing string-based translator.
-func Translate(expr Expr, opts TranslateOptions) (string, error) {
+func TranslateAST(expr logql.Expr, opts ASTTranslateOptions) (string, error) {
 	q, err := translateExpr(expr, opts)
 	if errors.Is(err, errFallthrough) {
-		return translator.TranslateLogQLWithStreamFields(expr.String(), opts.LabelFn, opts.StreamFields)
+		return TranslateLogQLWithStreamFields(expr.String(), opts.LabelFn, opts.StreamFields)
 	}
 	if err != nil {
 		return "", err
@@ -60,22 +60,22 @@ func Translate(expr Expr, opts TranslateOptions) (string, error) {
 }
 
 // translateExpr dispatches to the appropriate node translator.
-func translateExpr(expr Expr, opts TranslateOptions) (*logsql.Query, error) {
+func translateExpr(expr logql.Expr, opts ASTTranslateOptions) (*logsql.Query, error) {
 	switch e := expr.(type) {
-	case *LogQuery:
-		return translateLogQuery(e, opts)
+	case *logql.LogQuery:
+		return astTranslateLogQuery(e, opts)
 	default:
 		return nil, errFallthrough
 	}
 }
 
-// translateLogQuery maps a LogQL log query (stream selector + pipeline) to a logsql.Query.
+// astTranslateLogQuery maps a LogQL log query (stream selector + pipeline) to a logsql.Query.
 //
 // The filter section is built by combining stream-selector matchers and any leading
 // line-filter stages. Parser stages (json, logfmt, regexp, pattern) map to logsql
 // pipe types. Label-filter stages and other opaque stages fall through to the
 // string translator for the whole query.
-func translateLogQuery(lq *LogQuery, opts TranslateOptions) (*logsql.Query, error) {
+func astTranslateLogQuery(lq *logql.LogQuery, opts ASTTranslateOptions) (*logsql.Query, error) {
 	// Collect all filter parts (stream selector + line filters) as LogsQL strings.
 	var filterParts []string
 
@@ -90,56 +90,56 @@ func translateLogQuery(lq *LogQuery, opts TranslateOptions) (*logsql.Query, erro
 	var pipes []logsql.Pipe
 	for _, stage := range lq.Pipeline {
 		switch s := stage.(type) {
-		case *LineFilterStage:
+		case *logql.LineFilterStage:
 			part, err := translateLineFilter(s)
 			if err != nil {
 				return nil, err
 			}
 			filterParts = append(filterParts, part)
 
-		case *ParserStage:
+		case *logql.ParserStage:
 			pipe, err := translateParser(s)
 			if err != nil {
 				return nil, err
 			}
 			pipes = append(pipes, pipe)
 
-		case *LabelFilterStage:
+		case *logql.LabelFilterStage:
 			// Label filters can be complex (arithmetic, nested logic); fall through
 			// so the full query is handled by the string translator.
 			return nil, errFallthrough
 
-		case *DropStage:
+		case *logql.DropStage:
 			pipe, err := translateDrop(s, opts)
 			if err != nil {
 				return nil, err
 			}
 			pipes = append(pipes, pipe)
 
-		case *KeepStage:
+		case *logql.KeepStage:
 			pipe, err := translateKeep(s, opts)
 			if err != nil {
 				return nil, err
 			}
 			pipes = append(pipes, pipe)
 
-		case *LineFormatStage:
+		case *logql.LineFormatStage:
 			pipe, err := translateLineFormat(s)
 			if err != nil {
 				return nil, err
 			}
 			pipes = append(pipes, pipe)
 
-		case *LabelFormatStage:
+		case *logql.LabelFormatStage:
 			// label_format can rename/template labels; fall through to string translator.
 			return nil, errFallthrough
 
-		case *DecolorizeStage:
+		case *logql.DecolorizeStage:
 			pipes = append(pipes, logsql.PipeDecolorize{})
 
-		case *UnwrapStage:
+		case *logql.UnwrapStage:
 			// unwrap is a metric-level operator; queries containing it are metric
-			// expressions and should not reach translateLogQuery. Fall through.
+			// expressions and should not reach astTranslateLogQuery. Fall through.
 			return nil, errFallthrough
 
 		default:
@@ -164,7 +164,7 @@ func translateLogQuery(lq *LogQuery, opts TranslateOptions) (*logsql.Query, erro
 
 // translateStreamSelector converts LogQL stream-selector matchers to LogsQL filter strings.
 // Each matcher produces one string element; the caller joins them with spaces.
-func translateStreamSelector(sel *StreamSelector, opts TranslateOptions) ([]string, error) {
+func translateStreamSelector(sel *logql.StreamSelector, opts ASTTranslateOptions) ([]string, error) {
 	if sel == nil || len(sel.Matchers) == 0 {
 		return nil, nil
 	}
@@ -182,14 +182,14 @@ func translateStreamSelector(sel *StreamSelector, opts TranslateOptions) ([]stri
 	return parts, nil
 }
 
-// translateMatcher converts a single LabelMatcher to its LogsQL filter string.
+// translateMatcher converts a single logql.LabelMatcher to its LogsQL filter string.
 //
 // Field naming rules (matching translator package behaviour):
 //   - If opts.LabelFn is set, the label is renamed before use.
 //   - Dotted field names are wrapped in double quotes (VL requirement).
 //
 // Negation uses the `-` prefix (not `NOT`) to match the translator package output.
-func translateMatcher(m LabelMatcher, opts TranslateOptions) (string, error) {
+func translateMatcher(m logql.LabelMatcher, opts ASTTranslateOptions) (string, error) {
 	label := m.Name
 	if opts.LabelFn != nil {
 		label = opts.LabelFn(label)
@@ -203,19 +203,19 @@ func translateMatcher(m LabelMatcher, opts TranslateOptions) (string, error) {
 	value := m.Value
 
 	switch m.Op {
-	case MatchEq:
+	case logql.MatchEq:
 		ff := logsql.FieldFilter{Field: quotedLabel, Op: logsql.FieldOpExact, Value: value}
 		return ff.String(), nil
-	case MatchNeq:
+	case logql.MatchNeq:
 		ff := logsql.FieldFilter{Field: quotedLabel, Op: logsql.FieldOpExact, Value: value}
 		return "-" + ff.String(), nil
-	case MatchRe:
+	case logql.MatchRe:
 		// A LogQL label matcher is anchored to the whole value; VictoriaLogs'
 		// field:~"re" is unanchored. Line filters (|~) are NOT anchored — see
 		// translateLineFilter.
 		ff := logsql.FieldFilter{Field: quotedLabel, Op: logsql.FieldOpRegexp, Value: logsql.AnchorLabelMatcherRegex(value)}
 		return ff.String(), nil
-	case MatchNotRe:
+	case logql.MatchNotRe:
 		ff := logsql.FieldFilter{Field: quotedLabel, Op: logsql.FieldOpRegexp, Value: logsql.AnchorLabelMatcherRegex(value)}
 		return "-" + ff.String(), nil
 	default:
@@ -227,26 +227,26 @@ func translateMatcher(m LabelMatcher, opts TranslateOptions) (string, error) {
 //
 // Loki |= is a substring match; VL's ~"text" is the closest equivalent.
 // Pattern filters (|> and !>) fall through to the string translator.
-func translateLineFilter(s *LineFilterStage) (string, error) {
+func translateLineFilter(s *logql.LineFilterStage) (string, error) {
 	if s.IP || len(s.Or) > 0 {
 		return "", errFallthrough
 	}
 	quoted := logsql.QuotePattern(s.Value)
 	switch s.Op {
-	case LineFilterContains:
+	case logql.LineFilterContains:
 		return "~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
-	case LineFilterExcludes:
+	case logql.LineFilterExcludes:
 		return "NOT ~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
-	case LineFilterMatchRe:
+	case logql.LineFilterMatchRe:
 		// |~ "re" → ~"re"
 		return "~" + quoted, nil
-	case LineFilterExcludeRe:
+	case logql.LineFilterExcludeRe:
 		// !~ "re" → NOT ~"re"
 		return "NOT ~" + quoted, nil
-	case LineFilterContainsPat:
+	case logql.LineFilterContainsPat:
 		// |> "pattern" — no direct VL equivalent without capabilities context
 		return "", errFallthrough
-	case LineFilterExcludePat:
+	case logql.LineFilterExcludePat:
 		return "", errFallthrough
 	default:
 		return "", errFallthrough
@@ -254,17 +254,17 @@ func translateLineFilter(s *LineFilterStage) (string, error) {
 }
 
 // translateParser converts a LogQL parser stage to the matching logsql Pipe.
-func translateParser(s *ParserStage) (logsql.Pipe, error) {
+func translateParser(s *logql.ParserStage) (logsql.Pipe, error) {
 	switch s.Type {
-	case ParserJSON:
+	case logql.ParserJSON:
 		return logsql.PipeUnpackJSON{}, nil
-	case ParserLogfmt:
+	case logql.ParserLogfmt:
 		return logsql.PipeUnpackLogfmt{}, nil
-	case ParserRegexp:
+	case logql.ParserRegexp:
 		return logsql.PipeExtractRegexp{Pattern: s.Param, From: "_msg"}, nil
-	case ParserPattern:
+	case logql.ParserPattern:
 		return logsql.PipeExtract{Pattern: s.Param, From: "_msg"}, nil
-	case ParserUnpack:
+	case logql.ParserUnpack:
 		return logsql.PipeUnpackJSON{}, nil
 	default:
 		return nil, errFallthrough
@@ -274,7 +274,7 @@ func translateParser(s *ParserStage) (logsql.Pipe, error) {
 // translateDrop converts a LogQL | drop stage to a logsql PipeDelete.
 // Conditional drops (| drop level="debug") cannot be expressed natively in
 // LogsQL; return errFallthrough so the string translator handles the query.
-func translateDrop(s *DropStage, opts TranslateOptions) (logsql.Pipe, error) {
+func translateDrop(s *logql.DropStage, opts ASTTranslateOptions) (logsql.Pipe, error) {
 	if len(s.Matchers) > 0 {
 		return nil, errFallthrough
 	}
@@ -291,7 +291,7 @@ func translateDrop(s *DropStage, opts TranslateOptions) (logsql.Pipe, error) {
 // translateKeep converts a LogQL | keep stage to a logsql PipeFields.
 // Conditional keeps (| keep level="debug") cannot be expressed natively in
 // LogsQL; return errFallthrough so the string translator handles the query.
-func translateKeep(s *KeepStage, opts TranslateOptions) (logsql.Pipe, error) {
+func translateKeep(s *logql.KeepStage, opts ASTTranslateOptions) (logsql.Pipe, error) {
 	if len(s.Matchers) > 0 {
 		return nil, errFallthrough
 	}
@@ -309,7 +309,7 @@ func translateKeep(s *KeepStage, opts TranslateOptions) (logsql.Pipe, error) {
 // Complex Go template directives ({{if}}, {{range}}, {{with}}, pipes, or the
 // special __line__/__timestamp__ variables) are not expressible in LogsQL
 // | format; fall through to the string translator for those cases.
-func translateLineFormat(s *LineFormatStage) (logsql.Pipe, error) {
+func translateLineFormat(s *logql.LineFormatStage) (logsql.Pipe, error) {
 	tmpl := s.Template
 	if strings.Contains(tmpl, "{{if") || strings.Contains(tmpl, "{{range") ||
 		strings.Contains(tmpl, "{{with") || strings.Contains(tmpl, "__line__") ||
