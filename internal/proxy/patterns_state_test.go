@@ -258,6 +258,23 @@ func TestPatternStateCountsOnlyARangeInsideTheRetentionAlongside(t *testing.T) {
 	}
 }
 
+// A range that ends a little after now (Drilldown's moving window one step ahead) is answered from the state, its
+// lines read up to now, not by reading the whole range's lines again.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternStateAnswersARangeEndingAfterNow(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 100)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	want, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	reads := len(vl.lineRanges)
+	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour+5*time.Minute), now.Add(5*time.Minute))
+	if got != want || len(vl.lineRanges) != reads {
+		t.Fatalf("a range ending after now answered %q with %d more reads, want %q from the state", got, len(vl.lineRanges)-reads, want)
+	}
+}
+
 // A pattern's text is its cluster's template trained on every line the state read, as Loki's is, the samples
 // being those inside the range: the lines before the range, whose last token varies, make it <_> in the template
 // of a range whose lines all end the same.

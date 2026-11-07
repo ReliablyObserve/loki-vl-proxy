@@ -152,7 +152,7 @@ type patternFoldedCluster struct {
 // read when the range ends later. A range that starts before the retention is answered with the retention's
 // samples alone, as Loki's pattern ingester answers it (it holds no older ones), and one that ends before it with
 // none. answered is false when the state cannot be built within maxLines (or is being built in the background),
-// the range ends in the future, or VictoriaLogs fails: the caller answers without the state.
+// or VictoriaLogs fails: the caller answers without the state.
 //
 // fromNs is where the answer's samples start: Loki's retention (3h back), or with -patterns-full-range the hour
 // the state's samples start at, the range before it left to the caller (addPatternHistory). lines is the range's
@@ -165,9 +165,6 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	}
 	now := store.now()
 	retainFrom := now.Add(-lokiPatternRetention).Truncate(time.Hour).UnixNano()
-	if scope.endNs > now.Add(time.Minute).UnixNano() {
-		return nil, 0, -1, false
-	}
 	ctx := r.Context()
 	t := store.tenant(p.patternStateTenantKey(r))
 	t.mu.Lock()
