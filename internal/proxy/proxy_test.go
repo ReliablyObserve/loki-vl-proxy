@@ -879,12 +879,17 @@ func TestContract_Patterns_DoesNotAppendSortClause(t *testing.T) {
 }
 
 func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
-	var gotQuery string
+	var (
+		mu       sync.Mutex
+		gotQuery string
+	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		mu.Lock()
 		gotQuery = r.FormValue("query")
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		// Loki answers a pattern only when it holds lokiPatternMinLines lines in the range.
 		for i := 0; i < lokiPatternMinLines; i++ {
@@ -897,6 +902,8 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D+%7C+json+%7C+filter+source_message_bytes%3A%3D89+%7C+extract+%60%28.%2A%29%60&start=2026-04-04T09:00:00Z&end=2026-04-04T11:00:00Z", nil)
 	p.handlePatterns(w, r)
+	mu.Lock()
+	defer mu.Unlock()
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())

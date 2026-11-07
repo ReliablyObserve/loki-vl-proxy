@@ -491,8 +491,9 @@ func readPromMetric(t *testing.T, baseURL, metricName string) float64 {
 func ingestPatternData(t *testing.T) {
 	t.Helper()
 	patternDataOnce.Do(func() {
-		now := time.Now()
-		// Loki answers a pattern only when it holds at least 30 lines in the range: 40 lines of each kind.
+		// Loki answers a pattern only when it holds at least 30 lines in the range: 40 lines of each kind, one a
+		// second (pushStream), ending before now so every range that ends now holds them all.
+		now := time.Now().Add(-5 * time.Minute)
 		var lines []string
 		for i := 0; i < 40; i++ {
 			lines = append(lines,
