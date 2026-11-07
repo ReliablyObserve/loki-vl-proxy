@@ -25,7 +25,10 @@ func patternExactCountQuery(filter logsql.FilterExpr) *logsql.Query {
 }
 
 // patternExactLinesQuery reads the lines of a stream selector's filter with what the miner needs of each, a stream
-// after another and the lines of a stream oldest first, the order Loki's pattern ingester reads them in.
+// after another and the lines of a stream oldest first, the order Loki's pattern ingester reads them in. Lines of a
+// stream that share a time (a push's lines often do) come in their text's order: VictoriaLogs returns such ties in
+// any order, and the order a stream's lines are mined in decides which cluster a line joins, so every read, rebuild
+// and peer mines them alike.
 func patternExactLinesQuery(filter logsql.FilterExpr) *logsql.Query {
 	fields := []string{"_time", "_msg", patternExactStreamField}
 	for _, field := range patternCountsLevelFields {
@@ -36,7 +39,7 @@ func patternExactLinesQuery(filter logsql.FilterExpr) *logsql.Query {
 	}
 	return logsql.NewQuery(filter,
 		logsql.PipeFields{Labels: fields},
-		logsql.PipeSort{By: []logsql.SortField{{Field: patternExactStreamField}, {Field: "_time"}}},
+		logsql.PipeSort{By: []logsql.SortField{{Field: patternExactStreamField}, {Field: "_time"}, {Field: "_msg"}}},
 	)
 }
 

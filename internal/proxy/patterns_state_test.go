@@ -115,13 +115,16 @@ func (f *fakeStateVL) server(t *testing.T) *httptest.Server {
 		case strings.HasSuffix(q, "| stats count() as c"):
 			f.counts++
 			fmt.Fprintf(w, `{"c":"%d"}`+"\n", len(in))
-		case strings.Contains(q, "| sort by (_stream_id, _time)"):
+		case strings.Contains(q, "| sort by (_stream_id, _time, _msg)"):
 			f.lineRanges = append(f.lineRanges, [2]time.Time{time.Unix(0, from).UTC(), time.Unix(0, to).UTC()})
 			sort.SliceStable(in, func(i, j int) bool {
 				if in[i].stream != in[j].stream {
 					return in[i].stream < in[j].stream
 				}
-				return in[i].at.Before(in[j].at)
+				if !in[i].at.Equal(in[j].at) {
+					return in[i].at.Before(in[j].at)
+				}
+				return in[i].msg < in[j].msg
 			})
 			for _, row := range in {
 				encoded, _ := json.Marshal(map[string]string{"_time": row.at.Format(time.RFC3339Nano), "_msg": row.msg, "level": row.level, "_stream_id": row.stream})

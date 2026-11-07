@@ -132,6 +132,20 @@ decisions:
     evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
     code: [internal/proxy/patterns_counts.go]
     tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage]
+  - id: patterns-ties-in-text-order
+    chosen: Read a stream's lines that share a time in their text's order (sort by _stream_id, _time, _msg)
+    over: [sorting by stream and time only, VictoriaLogs returning ties in any order]
+    why: |
+      The order a stream's lines are mined in decides which cluster some lines
+      join, and a push's lines often share a time (153,878 such neighbours in
+      1h of env=production). Ordered by stream and time only, two reads of the
+      same settled hour returned them in different orders and two cold answers
+      differed by 1-4 lines a pattern; with the text as the last key every read,
+      rebuild and peer mines them alike (0 differing streams; sort time the
+      same). Loki mines them in push order, which VictoriaLogs does not keep.
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
+    code: [internal/proxy/patterns_exact.go]
+    tests: [TestPatternExactQueriesAreTyped, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
 
 implementation:
   - internal/proxy/pattern_cluster.go

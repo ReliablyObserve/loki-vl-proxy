@@ -134,7 +134,7 @@ func (f *fakePatternCounts) server(t *testing.T) *httptest.Server {
 		q := r.Form.Get("query")
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		switch {
-		case strings.Contains(q, "| sort by (_stream_id, _time)"):
+		case strings.Contains(q, "| sort by (_stream_id, _time, _msg)"):
 			f.lineCalls.Add(1)
 			if f.linesStatus != 0 {
 				w.WriteHeader(f.linesStatus)

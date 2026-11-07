@@ -55,7 +55,7 @@ func TestPatternExactQueriesAreTyped(t *testing.T) {
 	if got, want := patternExactCountQuery(filter).String(), `app:="api" | stats count() as c`; got != want {
 		t.Errorf("count query %s, want %s", got, want)
 	}
-	want := `app:="api" | fields _time, _msg, _stream_id, detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number | sort by (_stream_id, _time)`
+	want := `app:="api" | fields _time, _msg, _stream_id, detected_level, level, LEVEL, Level, "log.level", severity, SEVERITY, Severity, SeverityText, lvl, LVL, Lvl, severity_text, Severity_Text, SEVERITY_TEXT, severity_number | sort by (_stream_id, _time, _msg)`
 	if got := patternExactLinesQuery(filter).String(); got != want {
 		t.Errorf("lines query\n got %s\nwant %s", got, want)
 	}
