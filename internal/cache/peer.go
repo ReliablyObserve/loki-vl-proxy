@@ -516,6 +516,46 @@ func (pc *PeerCache) getReplica(key string) ([]byte, time.Duration, bool, bool) 
 	return nil, 0, false, false
 }
 
+// Reachable reports whether a peer answers within the peer request timeout: its breaker lets calls through and a
+// presence check for key (/_cache/has) returns 200. A caller that may then wait on the peer much longer (a /patterns
+// request the owner may build a pattern state on) asks first, so a stopped or frozen peer costs it at most the peer
+// timeout; the check counts towards the peer's breaker like any other call.
+func (pc *PeerCache) Reachable(addr, key string) bool {
+	if !pc.peerAllowed(addr) {
+		pc.RecordPeerErrorReason("breaker_open")
+		return false
+	}
+	endpoint := "http://" + addr + "/_cache/has?keys=" + url.QueryEscape(key)
+	ctx, cancel := context.WithTimeout(pc.peerContext(addr), pc.client.Timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		pc.recordPeerFailure(addr)
+		return false
+	}
+	if pc.authToken != "" {
+		req.Header.Set("X-Peer-Token", pc.authToken)
+	}
+	resp, err := pc.client.Do(req)
+	if err != nil {
+		if pc.recordPeerCallError(addr, ctx, err) {
+			pc.RecordPeerErrorReason("peer_not_up")
+		} else {
+			pc.RecordPeerErrorReason(classifyPeerFetchError(err))
+		}
+		return false
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		pc.recordPeerFailure(addr)
+		pc.RecordPeerErrorReason(peerStatusReason(resp.StatusCode))
+		return false
+	}
+	pc.recordPeerSuccess(addr)
+	return true
+}
+
 // fetchFrom asks one replica for key: the value, its remaining TTL and
 // whether the replica keeps it in memory only, with status 200; 404 on a
 // miss; 0 on an error (recorded against the peer).

@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reading is the LogQL parser's own. No behaviour change, except that a range
   longer than about 292 years reads as unusable instead of wrapping around.
 
+### Fixed
+
+- fix: work shared by several requests stops when the last of them leaves, not
+  when the first one does. A coalesced VictoriaLogs call (`/series`,
+  `index/stats`, volume hits, metadata) failed every waiting client with 499
+  the moment the first client gave up; now the others get the answer. The
+  Drilldown burst scan (one VictoriaLogs scan for a tab's breakdowns) ran on
+  for up to 30 seconds after every client had left; now it is cancelled when
+  the last one leaves, so VictoriaLogs stops scanning for nobody.
+
+- fix(patterns): with the selector's pattern-state owner stopped or frozen, a
+  `/loki/api/v1/patterns` request on another peer waited up to 30 seconds (the
+  time the owner gets to build the state) before asking the replica. A peer
+  now checks the owner answers within the peer timeout (`-peer-timeout`,
+  default 2s) before forwarding to it, so a down owner costs at most that.
+
 ## [2.89.0] - 2026-11-07
 
 ### Changed

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,13 +21,16 @@ type statePeers struct {
 	proxies []*Proxy
 	addrs   []string
 	servers []*http.Server
+	// frozen[i] makes peer i accept requests and never answer, as a paused container does.
+	frozen []atomic.Bool
 }
 
-func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *statePeers {
+// newStatePeers starts n peers; peerTimeout, when given, is their peer request timeout.
+func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int, peerTimeout ...time.Duration) *statePeers {
 	t.Helper()
 	backend := vl.server(t)
 	listeners := make([]net.Listener, n)
-	sp := &statePeers{}
+	sp := &statePeers{frozen: make([]atomic.Bool, n)}
 	for i := range listeners {
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -36,7 +40,11 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *stateP
 		sp.addrs = append(sp.addrs, l.Addr().String())
 	}
 	for i, l := range listeners {
-		pc := cache.NewPeerCache(cache.PeerConfig{SelfAddr: sp.addrs[i], DiscoveryType: "static", StaticPeers: strings.Join(sp.addrs, ","), AuthToken: "peer-secret", ReplicationFactor: 2})
+		cfg := cache.PeerConfig{SelfAddr: sp.addrs[i], DiscoveryType: "static", StaticPeers: strings.Join(sp.addrs, ","), AuthToken: "peer-secret", ReplicationFactor: 2}
+		if len(peerTimeout) > 0 {
+			cfg.Timeout = peerTimeout[0]
+		}
+		pc := cache.NewPeerCache(cfg)
 		t.Cleanup(pc.Close)
 		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", PeerCache: pc, PeerAuthToken: "peer-secret", PatternsCounts: true})
 		if err != nil {
@@ -47,7 +55,14 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *stateP
 		p.patternState.now = func() time.Time { return *now }
 		mux := http.NewServeMux()
 		p.RegisterRoutes(mux)
-		srv := &http.Server{Handler: mux}
+		frozen := &sp.frozen[i]
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if frozen.Load() {
+				<-r.Context().Done() // the caller gives up, or the server closes
+				return
+			}
+			mux.ServeHTTP(w, r)
+		})}
 		go func() { _ = srv.Serve(l) }()
 		t.Cleanup(func() { _ = srv.Close() })
 		sp.proxies = append(sp.proxies, p)
@@ -141,6 +156,42 @@ func TestPatternsAnsweredLocallyWhenTheOwnersAreDown(t *testing.T) {
 	}
 	if got := sp.patternsVia(t, survivor, "0", `{app="api"}`, now.Add(-time.Hour), now); !strings.Contains(got, "shipped to berlin") {
 		t.Fatalf("survivor answered %s", got)
+	}
+}
+
+// A state owner that accepts connections and never answers (a frozen container) costs a /patterns request at
+// most the peer timeout: the peer skips it after a presence check and asks the replica, instead of waiting
+// patternsOwnerTimeout on the forward.
+//
+// conformance: peer-cache-patterns, loki_api_v1_patterns
+func TestPatternsSkipAFrozenOwnerWithinThePeerTimeout(t *testing.T) {
+	const peerTimeout = 300 * time.Millisecond
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-40*time.Minute), 200)...)
+	now := stateNow
+	sp := newStatePeers(t, vl, &now, 3, peerTimeout)
+	scope, _ := sp.proxies[0].patternScope(`{app="api"}`, "1", "2", "")
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Scope-OrgID", "0")
+	replicas := sp.proxies[0].peerCache.Replicas(sp.proxies[0].patternStateKey(req, scope))
+	owner, asker := -1, -1
+	for i, addr := range sp.addrs {
+		switch {
+		case addr == replicas[0]:
+			owner = i
+		case addr != replicas[1]:
+			asker = i
+		}
+	}
+	// The owner keeps accepting requests and never answers.
+	sp.frozen[owner].Store(true)
+	started := time.Now()
+	got := sp.patternsVia(t, asker, "0", `{app="api"}`, now.Add(-time.Hour), now)
+	if elapsed := time.Since(started); elapsed > 3*peerTimeout {
+		t.Fatalf("a frozen owner cost %s, want at most about the peer timeout (%s)", elapsed, peerTimeout)
+	}
+	if !strings.Contains(got, "shipped to berlin") {
+		t.Fatalf("answered %s", got)
 	}
 }
 

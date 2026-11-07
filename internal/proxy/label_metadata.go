@@ -283,8 +283,8 @@ func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params ur
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
 	key := p.vlMetadataCoalesceKey(ctx, path, params)
-	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
-		return p.vlGetInner(ctx, path, params)
+	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, p.breaker.Allow, func(callCtx context.Context) (*http.Response, error) {
+		return p.vlGetInner(callCtx, path, params)
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
 		return 0, nil, fmt.Errorf("circuit breaker open — backend unavailable")
