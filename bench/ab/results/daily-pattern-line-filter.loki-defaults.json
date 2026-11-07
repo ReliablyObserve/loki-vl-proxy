@@ -1,6 +1,6 @@
 {
  "label": "daily-pattern-line-filter-loki-defaults",
- "date": "2026-11-06",
+ "date": "2026-11-07",
  "set": "pattern-line-filter",
  "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "P1 api-gateway empty pattern",
    "range": "1h",
    "p50": {
-    "release": 0.012,
-    "main": 0.012,
-    "loki": 0.005
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.009
    },
    "p95": {
-    "release": 0.013,
-    "main": 0.013,
-    "loki": 0.005
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.011
    },
    "cold": {
-    "release": 0.02,
-    "main": 0.01,
-    "loki": 0.028
+    "release": 0.015,
+    "main": 0.008,
+    "loki": 0.029
    },
    "status": {
     "release": "200",
@@ -141,19 +141,19 @@
    "shape": "P2 api-gateway not empty pattern, line filter",
    "range": "1h",
    "p50": {
-    "main": 0.034,
-    "release": 0.038,
-    "loki": 0.021
+    "main": 0.025,
+    "release": 0.026,
+    "loki": 0.024
    },
    "p95": {
-    "main": 0.037,
-    "release": 0.043,
-    "loki": 0.023
+    "main": 0.046,
+    "release": 0.057,
+    "loki": 0.031
    },
    "cold": {
-    "main": 0.036,
-    "release": 0.04,
-    "loki": 0.018
+    "main": 0.026,
+    "release": 0.025,
+    "loki": 0.054
    },
    "status": {
     "main": "200",
@@ -161,9 +161,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 26.36,
-    "release": 26.36,
-    "loki": 26.36
+    "main": 15.88,
+    "release": 15.88,
+    "loki": 15.88
    },
    "cache": {
     "loki": {
@@ -237,25 +237,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.12
+   "speedup": 1.04
   },
   {
    "shape": "P3 nginx count_over_time, pattern with spaces",
    "range": "1h",
    "p50": {
-    "release": 0.004,
-    "main": 0.004,
+    "release": 0.002,
+    "main": 0.002,
     "loki": 0.005
    },
    "p95": {
-    "release": 0.004,
-    "main": 0.004,
+    "release": 0.002,
+    "main": 0.002,
     "loki": 0.005
    },
    "cold": {
-    "release": 0.007,
-    "main": 0.007,
-    "loki": 0.013
+    "release": 0.005,
+    "main": 0.004,
+    "loki": 0.011
    },
    "status": {
     "release": "200",
@@ -263,9 +263,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 26.36,
-    "main": 26.36,
-    "loki": 26.36
+    "release": 15.88,
+    "main": 15.88,
+    "loki": 15.88
    },
    "stale": [
     "release",
@@ -310,12 +310,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 4603
+       "bytesReceived": 4606
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1116
+       "bytesReceived": 1119
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -353,19 +353,19 @@
    "shape": "P4 nginx count_over_time, GET request pattern",
    "range": "1h",
    "p50": {
-    "main": 0.004,
-    "release": 0.004,
-    "loki": 0.005
+    "main": 0.002,
+    "release": 0.002,
+    "loki": 0.004
    },
    "p95": {
-    "main": 0.005,
-    "release": 0.004,
-    "loki": 0.005
+    "main": 0.003,
+    "release": 0.002,
+    "loki": 0.004
    },
    "cold": {
-    "main": 0.007,
-    "release": 0.007,
-    "loki": 0.013
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.009
    },
    "status": {
     "main": "200",
@@ -373,9 +373,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 26.36,
-    "release": 26.36,
-    "loki": 26.36
+    "main": 15.88,
+    "release": 15.88,
+    "loki": 15.88
    },
    "cache": {
     "loki": {
@@ -388,7 +388,7 @@
       "statsResult": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 372
+       "bytesReceived": 376
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -415,12 +415,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85939
+       "bytesReceived": 85943
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1128
+       "bytesReceived": 1134
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -455,10 +455,10 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.0",
- "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
- "measured_at": "2026-11-06T03:22:00Z",
- "run": "42156069488.1",
+ "baseline_ref": "v2.83.4",
+ "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+ "measured_at": "2026-11-07T03:21:07Z",
+ "run": "42333584371.1",
  "proxy_align": {
   "release": "on",
   "main": "on"

@@ -1,6 +1,6 @@
 {
  "label": "daily-series-level-fine-step-loki-defaults",
- "date": "2026-11-06",
+ "date": "2026-11-07",
  "set": "series-level-fine-step",
  "description": "count, min, max and avg of a range function, and a sum by over a rate/count ratio, at a 20 s step over 24h: a sliding 5m window gives every stream a sample at each of the 15 steps its window covers (2.5 at a 120 s step), so the bucket matrix the proxy built before folding was (stream, active step) pairs x about 35 bytes (B2 of aggregation-over-binary answered 500 at 48h with a 120 s step, where Loki answers 200). The answers are groups x steps. Like B2, these compare differs from Loki where structured metadata splits Loki's series (metric-identity/structured-metadata-splits-series). Run with the control set.",
  "baseline": "release",
@@ -22,7 +22,7 @@
  "result_differs_from_reference": 4,
  "result_differs_preexisting": 4,
  "stale_answers": {
-  "release": 0,
+  "release": 1,
   "main": 0,
   "loki": 0
  },
@@ -31,19 +31,19 @@
    "shape": "F1 sum by over a ratio of two per-stream metrics, 20s step",
    "range": "24h-20s",
    "p50": {
-    "release": 0.22,
-    "main": 0.205,
-    "loki": 0.157
+    "release": 0.141,
+    "main": 0.136,
+    "loki": 0.123
    },
    "p95": {
-    "release": 0.235,
-    "main": 0.209,
-    "loki": 0.248
+    "release": 0.143,
+    "main": 0.153,
+    "loki": 0.138
    },
    "cold": {
-    "release": 4.015,
-    "main": 4.206,
-    "loki": 39.804
+    "release": 2.917,
+    "main": 2.954,
+    "loki": 32.332
    },
    "status": {
     "release": "200",
@@ -51,9 +51,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 276.1,
-    "main": 299.93,
-    "loki": 7.29
+    "release": 332.71,
+    "main": 332.71,
+    "loki": 3.34
    },
    "cache": {
     "loki": {
@@ -93,7 +93,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 7154100
+       "bytesReceived": 7153957
       },
       "statsResult": {
        "entriesFound": 12,
@@ -130,25 +130,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.07
+   "speedup": 1.04
   },
   {
    "shape": "F2 count by service of count_over_time, 20s step",
    "range": "24h-20s",
    "p50": {
-    "main": 0.007,
-    "release": 0.013,
-    "loki": 0.113
+    "main": 0.005,
+    "release": 0.01,
+    "loki": 0.083
    },
    "p95": {
-    "main": 0.011,
-    "release": 0.013,
-    "loki": 0.118
+    "main": 0.005,
+    "release": 0.01,
+    "loki": 0.09
    },
    "cold": {
-    "main": 0.012,
-    "release": 0.012,
-    "loki": 11.786
+    "main": 0.005,
+    "release": 0.01,
+    "loki": 9.451
    },
    "status": {
     "main": "200",
@@ -156,10 +156,13 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 7.29,
-    "release": 7.29,
-    "loki": 3.9
+    "main": 3.21,
+    "release": 3.21,
+    "loki": 3.22
    },
+   "stale": [
+    "release"
+   ],
    "cache": {
     "loki": {
      "cold": {
@@ -198,7 +201,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 7149388
+       "bytesReceived": 7149494
       },
       "statsResult": {
        "entriesFound": 6,
@@ -235,25 +238,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.86
+   "speedup": 2.0
   },
   {
    "shape": "F3 avg by service of rate, 20s step",
    "range": "24h-20s",
    "p50": {
-    "release": 0.015,
-    "main": 0.018,
-    "loki": 0.118
+    "release": 0.019,
+    "main": 0.015,
+    "loki": 0.102
    },
    "p95": {
-    "release": 0.016,
-    "main": 0.022,
-    "loki": 0.133
+    "release": 0.025,
+    "main": 0.017,
+    "loki": 0.117
    },
    "cold": {
-    "release": 1.838,
-    "main": 1.915,
-    "loki": 15.701
+    "release": 1.414,
+    "main": 1.417,
+    "loki": 12.361
    },
    "status": {
     "release": "200",
@@ -261,9 +264,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 3.86,
-    "main": 292.64,
-    "loki": 292.64
+    "release": 3.21,
+    "main": 235.53,
+    "loki": 235.53
    },
    "cache": {
     "loki": {
@@ -303,7 +306,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 7147825
+       "bytesReceived": 7147781
       },
       "statsResult": {
        "entriesFound": 12,
@@ -340,25 +343,25 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.83
+   "speedup": 1.27
   },
   {
    "shape": "F4 sum of max by service,app, 20s step",
    "range": "24h-20s",
    "p50": {
-    "main": 0.04,
-    "release": 0.046,
-    "loki": 0.104
+    "main": 0.018,
+    "release": 0.017,
+    "loki": 0.086
    },
    "p95": {
-    "main": 0.043,
-    "release": 0.05,
-    "loki": 0.105
+    "main": 0.02,
+    "release": 0.017,
+    "loki": 0.136
    },
    "cold": {
-    "main": 4.092,
-    "release": 4.192,
-    "loki": 11.72
+    "main": 2.983,
+    "release": 2.99,
+    "loki": 9.234
    },
    "status": {
     "main": "200",
@@ -366,9 +369,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 292.64,
-    "release": 246.49,
-    "loki": 16.12
+    "main": 235.53,
+    "release": 226.62,
+    "loki": 226.62
    },
    "cache": {
     "loki": {
@@ -408,7 +411,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 7153314
+       "bytesReceived": 7153488
       },
       "statsResult": {
        "entriesFound": 6,
@@ -445,13 +448,13 @@
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.15
+   "speedup": 0.94
   }
  ],
- "baseline_ref": "v2.83.0",
- "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
- "measured_at": "2026-11-06T03:22:00Z",
- "run": "42156069488.1",
+ "baseline_ref": "v2.83.4",
+ "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+ "measured_at": "2026-11-07T03:21:07Z",
+ "run": "42333584371.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
