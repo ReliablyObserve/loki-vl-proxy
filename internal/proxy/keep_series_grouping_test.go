@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -177,6 +178,14 @@ func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdow
 			}
 			if testing.Verbose() {
 				t.Logf("fake VL stats: %s", r.Form.Get("query"))
+			}
+			if strings.Contains(r.Form.Get("query"), ") if (") {
+				// A split's conditional stats (a strict | json count): pushdownFakeVL
+				// runs those as the split tests read them.
+				body := r.PostForm.Encode()
+				r.Body, r.ContentLength = io.NopCloser(strings.NewReader(body)), int64(len(body))
+				rest.ServeHTTP(w, r)
+				return
 			}
 			before, _, found := strings.Cut(r.Form.Get("query"), " | stats ")
 			if !found {

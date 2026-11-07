@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2185,8 +2186,12 @@ func TestOrderedJSONPipelineErrorMatchesLokiText(t *testing.T) {
 		t.Fatalf("got %d %q\nwant 400 %q", code, msg, want)
 	}
 	fake.mu.Lock()
-	if fake.raw != 0 || len(fake.guards) != 1 || !strings.HasSuffix(fake.guards[0], ` | filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1`) {
-		t.Fatalf("expected the error from one lookup without a raw scan: raw=%d guards=%q", fake.raw, fake.guards)
+	// The strict split's probes run alongside the lookup (its stats are
+	// discarded); the error comes from the lookup, with no raw scan.
+	if fake.raw != 0 || !slices.ContainsFunc(fake.guards, func(g string) bool {
+		return strings.HasSuffix(g, ` | filter -_msg:~"^[ \\t\\n\\r]*\\{" | limit 1`)
+	}) {
+		t.Fatalf("expected the error from the lookup without a raw scan: raw=%d guards=%q", fake.raw, fake.guards)
 	}
 	fake.mu.Unlock()
 	// The plain line sits exactly one window before the evaluation: outside
