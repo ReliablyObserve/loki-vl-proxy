@@ -1,0 +1,10 @@
+id: patterns-loki-mining
+state: partial
+pending: true
+reason: |
+  27 of 27 recorded Loki answers matched live (TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines)
+  and the recorded oracle runs offline (TestPatternMinerMatchesLokisRecordedPatterns); the documented
+  differences (out-of-order lines Loki skips, a state per proxy, the counts path above the state's bounds,
+  -patterns-full-range) keep it partial until the distributed state lands.
+owner_decision: null
+waiver: null

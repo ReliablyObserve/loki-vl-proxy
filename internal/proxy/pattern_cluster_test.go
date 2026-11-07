@@ -48,7 +48,7 @@ func lokiPatternLineMatches(pattern, line string) bool {
 
 // The reference matcher reads patterns as Loki's pattern line filter does.
 //
-// conformance: loki_api_v1_patterns
+// conformance: loki_api_v1_patterns, patterns-loki-mining
 func TestLokiPatternLineMatches(t *testing.T) {
 	for _, tc := range []struct {
 		pattern, line string
@@ -104,7 +104,7 @@ func expectPatterns(t *testing.T, got []string, want ...string) {
 
 // A line only joins a cluster with as many tokens, whatever the tokens before them read.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersSplitByTokenCount(t *testing.T) {
 	expectPatterns(t, minePatterns("info", "a b c d", "a b c d e", "a b c d f"), "a b c d", "a b c d <_>")
 	expectPatterns(t, minePatterns("info", "a b c d", "a b c d e", "a b c d f", "a b c d g h"), "a b c d", "a b c d <_>", "a b c d g h")
@@ -113,7 +113,7 @@ func TestPatternClustersSplitByTokenCount(t *testing.T) {
 // A token with a digit goes down the variable branch of the tree, so lines that differ in such a value meet in one
 // cluster: a value that changes is a variable, a word that does not stays.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersRouteNumbersToTheVariableBranch(t *testing.T) {
 	expectPatterns(t, minePatterns("info", "user 123 logged in", "user 456 logged in"), "user <_> logged in")
 	expectPatterns(t, minePatterns("info", "user alice logged in", "user bob logged in"), "user alice logged in", "user bob logged in")
@@ -125,7 +125,7 @@ func TestPatternClustersRouteNumbersToTheVariableBranch(t *testing.T) {
 // A line joins the best cluster at its leaf only if it holds at least 0.3 of its tokens as they are: of four
 // tokens one is too few, two are enough.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersNeedAThirdOfTheTokens(t *testing.T) {
 	// The numbers lead both lines to one leaf; only the tokens they share decide.
 	expectPatterns(t, minePatterns("info", "a 1 2 x", "a 5 6 y"), "a 1 2 x", "a 5 6 y")
@@ -137,7 +137,7 @@ func TestPatternClustersNeedAThirdOfTheTokens(t *testing.T) {
 
 // Of two clusters that score the same, the one with more variables takes the line, whichever was made first.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersTieGoesToTheOneWithMoreVariables(t *testing.T) {
 	// The numbers lead every line to one leaf, where the clusters tell the lines apart by the tokens they hold.
 	text := func(m *patternMiner, c *patternBucket) string {
@@ -176,7 +176,7 @@ func TestPatternClustersTieGoesToTheOneWithMoreVariables(t *testing.T) {
 // A node of the tree has 15 children at most: the 15th token that differs takes the last place as the variable
 // child, and every token after it goes there too.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersFifteenChildrenThenTheVariableChild(t *testing.T) {
 	words := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa"}
 	var lines, want []string
@@ -205,7 +205,7 @@ func TestPatternClustersFifteenChildrenThenTheVariableChild(t *testing.T) {
 
 // The last token never leads the line down the tree, and not more than 28 tokens do.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersNeverUseTheLastTokenOrMoreThan28(t *testing.T) {
 	expectPatterns(t, minePatterns("info", "a b c d", "a b c e"), "a b c <_>")
 	expectPatterns(t, minePatterns("info", "a b c d", "a b x d"), "a b c d", "a b x d")
@@ -232,7 +232,7 @@ func TestPatternClustersNeverUseTheLastTokenOrMoreThan28(t *testing.T) {
 // Logfmt and JSON lines are clustered by their tokens like any other line, and never with lines of another
 // format.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersByFormat(t *testing.T) {
 	expectPatterns(t, minePatterns("info",
 		"id=11 user=bob ok=true x=y",
@@ -251,7 +251,7 @@ func TestPatternClustersByFormat(t *testing.T) {
 
 // Levels never share a cluster.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersKeepLevelsApart(t *testing.T) {
 	miner := newPatternMiner()
 	for _, level := range []string{"info", "warn", "error"} {
@@ -273,7 +273,7 @@ func TestPatternClustersKeepLevelsApart(t *testing.T) {
 // given, and a line joins the cluster that was made first when clusters tie. (Clustering depends on the order of
 // the lines, so shuffled lines are not expected to agree.)
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternClustersAreTheSameEveryRun(t *testing.T) {
 	lines := patternMinerCorpusLines(5, 900)
 	body := patternMinerCorpusNDJSON(lines, 0)
@@ -315,7 +315,7 @@ func TestPatternClustersAreTheSameEveryRun(t *testing.T) {
 // of its own, or joined another, that cluster gets nothing from the group, and a cluster no group counted is no
 // pattern in the answer.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternGroupCountsGoToTheSmallestLinesCluster(t *testing.T) {
 	count := func(m *patternMiner, c *patternBucket, n int) {
 		c.buckets[60] += n
@@ -365,7 +365,7 @@ func TestPatternGroupCountsGoToTheSmallestLinesCluster(t *testing.T) {
 // lines of one kind keep it. Every line still matches a pattern under the pattern line filter Logs Drilldown
 // adds when a pattern is included.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternsOfMixedLinesMatchTheirLines(t *testing.T) {
 	var lines []string
 	paths := []string{"/api/v1/cart", "/api/v1/users", "/healthz", "/api/v1/orders/17", "/static/app.js", "/login"}
@@ -414,7 +414,7 @@ func TestPatternsOfMixedLinesMatchTheirLines(t *testing.T) {
 // Keys stay: logfmt lines with different keys in a place are different kinds of line, never key <_>=<_>, and the
 // level of a line is its own cluster's: level=info lines and level=warn lines are never one pattern.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternsKeepKeysAndLevels(t *testing.T) {
 	var body []byte
 	for _, level := range []string{"info", "warn", "error"} {
@@ -488,7 +488,7 @@ func patternReadsLine(pattern, line string) bool {
 //   - a line that reads as a pattern but that the filter's first-occurrence rule for literals (shared with Loki's
 //     filter) cannot place, a variable's value holding the literal after it: {""1 against {<_>"<_>.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func FuzzPatternsMatchTheirLines(f *testing.F) {
 	for _, seed := range [][3]string{
 		{`1.2.3.4 - admin [x +0000] "GET /a HTTP/1.1" 200 1 "-" "curl/8" 3`, `5.6.7.8 - - [y +0000] "GET /b/c HTTP/1.1" 404 22 "-" "kube-probe/1.28" 0`, `9.9.9.9 - - [z +0000] "GET /d HTTP/1.1" 500 3 "-" "sqlmap/1.7.8#stable (https://sqlmap.org)" 1`},
@@ -600,7 +600,7 @@ func clusterTexts(m *patternMiner) []string {
 // A miner keeps patternMaxClusters clusters: the 301st replaces the one used least recently, and a cluster a line
 // joined again counts as used.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternMinerKeepsThreeHundredClustersEvictingTheLeastRecentlyUsed(t *testing.T) {
 	miner := newPatternMiner()
 	for k := 0; k < patternMaxClusters; k++ {
@@ -623,7 +623,7 @@ func TestPatternMinerKeepsThreeHundredClustersEvictingTheLeastRecentlyUsed(t *te
 
 // An evicted cluster takes its samples with it: they are in no answer.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternMinerEvictedClustersLoseTheirSamples(t *testing.T) {
 	miner := newPatternMiner()
 	for k := 0; k < patternMaxClusters+1; k++ {
@@ -647,7 +647,7 @@ func TestPatternMinerEvictedClustersLoseTheirSamples(t *testing.T) {
 // cluster, the 401st is the last (101 evictions against 401 lines), whatever comes after, even a line of a cluster
 // kept. Other streams and levels have miners of their own.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternMinerStopsAdmittingLinesAfterTooManyEvictions(t *testing.T) {
 	miner := newPatternMiner()
 	admitted := 0
@@ -685,7 +685,7 @@ func TestPatternMinerStopsAdmittingLinesAfterTooManyEvictions(t *testing.T) {
 // their last token are two patterns, one for each, where together they are one. A stream's lines are mined oldest
 // first, whatever order the source gave them in.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternsAreMinedPerStreamOldestFirst(t *testing.T) {
 	row := func(stream, msg string, second int) string {
 		encoded, _ := json.Marshal(map[string]string{"_time": fmt.Sprintf("2026-11-06T10:00:%02dZ", second), "_msg": msg, "level": "info", "_stream_id": stream})
@@ -722,7 +722,7 @@ func TestPatternsAreMinedPerStreamOldestFirst(t *testing.T) {
 // left out, 30 answered, and a pattern of 40 lines of which 25 are in the range is left out. A sample counts when
 // the step it starts is inside [start, end).
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternsNeedThirtyLinesInTheRange(t *testing.T) {
 	entry := func(pattern string, samples ...[2]int) patternResultEntry {
 		e := patternResultEntry{Pattern: pattern}
@@ -758,7 +758,7 @@ func TestPatternsNeedThirtyLinesInTheRange(t *testing.T) {
 // A JSON line is mined from its message as the line writes it, escapes and all: a "\n" in the source stays the two
 // characters, as in Loki's pattern.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternJSONMessageKeepsItsEscapes(t *testing.T) {
 	for _, tc := range []struct{ line, want string }{
 		{`{"msg":"GET /a returned 200 in 5ms\nnext line"}`, `GET /a returned 200 in 5ms\nnext line`},

@@ -18,16 +18,16 @@ why: |
   v1.53.0), {env="production"} over 5 minutes, 22,540 lines: the proxy's
   samples covered the last 76 s with 3,661 lines; Loki's covered the range.
 
-  Fixed (internal/proxy/patterns_counts.go patternsFromCounts): for a stream
-  selector, two typed VictoriaLogs stats queries over the whole range count
-  every line per (level fields, message with numbers collapsed): one with the
-  group's smallest and largest message, which are mined (numbers that never
-  vary stay in the pattern), one per step, whose counts are the samples. The
-  step is Loki's (the request's, or the range over 250 points, never under
-  10 s), samples are only the steps with lines, and the selector's filter is
-  built as LogsQL nodes (internal/translator SelectorFilter). A request over
-  -patterns-max-counts-rows rows, or one with rows without a message, samples
-  lines as before; -patterns-counts=false keeps sampling.
+  Fixed: a selector's lines over Loki's pattern retention (3h) are mined as
+  Loki's pattern ingester mines them and kept in a pattern state per tenant
+  (internal/proxy/patterns_state.go), samples counted into Loki's 10 s samples
+  then into Loki's step (the request's, or the range over 250 points, never
+  under 10 s), zero-filled per stream; a refresh reads only new lines. With
+  -patterns-full-range (default) a longer range is charted over all of it, the
+  samples before the state's counted by VictoriaLogs per window onto the
+  state's patterns (patterns_history.go, settled windows cached). Selectors
+  above -patterns-state-max-build-lines, or with the state off, are counted by
+  VictoriaLogs (patterns_counts.go, typed stats queries) as before.
 request:
   method: GET
   path: /loki/api/v1/patterns
@@ -41,18 +41,18 @@ compare:
   mode: observed
   fields: [data]
   expect: |
-    Samples at Loki's step on every step the selector has lines, and each
-    pattern's samples adding up to the lines it covers (count_over_time of the
-    selector, less lines the tokenizer does not read).
+    Loki's patterns and samples for a range inside Loki's retention; for a
+    longer range with -patterns-full-range, the same patterns with samples over
+    the whole range (Loki answers the retention's alone).
 gap:
   status: fixed
   fixed_by: '#pending'
   impact: drilldown-visible
   effort: L
-  area: 'internal/proxy/patterns_counts.go patternsFromCounts (typed counts queries), patterns.go derivePatternStep / patternSampleStep / fillPatternSamplesAcrossRequestedRange'
+  area: 'internal/proxy/patterns_state.go (pattern state), patterns_history.go (counts before the state), patterns_exact.go, patterns_counts.go'
   loki: 'pkg/loghttp/patterns.go ParsePatternsQuery (step), pkg/pattern/drain/chunk.go (TimeResolution 10 s, ForRange)'
-  proxy: 'every step with lines, counted, at Loki''s step, no zero samples'
-  planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep (test/e2e-compat, group drilldown); TestPatternsFromCountsCountEveryLine, TestPatternCountsStepIsLokis, TestPatternStepsFollowLoki, TestPatternSamplesHaveNoZeros (internal/proxy)'
+  proxy: 'Loki''s samples inside the retention; with -patterns-full-range the whole range'
+  planned_test: 'TestDrilldown_Patterns_CountEveryLineAtLokisStep, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines (test/e2e-compat, group drilldown); TestPatternStateRefreshReadsOnlyNewLines, TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns, TestPatternSamplesAreCountedInTenSecondSamplesThenSteps, TestPatternsFromCountsCountEveryLine, TestPatternCountsStepIsLokis (internal/proxy)'
   clusters: []
 perf:
   max_ratio: 2.0

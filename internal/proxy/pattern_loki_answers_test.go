@@ -53,7 +53,7 @@ var patternMinerLokiNotExact = map[string]string{
 // share of the lines in Loki's patterns that are in a pattern the miner answers with Loki's text never falls
 // below its floor.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternMinerMatchesLokisRecordedPatterns(t *testing.T) {
 	f, err := os.Open(lokiPatternAnswers)
 	if err != nil {

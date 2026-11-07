@@ -401,7 +401,7 @@ func patternTextShares(loki, proxy []lokiRecordedPattern) (lines, precision floa
 // Loki's answer the proxy gives with the same pattern texts, and records Loki's answers for the miner's unit test,
 // which holds the proxy to them without a stack.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines(t *testing.T) {
 	waitForPatternABReady(t)
 	streams := patternOracleStreams()

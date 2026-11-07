@@ -584,6 +584,12 @@
     "parser-regexp": [
       "test/e2e-compat/query_semantics_matrix_test.go"
     ],
+    "patterns-loki-mining": [
+      "internal/proxy/pattern_cluster_test.go",
+      "internal/proxy/pattern_loki_answers_test.go",
+      "internal/proxy/patterns_state_test.go",
+      "test/e2e-compat/patterns_loki_oracle_test.go"
+    ],
     "peer-cache-fleet-recovery": [
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
@@ -1537,7 +1543,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 419,
+  "registry_items": 420,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2118,7 +2124,8 @@
     ],
     "internal/proxy/pattern_cluster_test.go": [
       "drilldown/patterns-mined-differently",
-      "loki_api_v1_patterns"
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
     "internal/proxy/pattern_formats_test.go": [
       "drilldown/patterns-mined-differently",
@@ -2130,7 +2137,8 @@
     ],
     "internal/proxy/pattern_loki_answers_test.go": [
       "drilldown/patterns-mined-differently",
-      "loki_api_v1_patterns"
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
     "internal/proxy/pattern_miner_answers_test.go": [
       "loki_api_v1_patterns"
@@ -2155,7 +2163,8 @@
     "internal/proxy/patterns_state_test.go": [
       "drilldown/patterns-full-range-counts",
       "drilldown/patterns-mined-differently",
-      "loki_api_v1_patterns"
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
@@ -3012,7 +3021,8 @@
     ],
     "test/e2e-compat/patterns_loki_oracle_test.go": [
       "drilldown/patterns-mined-differently",
-      "loki_api_v1_patterns"
+      "loki_api_v1_patterns",
+      "patterns-loki-mining"
     ],
     "test/e2e-compat/plain_name_after_parser_test.go": [
       "loki_api_v1_query",
@@ -3363,5 +3373,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 247
+  "wired_items": 248
 }

@@ -191,7 +191,7 @@ func statePatterns(t *testing.T, p *Proxy, org, query string, start, end time.Ti
 // A refresh reads only the lines after what the state read (from a little before, for lines made visible late),
 // and answers as a state built from scratch on the same lines does.
 //
-// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateRefreshReadsOnlyNewLines(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 1500)...)
@@ -227,7 +227,7 @@ func TestPatternStateRefreshReadsOnlyNewLines(t *testing.T) {
 // being those inside the range: the lines before the range, whose last token varies, make it <_> in the template
 // of a range whose lines all end the same.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateTemplatesComeFromEveryLineRead(t *testing.T) {
 	vl := &fakeStateVL{}
 	for i := 0; i < 60; i++ {
@@ -246,7 +246,7 @@ func TestPatternStateTemplatesComeFromEveryLineRead(t *testing.T) {
 
 // Selectors that share streams read and train each stream once, and each answers as it would alone.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateSelectorsShareStreams(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
@@ -267,7 +267,7 @@ func TestPatternStateSelectorsShareStreams(t *testing.T) {
 // A stream that read no line for -patterns-state-stream-idle is kept as its patterns and samples, and the answer
 // is the same as before.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateFoldsIdleStreams(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-40*time.Minute), 100)...)
@@ -293,7 +293,7 @@ func TestPatternStateFoldsIdleStreams(t *testing.T) {
 
 // Tenants never share a state: each reads its own lines.
 //
-// conformance: loki_api_v1_patterns
+// conformance: loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateKeepsTenantsApart(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
@@ -312,7 +312,7 @@ func TestPatternStateKeepsTenantsApart(t *testing.T) {
 // retention alone, and one that ends before it with no pattern; a selector whose lines over the retention are more
 // than -patterns-exact-max-lines is answered without the state.
 //
-// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateAnswersOnlyInsideItsBounds(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
@@ -340,7 +340,7 @@ func TestPatternStateAnswersOnlyInsideItsBounds(t *testing.T) {
 
 // Past -patterns-state-max-bytes the state is dropped, and built again it answers the same.
 //
-// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateDroppedAndBuiltAgainAnswersTheSame(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
@@ -361,7 +361,7 @@ func TestPatternStateDroppedAndBuiltAgainAnswersTheSame(t *testing.T) {
 // A stream that pauses for longer than -patterns-state-stream-idle and writes the same pattern again has its
 // samples zero-filled across the pause, as Loki's one cluster of the stream has.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateStreamResumingAfterIdleFillsItsPause(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 100)...)
@@ -380,7 +380,7 @@ func TestPatternStateStreamResumingAfterIdleFillsItsPause(t *testing.T) {
 // Lines of a stream that share a time are all mined, as Loki mines them (it skips only lines older than the newest);
 // a refresh that reads them again, and new lines at that time, mines only the new ones.
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateMinesLinesThatShareATimeOnce(t *testing.T) {
 	vl := &fakeStateVL{}
 	at := stateNow.Add(-5 * time.Second)
@@ -405,7 +405,7 @@ func TestPatternStateMinesLinesThatShareATimeOnce(t *testing.T) {
 // message fields' keys is left out by VictoriaLogs, so a service writing only such lines answers no pattern from
 // a count of 0 (Loki mines none from them either).
 //
-// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
 	// _msg:="{"* is the line starting with {: a line with a { inside, such as zap's console lines ending in a JSON
 	// object, is mined as Loki mines it.
@@ -425,7 +425,7 @@ func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
 // starts the build and those during it are answered without the state, and once built the state answers as one
 // built in a single read does.
 //
-// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns
+// conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateBuiltInTheBackgroundForBusySelectors(t *testing.T) {
 	vl := &fakeStateVL{}
 	for h := 0; h < 3; h++ {
@@ -459,7 +459,7 @@ func TestPatternStateBuiltInTheBackgroundForBusySelectors(t *testing.T) {
 
 // Closing the store stops a background build and waits for it.
 //
-// conformance: loki_api_v1_patterns
+// conformance: loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateCloseStopsBuilds(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-2*time.Hour), 3000)...)
@@ -486,7 +486,7 @@ func TestPatternStateCloseStopsBuilds(t *testing.T) {
 // matches; a line no pattern of the state matches is not counted, and a refresh counts only the window its moving
 // start cuts again.
 //
-// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-10*time.Hour), 3000)...)

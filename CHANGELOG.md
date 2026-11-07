@@ -7,44 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps
+  one. A selector's lines over Loki's pattern retention (3h) are read once,
+  sorted by stream and time, and each stream's clusters kept with their 10 s
+  samples; a refresh reads only the lines after what was read, and a pattern's
+  text is its template from every line read. A selector with more lines than
+  `-patterns-exact-max-lines` (default `200000`), up to
+  `-patterns-state-max-build-lines` (default `2000000`), has its state built in
+  the background an hour of lines at a time and is answered from VictoriaLogs'
+  counts until then. Idle streams (`-patterns-state-stream-idle`, default
+  `5m`) keep only their patterns and samples; the states of all tenants hold at
+  most `-patterns-state-max-bytes` (default 256 MB, `0` turns the state off),
+  the least recently used dropped past it. A range longer than the retention is
+  charted over all of it with `-patterns-full-range` (default `true`): Loki's
+  patterns from the state, their samples before the state's counted from
+  VictoriaLogs a window at a time onto the pattern each line matches as
+  Drilldown's `|>` filter does, settled windows cached and shared with peers;
+  `false` answers the last 3h alone, as Loki does. JSON lines with no message
+  field are left out in VictoriaLogs, so a service writing only such lines
+  answers from one count. Ranges above the state's bounds are counted by
+  VictoriaLogs (`-patterns-counts`, default `true`; `-patterns-max-counts-rows`,
+  default `250000`, past which lines are sampled), mined across a level's
+  streams, a documented difference from Loki's per-stream patterns.
+
 ### Fixed
 
-- fix(patterns): Logs Drilldown pattern charts cover the whole range with
-  every line counted, at Loki's step. Before, `/loki/api/v1/patterns` mined a
-  sample of lines VictoriaLogs returned newest first, so a chart showed samples
-  only at the end of the range (or of each window), counted that sample, and
-  used a proxy step (the range over 120 points, 2 s for 5 minutes). Now, for a
-  stream selector, two typed VictoriaLogs stats queries count every line per
-  level and message with numbers collapsed: one keeps each group's smallest and
-  largest message, which are mined (a number that never varies stays in the
-  pattern, one that varies is `<_>`), the other counts each group per step. The
-  step is Loki's (the request's, or the range over 250 points, never under
-  10 s), with zero samples between a pattern's first and last step as Loki
-  answers them; ranges over an hour are counted in aligned windows, settled
-  ones cached, so a refresh counts only its moving ends. Lines are mined by
-  format as Loki's pattern ingester mines them: a JSON line from its first
-  top-level `log`, `message`, `msg`, `msg_`, `_msg` or `content` string,
-  written `<_>message<_>`, and not at all without one (a raw JSON line is never
-  a pattern); a logfmt line as key and value pairs, timestamps and trace ids
-  variable. A pattern is a template, not a line: patterns of one kind of line
-  (as many space-separated fields, a quoted string being one, the same first
-  word, the same keys in the same places, at least half their fields alike,
-  whatever their level) are compared, and a field whose value differs between
-  them becomes `<_>`, keeping the punctuation the values share (`key=<_>`,
-  `[<_>`, `"<_>"`), as Loki's drain does between the lines of a cluster; a
-  value that never varies, or varies only with the level (`level=warn` in the
-  warn pattern), stays, and a key is never a variable. An access log is one
-  pattern rather than one per path and user agent; on the recorded miner
-  corpus the patterns fall from 4,704 to 2,550 and the readable ones from
-  1,450 distinct texts to 9, with no literal number left. Every line still
-  matches its pattern under the `|>` filter Logs Drilldown adds when a pattern
-  is included. The answer has one entry per level and pattern, and every pattern
-  without a `limit` parameter, as Loki's `/patterns` has none. New flags
-  `-patterns-counts` (default `true`; `false` keeps sampling) and
-  `-patterns-max-counts-rows` (default `250000`; past it the request samples
-  lines). On the compose stack over 5 minutes the samples cover the range
-  where they covered its last 76 s, and on fixture data both backends hold the
-  proxy's samples equal Loki's step for step.
+- fix(patterns): `/loki/api/v1/patterns` answers Loki's patterns. Before, it
+  mined a sample of the lines VictoriaLogs returned newest first, with its own
+  clustering, so Logs Drilldown showed many more patterns than Loki (one per
+  path, user agent or number, and raw JSON lines), with different texts, and
+  charts that covered only the end of the range at a proxy step. Now lines are
+  mined as Loki's pattern ingester mines them, from the lines' tokens: each
+  stream at each level apart, oldest line first, a line joining the cluster of
+  as many tokens it shares at least 30% of its tokens with (a token holding a
+  digit always taking the variable branch of the prefix tree), the tokens that
+  differ becoming `<_>`, at most 300 clusters per stream and level; JSON lines
+  from their raw `log`, `message`, `msg`, `msg_`, `_msg` or `content` field and
+  not at all without one; logfmt lines as key and value pairs. A pattern is
+  answered when it has at least 30 lines in the range, its samples counted into
+  Loki's 10 s samples and then into Loki's step (the request's, or the range
+  over 250 points, never under 10 s), zero-filled per stream. Equal patterns
+  are summed across streams and levels, one entry per level and pattern, every
+  pattern without a `limit`. On 27 recorded Loki answers (21 kinds of log lines
+  and edge cases, one stream, a service, a regexp selector, several pods, part
+  of a range) the proxy answers the same patterns with the same totals for all
+  27 (it answered 47% of their lines with Loki's text before).
 
 ## [2.83.4] - 2026-11-06
 
