@@ -258,7 +258,7 @@ func queryStepsShape(query string, step time.Duration) bool {
 	if ra.Op == logqlpkg.RangeQuantileOverTime || ra.Op == logqlpkg.RangeRateCounter {
 		return true
 	}
-	window := parseLokiDuration(ra.Range)
+	window := ra.RangeDuration
 	if window > 0 && window < step {
 		// sum, avg, max and min over time with unwrap and a shorter range are
 		// read from VictoriaLogs' step buckets (the phase filter and the
@@ -517,7 +517,7 @@ func queryStepsWindow(query string) (time.Duration, bool) {
 	if !ok {
 		return 0, false
 	}
-	window := parseLokiDuration(ra.Range)
+	window := ra.RangeDuration
 	return window, window > 0
 }
 

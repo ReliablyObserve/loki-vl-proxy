@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Expr is the top-level LogQL expression interface.
@@ -386,6 +387,10 @@ type RangeAggregation struct {
 	Param    float64 // for quantile_over_time
 	HasParam bool
 	Grouping *Grouping
+	// RangeDuration and OffsetDuration are Range and Offset as durations: 0
+	// when the offset is absent or the literal is not a positive duration.
+	RangeDuration  time.Duration
+	OffsetDuration time.Duration
 }
 
 func (r *RangeAggregation) String() string {
@@ -403,6 +408,10 @@ func (r *RangeAggregation) String() string {
 	}
 	return s
 }
+
+// HasOffset reports whether the selector carries an offset modifier, even a
+// zero one.
+func (r *RangeAggregation) HasOffset() bool { return r.Offset != "" }
 
 func (r *RangeAggregation) expr() {}
 

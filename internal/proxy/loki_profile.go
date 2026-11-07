@@ -388,6 +388,17 @@ func (p *Proxy) backendLogQuery(query string) (string, bool) {
 	return query, true
 }
 
+// labelFormatMentionsLine reports whether a label_format stage names the log
+// line: __line__ in a template, as a rename source or as a target.
+func labelFormatMentionsLine(s *logqlpkg.LabelFormatStage) bool {
+	for _, f := range s.Formats {
+		if strings.Contains(f.Name, "__line__") || strings.Contains(f.Value, "__line__") {
+			return true
+		}
+	}
+	return false
+}
+
 // stripUnreadLineFormat returns query without its only line_format stage
 // when no later stage reads the formatted line.
 func stripUnreadLineFormat(query string, pipeline []logqlpkg.Stage) (string, bool) {
@@ -408,7 +419,7 @@ func stripUnreadLineFormat(query string, pipeline []logqlpkg.Stage) (string, boo
 				return "", false
 			}
 		case *logqlpkg.LabelFormatStage:
-			if seen && strings.Contains(s.Raw, "__line__") {
+			if seen && labelFormatMentionsLine(s) {
 				return "", false
 			}
 		}
