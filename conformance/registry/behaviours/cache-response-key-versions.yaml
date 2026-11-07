@@ -1,0 +1,46 @@
+id: cache-response-key-versions
+kind: data_quality
+title: An answer cached before a semantics fix is never served after it
+pending: true
+
+loki: |
+  Loki's results cache keys an entry by the query, the step and the time
+  interval, and never serves partial or failed answers; it is not shared
+  with older code that answered differently.
+
+victorialogs: |
+  Not applicable: the proxy caches its own Loki-shaped answers.
+
+proxy: |
+  Response cache keys (the compat edge key for query and query_range, the
+  inner query_range key and the log window shape) carry version "fences":
+  a constant appended when the query has a shape whose answer a fix changed
+  (keep projection, ip() label filter, detected_level mutation, | json
+  vector and bare metric labels, | logfmt presence). A fixed answer gets a
+  new key, so entries cached before the fix — in memory, on disk or on peers
+  running older code — are not served. One function builds the chain for
+  every key (responseKeyFences); which fences apply, and their order, is
+  explicit per key site.
+
+implementation:
+  - internal/proxy/response_key_fences.go
+  - internal/proxy/middleware.go
+  - internal/proxy/proxy.go
+  - internal/proxy/query_range_windowing.go
+
+decisions:
+  - id: one-response-key-fence-builder
+    chosen: 'One function builds every key site''s fence chain, with the site explicit (compat query, compat query_range, inner query_range, log window shape); keys byte-identical to before'
+    over: [three copies of the chain in the key builders, unifying the sites' orders and logfmt rule (would change keys and cold-start every cache tier fleet-wide)]
+    why: |
+      Owner-approved consolidated plan (2026-11-07), phase 1 step 1: one
+      source for cache keys before the request plan derives them from the AST.
+      The copies already differed — the compat query_range key appends the
+      logfmt fence last and the compat query key not at all, the inner key
+      places it after the bare-json fence — so the differences are kept and
+      named rather than unified; changing a key is a deliberate, versioned
+      step of its own.
+    evidence: 'internal/proxy/response_key_fences_test.go (2026-11-07): 569 corpus queries (bench/ab/shapes.json, the semantics matrix, registry query/expr rows, 36 synthetic) x 3 request shapes, new equal to old at every site; a mutated site order is caught'
+    code: [internal/proxy/response_key_fences.go]
+    tests: [TestResponseKeyFencesByteIdentical, TestResponseKeyFencesSiteOrder]
+    quality: 'Every response key byte-identical to before; every fence fires somewhere in the corpus test, so it cannot pass vacuously.'

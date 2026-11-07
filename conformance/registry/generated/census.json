@@ -1233,6 +1233,7 @@
     "internal/proxy/rate_counter_singletons_test.go | semantics/unwrap-rate-counter-one-sample-series",
     "internal/proxy/rate_counter_singletons_test.go | semantics/unwrap-rate-ungrouped-sum-per-stream",
     "internal/proxy/recent_tail_bypass_clamp_test.go | semantics/metadata-answers-include-last-24h-like-loki",
+    "internal/proxy/response_key_fences_test.go | cache-response-key-versions",
     "internal/proxy/sanitized_json_key_filter_test.go | limits/label-values-response-cap",
     "internal/proxy/sanitized_json_key_filter_test.go | operator-configurable-limits",
     "internal/proxy/sanitized_json_key_filter_test.go | profiles/detected-fields-dotted-json-keys",
@@ -1889,7 +1890,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 352,
+      "go": 353,
       "playwright": 1
     },
     "page_kinds": {
@@ -1909,7 +1910,7 @@
     "shape_covers_distinct": 107,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 253
+    "wired_items": 254
   },
   "gates": [
     "A/B shape selection",

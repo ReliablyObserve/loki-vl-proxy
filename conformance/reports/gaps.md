@@ -70,6 +70,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 0 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 8 | proven |
+| data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 4 | 1 | unknown |
 | data_quality | `data-density-and-chart-quality` — Chart density, zero-fill and high-cardinality behaviour | 6 | 0 | gap |
 | data_quality | `data-probing-and-freshness` — Probes the proxy runs, and their cost and staleness | 11 | 1 | gap |
 | limits | `heavy-metric-fetch-bounds` — Metric evaluation reads bounded work from VictoriaLogs, or refuses early | 10 | 6 | partial |

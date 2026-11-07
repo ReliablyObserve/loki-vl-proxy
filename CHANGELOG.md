@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The response cache keys' version tags are built by one function for every
+  key (compat edge, inner query_range, log windows) instead of three copies;
+  every key is byte-identical to before. No behaviour change.
+
 ### Added
 
 - feat(observability): every request's query flow in its log line and in
