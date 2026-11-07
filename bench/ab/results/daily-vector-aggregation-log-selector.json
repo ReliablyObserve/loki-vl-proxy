@@ -1,6 +1,6 @@
 {
  "label": "daily-vector-aggregation-log-selector-aligned",
- "date": "2026-11-06",
+ "date": "2026-11-07",
  "set": "vector-aggregation-log-selector",
  "description": "A vector aggregation over a log selector (PR for semantics/vector-aggregation-over-log-selector-status): Loki answers a 400 parse error at the closing parenthesis; the proxy sent the selector to VictoriaLogs and answered 500 on query_range and its own 400 text on query. The proxy's parser now rejects it before any VictoriaLogs call. Error shapes: compare the status and text. Run with the control set.",
  "baseline": "release",
@@ -31,8 +31,8 @@
    "shape": "VA1 topk over a log selector",
    "range": "1h",
    "p50": {
-    "release": 0.001,
-    "main": 0.001,
+    "release": 0.0,
+    "main": 0.0,
     "loki": 0.001
    },
    "p95": {
@@ -41,7 +41,7 @@
     "loki": 0.001
    },
    "cold": {
-    "release": 0.009,
+    "release": 0.007,
     "main": 0.001,
     "loki": 0.001
    },
@@ -65,18 +65,18 @@
    "shape": "VA2 sort over a log selector",
    "range": "1h",
    "p50": {
-    "main": 0.001,
-    "release": 0.001,
+    "main": 0.0,
+    "release": 0.0,
     "loki": 0.001
    },
    "p95": {
-    "main": 0.001,
-    "release": 0.001,
+    "main": 0.0,
+    "release": 0.0,
     "loki": 0.001
    },
    "cold": {
-    "main": 0.001,
-    "release": 0.001,
+    "main": 0.0,
+    "release": 0.0,
     "loki": 0.001
    },
    "status": {
@@ -99,18 +99,18 @@
    "shape": "VA3 stddev over a log selector",
    "range": "1h",
    "p50": {
-    "release": 0.001,
-    "main": 0.001,
+    "release": 0.0,
+    "main": 0.0,
     "loki": 0.001
    },
    "p95": {
-    "release": 0.001,
-    "main": 0.001,
+    "release": 0.0,
+    "main": 0.0,
     "loki": 0.001
    },
    "cold": {
-    "release": 0.001,
-    "main": 0.001,
+    "release": 0.0,
+    "main": 0.0,
     "loki": 0.001
    },
    "status": {
@@ -130,10 +130,10 @@
    "speedup": null
   }
  ],
- "baseline_ref": "v2.83.0",
- "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
- "measured_at": "2026-11-06T03:22:00Z",
- "run": "42156069488.1",
+ "baseline_ref": "v2.83.4",
+ "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
+ "measured_at": "2026-11-07T03:21:07Z",
+ "run": "42333584371.1",
  "proxy_align": {
   "release": "on",
   "main": "on"

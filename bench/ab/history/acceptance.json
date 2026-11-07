@@ -576,6 +576,53 @@
      }
     }
    }
+  },
+  {
+   "commits": [
+    "422a7d8827"
+   ],
+   "date": "2026-11-07",
+   "measured_at": "2026-11-07T03:21:07Z",
+   "profiles": {
+    "aligned": {
+     "cold": {
+      "above": 5,
+      "below": 303,
+      "between": 9,
+      "close": 124,
+      "rows": 441,
+      "share_below": 68.7
+     },
+     "sets": 36,
+     "warm": {
+      "above": 0,
+      "below": 12,
+      "between": 3,
+      "close": 508,
+      "rows": 523,
+      "share_below": 2.3
+     }
+    },
+    "loki-defaults": {
+     "cold": {
+      "above": 6,
+      "below": 360,
+      "between": 6,
+      "close": 185,
+      "rows": 557,
+      "share_below": 64.6
+     },
+     "sets": 38,
+     "warm": {
+      "above": 0,
+      "below": 168,
+      "between": 1,
+      "close": 584,
+      "rows": 753,
+      "share_below": 22.3
+     }
+    }
+   }
   }
  ],
  "targets": {
