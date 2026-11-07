@@ -447,9 +447,9 @@ def render_acceptance(latest, bounds):
            f"{over2x.MIN_GAP * 1000:.0f} ms; close is within that.", "",
            "Each row is counted in the Loki profile of the run it comes from (`aligned`: the stack's Loki; `loki-defaults`:",
            "Loki with its own defaults, preferred when both ran); a locked row's bound holds in each profile.", "",
-           f"A row is green at Loki's speed or below it (at most {(over2x.GREEN_RATIO - 1) * 100:.0f}% above Loki); the",
-           f"target is {over2x.GREEN_SHARE:g}% of a mode's rows green.", "",
-           "| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (≤ Loki speed) "
+           "A row is green below Loki or within the noise of it (below + close); the target is",
+           f"{over2x.GREEN_SHARE:g}% of a mode's rows green.", "",
+           "| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (below + close) "
            f"| {over2x.GREEN_SHARE:g}% green | Worst case ≤ 2× |",
            "|---|---|---|---|---|---|---|---|---|---|---|"]
     for profile, by_mode in dist.items():

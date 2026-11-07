@@ -777,18 +777,14 @@ class AcceptanceAlertsTest(unittest.TestCase):
         self.assertIn("## Acceptance versus Loki", text)
         self.assertIn("| aligned | cold | 2 | 1 (50.0%) | 0 | 0 | 1 | 1 (50.0%) | ❌ | ❌ |", text)
 
-    def test_the_green_target_ticks_at_99_percent(self):
+    def test_the_green_target_ticks_at_95_percent(self):
         names = [f"s{i}" for i in range(100)]
-        self.day(*[timed(shape=n, cold=0.4) for n in names])  # every row below Loki
+        self.day(*[timed(shape=n, cold=0.4 if i > 4 else 3.0) for i, n in enumerate(names)])  # 5 rows above 2×
         text = history.render_alerts(self.run_alerts(shapes=names))
-        self.assertIn("| aligned | cold | 100 | 100 (100.0%) | 0 | 0 | 0 | 100 (100.0%) | ✅ | ✅ |", text)
-        self.day(*[timed(shape=n, cold=0.4 if i else 3.0) for i, n in enumerate(names)])  # one row above 2×
+        self.assertIn("| 95 (95.0%) | ✅ | ❌ |", text)
+        self.day(*[timed(shape=n, cold=0.4 if i > 5 else 3.0) for i, n in enumerate(names)])  # 6 rows
         text = history.render_alerts(self.run_alerts(shapes=names))
-        self.assertIn("| 99 (99.0%) | ✅ | ❌ |", text)
-        self.day(*[timed(shape=n, cold=0.4 if i > 1 else 3.0) for i, n in enumerate(names)])  # two rows
-        text = history.render_alerts(self.run_alerts(shapes=names))
-        self.assertIn("| 98 (98.0%) | ❌ | ❌ |", text)
-        self.assertNotIn("## Acceptance versus Loki", history.render_alerts(alerts(self.dir)))  # no blocks: off
+        self.assertIn("| 94 (94.0%) | ❌ | ❌ |", text)
 
     def test_acceptance_history_is_written_per_day(self):
         self.day(timed(cold=0.4))

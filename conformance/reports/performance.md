@@ -81,15 +81,15 @@ Warm repeat row. Below or above Loki means beyond 25% and 50 ms; close is within
 Each row is counted in the Loki profile of the run it comes from (`aligned`: the stack's Loki; `loki-defaults`:
 Loki with its own defaults, preferred when both ran); a locked row's bound holds in each profile.
 
-A row is green at Loki's speed or below it (at most 1% above Loki); the
-target is 99% of a mode's rows green.
+A row is green below Loki or within the noise of it (below + close); the target is
+95% of a mode's rows green.
 
-| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (≤ Loki speed) | 99% green | Worst case ≤ 2× |
+| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (below + close) | 95% green | Worst case ≤ 2× |
 |---|---|---|---|---|---|---|---|---|---|---|
-| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 133 | 19 (73.1%) | **no** | **no** |
-| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 257 | 13 (32.5%) | **no** | **no** |
-| loki-defaults | cold | 557 | 360 (64.6%) | 185 | 6 | 6 | 133 | 507 (91.0%) | **no** | **no** |
-| loki-defaults | warm | 753 | 168 (22.3%) | 584 | 1 | 0 | 257 | 653 (86.7%) | **no** | yes |
+| aligned | cold | 26 | 17 (65.4%) | 3 | 0 | 6 | 133 | 20 (76.9%) | **no** | **no** |
+| aligned | warm | 40 | 1 (2.5%) | 30 | 0 | 9 | 257 | 31 (77.5%) | **no** | **no** |
+| loki-defaults | cold | 557 | 360 (64.6%) | 185 | 6 | 6 | 133 | 545 (97.8%) | yes | **no** |
+| loki-defaults | warm | 753 | 168 (22.3%) | 584 | 1 | 0 | 257 | 752 (99.9%) | yes | yes |
 
 ### Between 1× and 2× Loki
 

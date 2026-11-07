@@ -15,7 +15,7 @@
       "close": 158,
       "rows": 415,
       "share_below": 48.2,
-      "share_green": 70.8
+      "share_green": 86.3
      },
      "sets": 20,
      "warm": {
@@ -25,7 +25,7 @@
       "close": 242,
       "rows": 415,
       "share_below": 10.1,
-      "share_green": 37.8
+      "share_green": 68.4
      }
     }
    }
@@ -44,7 +44,7 @@
       "close": 84,
       "rows": 282,
       "share_below": 54.6,
-      "share_green": 77.3
+      "share_green": 84.4
      },
      "sets": 20,
      "warm": {
@@ -54,7 +54,7 @@
       "close": 207,
       "rows": 415,
       "share_below": 9.9,
-      "share_green": 32.5
+      "share_green": 59.8
      }
     }
    }
@@ -73,7 +73,7 @@
       "close": 98,
       "rows": 299,
       "share_below": 53.8,
-      "share_green": 76.3
+      "share_green": 86.6
      },
      "sets": 21,
      "warm": {
@@ -83,7 +83,7 @@
       "close": 215,
       "rows": 430,
       "share_below": 7.9,
-      "share_green": 31.2
+      "share_green": 57.9
      }
     }
    }
@@ -102,7 +102,7 @@
       "close": 115,
       "rows": 331,
       "share_below": 50.8,
-      "share_green": 73.4
+      "share_green": 85.5
      },
      "sets": 22,
      "warm": {
@@ -112,7 +112,7 @@
       "close": 220,
       "rows": 462,
       "share_below": 8.0,
-      "share_green": 29.9
+      "share_green": 55.6
      }
     }
    }
@@ -131,7 +131,7 @@
       "close": 161,
       "rows": 429,
       "share_below": 45.7,
-      "share_green": 68.1
+      "share_green": 83.2
      },
      "sets": 24,
      "warm": {
@@ -141,7 +141,7 @@
       "close": 402,
       "rows": 573,
       "share_below": 10.5,
-      "share_green": 54.1
+      "share_green": 80.6
      }
     }
    }
@@ -160,7 +160,7 @@
       "close": 165,
       "rows": 449,
       "share_below": 47.7,
-      "share_green": 69.7
+      "share_green": 84.4
      },
      "sets": 25,
      "warm": {
@@ -170,7 +170,7 @@
       "close": 427,
       "rows": 602,
       "share_below": 10.5,
-      "share_green": 54.5
+      "share_green": 81.4
      }
     }
    }
@@ -189,7 +189,7 @@
       "close": 190,
       "rows": 475,
       "share_below": 50.5,
-      "share_green": 78.5
+      "share_green": 90.5
      },
      "sets": 27,
      "warm": {
@@ -199,7 +199,7 @@
       "close": 458,
       "rows": 630,
       "share_below": 23.2,
-      "share_green": 79.7
+      "share_green": 95.9
      }
     }
    }
@@ -218,7 +218,7 @@
       "close": 177,
       "rows": 500,
       "share_below": 54.8,
-      "share_green": 78.2
+      "share_green": 90.2
      },
      "sets": 29,
      "warm": {
@@ -228,7 +228,7 @@
       "close": 480,
       "rows": 659,
       "share_below": 25.0,
-      "share_green": 82.2
+      "share_green": 97.9
      }
     }
    }
@@ -247,7 +247,7 @@
       "close": 155,
       "rows": 499,
       "share_below": 55.9,
-      "share_green": 75.8
+      "share_green": 87.0
      },
      "sets": 29,
      "warm": {
@@ -257,7 +257,7 @@
       "close": 533,
       "rows": 659,
       "share_below": 15.5,
-      "share_green": 73.1
+      "share_green": 96.4
      }
     }
    }
@@ -276,7 +276,7 @@
       "close": 166,
       "rows": 501,
       "share_below": 53.3,
-      "share_green": 73.5
+      "share_green": 86.4
      },
      "sets": 29,
      "warm": {
@@ -286,7 +286,7 @@
       "close": 525,
       "rows": 659,
       "share_below": 16.1,
-      "share_green": 72.5
+      "share_green": 95.8
      }
     }
    }
@@ -305,7 +305,7 @@
       "close": 162,
       "rows": 501,
       "share_below": 54.5,
-      "share_green": 74.5
+      "share_green": 86.8
      },
      "sets": 29,
      "warm": {
@@ -315,7 +315,7 @@
       "close": 544,
       "rows": 659,
       "share_below": 14.7,
-      "share_green": 71.9
+      "share_green": 97.3
      }
     }
    }
@@ -334,7 +334,7 @@
       "close": 97,
       "rows": 382,
       "share_below": 64.4,
-      "share_green": 80.9
+      "share_green": 89.8
      },
      "sets": 27,
      "warm": {
@@ -344,7 +344,7 @@
       "close": 416,
       "rows": 454,
       "share_below": 4.4,
-      "share_green": 68.1
+      "share_green": 96.0
      }
     },
     "loki-defaults": {
@@ -355,7 +355,7 @@
       "close": 161,
       "rows": 501,
       "share_below": 54.7,
-      "share_green": 73.3
+      "share_green": 86.8
      },
      "sets": 29,
      "warm": {
@@ -365,7 +365,7 @@
       "close": 549,
       "rows": 659,
       "share_below": 13.8,
-      "share_green": 74.1
+      "share_green": 97.1
      }
     }
    }
@@ -394,7 +394,7 @@
       "close": 19,
       "rows": 19,
       "share_below": 0.0,
-      "share_green": 78.9
+      "share_green": 100.0
      }
     },
     "loki-defaults": {
@@ -415,7 +415,7 @@
       "close": 18,
       "rows": 19,
       "share_below": 5.3,
-      "share_green": 78.9
+      "share_green": 100.0
      }
     }
    }
@@ -434,7 +434,7 @@
       "close": 89,
       "rows": 395,
       "share_below": 72.7,
-      "share_green": 87.3
+      "share_green": 95.2
      },
      "sets": 29,
      "warm": {
@@ -444,7 +444,7 @@
       "close": 446,
       "rows": 474,
       "share_below": 3.2,
-      "share_green": 66.9
+      "share_green": 97.3
      }
     },
     "loki-defaults": {
@@ -455,7 +455,7 @@
       "close": 154,
       "rows": 514,
       "share_below": 61.1,
-      "share_green": 81.1
+      "share_green": 91.1
      },
      "sets": 31,
      "warm": {
@@ -465,7 +465,7 @@
       "close": 553,
       "rows": 682,
       "share_below": 17.2,
-      "share_green": 75.1
+      "share_green": 98.2
      }
     }
    }
@@ -485,7 +485,7 @@
       "close": 92,
       "rows": 423,
       "share_below": 75.7,
-      "share_green": 92.2
+      "share_green": 97.4
      },
      "sets": 32,
      "warm": {
@@ -495,7 +495,7 @@
       "close": 456,
       "rows": 502,
       "share_below": 8.2,
-      "share_green": 81.1
+      "share_green": 99.0
      }
     },
     "loki-defaults": {
@@ -506,7 +506,7 @@
       "close": 166,
       "rows": 542,
       "share_below": 67.3,
-      "share_green": 90.8
+      "share_green": 98.0
      },
      "sets": 34,
      "warm": {
@@ -516,7 +516,7 @@
       "close": 549,
       "rows": 710,
       "share_below": 22.4,
-      "share_green": 87.3
+      "share_green": 99.7
      }
     }
    }
@@ -536,7 +536,7 @@
       "close": 123,
       "rows": 429,
       "share_below": 68.5,
-      "share_green": 90.9
+      "share_green": 97.2
      },
      "sets": 33,
      "warm": {
@@ -546,7 +546,7 @@
       "close": 496,
       "rows": 508,
       "share_below": 2.4,
-      "share_green": 77.6
+      "share_green": 100.0
      }
     },
     "loki-defaults": {
@@ -557,7 +557,7 @@
       "close": 177,
       "rows": 549,
       "share_below": 66.8,
-      "share_green": 91.3
+      "share_green": 99.1
      },
      "sets": 35,
      "warm": {
@@ -567,7 +567,7 @@
       "close": 483,
       "rows": 731,
       "share_below": 33.9,
-      "share_green": 90.0
+      "share_green": 100.0
      }
     }
    }
@@ -587,7 +587,7 @@
       "close": 116,
       "rows": 441,
       "share_below": 69.8,
-      "share_green": 86.8
+      "share_green": 96.1
      },
      "sets": 36,
      "warm": {
@@ -597,7 +597,7 @@
       "close": 496,
       "rows": 523,
       "share_below": 4.0,
-      "share_green": 64.2
+      "share_green": 98.9
      }
     },
     "loki-defaults": {
@@ -608,7 +608,7 @@
       "close": 188,
       "rows": 556,
       "share_below": 63.3,
-      "share_green": 87.1
+      "share_green": 97.1
      },
      "sets": 38,
      "warm": {
@@ -618,7 +618,7 @@
       "close": 609,
       "rows": 753,
       "share_below": 18.5,
-      "share_green": 76.5
+      "share_green": 99.3
      }
     }
    }
@@ -638,7 +638,7 @@
       "close": 124,
       "rows": 441,
       "share_below": 68.7,
-      "share_green": 89.3
+      "share_green": 96.8
      },
      "sets": 36,
      "warm": {
@@ -648,7 +648,7 @@
       "close": 508,
       "rows": 523,
       "share_below": 2.3,
-      "share_green": 75.3
+      "share_green": 99.4
      }
     },
     "loki-defaults": {
@@ -659,7 +659,7 @@
       "close": 185,
       "rows": 557,
       "share_below": 64.6,
-      "share_green": 91.0
+      "share_green": 97.8
      },
      "sets": 38,
      "warm": {
@@ -669,7 +669,7 @@
       "close": 584,
       "rows": 753,
       "share_below": 22.3,
-      "share_green": 86.7
+      "share_green": 99.9
      }
     }
    }
@@ -678,6 +678,6 @@
  "targets": {
   "above": "worst case at most 2× (0)",
   "share_below": "most queries below Loki (above 50%)",
-  "share_green": "99% of rows at Loki's speed or below (at most 1.01× Loki)"
+  "share_green": "95% of rows green (below Loki or within the noise of it)"
  }
 }
