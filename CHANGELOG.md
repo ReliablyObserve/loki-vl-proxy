@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loki_vl_proxy_slow_requests_total` still counts slow requests. Helm: the
   `slow-query-log-level` key of `extraArgs`.
 
+## [2.92.0] - 2026-11-07
+
+### Added
+
 - feat(observability): every request's query flow in its log line and in
   metrics: how many LogQL parses, translations, cache lookups (by tier:
   memory, disk, peer; hit, miss, stale) and VictoriaLogs calls it made, the
