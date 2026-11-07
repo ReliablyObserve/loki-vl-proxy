@@ -6,42 +6,6 @@
  },
  "rows": [
   {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.052,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 0.176,
-   "range": "1h",
-   "ratio": 3.38,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
-  },
-  {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.648,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 4.085,
-   "range": "24h",
-   "ratio": 6.3,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
-  },
-  {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.171,
-   "mode": "cold",
-   "profile": "aligned",
-   "proxy_s": 1.045,
-   "range": "6h",
-   "ratio": 6.11,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
-  },
-  {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
    "loki_s": 0.188,
    "mode": "cold",
@@ -52,42 +16,6 @@
    "set": "level-filter-stored",
    "shape": "LS8 json count by level_extracted, collision",
    "since": "2026-10-28"
-  },
-  {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.058,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 0.174,
-   "range": "1h",
-   "ratio": 3.0,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
-  },
-  {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.797,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 4.078,
-   "range": "24h",
-   "ratio": 5.12,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
-  },
-  {
-   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
-   "loki_s": 0.168,
-   "mode": "cold",
-   "profile": "loki-defaults",
-   "proxy_s": 1.019,
-   "range": "6h",
-   "ratio": 6.07,
-   "set": "keep-series-grouping",
-   "shape": "K6 count by kept key, json",
-   "since": "2026-11-06"
   },
   {
    "commit": "45d1ea4703daa071c6c7532bcc8a0e225b83b2d0",
