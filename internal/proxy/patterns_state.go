@@ -421,79 +421,7 @@ func (st *patternStateStore) tenant(key string) *patternTenantState {
 // Counts are kept in slices indexed by step (a range has a few hundred steps), a stream's patterns gathered in a
 // buffer reused across streams, and a live cluster's pattern written again only when its template changed.
 func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryScope, patternLimit int) []patternResultEntry {
-	step := int64(scope.step / time.Second)
-	if step <= 0 {
-		step = 1
-	}
-	startSec, endSec := scope.startNs/int64(time.Second), (scope.endNs-1)/int64(time.Second)
-	base := startSec / step * step
-	steps := int((endSec/step*step-base)/step) + 1
-	type key struct{ level, pattern string }
-	type acc struct {
-		counts  []int
-		present []bool
-		total   int
-	}
-	sums := map[key]*acc{}
-	// One stream's patterns, gathered before they are added up: each with its steps' counts and the span it
-	// covers, so it is zero-filled once however many of the stream's clusters hold it.
-	type group struct {
-		key         key
-		counts      []int
-		first, last int
-	}
-	var groups []group
-	var spare [][]int
-	add := func(level, pattern string, samples map[int64]int) {
-		for at, n := range samples {
-			ns := at * int64(time.Second)
-			if ns < scope.startNs || ns >= scope.endNs || n == 0 {
-				continue
-			}
-			idx := int((at/step*step - base) / step)
-			if idx < 0 || idx >= steps {
-				continue
-			}
-			k := key{level, pattern}
-			g := -1
-			for i := range groups {
-				if groups[i].key == k {
-					g = i
-					break
-				}
-			}
-			if g < 0 {
-				var counts []int
-				if len(spare) > 0 {
-					counts, spare = spare[len(spare)-1], spare[:len(spare)-1]
-				} else {
-					counts = make([]int, steps)
-				}
-				groups = append(groups, group{key: k, counts: counts, first: idx, last: idx})
-				g = len(groups) - 1
-			}
-			groups[g].counts[idx] += n
-			groups[g].first = min(groups[g].first, idx)
-			groups[g].last = max(groups[g].last, idx)
-		}
-	}
-	flush := func() {
-		for _, g := range groups {
-			a := sums[g.key]
-			if a == nil {
-				a = &acc{counts: make([]int, steps), present: make([]bool, steps)}
-				sums[g.key] = a
-			}
-			for idx := g.first; idx <= g.last; idx++ {
-				a.counts[idx] += g.counts[idx]
-				a.total += g.counts[idx]
-				a.present[idx] = true
-				g.counts[idx] = 0
-			}
-			spare = append(spare, g.counts)
-		}
-		groups = groups[:0]
-	}
+	g := newPatternStepGrid(scope)
 	byStream := make(map[string][]*patternClusterer, len(t.miner.miners))
 	for mk, c := range t.miner.miners {
 		if _, ok := s.streams[mk.stream]; ok {
@@ -502,26 +430,121 @@ func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryS
 	}
 	for stream := range s.streams {
 		for _, cluster := range t.folded[stream] {
-			add(cluster.level, cluster.pattern, cluster.samples)
+			g.add(cluster.level, cluster.pattern, cluster.samples)
 		}
 		for _, c := range byStream[stream] {
 			for _, cluster := range c.live {
 				if cluster.text == "" {
 					cluster.text = t.miner.joinPatternTokens(cluster.tokens, cluster.spacesAfter, cluster.format)
 				}
-				add(c.level, cluster.text, cluster.buckets)
+				g.add(c.level, cluster.text, cluster.buckets)
 			}
 		}
-		flush()
+		g.endStream()
 	}
-	// The patterns with fewer lines in the range than Loki answers are left out before sorting (the answer's
-	// 30-line rule would drop them), then the rest sorted by their totals, held beside them.
+	return g.entries(patternLimit)
+}
+
+// patternStepKey is a pattern of a level, an entry of an answer.
+type patternStepKey struct{ level, pattern string }
+
+// patternStepCounts is a pattern's lines per step over the range, and the steps with a sample (zero-filled ones
+// included).
+type patternStepCounts struct {
+	counts  []int
+	present []bool
+	total   int
+}
+
+// patternStreamGroup is one pattern of the stream being added: its lines per step and the steps it spans.
+type patternStreamGroup struct {
+	key         patternStepKey
+	counts      []int
+	first, last int
+}
+
+// patternStepGrid adds up the samples of an answer's range by step: the steps from the one the range's start
+// falls in to the one its end does.
+type patternStepGrid struct {
+	scope      patternQueryScope
+	step, base int64
+	steps      int
+	sums       map[patternStepKey]*patternStepCounts
+	groups     []patternStreamGroup
+	spare      [][]int
+}
+
+func newPatternStepGrid(scope patternQueryScope) *patternStepGrid {
+	step := int64(scope.step / time.Second)
+	if step <= 0 {
+		step = 1
+	}
+	startSec, endSec := scope.startNs/int64(time.Second), (scope.endNs-1)/int64(time.Second)
+	base := startSec / step * step
+	return &patternStepGrid{scope: scope, step: step, base: base, steps: int((endSec/step*step-base)/step) + 1, sums: map[patternStepKey]*patternStepCounts{}}
+}
+
+// add counts a cluster's 10 s samples inside the range into the stream's pattern.
+func (g *patternStepGrid) add(level, pattern string, samples map[int64]int) {
+	for at, n := range samples {
+		if ns := at * int64(time.Second); ns < g.scope.startNs || ns >= g.scope.endNs || n == 0 {
+			continue
+		}
+		idx := int((at/g.step*g.step - g.base) / g.step)
+		if idx < 0 || idx >= g.steps {
+			continue
+		}
+		grp := g.group(patternStepKey{level, pattern}, idx)
+		grp.counts[idx] += n
+		grp.first, grp.last = min(grp.first, idx), max(grp.last, idx)
+	}
+}
+
+// group is the stream's pattern, started at step idx when the stream has none of it yet.
+func (g *patternStepGrid) group(k patternStepKey, idx int) *patternStreamGroup {
+	for i := range g.groups {
+		if g.groups[i].key == k {
+			return &g.groups[i]
+		}
+	}
+	var counts []int
+	if n := len(g.spare); n > 0 {
+		counts, g.spare = g.spare[n-1], g.spare[:n-1]
+	} else {
+		counts = make([]int, g.steps)
+	}
+	g.groups = append(g.groups, patternStreamGroup{key: k, counts: counts, first: idx, last: idx})
+	return &g.groups[len(g.groups)-1]
+}
+
+// endStream adds the stream's patterns to the answer, each zero-filled between its first and last step.
+func (g *patternStepGrid) endStream() {
+	for _, grp := range g.groups {
+		a := g.sums[grp.key]
+		if a == nil {
+			a = &patternStepCounts{counts: make([]int, g.steps), present: make([]bool, g.steps)}
+			g.sums[grp.key] = a
+		}
+		for idx := grp.first; idx <= grp.last; idx++ {
+			a.counts[idx] += grp.counts[idx]
+			a.total += grp.counts[idx]
+			a.present[idx] = true
+			grp.counts[idx] = 0
+		}
+		g.spare = append(g.spare, grp.counts)
+	}
+	g.groups = g.groups[:0]
+}
+
+// entries is the answer: the patterns with at least lokiPatternMinLines lines in the range (the others the
+// answer's 30-line rule would drop), the most lines first, at most patternLimit.
+func (g *patternStepGrid) entries(patternLimit int) []patternResultEntry {
 	type ranked struct {
-		key key
-		acc *acc
+		key patternStepKey
+		acc *patternStepCounts
 	}
-	items := make([]ranked, 0, len(sums))
-	for k, a := range sums {
+	items := make([]ranked, 0, len(g.sums))
+	for k, a := range g.sums {
 		if a.total >= lokiPatternMinLines {
 			items = append(items, ranked{k, a})
 		}
@@ -543,14 +566,13 @@ func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryS
 	}
 	entries := make([]patternResultEntry, 0, len(items))
 	for _, item := range items {
-		k, a := item.key, item.acc
-		samples := make([][]interface{}, 0, steps)
-		for idx, present := range a.present {
+		samples := make([][]interface{}, 0, g.steps)
+		for idx, present := range item.acc.present {
 			if present {
-				samples = append(samples, []interface{}{base + int64(idx)*step, a.counts[idx]})
+				samples = append(samples, []interface{}{g.base + int64(idx)*g.step, item.acc.counts[idx]})
 			}
 		}
-		entries = append(entries, patternResultEntry{Pattern: k.pattern, Level: k.level, Samples: samples})
+		entries = append(entries, patternResultEntry{Pattern: item.key.pattern, Level: item.key.level, Samples: samples})
 	}
 	return entries
 }
