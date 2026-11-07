@@ -183,12 +183,15 @@ decisions:
       answers no pattern for it: otel-collector on the compose stack has a stream
       per line, and Loki and the proxy answer none. Mining the selector's lines
       together answers their patterns (one pattern for otel-collector's 60 lines in
-      the unit test). It is not Loki's answer, so it is off by default and on only
+      the unit test). A JSON line whose message is under Loki's 4 tokens is mined
+      as the whole line in this scope: otel-collector's messages ('pipeline
+      traces/otlp flushed') are three tokens, which is why Loki shows none for it.
+      It is not Loki's answer, so it is off by default and on only
       where it is asked for: the playground's patterns-autodetect proxy with
       PATTERNS_SCOPE=selector; CI's Drilldown comparisons keep stream.
     evidence: 'owner decision 2026-11-07; compose stack otel-collector: Loki 0 patterns at 15m-6h'
     code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go, internal/proxy/postprocess.go, cmd/proxy/main.go]
-    tests: [TestPatternsSelectorScopeMinesAcrossStreams, TestPatternsSelectorScopeKeepsSelectorsApart]
+    tests: [TestPatternsSelectorScopeMinesAcrossStreams, TestPatternsSelectorScopeKeepsSelectorsApart, TestPatternsSelectorScopeMinesShortJSONMessagesAsTheWholeLine]
     quality: |
       stream scope answers equal Loki's (the 27 recorded answers); selector scope
       answers each selector from its own lines only, every line once, and its

@@ -65,3 +65,31 @@ func TestPatternsSelectorScopeKeepsSelectorsApart(t *testing.T) {
 		t.Fatalf("refresh answered %q, want %q", again, broad)
 	}
 }
+
+// Under -patterns-scope=selector a JSON line whose message is too short for Loki to mine (under 4 tokens) is mined
+// as the whole line, from the state and the exact read; Loki's scope mines none of them.
+//
+// conformance: loki_api_v1_patterns, patterns-loki-mining
+func TestPatternsSelectorScopeMinesShortJSONMessagesAsTheWholeLine(t *testing.T) {
+	vl := &fakeStateVL{}
+	at := stateNow.Add(-50 * time.Minute)
+	for i := 0; i < 40; i++ {
+		vl.add(stateRow{stream: fmt.Sprintf("otel/p%d", i%4), level: "warn", at: at.Add(time.Duration(i) * time.Second),
+			msg: fmt.Sprintf(`{"message": "pipeline traces/otlp flushed", "level": "warn", "received": %d, "dropped": %d}`, 1000+i, i%9)})
+	}
+	now := stateNow
+	if got, _ := statePatterns(t, newStateProxy(t, vl, &now, 1<<30), "", `{app="otel"}`, now.Add(-time.Hour), now); got != "" {
+		t.Fatalf("stream scope answered %q, want none (Loki mines no message under 4 tokens)", got)
+	}
+	for _, state := range []bool{true, false} {
+		p := newStateProxy(t, vl, &now, 1<<30)
+		p.patternsSelectorScope = true
+		if !state {
+			p.patternState = nil
+		}
+		got, _ := statePatterns(t, p, "", `{app="otel"}`, now.Add(-time.Hour), now)
+		if !strings.Contains(got, `"pipeline traces/otlp flushed"`) || !strings.HasSuffix(got, "=40") {
+			t.Fatalf("selector scope (state %v) answered %q, want the whole line's pattern over 40 lines", state, got)
+		}
+	}
+}

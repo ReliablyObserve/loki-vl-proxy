@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Loki's) mines a selector's `/loki/api/v1/patterns` lines with one miner per
   level across all its streams, so streams that each hold a few lines (a trace
   id as a stream label, short-lived pods) show their patterns, where Loki shows
-  none. Answers are cached under their own key. The compose stack's
+  none, and a JSON line whose message is under Loki's 4-token minimum is mined
+  as the whole line. Answers are cached under their own key. The compose stack's
   patterns-autodetect proxy takes it from `PATTERNS_SCOPE` (default `stream`).
 
 - feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps

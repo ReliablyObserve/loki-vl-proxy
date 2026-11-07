@@ -359,6 +359,7 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 	selector := ""
 	if p.patternsSelectorScope {
 		selector = patternSelectorStream(scope.filter.String())
+		t.miner.shortWholeLine = true
 	}
 	return p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), fromNs, toNs, maxLines, func(v *fj.Value) bool {
 		msg := v.GetStringBytes("_msg")

@@ -1151,6 +1151,9 @@ type patternMiner struct {
 	sampleFromNs, sampleToNs int64
 	// oneStream mines every line as one stream's (-patterns-scope=selector): one miner per level.
 	oneStream bool
+	// shortWholeLine mines a JSON line whose message is too short for Loki as the whole line
+	// (-patterns-scope=selector).
+	shortWholeLine bool
 }
 
 func newPatternMiner() *patternMiner {
