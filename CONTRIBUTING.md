@@ -76,6 +76,29 @@ go vet ./...
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 ```
 
+## Local Preflight
+
+A pull request reports a data race, a stale conformance report, a changelog entry under a released section, a lint finding or a test that is flaky only under the coverage run after 20-30 minutes in CI. `scripts/ci/preflight.sh` runs those checks locally, with the commands, flags and pinned versions CI uses (the Python suites, the golangci-lint version and the race-regression pattern are read from `.github/workflows/ci.yaml` at run time). Run it before every push:
+
+```bash
+scripts/ci/preflight.sh --quick   # static checks and gates, about 1.5 minutes (Python suites in parallel)
+scripts/ci/preflight.sh           # --quick, then the tests of the packages your diff touches
+scripts/ci/preflight.sh --full    # every package -short, bench module, govulncheck
+scripts/ci/preflight.sh --base origin/feat/parent    # a stacked pull request: compare with its base branch
+scripts/ci/preflight.sh --fuzz    # add the fuzz-smoke targets of the touched packages
+scripts/ci/preflight.sh --full --race-shard all      # the internal/proxy race shards of CI, one after another
+```
+
+| Step group | Runs | CI job it mirrors |
+| --- | --- | --- |
+| static | `gofmt -s -l`, `go build`, `go vet`, golangci-lint at the pinned version (installed under `~/.cache/loki-vl-proxy/bin` when missing), `go run ./cmd/configdoc -check`, the README support-policy test, `sync_observability_assets.sh --check` | `lint`, `test` (rest shard) |
+| gates | `check_changelog_pr.py --base <base> --head HEAD`, `go test ./test/testcache/`, `fuzz_smoke.py check`, every `python3 -m unittest` suite of `ci.yaml`, `check_conformance.py` (on a copy of the tree, because it rewrites stale reports) | `changelog`, `lint`, `conformance`, `fuzz-smoke` |
+| changed tests (default) | `go test -short -count=1 -p 1` on the touched packages; `-race` on them, and on `internal/proxy` only the tests of the changed files plus the concurrent-regression set; the `report` job's `go test -cover -json` run | `test-shard`, `race-stress-shard`, `tuple-contract`, `report` |
+
+Test runs are capped as the repo asks (`GOMEMLIMIT=2GiB` for the default mode, 3GiB for `--full`, `GOMAXPROCS=4`, `-p 1`). The step lines read `PASS|FAIL|SKIP <step> (<seconds>s)`; the run stops at the first failure unless `--keep-going`, and the exit status is non-zero when any step failed. The script never modifies tracked files: a step that leaves `git status` or `git diff HEAD` different from before fails (a fuzz crasher written to `testdata/fuzz` is one). Do not edit files while it runs: the edit is reported as the running step's change to the tree. The changelog gate reads the committed `HEAD`, so commit first. `check_conformance.py` compares its ratchets with `origin/main` whatever `--base` is. A changed `internal/proxy` file with no test file of the same name (`foo.go` and `foo_test.go`, `foo_*_test.go`) gets a note and only the regression set; use `--race-shard` for a CI shard of the package.
+
+Not run locally: the Docker, browser and runner-sized jobs (e2e, visual smoke, performance A/B, fleet, helm, security scans, `validate_compose.sh`), and the conformance evidence check, which needs the unit-test results of a whole CI run. The coverage step runs one package at a time (`-p 1`, the capped-run rule), so a flake that needs packages running in parallel (a port collision, CPU contention) can still appear only in CI. A change outside a Go package (`conformance/registry`, `scripts/ci/*.tsv`) selects no Go tests; the gates cover it.
+
 ## Changelog Gate
 
 A changelog entry and a release are tied to one question: does the pull request change something users receive? The `changelog` check (`scripts/ci/check_changelog_pr.py`) requires a new bullet under `## [Unreleased]` in `CHANGELOG.md` only when a changed file ships. The commit type does not matter: a `fix:` that touches nothing that ships needs no entry. What ships is listed in `SHIPPED` in `scripts/ci/change_scope.py`:
