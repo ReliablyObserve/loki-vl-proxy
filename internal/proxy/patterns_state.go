@@ -30,6 +30,10 @@ const (
 // only while it trains them; a window VictoriaLogs cannot sort is read in quarters.
 const patternStateBuildWindow = time.Hour
 
+// patternStateBuildWait is how long a background build waits at most for the request that started it to be
+// answered before it reads: until then its reads would slow that request's own.
+var patternStateBuildWait = 30 * time.Second
+
 // lokiPatternRetention is how far back Loki's pattern ingester holds patterns (pattern_ingester retain_for,
 // default 3h): the pattern state is built from then, and a range that starts earlier is answered, as Loki answers
 // it, with the samples of the retention alone.
@@ -143,16 +147,18 @@ type patternFoldedCluster struct {
 // the range ends in the future, or VictoriaLogs fails: the caller answers without the state.
 //
 // fromNs is where the answer's samples start: Loki's retention (3h back), or with -patterns-full-range the hour
-// the state's samples start at, the range before it left to the caller (addPatternHistory).
-func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) (entries []patternResultEntry, fromNs int64, ok bool) {
+// the state's samples start at, the range before it left to the caller (addPatternHistory). lines is the range's
+// count of lines when the state counted it (the request that finds no state for the selector, counted along with
+// the retention's), -1 otherwise.
+func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) (entries []patternResultEntry, fromNs int64, lines int, ok bool) {
 	store := p.patternState
 	if store == nil {
-		return nil, 0, false
+		return nil, 0, -1, false
 	}
 	now := store.now()
 	retainFrom := now.Add(-lokiPatternRetention).Truncate(time.Hour).UnixNano()
 	if scope.endNs > now.Add(time.Minute).UnixNano() {
-		return nil, 0, false
+		return nil, 0, -1, false
 	}
 	ctx := r.Context()
 	t := store.tenant(p.patternStateTenantKey(r))
@@ -163,20 +169,35 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	s := t.selectors[selector]
 	if s != nil && s.building {
 		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
-		return nil, 0, false
+		return nil, 0, -1, false
 	}
+	lines = -1
 	if s == nil {
-		lines, err := p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
-		if err != nil {
-			return nil, 0, false
+		// The range's lines are counted with the retention's, for the caller to answer the request without the
+		// state when the retention holds too many.
+		var retained int
+		var retainedErr, rangeErr error
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			lines, rangeErr = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs)
+		}()
+		retained, retainedErr = p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
+		wg.Wait()
+		if rangeErr != nil {
+			lines = -1
 		}
-		if lines > maxLines {
-			if lines <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
+		if retainedErr != nil {
+			return nil, 0, lines, false
+		}
+		if retained > maxLines {
+			if retained <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
 				p.observeInternalOperation(ctx, "patterns_state", "build_started", 0)
 			} else {
 				p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
 			}
-			return nil, 0, false
+			return nil, 0, lines, false
 		}
 		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{})}
 		t.selectors[selector] = s
@@ -194,7 +215,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		if err := p.readPatternStateLines(ctx, t, s, scope, readFrom, readTo, maxLines); err != nil {
 			delete(t.selectors, selector)
 			p.observeInternalOperation(ctx, "patterns_state", "error", time.Since(started))
-			return nil, 0, false
+			return nil, 0, lines, false
 		}
 		s.toNs = readTo
 		p.observeInternalOperation(ctx, "patterns_state", "read", time.Since(started))
@@ -213,7 +234,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		entries = t.answer(s, answered, patternLimit)
 	}
 	store.age(t, now, now, retainFrom)
-	return entries, fromNs, true
+	return entries, fromNs, lines, true
 }
 
 // buildPatternStateInBackground builds the selector's state from retainFromNs to now in the background, a window
@@ -236,6 +257,13 @@ func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantS
 		defer func() { <-store.builds }()
 		defer stop()
 		defer cancel()
+		// The build reads once the request that started it is answered (its context ends with the answer), so
+		// that request's own reads are not slowed down by the build's.
+		select {
+		case <-r.Context().Done():
+		case <-ctx.Done():
+		case <-time.After(patternStateBuildWait):
+		}
 		started := time.Now()
 		ok := p.readPatternStateWindows(ctx, t, selector, s, scope, retainFromNs, now.UnixNano())
 		t.mu.Lock()

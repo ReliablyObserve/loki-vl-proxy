@@ -146,6 +146,19 @@ decisions:
     evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
     code: [internal/proxy/patterns_exact.go]
     tests: [TestPatternExactQueriesAreTyped, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
+  - id: patterns-cold-request-before-build
+    chosen: Count the range with the retention at once, and start a background build's reads once the request that started it is answered
+    over: [counting the retention then the range, the build reading alongside the request's own read]
+    why: |
+      The first request for a busy selector counts the retention (to choose a
+      background build) and the range (to choose the exact read); run one after
+      the other they cost both, and the build's first window competed with the
+      request's own read of the same hour on VictoriaLogs. env=production cold
+      1h: 0.65 s to 0.47 s (1.12 s before the phrase filter; Loki 0.72-0.97 s on
+      the same stack). The build waits at most 30 s for the answer.
+    evidence: 'compose stack A/B, VictoriaLogs v1.53.0, Loki 3.7.9, 2026-11-07'
+    code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go]
+    tests: [TestPatternStateBuiltInTheBackgroundForBusySelectors, TestPatternStateRefreshReadsOnlyNewLines]
 
 implementation:
   - internal/proxy/pattern_cluster.go

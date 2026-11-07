@@ -202,15 +202,15 @@ func TestPatternStateRefreshReadsOnlyNewLines(t *testing.T) {
 	now := stateNow
 	p := newStateProxy(t, vl, &now, 1<<30)
 	statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
-	if vl.counts != 1 || len(vl.lineRanges) != 1 || !vl.lineRanges[0][0].Equal(stateNow.Add(-lokiPatternRetention)) {
-		t.Fatalf("cold build: %d counts, lines read over %v; want one count and one read from the retention", vl.counts, vl.lineRanges)
+	if vl.counts != 2 || len(vl.lineRanges) != 1 || !vl.lineRanges[0][0].Equal(stateNow.Add(-lokiPatternRetention)) {
+		t.Fatalf("cold build: %d counts, lines read over %v; want the retention's and the range's counts and one read from the retention", vl.counts, vl.lineRanges)
 	}
 
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow, 20)...)
 	now = stateNow.Add(time.Minute)
 	gotTexts, gotSamples := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
-	if vl.counts != 1 || len(vl.lineRanges) != 2 {
-		t.Fatalf("refresh: %d counts, %d reads; want no count and one more read", vl.counts, len(vl.lineRanges))
+	if vl.counts != 2 || len(vl.lineRanges) != 2 {
+		t.Fatalf("refresh: %d counts, %d reads; want no more count and one more read", vl.counts, len(vl.lineRanges))
 	}
 	if from, to := vl.lineRanges[1][0], vl.lineRanges[1][1]; !from.Equal(stateNow.Add(-patternStateOverlap)) || !to.Equal(now) {
 		t.Fatalf("refresh read [%s, %s), want the lines from %s on", from, to, stateNow.Add(-patternStateOverlap))
@@ -333,10 +333,10 @@ func TestPatternStateAnswersOnlyInsideItsBounds(t *testing.T) {
 	if !ok {
 		t.Fatal("scope")
 	}
-	if _, _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 99, 100); answered {
+	if _, _, _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 99, 100); answered {
 		t.Fatal("a selector with more lines than the cap was answered from the state")
 	}
-	if _, _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 100, 100); !answered {
+	if _, _, _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 100, 100); !answered {
 		t.Fatal("a selector within the cap was not answered from the state")
 	}
 }
@@ -352,7 +352,7 @@ func TestPatternStateDroppedAndBuiltAgainAnswersTheSame(t *testing.T) {
 	_, first := statePatterns(t, tiny, "", `{app="api"}`, now.Add(-time.Hour), now)
 	reads := len(vl.lineRanges)
 	_, second := statePatterns(t, tiny, "", `{app="api"}`, now.Add(-time.Hour+time.Second), now)
-	if len(vl.lineRanges) != reads+1 || vl.counts != 2 {
+	if len(vl.lineRanges) != reads+1 || vl.counts != 4 {
 		t.Fatalf("a dropped state was not built again: %d reads after %d, %d counts", len(vl.lineRanges), reads, vl.counts)
 	}
 	_, want := statePatterns(t, newStateProxy(t, vl, &now, 1<<30), "", `{app="api"}`, now.Add(-time.Hour+time.Second), now)
@@ -425,8 +425,9 @@ func TestPatternQueriesLeaveOutJSONLinesWithoutAMessage(t *testing.T) {
 
 // A selector with more lines than -patterns-exact-max-lines over the retention, up to
 // -patterns-state-max-build-lines, has its state built in the background an hour at a time: the request that
-// starts the build and those during it are answered without the state, and once built the state answers as one
-// built in a single read does.
+// starts the build and those during it are answered without the state (the first with the range's count of lines,
+// counted with the retention's), the build reads once that request is answered, and once built the state answers
+// as one built in a single read does.
 //
 // conformance: drilldown/patterns-full-range-counts, drilldown/patterns-mined-differently, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateBuiltInTheBackgroundForBusySelectors(t *testing.T) {
@@ -439,20 +440,34 @@ func TestPatternStateBuiltInTheBackgroundForBusySelectors(t *testing.T) {
 	p := newStateProxy(t, vl, &now, 1<<30)
 	p.patternState.maxBuildLines = 10_000
 	scope, _ := p.patternScope(`{app="api"}`, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if _, _, answered := p.patternsFromState(req, scope, 1000, 100); answered {
+	ctx, answer := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	_, _, lines, answered := p.patternsFromState(req, scope, 1000, 100)
+	if answered {
 		t.Fatal("a selector over the exact cap was answered before its state was built")
 	}
+	if want, err := p.countPatternLines(ctx, scope, scope.startNs, scope.endNs); err != nil || lines != want || lines == 0 {
+		t.Fatalf("range counted %d lines with the retention, want %d (%v)", lines, want, err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	vl.mu.Lock()
+	early := len(vl.lineRanges)
+	vl.mu.Unlock()
+	if early != 0 {
+		t.Fatalf("the build read %d windows before the request that started it was answered", early)
+	}
+	answer()
 	p.patternState.wg.Wait()
 	if len(vl.lineRanges) < 3 {
 		t.Fatalf("background build read %d windows, want one per hour of the retention", len(vl.lineRanges))
 	}
-	got, _, answered := p.patternsFromState(req, scope, 1000, 100)
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	got, _, _, answered := p.patternsFromState(req, scope, 1000, 100)
 	if !answered {
 		t.Fatal("built state did not answer")
 	}
 	direct := newStateProxy(t, vl, &now, 1<<30)
-	want, _, _ := direct.patternsFromState(req, scope, 100_000, 100)
+	want, _, _, _ := direct.patternsFromState(req, scope, 100_000, 100)
 	gotJSON, _ := json.Marshal(got)
 	wantJSON, _ := json.Marshal(want)
 	if string(gotJSON) != string(wantJSON) {

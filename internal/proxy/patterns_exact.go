@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -66,7 +65,8 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if !ok {
 		return nil, false, false
 	}
-	if entries, fromNs, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok && (!p.patternsFullRange || len(entries) > 0 || scope.startNs >= fromNs) {
+	entries, fromNs, lines, ok := p.patternsFromState(r, scope, maxLines, patternLimit)
+	if ok && (!p.patternsFullRange || len(entries) > 0 || scope.startNs >= fromNs) {
 		// (With -patterns-full-range, a range the state has no pattern for, such as one before its samples or a
 		// service quiet since, is mined from the range's own lines below, so its chart is not empty.)
 		if p.patternsFullRange && scope.startNs < fromNs {
@@ -80,13 +80,13 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 		return entries, true, true
 	}
 	ctx := r.Context()
-	lines := -1
-	err := p.readPatternCountRows(ctx, patternExactCountQuery(scope.filter), scope.startNs, scope.endNs, 1, func(v *fj.Value) bool {
+	if lines < 0 { // not counted by the state
 		var err error
-		lines, err = strconv.Atoi(string(v.GetStringBytes("c")))
-		return err == nil
-	})
-	if err != nil || lines < 0 || lines > maxLines {
+		if lines, err = p.countPatternLines(ctx, scope, scope.startNs, scope.endNs); err != nil {
+			return nil, false, false
+		}
+	}
+	if lines > maxLines {
 		return nil, false, false
 	}
 	if lines == 0 {
