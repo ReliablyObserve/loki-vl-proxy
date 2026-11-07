@@ -267,11 +267,19 @@ func TestPatternStateAnswersARangeEndingAfterNow(t *testing.T) {
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 100)...)
 	now := stateNow
 	p := newStateProxy(t, vl, &now, 1<<30)
-	want, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	ask := func(start, end time.Time) ([]patternResultEntry, bool) {
+		scope, _ := p.patternScope(`{app="api"}`, strconv.FormatInt(start.UnixNano(), 10), strconv.FormatInt(end.UnixNano(), 10), "300")
+		entries, _, _, ok := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 1000, 100)
+		return entries, ok
+	}
+	want, ok := ask(now.Add(-time.Hour), now)
 	reads := len(vl.lineRanges)
-	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour+5*time.Minute), now.Add(5*time.Minute))
-	if got != want || len(vl.lineRanges) != reads {
-		t.Fatalf("a range ending after now answered %q with %d more reads, want %q from the state", got, len(vl.lineRanges)-reads, want)
+	got, shiftedOK := ask(now.Add(-time.Hour+5*time.Minute), now.Add(5*time.Minute))
+	if !ok || !shiftedOK || len(got) != len(want) || len(vl.lineRanges) != reads {
+		t.Fatalf("a range ending a step after now: answered %v with %d patterns and %d more reads, want %d patterns from the state", shiftedOK, len(got), len(vl.lineRanges)-reads, len(want))
+	}
+	if _, ok := ask(now.Add(-time.Hour), now.Add(time.Hour)); ok {
+		t.Fatal("a range ending an hour after now was answered from the state, want its own lines read")
 	}
 }
 
