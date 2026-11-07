@@ -306,6 +306,9 @@ func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantS
 			return
 		}
 		s.building = false
+		// The streams that went idle since the windows were read keep only their patterns and samples.
+		now := store.now()
+		store.age(t, now, now, retainFromNs)
 		p.observeInternalOperation(ctx, "patterns_state", "built", time.Since(started))
 		p.writePatternStateSnapshot(ctx, key, t, s, true)
 	}()

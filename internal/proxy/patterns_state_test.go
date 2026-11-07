@@ -702,3 +702,38 @@ func TestPatternStateSnapshotRoundTrips(t *testing.T) {
 		t.Fatalf("a restored state snapshots differently:\n%s\n%s", first, second)
 	}
 }
+
+// A snapshot larger than a peer takes is cached in parts, and read back whole; a part that is gone makes the state
+// be built again rather than restored from part of it.
+//
+// conformance: peer-cache-patterns, patterns-loki-mining
+func TestPatternStateSnapshotIsCachedInParts(t *testing.T) {
+	vl := &fakeStateVL{}
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	tenant := &patternTenantState{miner: newPatternMiner(), newest: map[string]int64{}, atNewest: map[string]map[uint64]int{}, folded: map[string][]patternFoldedCluster{}, selectors: map[string]*patternSelectorState{}}
+	s := &patternSelectorState{fromNs: 1, toNs: 2, streams: map[string]struct{}{}}
+	for i := 0; i < 60_000; i++ {
+		stream := fmt.Sprintf("stream-%06d-%x", i, i*7919)
+		s.streams[stream] = struct{}{}
+		tenant.folded[stream] = []patternFoldedCluster{{level: "info", pattern: fmt.Sprintf("job %d of %x finished <_>", i, i*104729), samples: map[int64]int{int64(i): i}}}
+	}
+	tenant.selectors["sel"] = s
+	part := patternStateSnapshotPart
+	patternStateSnapshotPart = 256 << 10
+	t.Cleanup(func() { patternStateSnapshotPart = part })
+	p.writePatternStateSnapshot(context.Background(), "patterns_state:test", tenant, s, true)
+	raw, ok := p.cache.Get("patterns_state:test")
+	var manifest patternStateSnapshotManifest
+	if !ok || json.Unmarshal(raw, &manifest) != nil || manifest.Parts < 2 {
+		t.Fatalf("snapshot manifest %s: want several parts", raw)
+	}
+	restored := &patternTenantState{}
+	if got := p.loadPatternStateSnapshot(context.Background(), "patterns_state:test", "sel", restored); got == nil || len(got.streams) != 60_000 || len(restored.folded) != 60_000 {
+		t.Fatal("snapshot in parts not read back whole")
+	}
+	p.cache.Invalidate("patterns_state:test#1")
+	if got := p.loadPatternStateSnapshot(context.Background(), "patterns_state:test", "sel", &patternTenantState{}); got != nil {
+		t.Fatal("a snapshot with a part gone was restored")
+	}
+}

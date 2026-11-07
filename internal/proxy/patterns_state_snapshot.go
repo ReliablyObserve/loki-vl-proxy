@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -246,8 +247,26 @@ func (p *Proxy) writePatternStateSnapshot(ctx context.Context, key string, t *pa
 		return
 	}
 	t.snapshotAt = time.Now()
-	p.cache.SetWithTTL(key, data, patternStateSnapshotTTL)
+	// A peer takes a value of at most a few MB: a larger snapshot is cached in parts, each under its own key
+	// (spread across the ring), with the key holding how many there are.
+	parts := (len(data) + patternStateSnapshotPart - 1) / patternStateSnapshotPart
+	for i := 0; i < parts; i++ {
+		end := min((i+1)*patternStateSnapshotPart, len(data))
+		p.cache.SetWithTTL(key+"#"+strconv.Itoa(i), data[i*patternStateSnapshotPart:end], patternStateSnapshotTTL)
+	}
+	manifest, _ := json.Marshal(patternStateSnapshotManifest{Parts: parts, Bytes: len(data)})
+	p.cache.SetWithTTL(key, manifest, patternStateSnapshotTTL)
 	p.observeInternalOperation(ctx, "patterns_state_snapshot", "written", 0)
+}
+
+// patternStateSnapshotPart is the most bytes of a snapshot cached under one key (a variable for tests).
+var patternStateSnapshotPart = 4 << 20
+
+// patternStateSnapshotManifest is what a snapshot's key holds: how many parts the snapshot was cached in, under
+// the key followed by #0, #1 and so on, and its size.
+type patternStateSnapshotManifest struct {
+	Parts int `json:"parts"`
+	Bytes int `json:"bytes"`
 }
 
 // loadPatternStateSnapshot restores the selector's state from the cache (memory, disk, then the key's replicas on
@@ -257,8 +276,23 @@ func (p *Proxy) loadPatternStateSnapshot(ctx context.Context, key, selector stri
 	if p.cache == nil || key == "" {
 		return nil
 	}
-	data, ok := p.cache.Get(key)
+	raw, ok := p.cache.Get(key)
 	if !ok {
+		return nil
+	}
+	var manifest patternStateSnapshotManifest
+	if json.Unmarshal(raw, &manifest) != nil || manifest.Parts <= 0 || manifest.Bytes <= 0 {
+		return nil
+	}
+	data := make([]byte, 0, manifest.Bytes)
+	for i := 0; i < manifest.Parts; i++ {
+		part, ok := p.cache.Get(key + "#" + strconv.Itoa(i))
+		if !ok {
+			return nil // a part is gone: the state is built again
+		}
+		data = append(data, part...)
+	}
+	if len(data) != manifest.Bytes {
 		return nil
 	}
 	snap, ok := decodePatternStateSnapshot(data, 1<<30)
