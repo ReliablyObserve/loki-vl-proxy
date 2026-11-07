@@ -60,7 +60,8 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int) *stateP
 func (sp *statePeers) patternsVia(t *testing.T, i int, org, query string, start, end time.Time) string {
 	t.Helper()
 	q := url.Values{"query": {query}, "start": {strconv.FormatInt(start.UnixNano(), 10)}, "end": {strconv.FormatInt(end.UnixNano(), 10)}}
-	req, _ := http.NewRequest(http.MethodGet, "http://"+sp.addrs[i]+"/loki/api/v1/patterns?"+q.Encode(), nil)
+	target := url.URL{Scheme: "http", Host: sp.addrs[i], Path: "/loki/api/v1/patterns", RawQuery: q.Encode()}
+	req, _ := http.NewRequest(http.MethodGet, target.String(), nil)
 	req.Header.Set("X-Scope-OrgID", org)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

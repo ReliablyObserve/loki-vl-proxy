@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -67,7 +68,8 @@ func (p *Proxy) patternsFromOwner(r *http.Request, scope patternQueryScope) ([]p
 func (p *Proxy) forwardPatterns(r *http.Request, peer string) ([]patternResultEntry, error) {
 	ctx, cancel := context.WithTimeout(r.Context(), patternsOwnerTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+peer+"/loki/api/v1/patterns?"+r.URL.RawQuery, nil)
+	target := url.URL{Scheme: "http", Host: peer, Path: "/loki/api/v1/patterns", RawQuery: r.URL.RawQuery}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, err
 	}
