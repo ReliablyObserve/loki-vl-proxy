@@ -335,7 +335,10 @@ func TestPatternStateFoldsIdleStreams(t *testing.T) {
 	now := stateNow
 	p := newStateProxy(t, vl, &now, 1<<30)
 	_, before := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
-	tenant := p.patternState.tenants[p.patternStateTenantKey(httptest.NewRequest(http.MethodGet, "/", nil))]
+	var tenant *patternTenantState
+	for _, state := range p.patternState.tenants {
+		tenant = state // one tenant and selector
+	}
 	if tenant == nil || len(tenant.folded["api/a"]) != 1 || len(tenant.folded["api/b"]) != 0 {
 		t.Fatalf("idle stream api/a not folded, active api/b folded: %+v", tenant)
 	}
@@ -398,7 +401,8 @@ func TestPatternStateAnswersOnlyInsideItsBounds(t *testing.T) {
 	}
 }
 
-// Past -patterns-state-max-bytes the state is dropped, and built again it answers the same.
+// Past -patterns-state-max-bytes the state is dropped; the next request continues it from the snapshot it wrote
+// and answers the same, reading no line again.
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateDroppedAndBuiltAgainAnswersTheSame(t *testing.T) {
@@ -407,14 +411,14 @@ func TestPatternStateDroppedAndBuiltAgainAnswersTheSame(t *testing.T) {
 	now := stateNow
 	tiny := newStateProxy(t, vl, &now, 1)
 	_, first := statePatterns(t, tiny, "", `{app="api"}`, now.Add(-time.Hour), now)
-	reads := len(vl.lineRanges)
+	reads, counts := len(vl.lineRanges), vl.counts
 	_, second := statePatterns(t, tiny, "", `{app="api"}`, now.Add(-time.Hour+time.Second), now)
-	if len(vl.lineRanges) != reads+1 || vl.counts != 4 {
-		t.Fatalf("a dropped state was not built again: %d reads after %d, %d counts", len(vl.lineRanges), reads, vl.counts)
+	if len(vl.lineRanges) != reads || vl.counts != counts {
+		t.Fatalf("a dropped state read its lines again (%d reads after %d, %d counts after %d), want it continued from its snapshot", len(vl.lineRanges), reads, vl.counts, counts)
 	}
 	_, want := statePatterns(t, newStateProxy(t, vl, &now, 1<<30), "", `{app="api"}`, now.Add(-time.Hour+time.Second), now)
 	if second != want || first == "" {
-		t.Fatalf("rebuilt state answers\n %s\nwant\n %s", second, want)
+		t.Fatalf("restored state answers\n %s\nwant\n %s", second, want)
 	}
 }
 
@@ -559,8 +563,7 @@ func TestPatternStateCloseStopsBuilds(t *testing.T) {
 
 // With -patterns-full-range, a range longer than Loki's retention is answered over all of it: the patterns the
 // state answers, with their samples before the state's counted from VictoriaLogs, each line in the pattern it
-// matches; a line no pattern of the state matches is not counted, and a refresh counts only the window its moving
-// start cuts again.
+// matches; a line no pattern of the state matches is not counted, and a refresh counts no window again.
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
@@ -572,9 +575,15 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	p := newStateProxy(t, vl, &now, 1<<30)
 	p.patternsFullRange = true
 	p.queryRangeHistoryCacheTTL = time.Hour // settled windows are cached, as with the deployed default
+	ranges := patternHistoryRanges
+	patternHistoryRanges = nil // no history counted ahead: this test counts the request's own reads
+	t.Cleanup(func() { patternHistoryRanges = ranges })
 	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-12*time.Hour), now)
 	if want := "info order <_> shipped to berlin=3100"; got != want {
 		t.Fatalf("12h answer %q, want %q: the state's pattern with every line of the range", got, want)
+	}
+	if vl.countsCalls != 2 {
+		t.Fatalf("the history of a first request was counted in %d queries, want one groups and one timeline query", vl.countsCalls)
 	}
 	calls := vl.countsCalls
 	now = now.Add(30 * time.Second)
@@ -582,9 +591,9 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	if again != got {
 		t.Fatalf("refresh answers %q, want %q", again, got)
 	}
-	// The first window, which the moving start cuts, is counted again; the settled ones come from the cache.
-	if again := vl.countsCalls - calls; again > 2 {
-		t.Fatalf("refresh counted %d windows again, want the first alone", again/2)
+	// Every window, the one the moving start cuts too (counted whole), comes from the cache.
+	if again := vl.countsCalls - calls; again != 0 {
+		t.Fatalf("refresh counted %d windows again, want none", again/2)
 	}
 	p.patternsFullRange = false
 	now = now.Add(30 * time.Second)
@@ -622,5 +631,144 @@ func TestPatternCachedAnswerIsServedAsMade(t *testing.T) {
 	_, cached := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
 	if cached != first {
 		t.Fatalf("cached answer\n %s\nfirst answer\n %s", cached, first)
+	}
+}
+
+// A peer that takes a selector over, or its holder after a restart, continues the state from the snapshot the
+// holder wrote to the cache: it reads only the lines after it, and answers as the holder would, line for line.
+//
+// conformance: peer-cache-patterns, patterns-loki-mining, loki_api_v1_patterns
+func TestPatternStateContinuesFromItsSnapshot(t *testing.T) {
+	vl := &fakeStateVL{}
+	for i := 0; i < 400; i++ {
+		vl.add(stateRow{stream: "api/a", level: "info", msg: fmt.Sprintf("order %d shipped to %s via %s", i, []string{"berlin", "oslo"}[i%2], []string{"dhl", "ups", "fedex"}[i%3]), at: stateNow.Add(-50*time.Minute + time.Duration(i)*5*time.Second)})
+	}
+	now := stateNow
+	holder := newStateProxy(t, vl, &now, 1<<30)
+	statePatterns(t, holder, "", `{app="api"}`, now.Add(-time.Hour), now)
+
+	for i := 0; i < 60; i++ {
+		vl.add(stateRow{stream: "api/a", level: "info", msg: fmt.Sprintf("order %d shipped to lisbon via dhl", i), at: stateNow.Add(time.Duration(i) * time.Second)})
+	}
+	now = stateNow.Add(2 * time.Minute)
+	// The same VictoriaLogs, and the snapshot reaching it through the cache (its disk or the peers).
+	taker := newPatternCountsProxy(t, holder.backend.String(), 0)
+	taker.cache = holder.cache
+	taker.patternsExactMaxLines = holder.patternsExactMaxLines
+	taker.patternState = newPatternStateStore(1<<30, DefaultPatternsStateStreamIdle)
+	taker.patternState.now = func() time.Time { return now }
+	reads := len(vl.lineRanges)
+	_, got := statePatterns(t, taker, "", `{app="api"}`, now.Add(-time.Hour), now)
+	if len(vl.lineRanges) != reads+1 || !vl.lineRanges[reads][0].Equal(stateNow.Add(-patternStateOverlap)) {
+		t.Fatalf("the taker read %v, want the lines after the snapshot alone", vl.lineRanges[reads:])
+	}
+	_, want := statePatterns(t, holder, "", `{app="api"}`, now.Add(-time.Hour), now)
+	if got != want {
+		t.Fatalf("continued from the snapshot\n %s\nthe holder\n %s", got, want)
+	}
+}
+
+// A snapshot restores the state exactly: its clusters, prefix trees, samples and the lines read at each stream's
+// newest time, so the state trains on as the one it was written from.
+//
+// conformance: peer-cache-patterns, patterns-loki-mining
+func TestPatternStateSnapshotRoundTrips(t *testing.T) {
+	vl := &fakeStateVL{}
+	for i := 0; i < 300; i++ {
+		vl.add(stateRow{stream: fmt.Sprintf("api/p%d", i%3), level: []string{"info", "warn"}[i%2], msg: fmt.Sprintf("job %d of %s finished in %dms", i, []string{"export", "import", "reindex"}[i%3], i%90), at: stateNow.Add(-40*time.Minute + time.Duration(i)*7*time.Second)})
+	}
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	var tenant *patternTenantState
+	for _, state := range p.patternState.tenants {
+		tenant = state
+	}
+	var s *patternSelectorState
+	var selector string
+	for sel, state := range tenant.selectors {
+		selector, s = sel, state
+	}
+	data, err := encodePatternStateSnapshot(tenant.snapshot(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, ok := decodePatternStateSnapshot(data, 1<<30)
+	if !ok {
+		t.Fatal("snapshot does not decode")
+	}
+	restored := &patternTenantState{}
+	rs := restored.restore(selector, snap)
+	again, err := encodePatternStateSnapshot(restored.snapshot(rs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := decodePatternStateSnapshot(again, 1<<30)
+	first, _ := json.Marshal(snap)
+	second, _ := json.Marshal(a)
+	if string(first) != string(second) {
+		t.Fatalf("a restored state snapshots differently:\n%s\n%s", first, second)
+	}
+}
+
+// A snapshot larger than a peer takes is cached in parts, and read back whole; a part that is gone makes the state
+// be built again rather than restored from part of it.
+//
+// conformance: peer-cache-patterns, patterns-loki-mining
+func TestPatternStateSnapshotIsCachedInParts(t *testing.T) {
+	vl := &fakeStateVL{}
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	tenant := &patternTenantState{miner: newPatternMiner(), newest: map[string]int64{}, atNewest: map[string]map[uint64]int{}, folded: map[string][]patternFoldedCluster{}, selectors: map[string]*patternSelectorState{}}
+	s := &patternSelectorState{fromNs: 1, toNs: 2, streams: map[string]struct{}{}}
+	for i := 0; i < 60_000; i++ {
+		stream := fmt.Sprintf("stream-%06d-%x", i, i*7919)
+		s.streams[stream] = struct{}{}
+		tenant.folded[stream] = []patternFoldedCluster{{level: "info", pattern: fmt.Sprintf("job %d of %x finished <_>", i, i*104729), samples: map[int64]int{int64(i): i}}}
+	}
+	tenant.selectors["sel"] = s
+	part := patternStateSnapshotPart
+	patternStateSnapshotPart = 256 << 10
+	t.Cleanup(func() { patternStateSnapshotPart = part })
+	p.writePatternStateSnapshot(context.Background(), "patterns_state:test", tenant, s, true)
+	raw, ok := p.cache.Get("patterns_state:test")
+	var manifest patternStateSnapshotManifest
+	if !ok || json.Unmarshal(raw, &manifest) != nil || manifest.Parts < 2 {
+		t.Fatalf("snapshot manifest %s: want several parts", raw)
+	}
+	restored := &patternTenantState{}
+	if got := p.loadPatternStateSnapshot(context.Background(), "patterns_state:test", "sel", restored); got == nil || len(got.streams) != 60_000 || len(restored.folded) != 60_000 {
+		t.Fatal("snapshot in parts not read back whole")
+	}
+	p.cache.Invalidate("patterns_state:test#1")
+	if got := p.loadPatternStateSnapshot(context.Background(), "patterns_state:test", "sel", &patternTenantState{}); got != nil {
+		t.Fatal("a snapshot with a part gone was restored")
+	}
+}
+
+// The holder of a selector's state counts the history of Drilldown's longer ranges ahead, so a first request for
+// one reads only the window its start cuts.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternHistoryIsCountedAhead(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-23*time.Hour), 4000)...)
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	p.patternsFullRange = true
+	p.queryRangeHistoryCacheTTL = time.Hour
+	statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	p.patternState.wg.Wait()
+	if vl.countsCalls == 0 {
+		t.Fatal("no history was counted ahead")
+	}
+	before := vl.countsCalls
+	got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-24*time.Hour), now)
+	if again := vl.countsCalls - before; again > 2 {
+		t.Fatalf("a first 24h request counted %d queries, want the window its start cuts alone", again)
+	}
+	if !strings.Contains(got, "berlin=4100") {
+		t.Fatalf("24h answer %q", got)
 	}
 }

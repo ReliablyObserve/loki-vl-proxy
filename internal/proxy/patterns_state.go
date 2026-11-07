@@ -69,9 +69,11 @@ type patternStateStore struct {
 	// none. One build runs at a time (builds), each stopped with the store (ctx, wg).
 	maxBuildLines int
 	builds        chan struct{}
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
+	// prewarms is the one history count ahead that runs at a time.
+	prewarms chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 	// now is the clock the state ages by; time.Now outside tests.
 	now func() time.Time
 }
@@ -93,7 +95,7 @@ func newPatternStateStore(maxBytes int64, idle time.Duration) *patternStateStore
 	ctx, cancel := context.WithCancel(context.Background())
 	return &patternStateStore{
 		tenants: make(map[string]*patternTenantState), maxBytes: maxBytes, idle: idle, now: time.Now,
-		builds: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
+		builds: make(chan struct{}, 1), prewarms: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
 	}
 }
 
@@ -132,6 +134,10 @@ type patternTenantState struct {
 	// agedAt and agedFrom are when the state was last aged and the retention's start then.
 	agedAt   time.Time
 	agedFrom int64
+	// snapshotAt is when the state was last written to the cache or read from it, prewarmedAt when its holder
+	// last counted its selector's history ahead (prewarmPatternHistory).
+	snapshotAt  time.Time
+	prewarmedAt time.Time
 }
 
 // patternSelectorState is what the state read for a selector: its lines from fromNs up to toNs, and the streams
@@ -142,7 +148,11 @@ type patternSelectorState struct {
 	// building is true while a background build reads the selector's lines; requests are answered without the
 	// state until it ends.
 	building bool
+	// selector is the selector's LogsQL filter, its key in the tenant state.
+	selector string
 }
+
+func (s *patternSelectorState) key() string { return s.selector }
 
 // patternFoldedCluster is a cluster of a stream that went idle: a finished stream trains nothing more, so its
 // pattern and samples are all an answer needs.
@@ -175,12 +185,19 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		return nil, 0, -1, false
 	}
 	ctx := r.Context()
-	t := store.tenant(p.patternStateTenantKey(r))
+	selector := scope.filter.String()
+	// A state per tenant and selector: a selector's patterns depend on its own lines alone, not on which other
+	// selectors a peer happened to read, so the peer that holds it answers as any other would.
+	t := store.tenant(p.patternStateTenantKey(r) + "\x00" + selector)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	selector := scope.filter.String()
+	key := p.patternStateKey(r, scope)
 	s := t.selectors[selector]
+	if s == nil {
+		// The state the selector's holder wrote, when another peer held it or this one restarted.
+		s = p.loadPatternStateSnapshot(ctx, key, selector, t)
+	}
 	if s != nil && s.building {
 		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
 		return nil, 0, -1, false
@@ -209,14 +226,14 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			return nil, 0, lines, false
 		}
 		if retained > maxLines {
-			if retained <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
+			if retained <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, key, selector, scope, retainFrom, now) {
 				p.observeInternalOperation(ctx, "patterns_state", "build_started", 0)
 			} else {
 				p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
 			}
 			return nil, 0, lines, false
 		}
-		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{})}
+		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{}), selector: selector}
 		t.selectors[selector] = s
 	}
 	readTo := scope.endNs
@@ -236,8 +253,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			p.observeInternalOperation(ctx, "patterns_state", "error", time.Since(started))
 			return nil, 0, lines, false
 		}
+		cold := s.toNs == s.fromNs
 		s.toNs = readTo
 		p.observeInternalOperation(ctx, "patterns_state", "read", time.Since(started))
+		p.writePatternStateSnapshot(ctx, key, t, s, cold)
 	} else {
 		p.observeInternalOperation(ctx, "patterns_state", "hit", 0)
 	}
@@ -256,20 +275,24 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		store.age(t, now, now, retainFrom)
 		t.agedAt, t.agedFrom = now, retainFrom
 	}
+	if p.patternsFullRange && !s.building && now.Sub(t.prewarmedAt) >= patternHistoryPrewarmEvery {
+		t.prewarmedAt = now
+		p.prewarmPatternHistory(r, scope.filter, now, retainFrom)
+	}
 	return entries, fromNs, lines, true
 }
 
 // buildPatternStateInBackground builds the selector's state from retainFromNs to now in the background, a window
 // at a time, so the tenant's other requests are answered between windows; false when another build runs. The
 // build reads with the request's identity, outlives the request and stops with the store.
-func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantState, selector string, scope patternQueryScope, retainFromNs int64, now time.Time) bool {
+func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantState, key, selector string, scope patternQueryScope, retainFromNs int64, now time.Time) bool {
 	store := p.patternState
 	select {
 	case store.builds <- struct{}{}:
 	default:
 		return false
 	}
-	s := &patternSelectorState{fromNs: retainFromNs, toNs: retainFromNs, streams: make(map[string]struct{}), building: true}
+	s := &patternSelectorState{fromNs: retainFromNs, toNs: retainFromNs, streams: make(map[string]struct{}), building: true, selector: selector}
 	t.selectors[selector] = s
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	stop := context.AfterFunc(store.ctx, cancel)
@@ -296,7 +319,11 @@ func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantS
 			return
 		}
 		s.building = false
+		// The streams that went idle since the windows were read keep only their patterns and samples.
+		now := store.now()
+		store.age(t, now, now, retainFromNs)
 		p.observeInternalOperation(ctx, "patterns_state", "built", time.Since(started))
+		p.writePatternStateSnapshot(ctx, key, t, s, true)
 	}()
 	return true
 }

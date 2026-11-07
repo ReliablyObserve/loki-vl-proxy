@@ -755,9 +755,9 @@ func parsePatternSourceLineLimit(raw, startParam, endParam, stepParam string) in
 	return estimate
 }
 
-// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v4 answers are mined per stream
-// and level as Loki's pattern ingester mines them, zero-filled per stream; older answers are not read.
-const patternsCacheKeyPrefix = "patterns:v4:"
+// patternsCacheKeyPrefix starts the keys of cached and persisted /patterns answers. v5 answers come from the one
+// peer that holds the selector's pattern state, the same on every peer; older answers are not read.
+const patternsCacheKeyPrefix = "patterns:v5:"
 
 // patternsKeyPrefix is the prefix of this proxy's /patterns answer keys: under -patterns-scope=selector a prefix
 // of its own, so answers mined per stream (Loki's) and per selector are never served for each other.

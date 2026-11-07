@@ -287,8 +287,7 @@ func (p *Proxy) patternWindowInputsCached(r *http.Request, filter logsql.FilterE
 	ttl := p.queryRangeWindowTTL(w.endNs)
 	cacheKey := ""
 	if interior && ttl > 0 {
-		stepParam := strconv.FormatInt(int64(step/time.Second), 10) + "s"
-		cacheKey = p.patternWindowCacheKey(r, "counts "+filter.String(), stepParam, maxPatternResponseLimit, p.limits().PatternsCountsRows, w.startNs, w.endNs)
+		cacheKey = p.patternWindowInputsKey(r, filter, step, w)
 		lookup := time.Now()
 		if cached, ok := p.cache.Get(cacheKey); ok {
 			var value patternWindowInputs
@@ -306,6 +305,12 @@ func (p *Proxy) patternWindowInputsCached(r *http.Request, filter logsql.FilterE
 		}
 	}
 	return inputs, ok
+}
+
+// patternWindowInputsKey names a window's counted inputs in the cache.
+func (p *Proxy) patternWindowInputsKey(r *http.Request, filter logsql.FilterExpr, step time.Duration, w queryRangeWindow) string {
+	stepParam := strconv.FormatInt(int64(step/time.Second), 10) + "s"
+	return p.patternWindowCacheKey(r, "counts "+filter.String(), stepParam, maxPatternResponseLimit, p.limits().PatternsCountsRows, w.startNs, w.endNs)
 }
 
 // readPatternWindowInputs counts every line of [startNs, endNs]: two typed stats queries run at once, the groups,
