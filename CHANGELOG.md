@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.88.0] - 2026-11-07
+
 ### Fixed
 
 - fix: an `ip()` label filter after `| json` or `| logfmt` in a metric query
