@@ -131,6 +131,8 @@ type patternTenantState struct {
 	// agedAt and agedFrom are when the state was last aged and the retention's start then.
 	agedAt   time.Time
 	agedFrom int64
+	// snapshotAt is when the state was last written to the cache or read from it.
+	snapshotAt time.Time
 }
 
 // patternSelectorState is what the state read for a selector: its lines from fromNs up to toNs, and the streams
@@ -181,7 +183,12 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	key := p.patternStateKey(r, scope)
 	s := t.selectors[selector]
+	if s == nil {
+		// The state the selector's holder wrote, when another peer held it or this one restarted.
+		s = p.loadPatternStateSnapshot(ctx, key, selector, t)
+	}
 	if s != nil && s.building {
 		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
 		return nil, 0, -1, false
@@ -210,7 +217,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			return nil, 0, lines, false
 		}
 		if retained > maxLines {
-			if retained <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
+			if retained <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, key, selector, scope, retainFrom, now) {
 				p.observeInternalOperation(ctx, "patterns_state", "build_started", 0)
 			} else {
 				p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
@@ -237,8 +244,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			p.observeInternalOperation(ctx, "patterns_state", "error", time.Since(started))
 			return nil, 0, lines, false
 		}
+		cold := s.toNs == s.fromNs
 		s.toNs = readTo
 		p.observeInternalOperation(ctx, "patterns_state", "read", time.Since(started))
+		p.writePatternStateSnapshot(ctx, key, t, s, cold)
 	} else {
 		p.observeInternalOperation(ctx, "patterns_state", "hit", 0)
 	}
@@ -263,7 +272,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 // buildPatternStateInBackground builds the selector's state from retainFromNs to now in the background, a window
 // at a time, so the tenant's other requests are answered between windows; false when another build runs. The
 // build reads with the request's identity, outlives the request and stops with the store.
-func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantState, selector string, scope patternQueryScope, retainFromNs int64, now time.Time) bool {
+func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantState, key, selector string, scope patternQueryScope, retainFromNs int64, now time.Time) bool {
 	store := p.patternState
 	select {
 	case store.builds <- struct{}{}:
@@ -298,6 +307,7 @@ func (p *Proxy) buildPatternStateInBackground(r *http.Request, t *patternTenantS
 		}
 		s.building = false
 		p.observeInternalOperation(ctx, "patterns_state", "built", time.Since(started))
+		p.writePatternStateSnapshot(ctx, key, t, s, true)
 	}()
 	return true
 }
