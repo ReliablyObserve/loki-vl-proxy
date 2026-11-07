@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `slow_upstream_request` lines with example lines. The parse count is a lower
   bound until queries are parsed once per request.
 
+### Changed
+
+- Range and offset durations of a metric query are parsed once with the
+  query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
+  them instead of parsing the text again; the proxy's day/week/year duration
+  reading is the LogQL parser's own. No behaviour change, except that a range
+  longer than about 292 years reads as unusable instead of wrapping around.
+
+## [2.88.0] - 2026-11-07
+
 ### Fixed
 
 - fix: an `ip()` label filter after `| json` or `| logfmt` in a metric query
@@ -35,12 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release for queries with `ip()` are not served.
 
 ### Changed
-
-- Range and offset durations of a metric query are parsed once with the
-  query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
-  them instead of parsing the text again; the proxy's day/week/year duration
-  reading is the LogQL parser's own. No behaviour change, except that a range
-  longer than about 292 years reads as unusable instead of wrapping around.
 
 - The proxy reads label filter stages from their parsed expression instead of
   matching their text with regular expressions (detected_fields and Drilldown
