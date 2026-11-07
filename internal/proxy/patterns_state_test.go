@@ -335,7 +335,10 @@ func TestPatternStateFoldsIdleStreams(t *testing.T) {
 	now := stateNow
 	p := newStateProxy(t, vl, &now, 1<<30)
 	_, before := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
-	tenant := p.patternState.tenants[p.patternStateTenantKey(httptest.NewRequest(http.MethodGet, "/", nil))]
+	var tenant *patternTenantState
+	for _, state := range p.patternState.tenants {
+		tenant = state // one tenant and selector
+	}
 	if tenant == nil || len(tenant.folded["api/a"]) != 1 || len(tenant.folded["api/b"]) != 0 {
 		t.Fatalf("idle stream api/a not folded, active api/b folded: %+v", tenant)
 	}

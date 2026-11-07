@@ -174,11 +174,13 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		return nil, 0, -1, false
 	}
 	ctx := r.Context()
-	t := store.tenant(p.patternStateTenantKey(r))
+	selector := scope.filter.String()
+	// A state per tenant and selector: a selector's patterns depend on its own lines alone, not on which other
+	// selectors a peer happened to read, so the peer that holds it answers as any other would.
+	t := store.tenant(p.patternStateTenantKey(r) + "\x00" + selector)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	selector := scope.filter.String()
 	s := t.selectors[selector]
 	if s != nil && s.building {
 		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
