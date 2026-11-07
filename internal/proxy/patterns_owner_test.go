@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,8 @@ type statePeers struct {
 	proxies []*Proxy
 	addrs   []string
 	servers []*http.Server
+	// frozen[i] makes peer i accept requests and never answer, as a paused container does.
+	frozen []atomic.Bool
 }
 
 // newStatePeers starts n peers; peerTimeout, when given, is their peer request timeout.
@@ -27,7 +30,7 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int, peerTim
 	t.Helper()
 	backend := vl.server(t)
 	listeners := make([]net.Listener, n)
-	sp := &statePeers{}
+	sp := &statePeers{frozen: make([]atomic.Bool, n)}
 	for i := range listeners {
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -52,7 +55,14 @@ func newStatePeers(t *testing.T, vl *fakeStateVL, now *time.Time, n int, peerTim
 		p.patternState.now = func() time.Time { return *now }
 		mux := http.NewServeMux()
 		p.RegisterRoutes(mux)
-		srv := &http.Server{Handler: mux}
+		frozen := &sp.frozen[i]
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if frozen.Load() {
+				<-r.Context().Done() // the caller gives up, or the server closes
+				return
+			}
+			mux.ServeHTTP(w, r)
+		})}
 		go func() { _ = srv.Serve(l) }()
 		t.Cleanup(func() { _ = srv.Close() })
 		sp.proxies = append(sp.proxies, p)
@@ -173,22 +183,8 @@ func TestPatternsSkipAFrozenOwnerWithinThePeerTimeout(t *testing.T) {
 			asker = i
 		}
 	}
-	// The owner's port keeps accepting connections and never answers.
-	_ = sp.servers[owner].Close()
-	frozen, err := net.Listen("tcp", sp.addrs[owner])
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = frozen.Close() })
-	go func() {
-		for {
-			conn, err := frozen.Accept()
-			if err != nil {
-				return
-			}
-			t.Cleanup(func() { _ = conn.Close() })
-		}
-	}()
+	// The owner keeps accepting requests and never answers.
+	sp.frozen[owner].Store(true)
 	started := time.Now()
 	got := sp.patternsVia(t, asker, "0", `{app="api"}`, now.Add(-time.Hour), now)
 	if elapsed := time.Since(started); elapsed > 3*peerTimeout {
