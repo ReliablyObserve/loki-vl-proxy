@@ -37,7 +37,7 @@ compare:
     The count of the lines the log query with the same filter returns.
 gap:
   status: fixed
-  fixed_by: 'fix/typed-label-filter-ip'
+  fixed_by: '#1156'
   impact: explore-visible
   effort: S
   area: 'internal/proxy/ordered_json_metric.go logsQLLabelCondition (stats pushdown label filters)'

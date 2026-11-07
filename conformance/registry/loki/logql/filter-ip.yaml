@@ -56,7 +56,7 @@ decisions:
         measured: 'Loki 10,819 lines over 1h, proxy no series, on query and query_range, since #1105 (also at #1145 and on main)'
         cause: 'the ordered-JSON metric plan rebuilt the filter from the stage text and compared strings'
         effect: 'parity run 2026-11-07 clusters 4ebfd2c5 and e1528358; the perf rows IP4/IP5 timed an empty answer'
-        fixed_by: 'fix/typed-label-filter-ip'
+        fixed_by: '#1156'
         after: 'equal to Loki point for point; stats pushdown with ipv4_range, no raw-row read; cached v1 answers fenced by the ip-label-filter-v2 response key'
     quality: |
       ip() metrics after | json or | logfmt equal Loki on query and query_range,
