@@ -63,3 +63,26 @@ decisions:
     evidence: 'git diff of conformance/registry/query-text-sites.json in this change'
     code: [conformance/registry/query-text-sites.json]
     tests: [TestQueryTextSites]
+  - id: label-filter-readers-typed
+    chosen: |
+      The proxy's label filter readers (detected_fields and Drilldown relaxed
+      scans, stage field exposure, unwrap conversion-error hints and keeps, the
+      line_format __error__ filter) read LabelFilterStage.Expr, not Raw with
+      regular expressions; a stage the parser keeps opaque (nil Expr) is still
+      read as text, and the ip() exposure reading keeps its old output.
+    over: [keeping regular expressions over the stage text, converting with every old reading preserved bit for bit (the AST would have to carry parentheses, separators and quote style)]
+    why: |
+      Owner 2026-11-07: finish the AST work and remove string handling of
+      queries before visual and performance work. A differential of the old
+      readers against the new over 1,200 shape queries and every real query
+      in bench/ab/shapes.json and the semantics matrix found no difference on
+      real queries; the synthetic differences are spellings Loki reads as one
+      filter (a group, `and` or juxtaposition, a backquoted empty value),
+      literals the old regexps misread (`1h30m` tokenized as `1h 30m`, `1e5`,
+      `.5`, `0x10`) and non-ASCII names. Those now read like their plain
+      spelling; opaque stages and ip() quirks keep the old reading because the
+      new one regressed a Drilldown test or was not needed.
+    evidence: 'internal/proxy/label_filter_readers_differential_test.go (2026-11-07): plain spelling 591 inputs equal to the old readers; groups 75, and/juxtaposition 40, backquoted empty 5 equal to their canonical spelling; literals 35 and non-ASCII 15 asserted'
+    code: [internal/proxy/drilldown.go, internal/proxy/loki_profile.go, internal/proxy/unwrap_conversion_error.go, internal/proxy/postprocess.go]
+    tests: [TestLabelFilterReadersMatchTextReaders, TestLabelFilterReadersNumericLiterals, TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback, TestQueryTextSites]
+    quality: 'Real queries read exactly as before; equivalent spellings read alike; query-text sites only fall (parse_calls 63 -> 62, text_built 214 -> 213).'

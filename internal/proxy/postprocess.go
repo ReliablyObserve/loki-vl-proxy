@@ -178,6 +178,11 @@ type lineFormatAfter struct {
 	dropError, dropDetails bool
 }
 
+// isErrorEmptyFilter reports whether a label filter is `__error__=""`.
+func isErrorEmptyFilter(e *logqlpkg.LabelFilterExpr) bool {
+	return e != nil && e.IsLeaf() && e.Name == errorLabel && e.Cmp == "=" && e.Kind == logqlpkg.LabelFilterValueString && e.Value == ""
+}
+
 // lineFormatAfterStages reads the stages after the line_format of query, in
 // order: | __error__="" drops an entry that still carries __error__, and
 // | drop / | keep remove the error labels.
@@ -193,7 +198,7 @@ func lineFormatAfterStages(query string) lineFormatAfter {
 		case *logqlpkg.LineFormatStage:
 			seen = true
 		case *logqlpkg.LabelFilterStage:
-			if seen && !after.dropError && strings.Join(strings.Fields(st.Raw), "") == errorLabel+`=""` {
+			if seen && !after.dropError && isErrorEmptyFilter(st.Expr) {
 				after.dropFailed = true
 			}
 		case *logqlpkg.DropStage:
