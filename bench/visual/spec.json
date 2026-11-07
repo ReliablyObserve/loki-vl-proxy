@@ -1706,6 +1706,7 @@
    "kind": "drilldown",
    "path": "service/{service}/patterns",
    "service": true,
+   "serviceName": "cache-redis",
    "covers": [
     "loki_api_v1_patterns"
    ],
