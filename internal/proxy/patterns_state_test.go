@@ -531,3 +531,20 @@ func TestPatternStateFullRangeMinesARangeBeforeTheState(t *testing.T) {
 		t.Fatalf("a range before the state answers %q, want its own lines' pattern", got)
 	}
 }
+
+// A cached answer is served as it was made: its samples, zero-filled per stream, are not filled again, so a
+// repeated request (or a peer serving a copy) answers what the first did.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternCachedAnswerIsServedAsMade(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-50*time.Minute), 40)...)
+	vl.add(stateLines("api/b", "info", "order %d shipped to berlin", stateNow.Add(-10*time.Minute), 40)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	_, first := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	_, cached := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
+	if cached != first {
+		t.Fatalf("cached answer\n %s\nfirst answer\n %s", cached, first)
+	}
+}

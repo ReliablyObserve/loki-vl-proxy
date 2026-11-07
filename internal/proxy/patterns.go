@@ -1169,23 +1169,22 @@ func (p *Proxy) prependCustomPatternEntries(patterns []patternResultEntry, start
 	return out
 }
 
+// applyCustomPatternsToPayload is a cached or persisted answer as it is served: limited, with the custom patterns
+// in front. Its samples are served as they were cached, already counted and filled as the answer was made (for an
+// answer mined per stream, zero-filled per stream, which filling the whole answer again would change).
 func (p *Proxy) applyCustomPatternsToPayload(payload []byte, startParam, endParam, stepParam string, limit int) []byte {
-	if len(payload) == 0 {
-		return payload
+	trimmed := limitPatternPayload(payload, limit)
+	if len(trimmed) == 0 || len(p.patternsCustom) == 0 {
+		return trimmed
 	}
-	if len(p.patternsCustom) == 0 {
-		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
-	}
-
 	var resp patternsResponse
-	if err := json.Unmarshal(payload, &resp); err != nil {
-		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
+	if err := json.Unmarshal(trimmed, &resp); err != nil {
+		return trimmed
 	}
 	resp.Data = p.prependCustomPatternEntries(resp.Data, startParam, stepParam, limit)
-	resp.Data = fillPatternSamplesAcrossRequestedRange(resp.Data, startParam, endParam, stepParam)
 	encoded, err := json.Marshal(resp)
 	if err != nil {
-		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
+		return trimmed
 	}
 	return encoded
 }
@@ -1235,23 +1234,6 @@ func normalizePatternCacheBoundary(raw, normalizedStep string) string {
 		}
 	}
 	return strconv.FormatInt(ns, 10)
-}
-
-func fillPatternPayloadSamples(payload []byte, startParam, endParam, stepParam string, limit int) []byte {
-	trimmed := limitPatternPayload(payload, limit)
-	if len(trimmed) == 0 {
-		return trimmed
-	}
-	var resp patternsResponse
-	if err := json.Unmarshal(trimmed, &resp); err != nil {
-		return trimmed
-	}
-	resp.Data = fillPatternSamplesAcrossRequestedRange(resp.Data, startParam, endParam, stepParam)
-	encoded, err := json.Marshal(resp)
-	if err != nil {
-		return trimmed
-	}
-	return encoded
 }
 
 func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startParam, endParam, stepParam string) []patternResultEntry {
