@@ -94,8 +94,8 @@ func TestPatternStateIsHeldByOnePeer(t *testing.T) {
 			t.Fatalf("peer %d answers\n %s\npeer 0\n %s", i+1, a, answers[0])
 		}
 	}
-	if vl.counts != 1 || len(vl.lineRanges) != 1 {
-		t.Fatalf("the selector's lines were read %d times (%d counts): want once, by its owner", len(vl.lineRanges), vl.counts)
+	if vl.counts != 2 || len(vl.lineRanges) != 1 {
+		t.Fatalf("the selector's lines were read %d times (%d counts): want once and counted once (the retention and the range), by its owner", len(vl.lineRanges), vl.counts)
 	}
 }
 
