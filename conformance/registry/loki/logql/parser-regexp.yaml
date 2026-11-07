@@ -8,7 +8,7 @@ generated:
     - internal/logql/parser.go
     - internal/logql/semantic.go
     - internal/logql/stage_validate.go
-    - internal/logql/translate.go
+    - internal/translator/ast_translate.go
     - internal/proxy/drilldown.go
     - internal/proxy/drilldown_burst_coalescer.go
 

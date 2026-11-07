@@ -101,11 +101,6 @@ func TestIPCallAndLiteralRemainDistinct(t *testing.T) {
 			t.Fatalf("lost IP kind: %s err=%v", expr.String(), err)
 		}
 	}
-	callQL, callErr := Translate(call, TranslateOptions{})
-	literalQL, literalErr := Translate(literal, TranslateOptions{})
-	if callErr != nil || literalErr != nil || callQL == literalQL {
-		t.Fatalf("IP call translated as literal: call=%s literal=%s errors=%v/%v", callQL, literalQL, callErr, literalErr)
-	}
 }
 
 func TestRawAndEscapedStringValuesPreserveDecodedBytes(t *testing.T) {

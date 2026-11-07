@@ -2,8 +2,6 @@ package logql
 
 import (
 	"strings"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // CanonicalizeLogRanges rewrites the alternative forms Loki accepts for a log
@@ -133,10 +131,38 @@ func skipSpace(q string, i int) int {
 // and whether a comma follows it (a call with further arguments). Strings in
 // double quotes or backticks and nested brackets are skipped.
 func FirstArgument(s string) (string, bool) {
-	n := firstArgumentLen(s)
+	n := FirstArgumentLen(s)
 	return s[:n], n < len(s) && s[n] == ','
 }
 
-// firstArgumentLen is the length of the first argument of a call, given the
-// text after its '(': see translator.FirstArgumentLen.
-func firstArgumentLen(s string) int { return translator.FirstArgumentLen(s) }
+// FirstArgumentLen is the length of the first argument of a call, given the
+// text after its '(': up to the first comma or unmatched ')' outside strings
+// (double-quoted with escapes, or backtick-quoted) and nested brackets. It is
+// len(s) when the call is not closed.
+func FirstArgumentLen(s string) int {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '`':
+			quote = c
+		case c == '(' || c == '[' || c == '{':
+			depth++
+		case c == ')' || c == ']' || c == '}':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		case c == ',' && depth == 0:
+			return i
+		}
+	}
+	return len(s)
+}

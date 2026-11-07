@@ -9,6 +9,8 @@ linters:
     - govet
     - misspell
     - gocyclo
+    - depguard
+    - dupl
   settings:
     errcheck:
       exclude-functions:
@@ -25,12 +27,40 @@ linters:
         - (*os.File).Close
     gocyclo:
       min-complexity: 30
+    # Layering: the LogQL and LogsQL syntax packages sit below the translator
+    # and the proxy. logql may use logsql; logsql may use neither. Both may use
+    # the stdlib and internal/querycorpus (a stdlib-only leaf). Test files are
+    # out of scope: a test in package logql cannot import the translator anyway.
+    depguard:
+      rules:
+        logql:
+          list-mode: strict
+          files:
+            - "**/internal/logql/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus
+        logsql:
+          list-mode: strict
+          files:
+            - "**/internal/logsql/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
           - gocyclo
+          - dupl
+      # dupl guards the syntax packages only.
+      - path-except: internal/(logql|logsql)/
+        linters:
+          - dupl
 
 formatters:
   enable:

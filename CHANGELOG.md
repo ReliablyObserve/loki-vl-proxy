@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The LogQL and LogsQL syntax packages (`internal/logql`, `internal/logsql`)
+  no longer depend on the translator: the label filter parser and printer
+  move into `internal/logql`, and the typed LogQL-to-LogsQL lowering that
+  `/patterns` uses to scope a selector moves into `internal/translator`. Lint
+  rules keep the two packages on the standard library (depguard) and free of
+  duplicated code (dupl). No behaviour change.
+
 ## [2.86.0] - 2026-11-07
 
 ### Added

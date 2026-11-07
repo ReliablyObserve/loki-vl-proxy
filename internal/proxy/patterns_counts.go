@@ -15,8 +15,8 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // patternCountsMinStep is the resolution Loki keeps pattern samples at (pkg/pattern/drain TimeResolution): a
@@ -226,12 +226,12 @@ func (p *Proxy) patternScope(query, startParam, endParam, stepParam string) (pat
 		return patternQueryScope{}, false
 	}
 	p.configMu.RLock()
-	opts := logqlpkg.TranslateOptions{StreamFields: p.streamFieldsMap}
+	opts := translator.ASTTranslateOptions{StreamFields: p.streamFieldsMap}
 	if p.labelTranslator != nil {
 		opts.LabelFn = p.labelTranslator.ToVL
 	}
 	p.configMu.RUnlock()
-	filter, err := logqlpkg.SelectorFilter(lq.Selector, opts)
+	filter, err := translator.ASTSelectorFilter(lq.Selector, opts)
 	if err != nil {
 		return patternQueryScope{}, false
 	}

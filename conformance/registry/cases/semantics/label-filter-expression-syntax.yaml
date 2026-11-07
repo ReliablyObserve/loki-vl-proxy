@@ -24,7 +24,7 @@ why: |
   `labelFilter labelFilter` none, so goyacc always shifts: the right operand of
   a comma or of a juxtaposition is the rest of the group. `a, b or c` is `a and
   (b or c)` and `a or b, c` is `a or (b and c)`. Both sides read the stage with
-  one grammar (translator.ParseLabelFilterExpr): the parser rejects with Loki's
+  one grammar (logql.ParseLabelFilterExpr): the parser rejects with Loki's
   token, expected-token list, line and column, and the translator emits every
   binary node parenthesized, each filter translated like a stand-alone stage.
   A metric query keeps the grouped filter in front of `| stats`. A stage with

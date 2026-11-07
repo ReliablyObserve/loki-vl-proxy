@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // ParseError is a query rejection whose message is already formatted the way
@@ -236,7 +235,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 			if p.canon != nil {
 				// label_replace(rate(({a} |= "x")[1m]), ...): the first argument is a
 				// metric expression, written in the plain form like any other.
-				argEnd := argStart + firstArgumentLen(p.sc.src[argStart:endPos])
+				argEnd := argStart + FirstArgumentLen(p.sc.src[argStart:endPos])
 				if arg := p.sc.src[argStart:argEnd]; CanonicalizeLogRanges(arg) != arg {
 					p.addRewrite(argStart, argEnd, CanonicalizeLogRanges(arg))
 				}
@@ -480,7 +479,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	if p.cur.Typ != TokIdent {
 		if p.cur.Typ == TokDuration {
 			// A literal, not a range: Loki names it by what it holds.
-			name := translator.LabelFilterWordName(p.cur.Val)
+			name := LabelFilterWordName(p.cur.Val)
 			return nil, p.errorAt(p.pos(), name, "", zeroLineToken(name))
 		}
 		return nil, p.syntaxErrorAt("")
@@ -963,7 +962,7 @@ func isLabelFilterOperator(t TokType) bool {
 func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
 	raw := kw + p.consumeRestOfStage(prev)
 	text := p.sc.src[start:p.pos()]
-	if _, serr := translator.ParseLabelFilterExpr(text); serr != nil {
+	if _, serr := ParseLabelFilterExpr(text); serr != nil {
 		if serr.Offset >= len(text) {
 			// The stage ended too early: the token that ends it is the unexpected one.
 			return nil, p.syntaxErrorAt(serr.Expecting)

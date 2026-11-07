@@ -6,7 +6,7 @@ generated:
   supported_by_proxy: true
   seen_in:
     - internal/logql/parser.go
-    - internal/logql/translate.go
+    - internal/translator/ast_translate.go
     - internal/proxy/multitenant.go
     - internal/proxy/patterns.go
     - internal/proxy/postprocess.go

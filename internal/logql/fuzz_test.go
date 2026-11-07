@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// FuzzParse ensures that Parse + String + Translate never panic on arbitrary input.
+// FuzzParse ensures that Parse + String never panic on arbitrary input.
 // Run with: go test -fuzz=FuzzParse ./internal/logql/
 func FuzzParse(f *testing.F) {
 	seeds := []string{
@@ -80,8 +80,7 @@ func FuzzParse(f *testing.F) {
 		if err != nil {
 			return
 		}
-		// If Parse succeeded, String() and Translate() must not panic.
+		// If Parse succeeded, String() must not panic.
 		_ = expr.String()
-		_, _ = Translate(expr, TranslateOptions{})
 	})
 }

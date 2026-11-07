@@ -56,27 +56,6 @@ func BenchmarkParseAndValidate(b *testing.B) {
 	}
 }
 
-func BenchmarkTranslate(b *testing.B) {
-	exprs := make(map[string]logql.Expr, len(benchQueries))
-	for name, q := range benchQueries {
-		e, err := logql.Parse(q)
-		if err != nil {
-			b.Logf("skipping %s: %v", name, err)
-			continue
-		}
-		exprs[name] = e
-	}
-	for name, expr := range exprs {
-		e := expr
-		b.Run(name, func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				_, _ = logql.Translate(e, logql.TranslateOptions{})
-			}
-		})
-	}
-}
-
 // Queries in Loki's alternative forms, and line filters with `or`.
 var alternativeBenchQueries = map[string]string{
 	"paren_range":     `rate(({app="api"} |= "error")[5m])`,

@@ -1,4 +1,4 @@
-package logql_test
+package translator
 
 import (
 	"regexp"
@@ -7,18 +7,17 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 func TestLineFilterLiteralTranslation(t *testing.T) {
 	translations := map[string]func(string) (string, error){
-		"string": translator.TranslateLogQL,
+		"string": TranslateLogQL,
 		"typed": func(q string) (string, error) {
 			expr, err := logql.Parse(q)
 			if err != nil {
 				return "", err
 			}
-			return logql.Translate(expr, logql.TranslateOptions{})
+			return TranslateAST(expr, ASTTranslateOptions{})
 		},
 	}
 	for name, translate := range translations {
@@ -62,7 +61,7 @@ func TestLineFilterLiteralTranslation(t *testing.T) {
 }
 
 func TestLineFilterEscapedBackslashDoesNotSwallowNextStage(t *testing.T) {
-	out, err := translator.TranslateLogQL(`{app="a"} |= "C:\\" != "[ignore]"`)
+	out, err := TranslateLogQL(`{app="a"} |= "C:\\" != "[ignore]"`)
 	if err != nil {
 		t.Fatal(err)
 	}

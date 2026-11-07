@@ -187,7 +187,7 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 }
 
 // typedSelectorPair is, for a client LogQL row that is a bare stream selector, the filter the typed selector
-// translation builds (logql.SelectorFilter) and the one the string translator writes for it, both for version v:
+// translation builds (translator.ASTSelectorFilter) and the one the string translator writes for it, both for version v:
 // VictoriaLogs' parser must read the two the same.
 func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
@@ -198,7 +198,7 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 		return "", "", false
 	}
 	identity := func(s string) string { return s }
-	f, err := logql.SelectorFilter(lq.Selector, logql.TranslateOptions{LabelFn: identity})
+	f, err := translator.ASTSelectorFilter(lq.Selector, translator.ASTTranslateOptions{LabelFn: identity})
 	if err != nil {
 		return "", "", false
 	}
