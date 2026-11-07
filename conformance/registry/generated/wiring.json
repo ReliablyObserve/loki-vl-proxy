@@ -1511,6 +1511,12 @@
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
+    "vl-phrase-filter-quoted-names": [
+      "test/e2e-compat/vl_pattern_lines_test.go"
+    ],
+    "vl-sort-ties-by-text": [
+      "test/e2e-compat/vl_pattern_lines_test.go"
+    ],
     "vl-zstd-response-window": [
       "test/e2e-compat/vl_zstd_response_window_test.go"
     ],
@@ -1543,7 +1549,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 420,
+  "registry_items": 422,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3241,6 +3247,10 @@
       "semantics/unwrap-sample-validity",
       "status-400"
     ],
+    "test/e2e-compat/vl_pattern_lines_test.go": [
+      "vl-phrase-filter-quoted-names",
+      "vl-sort-ties-by-text"
+    ],
     "test/e2e-compat/vl_zstd_response_window_test.go": [
       "vl-zstd-response-window"
     ],
@@ -3272,7 +3282,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 340,
+  "tests_with_markers": 341,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3373,5 +3383,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 248
+  "wired_items": 250
 }

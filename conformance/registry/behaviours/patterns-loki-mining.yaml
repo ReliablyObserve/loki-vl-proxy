@@ -129,9 +129,9 @@ decisions:
       holds its quoted name), and a line with the name as a value only is read
       and mined to nothing, as before; measured over 3 days of stack data, 0
       lines kept by one and not the other.
-    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07; vl/capabilities/vl-phrase-filter-quoted-names'
     code: [internal/proxy/patterns_counts.go]
-    tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage]
+    tests: [TestPatternQueriesLeaveOutJSONLinesWithoutAMessage, TestVLCapability_PatternLinesFilterAndTieOrder]
   - id: patterns-ties-in-text-order
     chosen: Read a stream's lines that share a time in their text's order (sort by _stream_id, _time, _msg)
     over: [sorting by stream and time only, VictoriaLogs returning ties in any order]
@@ -143,9 +143,9 @@ decisions:
       differed by 1-4 lines a pattern; with the text as the last key every read,
       rebuild and peer mines them alike (0 differing streams; sort time the
       same). Loki mines them in push order, which VictoriaLogs does not keep.
-    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07'
+    evidence: 'VictoriaLogs v1.53.0 on the compose stack, 2026-11-07; vl/capabilities/vl-sort-ties-by-text'
     code: [internal/proxy/patterns_exact.go]
-    tests: [TestPatternExactQueriesAreTyped, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
+    tests: [TestPatternExactQueriesAreTyped, TestVLCapability_PatternLinesFilterAndTieOrder, TestDrilldown_Patterns_TextsMatchLokisOnTheSameLines]
   - id: patterns-cold-request-before-build
     chosen: Count the range with the retention at once, and start a background build's reads once the request that started it is answered
     over: [counting the retention then the range, the build reading alongside the request's own read]
