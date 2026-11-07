@@ -41,7 +41,16 @@ decisions:
       of patterns, and reads a selector's lines once for the fleet.
     evidence: 'compose stack, 2026-11-07: three peers identical on 9 of 9 shape x range requests after, 0 of 2 checked before'
     code: [internal/proxy/patterns_owner.go]
-    tests: [TestPatternStateIsHeldByOnePeer, TestPatternsForwardMarkNeedsThePeerToken, TestPatternsAnsweredLocallyWhenTheOwnersAreDown]
+    tests: [TestPatternStateIsHeldByOnePeer, TestPatternsForwardMarkNeedsThePeerToken, TestPatternsAnsweredLocallyWhenTheOwnersAreDown, TestPatternsSkipAFrozenOwnerWithinThePeerTimeout, TestPeerCache_ReachableIsBoundedByThePeerTimeout]
+    history:
+      - date: '2026-11-07'
+        what: 'e2e-fleet edge_owner_paused_timeout_bound: /patterns on proxy-b and proxy-c with the state owner (proxy-a) paused'
+        measured: '32.0 s and 34.0 s, against the contract of the cold read plus the peer timeout (2 s) and 1 s slack'
+        cause: 'the forward to the owner waits up to patternsOwnerTimeout (30 s, the owner may build the state); a paused container still accepts connections, so nothing fails until that timeout'
+        effect: 'e2e-fleet failed intermittently on pull requests and on main after the fleet-wide pattern state (#1148)'
+        fixed_by: 'fix/patterns-owner-reachable'
+        after: 'a presence check (/_cache/has) within the peer timeout first, counting towards the peer breaker; an owner that does not answer it is skipped; unit reproduction 30.0 s before, within the 300 ms test peer timeout after'
+    quality: 'With the owner stopped, frozen or unreachable, a /patterns request costs at most the peer timeout more than a cold answer; with the owner up, it still gets patternsOwnerTimeout to build the state, so the fleet keeps one state per selector.'
   - id: patterns-forward-through-the-public-route
     chosen: Forward to the holder's own /loki/api/v1/patterns with the client's headers
     over: [a peer-only route that would carry the tenant's identity itself]

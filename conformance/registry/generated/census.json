@@ -813,6 +813,7 @@
     "cmd/proxy/tenant_routing_test.go | tenant-numeric-routing",
     "internal/cache/cache_test.go | shutdown-releases-background-work",
     "internal/cache/peer_replication_test.go | peer-cache-replication",
+    "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
@@ -1884,7 +1885,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 348,
+      "go": 349,
       "playwright": 1
     },
     "page_kinds": {

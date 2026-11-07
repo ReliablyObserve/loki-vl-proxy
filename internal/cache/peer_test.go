@@ -2152,3 +2152,45 @@ func TestPeerCache_AZMethods(t *testing.T) {
 		}
 	})
 }
+
+// Reachable answers within the peer timeout: true for a peer that serves its presence check, false for one that
+// accepts connections and never answers, and false without a call while the peer's breaker is open.
+//
+// conformance: peer-cache-patterns
+func TestPeerCache_ReachableIsBoundedByThePeerTimeout(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_cache/has" || r.Header.Get("X-Peer-Token") != "secret" {
+			http.Error(w, "unexpected", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer live.Close()
+	release := make(chan struct{})
+	frozen := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+	defer frozen.Close()
+	defer close(release)
+	liveAddr, frozenAddr := strings.TrimPrefix(live.URL, "http://"), strings.TrimPrefix(frozen.URL, "http://")
+	pc := NewPeerCache(PeerConfig{SelfAddr: "127.0.0.1:1", DiscoveryType: "static", StaticPeers: "127.0.0.1:1," + liveAddr + "," + frozenAddr, AuthToken: "secret", Timeout: timeout})
+	defer pc.Close()
+
+	if !pc.Reachable(liveAddr, "k") {
+		t.Fatal("a serving peer is not reachable")
+	}
+	started := time.Now()
+	if pc.Reachable(frozenAddr, "k") {
+		t.Fatal("a peer that never answers is reachable")
+	}
+	if elapsed := time.Since(started); elapsed > timeout+150*time.Millisecond {
+		t.Fatalf("the check on a frozen peer took %s, want at most the peer timeout %s", elapsed, timeout)
+	}
+	// The timeout suspended the frozen peer: the next check does not call it.
+	started = time.Now()
+	if pc.Reachable(frozenAddr, "k") {
+		t.Fatal("a suspended peer is reachable")
+	}
+	if elapsed := time.Since(started); elapsed > 50*time.Millisecond {
+		t.Fatalf("a check on a suspended peer took %s, want no call", elapsed)
+	}
+}

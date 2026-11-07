@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for up to 30 seconds after every client had left; now it is cancelled when
   the last one leaves, so VictoriaLogs stops scanning for nobody.
 
+- fix(patterns): with the selector's pattern-state owner stopped or frozen, a
+  `/loki/api/v1/patterns` request on another peer waited up to 30 seconds (the
+  time the owner gets to build the state) before asking the replica. A peer
+  now checks the owner answers within the peer timeout (`-peer-timeout`,
+  default 2s) before forwarding to it, so a down owner costs at most that.
+
 ## [2.89.0] - 2026-11-07
 
 ### Changed

@@ -48,11 +48,18 @@ func (p *Proxy) patternsFromOwner(r *http.Request, scope patternQueryScope) ([]p
 		return nil, false
 	}
 	self := p.peerCache.SelfAddr()
-	for _, peer := range p.peerCache.Replicas(p.patternStateKey(r, scope)) {
+	key := p.patternStateKey(r, scope)
+	for _, peer := range p.peerCache.Replicas(key) {
 		if peer == self {
 			return nil, false
 		}
 		started := time.Now()
+		// The forward may wait patternsOwnerTimeout while the owner builds the state, so a peer that does not
+		// answer a presence check within the peer timeout (stopped, frozen, unreachable) is skipped first.
+		if !p.peerCache.Reachable(peer, key) {
+			p.observeInternalOperation(r.Context(), "patterns_owner", "peer_unreachable", time.Since(started))
+			continue
+		}
 		entries, err := p.forwardPatterns(r, peer)
 		if err == nil {
 			p.observeInternalOperation(r.Context(), "patterns_owner", "forwarded", time.Since(started))
