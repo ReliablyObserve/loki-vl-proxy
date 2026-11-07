@@ -188,7 +188,8 @@ func patternCountsWindows(startNs, endNs int64) []queryRangeWindow {
 // (patternJSONMessage reads the raw text for a top-level key the same way), so a service that writes only such lines
 // reads nothing and counts nothing.
 var patternMinableLines = logsql.Exclude{Expr: logsql.Group{Expr: logsql.AllOf{
-	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpPrefix, Value: logsql.QuoteValue("{")},
+	// An exact prefix: the whole line starts with {, where a prefix filter matches a word starting with { anywhere.
+	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpExactPrefix, Value: "{"},
 	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpRegexp, Value: `\}$`},
 	logsql.FieldFilter{Field: "_msg", Op: logsql.FieldOpRegexp, Value: patternMessageKeysRegexp(), Negate: true},
 }}}
