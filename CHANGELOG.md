@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for up to 30 seconds after every client had left; now it is cancelled when
   the last one leaves, so VictoriaLogs stops scanning for nobody.
 
+## [2.89.0] - 2026-11-07
+
 ### Changed
 
 - The proxy reads label filter stages from their parsed expression instead of
