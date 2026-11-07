@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.84.0] - 2026-11-07
-
 ### Added
 
 - feat(observability): slow requests are counted and logged with their
@@ -25,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from measured timings (the 99th percentile of the daily benchmark's cold
   first loads; rarer than 1 in 50 VictoriaLogs calls on the compose stack). Queries are logged as text, capped at 8 KB
   (`-slow-query-log-raw-queries=false` logs their hashes).
+
+## [2.84.0] - 2026-11-07
+
+### Added
+
 - feat(patterns): one pattern state per tenant and selector across the
   fleet, so every peer answers a selector with the same patterns. A
   `/loki/api/v1/patterns` request goes to the peer that owns the selector's
