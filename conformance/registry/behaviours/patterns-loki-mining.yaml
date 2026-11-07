@@ -174,6 +174,28 @@ decisions:
     evidence: 'compose stack A/B, VictoriaLogs v1.53.0, 2026-11-07; perf-smoke DP2'
     code: [internal/proxy/patterns_state.go]
     tests: [TestPatternStateFoldsIdleStreams, TestPatternStateAnswersOnlyInsideItsBounds]
+  - id: patterns-selector-scope-opt-in
+    chosen: An opt-in -patterns-scope=selector that mines a selector's lines with one miner per level across its streams; the default stays Loki's per-stream mining
+    over: [only Loki's per-stream mining, changing the default]
+    why: |
+      A stream that holds a few lines (a trace or span id as a stream label, a
+      short-lived pod) never reaches 30 lines in one stream's clusters, so Loki
+      answers no pattern for it: otel-collector on the compose stack has a stream
+      per line, and Loki and the proxy answer none. Mining the selector's lines
+      together answers their patterns (one pattern for otel-collector's 60 lines in
+      the unit test). It is not Loki's answer, so it is off by default and on only
+      where it is asked for: the playground's patterns-autodetect proxy with
+      PATTERNS_SCOPE=selector; CI's Drilldown comparisons keep stream.
+    evidence: 'owner decision 2026-11-07; compose stack otel-collector: Loki 0 patterns at 15m-6h'
+    code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go, internal/proxy/postprocess.go, cmd/proxy/main.go]
+    tests: [TestPatternsSelectorScopeMinesAcrossStreams, TestPatternsSelectorScopeKeepsSelectorsApart]
+    quality: |
+      stream scope answers equal Loki's (the 27 recorded answers); selector scope
+      answers each selector from its own lines only, every line once, and its
+      answers are cached under their own key (patterns:v4-selector:).
+    performance:
+      tracked: ['patterns DP2 (stream scope)']
+      bound: 'selector scope reads the same lines as stream scope; no extra VictoriaLogs call'
 
 implementation:
   - internal/proxy/pattern_cluster.go

@@ -1149,6 +1149,8 @@ type patternMiner struct {
 	// sampleFromNs and sampleToNs bound the samples counted, in unix nanoseconds: a line whose 10 s sample starts
 	// before the first or at the second is mined but not counted. 0 leaves a side open.
 	sampleFromNs, sampleToNs int64
+	// oneStream mines every line as one stream's (-patterns-scope=selector): one miner per level.
+	oneStream bool
 }
 
 func newPatternMiner() *patternMiner {
@@ -1172,6 +1174,9 @@ func (m *patternMiner) observeLine(level, line string, bucket int64, count int) 
 // nil when the tokenizer does not read the line or its miner admits no more lines. A count of 0 shapes the
 // cluster's template without adding a sample.
 func (m *patternMiner) observeStreamLine(stream, level, line string, bucket int64, count int) *patternBucket {
+	if m.oneStream {
+		stream = ""
+	}
 	tokens, spacesAfter, format, ok := m.patternLineTokens(line)
 	if !ok {
 		return nil
