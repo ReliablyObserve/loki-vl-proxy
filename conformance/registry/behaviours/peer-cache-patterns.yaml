@@ -77,15 +77,52 @@ decisions:
     code: [internal/proxy/patterns_state_snapshot.go]
     tests: [TestPatternStateSnapshotRoundTrips, TestPatternStateContinuesFromItsSnapshot, TestPatternStateSnapshotIsCachedInParts]
   - id: patterns-history-one-read
-    chosen: Read a range's missing history windows in one groups and one timeline query, split into the cached windows
+    chosen: Read each run of missing history windows in one groups and one timeline query, aligned to the step, split into the cached windows
     over: [two queries per window]
     why: |
       A range's first request made 19-23 VictoriaLogs calls (12h, 7d), 1.1-2.5x
-      Loki; one read covers them, and the windows it splits into are cached and
-      shared as before, so refreshes are unchanged.
+      Loki; one read per run covers them. A step belongs whole to the window it
+      starts in (the read starts at the run's first step and ends where its last
+      step does), so windows filled by different reads never lose or double a
+      step's lines (a test that read 24h through two reads lost 120 of 4,100
+      lines before).
+    evidence: 'patterns bench in the PR; TestPatternHistoryIsCountedAhead'
+    code: [internal/proxy/patterns_history.go]
+    tests: [TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns, TestPatternHistoryIsCountedAhead]
+  - id: patterns-history-counted-ahead
+    chosen: The holder counts the history of 6h, 12h and 24h ahead every 30 minutes, and counts the window a range's start cuts whole
+    over: [counting history on a range's first request; re-reading the cut window on each refresh]
+    why: |
+      Drilldown asks /patterns without a step, so a range's step follows from its
+      length and the windows its request reads are known in advance. Measured on
+      env=production (1.6M lines over the history): a first 24h request went
+      from 3.8x Loki to below it, and refreshes of 6h-24h from re-reading a
+      partial hour of ~355k lines to reading no history at all (the cut window's
+      steps before the range are left out, as Loki answers only steps inside it).
     evidence: 'patterns bench in the PR'
     code: [internal/proxy/patterns_history.go]
-    tests: [TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns]
+    tests: [TestPatternHistoryIsCountedAhead, TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns]
+  - id: patterns-state-snapshot-every-10-minutes
+    chosen: Snapshot a refreshed state in the background every 10 minutes (a built one at once)
+    over: [every minute, encoded on the request]
+    why: |
+      env=production's snapshot is 23 MB gzipped; encoding it on the request
+      every minute made one refresh a minute take ~1.3 s. A takeover now reads at
+      most 10 minutes of lines once (a few hundred ms).
+    evidence: 'compose stack, 2026-11-07'
+    code: [internal/proxy/patterns_state_snapshot.go]
+    tests: [TestPatternStateContinuesFromItsSnapshot]
+  - id: patterns-state-answer-step-grid
+    chosen: Sum the state's samples in step-indexed slices and sort only the patterns with at least 30 lines
+    over: [maps keyed by pattern text per sample, sorting every pattern]
+    why: |
+      A warm env=production answer (112k streams) spent most of its time hashing
+      pattern texts and sorting thousands of patterns the 30-line rule then
+      dropped: in process, 6h 629 ms to 261 ms, 24h 625 ms to 277 ms, 7d 558 ms
+      to 166 ms.
+    evidence: 'in-process measurement against the compose stack VictoriaLogs, 2026-11-07'
+    code: [internal/proxy/patterns_state.go]
+    tests: [TestPatternStateRefreshReadsOnlyNewLines, TestPatternStateStreamResumingAfterIdleFillsItsPause]
 
 implementation:
   - internal/proxy/patterns_owner.go
