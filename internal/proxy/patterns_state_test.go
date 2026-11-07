@@ -516,3 +516,18 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 		t.Fatalf("without full range the answer is %q, want the retention's alone", loki)
 	}
 }
+
+// With -patterns-full-range, a range the state holds no pattern for (one that ends before the state's samples, as
+// yesterday's) is mined from its own lines, so its chart is not empty.
+//
+// conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
+func TestPatternStateFullRangeMinesARangeBeforeTheState(t *testing.T) {
+	vl := &fakeStateVL{}
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-20*time.Hour), 100)...)
+	now := stateNow
+	p := newStateProxy(t, vl, &now, 1<<30)
+	p.patternsFullRange = true
+	if got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-21*time.Hour), now.Add(-19*time.Hour)); got != "info order <_> shipped to berlin=100" {
+		t.Fatalf("a range before the state answers %q, want its own lines' pattern", got)
+	}
+}
