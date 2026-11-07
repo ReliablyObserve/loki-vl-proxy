@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs (`ipv4_range`, no raw-row read), and answers cached before this
   release for queries with `ip()` are not served.
 
+## [2.87.0] - 2026-11-07
+
 ### Changed
 
 - The LogQL and LogsQL syntax packages (`internal/logql`, `internal/logsql`)
