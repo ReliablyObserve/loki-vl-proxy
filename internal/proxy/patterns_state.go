@@ -30,6 +30,11 @@ const (
 // only while it trains them; a window VictoriaLogs cannot sort is read in quarters.
 const patternStateBuildWindow = time.Hour
 
+// patternStateAgeEvery is how often a request ages its tenant's state (folds idle streams, drops samples older
+// than the retention, applies the store's bounds); a read from the retention's start and a new retention hour age
+// it at once. Aging walks every cluster's samples, a fifth of a busy selector's warm answer when done each time.
+const patternStateAgeEvery = 15 * time.Second
+
 // patternStateBuildWait is how long a background build waits at most for the request that started it to be
 // answered before it reads: until then its reads would slow that request's own.
 var patternStateBuildWait = 30 * time.Second
@@ -120,6 +125,9 @@ type patternTenantState struct {
 	selectors map[string]*patternSelectorState
 	bytes     int64
 	used      uint64
+	// agedAt and agedFrom are when the state was last aged and the retention's start then.
+	agedAt   time.Time
+	agedFrom int64
 }
 
 // patternSelectorState is what the state read for a selector: its lines from fromNs up to toNs, and the streams
@@ -209,8 +217,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	if nowNs := now.UnixNano(); readTo > nowNs {
 		readTo = nowNs
 	}
+	built := false
 	if readTo > s.toNs {
 		started := time.Now()
+		built = s.toNs == s.fromNs
 		readFrom := s.toNs - int64(patternStateOverlap)
 		if readFrom < s.fromNs {
 			readFrom = s.fromNs
@@ -236,7 +246,10 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	if answered.startNs < answered.endNs {
 		entries = t.answer(s, answered, patternLimit)
 	}
-	store.age(t, now, now, retainFrom)
+	if built || retainFrom != t.agedFrom || now.Sub(t.agedAt) >= patternStateAgeEvery {
+		store.age(t, now, now, retainFrom)
+		t.agedAt, t.agedFrom = now, retainFrom
+	}
 	return entries, fromNs, lines, true
 }
 

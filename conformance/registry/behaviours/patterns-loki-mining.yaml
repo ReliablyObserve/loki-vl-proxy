@@ -162,6 +162,18 @@ decisions:
     evidence: 'compose stack A/B, VictoriaLogs v1.53.0, Loki 3.7.9, 2026-11-07'
     code: [internal/proxy/patterns_state.go, internal/proxy/patterns_exact.go]
     tests: [TestPatternStateBuiltInTheBackgroundForBusySelectors, TestPatternStateCountsOnlyARangeInsideTheRetentionAlongside, TestPatternStateRefreshReadsOnlyNewLines]
+  - id: patterns-warm-answer-step-grid
+    chosen: Answer from the state on a step grid, sorting only the patterns with 30 lines, and age the state at most every 15 s
+    over: [summing samples through maps and sorting every pattern, aging (fold, retention, bounds) on every request]
+    why: |
+      A busy selector's state holds thousands of streams' clusters; a warm
+      answer is computed again on every refresh. env=production 1h warm (6 s
+      apart, 15 requests): 227 ms to 139 ms (main's cross-stream counts 110 ms,
+      Loki 460 ms in CI). A read from the retention's start or a new retention
+      hour ages it at once, so bounds hold after a build.
+    evidence: 'compose stack A/B, VictoriaLogs v1.53.0, 2026-11-07; perf-smoke DP2'
+    code: [internal/proxy/patterns_state.go]
+    tests: [TestPatternStateFoldsIdleStreams, TestPatternStateAnswersOnlyInsideItsBounds]
 
 implementation:
   - internal/proxy/pattern_cluster.go
