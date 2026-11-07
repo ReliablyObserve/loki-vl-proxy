@@ -1215,6 +1215,7 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 		return fmt.Errorf("logql: expected duration: %w", err)
 	}
 	ra.Range = dur.Val
+	ra.RangeDuration = parseDuration(dur.Val)
 
 	// A PromQL-style [range:step] is not LogQL. Loki's lexer rejects the
 	// duration token itself; the colon arrives here as TokError ":".
@@ -1238,6 +1239,7 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 			return fmt.Errorf("logql: expected duration after offset: %w", offErr)
 		}
 		ra.Offset = off.Val
+		ra.OffsetDuration = parseDuration(off.Val)
 	}
 
 	// Optional @ modifier: [duration] @ <unix_timestamp | start() | end()>

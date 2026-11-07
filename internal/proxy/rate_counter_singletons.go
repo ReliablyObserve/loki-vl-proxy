@@ -77,7 +77,7 @@ func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
 		return "", false, false
 	}
 	ra, isRange := agg.Inner.(*logqlpkg.RangeAggregation)
-	if !isRange || ra.Op != logqlpkg.RangeRateCounter || ra.Grouping != nil || ra.Offset != "" {
+	if !isRange || ra.Op != logqlpkg.RangeRateCounter || ra.Grouping != nil || ra.HasOffset() {
 		return "", false, false
 	}
 	lq, isLog := ra.Inner.(*logqlpkg.LogQuery)

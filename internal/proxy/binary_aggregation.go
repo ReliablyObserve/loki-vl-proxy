@@ -125,8 +125,8 @@ func sumRateCountRatio(chain []*logqlpkg.VectorAggregation, binary *logqlpkg.Bin
 	if !ok || len(logs.Pipeline) != 0 {
 		return nil
 	}
-	window, ok := parsePositiveStepDuration(rate.Range)
-	if !ok || window.Seconds() <= 0 {
+	window := rate.RangeDuration
+	if window <= 0 || window.Seconds() <= 0 {
 		return nil
 	}
 	agg := *chain[0]

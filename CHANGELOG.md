@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Range and offset durations of a metric query are parsed once with the
+  query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
+  them instead of parsing the text again; the proxy's day/week/year duration
+  reading is the LogQL parser's own. No behaviour change, except that a range
+  longer than about 292 years reads as unusable instead of wrapping around.
+
 ### Fixed
 
 - fix: work shared by several requests stops when the last of them leaves, not

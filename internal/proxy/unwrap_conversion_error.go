@@ -98,11 +98,11 @@ func unwrapErrorProbes(expr logqlpkg.Expr) []unwrapErrorProbe {
 // semantics/unwrap-conversion-error-postfilter-forms).
 func unwrapErrorProbeFor(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAggregation) (unwrapErrorProbe, bool) {
 	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
-	if !ok || ra.Offset != "" {
+	if !ok || ra.HasOffset() {
 		return unwrapErrorProbe{}, false
 	}
-	window, ok := parsePositiveStepDuration(ra.Range)
-	if !ok {
+	window := ra.RangeDuration
+	if window <= 0 {
 		return unwrapErrorProbe{}, false
 	}
 	at := -1

@@ -388,7 +388,7 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 		expr = outer.Inner
 	}
 	rangeExpr, ok := expr.(*logqlpkg.RangeAggregation)
-	if !ok || rangeExpr.Offset != "" || rangeExpr.Grouping != nil {
+	if !ok || rangeExpr.HasOffset() || rangeExpr.Grouping != nil {
 		return nil, false
 	}
 	switch rangeExpr.Op {
@@ -397,8 +397,8 @@ func compileOrderedJSONMetricExpr(expr logqlpkg.Expr) (*orderedJSONMetricPlan, b
 	default:
 		return nil, false
 	}
-	plan.window, ok = parsePositiveStepDuration(rangeExpr.Range)
-	if !ok {
+	plan.window = rangeExpr.RangeDuration
+	if plan.window <= 0 {
 		return nil, false
 	}
 	logExpr, ok := rangeExpr.Inner.(*logqlpkg.LogQuery)

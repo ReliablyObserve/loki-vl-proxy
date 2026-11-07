@@ -844,8 +844,8 @@ func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpe
 	}
 
 	windowRaw := ra.Range
-	window, windowOK := parsePositiveStepDuration(windowRaw)
-	if !windowOK {
+	window := ra.RangeDuration
+	if window <= 0 {
 		// A non-duration window would have caused a parse error already; guard anyway.
 		return bareParserMetricCompatSpec{}, false
 	}
