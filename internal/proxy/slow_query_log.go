@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"sort"
@@ -56,9 +57,26 @@ type slowTraceStep struct {
 	bytes    int64
 }
 
-// slowTraceOn reports whether the proxy keeps request traces (either slow threshold is set).
+// slowTraceOn reports whether the proxy keeps request traces: either slow threshold is set and the slow lines
+// are logged (-slow-query-log-level is not off). The trace only feeds the lines.
 func (p *Proxy) slowTraceOn() bool {
-	return p != nil && (p.slowQueryThreshold > 0 || p.slowUpstreamThreshold > 0)
+	return p != nil && !p.slowLogOff && (p.slowQueryThreshold > 0 || p.slowUpstreamThreshold > 0)
+}
+
+// ParseSlowQueryLogLevel reads -slow-query-log-level: the level slow lines are logged at (warn, info, debug), or
+// off, which logs none and still counts loki_vl_proxy_slow_requests_total.
+func ParseSlowQueryLogLevel(s string) (level slog.Level, off bool, err error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "warn":
+		return slog.LevelWarn, false, nil
+	case "info":
+		return slog.LevelInfo, false, nil
+	case "debug":
+		return slog.LevelDebug, false, nil
+	case "off":
+		return slog.LevelWarn, true, nil
+	}
+	return slog.LevelWarn, false, fmt.Errorf("-slow-query-log-level %q: want warn, info, debug or off", s)
 }
 
 // traceStep adds a step to the request's trace, when the request keeps one and its log line is not written yet.
@@ -142,6 +160,10 @@ func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url
 	}
 	recordFlowVL(ctx, total, bytes)
 	if !p.slowTraceOn() {
+		// With the slow lines off the slow call is still counted.
+		if p.slowLogOff && p.slowUpstreamThreshold > 0 && total >= p.slowUpstreamThreshold {
+			p.metrics.RecordSlowRequest("vl", normalizeObservedRoute(path))
+		}
 		return
 	}
 	query := params.Get("query")
@@ -172,7 +194,7 @@ func (p *Proxy) observeUpstreamDone(ctx context.Context, path string, params url
 	if !inRequest {
 		attrs = append(attrs, "proxy.background", true)
 	}
-	p.log.Log(ctx, slog.LevelWarn, "slow_upstream_request", attrs...)
+	p.log.Log(ctx, p.slowLogLevel, "slow_upstream_request", attrs...)
 }
 
 // slowRequestExempt reports a route whose requests last as long as a client keeps them open (live tail).
@@ -187,6 +209,9 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 		return
 	}
 	p.metrics.RecordSlowRequest("loki", route)
+	if p.slowLogOff {
+		return
+	}
 	// Steps are added as they finish; the line lists them as they started. A query is written once (a split's
 	// checks repeat its base query): a step repeating one names the step that holds it; past the line's budget a
 	// query is its hash.
@@ -250,5 +275,5 @@ func (p *Proxy) logSlowRequest(ctx context.Context, endpoint, route, query strin
 	if dropped > 0 {
 		attrs = append(attrs, "proxy.steps_dropped", dropped)
 	}
-	p.log.Log(ctx, slog.LevelWarn, "slow_request", attrs...)
+	p.log.Log(ctx, p.slowLogLevel, "slow_request", attrs...)
 }

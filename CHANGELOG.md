@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat(observability): `-slow-query-log-level` (`warn` default, `info`,
+  `debug`, `off`) sets the level the `slow_request` and
+  `slow_upstream_request` lines are logged at, or turns them off: `off` writes
+  no slow lines and keeps no per-request trace, while
+  `loki_vl_proxy_slow_requests_total` still counts slow requests. Helm: the
+  `slow-query-log-level` key of `extraArgs`.
+
 - feat(observability): every request's query flow in its log line and in
   metrics: how many LogQL parses, translations, cache lookups (by tier:
   memory, disk, peer; hit, miss, stale) and VictoriaLogs calls it made, the

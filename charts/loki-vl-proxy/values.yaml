@@ -237,6 +237,7 @@ extraArgs:
   # slow-query-threshold: "3s"        # client requests at or over this are counted and logged (slow_request) with their LogQL, LogsQL and steps; "0" off
   # slow-upstream-threshold: "2s"     # one VictoriaLogs call at or over this (to the end of its body) is counted and logged (slow_upstream_request); "0" off
   # slow-query-log-raw-queries: "true" # "false": slow lines carry the queries' sha256 and length instead of their text
+  # slow-query-log-level: "warn"      # level of the slow lines: warn, info, debug, or off (no lines; the metric still counts)
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"
