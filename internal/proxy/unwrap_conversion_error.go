@@ -177,8 +177,19 @@ func unwrapErrorPostFilters(post []logqlpkg.Stage) (fails, known bool) {
 	return true, true
 }
 
-// unwrapComparisonRE reads a comparison label filter (`latency > 250ms`).
-var unwrapComparisonRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<|=)\s*([^\s"'` + "`" + `(),]+)\s*$`)
+// unwrapComparison reads a comparison label filter (`latency > 250ms`): its
+// label, its operator and the number, duration or bytes literal it compares to.
+func unwrapComparison(stage *logqlpkg.LabelFilterStage) (label, cmp, literal string, ok bool) {
+	e := stage.Expr
+	if e == nil || !e.IsLeaf() || !isLokiLabelName(e.Name) {
+		return "", "", "", false
+	}
+	switch e.Kind {
+	case logqlpkg.LabelFilterValueNumber, logqlpkg.LabelFilterValueDuration, logqlpkg.LabelFilterValueBytes:
+		return e.Name, e.Cmp, e.Value, true
+	}
+	return "", "", "", false
+}
 
 // unwrapParserHints returns the labels Loki's parser extracts for the
 // aggregation's sample extractor, or nil when it extracts every label
@@ -220,8 +231,8 @@ func unwrapParserHints(ra *logqlpkg.RangeAggregation, parent *logqlpkg.VectorAgg
 		}
 		if compiled, valid := compileOrderedJSONStage(lf); valid && compiled.filter != nil {
 			add(compiled.filter.Field)
-		} else if m := unwrapComparisonRE.FindStringSubmatch(lf.Raw); m != nil {
-			add(m[1])
+		} else if label, _, _, ok := unwrapComparison(lf); ok {
+			add(label)
 		}
 	}
 	return hints
@@ -1346,16 +1357,16 @@ func unwrapLabelFilterKeeps(stage *logqlpkg.LabelFilterStage, labels map[string]
 	if compiled, valid := compileOrderedJSONStage(stage); valid && compiled.filter != nil {
 		return compiled.filter.Matches(labels[compiled.filter.Field]), true
 	}
-	m := unwrapComparisonRE.FindStringSubmatch(stage.Raw)
-	if m == nil {
-		return false, false
-	}
-	conv, ok := unwrapComparisonConv(m[3])
+	label, cmp, literal, ok := unwrapComparison(stage)
 	if !ok {
 		return false, false
 	}
-	bound, _ := convertUnwrap(m[3], conv)
-	raw, present := labels[m[1]]
+	conv, ok := unwrapComparisonConv(literal)
+	if !ok {
+		return false, false
+	}
+	bound, _ := convertUnwrap(literal, conv)
+	raw, present := labels[label]
 	if !present {
 		return false, true
 	}
@@ -1363,7 +1374,7 @@ func unwrapLabelFilterKeeps(stage *logqlpkg.LabelFilterStage, labels map[string]
 	if err != nil {
 		return true, true
 	}
-	switch m[2] {
+	switch cmp {
 	case ">":
 		return value > bound, true
 	case ">=":

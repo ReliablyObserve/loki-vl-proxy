@@ -818,13 +818,25 @@ func stripFieldDetectionStages(query string) string {
 	return stripParserOnlyStages(stripUnwrapAndDropStages(query))
 }
 
-// labelFilterHasComparison reports whether a LabelFilterStage.Raw string contains a
-// field-comparison operator (=, !=, =~, !~, >=, <=, >, <).
 var (
+	// labelFilterCompareRE reads the text of a stage the parser keeps opaque
+	// (`| a-b="x"`, which Loki rejects but the proxy passes through).
 	labelFilterCompareRE      = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
 	hasFieldComparisonRE      = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
 	stripFieldComparisonStgRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
 )
+
+// isFieldComparisonStage reports whether a stage is a label filter, each of
+// which compares a label to a value (=, !=, =~, !~, >=, <=, >, <). A stage the
+// parser keeps opaque is still read as text until the text fallbacks are
+// retired.
+func isFieldComparisonStage(s logqlpkg.Stage) bool {
+	lfs, ok := s.(*logqlpkg.LabelFilterStage)
+	if !ok {
+		return false
+	}
+	return lfs.Expr != nil || labelFilterCompareRE.MatchString(lfs.Raw)
+}
 
 func hasFieldComparisonStages(query string) bool {
 	lq, err := logqlpkg.ParseLogQuery(query)
@@ -832,8 +844,7 @@ func hasFieldComparisonStages(query string) bool {
 		return hasFieldComparisonRE.MatchString(query)
 	}
 	for _, stage := range lq.Pipeline {
-		lfs, ok := stage.(*logqlpkg.LabelFilterStage)
-		if ok && labelFilterCompareRE.MatchString(lfs.Raw) {
+		if isFieldComparisonStage(stage) {
 			return true
 		}
 	}
@@ -854,11 +865,7 @@ func stripFieldComparisonStages(query string) string {
 		return strings.TrimSpace(result)
 	}
 	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
-		lfs, ok := s.(*logqlpkg.LabelFilterStage)
-		if ok && labelFilterCompareRE.MatchString(lfs.Raw) {
-			return false
-		}
-		return true
+		return !isFieldComparisonStage(s)
 	})
 	return out.String()
 }
