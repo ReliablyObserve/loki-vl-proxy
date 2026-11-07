@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `slow_upstream_request` lines with example lines. The parse count is a lower
   bound until queries are parsed once per request.
 
+## [2.91.0] - 2026-11-07
+
 ### Changed
 
 - Range and offset durations of a metric query are parsed once with the
