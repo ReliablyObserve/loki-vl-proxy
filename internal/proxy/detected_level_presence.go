@@ -436,7 +436,7 @@ func (p *Proxy) coveredWindowProbe(ctx context.Context, key string, start, end t
 	todo := []window{{start, end}}
 	coveredFrom, coveredTo := start, end
 	acc, ttl := "", p.parseRiskProbeCacheTTL
-	if raw, remaining, ok := p.cache.GetWithTTL(key); ok {
+	if raw, remaining, ok := p.cacheGetWithTTL(ctx, p.cache, key); ok {
 		parts := strings.SplitN(string(raw), " ", 3)
 		var fromNs, toNs int64
 		var err error
@@ -528,7 +528,7 @@ func (p *Proxy) levelNeedsChain(ctx context.Context, base string) bool {
 	if p.cache == nil {
 		return false
 	}
-	_, _, ok := p.cache.GetWithTTL(levelNeedsChainKey(p, ctx, base))
+	_, _, ok := p.cacheGetWithTTL(ctx, p.cache, levelNeedsChainKey(p, ctx, base))
 	return ok
 }
 

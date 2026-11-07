@@ -192,7 +192,7 @@ func parsedLogQuery(query string) (*logql.LogQuery, error) {
 			}
 		}
 	}
-	lq, err := logql.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if cacheable {
 		storeValidationResult(parsedLogQueryKey(query), parsedLogQueryResult{lq: lq, err: err})
 	}

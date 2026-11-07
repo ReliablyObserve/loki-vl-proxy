@@ -192,7 +192,7 @@ var patternCaptureRE = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_]*)>`)
 // logQueryLineFields returns the fields a LogQL query's pipeline writes; see
 // pipelineLineFields.
 func logQueryLineFields(query string) map[string]bool {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return nil
 	}

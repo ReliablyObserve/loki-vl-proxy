@@ -33,6 +33,8 @@ type requestTelemetry struct {
 	upstreamDurationByType map[string]time.Duration
 	internalOpsByType      map[string]int
 	internalDurationByType map[string]time.Duration
+	// flow is what the request caused (query_flow.go).
+	flow flowCounters
 	// heavyAdmissionRejected memoizes a heavy-query queue rejection so later
 	// heavy backend calls of the same request fail fast instead of queueing again.
 	heavyAdmissionRejected error
@@ -49,6 +51,7 @@ type requestTelemetry struct {
 	traceClosed  bool
 	trace        []slowTraceStep
 	traceDropped int
+	traceCache   int // cache steps kept, bounded by slowTraceMaxCacheSteps
 }
 
 type requestTelemetrySnapshot struct {
@@ -61,6 +64,7 @@ type requestTelemetrySnapshot struct {
 	upstreamDurationByType map[string]time.Duration
 	internalOpsByType      map[string]int
 	internalDurationByType map[string]time.Duration
+	flow                   flowCounters
 }
 
 type requestRouteMeta struct {
@@ -206,6 +210,10 @@ func recordInternalOperation(ctx context.Context, operation, outcome string, dur
 	}
 	rt.internalOpsByType[key]++
 	rt.internalDurationByType[key] += duration
+	if operation == "translate_query" { // every outcome (translated, cache_hit, passthrough) is one translation
+		rt.flow.translateCount++
+		rt.flow.translateDur += duration
+	}
 	rt.mu.Unlock()
 }
 
@@ -242,6 +250,7 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		upstreamDurationByType: upstreamDurationByType,
 		internalOpsByType:      internalOpsByType,
 		internalDurationByType: internalDurationByType,
+		flow:                   rt.flow,
 	}
 }
 

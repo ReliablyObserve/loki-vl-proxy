@@ -135,7 +135,7 @@ func (p *Proxy) statsExtentPost(ctx context.Context, path string, params url.Val
 // VictoriaLogs calls for the missing ones, and stores what it read.
 func (p *Proxy) statsExtentAnswer(ctx context.Context, req *statsExtentRequest, lastStored int64) (*http.Response, string, error) {
 	fetchCtx := context.WithValue(ctx, statsExtentFetchKey{}, true)
-	chunks := p.loadStatsExtentChunks(req, lastStored)
+	chunks := p.loadStatsExtentChunks(ctx, req, lastStored)
 	var covered [][2]int64
 	for _, c := range chunks {
 		if from, to := max(c.from, req.first), statsExtentMin(c.to, req.last); from <= to {
@@ -480,7 +480,7 @@ func readStatsExtentBody(body io.Reader, limit int64) (data []byte, whole bool, 
 
 // loadStatsExtentChunks reads the stored splits of req, side by side: a
 // miss may ask the disk tier and a peer.
-func (p *Proxy) loadStatsExtentChunks(req *statsExtentRequest, lastStored int64) map[int64]*statsExtentChunk {
+func (p *Proxy) loadStatsExtentChunks(ctx context.Context, req *statsExtentRequest, lastStored int64) map[int64]*statsExtentChunk {
 	firstChunk := statsExtentFloorDiv(req.first, req.chunk)
 	lastChunk := statsExtentFloorDiv(statsExtentMin(req.last, lastStored), req.chunk)
 	found := make([]*statsExtentChunk, lastChunk-firstChunk+1)
@@ -489,7 +489,7 @@ func (p *Proxy) loadStatsExtentChunks(req *statsExtentRequest, lastStored int64)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			raw, ok := p.cache.Get(req.chunkKey(j))
+			raw, ok := p.cacheGet(ctx, p.cache, req.chunkKey(j))
 			if !ok {
 				return
 			}

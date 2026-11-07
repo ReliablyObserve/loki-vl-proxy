@@ -289,7 +289,7 @@ func (p *Proxy) patternWindowInputsCached(r *http.Request, filter logsql.FilterE
 	if interior && ttl > 0 {
 		cacheKey = p.patternWindowInputsKey(r, filter, step, w)
 		lookup := time.Now()
-		if cached, ok := p.cache.Get(cacheKey); ok {
+		if cached, ok := p.cacheGet(r.Context(), p.cache, cacheKey); ok {
 			var value patternWindowInputs
 			if json.Unmarshal(cached, &value) == nil {
 				p.observeInternalOperation(ctx, "patterns_window_cache", "hit", time.Since(lookup))

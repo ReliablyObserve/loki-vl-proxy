@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -126,7 +127,7 @@ func TestLabelsCache_StoresResponsesOnReplicasWhenPeerWriteThroughEnabled(t *tes
 		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
 	}
 
-	if _, _, _, ok := p.endpointReadCacheEntry("labels", cacheKey); !ok {
+	if _, _, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", cacheKey); !ok {
 		t.Fatalf("expected labels cache entry for %q", cacheKey)
 	}
 	if _, ok := dc.Get(cacheKey); ok != pc.IsReplica(cacheKey) {

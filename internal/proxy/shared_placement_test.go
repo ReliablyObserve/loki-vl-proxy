@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -86,7 +87,7 @@ func TestSharedMetadataPlacementAcrossThreeFrontends(t *testing.T) {
 						if _, ok := node.disk.Get(key); ok {
 							copies++
 						}
-						body, _, _, ok := (&Proxy{cache: node.c}).endpointReadCacheEntry(endpoint, key)
+						body, _, _, ok := (&Proxy{cache: node.c}).endpointReadCacheEntry(context.Background(), endpoint, key)
 						if !ok || !strings.Contains(string(body), "shared") {
 							t.Fatal("a frontend cannot reuse the shared answer")
 						}

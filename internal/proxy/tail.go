@@ -17,7 +17,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 )
 
@@ -468,7 +467,7 @@ const maxTailFrameEntries = 100
 const tailScanBufferInitial = 4 * 1024
 
 func (p *Proxy) newTailPipeline(query string, levelAsMetadata bool) *tailPipeline {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	return &tailPipeline{
 		query:           query,
 		noop:            err == nil && len(lq.Pipeline) == 0,

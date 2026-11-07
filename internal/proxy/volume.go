@@ -215,7 +215,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 		return
 	}
 	cacheKey := p.canonicalReadCacheKey(endpoint, orgID, r)
-	if cached, remaining, _, ok := p.endpointReadCacheEntry(endpoint, cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), endpoint, cacheKey); ok {
 		if !p.shouldBypassRecentTailCache(endpoint, CacheTTLs[endpoint], remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
@@ -231,7 +231,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 
 	result, err := p.computeVolume(r.Context(), req)
 	if err != nil {
-		if p.serveStaleReadCacheOnError(w, endpoint, cacheKey, start, err) {
+		if p.serveStaleReadCacheOnError(r.Context(), w, endpoint, cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)

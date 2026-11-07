@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(observability): every request's query flow in its log line and in
+  metrics: how many LogQL parses, translations, cache lookups (by tier:
+  memory, disk, peer; hit, miss, stale) and VictoriaLogs calls it made, the
+  time each took, the bytes the cache served and VictoriaLogs returned, and the
+  proxy's own time (`flow.*` fields on `request` and `slow_request`; cache
+  lookups as steps of the slow-request trace). New metrics:
+  `loki_vl_proxy_request_phase_seconds{route,phase}`,
+  `loki_vl_proxy_request_fanout{route,kind}` and
+  `loki_vl_proxy_cache_lookup_seconds{tier,result}`. `docs/observability.md`
+  documents every field of the `request`, `request_digest`, `slow_request` and
+  `slow_upstream_request` lines with example lines. The parse count is a lower
+  bound until queries are parsed once per request.
+
 ### Changed
 
 - Range and offset durations of a metric query are parsed once with the

@@ -23,8 +23,9 @@ const module = "github.com/ReliablyObserve/Loki-VL-proxy/"
 
 // The categories, each counted over the production (non-test) Go files of cmd/ and internal/:
 //
-//	parse_calls             a call of the LogQL or LogsQL parser outside its own package: a place that parses
-//	                        query text again instead of reusing a parsed query
+//	parse_calls             a call of the LogQL or LogsQL parser outside its own package (or of the proxy's
+//	                        helpers that wrap it): a place that parses query text again instead of reusing a
+//	                        parsed query
 //	string_reads            a strings or regexp call whose literal argument is LogQL or LogsQL: query text read as
 //	                        a string
 //	text_built              any other LogQL or LogsQL literal: query text built as a string
@@ -40,6 +41,13 @@ var parserFuncs = map[string]map[string]bool{
 	module + "internal/logql":  {"Parse": true, "ParseLogQuery": true, "ParseAndValidate": true},
 	module + "internal/logsql": {"Parse": true, "ParseFilter": true},
 }
+
+// proxyParseHelpers are the proxy's own calls of the LogQL parser (internal/proxy/query_flow.go): each times the
+// parse for the request's flow. A call of one is a parse_calls site exactly like a direct call, so moving a parse
+// behind them cannot lower the count; the helpers' own bodies are not counted.
+var proxyParseHelpers = map[string]bool{"parseLogQLExpr": true, "parseLogQLQuery": true, "validateLogQL": true}
+
+const proxyParseHelperFile = "internal/proxy/query_flow.go"
 
 // stringReads are the strings functions that inspect or cut text.
 var stringReads = map[string]bool{
@@ -129,6 +137,10 @@ func countFile(counts siteCounts, rel string, f *ast.File) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.CallExpr:
+			if id, ok := v.Fun.(*ast.Ident); ok && proxyParseHelpers[id.Name] && strings.HasPrefix(rel, "internal/proxy/") {
+				counts.add("parse_calls", rel)
+				return true
+			}
 			sel, ok := v.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
@@ -138,7 +150,7 @@ func countFile(counts siteCounts, rel string, f *ast.File) {
 				return true
 			}
 			path := imports[pkg.Name]
-			if parserFuncs[path][sel.Sel.Name] {
+			if parserFuncs[path][sel.Sel.Name] && rel != proxyParseHelperFile {
 				counts.add("parse_calls", rel)
 			}
 			if translator && (path == "strings" || path == "regexp") {

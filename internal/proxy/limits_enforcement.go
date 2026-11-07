@@ -529,7 +529,7 @@ func parseLimitedQuery(r *http.Request, endpoint string) (logqlpkg.Expr, bool) {
 		return nil, false
 	}
 	query := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(r.Context(), query)
 	return expr, err == nil
 }
 
