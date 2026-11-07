@@ -580,6 +580,9 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	if want := "info order <_> shipped to berlin=3100"; got != want {
 		t.Fatalf("12h answer %q, want %q: the state's pattern with every line of the range", got, want)
 	}
+	if vl.countsCalls != 2 {
+		t.Fatalf("the history of a first request was counted in %d queries, want one groups and one timeline query", vl.countsCalls)
+	}
 	calls := vl.countsCalls
 	now = now.Add(30 * time.Second)
 	again, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-12*time.Hour), now)

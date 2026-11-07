@@ -1,10 +1,11 @@
 package proxy
 
 import (
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
+	"time"
 )
 
 // addPatternHistory counts the lines of the scope's range (the part of a request before the pattern state's
@@ -17,28 +18,10 @@ func (p *Proxy) addPatternHistory(r *http.Request, scope patternQueryScope, entr
 	if len(entries) == 0 || scope.startNs >= scope.endNs {
 		return entries
 	}
-	windows := patternCountsWindows(scope.startNs, scope.endNs)
-	inputs := make([]patternWindowInputs, len(windows))
-	oks := make([]bool, len(windows))
-	sem := make(chan struct{}, patternCountsParallel)
-	var wg sync.WaitGroup
-	for i, w := range windows {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			// Every window of the history lies before the state's samples and is settled; the first, which the
-			// range's moving start cuts, is not cached, so a refresh does not keep one copy per start.
-			inputs[i], oks[i] = p.patternWindowInputsCached(r, scope.filter, scope.step, w, w.startNs != scope.startNs)
-		}()
-	}
-	wg.Wait()
-	for _, ok := range oks {
-		if !ok {
-			p.observeInternalOperation(r.Context(), "patterns_history", "error", 0)
-			return entries
-		}
+	inputs, ok := p.patternHistoryInputs(r, scope)
+	if !ok {
+		p.observeInternalOperation(r.Context(), "patterns_history", "error", 0)
+		return entries
 	}
 
 	// The patterns of each level, most specific first: the most literal text, then the most lines.
@@ -121,6 +104,84 @@ func (p *Proxy) addPatternHistory(r *http.Request, scope patternQueryScope, entr
 	}
 	p.observeInternalOperation(r.Context(), "patterns_history", "counted", 0)
 	return entries
+}
+
+// patternHistoryInputs is the counted inputs of the history's windows: the settled ones from the cache (memory,
+// disk, the peers), and those missing counted together in one VictoriaLogs read (a groups and a timeline query)
+// over their span, split into windows and cached, so a range's first request reads VictoriaLogs twice whatever
+// its length and later ones reuse the windows. The window the range's moving start cuts is not cached.
+func (p *Proxy) patternHistoryInputs(r *http.Request, scope patternQueryScope) ([]patternWindowInputs, bool) {
+	windows := patternCountsWindows(scope.startNs, scope.endNs)
+	inputs := make([]patternWindowInputs, len(windows))
+	keys := make([]string, len(windows))
+	var missing []int
+	for i, w := range windows {
+		if w.startNs != scope.startNs && p.queryRangeWindowTTL(w.endNs) > 0 {
+			keys[i] = p.patternWindowInputsKey(r, scope.filter, scope.step, w)
+			if cached, ok := p.cache.Get(keys[i]); ok && json.Unmarshal(cached, &inputs[i]) == nil {
+				continue
+			}
+		}
+		missing = append(missing, i)
+	}
+	if len(missing) == 0 {
+		return inputs, true
+	}
+	from, to := windows[missing[0]].startNs, windows[missing[0]].endNs
+	for _, i := range missing[1:] {
+		from, to = min64(from, windows[i].startNs), max64(to, windows[i].endNs)
+	}
+	all, ok := p.readPatternWindowInputs(r.Context(), scope.filter, scope.step, from, to)
+	if !ok {
+		return nil, false
+	}
+	groupOf := make(map[string]patternGroupInput, len(all.Groups))
+	for _, g := range all.Groups {
+		groupOf[g.Key] = g
+	}
+	for _, i := range missing {
+		w := windows[i]
+		var part patternWindowInputs
+		index := map[int]int{}
+		for _, row := range all.Timeline {
+			if at := row.Bucket * int64(time.Second); at < w.startNs || at >= w.endNs || row.Group < 0 || row.Group >= len(all.Keys) {
+				continue
+			}
+			local, seen := index[row.Group]
+			if !seen {
+				local = len(part.Keys)
+				index[row.Group] = local
+				key := all.Keys[row.Group]
+				part.Keys = append(part.Keys, key)
+				if g, ok := groupOf[key]; ok {
+					part.Groups = append(part.Groups, g)
+				}
+			}
+			part.Timeline = append(part.Timeline, patternTimelineInput{Group: local, Bucket: row.Bucket, Count: row.Count})
+		}
+		inputs[i] = part
+		if keys[i] != "" {
+			if encoded, err := json.Marshal(part); err == nil {
+				p.cache.SetWithTTL(keys[i], encoded, p.queryRangeWindowTTL(w.endNs))
+			}
+		}
+	}
+	p.observeInternalOperation(r.Context(), "patterns_history", "read", 0)
+	return inputs, true
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // patternMatchesLine reports whether a pattern matches a line as Loki's pattern line filter (|>) does, the filter

@@ -225,7 +225,7 @@ func decodePatternStateSnapshot(data []byte, maxBytes int64) (patternStateSnapsh
 	if err != nil {
 		return snap, false
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 	if err := json.NewDecoder(io.LimitReader(zr, maxBytes)).Decode(&snap); err != nil || snap.V != patternStateSnapshotVersion {
 		return patternStateSnapshot{}, false
 	}
