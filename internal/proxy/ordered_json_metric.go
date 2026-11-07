@@ -1533,6 +1533,13 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 	}
 	statsDone := make(chan orderedJSONStatsResult, 1)
 	go func() { statsDone <- runStats(statsCtx, false) }()
+	// A strict split's unparsed-line lookup is read first: a line Loki's parser rejects decides the answer (Loki's
+	// error, from the row evaluator) without waiting for the scans the other checks and the stats run.
+	unparsed := <-unparsedDone
+	if unparsed.err != nil || unparsed.risky {
+		cancelStats()
+		return nil, false, false, unparsed.err
+	}
 	risk := <-riskDone
 	if risk.err != nil || risk.risky {
 		cancelStats()
@@ -1547,11 +1554,6 @@ func (p *Proxy) orderedJSONStatsBuckets(ctx context.Context, plan *orderedJSONMe
 		// Not provably Loki's level: the row evaluator derives it.
 		cancelStats()
 		return nil, false, false, nil
-	}
-	unparsed := <-unparsedDone
-	if unparsed.err != nil || unparsed.risky {
-		cancelStats()
-		return nil, false, false, unparsed.err
 	}
 	hazard := <-hazardDone
 	if hazard.err != nil {
