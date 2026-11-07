@@ -1,0 +1,48 @@
+id: semantics/ip-filter-json-stats-pushdown
+title: An ip() label filter after | json in a metric query matches no line on the stats pushdown; Loki counts the lines in range (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  The differential run of 2026-11-07 (proxy a3ad4c1b, Loki v3.7.9,
+  VictoriaLogs v1.53.0): `sum(count_over_time({service_name="api-gateway"} |
+  json | ip=ip("10.2.0.0/16") [1m]))` and the range form
+  `ip=ip("10.0.0.0-10.2.255.255")` answer one series on Loki and none on the
+  proxy, on query_range and query. The log query with the same filter matches
+  Loki (semantics/ip-label-filter-missing-label).
+
+  The `| json` metric stats pushdown writes the filter as the string
+  comparison `ip:="ip(10.2.0.0/16)"` (internal/proxy/ordered_json_metric.go
+  logsQLLabelCondition) instead of the address match the translator builds
+  for the log query (`ip:ipv4_range(10.2.0.0, 10.2.255.255)`), so no line
+  passes it. Reproduced on the compose stack over 1h: Loki 10819 lines, the
+  proxy 0, on main and on the builds of #1145 and #1105.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({service_name="api-gateway"} | json | ip=ip("10.2.0.0/16") [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    The count of the lines the log query with the same filter returns.
+gap:
+  status: open
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/ordered_json_metric.go logsQLLabelCondition (stats pushdown label filters)'
+  loki: 'pkg/logql/log/ip.go:123-145 (absent label: line dropped under = and !=), :183-261 (address scan, pattern forms)'
+  proxy: 'no series: the filter compares the value with the text ip(...)'
+  planned_test: 'TestCompat_IPLabelFilterJSONMetric (test/e2e-compat, group core)'
+  clusters:
+    - 4ebfd2c5
+    - e1528358

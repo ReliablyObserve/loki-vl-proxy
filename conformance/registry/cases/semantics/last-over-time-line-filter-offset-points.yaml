@@ -1,0 +1,46 @@
+id: semantics/last-over-time-line-filter-offset-points
+title: last_over_time over unwrap with a line filter and an offset answers other points than Loki through Grafana (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The differential run of 2026-11-07 (proxy a3ad4c1b, Loki v3.7.9,
+  VictoriaLogs v1.53.0), Grafana Explore:
+  `last_over_time({service_name="payment-service"} |= "latency_ms" | logfmt |
+  unwrap latency_ms [1m] offset 2s) by (level)` answers 721 points for
+  `{level="info"}` on Loki and 360 on the proxy. The same query without the
+  line filter is semantics/first-last-over-time-translation (fixed in #1059).
+
+  A direct query_range at step 5 on the live compose stack (UI generator on,
+  data not proven equal: VictoriaLogs held 30 more info lines than Loki in the
+  hour) answered 721 points on both and other values at most steps, with and
+  without the offset; the generator writes several lines with the same
+  timestamp, so the last value of a window can differ when lines tie. Neither
+  observation is a classification yet.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'last_over_time({service_name="payment-service"} |= "latency_ms" | logfmt | unwrap latency_ms [1m] offset 2s) by (level)'
+    start: 'now-1h'
+    end: 'now'
+    step: '5'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [series, values]
+  expect: |
+    Loki's points and values, on fixtures whose lines have distinct timestamps.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy unwrap last_over_time (row_max over _time), offset shift'
+  loki: 'the recorded answer of the 2026-11-07 run (Grafana ds_query, 1h)'
+  proxy: '360 points for level=info where Loki has 721'
+  planned_test: 'TestCompat_UnwrapFirstLastRangeLevelBy with a line filter and an offset (test/e2e-compat, group semantics)'
+  clusters:
+    - 1ed3ce08

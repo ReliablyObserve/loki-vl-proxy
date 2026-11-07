@@ -1558,7 +1558,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 423,
+  "registry_items": 425,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3361,10 +3361,12 @@
     "semantics/extracted-derived-labels-raw-evaluator",
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
+    "semantics/ip-filter-json-stats-pushdown",
     "semantics/ip-filter-precision",
     "semantics/json-empty-value-label-series",
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
+    "semantics/last-over-time-line-filter-offset-points",
     "semantics/log-entries-differ-same-count",
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/parse-error-labels-on-log-lines",

@@ -73,7 +73,7 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 | Endpoints whose registry state is `proven` | **12 of 27** (44%) |
 | Routed endpoints answered natively by VictoriaLogs | 6 of 25 |
 | Behaviour and feature items | 6 proven, 21 partial, 3 gaps |
-| Known differences from Loki (ranked) | **104**: 81 open, 13 documented, 7 owner-kept, 3 upstream |
+| Known differences from Loki (ranked) | **106**: 83 open, 13 documented, 7 owner-kept, 3 upstream |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 
