@@ -539,8 +539,10 @@ func TestPatternSnapshotEntry_CanonicalizesRangeKeysAndCompactsSamples(t *testin
 	if len(stored.Data) != 1 {
 		t.Fatalf("expected one persisted pattern entry, got %#v", stored.Data)
 	}
-	if got := stored.Data[0].Samples; len(got) != 1 || got[0][0] != float64(120) || got[0][1] != float64(4) {
-		t.Fatalf("expected compacted non-zero samples only, got %#v", got)
+	// The zero-filled steps are samples of the answer: an answer served from the
+	// snapshot equals the one computed (it is not filled again on serve).
+	if got := stored.Data[0].Samples; len(got) != 3 || got[0][1] != float64(0) || got[1][0] != float64(120) || got[1][1] != float64(4) || got[2][1] != float64(0) {
+		t.Fatalf("expected the samples with their zeros, got %#v", got)
 	}
 
 	p.patternsPersistDirty.Store(false)

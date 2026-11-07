@@ -334,7 +334,10 @@ func compactPatternSnapshotSamples(samples [][]interface{}) [][]interface{} {
 		}
 		ts, okTS := numberToInt64(pair[0])
 		count, okCount := numberToInt(pair[1])
-		if !okTS || !okCount || count <= 0 {
+		// A 0 is a sample of the answer (Loki fills the steps between a
+		// cluster's samples with 0): the snapshot keeps it, so an answer
+		// served from it equals the one computed.
+		if !okTS || !okCount || count < 0 {
 			continue
 		}
 		if _, seen := byTimestamp[ts]; !seen {
