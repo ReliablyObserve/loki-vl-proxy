@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a range) the proxy answers the same patterns with the same totals for all
   27 (it answered 47% of their lines with Loki's text before).
 
+## [2.83.5] - 2026-11-07
+
 ### Performance
 
 - perf(query): a `| json` metric that keeps the parser errors (no
