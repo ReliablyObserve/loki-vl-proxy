@@ -221,3 +221,62 @@ func TestSlowQueryLogLineStaysBounded(t *testing.T) {
 		}
 	}
 }
+
+// -slow-query-log-level sets the level of the slow lines; off logs none, keeps no trace, and still counts the
+// slow requests.
+//
+// conformance: observability-slow-query-log
+func TestSlowQueryLogLevelAndOff(t *testing.T) {
+	p, buf := slowLogProxy(t, 40*time.Millisecond)
+	p.slowLogLevel = slog.LevelInfo
+	serveSlowLog(p, "query_range", "/loki/api/v1/query_range", slowLogHandler(p))
+	for _, msg := range []string{"slow_request", "slow_upstream_request"} {
+		lines := slowLogLines(t, buf, msg)
+		if len(lines) != 1 || lines[0]["level"] != "INFO" {
+			t.Fatalf("%s at -slow-query-log-level=info: %v", msg, lines)
+		}
+	}
+
+	p, buf = slowLogProxy(t, 40*time.Millisecond)
+	p.slowLogOff = true
+	if p.slowTraceOn() {
+		t.Fatal("off keeps a request trace")
+	}
+	serveSlowLog(p, "query_range", "/loki/api/v1/query_range", slowLogHandler(p))
+	if n := len(slowLogLines(t, buf, "slow_request")) + len(slowLogLines(t, buf, "slow_upstream_request")); n != 0 {
+		t.Fatalf("off logged %d slow lines\n%s", n, buf)
+	}
+	body := metricsBody(p)
+	for _, want := range []string{
+		`loki_vl_proxy_slow_requests_total{system="loki",route="/loki/api/v1/query_range"} 1`,
+		`loki_vl_proxy_slow_requests_total{system="vl",route="/select/logsql/query"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("off: metrics lack %s", want)
+		}
+	}
+}
+
+// conformance: observability-slow-query-log
+func TestParseSlowQueryLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		level slog.Level
+		off   bool
+		bad   bool
+	}{
+		{"", slog.LevelWarn, false, false},
+		{"warn", slog.LevelWarn, false, false},
+		{"WARN", slog.LevelWarn, false, false},
+		{"info", slog.LevelInfo, false, false},
+		{"debug", slog.LevelDebug, false, false},
+		{"off", slog.LevelWarn, true, false},
+		{"error", 0, false, true},
+		{"loud", 0, false, true},
+	} {
+		level, off, err := ParseSlowQueryLogLevel(tc.in)
+		if (err != nil) != tc.bad || (!tc.bad && (level != tc.level || off != tc.off)) {
+			t.Errorf("%q: level %v off %v err %v", tc.in, level, off, err)
+		}
+	}
+}
