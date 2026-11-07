@@ -447,15 +447,19 @@ def render_acceptance(latest, bounds):
            f"{over2x.MIN_GAP * 1000:.0f} ms; close is within that.", "",
            "Each row is counted in the Loki profile of the run it comes from (`aligned`: the stack's Loki; `loki-defaults`:",
            "Loki with its own defaults, preferred when both ran); a locked row's bound holds in each profile.", "",
-           "| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Most below Loki | Worst case ≤ 2× |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+           "A row is green below Loki or within the noise of it (below + close); the target is",
+           f"{over2x.GREEN_SHARE:g}% of a mode's rows green.", "",
+           "| Profile | Mode | Rows compared | Below Loki | Close to Loki | 1–2× | Above 2× | Locked rows | Green (below + close) "
+           f"| {over2x.GREEN_SHARE:g}% green | Worst case ≤ 2× |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for profile, by_mode in dist.items():
         for mode in over2x.MODES:
             d = by_mode.get(mode)
             if not d:
                 continue
             out.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} ({d['share_below']:.1f}%) | {d['close']} | "
-                       f"{d['between']} | {d['above']} | {locked[mode]} | {'yes' if d['share_below'] > 50 else '**no**'} | "
+                       f"{d['between']} | {d['above']} | {locked[mode]} | {d['green']} ({d['share_green']:.1f}%) | "
+                       f"{'yes' if d['share_green'] >= over2x.GREEN_SHARE else '**no**'} | "
                        f"{'yes' if not d['above'] else '**no**'} |")
     flagged = sum(1 for b in between if not b[5]["exception"])
     out += ["", "### Between 1× and 2× Loki", "",
