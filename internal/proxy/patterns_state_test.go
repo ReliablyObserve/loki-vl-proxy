@@ -629,6 +629,9 @@ func TestPatternCachedAnswerIsServedAsMade(t *testing.T) {
 	_, cached := statePatterns(t, p, "", `{app="api"}`, now.Add(-time.Hour), now)
 	if cached != first {
 		t.Fatalf("cached answer\n %s\nfirst answer\n %s", cached, first)
+	}
+}
+
 // A peer that takes a selector over, or its holder after a restart, continues the state from the snapshot the
 // holder wrote to the cache: it reads only the lines after it, and answers as the holder would, line for line.
 //
