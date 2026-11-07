@@ -142,6 +142,11 @@ var jsonDetectedLevelSplitQueries = []struct {
 	{`sum by (detected_level) (count_over_time({env="prod"} | json [1m]))`, jsonSplitStrict},
 	{`sum by (detected_level) (rate({env="prod"} | json [2m]))`, jsonSplitStrict},
 	{`sum by (detected_level) (bytes_rate({env="prod"} | json [1m]))`, jsonSplitStrict},
+	// Grouped by a parsed key or a stored label, and through a keep of the
+	// grouped labels (keep-series-grouping K6).
+	{`sum by (status) (count_over_time({env="prod"} | json [1m]))`, jsonSplitStrict},
+	{`sum by (level) (count_over_time({env="prod"} | json | keep level [1m]))`, jsonSplitStrict},
+	{`sum by (level, status) (rate({env="prod"} | json | keep level, status [2m]))`, jsonSplitStrict},
 }
 
 // runDetectedLevelSplit answers query through the proxy over rows, and through
@@ -250,7 +255,9 @@ func TestJSONDetectedLevelSplitMatchesRawEvaluator(t *testing.T) {
 			}
 			fake := runDetectedLevelSplit(t, braceOnlyRows(t, mixed, false), tc.query, start, end, time.Minute, label+" (accepted lines)")
 			assertBoundedRawReads(t, fake, label)
-			assertStoredLevelStats(t, fake, label)
+			if strings.Contains(tc.query, "detected_level") {
+				assertStoredLevelStats(t, fake, label)
+			}
 			fake = runDetectedLevelSplit(t, braceOnlyRows(t, partly, false), tc.query, start, end, time.Minute, label+" (accepted lines, levels partly stored)")
 			assertBoundedRawReads(t, fake, label+" (accepted lines, levels partly stored)")
 			runDetectedLevelSplit(t, braceOnlyRows(t, mixed, true), tc.query, start, end, time.Minute, label+" (with rejected lines)")
@@ -340,8 +347,10 @@ func TestJSONDetectedLevelSplitEdgeTable(t *testing.T) {
 	}
 }
 
-// Shapes outside the family keep their routes: a strict plan grouped by a
-// parsed key or filtered, a `__error__!=""` followed by another label stage.
+// Shapes outside the family keep their routes: a strict plan filtered, a keep
+// that does not name every grouped label, has a matcher or is followed by a
+// label stage, a `__error__!=""` followed by another label stage. A strict plan
+// grouped by a parsed key or a stored label is in the family.
 // A step wider than the window stays on the split: its stats read only the
 // lines inside a window (TestOrderedJSONStepWiderThanRangeDifferential).
 // conformance: semantics/json-detected-level-error-split, semantics/json-metric-detected-level-derivation
@@ -354,8 +363,14 @@ func TestJSONDetectedLevelSplitEligibility(t *testing.T) {
 		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__!="" [1m]))`, jsonSplitErrors},
 		{`sum(count_over_time({env="prod"} | json | __error__!="" [1m]))`, jsonSplitErrors},
 		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__="" [1m]))`, jsonSplitValid},
-		{`sum by (status) (count_over_time({env="prod"} | json [1m]))`, jsonSplitNone},
-		{`sum by (detected_level, app) (count_over_time({env="prod"} | json [1m]))`, jsonSplitNone},
+		{`sum by (status) (count_over_time({env="prod"} | json [1m]))`, jsonSplitStrict},
+		{`sum by (detected_level, app) (count_over_time({env="prod"} | json [1m]))`, jsonSplitStrict},
+		{`sum by (level) (count_over_time({env="prod"} | json | keep level [1m]))`, jsonSplitStrict},
+		{`sum by (level, app) (count_over_time({env="prod"} | json | keep level [1m]))`, jsonSplitNone},
+		{`sum by (level) (count_over_time({env="prod"} | json | keep level, app="api" [1m]))`, jsonSplitNone},
+		{`sum by (level) (count_over_time({env="prod"} | json | keep level | status="200" [1m]))`, jsonSplitNone},
+		{`sum by (level) (count_over_time({env="prod"} | json | keep level | drop status [1m]))`, jsonSplitNone},
+		{`sum without (app) (count_over_time({env="prod"} | json | keep level [1m]))`, jsonSplitNone},
 		{`sum by (detected_level) (count_over_time({env="prod"} | json | status="200" [1m]))`, jsonSplitNone},
 		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__!="" | status="500" [1m]))`, jsonSplitNone},
 		{`sum by (detected_level) (count_over_time({env="prod"} | json | __error__!="" | drop __error__ [1m]))`, jsonSplitNone},
