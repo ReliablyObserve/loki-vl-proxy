@@ -828,6 +828,8 @@
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
+    "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
+    "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
     "internal/metrics/request_flow_test.go | observability-query-flow",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
     "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
@@ -1890,7 +1892,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 353,
+      "go": 355,
       "playwright": 1
     },
     "page_kinds": {
@@ -1909,8 +1911,8 @@
     },
     "shape_covers_distinct": 107,
     "shapes_path_only": 8,
-    "unwired_items": 100,
-    "wired_items": 254
+    "unwired_items": 99,
+    "wired_items": 255
   },
   "gates": [
     "A/B shape selection",

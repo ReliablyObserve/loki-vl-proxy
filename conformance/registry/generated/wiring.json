@@ -10,6 +10,10 @@
     "api_prom_rules_namespace_groupname": [
       "internal/proxy/alerting_tenant_label_test.go"
     ],
+    "architecture-syntax-package-layering": [
+      "internal/logsql/parser_read_test.go",
+      "internal/logsql/parser_typed_test.go"
+    ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
       "internal/proxy/metadata_inventory_test.go",
@@ -1637,6 +1641,12 @@
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
+    ],
+    "internal/logsql/parser_read_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/parser_typed_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/metrics/request_flow_test.go": [
       "observability-query-flow"
@@ -3366,7 +3376,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 354,
+  "tests_with_markers": 356,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3375,7 +3385,6 @@
     "api_prom_query",
     "api_prom_series",
     "api_prom_tail",
-    "architecture-syntax-package-layering",
     "data-density-and-chart-quality",
     "drilldown/detected-field-values",
     "drilldown/detected-fields-metadata-reported-as-json",
@@ -3470,5 +3479,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 254
+  "wired_items": 255
 }
