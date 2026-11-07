@@ -1,0 +1,59 @@
+id: observability-slow-query-log
+kind: observability
+title: A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps
+
+loki: |
+  Loki's query frontend logs a query that takes longer than
+  `log_queries_longer_than` ("slow query detected", off by default) with the
+  query and its statistics. It has no notion of a backend call: its steps are
+  its own queriers.
+
+victorialogs: |
+  VictoriaLogs logs a query slower than -search.logSlowQueryDuration with its
+  LogsQL; it does not know the Loki request the query served.
+
+proxy: |
+  A client request at or over -slow-query-threshold (default 3s) and one
+  VictoriaLogs call at or over -slow-upstream-threshold (default 2s, timed to
+  the end of its body) are counted in
+  loki_vl_proxy_slow_requests_total{system="loki"|"vl",route} and logged at
+  WARN whatever the request-log sampling: slow_request with the LogQL and its
+  steps (each VictoriaLogs call with its LogsQL, window, status, bytes and
+  time; each proxy-side operation and route decision; each rewrite of the
+  LogQL; every step with its offset from the request's start, at most 64),
+  slow_upstream_request with the LogsQL and the client route it served
+  (proxy.background when it outlived its request). Live tail is exempt. The
+  queries are the text, capped at 8 KB (-slow-query-log-raw-queries=false
+  hashes them). 0 turns a threshold off.
+
+implementation:
+  - internal/proxy/slow_query_log.go
+  - internal/proxy/telemetry.go
+  - internal/proxy/backend_read_observation.go
+  - internal/proxy/query_translation.go
+  - internal/metrics/metrics.go
+
+decisions:
+  - id: slow-query-log-defaults-from-measurements
+    chosen: 'On by default: -slow-query-threshold 3s, -slow-upstream-threshold 2s, queries as text'
+    over: [off by default (Loki's log_queries_longer_than), round guesses, queries hashed as debug logs are]
+    why: |
+      Owner 2026-11-07: slow requests must be visible in normal environments,
+      with the Loki and VictoriaLogs queries in the log, and the thresholds set
+      from what is slow for the proxy. 3s is the 99th percentile of the daily
+      A/B benchmark's cold first loads (3.1s over 1,334 shape x range rows; 95th
+      1.0s), about the slowest 4% of the compose stack's client requests; 2s is
+      about the slowest 2% of the stack's VictoriaLogs calls (98th percentile
+      1.96s, 99th 3.3s over 2,511 calls). Queries are text because the owner
+      asked for them; -slow-query-log-raw-queries=false hashes them.
+    evidence: 'bench/ab/results/daily-*.json (2026-11-07); compose stack proxy logs, 24h, 2026-11-07'
+    code: [internal/proxy/slow_query_log.go, cmd/proxy/main.go]
+    tests: [TestSlowQueryLogCarriesTheQueriesAndTheSteps, TestSlowQueryLogThresholdsTailAndRedaction, TestSlowQueryLogTraceBoundsAndBackgroundWork]
+    quality: |
+      One slow_request per slow client request (never for live tail), one
+      slow_upstream_request per slow VictoriaLogs call, the steps in order with
+      their offsets, the trace bounded, background work marked; nothing under
+      the thresholds.
+    performance:
+      tracked: ['request path: allocations per request with the trace on (benchstat)', 'perf-smoke: no shape slower than its base']
+      bound: 'a request under the thresholds formats nothing; steps hold references until a line is written'

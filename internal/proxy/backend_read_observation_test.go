@@ -23,7 +23,7 @@ func TestBackendBodyReadProductionObservation(t *testing.T) {
 	p := newDLVBaselineProxy(t, backend.URL, false)
 	var log bytes.Buffer
 	p.log = slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	body := p.observeBackendBody(context.Background(), io.NopCloser(strings.NewReader("fixture")), "/select/logsql/query", url.Values{"start": {"1700000400000000000"}, "end": {"1700000460000000000"}, "query": {"secret-selector"}}, time.Now())
+	body := p.observeBackendBody(context.Background(), io.NopCloser(strings.NewReader("fixture")), "/select/logsql/query", url.Values{"start": {"1700000400000000000"}, "end": {"1700000460000000000"}, "query": {"secret-selector"}}, 200, time.Now())
 	got, err := io.ReadAll(body)
 	if err != nil || string(got) != "fixture" {
 		t.Fatal("observer changed bytes", err)
@@ -73,7 +73,7 @@ func TestBackendBodyReadObservationPreservesErrors(t *testing.T) {
 			if outcome == "error" {
 				reader = iotest.ErrReader(boom)
 			}
-			body := p.observeBackendBody(ctx, io.NopCloser(reader), "/select/logsql/query", nil, time.Now())
+			body := p.observeBackendBody(ctx, io.NopCloser(reader), "/select/logsql/query", nil, 200, time.Now())
 			if outcome == "canceled" {
 				cancel()
 			}
@@ -103,7 +103,7 @@ func TestBackendBodyReadObservationPreservesResponseCap(t *testing.T) {
 	backend, _ := newDLVBaselineBackend(t, dlvBaselineShapes[1], time.Unix(1700000400, 0))
 	p := newDLVBaselineProxy(t, backend.URL, false)
 	ctx := withLabelValuesResponseCap(context.Background(), 512<<20)
-	body := p.observeBackendBody(ctx, p.guardBackendBody(ctx, io.NopCloser(strings.NewReader("x")), "/select/logsql/field_values", nil, time.Now()), "/select/logsql/field_values", nil, time.Now())
+	body := p.observeBackendBody(ctx, p.guardBackendBody(ctx, io.NopCloser(strings.NewReader("x")), "/select/logsql/field_values", nil, time.Now()), "/select/logsql/field_values", nil, 200, time.Now())
 	defer body.Close()
 	if cap, ok := body.(interface{ BodyLimit() int64 }); !ok || cap.BodyLimit() != 512<<20 {
 		t.Fatal("observer hid body cap from coalescer")
@@ -128,7 +128,7 @@ func TestBackendBodyReadObservationTerminalErrorsAndClose(t *testing.T) {
 	body := p.observeBackendBody(context.Background(), observedTestBody{
 		read:  func(b []byte) (int, error) { return copy(b, "abc"), readErr },
 		close: func() error { closes.Add(1); return closeErr },
-	}, "/select/logsql/query", nil, time.Now())
+	}, "/select/logsql/query", nil, 200, time.Now())
 	buf := make([]byte, 10)
 	if n, err := body.Read(buf); n != 3 || !errors.Is(err, readErr) || string(buf[:n]) != "abc" {
 		t.Fatal("terminal read changed", n, err)
@@ -162,7 +162,7 @@ func TestBackendBodyReadObservationCloseInterruptsRead(t *testing.T) {
 	p := newDLVBaselineProxy(t, backend.URL, false)
 	reader, writer := io.Pipe()
 	defer writer.Close()
-	body := p.observeBackendBody(context.Background(), reader, "/select/logsql/query", nil, time.Now())
+	body := p.observeBackendBody(context.Background(), reader, "/select/logsql/query", nil, 200, time.Now())
 	done := make(chan error, 1)
 	go func() { _, err := io.ReadAll(body); done <- err }()
 	if err := body.Close(); err != nil {

@@ -129,6 +129,37 @@ normal traffic.
 | `-log-rate-threshold` | `10` | Req/s above which OK logs become periodic summaries |
 | `-log-stats-interval` | `10s` | How often to print the request statistics summary |
 
+### Slow Queries
+
+A client request taking at least `-slow-query-threshold` (default `3s`) and a
+single VictoriaLogs call taking at least `-slow-upstream-threshold` (default
+`2s`, to the end of its response body) are logged at `WARN` whatever the
+sampling above, and counted in `loki_vl_proxy_slow_requests_total`:
+
+- `slow_request`: the route, status, duration, tenant, the LogQL, cache
+  result, and `proxy.steps`, the request's steps in order, each with its
+  offset from the request's start (`at_ms`): every VictoriaLogs call
+  (`upstream`: route, LogsQL, window, status, bytes, outcome, duration), every
+  proxy-side operation or route decision (`operation`: e.g. `patterns_state`,
+  `json_metric_evaluator` with `vl_stats_buckets/pushdown` or
+  `raw_rows/probe`, with its outcome and duration), and every rewrite of the
+  LogQL (`rewrite`: from, to). At most 64 steps; `proxy.steps_dropped` counts
+  the rest. Live tail is never a slow request.
+- `slow_upstream_request`: the VictoriaLogs route, LogsQL, window, body bytes
+  and outcome, duration and the client route it served (`http.parent_route`);
+  `proxy.background=true` marks a call that outlived its request (a background
+  build).
+
+The defaults come from measured timings: 3s is the 99th percentile of the
+daily A/B benchmark's cold first loads, 2s about the slowest 2% of
+VictoriaLogs calls on the compose stack.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `-slow-query-threshold` | `3s` | Client request duration at or over which it is slow; `0` turns it off |
+| `-slow-upstream-threshold` | `2s` | VictoriaLogs call duration (to the end of its body) at or over which it is slow; `0` turns it off |
+| `-slow-query-log-raw-queries` | `true` | Slow lines carry the queries' text (capped at 8 KB); `false` carries their sha256 and length |
+
 ### OpenTelemetry Fields Used in Logs
 
 | Field | Meaning |
@@ -267,6 +298,7 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_http_connection_transitions_total` | counter | `state` | `Low` | downstream HTTP server connection state transitions |
 | `loki_vl_proxy_http_connection_rotations_total` | counter | `reason` | `Low` | downstream HTTP/1.x connection rotations triggered by the proxy |
 | `loki_vl_proxy_parser_metric_evaluations_total` | counter | `evaluator`, `reason` | `Low` | metric queries over a `\| json` or `\| logfmt` pipeline by the evaluator that answered them (`vl_stats_buckets`: VictoriaLogs stats over unpacked fields, no raw rows; `raw_rows`: the exact row evaluator, bounded by `-manual-range-metric-row-limit`) and why: `pushdown`; `probe` (a `\| limit 1` probe found a line the two parsers read differently, so the line shapes of that stream are worth a look); `ineligible` (a pipeline the pushdown does not cover: `keep`, a second parser, an `_extracted` or `__error__` label, a filter accepting the empty value without `drop __error__`); `grid` (no bucket grid for the step and range) |
+| `loki_vl_proxy_slow_requests_total` | counter | `system`, `route` | `Low` | requests at or over their slow threshold: `system="loki"` a client request over `-slow-query-threshold`, `system="vl"` one VictoriaLogs call over `-slow-upstream-threshold` (see Slow Queries) |
 
 `tier="l0"` is the hot-key index that sits alongside the lookup tiers, not a lookup tier itself: `requests` counts every cache request that touched it, `hits` counts requests whose key was already hot, `misses` counts first observations of a key, and `cache_objects{tier="l0"}` is the current bounded index population.
 

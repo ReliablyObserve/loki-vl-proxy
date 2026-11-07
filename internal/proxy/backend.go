@@ -692,6 +692,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 		err = p.sanitizeUpstreamError(err)
 		mappedStatus := upstreamErrorStatus(ctx, err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
+		p.observeUpstreamDone(ctx, path, params, mappedStatus, "error", 0, duration)
 		if shouldRecordBreakerFailure(ctx, err) {
 			p.breaker.RecordFailure()
 		}
@@ -701,13 +702,14 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		_ = resp.Body.Close()
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
+		p.observeUpstreamDone(ctx, path, params, http.StatusBadGateway, "error", 0, duration)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	resp.Body = p.guardBackendBody(ctx, resp.Body, path, params, start)
-	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, start)
+	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, resp.StatusCode, start)
 	return resp, nil
 }
 
@@ -792,16 +794,18 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 		err = p.sanitizeUpstreamError(err)
 		mappedStatus := upstreamErrorStatus(ctx, err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
+		p.observeUpstreamDone(ctx, path, params, mappedStatus, "error", 0, duration)
 		return nil, err
 	}
 	p.observeBackendVersionFromHeaders(resp.Header)
 	if err := decodeCompressedHTTPResponse(resp, p.decodedBodyLimit()); err != nil {
 		_ = resp.Body.Close()
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
+		p.observeUpstreamDone(ctx, path, params, http.StatusBadGateway, "error", 0, duration)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
-	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, start)
+	resp.Body = p.observeBackendBody(ctx, resp.Body, path, params, resp.StatusCode, start)
 	if stripUnwrapCounter != nil {
 		if err := p.unwrapStripResponse(resp, stripUnwrapCounter); err != nil {
 			return nil, err

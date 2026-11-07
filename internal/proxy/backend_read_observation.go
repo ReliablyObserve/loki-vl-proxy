@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-func (p *Proxy) observeBackendBody(ctx context.Context, body io.ReadCloser, path string, params url.Values, start time.Time) io.ReadCloser {
+func (p *Proxy) observeBackendBody(ctx context.Context, body io.ReadCloser, path string, params url.Values, status int, start time.Time) io.ReadCloser {
 	if body == nil {
 		return nil
 	}
-	g := &backendReadObservation{ReadCloser: body, p: p, ctx: ctx, path: path, start: start}
+	g := &backendReadObservation{ReadCloser: body, p: p, ctx: ctx, path: path, params: params, status: status, start: start}
 	from, okFrom := parseLokiTimeToUnixNano(params.Get("start"))
 	to, okTo := parseLokiTimeToUnixNano(params.Get("end"))
 	if okFrom && okTo && to >= from {
@@ -31,6 +31,8 @@ type backendReadObservation struct {
 	p           *Proxy
 	ctx         context.Context
 	path        string
+	params      url.Values
+	status      int
 	start       time.Time
 	spanSeconds float64
 	hasSpan     bool
@@ -84,6 +86,7 @@ func (g *backendReadObservation) Close() error {
 		}
 		g.p.metrics.RecordBackendReadBytes(kind, g.read.Load())
 		g.p.observeInternalOperation(g.ctx, "backend_body_read", outcome, elapsed)
+		g.p.observeUpstreamDone(g.ctx, g.path, g.params, g.status, outcome, g.read.Load(), elapsed)
 		if g.p.log.Enabled(g.ctx, level) {
 			attrs := []any{"backend.route", g.path, "outcome", outcome, "decoded_bytes", g.read.Load(), "elapsed_seconds", elapsed.Seconds(), "eof_observed", g.eof.Load()}
 			if g.hasSpan {
