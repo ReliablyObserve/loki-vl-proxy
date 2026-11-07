@@ -1,6 +1,7 @@
 package logql
 
 import (
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -26,6 +27,45 @@ type LabelFilterExpr struct {
 	// Leaf is the text of a single filter (`status>=500`) when Op is
 	// LabelFilterLeaf.
 	Leaf string
+	// Name, Cmp, Value and Kind are the parts of that filter (`status`, `>=`,
+	// `500`, a number), set on a leaf only. Value is a string literal without its
+	// quotes and unescaped as the LogQL scanner does, the pattern of an
+	// ip("...") filter likewise, and the literal text of a number, a duration or
+	// a bytes size. Kind is LabelFilterValueNone, and Value empty, when a string
+	// literal is not valid (the stage is still accepted, as its Leaf text is).
+	Name  string
+	Cmp   string
+	Value string
+	Kind  LabelFilterValueKind
+}
+
+// LabelFilterValueKind is the kind of value a label filter compares a label to.
+type LabelFilterValueKind int
+
+// The kinds of label filter values, named like Loki's lexer tokens.
+const (
+	LabelFilterValueNone LabelFilterValueKind = iota
+	LabelFilterValueString
+	LabelFilterValueNumber
+	LabelFilterValueDuration
+	LabelFilterValueBytes
+	LabelFilterValueIP
+)
+
+func (k LabelFilterValueKind) String() string {
+	switch k {
+	case LabelFilterValueString:
+		return "STRING"
+	case LabelFilterValueNumber:
+		return "NUMBER"
+	case LabelFilterValueDuration:
+		return "DURATION"
+	case LabelFilterValueBytes:
+		return "BYTES"
+	case LabelFilterValueIP:
+		return "IP"
+	}
+	return ""
 }
 
 // LabelFilterOp is the kind of a LabelFilterExpr node.
@@ -311,7 +351,7 @@ func (p *lfParser) parseOperand(first bool) (*LabelFilterExpr, *LabelFilterSynta
 // a duration or a bytes size for the comparison operators and ==, and
 // ip("...") for = and !=.
 func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
-	start := p.tok.start
+	start, name := p.tok.start, p.tok.text
 	p.next()
 	if p.tok.kind != lfOp {
 		return nil, p.unexpected("")
@@ -325,6 +365,7 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 		return nil, err
 	}
 	p.next()
+	value := p.tok.text
 	kind := "" // what the value is: STRING, NUMBER, DURATION, BYTES, IP, IDENTIFIER
 	switch p.tok.kind {
 	case lfString:
@@ -361,13 +402,42 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 		if p.tok.kind != lfString {
 			return nil, p.unexpected("STRING")
 		}
+		value = p.tok.text
 		p.next()
 		if p.tok.kind != lfRParen {
 			return nil, p.unexpected(")")
 		}
 		p.next()
 	}
-	return &LabelFilterExpr{Leaf: strings.TrimSpace(p.src[start:p.tokenEnd()])}, nil
+	leaf := &LabelFilterExpr{Leaf: strings.TrimSpace(p.src[start:p.tokenEnd()]), Name: name, Cmp: op, Value: value}
+	switch kind {
+	case "STRING", "IP":
+		var ok bool
+		if leaf.Value, ok = unquoteLabelFilterString(value); ok {
+			leaf.Kind = LabelFilterValueString
+			if kind == "IP" {
+				leaf.Kind = LabelFilterValueIP
+			}
+		}
+	case "NUMBER":
+		leaf.Kind = LabelFilterValueNumber
+	case "DURATION":
+		leaf.Kind = LabelFilterValueDuration
+	case "BYTES":
+		leaf.Kind = LabelFilterValueBytes
+	}
+	return leaf, nil
+}
+
+// unquoteLabelFilterString is the value of a string literal the way the LogQL
+// scanner reads it: the text of a back-quoted literal as it is, a double-quoted
+// one unescaped, which fails for an invalid escape or invalid UTF-8.
+func unquoteLabelFilterString(literal string) (string, bool) {
+	if literal[0] == '`' {
+		return literal[1 : len(literal)-1], true
+	}
+	value, err := strconv.Unquote(literal)
+	return value, err == nil && utf8.ValidString(literal)
 }
 
 // tokenEnd is the end of the previous token: the text read before the current

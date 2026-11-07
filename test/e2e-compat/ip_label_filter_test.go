@@ -122,3 +122,86 @@ func TestCompat_IPLabelFilterAbsentLabel(t *testing.T) {
 		}
 	}
 }
+
+// TestCompat_IPLabelFilterJSONMetric: an ip() label filter after | json in a
+// metric query counts the lines Loki counts, on query and query_range,
+// ungrouped and grouped. The fixture is one stream of JSON lines ingested alike
+// into Loki and VictoriaLogs: addresses in and out of 10.2.0.0/16 and a line
+// without the key. A line the JSON parser rejects is left out: Loki's ip()
+// filter keeps it (semantics/ip-filter-keeps-parser-error-lines).
+// conformance: semantics/ip-filter-json-stats-pushdown, loki_api_v1_query_range, loki_api_v1_query
+func TestCompat_IPLabelFilterJSONMetric(t *testing.T) {
+	probe := fmt.Sprintf("ip-json-%d", time.Now().UnixNano())
+	stamp := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	lines := []string{
+		`{"method":"GET","ip":"10.2.1.1"}`,
+		`{"method":"POST","ip":"10.2.200.7"}`,
+		`{"method":"GET","ip":"10.3.0.1"}`,
+		`{"method":"GET"}`,
+		`{"method":"PUT","ip":"10.2.0.9"}`,
+		`{"method":"GET","ip":"192.168.0.1"}`,
+	}
+	var vlRows []string
+	var values [][]string
+	for i, line := range lines {
+		ts := stamp.Add(time.Duration(i) * time.Second)
+		row, _ := json.Marshal(map[string]string{"_time": ts.UTC().Format(time.RFC3339Nano), "_msg": line, "app": "ip-json", "probe": probe})
+		vlRows = append(vlRows, string(row))
+		values = append(values, []string{strconv.FormatInt(ts.UnixNano(), 10), line})
+	}
+	status, body := hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=app,probe",
+		strings.Join(vlRows, "\n")+"\n", map[string]string{"Content-Type": "application/stream+json"})
+	if status != http.StatusOK {
+		t.Fatalf("VictoriaLogs ingest: %d %s", status, body)
+	}
+	push, _ := json.Marshal(map[string]any{"streams": []any{map[string]any{
+		"stream": map[string]string{"app": "ip-json", "probe": probe}, "values": values,
+	}}})
+	status, body = hardeningRequest(t, http.MethodPost, lokiURL+"/loki/api/v1/push", string(push), map[string]string{"Content-Type": "application/json"})
+	if status != http.StatusNoContent {
+		t.Fatalf("Loki ingest: %d %s", status, body)
+	}
+	forceVLFlush(t)
+	headers := map[string]string{"X-Scope-OrgID": "0"}
+	waitForLokiMetricDataSelector(t, fmt.Sprintf(`{probe=%q}`, probe))
+	at := strconv.FormatInt(stamp.Add(time.Minute).UnixNano(), 10)
+	for _, tc := range []struct {
+		expr string
+		want string // Loki's total over the fixture
+	}{
+		{`sum(count_over_time({probe=%q} | json | ip=ip("10.2.0.0/16") [5m]))`, "3"},
+		{`sum(count_over_time({probe=%q} | json | ip!=ip("10.2.0.0/16") [5m]))`, "2"},
+		{`sum(count_over_time({probe=%q} | json | ip=ip("10.2.0.0-10.3.255.255") [5m]))`, "4"},
+		{`sum by (method) (count_over_time({probe=%q} | json | ip=ip("10.2.0.0/16") [5m]))`, ""},
+	} {
+		query := fmt.Sprintf(tc.expr, probe)
+		instant := url.Values{"query": {query}, "time": {at}}
+		ls, lb, lp := doJSONGET(t, lokiURL+"/loki/api/v1/query?"+instant.Encode(), headers)
+		ps, pb, pp := doJSONGET(t, proxyURL+"/loki/api/v1/query?"+instant.Encode(), headers)
+		if ls != http.StatusOK || ps != http.StatusOK {
+			t.Fatalf("%s: Loki=%d %s proxy=%d %s", query, ls, lb, ps, pb)
+		}
+		lokiResult := extractArray(extractMap(lp, "data"), "result")
+		if len(lokiResult) == 0 {
+			t.Fatalf("%s: Loki answered no sample: %s", query, lb)
+		}
+		if tc.want != "" {
+			if got := lokiResult[0].(map[string]interface{})["value"].([]interface{})[1]; got != tc.want {
+				t.Fatalf("%s: Loki answered %v, the fixture holds %s: %s", query, got, tc.want, lb)
+			}
+		}
+		if !reflect.DeepEqual(extractArray(extractMap(pp, "data"), "result"), lokiResult) {
+			t.Errorf("instant %s:\nproxy %s\n Loki %s", query, pb, lb)
+		}
+		rng := url.Values{"query": {query}, "start": {strconv.FormatInt(stamp.Add(-time.Minute).Unix(), 10)},
+			"end": {strconv.FormatInt(stamp.Add(time.Minute).Unix(), 10)}, "step": {"15"}}
+		ls, lb, lp = queryRangeGET(t, lokiURL, rng, headers)
+		ps, pb, pp = queryRangeGET(t, proxyURL, rng, headers)
+		if ls != http.StatusOK || ps != http.StatusOK {
+			t.Fatalf("range %s: Loki=%d %s proxy=%d %s", query, ls, lb, ps, pb)
+		}
+		if l := extractArray(extractMap(lp, "data"), "result"); len(l) == 0 || !reflect.DeepEqual(extractArray(extractMap(pp, "data"), "result"), l) {
+			t.Errorf("range %s:\nproxy %s\n Loki %s", query, pb, lb)
+		}
+	}
+}

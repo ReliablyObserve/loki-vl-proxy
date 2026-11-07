@@ -157,4 +157,5 @@ newest daily run did not re-measure (listed apart in performance.md).
 | `severity-detected-level-derivation` | 1 | 0.11s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.04s | 0.01s | 0.09s | — |
 | `severity/detected-level-filter-json-level` | 1 | 0.11s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.04s | 0.01s | 0.09s | — |
 | `semantics/pattern-line-filter-anchoring` | 1 | 0.18s (A5 drilldown exclude, volume by detected_level, 24h) | 0.13s | 0.01s | 0.00s | — |
+| `semantics/ip-filter-json-stats-pushdown` | 1 | 0.25s (IP5 count, json ip=ip(range), 24h) | 0.20s | 0.03s | 0.01s | — |
 | `semantics/ip-label-filter-missing-label` | 1 | 0.25s (IP5 count, json ip=ip(range), 24h) | 0.20s | 0.03s | 0.01s | — |

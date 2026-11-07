@@ -1285,8 +1285,9 @@ func filtersOnLevel(filters []translator.DropCondition) bool {
 }
 
 // logsQLLabelFilter renders a Loki string label filter as a LogsQL filter pipe
-// with the same semantics: exact comparison, and the regexp Loki's label
-// filter matches (translator.LabelFilterRegexpFieldFilter).
+// with the same semantics: exact comparison, the regexp Loki's label filter
+// matches (translator.LabelFilterRegexpFieldFilter) and the address filter of an
+// ip() comparison (translator.DropCondition.IPFilter).
 func logsQLLabelFilter(filter translator.DropCondition) string {
 	return " | filter " + logsQLLabelCondition(filter)
 }
@@ -1294,6 +1295,9 @@ func logsQLLabelFilter(filter translator.DropCondition) string {
 // logsQLLabelCondition is the condition of logsQLLabelFilter.
 func logsQLLabelCondition(filter translator.DropCondition) string {
 	field := quoteLogsQLIdent(filter.Field)
+	if ipFilter, ok := filter.IPFilter(field); ok {
+		return ipFilter
+	}
 	switch filter.Op {
 	case "=":
 		return field + ":=" + logsql.QuoteValue(filter.Value)
@@ -2851,15 +2855,9 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 		out.parser = out.logfmt || (s.Type == logqlpkg.ParserJSON && s.Param == "")
 		return out, out.parser
 	case *logqlpkg.LabelFilterStage:
-		parsed, err := logqlpkg.ParseLogQuery("{" + s.Raw + "}")
-		if err != nil || len(parsed.Selector.Matchers) != 1 {
-			return out, false
-		}
-		m := parsed.Selector.Matchers[0]
-		op := []string{"=", "!=", "=~", "!~"}[int(m.Op)]
-		condition, err := translator.NewLabelFilterCondition(m.Name, op, m.Value)
+		condition, ok := compileOrderedJSONLabelFilter(s)
 		out.filter = &condition
-		return out, err == nil
+		return out, ok
 	case *logqlpkg.LineFilterStage:
 		var err error
 		out.line, err = orderedJSONLineFilter(s)
@@ -2871,6 +2869,34 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 	default:
 		return out, false
 	}
+}
+
+// compileOrderedJSONLabelFilter is the condition of a label filter stage the
+// plan evaluates: one string comparison (=, !=, =~, !~) or one ip("...")
+// comparison (=, !=). A group, a compound expression and a numeric, duration or
+// bytes comparison are not (ok is false), nor is an ip() filter on
+// detected_level, which the level pipes compare as a stored word.
+func compileOrderedJSONLabelFilter(stage *logqlpkg.LabelFilterStage) (condition translator.DropCondition, ok bool) {
+	expr := stage.Expr
+	if expr == nil {
+		var err *logqlpkg.LabelFilterSyntaxError
+		if expr, err = logqlpkg.ParseLabelFilterExpr(stage.Raw); err != nil {
+			return condition, false
+		}
+	}
+	if !expr.IsLeaf() || strings.HasPrefix(stage.Raw, "(") {
+		return condition, false
+	}
+	var err error
+	switch {
+	case expr.Kind == logqlpkg.LabelFilterValueString && slices.Contains([]string{"=", "!=", "=~", "!~"}, expr.Cmp):
+		condition, err = translator.NewLabelFilterCondition(expr.Name, expr.Cmp, expr.Value)
+	case expr.Kind == logqlpkg.LabelFilterValueIP && (expr.Cmp == "=" || expr.Cmp == "!=") && expr.Name != detectedLevelLabel:
+		condition, err = translator.NewIPLabelFilterCondition(expr.Name, expr.Value, expr.Cmp == "!=")
+	default:
+		return condition, false
+	}
+	return condition, err == nil
 }
 
 // parseLogfmt extracts the line's logfmt pairs the way Loki's decoder does, so

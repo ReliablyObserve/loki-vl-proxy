@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 106 items are locked; 5 carry an effort exception.
+29 of 107 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -129,7 +129,7 @@ Rows the newest daily run measured; rows it does not re-measure are listed under
 | shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |
 |---|---|---|---|---|---|---|
 | X1 json filter level_extracted, by level | 6h | 1.20s | 0.87s | 0.05s | 0.05s | `parser-error-and-label-collision`, `quality/json-label-probe-gates`, `semantics/extracted-suffix-collision`, `semantics/json-extracted-metric-pushdown` |
-| IP5 count, json ip=ip(range) | 24h | 0.25s | 0.20s | 0.03s | 0.01s | `semantics/ip-label-filter-missing-label` |
+| IP5 count, json ip=ip(range) | 24h | 0.25s | 0.20s | 0.03s | 0.01s | `semantics/ip-filter-json-stats-pushdown`, `semantics/ip-label-filter-missing-label` |
 | A explore volume, 2 filters, drop | 24h | 4.56s | 3.32s | 0.03s | 0.08s | `explore-logs-volume-json`, `parser-error-and-label-collision`, `semantics/json-filter-pushdown-translated-label`, `semantics/json-filter-pushdown-underscore-label` |
 | F field breakdown service_version (explore) | 1h | 0.29s | 0.19s | 0.03s | 0.08s | `parsed-label-series-identity`, `semantics/json-filter-pushdown-underscore-label`, `semantics/json-label-spelling-probe` |
 | F field breakdown service_version (explore) | 24h | 4.66s | 3.58s | 0.04s | 0.08s | `parsed-label-series-identity`, `semantics/json-filter-pushdown-underscore-label`, `semantics/json-label-spelling-probe` |
@@ -234,6 +234,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/detected-fields-no-logfmt-token-fields` | 1 × 3 ranges | 3 same | worst 0.12s / 0.00s (24h) | 0.18s † / 0.11s | differs | not locked |
 | `semantics/detected-level-filter-before-parser-pushdown` | 3 × 3 ranges | 9 same | worst 0.35s / 0.03s (24h) | 2.95s / 0.03s | same | not locked |
 | `semantics/extracted-suffix-collision` | 16 × 5 ranges | 36 same | worst 4.39s / 0.04s (24h) | 4.13s / 0.05s | same; 3 slower than Loki cold | not locked |
+| `semantics/ip-filter-json-stats-pushdown` | 2 × 3 ranges | 6 same | worst 0.46s / 0.03s (24h) | 0.75s / 0.01s | differs; 1 slower than Loki cold | not locked |
 | `semantics/ip-label-filter-missing-label` | 5 × 3 ranges | 15 same | worst 0.46s / 0.03s (24h) | 0.75s / 0.01s | differs; 1 slower than Loki cold | not locked |
 | `semantics/json-detected-level-error-split` | 4 × 3 ranges | 12 same | worst 1.88s / 0.02s (24h) | 4.35s / 0.06s | same | not locked |
 | `semantics/json-error-filter-metric-split-pushdown` | 5 × 3 ranges | 15 same | worst 1.88s / 0.04s (24h) | 3.82s / 0.05s | same | locked 2026-10-27 |

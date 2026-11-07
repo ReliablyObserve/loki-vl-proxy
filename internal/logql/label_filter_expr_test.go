@@ -109,3 +109,123 @@ func TestValidateLogQL_LabelFilterExpressionErrorsInMetrics(t *testing.T) {
 		}
 	}
 }
+
+// Each leaf of a parsed label filter carries its label, comparison, value and
+// the kind of that value, whatever the quoting or spacing of the source.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestParseLabelFilterExpr_TypedLeaves(t *testing.T) {
+	type leaf struct {
+		name, cmp, value string
+		kind             LabelFilterValueKind
+	}
+	for _, tc := range []struct {
+		text string
+		want []leaf // the leaves in source order
+	}{
+		{`status>=500`, []leaf{{"status", ">=", "500", LabelFilterValueNumber}}},
+		{`ratio < 2.5`, []leaf{{"ratio", "<", "2.5", LabelFilterValueNumber}}},
+		{`size == 10KB`, []leaf{{"size", "==", "10KB", LabelFilterValueBytes}}},
+		{`latency>250ms`, []leaf{{"latency", ">", "250ms", LabelFilterValueDuration}}},
+		{`code=5`, []leaf{{"code", "=", "5", LabelFilterValueNumber}}},
+		{`method="GET"`, []leaf{{"method", "=", "GET", LabelFilterValueString}}},
+		{`method!="GET"`, []leaf{{"method", "!=", "GET", LabelFilterValueString}}},
+		{`path=~"/api/.+"`, []leaf{{"path", "=~", "/api/.+", LabelFilterValueString}}},
+		{`path!~"^/health"`, []leaf{{"path", "!~", "^/health", LabelFilterValueString}}},
+		{`a=""`, []leaf{{"a", "=", "", LabelFilterValueString}}},
+		// Both quote styles: an escape is read in "..." and kept in `...`.
+		{`msg="a\"b\\c\n"`, []leaf{{"msg", "=", "a\"b\\c\n", LabelFilterValueString}}},
+		{"msg=`a\\\"b\\n`", []leaf{{"msg", "=", `a\"b\n`, LabelFilterValueString}}},
+		{`msg="é\x41"`, []leaf{{"msg", "=", "éA", LabelFilterValueString}}},
+		{`msg=~"a b, (c) or d"`, []leaf{{"msg", "=~", "a b, (c) or d", LabelFilterValueString}}},
+		// An invalid escape is accepted like the stage text, with no value kind.
+		{`msg="\q"`, []leaf{{"msg", "=", "", LabelFilterValueNone}}},
+		{`ip=ip("10.2.0.0/16")`, []leaf{{"ip", "=", "10.2.0.0/16", LabelFilterValueIP}}},
+		{`ip!=ip("1.2.3.4-1.2.3.9")`, []leaf{{"ip", "!=", "1.2.3.4-1.2.3.9", LabelFilterValueIP}}},
+		{"ip = IP ( `2001:db8::/32` )", []leaf{{"ip", "=", "2001:db8::/32", LabelFilterValueIP}}},
+		{`ip = ip ( "1.2.3.4" )`, []leaf{{"ip", "=", "1.2.3.4", LabelFilterValueIP}}},
+		// Compound expressions: every leaf is typed.
+		{`status>=500, method="GET"`, []leaf{{"status", ">=", "500", LabelFilterValueNumber}, {"method", "=", "GET", LabelFilterValueString}}},
+		{`(a="1" or b!~"x") and c<5s`, []leaf{{"a", "=", "1", LabelFilterValueString}, {"b", "!~", "x", LabelFilterValueString}, {"c", "<", "5s", LabelFilterValueDuration}}},
+		{`a=ip("1.2.3.4") or (b=ip("::1") and c="x")`, []leaf{{"a", "=", "1.2.3.4", LabelFilterValueIP}, {"b", "=", "::1", LabelFilterValueIP}, {"c", "=", "x", LabelFilterValueString}}},
+	} {
+		expr, err := ParseLabelFilterExpr(tc.text)
+		if err != nil {
+			t.Errorf("%s: %v", tc.text, err)
+			continue
+		}
+		var got []leaf
+		var walk func(*LabelFilterExpr)
+		walk = func(e *LabelFilterExpr) {
+			if !e.IsLeaf() {
+				if e.Name != "" || e.Cmp != "" || e.Value != "" || e.Kind != LabelFilterValueNone {
+					t.Errorf("%s: a binary node carries leaf fields: %+v", tc.text, e)
+				}
+				walk(e.Left)
+				walk(e.Right)
+				return
+			}
+			got = append(got, leaf{e.Name, e.Cmp, e.Value, e.Kind})
+		}
+		walk(expr)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: got %+v, want %+v", tc.text, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: leaf %d got %+v, want %+v", tc.text, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestLabelFilterValueKind_String(t *testing.T) {
+	for kind, want := range map[LabelFilterValueKind]string{
+		LabelFilterValueNone: "", LabelFilterValueString: "STRING", LabelFilterValueNumber: "NUMBER",
+		LabelFilterValueDuration: "DURATION", LabelFilterValueBytes: "BYTES", LabelFilterValueIP: "IP",
+	} {
+		if got := kind.String(); got != want {
+			t.Errorf("kind %d = %q, want %q", int(kind), got, want)
+		}
+	}
+}
+
+// The stage keeps its parsed filter next to the raw text, which and whose
+// rendering do not change.
+// conformance: semantics/ip-filter-json-stats-pushdown
+func TestParseLogQuery_LabelFilterStageKeepsExpr(t *testing.T) {
+	for _, tc := range []struct{ query, stage string }{
+		{`{a="b"} | json | ip=ip("10.2.0.0/16")`, `| ip=ip("10.2.0.0/16")`},
+		{`{a="b"} | json | ip != ip ( "1.2.3.4" )`, `| ip!=ip("1.2.3.4")`},
+		{`{a="b"} | json | status>=500, method="GET"`, `| status>=500, method="GET"`},
+		{`{a="b"} | (a="1" or b="2")`, `| (a="1" or b="2")`},
+	} {
+		lq, err := ParseLogQuery(tc.query)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.query, err)
+		}
+		stage, ok := lq.Pipeline[len(lq.Pipeline)-1].(*LabelFilterStage)
+		if !ok {
+			t.Fatalf("%s: last stage is %T", tc.query, lq.Pipeline[len(lq.Pipeline)-1])
+		}
+		if stage.Expr == nil {
+			t.Errorf("%s: no parsed filter", tc.query)
+		}
+		if got := stage.String(); got != tc.stage {
+			t.Errorf("%s: stage prints %q, want %q", tc.query, got, tc.stage)
+		}
+		again, err := ParseLogQuery(lq.String())
+		if err != nil || again.String() != lq.String() {
+			t.Errorf("%s: round trip %q (%v)", tc.query, again, err)
+		}
+	}
+	// A stage that is not a filter Loki accepts keeps no parsed filter.
+	lq, err := ParseLogQuery(`{a="b"} | foo`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, ok := lq.Pipeline[0].(*LabelFilterStage)
+	if !ok || stage.Expr != nil || stage.String() != "| foo" {
+		t.Errorf("an opaque stage is %#v", lq.Pipeline[0])
+	}
+}

@@ -115,10 +115,14 @@ type DropCondition struct {
 	Op    string // "=", "!=", "=~", "!~"
 	Value string
 	re    *regexp.Regexp // non-nil for =~ and !~
+	ip    *ipCondition   // non-nil for a label filter `field = ip("...")` (NewIPLabelFilterCondition)
 }
 
 // Matches reports whether val satisfies the drop condition.
 func (dc DropCondition) Matches(val string) bool {
+	if dc.ip != nil {
+		return dc.ip.matches(val, dc.Op == "!=")
+	}
 	switch dc.Op {
 	case "=":
 		return val == dc.Value

@@ -9,13 +9,62 @@ generated:
     - internal/logql/parser.go
 
 semantics: |
-  TODO: Loki's exact semantics, including how it treats missing labels,
-  parse errors, ordering and empty input.
+  `label = ip("pattern")` and `label != ip("pattern")` (and `|= ip(...)` /
+  `!= ip(...)` on the line) match an address Loki reads out of the value
+  against one address, a CIDR or a same-family range. Observed against Loki
+  3.7.9 (registry cases below): a line without the label is dropped under both
+  operators; a whole-address value is in or out of the pattern; an address
+  inside other text is read out of it (semantics/ip-label-filter-embedded-address);
+  a line its parser rejected keeps going with `__error__` under both operators
+  (semantics/ip-filter-keeps-parser-error-lines), so a metric over it answers
+  Loki's pipeline error unless `__error__=""` drops it.
 victorialogs: |
-  TODO: the native LogsQL construct used, or the proxy-side
-  transformation and the VictoriaLogs limitation that forces it.
-consumers: []   # explore, drilldown, datasource, api
-cases: []       # case ids proving the semantics match
+  `ipv4_range(lo, hi)` / `ipv6_range(lo, hi)` on the field, guarded so only
+  values Loki reads as that same whole address match (digits-and-dots IPv4
+  without leading zeros; IPv6 starting with a group), plus `field:*` for the
+  `!=` presence (internal/translator/ip_label_filter.go ipLabelFilter). Log
+  queries and the `| json` / `| logfmt` metric stats pushdown emit the same
+  filter; the metric plan's row evaluator matches it with a Go mirror of that
+  LogsQL (DropCondition.Matches), so rows, pushdown and logs agree.
+consumers: [explore, datasource]
+cases:
+  - semantics/ip-label-filter-missing-label
+  - semantics/ip-filter-json-stats-pushdown
+  - semantics/ip-filter-keeps-parser-error-lines
+decisions:
+  - id: ip-filter-typed-in-metric-plans
+    chosen: |
+      Label filter stages carry a typed expression (name, operator, value, value
+      kind) from the parser; the | json / | logfmt metric plan reads it, renders
+      an ip() leaf with the translator's ipLabelFilter in the stats pushdown and
+      matches it on rows with a Go mirror of that same LogsQL.
+    over: [declining ip() filters to the native route (instant queries then read every selected row), moving the test reference of Loki's address scan into the binary (Loki-derived code)]
+    why: |
+      The plan re-parsed the stage text as a stream selector, which lost that the
+      value was ip("..."), and compared the label with the text ip(10.2.0.0/16):
+      every ip() metric after a parser answered no series. Declining kept the
+      answers right but turned instant queries into raw-row reads, which the
+      metric rule forbids; a mirror of the LogsQL keeps one definition for logs,
+      pushdown and rows, proven equal by a differential against the VictoriaLogs
+      filter emulation.
+    evidence: 'compose stack, Loki 3.7.9, VictoriaLogs v1.53.0, 2026-11-07: 7 shapes x 1h/24h query_range equal to Loki; instant [1h] equal; instant [24h] 251,728 vs Loki 251,677 (main: empty) with the controls off by the same stack data gap; zero raw-row reads'
+    code: [internal/logql/label_filter_expr.go, internal/logql/parser.go, internal/translator/ip_label_filter.go, internal/translator/label_matcher_regexp.go, internal/proxy/ordered_json_metric.go]
+    tests: [TestCompat_IPLabelFilterJSONMetric, TestIPLabelFilterCondition_MatchesLogsQL, TestIPLabelFilterCondition_TextForm, FuzzIPLabelFilterConditionMatchesLogsQL, TestCompileOrderedJSONLabelFilterShapes]
+    history:
+      - date: '2026-11-07'
+        what: '`sum(count_over_time({service_name="api-gateway"} | json | ip=ip("10.2.0.0/16") [1m]))` and the A/B shapes IP4/IP5'
+        measured: 'Loki 10,819 lines over 1h, proxy no series, on query and query_range, since #1105 (also at #1145 and on main)'
+        cause: 'the ordered-JSON metric plan rebuilt the filter from the stage text and compared strings'
+        effect: 'parity run 2026-11-07 clusters 4ebfd2c5 and e1528358; the perf rows IP4/IP5 timed an empty answer'
+        fixed_by: 'fix/typed-label-filter-ip'
+        after: 'equal to Loki point for point; stats pushdown with ipv4_range, no raw-row read; cached v1 answers fenced by the ip-label-filter-v2 response key'
+    quality: |
+      ip() metrics after | json or | logfmt equal Loki on query and query_range,
+      ungrouped and grouped, = and != and ranges; the row evaluator, the pushdown
+      and the log path answer alike (differential, edge table, fuzz).
+    performance:
+      tracked: ['ip-label-filter IP4, IP5']
+      bound: 'perf block max_ratio 2.0, target 1.0; green at Loki speed or below'
 victorialogs_candidates:
   - id: pipe-filter
     since: v1.40.0

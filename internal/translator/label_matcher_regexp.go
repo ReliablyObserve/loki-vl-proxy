@@ -52,6 +52,35 @@ func NewLabelFilterCondition(field, op, value string) (DropCondition, error) {
 	return dc, nil
 }
 
+// NewIPLabelFilterCondition is the DropCondition of a label filter
+// `| field = ip("pattern")` (negate: `!=`). Its Value is that LogQL text, so
+// code that tells a condition from the empty-value ones keeps working; Matches
+// answers what the LogsQL of IPFilter answers on VictoriaLogs for the value, so
+// the rows a plan reads itself, its stats pushdown and the log query agree.
+func NewIPLabelFilterCondition(field, pattern string, negate bool) (DropCondition, error) {
+	op := "="
+	if negate {
+		op = "!="
+	}
+	dc := DropCondition{Field: field, Op: op, Value: "ip(" + strconv.Quote(pattern) + ")"}
+	ip, ok := newIPCondition(pattern)
+	if !ok {
+		return dc, fmt.Errorf("invalid ip pattern %q in label filter", pattern)
+	}
+	dc.ip = ip
+	return dc, nil
+}
+
+// IPFilter is the LogsQL filter of an ip() label condition on field (the
+// label's name, quoted the way LogsQL needs it); ok is false for any other
+// condition.
+func (dc DropCondition) IPFilter(field string) (filter string, ok bool) {
+	if dc.ip == nil {
+		return "", false
+	}
+	return ipLabelFilter(field, dc.ip.raw, dc.Op == "!=")
+}
+
 // wholeValueRegexpFilter selects a row when the field's whole value matches
 // pattern, as ^(?s:pattern)$ when dotNL, else as ^(?:pattern)$. A missing
 // field reads as the empty value, as an absent Loki label does.

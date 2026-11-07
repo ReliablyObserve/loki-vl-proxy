@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix: an `ip()` label filter after `| json` or `| logfmt` in a metric query
+  counts the lines Loki counts. Before, `sum(count_over_time({app="api"} |
+  json | ip=ip("10.2.0.0/16") [1m]))` and every such metric answered no series
+  on `query` and `query_range`: the metric plan rebuilt the filter from its
+  text and compared the label with the string `ip(10.2.0.0/16)`. Label filter
+  stages now carry their parsed expression (name, operator, value and its
+  kind), the plan sends the same address filter log queries use to
+  VictoriaLogs (`ipv4_range`, no raw-row read), and answers cached before this
+  release for queries with `ip()` are not served.
+
 ### Changed
 
 - The LogQL and LogsQL syntax packages (`internal/logql`, `internal/logsql`)
