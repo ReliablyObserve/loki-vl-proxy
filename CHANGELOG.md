@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The response cache keys' version tags are built by one function for every
+  key (compat edge, inner query_range, log windows) instead of three copies;
+  every key is byte-identical to before. No behaviour change.
+
 ### Added
 
 - feat(observability): every request's query flow in its log line and in
@@ -22,11 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `slow_upstream_request` lines with example lines. The parse count is a lower
   bound until queries are parsed once per request.
 
-### Changed
+## [2.91.0] - 2026-11-07
 
-- The response cache keys' version tags are built by one function for every
-  key (compat edge, inner query_range, log windows) instead of three copies;
-  every key is byte-identical to before. No behaviour change.
+### Changed
 
 - Range and offset durations of a metric query are parsed once with the
   query (`RangeDuration`, `OffsetDuration`), and the proxy's handlers read
