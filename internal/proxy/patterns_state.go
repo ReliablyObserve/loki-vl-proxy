@@ -31,7 +31,8 @@ const (
 const patternStateBuildWindow = time.Hour
 
 // lokiPatternRetention is how far back Loki's pattern ingester holds patterns (pattern_ingester retain_for,
-// default 3h): the pattern state is built from then, and a range that starts earlier is answered without it.
+// default 3h): the pattern state is built from then, and a range that starts earlier is answered, as Loki answers
+// it, with the samples of the retention alone.
 const lokiPatternRetention = 3 * time.Hour
 
 // patternStateOverlap is how far before the end of what a selector's state read a refresh reads again, so a line
@@ -136,8 +137,10 @@ type patternFoldedCluster struct {
 
 // patternsFromState answers a request from the tenant's pattern state, building the state for the selector from
 // Loki's retention when it has none (if that holds at most maxLines lines) and reading the lines after what it
-// read when the range ends later. answered is false when the range starts before the retention, the state cannot
-// be built within maxLines, or VictoriaLogs fails: the caller answers without the state.
+// read when the range ends later. A range that starts before the retention is answered with the retention's
+// samples alone, as Loki's pattern ingester answers it (it holds no older ones), and one that ends before it with
+// none. answered is false when the state cannot be built within maxLines (or is being built in the background),
+// the range ends in the future, or VictoriaLogs fails: the caller answers without the state.
 func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) ([]patternResultEntry, bool) {
 	store := p.patternState
 	if store == nil {
@@ -145,7 +148,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	}
 	now := store.now()
 	retainFrom := now.Add(-lokiPatternRetention).Truncate(time.Hour).UnixNano()
-	if scope.startNs < retainFrom || scope.endNs > now.Add(time.Minute).UnixNano() {
+	if scope.endNs > now.Add(time.Minute).UnixNano() {
 		return nil, false
 	}
 	ctx := r.Context()
@@ -195,7 +198,14 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	} else {
 		p.observeInternalOperation(ctx, "patterns_state", "hit", 0)
 	}
-	entries := t.answer(s, scope, patternLimit)
+	answered := scope
+	if retained := now.Add(-lokiPatternRetention).UnixNano(); answered.startNs < retained {
+		answered.startNs = retained
+	}
+	var entries []patternResultEntry
+	if answered.startNs < answered.endNs {
+		entries = t.answer(s, answered, patternLimit)
+	}
 	store.age(t, now, now, retainFrom)
 	return entries, true
 }

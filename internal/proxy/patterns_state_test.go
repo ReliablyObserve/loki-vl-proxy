@@ -246,23 +246,28 @@ func TestPatternStateKeepsTenantsApart(t *testing.T) {
 	}
 }
 
-// The state answers only what it can answer as Loki does: a range that starts before Loki's pattern retention,
-// or a selector whose lines over the retention are more than -patterns-exact-max-lines, is answered without it.
+// A range that starts before Loki's pattern retention is answered as Loki answers it, with the samples of the
+// retention alone, and one that ends before it with no pattern; a selector whose lines over the retention are more
+// than -patterns-exact-max-lines is answered without the state.
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns
 func TestPatternStateAnswersOnlyInsideItsBounds(t *testing.T) {
 	vl := &fakeStateVL{}
 	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-30*time.Minute), 100)...)
+	vl.add(stateLines("api/a", "info", "order %d shipped to berlin", stateNow.Add(-5*time.Hour), 100)...)
 	now := stateNow
 	p := newStateProxy(t, vl, &now, 1<<30)
-	scope, ok := p.patternScope(`{app="api"}`, strconv.FormatInt(now.Add(-5*time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
+	if got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-6*time.Hour), now); got != "info order <_> shipped to berlin=100" {
+		t.Fatalf("a 6h range answers %q, want the retention's 100 lines alone, as Loki", got)
+	}
+	if got, _ := statePatterns(t, p, "", `{app="api"}`, now.Add(-6*time.Hour), now.Add(-4*time.Hour)); got != "" {
+		t.Fatalf("a range before the retention answers %q, want none, as Loki", got)
+	}
+	p = newStateProxy(t, vl, &now, 1<<30)
+	scope, ok := p.patternScope(`{app="api"}`, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10), "")
 	if !ok {
 		t.Fatal("scope")
 	}
-	if _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 100_000, 100); answered {
-		t.Fatal("a range older than the retention was answered from the state")
-	}
-	scope.startNs = now.Add(-time.Hour).UnixNano()
 	if _, answered := p.patternsFromState(httptest.NewRequest(http.MethodGet, "/", nil), scope, 99, 100); answered {
 		t.Fatal("a selector with more lines than the cap was answered from the state")
 	}
