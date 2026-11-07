@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reading is the LogQL parser's own. No behaviour change, except that a range
   longer than about 292 years reads as unusable instead of wrapping around.
 
+## [2.89.0] - 2026-11-07
+
+### Changed
+
 - The proxy reads label filter stages from their parsed expression instead of
   matching their text with regular expressions (detected_fields and Drilldown
   relaxed scans, field exposure, unwrap conversion errors, the `line_format`
