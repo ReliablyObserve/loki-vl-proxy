@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   others, and the holder counts the history of 6h, 12h and 24h ahead every 30
   minutes, so a first request and a refresh read no history. Answers are
   summed by step in slices, sorting only the patterns with at least 30 lines.
+- feat(patterns): `-patterns-scope=selector` (opt-in; the default `stream` is
+  Loki's) mines a selector's `/loki/api/v1/patterns` lines with one miner per
+  level across all its streams, so streams that each hold a few lines (a trace
+  id as a stream label, short-lived pods) show their patterns, where Loki shows
+  none, and a JSON line whose message is under Loki's 4-token minimum is mined
+  as the whole line. Answers are cached under their own key. The compose stack's
+  patterns-autodetect proxy takes it from `PATTERNS_SCOPE` (default `stream`).
+
 - feat(patterns): a pattern state per tenant, as Loki's pattern ingester keeps
   one. A selector's lines over Loki's pattern retention (3h) are read once,
   sorted by stream and time, and each stream's clusters kept with their 10 s

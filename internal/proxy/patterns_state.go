@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -385,6 +386,13 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 	levels := p.newLogRowLevels()
 	// unread is, per stream, the lines at its newest time this read has not met again yet.
 	unread := map[string]map[uint64]int{}
+	// With -patterns-scope=selector the selector's lines are mined by one miner per level, whatever their stream;
+	// the lines read are still tracked per stream, apart from the other selectors' (each mines them itself).
+	selector := ""
+	if p.patternsSelectorScope {
+		selector = patternSelectorStream(scope.filter.String())
+		t.miner.shortWholeLine = true
+	}
 	return p.readPatternCountRows(ctx, patternExactLinesQuery(scope.filter), fromNs, toNs, maxLines, func(v *fj.Value) bool {
 		msg := v.GetStringBytes("_msg")
 		if isVLMissingMsgBytes(msg, levels.defaultMsg) {
@@ -396,6 +404,10 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 		}
 		stream := string(v.GetStringBytes(patternExactStreamField))
 		s.streams[stream] = struct{}{}
+		minedAs := stream
+		if selector != "" {
+			minedAs, stream = selector, selector+stream
+		}
 		newest, seen := t.newest[stream]
 		switch {
 		case seen && timeNs < newest:
@@ -421,11 +433,15 @@ func (p *Proxy) readPatternStateLines(ctx context.Context, t *patternTenantState
 			unread[stream] = map[uint64]int{}
 		}
 		if len(msg) > 0 {
-			t.miner.observeStreamLine(stream, patternLevelFromFJ(v, &levels), string(msg), patternSampleStart(timeNs), 1)
+			t.miner.observeStreamLine(minedAs, patternLevelFromFJ(v, &levels), string(msg), patternSampleStart(timeNs), 1)
 		}
 		return true
 	})
 }
+
+// patternSelectorStream is the miner key of a selector's lines under -patterns-scope=selector: a name no stream
+// has, the selector's filter after a NUL.
+func patternSelectorStream(selector string) string { return "\x00" + selector }
 
 // patternStateTenantKey names a tenant's state: the scope and the identity a request is read with, so tenants
 // and their stream filters never share a state.
@@ -468,12 +484,20 @@ func (st *patternStateStore) tenant(key string) *patternTenantState {
 func (t *patternTenantState) answer(s *patternSelectorState, scope patternQueryScope, patternLimit int) []patternResultEntry {
 	g := newPatternStepGrid(scope)
 	byStream := make(map[string][]*patternClusterer, len(t.miner.miners))
+	selector := patternSelectorStream(scope.filter.String())
 	for mk, c := range t.miner.miners {
-		if _, ok := s.streams[mk.stream]; ok {
+		if _, ok := s.streams[mk.stream]; ok || mk.stream == selector {
 			byStream[mk.stream] = append(byStream[mk.stream], c)
 		}
 	}
+	streams := make([]string, 0, len(s.streams)+1)
 	for stream := range s.streams {
+		streams = append(streams, stream)
+	}
+	if byStream[selector] != nil {
+		streams = append(streams, selector) // -patterns-scope=selector: one miner per level for all the streams
+	}
+	for _, stream := range streams {
 		for _, cluster := range t.folded[stream] {
 			g.add(cluster.level, cluster.pattern, cluster.samples)
 		}
@@ -633,7 +657,8 @@ func (st *patternStateStore) age(t *patternTenantState, now, idleAt time.Time, r
 		byStream[mk.stream] = append(byStream[mk.stream], mk)
 	}
 	for stream, keys := range byStream {
-		if t.newest[stream] >= idleBefore {
+		if t.newest[stream] >= idleBefore || strings.HasPrefix(stream, "\x00") {
+			// A selector's miner (-patterns-scope=selector) stays with its selector; its samples age out below.
 			continue
 		}
 		for _, mk := range keys {
@@ -688,11 +713,7 @@ func (st *patternStateStore) age(t *patternTenantState, now, idleAt time.Time, r
 			t.folded[stream] = kept
 		}
 	}
-	for selector, s := range t.selectors {
-		if s.toNs < retainFromNs && !s.building {
-			delete(t.selectors, selector)
-		}
-	}
+	t.ageSelectors(retainFromNs, idleBefore)
 	t.bytes = t.size()
 
 	st.mu.Lock()
@@ -722,6 +743,30 @@ func (st *patternStateStore) age(t *patternTenantState, now, idleAt time.Time, r
 		t.folded = make(map[string][]patternFoldedCluster)
 		t.selectors = make(map[string]*patternSelectorState)
 		t.bytes = 0
+	}
+}
+
+// ageSelectors drops the selectors whose lines all fell out of the retention, with their miners under
+// -patterns-scope=selector, and a selector's per-stream read marks once the stream went idle.
+func (t *patternTenantState) ageSelectors(retainFromNs, idleBefore int64) {
+	for selector, s := range t.selectors {
+		if s.toNs < retainFromNs && !s.building {
+			delete(t.selectors, selector)
+			sel := patternSelectorStream(selector)
+			for mk := range t.miner.miners {
+				if mk.stream == sel {
+					delete(t.miner.miners, mk)
+				}
+			}
+		}
+	}
+	for key, newest := range t.newest {
+		// A selector's per-stream marks (-patterns-scope=selector) are dropped once the stream went idle: its lines
+		// are mined, and nothing was folded under them.
+		if strings.HasPrefix(key, "\x00") && newest < idleBefore {
+			delete(t.newest, key)
+			delete(t.atNewest, key)
+		}
 	}
 }
 
