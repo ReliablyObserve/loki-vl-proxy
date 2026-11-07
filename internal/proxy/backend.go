@@ -864,8 +864,8 @@ func (p *Proxy) vlGetCoalesced(ctx context.Context, key, path string, params url
 // in-flight, this call joins the in-flight rather than failing immediately.
 func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
 	key += ":scope:" + p.contextScopeFingerprint(ctx)
-	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
-		return p.vlGetInner(ctx, path, params)
+	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, p.breaker.Allow, func(callCtx context.Context) (*http.Response, error) {
+		return p.vlGetInner(callCtx, path, params)
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
 		return 0, nil, fmt.Errorf("circuit breaker open — backend unavailable")
@@ -886,8 +886,8 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 		// answer are the same for every request, which may share the call.
 		key += fmt.Sprintf(":unwrap-check:%p", c)
 	}
-	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
-		return p.vlPostInner(ctx, path, params)
+	status, _, body, err := p.coalescer.DoWithGuardCtx(ctx, key, p.breaker.Allow, func(callCtx context.Context) (*http.Response, error) {
+		return p.vlPostInner(callCtx, path, params)
 	})
 	if errors.Is(err, mw.ErrGuardRejected) {
 		return 0, nil, fmt.Errorf("circuit breaker open — backend unavailable")

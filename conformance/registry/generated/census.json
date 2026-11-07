@@ -828,6 +828,7 @@
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/middleware/coalescer_body_limit_test.go | limits/label-values-response-cap",
+    "internal/middleware/coalescer_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/absent_over_time_differential_test.go | metric-series-identity",
     "internal/proxy/absent_over_time_differential_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/absent_over_time_differential_test.go | window-bounds-and-step-alignment",
@@ -929,6 +930,7 @@
     "internal/proxy/drilldown_breakdown_matrix_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/drilldown_breakdown_matrix_test.go | limits/series-limit-error",
     "internal/proxy/drilldown_breakdown_matrix_test.go | loki_api_v1_query_range",
+    "internal/proxy/drilldown_burst_cancel_test.go | backend-deadlines-and-cancellation",
     "internal/proxy/drilldown_byte_overflow_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/drilldown_byte_overflow_test.go | limits/per-tenant-override",
     "internal/proxy/drilldown_byte_overflow_test.go | operator-configurable-limits",
@@ -1883,7 +1885,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 347,
+      "go": 349,
       "playwright": 1
     },
     "page_kinds": {
