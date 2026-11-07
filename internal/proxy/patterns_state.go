@@ -141,15 +141,18 @@ type patternFoldedCluster struct {
 // samples alone, as Loki's pattern ingester answers it (it holds no older ones), and one that ends before it with
 // none. answered is false when the state cannot be built within maxLines (or is being built in the background),
 // the range ends in the future, or VictoriaLogs fails: the caller answers without the state.
-func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) ([]patternResultEntry, bool) {
+//
+// fromNs is where the answer's samples start: Loki's retention (3h back), or with -patterns-full-range the hour
+// the state's samples start at, the range before it left to the caller (addPatternHistory).
+func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxLines, patternLimit int) (entries []patternResultEntry, fromNs int64, ok bool) {
 	store := p.patternState
 	if store == nil {
-		return nil, false
+		return nil, 0, false
 	}
 	now := store.now()
 	retainFrom := now.Add(-lokiPatternRetention).Truncate(time.Hour).UnixNano()
 	if scope.endNs > now.Add(time.Minute).UnixNano() {
-		return nil, false
+		return nil, 0, false
 	}
 	ctx := r.Context()
 	t := store.tenant(p.patternStateTenantKey(r))
@@ -160,12 +163,12 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 	s := t.selectors[selector]
 	if s != nil && s.building {
 		p.observeInternalOperation(ctx, "patterns_state", "building", 0)
-		return nil, false
+		return nil, 0, false
 	}
 	if s == nil {
 		lines, err := p.countPatternLines(ctx, scope, retainFrom, scope.endNs)
 		if err != nil {
-			return nil, false
+			return nil, 0, false
 		}
 		if lines > maxLines {
 			if lines <= store.maxBuildLines && p.buildPatternStateInBackground(r, t, selector, scope, retainFrom, now) {
@@ -173,7 +176,7 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 			} else {
 				p.observeInternalOperation(ctx, "patterns_state", "over_cap", 0)
 			}
-			return nil, false
+			return nil, 0, false
 		}
 		s = &patternSelectorState{fromNs: retainFrom, toNs: retainFrom, streams: make(map[string]struct{})}
 		t.selectors[selector] = s
@@ -191,23 +194,26 @@ func (p *Proxy) patternsFromState(r *http.Request, scope patternQueryScope, maxL
 		if err := p.readPatternStateLines(ctx, t, s, scope, readFrom, readTo, maxLines); err != nil {
 			delete(t.selectors, selector)
 			p.observeInternalOperation(ctx, "patterns_state", "error", time.Since(started))
-			return nil, false
+			return nil, 0, false
 		}
 		s.toNs = readTo
 		p.observeInternalOperation(ctx, "patterns_state", "read", time.Since(started))
 	} else {
 		p.observeInternalOperation(ctx, "patterns_state", "hit", 0)
 	}
-	answered := scope
-	if retained := now.Add(-lokiPatternRetention).UnixNano(); answered.startNs < retained {
-		answered.startNs = retained
+	fromNs = now.Add(-lokiPatternRetention).UnixNano()
+	if p.patternsFullRange {
+		fromNs = retainFrom
 	}
-	var entries []patternResultEntry
+	answered := scope
+	if answered.startNs < fromNs {
+		answered.startNs = fromNs
+	}
 	if answered.startNs < answered.endNs {
 		entries = t.answer(s, answered, patternLimit)
 	}
 	store.age(t, now, now, retainFrom)
-	return entries, true
+	return entries, fromNs, true
 }
 
 // buildPatternStateInBackground builds the selector's state from retainFromNs to now in the background, a window

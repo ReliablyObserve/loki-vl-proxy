@@ -207,6 +207,7 @@ extraArgs:
   # patterns-state-max-bytes: "268435456"              # memory of the /patterns state (each stream's clusters over Loki's 3h retention, so refreshes read only new lines); "0" turns it off
   # patterns-state-stream-idle: "5m"                      # a stream idle this long keeps only its patterns and samples in the /patterns state
   # patterns-state-max-build-lines: "2000000"            # selectors with more lines than -patterns-exact-max-lines over 3h get their /patterns state built in the background, up to this; "0" builds none
+  # patterns-full-range: "true"                          # /patterns ranges longer than Loki's 3h retention charted over all of the range (older samples counted onto Loki's patterns); "false" answers the last 3h alone, as Loki
   # patterns-max-counts-rows: "250000"                  # rows the /patterns counts query reads before sampling instead
   # max-zero-fill-buckets: "32768"                      # buckets the proxy zero-fills in a metric response
   # max-query-length-bytes: "131072"                    # LogQL query length; the default is Loki's own syntax.maxInputSize

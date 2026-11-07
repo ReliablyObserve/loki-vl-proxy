@@ -63,7 +63,15 @@ func (p *Proxy) patternsFromLines(r *http.Request, query, startParam, endParam, 
 	if !ok {
 		return nil, false, false
 	}
-	if entries, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok {
+	if entries, fromNs, ok := p.patternsFromState(r, scope, maxLines, patternLimit); ok {
+		if p.patternsFullRange && scope.startNs < fromNs {
+			// The patterns are Loki's, those with 30 lines in the state's part of the range; the part before it
+			// is counted onto them.
+			entries = dropPatternsBelowMinLines(entries, fromNs, scope.endNs)
+			history := scope
+			history.endNs = fromNs
+			entries = p.addPatternHistory(r, history, entries)
+		}
 		return entries, true, true
 	}
 	ctx := r.Context()

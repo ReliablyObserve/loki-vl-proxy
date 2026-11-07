@@ -245,6 +245,10 @@ type Config struct {
 	// PatternsStateMaxBuildLines is the most lines over the retention a selector's state is built from in the
 	// background when they are more than PatternsExactMaxLines; 0 builds none.
 	PatternsStateMaxBuildLines int
+	// PatternsFullRange answers a /patterns range longer than Loki's pattern retention (3h) over all of it: the
+	// patterns the state answers, their samples before the state's counted from VictoriaLogs (addPatternHistory).
+	// Off, such a range has the retention's samples alone, as Loki's.
+	PatternsFullRange bool
 
 	// ExactParserSeriesIdentity names the series of a metric over a
 	// dynamic-key parser (`| json`, `| logfmt`) with the labels that parser
@@ -658,6 +662,7 @@ type Proxy struct {
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
 	patternState                          *patternStateStore
+	patternsFullRange                     bool
 	exactParserSeriesIdentity             bool
 	alignQueriesWithStep                  bool
 	patternsCustom                        []string
@@ -1338,6 +1343,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsCounts:                        cfg.PatternsCounts,
 		patternsExactMaxLines:                 cfg.PatternsExactMaxLines,
 		patternState:                          newPatternStateStoreFor(cfg.PatternsStateMaxBytes, cfg.PatternsStateStreamIdle, cfg.PatternsStateMaxBuildLines),
+		patternsFullRange:                     cfg.PatternsFullRange,
 		exactParserSeriesIdentity:             cfg.ExactParserSeriesIdentity,
 		alignQueriesWithStep:                  cfg.AlignQueriesWithStep,
 		patternsCustom:                        patternsCustom,
