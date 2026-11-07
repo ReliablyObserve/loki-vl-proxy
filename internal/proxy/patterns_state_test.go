@@ -563,8 +563,7 @@ func TestPatternStateCloseStopsBuilds(t *testing.T) {
 
 // With -patterns-full-range, a range longer than Loki's retention is answered over all of it: the patterns the
 // state answers, with their samples before the state's counted from VictoriaLogs, each line in the pattern it
-// matches; a line no pattern of the state matches is not counted, and a refresh counts only the window its moving
-// start cuts again.
+// matches; a line no pattern of the state matches is not counted, and a refresh counts no window again.
 //
 // conformance: drilldown/patterns-full-range-counts, loki_api_v1_patterns, patterns-loki-mining
 func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
@@ -592,9 +591,9 @@ func TestPatternStateFullRangeCountsTheHistoryOntoItsPatterns(t *testing.T) {
 	if again != got {
 		t.Fatalf("refresh answers %q, want %q", again, got)
 	}
-	// The first window, which the moving start cuts, is counted again; the settled ones come from the cache.
-	if again := vl.countsCalls - calls; again > 2 {
-		t.Fatalf("refresh counted %d windows again, want the first alone", again/2)
+	// Every window, the one the moving start cuts too (counted whole), comes from the cache.
+	if again := vl.countsCalls - calls; again != 0 {
+		t.Fatalf("refresh counted %d windows again, want none", again/2)
 	}
 	p.patternsFullRange = false
 	now = now.Add(30 * time.Second)

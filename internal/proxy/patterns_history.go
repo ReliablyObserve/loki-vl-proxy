@@ -158,11 +158,28 @@ func (p *Proxy) prewarmPatternHistory(r *http.Request, filter logsql.FilterExpr,
 // its length and later ones reuse the windows. The window the range's moving start cuts is not cached.
 func (p *Proxy) patternHistoryInputs(r *http.Request, scope patternQueryScope) ([]patternWindowInputs, bool) {
 	windows := patternCountsWindows(scope.startNs, scope.endNs)
+	// The window the range's start cuts is counted whole, from its aligned start, and cached as the others are, so
+	// a refresh, whose start has moved, reads it from the cache too: its steps that start before the range are
+	// left out of the answer (as Loki answers only the steps inside the range).
+	size := int64(0)
+	for _, w := range windows {
+		size = max(size, w.endNs-w.startNs+1)
+	}
+	for i, w := range windows {
+		if w.startNs == scope.startNs && len(windows) > 1 && w.endNs+1-size < w.startNs {
+			windows[i].startNs = w.endNs + 1 - size
+		}
+	}
 	inputs := make([]patternWindowInputs, len(windows))
 	keys := make([]string, len(windows))
 	var missing []int
+	defer func() {
+		for i := range inputs {
+			inputs[i] = inputs[i].from(scope.startNs)
+		}
+	}()
 	for i, w := range windows {
-		if w.startNs != scope.startNs && p.queryRangeWindowTTL(w.endNs) > 0 {
+		if (w.startNs != scope.startNs || len(windows) > 1) && p.queryRangeWindowTTL(w.endNs) > 0 {
 			keys[i] = p.patternWindowInputsKey(r, scope.filter, scope.step, w)
 			if cached, ok := p.cache.Get(keys[i]); ok && json.Unmarshal(cached, &inputs[i]) == nil {
 				continue
@@ -190,6 +207,21 @@ func (p *Proxy) patternHistoryInputs(r *http.Request, scope patternQueryScope) (
 	}
 	p.observeInternalOperation(r.Context(), "patterns_history", "read", 0)
 	return inputs, true
+}
+
+// from is the window's inputs with the steps that start before startNs left out; the inputs are not changed.
+func (w patternWindowInputs) from(startNs int64) patternWindowInputs {
+	keep := w.Timeline[:0:0]
+	for _, row := range w.Timeline {
+		if row.Bucket*int64(time.Second) >= startNs {
+			keep = append(keep, row)
+		}
+	}
+	if len(keep) == len(w.Timeline) {
+		return w
+	}
+	w.Timeline = keep
+	return w
 }
 
 // readPatternHistoryRun reads the run of adjacent windows (indexes into windows, oldest first) in one groups and
