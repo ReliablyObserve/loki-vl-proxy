@@ -607,6 +607,7 @@
       "test/e2e-fleet/peer_cache_proof_test.go"
     ],
     "peer-cache-patterns": [
+      "internal/cache/peer_test.go",
       "internal/proxy/patterns_owner_test.go",
       "internal/proxy/patterns_state_test.go",
       "test/e2e-fleet/peer_cache_proof_test.go"
@@ -1582,6 +1583,9 @@
     ],
     "internal/cache/peer_replication_test.go": [
       "peer-cache-replication"
+    ],
+    "internal/cache/peer_test.go": [
+      "peer-cache-patterns"
     ],
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
@@ -3322,7 +3326,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 346,
+  "tests_with_markers": 347,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
