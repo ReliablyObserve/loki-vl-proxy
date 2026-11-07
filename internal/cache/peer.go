@@ -525,9 +525,10 @@ func (pc *PeerCache) Reachable(addr, key string) bool {
 		pc.RecordPeerErrorReason("breaker_open")
 		return false
 	}
+	endpoint := "http://" + addr + "/_cache/has?keys=" + url.QueryEscape(key)
 	ctx, cancel := context.WithTimeout(pc.peerContext(addr), pc.client.Timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/_cache/has?keys="+url.QueryEscape(key), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		pc.recordPeerFailure(addr)
 		return false
