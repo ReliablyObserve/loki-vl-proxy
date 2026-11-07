@@ -375,6 +375,9 @@
     "semantics/instant-result-type-missing | compare:observed",
     "semantics/instant-result-type-missing | gap:fixed",
     "semantics/instant-result-type-missing | query",
+    "semantics/ip-filter-json-stats-pushdown | compare:observed",
+    "semantics/ip-filter-json-stats-pushdown | gap:open",
+    "semantics/ip-filter-json-stats-pushdown | query",
     "semantics/ip-filter-precision | compare:observed",
     "semantics/ip-filter-precision | gap:documented",
     "semantics/ip-filter-precision | query",
@@ -472,6 +475,9 @@
     "semantics/labels-end-inclusive-like-loki | perf",
     "semantics/labels-end-inclusive-like-loki | perf:locked",
     "semantics/labels-end-inclusive-like-loki | query",
+    "semantics/last-over-time-line-filter-offset-points | compare:observed",
+    "semantics/last-over-time-line-filter-offset-points | gap:open",
+    "semantics/last-over-time-line-filter-offset-points | query",
     "semantics/line-filter-or-alternatives | compare:observed",
     "semantics/line-filter-or-alternatives | gap:fixed",
     "semantics/line-filter-or-alternatives | perf",
@@ -1856,7 +1862,7 @@
       "any": 28,
       "api": 40,
       "drilldown": 49,
-      "explore": 145,
+      "explore": 147,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -1880,7 +1886,7 @@
     },
     "shape_covers_distinct": 106,
     "shapes_path_only": 8,
-    "unwired_items": 97,
+    "unwired_items": 99,
     "wired_items": 250
   },
   "gates": [

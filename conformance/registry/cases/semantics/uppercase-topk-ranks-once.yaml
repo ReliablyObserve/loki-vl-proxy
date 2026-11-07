@@ -42,3 +42,5 @@ gap:
   planned_test: 'TestCompat_UppercaseKeywordsRankPerStep (test/e2e-compat, group semantics)'
   clusters:
     - 912fa21e
+    - 2572a0e0
+    - 4e45c615

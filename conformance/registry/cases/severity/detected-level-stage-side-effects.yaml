@@ -27,6 +27,10 @@ why: |
   detected_level_extracted` keeps the `level` label Loki drops, and `| keep
   detected_level` with plain encoding answers 4 entries on Loki and 2 on the
   proxy.
+
+  The run of 2026-11-07 (proxy a3ad4c1b) records `| keep detected_level` as
+  a different difference: Loki returns `detected_level` in the entries'
+  structured metadata and the proxy does not (cluster a4c74036).
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -55,6 +59,7 @@ gap:
   clusters:
     - 3bf7d7dd
     - 877ff75b
+    - a4c74036
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
