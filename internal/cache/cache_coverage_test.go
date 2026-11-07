@@ -488,3 +488,44 @@ func TestStats_HitMiss(t *testing.T) {
 		t.Error("expected at least 1 miss")
 	}
 }
+
+// GetWithTier answers exactly as Get does and names the tier that answered: memory, then disk (promoting the
+// entry into memory); a miss names none.
+//
+// conformance: observability-query-flow
+func TestGetWithTier_NamesTheAnsweringTierAndMatchesGet(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{Path: tempDBPath(t), Compression: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+	c.SetL2(dc)
+
+	dc.Set("on-disk", []byte("payload"), 5*time.Second)
+	dc.Flush()
+	c.SetWithTTL("in-memory", []byte("hot"), 5*time.Second)
+
+	for _, tc := range []struct {
+		key, want, tier string
+		ok              bool
+	}{
+		{"in-memory", "hot", "l1_memory", true},
+		{"on-disk", "payload", "l2_disk", true},
+		{"on-disk", "payload", "l1_memory", true}, // promoted by the first read
+		{"absent", "", "", false},
+	} {
+		v, tier, ok := c.GetWithTier(tc.key)
+		if string(v) != tc.want || tier != tc.tier || ok != tc.ok {
+			t.Fatalf("GetWithTier(%q) = %q %q %v, want %q %q %v", tc.key, v, tier, ok, tc.want, tc.tier, tc.ok)
+		}
+		if gv, gok := c.Get(tc.key); string(gv) != tc.want || gok != tc.ok {
+			t.Fatalf("Get(%q) = %q %v differs from GetWithTier", tc.key, gv, gok)
+		}
+	}
+	var nilCache *Cache
+	if _, tier, ok := nilCache.GetWithTier("k"); ok || tier != "" {
+		t.Fatal("a nil cache has no entries")
+	}
+}

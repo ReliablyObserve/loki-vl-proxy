@@ -533,7 +533,7 @@ func quantileOuterFrom(ctx context.Context) *quantileOuter {
 // other shape (without, label_replace, nested aggregations), which keeps the
 // translation's grouping.
 func quantileQueryShape(logql string) (rangeGrouped bool, outer *quantileOuter, ok bool) {
-	expr, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	expr, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
 	if err != nil {
 		return false, nil, false
 	}

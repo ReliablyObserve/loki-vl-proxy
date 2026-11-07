@@ -218,7 +218,7 @@ func TestLabelsFullRange_EmptyWindowHasNoSyntheticLabels(t *testing.T) {
 	// The empty answer is cached only briefly (negative TTL) and never with the
 	// metadata TTL, so polling does not rescan while later data still shows up.
 	req := httptest.NewRequest(http.MethodGet, path, nil)
-	_, remaining, _, ok := p.endpointReadCacheEntry("labels", p.canonicalReadCacheKey("labels", "", req))
+	_, remaining, _, ok := p.endpointReadCacheEntry(context.Background(), "labels", p.canonicalReadCacheKey("labels", "", req))
 	if !ok || remaining <= 0 || remaining > metadataNegativeCacheTTL {
 		t.Fatalf("empty /labels answer must be cached for at most %v, got ok=%v remaining=%v", metadataNegativeCacheTTL, ok, remaining)
 	}
@@ -455,7 +455,7 @@ func TestMetadataRefresh_WritesWindowScaledTTL_NoRefreshOnNextHit(t *testing.T) 
 			}
 			deadline := time.Now().Add(3 * time.Second)
 			for {
-				if _, _, _, ok := p.endpointReadCacheEntry(tc.endpoint, cacheKey); ok {
+				if _, _, _, ok := p.endpointReadCacheEntry(context.Background(), tc.endpoint, cacheKey); ok {
 					break
 				}
 				if time.Now().After(deadline) {
@@ -465,7 +465,7 @@ func TestMetadataRefresh_WritesWindowScaledTTL_NoRefreshOnNextHit(t *testing.T) 
 			}
 			waitForBackendIdle(t, &fake.count)
 
-			_, remaining, _, _ := p.endpointReadCacheEntry(tc.endpoint, cacheKey)
+			_, remaining, _, _ := p.endpointReadCacheEntry(context.Background(), tc.endpoint, cacheKey)
 			scaled := metadataWindowTTL(startRaw, endRaw, 5*time.Minute)
 			if p.shouldRefreshLabelsInBackground(remaining, scaled) {
 				t.Fatalf("refresher wrote remaining TTL %v; handler (TTL %v) would refresh on every hit", remaining, scaled)
@@ -517,7 +517,7 @@ func TestMetadataRefresh_DetectedEndpointsWriteWindowScaledTTL(t *testing.T) {
 		tc.refresh()
 		deadline := time.Now().Add(5 * time.Second)
 		for {
-			if _, _, _, ok := p.endpointReadCacheEntry(tc.endpoint, tc.key); ok {
+			if _, _, _, ok := p.endpointReadCacheEntry(context.Background(), tc.endpoint, tc.key); ok {
 				break
 			}
 			if time.Now().After(deadline) {
@@ -525,7 +525,7 @@ func TestMetadataRefresh_DetectedEndpointsWriteWindowScaledTTL(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		body, remaining, _, _ := p.endpointReadCacheEntry(tc.endpoint, tc.key)
+		body, remaining, _, _ := p.endpointReadCacheEntry(context.Background(), tc.endpoint, tc.key)
 		scaled := metadataWindowTTL(startRaw, endRaw, CacheTTLs[tc.endpoint])
 		if p.shouldRefreshLabelsInBackground(remaining, scaled) {
 			t.Fatalf("%s refresher wrote remaining TTL %v; handler compares against %v", tc.endpoint, remaining, scaled)

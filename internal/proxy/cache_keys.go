@@ -317,28 +317,28 @@ func (p *Proxy) setEndpointReadCacheWithTTL(endpoint, cacheKey string, value []b
 	p.cache.SetLocalOnlyWithTTL(cacheKey, value, ttl)
 }
 
-func (p *Proxy) endpointReadCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
-	body, ttl, _, tier, ok := p.endpointReadCacheEntryAge(endpoint, cacheKey)
+func (p *Proxy) endpointReadCacheEntry(ctx context.Context, endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
+	body, ttl, _, tier, ok := p.endpointReadCacheEntryAge(ctx, endpoint, cacheKey)
 	return body, ttl, tier, ok
 }
 
 // endpointReadCacheEntryAge is endpointReadCacheEntry plus the entry's age on
 // this replica (-1 when unknown), see cache.GetSharedWithAge.
-func (p *Proxy) endpointReadCacheEntryAge(endpoint, cacheKey string) ([]byte, time.Duration, time.Duration, string, bool) {
+func (p *Proxy) endpointReadCacheEntryAge(ctx context.Context, endpoint, cacheKey string) ([]byte, time.Duration, time.Duration, string, bool) {
 	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
 		return nil, 0, 0, "", false
 	}
 	if p.endpointUsesSharedReadCache(endpoint) {
-		return p.cache.GetSharedWithAge(cacheKey)
+		return p.cacheGetSharedWithAge(ctx, p.cache, cacheKey)
 	}
-	body, ttl, age, ok := p.cache.GetWithAge(cacheKey)
+	body, ttl, age, ok := p.cacheGetWithAge(ctx, p.cache, cacheKey)
 	if !ok {
 		return nil, 0, 0, "", false
 	}
 	return body, ttl, age, "l1_memory", true
 }
 
-func (p *Proxy) staleEndpointCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
+func (p *Proxy) staleEndpointCacheEntry(ctx context.Context, endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
 	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
 		return nil, 0, "", false
 	}
@@ -349,9 +349,9 @@ func (p *Proxy) staleEndpointCacheEntry(endpoint, cacheKey string) ([]byte, time
 		usable = func(body []byte) bool { return !metadataListPayloadEmpty(body) }
 	}
 	if p.endpointUsesSharedReadCache(endpoint) {
-		return p.cache.GetRecoverableStaleWithTTLMatching(cacheKey, usable)
+		return p.cacheGetRecoverableStale(ctx, p.cache, cacheKey, usable)
 	}
-	body, ttl, ok := p.cache.GetStaleWithTTL(cacheKey)
+	body, ttl, ok := p.cacheGetStale(ctx, p.cache, cacheKey)
 	if !ok || (usable != nil && !usable(body)) {
 		return nil, 0, "", false
 	}
@@ -372,12 +372,12 @@ func markStaleResponse(h http.Header) {
 	h.Set("Cache-Control", "no-store")
 }
 
-func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cacheKey string, started time.Time, err error) bool {
+func (p *Proxy) serveStaleReadCacheOnError(ctx context.Context, w http.ResponseWriter, endpoint, cacheKey string, started time.Time, err error) bool {
 	// A rejected query is not a backend outage: answer it, never mask it.
 	if isUpstreamQueryRejected(err) {
 		return false
 	}
-	body, remaining, tier, ok := p.staleEndpointCacheEntry(endpoint, cacheKey)
+	body, remaining, tier, ok := p.staleEndpointCacheEntry(ctx, endpoint, cacheKey)
 	if !ok || len(body) == 0 {
 		return false
 	}

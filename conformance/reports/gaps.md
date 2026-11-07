@@ -76,7 +76,8 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | semantics | `loki-compatible-profile` — The Loki-compatible profile holds requests and responses to Loki's contract | 14 | 7 | partial |
 | identity | `metric-series-identity` — A metric series is named by the stream, its metadata and its parsed labels | 6 | 37 | partial |
 | semantics | `numeric-and-response-formatting` — Timestamps, number formatting and empty shapes | 5 | 1 | gap |
-| observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 5 | 1 | unknown |
+| observability | `observability-query-flow` — Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took | 6 | 3 | unknown |
+| observability | `observability-slow-query-log` — A slow request and a slow VictoriaLogs call are counted and logged with their queries and steps | 5 | 2 | unknown |
 | limits | `operator-configurable-limits` — Every bound on work is an operator flag, documented from one source | 13 | 10 | proven |
 | identity | `parsed-label-series-identity` — Labels a parser extracts are part of a metric series | 6 | 4 | partial |
 | semantics | `parser-error-and-label-collision` — Parser errors, __error__ and _extracted collisions | 23 | 13 | partial |

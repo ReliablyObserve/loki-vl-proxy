@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -119,11 +120,11 @@ func TestCanonicalReadCacheKeyPOSTMigrationRejectsPriorNamespace(t *testing.T) {
 			key := p.canonicalReadCacheKey(endpoint, "tenant-a", req)
 			previous := previousPOSTReadCacheKey(endpoint, key)
 			c.SetWithTTL(previous, []byte(`{"status":"success","data":["poisoned-selector"]}`), time.Hour)
-			if body, _, _, hit := p.endpointReadCacheEntry(endpoint, key); hit {
+			if body, _, _, hit := p.endpointReadCacheEntry(context.Background(), endpoint, key); hit {
 				t.Fatalf("current GET reused a prior POST namespace: endpoint=%s key=%q body=%s", endpoint, key, body)
 			}
 			c.SetWithTTL(key, []byte("current-answer"), time.Hour)
-			if body, _, _, hit := p.endpointReadCacheEntry(endpoint, key); !hit || string(body) != "current-answer" {
+			if body, _, _, hit := p.endpointReadCacheEntry(context.Background(), endpoint, key); !hit || string(body) != "current-answer" {
 				t.Fatalf("current namespace did not retain its own entry: hit=%v body=%s", hit, body)
 			}
 		})

@@ -182,7 +182,7 @@ func (p *Proxy) patternHistoryInputs(r *http.Request, scope patternQueryScope) (
 		if (w.startNs != scope.startNs || len(windows) > 1) && p.queryRangeWindowTTL(w.endNs) > 0 {
 			keys[i] = p.patternWindowInputsKey(r, scope.filter, scope.step, w)
 			lookup := time.Now()
-			if cached, ok := p.cache.Get(keys[i]); ok && json.Unmarshal(cached, &inputs[i]) == nil {
+			if cached, ok := p.cacheGet(r.Context(), p.cache, keys[i]); ok && json.Unmarshal(cached, &inputs[i]) == nil {
 				p.observeInternalOperation(r.Context(), "patterns_window_cache", "hit", time.Since(lookup))
 				continue
 			}

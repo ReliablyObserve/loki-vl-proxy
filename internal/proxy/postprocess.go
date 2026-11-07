@@ -188,7 +188,7 @@ func isErrorEmptyFilter(e *logqlpkg.LabelFilterExpr) bool {
 // | drop / | keep remove the error labels.
 func lineFormatAfterStages(query string) lineFormatAfter {
 	var after lineFormatAfter
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return after
 	}

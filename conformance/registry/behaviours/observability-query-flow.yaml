@@ -1,0 +1,71 @@
+id: observability-query-flow
+kind: observability
+title: Every client request reports how many parses, translations, cache lookups and VictoriaLogs calls it caused, and what each took
+pending: true
+
+loki: |
+  Loki's query frontend and queriers log per-query statistics (bytes
+  processed, chunks, cache hits per cache) in the "metrics.go" query line. It
+  has no per-request count of parses or translations, because it does not
+  translate.
+
+victorialogs: |
+  VictoriaLogs reports nothing about the Loki request a call serves; its
+  query logs and metrics are per LogsQL call.
+
+proxy: |
+  The request log line, slow_request and the metrics carry the request's flow:
+  flow.parse.count/ms (LogQL parses made with the request's context),
+  flow.translate.count/ms (the translate_query operation, every outcome),
+  flow.cache.lookups/hits/misses/stale/ms/bytes and flow.cache.by_tier (one
+  count per physical cache read, by the tier that answered), flow.vl.calls/ms/
+  bytes (VictoriaLogs calls timed to the end of their body) and flow.proxy.ms
+  (the request's time minus VictoriaLogs and cache time, never below zero; an
+  estimate, because parallel calls add up). A slow request's trace also lists
+  each cache lookup (kind cache: tier, result, bytes, time), at most 16.
+  Metrics: loki_vl_proxy_request_phase_seconds{route,phase},
+  loki_vl_proxy_request_fanout{route,kind},
+  loki_vl_proxy_cache_lookup_seconds{tier,result}, all of fixed small label
+  sets.
+
+implementation:
+  - internal/proxy/query_flow.go
+  - internal/proxy/telemetry.go
+  - internal/proxy/slow_query_log.go
+  - internal/proxy/query_translation.go
+  - internal/metrics/request_flow.go
+  - internal/cache/cache.go
+
+decisions:
+  - id: query-flow-counted-at-the-choke-points
+    chosen: 'One parse helper and one set of cache-read wrappers record into the request context; translate and VictoriaLogs reuse the existing internal-operation and upstream-done hooks'
+    over: ['counting in each handler', 'global counters sampled per request', 'a tracing library span per step']
+    why: |
+      Owner 2026-11-07: see, per request and per route, what work it caused
+      and where the time went, without a new dependency and at no cost to a
+      request that has no telemetry. A single helper per kind keeps every call
+      site's behaviour identical (same function, arguments and errors) and
+      makes the parse-call ratchet count the helper, not 60 call sites.
+      VictoriaLogs time is the end of the body (the slow-query log's
+      definition), so body-read time is not left in the proxy's own time.
+      Cache.Get could not name its tier, so cache.GetWithTier (Get plus the
+      tier) is the one internal/cache change; Get is unchanged for callers.
+    evidence: |
+      TestRequestLogFlowOnACacheMissAndACacheHit, TestSlowRequestCarriesTheFlowAndCacheSteps.
+      Request-path benchmark, branch vs its base (Apple M5 Pro, 6 runs, benchstat), allocs/op:
+      no cache or VictoriaLogs work 21 -> 21 (1.500 -> 1.689 KiB/op, the flow counters in the
+      request's telemetry); with the request log on 33 -> 35; labels cache hit 76 -> 76 (76 -> 77
+      with the slow-query trace on, 91 -> 94 with the log on); labels miss with a VictoriaLogs
+      call 757 -> 757. A cache read under 4-way contention: 252 ns raw, 360 ns through the
+      wrapper, 0 allocs.
+    code: [internal/proxy/query_flow.go, internal/proxy/telemetry.go, internal/metrics/request_flow.go]
+    tests: [TestRequestFlowAccumulatesFromParallelCalls, TestCacheReadsKeepTheirResultsAndRecordTierResultAndBytes, TestParseHelpersMatchTheParserAndCountInTheRequest, TestRequestLogFlowOnACacheMissAndACacheHit, TestSlowRequestCarriesTheFlowAndCacheSteps, TestRequestFlowIsMeasuredWhateverTheRequestLogSampling, TestRequestFlowMetricsExposition]
+    quality: |
+      flow.parse.count is a lower bound: it counts parses made where the
+      request's context is in reach (the handlers' entry points), not the
+      shape probes deeper in the call chain, which still parse without a
+      request context. Every cache read and VictoriaLogs call of a request is
+      counted once; translation-memo lookups are part of translate.
+    performance:
+      tracked: ['request path: allocations per request (benchstat)', 'cache read: ns/op of a hit']
+      bound: 'a request without cache or VictoriaLogs work allocates 0 to 2 more (the log line) and ~190 B more; a cache read adds two clock reads, the shared lookup histogram lock and the request lock (twice with the trace on)'

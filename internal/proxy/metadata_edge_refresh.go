@@ -170,7 +170,7 @@ func (p *Proxy) serveMetadataEdge(w http.ResponseWriter, r *http.Request, ctx co
 	// An empty answer is a negative entry, not a last known answer (as for
 	// stale-on-error: data may not have been searchable yet), and a disk or
 	// peer copy (age unknown) is not the answer this replica recorded.
-	stale, _, age, _, hit := p.endpointReadCacheEntryAge(endpoint, cacheKey)
+	stale, _, age, _, hit := p.endpointReadCacheEntryAge(ctx, endpoint, cacheKey)
 	if !hit || age < 0 || metadataListPayloadEmpty(stale) {
 		return metadataEdgeAnswer{}
 	}

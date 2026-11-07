@@ -316,7 +316,7 @@ func TestMetadataFreshness_AgeSurvivesTheDiskTierAndShortenedTTLs(t *testing.T) 
 	second := cache.New(time.Minute, 100)
 	second.SetL2(dc)
 	p.cache = second
-	_, remaining, tier, ok := p.endpointReadCacheEntry("labels", "labels:k")
+	_, remaining, tier, ok := p.endpointReadCacheEntry(context.Background(), "labels", "labels:k")
 	if !ok || tier != "l2_disk" {
 		t.Fatalf("want an l2_disk hit, got ok=%v tier=%s", ok, tier)
 	}

@@ -206,7 +206,7 @@ func decomposableUnwrapAggregation(query, manualFunc string) (*logqlpkg.VectorAg
 	if manualFunc != "max" && manualFunc != "min" {
 		return nil, false
 	}
-	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
 		return nil, false
 	}
@@ -266,7 +266,7 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 // an optional topk or bottomk by labels and label_replace. A nested `without`,
 // an empty `without ()` and a ranking `without` are answered as before.
 func unwrapWindowForm(query string) bool {
-	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
 		return false
 	}

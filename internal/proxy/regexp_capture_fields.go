@@ -10,7 +10,7 @@ func regexpCaptureFields(query string) map[string]bool {
 	if !regexpParserStageRE.MatchString(query) {
 		return nil
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return nil
 	}

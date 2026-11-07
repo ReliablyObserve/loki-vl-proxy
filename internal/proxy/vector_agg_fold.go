@@ -17,7 +17,7 @@ import (
 // only that first pipe, answers every series unreduced. A `without` anywhere is
 // folded by the without marker; the other operators are not series-level.
 func seriesAggregationChain(query string) ([]*logqlpkg.VectorAggregation, bool) {
-	expr, err := logqlpkg.Parse(stripOuterLabelReplace(strings.TrimSpace(query)))
+	expr, err := parseLogQLExpr(noFlowCtx, stripOuterLabelReplace(strings.TrimSpace(query)))
 	if err != nil {
 		return nil, false
 	}

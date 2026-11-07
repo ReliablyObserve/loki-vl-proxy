@@ -104,7 +104,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Last known-good full-range answer, if any; otherwise the error, never a
 		// capped partial list.
-		if p.serveStaleReadCacheOnError(w, "labels", cacheKey, start, err) {
+		if p.serveStaleReadCacheOnError(r.Context(), w, "labels", cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)
@@ -233,7 +233,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Last known-good full-range answer, if any; otherwise the error. A
 		// response over its size limit is answered with the limit error.
-		if (labelName == "service_name" || !isLabelValuesResponseTooLarge(err)) && p.serveStaleReadCacheOnError(w, "label_values", cacheKey, start, err) {
+		if (labelName == "service_name" || !isLabelValuesResponseTooLarge(err)) && p.serveStaleReadCacheOnError(r.Context(), w, "label_values", cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)
@@ -551,7 +551,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("index_stats", orgID, r)
-	if cached, _, _, ok := p.endpointReadCacheEntry("index_stats", cacheKey); ok {
+	if cached, _, _, ok := p.endpointReadCacheEntry(r.Context(), "index_stats", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
@@ -577,7 +577,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := p.computeIndexStatsResult(r.Context(), r.FormValue("query"), qStart, qEnd)
 	if err != nil {
-		if p.serveStaleReadCacheOnError(w, "index_stats", cacheKey, start, err) {
+		if p.serveStaleReadCacheOnError(r.Context(), w, "index_stats", cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)
@@ -761,7 +761,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("detected_fields", orgID, r)
 	detectedFieldsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_fields"])
-	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_fields", cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_fields", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
@@ -792,7 +792,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 			p.observeInternalOperation(r.Context(), "drilldown_scan_timeout", "detected_fields_handler", 0)
 			fields = nil
 			scanTimedOut = true
-		} else if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
+		} else if p.serveStaleReadCacheOnError(r.Context(), w, "detected_fields", cacheKey, start, err) {
 			return
 		} else {
 			status := p.writeErr(w, r.Context(), err)
@@ -847,7 +847,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	lineLimit := parseDetectedLineLimit(r)
 	cacheKey := p.canonicalReadCacheKey("detected_field_values", orgID, r, fieldName)
 	detectedFieldValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_field_values"])
-	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_field_values", cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_field_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
@@ -876,7 +876,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	values, err := p.resolveDetectedFieldValues(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, true)
 	if err != nil {
-		if p.serveStaleReadCacheOnError(w, "detected_field_values", cacheKey, start, err) {
+		if p.serveStaleReadCacheOnError(r.Context(), w, "detected_field_values", cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)

@@ -87,14 +87,250 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
   "proxy.operation_duration_ms_by_type": {
     "translate_query:translated": 4
   },
-  "proxy.overhead_ms": 11
+  "proxy.overhead_ms": 11,
+  "flow.cache.lookups": 3,
+  "flow.cache.misses": 3,
+  "flow.vl.calls": 1,
+  "flow.vl.ms": 33,
+  "flow.proxy.ms": 9
 }
 ```
+
+The example is shortened; the Log line reference below lists every field.
 
 That makes the log stream usable in two ways:
 
 - plain JSON ingestion with no transformation
 - low-friction mapping into the OpenTelemetry log data model
+
+### Log line reference
+
+Every line is one JSON object. The proxy writes these lines about client
+traffic (the rest of the log, such as `upstream_request` for each call to
+VictoriaLogs or the cache and tail internals, is described under Log Sources):
+
+| Line (`msg`) | Level | When |
+|---|---|---|
+| `request` | `INFO`; `WARN` for 4xx, `ERROR` for 5xx | once per client request, subject to Adaptive Log Sampling |
+| `request_digest` | `INFO` | a periodic summary (`requests.total`, `requests.ok`, `requests.errors`, `requests.rate_per_sec`, `latency.avg_ms`, `latency.max_ms`, `cache.hit_pct`, an error breakdown) replacing the OK `request` lines above `-log-rate-threshold` |
+| `slow_request` | `WARN` | a client request at or over `-slow-query-threshold`, whatever the sampling |
+| `slow_upstream_request` | `WARN` | one VictoriaLogs call at or over `-slow-upstream-threshold`, whatever the sampling |
+
+#### The `request` line
+
+```json
+{
+  "timestamp": "2026-11-07T10:15:02.411903Z",
+  "severity": {"text": "INFO", "number": 9},
+  "body": "request",
+  "http.route": "/loki/api/v1/query_range",
+  "url.path": "/loki/api/v1/query_range",
+  "http.request.method": "GET",
+  "http.response.status_code": 200,
+  "loki.request.type": "query_range",
+  "loki.api.system": "loki",
+  "proxy.direction": "downstream",
+  "event.duration": 412000000,
+  "loki.tenant.id": "team-a",
+  "loki.query": "sum by (level) (count_over_time({service_name=\"api\"}[5m]))",
+  "enduser.id": "grafana-user@example.com",
+  "enduser.source": "grafana_user",
+  "cache.result": "miss",
+  "proxy.duration_ms": 412,
+  "proxy.overhead_ms": 61,
+  "upstream.calls": 2,
+  "upstream.duration_ms": 351,
+  "upstream.status_code": 200,
+  "upstream.error": false,
+  "flow.parse.count": 1,
+  "flow.parse.ms": 0,
+  "flow.translate.count": 2,
+  "flow.translate.ms": 1,
+  "flow.cache.lookups": 3,
+  "flow.cache.hits": 0,
+  "flow.cache.misses": 3,
+  "flow.cache.stale": 0,
+  "flow.cache.ms": 0,
+  "flow.cache.bytes": 0,
+  "flow.cache.by_tier": {
+    "unknown": {"hits": 0, "misses": 3, "stale": 0}
+  },
+  "flow.vl.calls": 2,
+  "flow.vl.ms": 366,
+  "flow.vl.bytes": 18234,
+  "flow.proxy.ms": 46,
+  "upstream.call_types": 1,
+  "upstream.duration_types": 1,
+  "proxy.operation_types": 3,
+  "proxy.operation_duration_types": 3,
+  "client.address": "10.0.0.12",
+  "network.peer.address": "10.0.0.7",
+  "user_agent.original": "Grafana/12.2.0",
+  "grafana.version": "12.2.0",
+  "grafana.client.surface": "grafana_loki_datasource",
+  "enduser.name": "grafana-user@example.com"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `http.route`, `url.path`, `http.request.method`, `http.response.status_code` | the Loki route (the normalized label used by the metrics), the requested path, the method and the status sent |
+| `loki.request.type` | the Loki endpoint name (`query_range`, `labels`, `detected_fields`, ...) |
+| `loki.api.system`, `proxy.direction` | always `loki` and `downstream` on these lines |
+| `event.duration` | request duration in nanoseconds; `proxy.duration_ms` is the same in milliseconds |
+| `loki.tenant.id` | the `X-Scope-OrgID` of the request |
+| `loki.query` | the LogQL, cut at 200 bytes |
+| `enduser.id`, `enduser.source`, `enduser.name`, `auth.source` | the client identity and how it was derived (`-metrics.trust-proxy-headers`); `auth.source` is only the mechanism (for example `basic_auth`), never the credential |
+| `client.address`, `network.peer.address`, `user_agent.original` | the forwarded client address, the connection peer and the user agent |
+| `grafana.*` | the Grafana version, surface (Explore, Drilldown), source tag and profiles read from the user agent and `X-Query-Tags`, when present |
+| `cache.result` | the answer-cache outcome of the request: `hit`, `miss` or `bypass` (cache not used) |
+| `proxy.overhead_ms` | the request's duration minus `upstream.duration_ms` (never below 0) |
+| `upstream.calls`, `upstream.duration_ms`, `upstream.status_code`, `upstream.error` | the requests sent to VictoriaLogs and Loki-compatible backends for this request: how many, their summed time to the response headers, the last status and whether any failed |
+| `upstream.call_types`, `upstream.duration_types`, `proxy.operation_types`, `proxy.operation_duration_types` | how many distinct VictoriaLogs request types and proxy-side operations the request used; at `DEBUG` level the maps themselves follow (`upstream.calls_by_type`, `upstream.duration_ms_by_type`, `proxy.operations_by_type`, `proxy.operation_duration_ms_by_type`, keyed `system:type` and `operation:outcome`) |
+| `flow.*` | what the request caused, see Query Flow below |
+
+#### Query Flow (`flow.*`)
+
+The `flow` fields answer "how much work did this request cause, and where did
+the time go". They are on every `request` and `slow_request` line, and feed
+the `loki_vl_proxy_request_phase_seconds` and `loki_vl_proxy_request_fanout`
+metrics, which see every request whatever the log sampling.
+
+| Field | Meaning |
+|---|---|
+| `flow.parse.count`, `flow.parse.ms` | LogQL parses made with the request's context, and their summed time. A lower bound: parses made by helpers that have no request context (the shape probes deeper in a handler) are not counted, and a hit in the parsed-query cache is not a parse |
+| `flow.translate.count`, `flow.translate.ms` | LogQL to LogsQL translations (every `translate_query` outcome: `translated`, `cache_hit`, `passthrough`) and their summed time |
+| `flow.cache.lookups` | physical cache reads: the answer, window, extent, label and inventory caches and the compatibility cache, each read counted once under the tier that answered. In-process translation-memo lookups are part of `flow.translate.*`, not counted here |
+| `flow.cache.hits`, `flow.cache.misses`, `flow.cache.stale` | the lookups by result. `stale` is a read that asks for expired entries (the last known-good answer, used when VictoriaLogs fails) and found one; it counts as stale whatever the entry's remaining TTL, because it is only used after the fresh read missed |
+| `flow.cache.ms`, `flow.cache.bytes` | summed lookup time, and the bytes the cache returned on hits and stale reads |
+| `flow.cache.by_tier` | per tier (`l1_memory`, `l2_disk`, `l3_peer`, `unknown`) the `hits`, `misses` and `stale` counts. A read through every tier that misses is `unknown` (it consulted all of them); a memory-only read is `l1_memory` |
+| `flow.vl.calls`, `flow.vl.ms`, `flow.vl.bytes` | VictoriaLogs calls, their summed time from sending to the end of the response body (the slow-query definition, so body reading is included), and the decoded response bytes. `upstream.calls` and `upstream.duration_ms` keep their earlier meaning (time to the response headers) |
+| `flow.proxy.ms` | the request's own time: its duration minus `flow.vl.ms` and `flow.cache.ms`, never below 0. It includes the parse and translate time, which are not subtracted |
+
+Times are sums of the calls' own times. When a request runs calls in parallel
+(a split query, a metadata fan-out) `flow.vl.ms` and `flow.cache.ms` add up to
+more than the request lasted, and `flow.proxy.ms` is then an estimate (0 when
+the calls outlast the request).
+
+How to read it:
+
+- A refresh answered from the cache shows `flow.cache.hits` above 0 and
+  `flow.vl.calls` 0, with `flow.cache.bytes` the size of the answer served.
+- A cold request shows `flow.cache.misses` and then `flow.vl.calls`; if
+  `flow.vl.ms` is most of `proxy.duration_ms` the time is VictoriaLogs', if
+  `flow.proxy.ms` is, the proxy's (merging, post-processing).
+- Many `flow.cache.lookups` for one request with `l2_disk` or `l3_peer` hits
+  mean the answer was assembled from stored pieces (extents, windows) and
+  that the disk or the fleet answered it.
+- `flow.parse.count` is small by construction (see its row): use it to see
+  whether a handler parses a query again, not as a total of the parser's work.
+
+#### The `slow_request` line
+
+```json
+{
+  "timestamp": "2026-11-07T10:20:41.007120Z",
+  "severity": {"text": "WARN", "number": 13},
+  "body": "slow_request",
+  "http.route": "/loki/api/v1/query_range",
+  "loki.request.type": "query_range",
+  "loki.api.system": "loki",
+  "proxy.direction": "downstream",
+  "http.response.status_code": 200,
+  "event.duration": 4210000000,
+  "slow.threshold_ms": 3000,
+  "loki.tenant.id": "team-a",
+  "loki.query": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
+  "cache.result": "miss",
+  "upstream.calls": 2,
+  "upstream.duration_ms": 4102,
+  "flow.parse.count": 1,
+  "flow.parse.ms": 0,
+  "flow.translate.count": 1,
+  "flow.translate.ms": 1,
+  "flow.cache.lookups": 3,
+  "flow.cache.hits": 1,
+  "flow.cache.misses": 2,
+  "flow.cache.stale": 0,
+  "flow.cache.ms": 1,
+  "flow.cache.bytes": 2048,
+  "flow.cache.by_tier": {
+    "l1_memory": {"hits": 1, "misses": 0, "stale": 0},
+    "unknown": {"hits": 0, "misses": 2, "stale": 0}
+  },
+  "flow.vl.calls": 2,
+  "flow.vl.ms": 4180,
+  "flow.vl.bytes": 912340,
+  "flow.proxy.ms": 29,
+  "proxy.steps": [
+    {"kind": "cache", "at_ms": 0, "tier": "unknown", "result": "miss", "bytes": 0, "duration_ms": 0},
+    {"kind": "rewrite", "at_ms": 0, "from": "sum by (level) (count_over_time({service_name=\"api\"} | json [5m]))",
+     "to": "sum by (level) (count_over_time({service_name=\"api\"} | json | drop __error__ [5m]))"},
+    {"kind": "operation", "at_ms": 1, "operation": "translate_query", "outcome": "translated", "duration_ms": 1},
+    {"kind": "upstream", "at_ms": 2, "route": "/select/logsql/stats_query_range",
+     "query": "{service_name=\"api\"} | unpack_json | stats by (_time:5m, level) count() c",
+     "window": "start=1794000000 end=1794003600 step=300", "status": 200, "bytes": 640112, "outcome": "eof", "duration_ms": 2301},
+    {"kind": "upstream", "at_ms": 2305, "route": "/select/logsql/stats_query_range",
+     "query": {"same_as_step": 3}, "window": "start=1793996400 end=1794000000 step=300",
+     "status": 200, "bytes": 272228, "outcome": "eof", "duration_ms": 1879}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `http.route`, `loki.request.type`, `http.response.status_code`, `event.duration`, `loki.tenant.id`, `cache.result`, `upstream.calls`, `upstream.duration_ms` | as on the `request` line |
+| `slow.threshold_ms` | the `-slow-query-threshold` that was crossed |
+| `loki.query` | the LogQL as received: its text up to 8 KB, or its `sha256:` hash and length with `-slow-query-log-raw-queries=false` |
+| `flow.*` | as on the `request` line |
+| `proxy.steps` | the request's steps, listed as they started, each with `at_ms` (the offset from the request's start); at most 64 |
+| `proxy.steps_dropped` | steps beyond the limit that were counted, not kept (only present when above 0); at most 16 of the 64 are cache steps, so a request that reads the cache many times keeps room for its VictoriaLogs calls |
+
+Each step has a `kind`:
+
+| `kind` | Fields |
+|---|---|
+| `upstream` | one VictoriaLogs call: `route` (the VictoriaLogs path), `query` (the LogsQL), `window` (`start`, `end`, `step` as sent), `status`, `bytes` (decoded body bytes), `outcome` (`eof`, `closed`, `canceled`, `timeout`, `error`), `duration_ms` (to the end of the body) |
+| `operation` | a proxy-side operation or route decision: `operation`, `outcome`, `duration_ms` (for example `patterns_state`, `json_metric_evaluator` with `vl_stats_buckets/pushdown` or `raw_rows/probe`, `translate_query`) |
+| `rewrite` | a handler rewrote the request's LogQL: `from`, `to` |
+| `cache` | one cache lookup: `tier` (`l1_memory`, `l2_disk`, `l3_peer` or `unknown`), `result` (`hit`, `miss`, `stale`), `bytes` returned, `duration_ms` |
+
+A query appears once on a line: a step repeating an earlier query holds
+`{"same_as_step": N}` naming the step that has it, and past a line budget of
+32 KB a query is its `sha256:` hash. `proxy.steps_dropped` is the number of
+steps (of any kind) not kept.
+
+#### The `slow_upstream_request` line
+
+```json
+{
+  "timestamp": "2026-11-07T10:20:40.998774Z",
+  "severity": {"text": "WARN", "number": 13},
+  "body": "slow_upstream_request",
+  "http.route": "/select/logsql/stats_query_range",
+  "loki.api.system": "vl",
+  "proxy.direction": "upstream",
+  "http.response.status_code": 200,
+  "event.duration": 2301000000,
+  "slow.threshold_ms": 2000,
+  "loki.tenant.id": "team-a",
+  "vl.query": "{service_name=\"api\"} | unpack_json | stats by (_time:5m, level) count() c",
+  "vl.window": "start=1794000000 end=1794003600 step=300",
+  "vl.body_bytes": 640112,
+  "vl.body_outcome": "eof",
+  "http.parent_route": "/loki/api/v1/query_range"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `http.route` | the VictoriaLogs path |
+| `http.response.status_code`, `event.duration` | the VictoriaLogs status and the call's duration in nanoseconds, to the end of its body |
+| `slow.threshold_ms` | the `-slow-upstream-threshold` that was crossed |
+| `vl.query`, `vl.window` | the LogsQL (text up to 8 KB, or its hash) and the `start`, `end`, `step` it was sent with |
+| `vl.body_bytes`, `vl.body_outcome` | decoded body bytes and how the body ended (`eof`, `closed`, `canceled`, `timeout`, `error`) |
+| `http.parent_route` | the client route the call served |
+| `proxy.background` | `true` when the call outlived its request (a background build); such a call is in no request's trace |
 
 ### Log Sources
 
@@ -137,14 +373,16 @@ single VictoriaLogs call taking at least `-slow-upstream-threshold` (default
 sampling above, and counted in `loki_vl_proxy_slow_requests_total`:
 
 - `slow_request`: the route, status, duration, tenant, the LogQL, cache
-  result, and `proxy.steps`, the request's steps in order, each with its
+  result, the `flow.*` fields (what the request caused) and `proxy.steps`, the request's steps in order, each with its
   offset from the request's start (`at_ms`): every VictoriaLogs call
   (`upstream`: route, LogsQL, window, status, bytes, outcome, duration), every
   proxy-side operation or route decision (`operation`: e.g. `patterns_state`,
   `json_metric_evaluator` with `vl_stats_buckets/pushdown` or
   `raw_rows/probe`, with its outcome and duration), and every rewrite of the
-  LogQL (`rewrite`: from, to). At most 64 steps; `proxy.steps_dropped` counts
-  the rest. Live tail is never a slow request.
+  LogQL (`rewrite`: from, to), and every cache lookup (`cache`: tier, result,
+  bytes, duration; at most 16, so they leave room for the calls). At most 64
+  steps; `proxy.steps_dropped` counts the rest. Live tail is never a slow
+  request. The Log line reference above lists every field with an example.
 - `slow_upstream_request`: the VictoriaLogs route, LogsQL, window, body bytes
   and outcome, duration and the client route it served (`http.parent_route`);
   `proxy.background=true` marks a call that outlived its request (a background
@@ -288,6 +526,9 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
 | `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | named internal operations including translation, parser preference, rewrites and upstream body completion |
 | `loki_vl_proxy_internal_operation_duration_seconds` | histogram | `operation`, `outcome` | `Medium` | named-operation duration; backend_body_read includes HTTP and consumer time |
+| `loki_vl_proxy_request_phase_seconds` | histogram | `route`, `phase` | `Low` | time one client request spent per phase: `parse`, `translate`, `cache`, `vl`, `proxy` (the request's time minus `vl` and `cache`, so it includes `parse` and `translate`; an estimate when calls ran in parallel); a phase that did not run is not observed, `proxy` always is; Prometheus scrape only |
+| `loki_vl_proxy_request_fanout` | histogram | `route`, `kind` | `Low` | work one client request caused, observed for every request, zero included: `parse`, `translate`, `cache_lookup`, `cache_hit`, `vl_call` counts; buckets 0, 1, 2, 3, 5, 8, 13, 21, 34, 55; Prometheus scrape only |
+| `loki_vl_proxy_cache_lookup_seconds` | histogram | `tier`, `result` | `Low` | time of one cache lookup by the tier that answered (`l1_memory`, `l2_disk`, `l3_peer`, `unknown` for a miss of the full stack) and `result` (`hit`, `miss`, `stale`); buckets from 10 microseconds; Prometheus scrape only |
 | `loki_vl_proxy_backend_read_bytes_total` | counter | `kind` | `Low` | consumed decoded VL HTTP body bytes recorded at close; fixed `raw`, `stats`, `metadata`, `other` kinds; not encoded network traffic or cache bytes; both Prometheus and OTLP |
 | `loki_vl_proxy_coalesced_total` | counter | none | `Low` | requests served from coalesced results |
 | `loki_vl_proxy_coalesced_saved_total` | counter | none | `Low` | backend requests saved by coalescing |
@@ -607,6 +848,12 @@ Use these queries to quickly isolate downstream client pain, upstream slowness, 
 | Tenant p99 latency by route | `histogram_quantile(0.99, sum(rate(loki_vl_proxy_tenant_request_duration_seconds_bucket{system="loki",direction="downstream"}[5m])) by (le, tenant, endpoint, route))` |
 | Route cache hit ratio | `sum(rate(loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream"}[5m])) by (endpoint, route) / clamp_min(sum(rate(loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream"}[5m])) by (endpoint, route) + sum(rate(loki_vl_proxy_cache_misses_by_endpoint{system="loki",direction="downstream"}[5m])) by (endpoint, route), 1)` |
 | Client bad_request by route | `sum(rate(loki_vl_proxy_client_errors_total{system="loki",direction="downstream",reason="bad_request"}[5m])) by (endpoint, route)` |
+| VictoriaLogs calls per request, p95 by route | `histogram_quantile(0.95, sum(rate(loki_vl_proxy_request_fanout_bucket{kind="vl_call"}[5m])) by (le, route))` |
+| Requests answered with no VictoriaLogs call | `sum(rate(loki_vl_proxy_request_fanout_bucket{kind="vl_call",le="0"}[5m])) by (route) / sum(rate(loki_vl_proxy_request_fanout_count{kind="vl_call"}[5m])) by (route)` |
+| Cache lookups per request, p95 by route | `histogram_quantile(0.95, sum(rate(loki_vl_proxy_request_fanout_bucket{kind="cache_lookup"}[5m])) by (le, route))` |
+| Share of request time in cache vs VictoriaLogs, by route | `sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase="cache"}[5m])) by (route) / sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase=~"cache\|vl\|proxy"}[5m])) by (route)` and the same with `phase="vl"` (`parse` and `translate` run inside `proxy`, so leave them out of the denominator) |
+| Where the time goes (`cache`, `vl`, `proxy` add up to the request time; `parse` and `translate` are part of `proxy`) | `sum(rate(loki_vl_proxy_request_phase_seconds_sum{phase=~"cache\|vl\|proxy"}[5m])) by (phase)` |
+| p99 cache lookup time by tier | `histogram_quantile(0.99, sum(rate(loki_vl_proxy_cache_lookup_seconds_bucket{result="hit"}[5m])) by (le, tier))` |
 
 For latency histograms, keep dashboards on `p50`, `p95`, and `p99` rather than averages. Averages hide tail latency incidents. For exact proxy-only overhead, use structured logs (`proxy.overhead_ms`) alongside the latency histograms; subtracting histogram quantiles is not mathematically reliable.
 

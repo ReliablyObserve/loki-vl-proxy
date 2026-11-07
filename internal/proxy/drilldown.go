@@ -479,7 +479,7 @@ func streamSelectorPrefix(query string) string {
 	if query == "" {
 		return ""
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		// Fall back to brace-scanner on parse failure.
 		inQuote := byte(0)
@@ -753,7 +753,7 @@ func stripUnwrapAndDropStages(query string) string {
 	if query == "" {
 		return query
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		// Fall back to regex on parse failure.
 		query = reDropStage.ReplaceAllString(query, " ")
@@ -784,7 +784,7 @@ func stripIncompleteUnwrapStubs(query string) string {
 	if !strings.Contains(query, "unwrap") {
 		return query
 	}
-	expr, err := logqlpkg.Parse(query)
+	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
 		return query
 	}
@@ -804,7 +804,7 @@ func stripParserOnlyStages(query string) string {
 	if query == "" {
 		return query
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return collapseSpaces(reParserStage.ReplaceAllString(query, " "))
 	}
@@ -839,7 +839,7 @@ func isFieldComparisonStage(s logqlpkg.Stage) bool {
 }
 
 func hasFieldComparisonStages(query string) bool {
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		return hasFieldComparisonRE.MatchString(query)
 	}
@@ -856,7 +856,7 @@ func stripFieldComparisonStages(query string) string {
 	if query == "" {
 		return query
 	}
-	lq, err := logqlpkg.ParseLogQuery(query)
+	lq, err := parseLogQLQuery(noFlowCtx, query)
 	if err != nil {
 		result := stripFieldComparisonStgRE.ReplaceAllString(query, " ")
 		for strings.Contains(result, "  ") {
@@ -2478,7 +2478,7 @@ func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end s
 	if ctx.Value(detectedFieldsRefreshKey{}) != nil {
 		return nil, nil, false
 	}
-	raw, ok := p.cache.Get(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit))
+	raw, ok := p.cacheGet(ctx, p.cache, p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit))
 	if !ok {
 		return nil, nil, false
 	}
@@ -2511,7 +2511,7 @@ func (p *Proxy) getCachedDetectedLabels(ctx context.Context, query, start, end s
 	if p.cache == nil {
 		return nil, nil, false
 	}
-	raw, ok := p.cache.Get(p.detectedLabelsCacheKey(ctx, query, start, end, lineLimit))
+	raw, ok := p.cacheGet(ctx, p.cache, p.detectedLabelsCacheKey(ctx, query, start, end, lineLimit))
 	if !ok {
 		return nil, nil, false
 	}

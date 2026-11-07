@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
@@ -38,7 +37,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	if len(filteredTenants) == 0 {
 		if endpoint == "query" {
 			// No tenant left to ask is no reason to answer `streams`: a log query is no instant query.
-			if _, err := logqlpkg.Parse(r.FormValue("query")); err != nil {
+			if _, err := parseLogQLExpr(r.Context(), r.FormValue("query")); err != nil {
 				p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : %v", err))
 				return true
 			}
@@ -52,7 +51,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
-		if cached, remaining, age, ok := p.cache.GetWithAge(cacheKey); ok && !p.multiTenantMergeStale(endpoint, cached, remaining, age, filteredReq) {
+		if cached, remaining, age, ok := p.cacheGetWithAge(r.Context(), p.cache, cacheKey); ok && !p.multiTenantMergeStale(endpoint, cached, remaining, age, filteredReq) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			return true

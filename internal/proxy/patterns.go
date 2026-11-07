@@ -191,7 +191,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		if key == "" {
 			continue
 		}
-		if cached, ok := p.cache.Get(key); ok {
+		if cached, ok := p.cacheGet(r.Context(), p.cache, key); ok {
 			body := p.applyCustomPatternsToPayload(cached, startParam, endParam, stepParam, patternLimit)
 			recordPatternResponseMetrics(p.metrics, body)
 			w.Header().Set("Content-Type", "application/json")
@@ -202,7 +202,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if fallbackCached, ok := p.cache.Get(cacheWriteKey); ok {
+	if fallbackCached, ok := p.cacheGet(r.Context(), p.cache, cacheWriteKey); ok {
 		body := p.applyCustomPatternsToPayload(fallbackCached, startParam, endParam, stepParam, patternLimit)
 		recordPatternResponseMetrics(p.metrics, body)
 		w.Header().Set("Content-Type", "application/json")
@@ -513,7 +513,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 		if cacheable {
 			cacheKey = p.patternWindowCacheKey(r, logsqlQuery, stepParam, patternLimit, limit, window.startNs, endNs)
 			lookupStart := time.Now()
-			if cached, ok := p.cache.Get(cacheKey); ok {
+			if cached, ok := p.cacheGet(r.Context(), p.cache, cacheKey); ok {
 				var value patternWindowCacheValue
 				if json.Unmarshal(cached, &value) == nil && len(value.Entries) > 0 {
 					p.observeInternalOperation(r.Context(), "patterns_window_cache", "hit", time.Since(lookupStart))
@@ -1525,7 +1525,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("detected_labels", orgID, r)
 	detectedLabelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_labels"])
-	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_labels", cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry(r.Context(), "detected_labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
@@ -1541,7 +1541,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	lineLimit := parseDetectedLineLimit(r)
 	detectedLabels, _, err := p.detectLabels(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		if p.serveStaleReadCacheOnError(w, "detected_labels", cacheKey, start, err) {
+		if p.serveStaleReadCacheOnError(r.Context(), w, "detected_labels", cacheKey, start, err) {
 			return
 		}
 		status := p.writeErr(w, r.Context(), err)
