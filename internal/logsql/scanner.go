@@ -3,7 +3,9 @@ package logsql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -49,8 +51,10 @@ const (
 
 	// Values
 	TokIdent     // identifier (letters, digits, _, ., -, /, [, ])
-	TokString    // "…" — stored without surrounding quotes
+	TokString    // "…" or '…' — stored without surrounding quotes
 	TokRawString // `…` — stored without surrounding backticks
+
+	TokBang // !  (negation, when no = or ~ follows)
 )
 
 // Token is a single lexical unit.
@@ -63,7 +67,18 @@ type Token struct {
 type Scanner struct {
 	src string
 	pos int
+	// spaceBefore is whether whitespace came before the token Next returned last, so a parser can tell "a -b"
+	// from "a-b" and "*a" from "* a".
+	spaceBefore bool
+	// start and end are the byte offsets of the token Next returned last in the source.
+	start, end int
 }
+
+// Raw returns the source text of the token Next returned last: a quoted string with its quotes.
+func (s *Scanner) Raw() string { return s.src[s.start:s.end] }
+
+// SpaceBefore reports whether whitespace (or a comment) separated the token Next returned last from the one before.
+func (s *Scanner) SpaceBefore() bool { return s.spaceBefore }
 
 // NewScanner returns a Scanner for the given input string.
 func NewScanner(src string) *Scanner { return &Scanner{src: src} }
@@ -71,7 +86,16 @@ func NewScanner(src string) *Scanner { return &Scanner{src: src} }
 // Next returns the next Token, advancing the position.
 // Returns TokEOF once all input is consumed.
 func (s *Scanner) Next() Token {
+	start := s.pos
 	s.skipWS()
+	s.spaceBefore = s.pos > start
+	s.start = s.pos
+	tok := s.next()
+	s.end = s.pos
+	return tok
+}
+
+func (s *Scanner) next() Token {
 	if s.pos >= len(s.src) {
 		return Token{Typ: TokEOF}
 	}
@@ -105,7 +129,7 @@ func (s *Scanner) Next() Token {
 	case '*':
 		s.pos += size
 		return Token{Typ: TokStar, Val: "*"}
-	case '"':
+	case '"', '\'':
 		return s.scanQuoted()
 	case '`':
 		return s.scanRaw()
@@ -130,7 +154,7 @@ func (s *Scanner) Next() Token {
 				return Token{Typ: TokReNotMatch, Val: "!~"}
 			}
 		}
-		return Token{Typ: TokError, Val: "unexpected !"}
+		return Token{Typ: TokBang, Val: "!"}
 	case '~':
 		s.pos += size
 		return Token{Typ: TokTilde, Val: "~"}
@@ -142,43 +166,49 @@ func (s *Scanner) Next() Token {
 func (s *Scanner) skipWS() {
 	for s.pos < len(s.src) {
 		r, size := utf8.DecodeRuneInString(s.src[s.pos:])
-		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
+		if r == '#' { // a comment runs to the end of the line
+			if n := strings.IndexByte(s.src[s.pos:], '\n'); n >= 0 {
+				s.pos += n
+			} else {
+				s.pos = len(s.src)
+			}
+			continue
+		}
+		if !unicode.IsSpace(r) {
 			break
 		}
 		s.pos += size
 	}
 }
 
+// scanQuoted reads a "…" or '…' string the way VictoriaLogs' lexer does: "…" with Go's string escapes and '…' with
+// Go's escapes for a single-quoted string.
 func (s *Scanner) scanQuoted() Token {
-	s.pos++ // consume opening "
-	var b strings.Builder
-	for s.pos < len(s.src) {
-		ch := s.src[s.pos]
-		if ch == '"' {
-			s.pos++
-			return Token{Typ: TokString, Val: b.String()}
-		}
-		if ch == '\\' && s.pos+1 < len(s.src) {
-			s.pos++
-			switch s.src[s.pos] {
-			case 'n':
-				b.WriteByte('\n')
-			case 't':
-				b.WriteByte('\t')
-			case '"':
-				b.WriteByte('"')
-			case '\\':
-				b.WriteByte('\\')
-			default:
-				b.WriteByte('\\')
-				b.WriteByte(s.src[s.pos])
+	rest := s.src[s.pos:]
+	if rest[0] == '\'' {
+		var b []byte
+		i := 1
+		for !strings.HasPrefix(rest[i:], "'") {
+			ch, _, tail, err := strconv.UnquoteChar(rest[i:], '\'')
+			if err != nil {
+				s.pos++
+				return Token{Typ: TokError, Val: "unterminated string"}
 			}
-			s.pos++
-			continue
+			b = utf8.AppendRune(b, ch)
+			i = len(rest) - len(tail)
 		}
-		b.WriteByte(ch)
-		s.pos++
+		s.pos += i + 1
+		return Token{Typ: TokString, Val: string(b)}
 	}
+	prefix, err := strconv.QuotedPrefix(rest)
+	if err == nil {
+		var val string
+		if val, err = strconv.Unquote(prefix); err == nil {
+			s.pos += len(prefix)
+			return Token{Typ: TokString, Val: val}
+		}
+	}
+	s.pos++
 	return Token{Typ: TokError, Val: "unterminated string"}
 }
 
@@ -188,10 +218,11 @@ func (s *Scanner) scanRaw() Token {
 	for s.pos < len(s.src) && s.src[s.pos] != '`' {
 		s.pos++
 	}
-	val := s.src[start:s.pos]
-	if s.pos < len(s.src) {
-		s.pos++ // consume closing `
+	if s.pos >= len(s.src) {
+		return Token{Typ: TokError, Val: "unterminated raw string"}
 	}
+	val := s.src[start:s.pos]
+	s.pos++ // consume closing `
 	return Token{Typ: TokRawString, Val: val}
 }
 
@@ -242,7 +273,8 @@ func (s *Scanner) scanIdent() Token {
 		s.pos += size
 		return Token{Typ: TokError, Val: "unexpected character: " + bad}
 	}
-	switch val {
+	// VictoriaLogs reads the logical keywords in any case.
+	switch strings.ToUpper(val) {
 	case "AND":
 		return Token{Typ: TokAnd, Val: val}
 	case "OR":
@@ -256,9 +288,9 @@ func (s *Scanner) scanIdent() Token {
 // isIdentRune returns true for characters valid inside a LogsQL identifier
 // or bare value (field names, durations, numbers, paths).
 func isIdentRune(r rune) bool {
-	return r == '_' || r == '.' || r == '-' || r == '/' ||
+	return r == '_' || r == '.' || r == '-' || r == '/' || r == '+' || r == '$' ||
 		(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-		(r >= '0' && r <= '9')
+		(r >= '0' && r <= '9') || (r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)))
 }
 
 // String returns a human-readable name for the token type.
@@ -271,7 +303,7 @@ func (t TokType) String() string {
 		"Eq", "Neq", "ReMatch", "ReNotMatch",
 		"Tilde",
 		"And", "Or", "Not",
-		"Ident", "String", "RawString",
+		"Ident", "String", "RawString", "Bang",
 	}
 	if int(t) < len(names) {
 		return names[t]

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The proxy's LogsQL parser reads back what the proxy sends to VictoriaLogs:
+  every pipe the translator emits (`extract`, `format`, `rename`, `replace`,
+  `pack_*`, `unpack_*` with their arguments, `stats` with `if` and
+  `by (_time:step offset)`, `math`, `coalesce`, `copy`) and the filter forms
+  (negations, implicit AND, field scopes, `_time` and `_stream` forms), as typed
+  nodes that print back to the same query. A value holding a line break or
+  carriage return is now written as an escaped string so it reads back the
+  same; VictoriaLogs answers these queries as before.
+
 ### Added
 
 - feat(observability): `-slow-query-log-level` (`warn` default, `info`,

@@ -100,8 +100,9 @@ func FuzzCapabilitiesFor(f *testing.F) {
 	})
 }
 
-// FuzzParseRoundTrip tests that parsing never panics on arbitrary input.
-// Round-trip correctness is NOT asserted (arbitrary input won't be canonical).
+// FuzzParseRoundTrip tests that parsing never panics on arbitrary input, and that what parses prints to a query
+// that parses again and prints the same: the printed form is canonical. A printed form that does not read again
+// would be a node whose printer and parser disagree.
 func FuzzParseRoundTrip(f *testing.F) {
 	// Seed with known-valid inputs from TestParseRoundTrip
 	f.Add("*")
@@ -111,6 +112,17 @@ func FuzzParseRoundTrip(f *testing.F) {
 	f.Add(`_time:5m`)
 	f.Add(`* | unpack_json | filter level:="error" | stats by (host) count() as cnt`)
 	f.Add(`latency:range(100,500)`)
+	// The pipes and filters the translator writes.
+	f.Add(`app:="x" | format if (level:*) "<level>" as lvl keep_original_fields | unpack_json from _msg fields (a, "b.c") result_prefix "p_" skip_empty_results`)
+	f.Add(`app:="x" | extract if (-a:*) "<a> <_>" from _msg keep_original_fields | extract_regexp "(?P<n>[0-9]+)" skip_empty_results`)
+	f.Add("app:=\"x\" | copy a as b, \"c.d\" as e | rename f as g | replace (\"a\", \"b\") at h limit 2 | replace_regexp if (h:*) (`^\\d`, \"0\") at i")
+	f.Add(`app:="x" | pack_json fields (a, b) as p | pack_logfmt | coalesce(a, "b.c") default "d" as e | math a + 1 as n | stats by (_time:5m offset 1h, a) count() if (b:*) c, sum(n) | sort by (c desc) limit 3`)
+	f.Add(`"a.b":~"x" -c:="d" e:!"" f:>=1.5 g:<=1h5m _msg:(i(a) OR i(b)) (h:* OR -i:*) j:in(a, "b") k:ipv4_range(1.2.3.4, 5.6.7.8)`)
+	f.Add(`a:i(b*) NOT c seq("d","e") contains_all("f") len_range(1, 5) pattern("a <_> b") !g _time:[2026-11-07T00:00:00Z, 2026-11-07T01:00:00Z)`)
+	f.Add(`* | count() as n | stats by (a) uniq_values(b, 3) y`)
+	// Inputs the fuzzer found: a negated NOT, and bytes that are not UTF-8.
+	f.Add(`-!000`)
+	f.Add("`\xb5`")
 	f.Fuzz(func(t *testing.T, input string) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -122,12 +134,14 @@ func FuzzParseRoundTrip(f *testing.F) {
 		if err != nil {
 			return
 		}
-		// If parse succeeds, String() must not panic
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("Query.String() panicked after parsing %q: %v", input, r)
-			}
-		}()
-		_ = q.String()
+		// If parse succeeds, String() must not panic and must read again as itself
+		printed := q.String()
+		q2, err := logsql.Parse(printed)
+		if err != nil {
+			t.Fatalf("Parse(%q) printed %q, which does not parse: %v", input, printed, err)
+		}
+		if again := q2.String(); again != printed {
+			t.Fatalf("Parse(%q) printed %q, which prints again as %q", input, printed, again)
+		}
 	})
 }

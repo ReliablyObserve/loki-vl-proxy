@@ -62,7 +62,7 @@ func TestPipeString_Extended(t *testing.T) {
 		{"facets_no_limit", logsql.PipeFacets{}, "| facets"},
 		{"field_values_limit", logsql.PipeFieldValues{Field: "level", Limit: 5}, "| field_values level limit 5"},
 		{"field_values_no_limit", logsql.PipeFieldValues{Field: "level"}, "| field_values level"},
-		{"generate_sequence", logsql.PipeGenerateSequence{Limit: 10}, "| generate_sequence limit 10"},
+		{"generate_sequence", logsql.PipeGenerateSequence{Limit: 10}, "| generate_sequence 10"},
 		{"hash", logsql.PipeHash{Fields: []string{"user_id"}, Result: "uid_hash"}, "| hash(user_id) as uid_hash"},
 		{"join", logsql.PipeJoin{By: []string{"id"}, Inner: `_msg:"x"`}, `| join by (id) (_msg:"x")`},
 		{"join_prefix", logsql.PipeJoin{By: []string{"id"}, Inner: "x", Prefix: "r_"}, "| join by (id) (x) prefix r_"},
