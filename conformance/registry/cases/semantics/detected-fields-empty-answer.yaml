@@ -70,8 +70,7 @@ gap:
   loki: 'pkg/querier/queryrange/detected_fields.go:42-89; pkg/logproto/logproto.pb.go DetectedFieldsResponse'
   proxy: 'no bare-selector field lookup after a scan that answered; no limit without fields'
   planned_test: 'TestDetectedFields_EmptyAnswerLikeLoki_EdgeTable, TestDetectedFields_EmptyAnswerTokensLeaveRelaxedQuery, TestDetectedFields_EmptyAnswerCachedRepeat, TestDetectedFields_ScanDeadlineKeepsNativeFallback, TestDetectedFields_MultiTenantEmptyAnswer, TestDetectedFields_EmptyAnswerDifferentialAgainstLokiReference, FuzzDetectedFieldsEmptyAnswer (internal/proxy, CI fuzz-smoke); TestCompat_DetectedFieldsEmptyAnswer (test/e2e-compat, group core)'
-  clusters:
-    - 3b1319d9
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0

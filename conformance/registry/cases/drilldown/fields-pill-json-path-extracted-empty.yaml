@@ -55,8 +55,7 @@ gap:
   loki: 'pkg/logql/log/parser.go:671 (JSONExpressionParser.Process, JSON path into the named label)'
   proxy: 'Loki''s series and values, with and without the level pill'
   planned_test: 'TestCompat_DrilldownFieldsPillJSONPathExtracted (test/e2e-compat, group core)'
-  clusters:
-    - 640ed4be
+  clusters: []
 perf:
   max_ratio: 2.0
   target_ratio: 1.0
