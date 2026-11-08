@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The stats handlers read each translated stats query as a typed query-plan
+  operator decoded once where the query is produced, instead of re-reading its
+  text at every step. The requests sent to VictoriaLogs, the cache keys and the
+  answers do not change.
+
 ## [2.105.0] - 2026-11-08
 
 ### Changed

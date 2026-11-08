@@ -22,7 +22,6 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -2301,55 +2300,6 @@ type bareParserMetricSeries struct {
 	samples []bareParserMetricSample
 }
 
-// isStatsQuery returns true if the LogsQL query contains a stats pipe.
-// It uses the typed AST parser when possible, falling back to a quote-aware
-// string scanner on parse failure (e.g. malformed or unsupported syntax).
-func isStatsQuery(logsqlQuery string) bool {
-	q, err := logsql.Parse(logsqlQuery)
-	if err != nil {
-		// Fall back to old quote-aware heuristic only on parse failure.
-		return isStatsQueryHeuristic(logsqlQuery)
-	}
-	for _, p := range q.Pipes {
-		switch p.(type) {
-		case logsql.PipeStats, logsql.PipeRunningStats, logsql.PipeTotalStats:
-			return true
-		}
-	}
-	// VictoriaLogs shorthand "| rate(" / "| count(" are not yet modelled as
-	// standalone pipe types in the local AST; detect them with the heuristic
-	// but run it only when the query parsed successfully (so the filter region
-	// is well-formed and the quote-aware walk is safe).
-	return isStatsQueryHeuristic(logsqlQuery)
-}
-
-// isStatsQueryHeuristic is the original quote-aware string scanner for
-// detecting stats pipes. It is used as a fallback when the AST parser fails
-// and also to detect VL shorthand pipes (| rate(, | count() not yet in AST).
-func isStatsQueryHeuristic(logsqlQuery string) bool {
-	inQuote := false
-	for i := 0; i < len(logsqlQuery); i++ {
-		if inQuote && logsqlQuery[i] == '\\' && i+1 < len(logsqlQuery) {
-			i++
-			continue
-		}
-		if logsqlQuery[i] == '"' {
-			inQuote = !inQuote
-			continue
-		}
-		if inQuote {
-			continue
-		}
-		rest := logsqlQuery[i:]
-		if strings.HasPrefix(rest, "| stats ") ||
-			strings.HasPrefix(rest, "| rate(") ||
-			strings.HasPrefix(rest, "| count(") {
-			return true
-		}
-	}
-	return false
-}
-
 // parseDeleteTimestamp parses a timestamp string used in delete requests and
 // returns Unix nanoseconds. It accepts float seconds, float nanoseconds (>1e15),
 // RFC3339Nano, and RFC3339. Returns an error for unrecognized formats so callers
@@ -2587,4 +2537,11 @@ func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
 		buf.WriteString(s[start:])
 	}
 	buf.WriteByte('"')
+}
+
+// isStatsQuery reports whether a translated query is a stats query (translator.DecodeStats), for the paths that
+// still rewrite the query as text before reading it.
+func isStatsQuery(logsqlQuery string) bool {
+	_, ok := translator.DecodeStats(logsqlQuery)
+	return ok
 }

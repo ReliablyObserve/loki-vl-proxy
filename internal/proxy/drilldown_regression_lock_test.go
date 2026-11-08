@@ -159,7 +159,7 @@ func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
 				tc.startSec, tc.endSec, tc.stepRaw, tc.source)
 			w := httptest.NewRecorder()
 			p.proxyStatsQueryRange(w, r,
-				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
+				statsQueryOf(`namespace:="prod" | filter pod:!"" | stats by (pod) count()`))
 
 			gotSuppressed := w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed"
 			if gotSuppressed != tc.wantSuppress {
@@ -439,7 +439,7 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 			c[0], c[1], strconv.FormatInt(int64(step.Seconds()), 10), source)
 		w := httptest.NewRecorder()
 		p.proxyStatsQueryRange(w, r,
-			`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
+			statsQueryOf(`namespace:="prod" | filter pod:!"" | stats by (pod) count()`))
 
 		// Skip suppressed leftovers (Grafana would have nothing to merge).
 		if w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed" {

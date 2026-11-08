@@ -450,11 +450,11 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
-        "internal/proxy/stream_processing.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/unwrap_samples.go",
         "internal/proxy/volume.go",
         "internal/proxy/volume_segments.go",
+        "internal/translator/stats_codec.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]
@@ -627,9 +627,9 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
-        "internal/proxy/stream_processing.go",
         "internal/proxy/unwrap_samples.go",
         "internal/translator/parsed_key_variants.go",
+        "internal/translator/stats_codec.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]
@@ -759,7 +759,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/proxy/stream_processing.go"
+        "internal/translator/stats_codec.go"
       ]
     },
     {
