@@ -1,0 +1,46 @@
+id: semantics/nested-aggregation-query-length
+title: A deeply nested aggregation translates to LogsQL longer than VictoriaLogs accepts, and answers 500 where Loki answers 200 (open)
+pending: true
+proves:
+  - loki_api_v1_query
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Observed 2026-11-08 on the compose stack (Loki 3.7.9, VictoriaLogs v1.53.0
+  with its default -search.maxQueryLen=16384):
+
+  | query | LogQL | LogsQL sent | Loki | proxy |
+  |---|---:|---:|---|---|
+  | `sum(` × 100 around `count_over_time({service_name="api-gateway"}[1m])` | 549 B | under the limit | 200 | 200 |
+  | the same, 1,000 levels | 5,049 B | 42,674 B | 200 | 500 (VictoriaLogs: `the query arg length cannot exceed -search.maxQueryLen=16384 bytes`) |
+  | the same, 10,000 levels | 50,049 B | 402,674 B | 200 | 500 |
+  | the same, 30,000 levels | 150,049 B | not translated | 400 `input size too long` | 400 `input size too long` |
+
+  Each level of nesting adds about 42 bytes of LogsQL, so VictoriaLogs' default
+  limit is reached at about 380 levels; Loki answers up to its own 131,072-byte
+  input limit. A query nobody writes by hand, but one a generator can send.
+  VictoriaLogs' limit is the operator's (-search.maxQueryLen), so the answer
+  also depends on the backend's configuration.
+request:
+  method: GET
+  path: /loki/api/v1/query
+  params:
+    query: 'sum(sum(sum(count_over_time({service_name="api-gateway"}[1m]))))'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: |
+    Loki's 200 for every nesting depth under Loki's input size; the proxy's
+    LogsQL either fits VictoriaLogs' query length (an outer sum over a sum adds
+    nothing to fold) or the extra levels are folded proxy-side.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator (nested vector aggregations: each level writes its own stats pipe), the physical plan (a sum over a sum is the inner sum)'
+  loki: 'the observed answers above (compose stack, Loki 3.7.9, 2026-11-08)'
+  proxy: 'translates every level into the LogsQL text, past VictoriaLogs default query length at about 380 levels'
+  planned_test: 'TestQuery_NestedAggregationFitsVictoriaLogsQueryLength (internal/proxy, stub VictoriaLogs enforcing 16384 bytes)'
+  clusters: []
