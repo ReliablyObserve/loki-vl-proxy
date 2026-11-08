@@ -75,8 +75,11 @@ func withoutSourceSpacing(e Expr) {
 var (
 	// labelFilterName is a label name as the printer is meant to keep.
 	labelFilterName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
-	// labelFilterNumeral is a number, duration or bytes literal likewise.
-	labelFilterNumeral = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
+	// labelFilterNumeral is a number (decimal, exponent, hex, `_` separators),
+	// duration (`1h5m`, `1.5s`, `5µs`) or bytes (`10KB`, `10MiB`) literal
+	// likewise. Values such as `.` or `0+` pass ValidateLogQL but are no number
+	// Loki reads, so the printer has nothing to keep for them.
+	labelFilterNumeral = regexp.MustCompile(`^[+-]?(0[xX][0-9A-Fa-f_]+|([0-9][0-9_]*(\.[0-9_]*)?|\.[0-9][0-9_]*)([eE][+-]?[0-9]+)?([A-Za-zµ]+([0-9][0-9_]*(\.[0-9_]*)?[A-Za-zµ]+)*)?)$`)
 )
 
 // outsideLabelFilterDomain reports whether a label filter stage of the tree is
@@ -91,10 +94,17 @@ func outsideLabelFilterDomain(e Expr) bool {
 		switch x := node.(type) {
 		case *LabelFilterStage:
 			outside = outside || x.Expr == nil
+		case *UnwrapStage:
+			// `| unwrap [5m]` and `| unwrap[`: an unwrap without its label prints
+			// without what followed it (a known printer gap, not a literal).
+			outside = outside || x.Label == ""
 		case *LabelFilterExpr:
 			if x.IsLeaf() {
 				numeric := x.Kind == LabelFilterValueNumber || x.Kind == LabelFilterValueDuration || x.Kind == LabelFilterValueBytes
-				outside = outside || x.Kind == LabelFilterValueNone || !labelFilterName.MatchString(x.Name) || numeric && !labelFilterNumeral.MatchString(x.Value)
+				outside = outside || x.Kind == LabelFilterValueNone || !labelFilterName.MatchString(x.Name) || numeric && !labelFilterNumeral.MatchString(x.Value) ||
+					// A label named like a keyword (`BY`): the scanner lowercases it in the
+					// stage text, which the text readers rely on (`IP(` reads as `ip(`).
+					lokiKeywords[strings.ToLower(x.Name)] && strings.ToLower(x.Name) != x.Name
 			}
 		}
 	})

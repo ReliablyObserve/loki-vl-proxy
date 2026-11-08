@@ -993,7 +993,8 @@ func zeroLineToken(name string) bool {
 // appendStageToken appends the current token's source rendering to b and
 // advances. It inserts a space when adjacent tokens would merge without one:
 //
-//	(a) alphanumeric + alphanumeric: `200`+`and` → `200and` (unparseable)
+//	(a) alphanumeric, `.` or non-ASCII + alphanumeric: `200`+`and` → `200and`,
+//	    `0µ`+`A` → `0µA` (unparseable)
 //	(b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
 //
 // Rule (a) does not apply to tokens that touch in the source: the scanner cuts
@@ -1004,7 +1005,7 @@ func (p *parser) appendStageToken(b *strings.Builder) {
 	raw := tokenRaw(p.advance())
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
-		if (isAlphanumeric(prev) && !touches) || prev == '"' || prev == '`' {
+		if ((isAlphanumeric(prev) || prev == '.' || prev >= 0x80) && !touches) || prev == '"' || prev == '`' {
 			b.WriteByte(' ')
 		}
 	}
