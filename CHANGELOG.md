@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix: a query whose line filter, label filter value or stream label value
+  holds text the proxy writes into its own translated queries (for example
+  `|= "__without__:pod"`) answered an error; the text is now matched as text,
+  like Loki, on `query` and `query_range`.
+
 ## [2.97.0] - 2026-11-08
 
 ### Changed

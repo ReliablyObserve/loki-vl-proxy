@@ -31,10 +31,10 @@ func lrMarker(dst, repl, src, regex string) string {
 // physical.Split(DecodePhysical(s)) gives, and the decoded operators write s back.
 func assertSplitPost(t testing.TB, s string) {
 	t.Helper()
-	wantClean, wantOp, wantLabels, wantSpecs := legacySplit(s)
+	wantClean, wantOp, wantLabels, wantSpecs := referenceSplit(s)
 	clean, post := translator.SplitPost(s)
 	if clean != wantClean {
-		t.Fatalf("SplitPost(%q) clean = %q, legacy %q", s, clean, wantClean)
+		t.Fatalf("SplitPost(%q) clean = %q, reference %q", s, clean, wantClean)
 	}
 	if wantFolds := wantOp != "" || len(wantLabels) > 0; post.Folds() != wantFolds {
 		t.Fatalf("SplitPost(%q) folds = %v, legacy op %q labels %#v", s, post.Folds(), wantOp, wantLabels)
@@ -302,8 +302,9 @@ func FuzzPhysicalCodec(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) { checkPhysicalCodec(t, s) })
 }
 
-// FuzzSplitPostOnTranslatorOutput: for any LogQL text the translator accepts, SplitPost reads its output like the old
-// strip, and the codec writes it back.
+// FuzzSplitPostOnTranslatorOutput: for any LogQL text the translator accepts, SplitPost reads its output like the
+// reference, the codec writes it back, and a without fold or a label_replace is read only when the query, outside its
+// strings, has a without or a label_replace: text inside a client's string never becomes one.
 func FuzzSplitPostOnTranslatorOutput(f *testing.F) {
 	b, err := os.ReadFile(captureSamplePath)
 	if err != nil {
@@ -322,6 +323,8 @@ func FuzzSplitPostOnTranslatorOutput(f *testing.F) {
 		`sum without (pod) (rate({app="x"}[5m]))`, `label_replace(rate({app="x"}[5m]), "a", "$1", "app", "(.*)")`,
 		`rate({app="x"}[5m]) / on (app) group_left rate({app="y"}[5m])`, `{app="x"} |= "__without__:a"`, `{app="x"} |= "__lvp_lr:YQ==__"`,
 		`label_replace(sum without (pod) (rate({app="x"}[5m])), "", "", "", "")`, `sum without () (rate({app="x"}[5m]))`,
+		`sum(count_over_time({app="x"} |= "__without__:pod" [1m]))`, "{app=\"x\"} |= `__without__:pod`",
+		`sum by (a) (count_over_time({app="__lvp_lr:YQ==__"} | json | x="__without__:a" [1m]))`,
 	} {
 		f.Add(q)
 	}
@@ -331,7 +334,37 @@ func FuzzSplitPostOnTranslatorOutput(f *testing.F) {
 			t.Skip()
 		}
 		checkPhysicalCodec(t, s)
+		code := strings.ToLower(withoutStrings(q))
+		_, post := translator.SplitPost(s)
+		if post.Folds() && !strings.Contains(code, "without") {
+			t.Fatalf("%q: a without fold is read, and the query has no without outside its strings\n%q", q, s)
+		}
+		if len(post.LabelReplace) > strings.Count(code, "label_replace") {
+			t.Fatalf("%q: %d label_replace calls are read, the query has %d outside its strings\n%q", q,
+				len(post.LabelReplace), strings.Count(code, "label_replace"), s)
+		}
 	})
+}
+
+// withoutStrings is LogQL text with its quoted strings ("…", `…`) removed, escapes included.
+func withoutStrings(q string) string {
+	var b strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; c {
+		case '"':
+			for i++; i < len(q) && q[i] != '"'; i++ {
+				if q[i] == '\\' {
+					i++
+				}
+			}
+		case '`':
+			for i++; i < len(q) && q[i] != '`'; i++ {
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // opGen builds physical operators from fuzzer bytes: a byte stream picks the shape, the strings and the depth, and an

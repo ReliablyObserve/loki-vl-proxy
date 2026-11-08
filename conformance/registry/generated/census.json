@@ -505,6 +505,9 @@
     "semantics/lower-bound-exclusive | compare:observed",
     "semantics/lower-bound-exclusive | gap:fixed",
     "semantics/lower-bound-exclusive | query",
+    "semantics/marker-text-in-query-strings | compare:observed",
+    "semantics/marker-text-in-query-strings | gap:fixed",
+    "semantics/marker-text-in-query-strings | query",
     "semantics/metadata-answers-include-last-24h-like-loki | compare:exact",
     "semantics/metadata-answers-include-last-24h-like-loki | perf",
     "semantics/metadata-answers-include-last-24h-like-loki | perf:locked",
@@ -512,6 +515,9 @@
     "semantics/nested-aggregation-outer-by-native-routes | gap:fixed",
     "semantics/nested-aggregation-outer-by-native-routes | perf",
     "semantics/nested-aggregation-outer-by-native-routes | query",
+    "semantics/nested-aggregation-query-length | compare:observed",
+    "semantics/nested-aggregation-query-length | gap:open",
+    "semantics/nested-aggregation-query-length | query",
     "semantics/non-sum-vector-aggregation-unreduced | compare:observed",
     "semantics/non-sum-vector-aggregation-unreduced | gap:fixed",
     "semantics/non-sum-vector-aggregation-unreduced | query",
@@ -1467,6 +1473,7 @@
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/physical_security_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_security_test.go | semantics/marker-text-in-query-strings",
     "internal/querycorpus/physical_security_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/physical_split_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_split_test.go | semantics/without-over-inner-aggregation-collapses",
@@ -1707,6 +1714,9 @@
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
+    "test/e2e-compat/marker_text_test.go | loki_api_v1_query",
+    "test/e2e-compat/marker_text_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/marker_text_test.go | semantics/marker-text-in-query-strings",
     "test/e2e-compat/metadata_scan_admission_test.go | backend-admission-and-heavy-query-queueing",
     "test/e2e-compat/metadata_scan_admission_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "test/e2e-compat/metadata_scan_admission_test.go | limits/metadata-not-queued",
@@ -1925,14 +1935,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 40,
+      "api": 41,
       "drilldown": 49,
-      "explore": 150,
+      "explore": 151,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 370,
+      "go": 371,
       "playwright": 1
     },
     "page_kinds": {
@@ -1951,8 +1961,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 99,
-    "wired_items": 257
+    "unwired_items": 100,
+    "wired_items": 258
   },
   "gates": [
     "A/B shape selection",
