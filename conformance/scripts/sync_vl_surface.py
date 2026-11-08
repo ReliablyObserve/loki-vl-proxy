@@ -51,7 +51,7 @@ def constructs(tag):
 # Where the proxy builds LogsQL. internal/logsql only defines the AST and its parser (every construct has a
 # String method there), so it proves nothing about emission; the AST types the translator and the proxy
 # construct (logsql.PipeUnion{...}) count instead.
-EMITTERS = ("internal/translator", "internal/proxy")
+EMITTERS = ("internal/translator", "internal/translate", "internal/proxy")
 AST = "internal/logsql/ast.go"
 # The translator's name tables map a LogQL function to the LogsQL stats function it emits.
 TABLES = "internal/translator"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // Loki's json and logfmt parsers sanitize every extracted key into a label name
@@ -175,7 +176,7 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 	if !op.isRe {
 		return (v == "") != op.negate
 	}
-	re, err := regexp.Compile(anchorLabelFilterPattern(lokiLabelFilterPattern(v)))
+	re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(v)))
 	if err != nil {
 		return op.negate
 	}

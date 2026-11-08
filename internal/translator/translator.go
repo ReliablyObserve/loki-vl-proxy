@@ -20,11 +20,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
-
-// LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
-// If nil, no translation is performed.
-type LabelTranslateFunc func(lokiLabel string) string
 
 // emptyByGrouping is a sentinel value used as the byLabels argument to buildStatsQuery
 // to indicate an explicit "by ()" clause (aggregate all into one series).
@@ -1503,16 +1500,7 @@ var logqlSingleFilterOps = []struct {
 // (rather than "NOT ") so downstream string-matching in canonicalLabelFilterStage
 // and translatedFilterFieldOp continues to work without change.
 func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
-	return buildFieldFilter(field, op, value, negate).String()
-}
-
-// buildFieldFilter is a field filter, excluded (-field:...) when negate.
-func buildFieldFilter(field string, op logsql.FieldOp, value string, negate bool) logsql.FilterExpr {
-	ff := logsql.FieldFilter{Field: field, Op: op, Value: value}
-	if negate {
-		return logsql.Exclude{Expr: ff}
-	}
-	return ff
+	return translate.BuildFieldFilter(field, op, value, negate).String()
 }
 
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
@@ -1521,7 +1509,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 	for _, entry := range logqlSingleFilterOps {
 		idx := matcherOperatorIndex(stage, entry.logql)
 		if idx > 0 {
-			label := sanitizeFieldIdentifier(stage[:idx])
+			label := translate.SanitizeFieldIdentifier(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(entry.logql):])
 			if label == "" {
 				return "", false
@@ -1539,7 +1527,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				if strings.Contains(translated, parsedKeySep) && !strings.Contains(label, parsedKeySep) {
 					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.entry, caps)
 				}
-				label = sanitizeFieldIdentifier(translated)
+				label = translate.SanitizeFieldIdentifier(translated)
 				if label == "" {
 					return "", false
 				}
@@ -1835,7 +1823,7 @@ func splitCSV(s string) []string {
 }
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
-	rawCandidate := normalizeFieldIdentifier(stage)
+	rawCandidate := translate.NormalizeFieldIdentifier(stage)
 	if rawCandidate == "" {
 		return "", false
 	}
@@ -1855,7 +1843,7 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		return "", false
 	}
 	if labelFn != nil {
-		candidate = sanitizeFieldIdentifier(labelFn(candidate))
+		candidate = translate.SanitizeFieldIdentifier(labelFn(candidate))
 	}
 	if candidate == "" {
 		return "", false
@@ -1920,31 +1908,6 @@ func translatedFilterFieldOp(translated string) (field string, op string, ok boo
 	}
 	return "", "", false
 }
-
-func normalizeFieldIdentifier(label string) string {
-	label = strings.TrimSpace(label)
-	if label == "" {
-		return ""
-	}
-	label = strings.ReplaceAll(label, "`", "")
-	label = strings.ReplaceAll(label, `"`, "")
-	label = fieldDotSpacingRE.ReplaceAllString(label, ".")
-	return strings.TrimSpace(label)
-}
-
-func sanitizeFieldIdentifier(label string) string {
-	label = normalizeFieldIdentifier(label)
-	if label == "" {
-		return ""
-	}
-	label = strings.Trim(label, ".")
-	for strings.Contains(label, "..") {
-		label = strings.ReplaceAll(label, "..", ".")
-	}
-	return strings.TrimSpace(label)
-}
-
-var fieldDotSpacingRE = regexp.MustCompile(`\s*\.\s*`)
 
 // translateLabelFormat converts label_format expressions.
 // Supports multiple renames: label_format a="{{.x}}", b="{{.y}}"
@@ -3297,7 +3260,7 @@ func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
 // applyServiceNameGrouping makes `by (service_name)` group by the service name
 // Loki assigns: every metric subquery whose stats pipe groups by service_name
 // computes that field first, as the first non-empty source field in
-// syntheticServiceNameFields order, else unknown_service (the value the
+// translate.SyntheticServiceNameFields order, else unknown_service (the value the
 // selector filter matches). The pipes go before any parser stage, which reads
 // fields but never changes a stream's service name in Loki. VictoriaLogs
 // v1.51+ has the coalesce pipe; older versions get the same value from format
@@ -3519,7 +3482,7 @@ func applyDerivedGroupingSegment(segment, label string, insert func(string) stri
 
 // WithDerivedServiceName returns query with the pipes that set the
 // service_name field to the service name Loki assigns (the first non-empty
-// field of syntheticServiceNameFields, else unknown_service) inserted before
+// field of translate.SyntheticServiceNameFields, else unknown_service) inserted before
 // its first pipe, or appended to a pipe-less filter.
 func WithDerivedServiceName(query string, caps logsql.Capabilities) string {
 	pipeAt := firstTopLevelPipe(query)
@@ -3597,7 +3560,7 @@ func firstTopLevelPipe(query string) int {
 // ServiceNameSourceFields returns the VictoriaLogs fields the proxy reads to
 // derive service_name, in Loki's discover_service_name order. The result must
 // not be modified.
-func ServiceNameSourceFields() []string { return syntheticServiceNameFields }
+func ServiceNameSourceFields() []string { return translate.SyntheticServiceNameFields }
 
 // ServiceNameDerivationPipes returns the pipes that set the service_name field
 // of every row to the service name Loki assigns.
@@ -3606,8 +3569,8 @@ func ServiceNameDerivationPipes(caps logsql.Capabilities) string {
 }
 
 func serviceNameGroupingPipes(caps logsql.Capabilities) string {
-	names := make([]string, len(syntheticServiceNameFields))
-	for i, field := range syntheticServiceNameFields {
+	names := make([]string, len(translate.SyntheticServiceNameFields))
+	for i, field := range translate.SyntheticServiceNameFields {
 		names[i] = field
 		if strings.Contains(field, ".") {
 			names[i] = `"` + field + `"`
@@ -3617,7 +3580,7 @@ func serviceNameGroupingPipes(caps logsql.Capabilities) string {
 		return "| coalesce(" + strings.Join(names, ", ") + ") default " + logsql.QuoteValue(unknownServiceNameValue) + " as service_name"
 	}
 	var b strings.Builder
-	for _, field := range syntheticServiceNameFields[1:] {
+	for _, field := range translate.SyntheticServiceNameFields[1:] {
 		b.WriteString(`| format "<` + field + `>" as service_name keep_original_fields `)
 	}
 	b.WriteString(`| format ` + logsql.QuoteValue(unknownServiceNameValue) + ` as service_name keep_original_fields`)
@@ -4264,20 +4227,6 @@ func splitStreamMatchers(s string) []string {
 	return matchers
 }
 
-// streamMatcherOps maps LogQL stream-selector operators to FieldOp constants.
-// Only the four operators valid in stream selectors are listed here.
-var streamMatcherOps = []struct {
-	logql  string
-	vlOp   logsql.FieldOp
-	negate bool
-	isRe   bool
-}{
-	{"!~", logsql.FieldOpRegexp, true, true},
-	{"=~", logsql.FieldOpRegexp, false, true},
-	{"!=", logsql.FieldOpExact, true, false},
-	{"=", logsql.FieldOpExact, false, false},
-}
-
 // matcherOperatorIndex finds op in matcher, skipping quoted and backquoted
 // segments: a value may contain the operator text itself, as in
 // {app="plain!~val"}, and splitting inside it would invent a field name. A
@@ -4315,12 +4264,12 @@ func matcherOperatorIndex(matcher, op string) int {
 func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) string {
 	matcher = strings.TrimSpace(matcher)
 
-	for _, op := range streamMatcherOps {
-		idx := matcherOperatorIndex(matcher, op.logql)
+	for _, op := range translate.StreamMatcherOps {
+		idx := matcherOperatorIndex(matcher, op.LogQL)
 		if idx > 0 {
-			label := sanitizeFieldIdentifier(matcher[:idx])
-			value := streamMatcherValue(matcher[idx+len(op.logql):], op.isRe)
-			if f := matcherFieldFilter(label, op.negate, op.isRe, value, labelFn); f != nil {
+			label := translate.SanitizeFieldIdentifier(matcher[:idx])
+			value := streamMatcherValue(matcher[idx+len(op.LogQL):], op.IsRe)
+			if f := translate.MatcherFieldFilter(label, op.Negate, op.IsRe, value, labelFn); f != nil {
 				return f.String()
 			}
 			return ""
@@ -4329,55 +4278,8 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	return ""
 }
 
-// matcherFieldFilter is the field filter for a selector matcher on label, with its value as Loki reads it
-// (unquoted), or nil when the label is no field name.
-func matcherFieldFilter(label string, negate, isRe bool, value string, labelFn LabelTranslateFunc) logsql.FilterExpr {
-	if label == "" {
-		return nil
-	}
-	// service_name is derived from stream fields on the read path;
-	// match exactly the streams the proxy labels with that value.
-	if label == "service_name" {
-		return serviceNameMatcherFilterExpr(value, negate, isRe)
-	}
-	if labelFn != nil {
-		label = sanitizeFieldIdentifier(labelFn(label))
-		if label == "" {
-			return nil
-		}
-	}
-
-	// VL requires quoting for dotted field names. Quote the field name
-	// before building the FieldFilter so it uses it as-is.
-	if strings.Contains(label, ".") {
-		label = `"` + label + `"`
-	}
-
-	if isRe {
-		// A selector matcher is anchored to the whole value.
-		return selectorRegexpFilter(label, value, negate)
-	}
-
-	if value == "" {
-		// level="" matches entries where level is absent or empty.
-		// -level:* covers both cases; level:="" would only match
-		// explicit empty strings.
-		if label == "level" && !negate {
-			return logsql.Exclude{Expr: logsql.FieldFilter{Field: "level", Op: logsql.FieldOpAny}}
-		}
-		if negate {
-			// field:!"" means "field exists and is non-empty"; keep literal form.
-			return logsql.FieldFilter{Field: label, Op: logsql.FieldOpNotExact}
-		}
-		return buildFieldFilter(label, logsql.FieldOpExact, "", false)
-	}
-
-	op := logsql.FieldOpExact
-	return buildFieldFilter(label, op, value, negate)
-}
-
 const (
-	detectedLevelLabel = "detected_level"
+	detectedLevelLabel = translate.DetectedLevelLabel
 	// matchNoRows is a LogsQL filter no row passes: an empty in() list.
 	matchNoRows = `_stream_id:in()`
 )
@@ -4390,24 +4292,24 @@ const (
 // ok is false for matchers on other labels.
 func detectedLevelSelectorFilter(matcher string) (filter string, ok bool, err error) {
 	matcher = strings.TrimSpace(matcher)
-	for _, op := range streamMatcherOps {
-		idx := strings.Index(matcher, op.logql)
+	for _, op := range translate.StreamMatcherOps {
+		idx := strings.Index(matcher, op.LogQL)
 		if idx <= 0 {
 			continue
 		}
-		if sanitizeFieldIdentifier(matcher[:idx]) != detectedLevelLabel {
+		if translate.SanitizeFieldIdentifier(matcher[:idx]) != detectedLevelLabel {
 			return "", false, nil
 		}
-		value := streamMatcherValue(matcher[idx+len(op.logql):], false)
+		value := streamMatcherValue(matcher[idx+len(op.LogQL):], false)
 		matchesEmpty := value == ""
-		if op.isRe {
+		if op.IsRe {
 			re, reErr := regexp.Compile("^(?:" + value + ")$")
 			if reErr != nil {
 				return "", false, &ParseError{Msg: fmt.Sprintf("invalid regexp in stream matcher %s: %v", matcher, reErr), Pos: -1}
 			}
 			matchesEmpty = re.MatchString("")
 		}
-		if matchesEmpty != op.negate {
+		if matchesEmpty != op.Negate {
 			return "", true, nil
 		}
 		return matchNoRows, true, nil
@@ -4430,7 +4332,7 @@ func canUseStreamSelector(matcher string, streamFields map[string]bool, labelFn 
 	if idx <= 0 {
 		return false
 	}
-	label := sanitizeFieldIdentifier(matcher[:idx])
+	label := translate.SanitizeFieldIdentifier(matcher[:idx])
 	if label == "" {
 		return false
 	}
@@ -4438,32 +4340,12 @@ func canUseStreamSelector(matcher string, streamFields map[string]bool, labelFn 
 		return false
 	}
 	if labelFn != nil {
-		label = sanitizeFieldIdentifier(labelFn(label))
+		label = translate.SanitizeFieldIdentifier(labelFn(label))
 		if label == "" {
 			return false
 		}
 	}
 	return streamFields[label]
-}
-
-var syntheticServiceNameFields = []string{
-	"service_name",
-	"service.name",
-	"service",
-	"app",
-	"application",
-	"app_name",
-	"name",
-	"app_kubernetes_io_name",
-	"container",
-	"container_name",
-	"k8s.container.name",
-	"k8s_container_name",
-	"component",
-	"workload",
-	"job",
-	"k8s.job.name",
-	"k8s_job_name",
 }
 
 func streamMatcherValue(value string, isRegex bool) string {
@@ -4485,13 +4367,10 @@ func streamMatcherValue(value string, isRegex bool) string {
 const (
 	// unknownServiceNameValue is the service_name Loki assigns when no source
 	// label exists (discover_service_name fallback).
-	unknownServiceNameValue = "unknown_service"
+	unknownServiceNameValue = translate.UnknownServiceNameValue
 	// matchNoStreamsFilter is a LogsQL filter that matches no rows.
 	matchNoStreamsFilter = "-*"
 )
-
-// matchNoStreams is matchNoStreamsFilter as a filter node.
-var matchNoStreams = logsql.Exclude{Expr: logsql.Wildcard{}}
 
 // serviceNameMatcherFilter translates a `service_name` stream matcher.
 //
@@ -4499,7 +4378,7 @@ var matchNoStreams = logsql.Exclude{Expr: logsql.Wildcard{}}
 // first non-empty label of discover_service_name, else unknown_service. The
 // proxy has no ingest, so the value is derived on the read path from what
 // VictoriaLogs stores: the first non-empty field of
-// syntheticServiceNameFields (the same order the metric grouping coalesces),
+// translate.SyntheticServiceNameFields (the same order the metric grouping coalesces),
 // else unknown_service. The selector must select a row if and only if that
 // derived value satisfies the matcher, so it is a pure filter with one OR
 // branch per priority position; a branch requires every higher-priority
@@ -4513,16 +4392,7 @@ var matchNoStreams = logsql.Exclude{Expr: logsql.Wildcard{}}
 // Plain field filters keep VictoriaLogs on its bloom-filter path and stay
 // valid wherever the proxy strips pipes from the base query.
 func serviceNameMatcherFilter(rawValue string, neg, isRegex bool) string {
-	return serviceNameMatcherFilterExpr(streamMatcherValue(rawValue, false), neg, isRegex).String()
-}
-
-// serviceNameMatcherFilterExpr is serviceNameMatcherFilter for the matcher's value as Loki reads it.
-func serviceNameMatcherFilterExpr(value string, neg, isRegex bool) logsql.FilterExpr {
-	if isRegex {
-		// Loki selector regexps are fully anchored and '.' matches newlines.
-		value = logsql.AnchorLabelMatcherRegex(value)
-	}
-	return serviceNameDerivedFilterExpr(value, neg, isRegex)
+	return translate.ServiceNameMatcherFilterExpr(streamMatcherValue(rawValue, false), neg, isRegex).String()
 }
 
 // serviceNameLabelFilter translates a `| service_name op "v"` stage. Loki
@@ -4542,72 +4412,13 @@ func serviceNameLabelFilter(rawValue string, neg, isRegex bool) string {
 // serviceNameDerivedFilter builds the filter for an already-effective value:
 // an exact value, or a fully anchored regexp.
 func serviceNameDerivedFilter(value string, neg, isRegex bool) string {
-	return serviceNameDerivedFilterExpr(value, neg, isRegex).String()
-}
-
-// serviceNameDerivedFilterExpr matches the rows whose derived service_name the matcher accepts: the first
-// non-empty field of syntheticServiceNameFields, or unknownServiceNameValue when they are all empty.
-func serviceNameDerivedFilterExpr(value string, neg, isRegex bool) logsql.FilterExpr {
-	var re *regexp.Regexp
-	if isRegex {
-		// An invalid regexp is left for VictoriaLogs to reject.
-		re, _ = regexp.Compile(value)
-	}
-	branches := make(logsql.AnyOf, 0, len(syntheticServiceNameFields)+1)
-	emptyPrefix := make(logsql.AllOf, 0, len(syntheticServiceNameFields))
-	for _, field := range syntheticServiceNameFields {
-		name := field
-		if strings.Contains(name, ".") {
-			name = `"` + name + `"`
-		}
-		var terms logsql.AllOf
-		switch {
-		case isRegex:
-			terms = append(terms, logsql.FieldFilter{Field: name, Op: logsql.FieldOpRegexp, Value: value})
-			if re == nil || re.MatchString("") {
-				// A missing field reads as empty and would satisfy an
-				// empty-compatible regexp; derivation needs a non-empty value.
-				terms = append(terms, logsql.Exclude{Expr: logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact}})
-			}
-		case value != "":
-			terms = append(terms, logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact, Value: value, GoQuoted: true})
-		}
-		if len(terms) > 0 {
-			terms = append(append(make(logsql.AllOf, 0, len(emptyPrefix)+len(terms)), emptyPrefix...), terms...)
-			if len(terms) == 1 {
-				branches = append(branches, terms[0])
-			} else {
-				branches = append(branches, logsql.Group{Expr: terms})
-			}
-		}
-		emptyPrefix = append(emptyPrefix, logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact})
-	}
-	unknownMatches := value == unknownServiceNameValue
-	if isRegex {
-		unknownMatches = re != nil && re.MatchString(unknownServiceNameValue)
-	}
-	if unknownMatches {
-		branches = append(branches, logsql.Group{Expr: emptyPrefix})
-	}
-	if len(branches) == 0 {
-		// Every row has a non-empty service_name, so `service_name=""`
-		// matches nothing and `service_name!=""` matches everything.
-		if neg {
-			return logsql.Wildcard{}
-		}
-		return matchNoStreams
-	}
-	filter := logsql.FilterExpr(logsql.Group{Expr: branches})
-	if neg {
-		return logsql.Exclude{Expr: filter}
-	}
-	return filter
+	return translate.ServiceNameDerivedFilterExpr(value, neg, isRegex).String()
 }
 
 // serviceNameLabelFilterPattern returns the anchored pattern that matches what
 // Loki's label filter matches for the regexp value (lokiLabelFilterPattern).
 func serviceNameLabelFilterPattern(value string) string {
-	return anchorLabelFilterPattern(lokiLabelFilterPattern(value))
+	return translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(value))
 }
 
 func isParserStage(translated string) bool {

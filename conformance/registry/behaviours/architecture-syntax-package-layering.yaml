@@ -239,3 +239,26 @@ decisions:
     code: [internal/proxy/slow_query_log.go]
     tests: [TestPlanRouteParity, TestPlanRouteParityCatchesAWrongRoute]
     quality: 'No handler reads a predicted route yet. VictoriaLogs request sets on the concurrent probe routes vary run to run in production too (which calls a probe race sends); recorded as a fleet-cost follow-up, not changed here.'
+  - id: lowering-bare-selector
+    chosen: 'The stream-selector filter builders move out of the string translator into internal/translate (stdlib, logql and logsql only), which the translator and the lowering both call: one builder, so the two cannot drift. lower.Plan lowers a log query with no pipeline stages to physical.VLQuery holding translate.StreamSelectorFilter, under every profile; a pipeline stays delegated (LogSelect pipeline), and route parity counts a lowered plan as delegated until the route rules land (LogSelect (route rule))'
+    over: [an injected selector builder on lower.Profile, lowering line filters in the same step, giving translate its own sites category]
+    why: |
+      Step eight of architecture B (owner 2026-11-08). The design moves the
+      builders the lowering needs out of the translator rather than handing
+      them in, because the translator is deleted at the end; the moved code
+      keeps its tests, the string paths call it directly, and ParseError and
+      LabelTranslateFunc are aliases, so a selector error keeps its type and
+      its Loki status. The moved strings and regexp calls count with
+      translator_string_ops until they are typed. The lowered query is checked
+      three ways: the shadow against the string translator (native 0 → 420
+      of 22,809 rows × profiles, 0 mismatches), the VictoriaLogs oracle
+      (VictoriaLogs' own parser accepts and reads the lowered and translated
+      bare selectors alike, 176 rows on v1.49.0 and v1.53.0), and the Loki
+      oracle (the stream matchers of the 2,097 corpus queries with one log
+      selector under their aggregations equal Loki's tree, 0 differences; the
+      other 330 of the 2,427 are binary operations and literals). The
+      VictoriaLogs oracle ran locally and runs in the PR quality report.
+    evidence: 'internal/querycorpus/plan_shadow_test.go TestPlanShadow and oracle_test.go TestVLOracle (typed-selector rows); internal/queryplan/loki_oracle_test.go TestPlanMatchesLokiOracle; conformance/registry/query-plan.json shadow section (2026-11-08)'
+    code: [internal/translate/selector.go, internal/queryplan/lower/lower.go, internal/translator/ast_translate.go, test/oracle/loki/facts.go, .golangci.yml]
+    tests: [TestSelectorFilterMatchers, TestPlanLowersBareSelectors, TestPlanDelegatesEveryConstruct, TestPlanShadow, TestVLOracle, TestPlanMatchesLokiOracle, TestPlanRouteParity]
+    quality: 'No handler reads the lowering yet. The open selector difference (semantics/stream-label-selector-shadowed-by-ingest-json-key) changes the filter of every query on such a label and stays its own change: the shadow requires the lowering to equal the string translator.'

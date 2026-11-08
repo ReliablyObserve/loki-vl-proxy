@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The stream-selector filter builders moved out of the string translator into
+  a package of their own that the translator and the query-plan lowering both
+  call, and the lowering now translates log queries without pipeline stages
+  natively, held to the string translator on every corpus query. No handler
+  reads the lowering yet, so responses do not change.
+
 ## [2.104.0] - 2026-11-08
 
 ### Changed

@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 var (
@@ -156,8 +158,8 @@ func capturedLabels(name, args string) ([]string, seriesStageKind) {
 func selectorLabelNames(content string) []string {
 	var names []string
 	for _, matcher := range splitStreamMatchers(content) {
-		for _, op := range streamMatcherOps {
-			if idx := matcherOperatorIndex(matcher, op.logql); idx > 0 {
+		for _, op := range translate.StreamMatcherOps {
+			if idx := matcherOperatorIndex(matcher, op.LogQL); idx > 0 {
 				names = append(names, strings.Trim(strings.TrimSpace(matcher[:idx]), "`\""))
 				break
 			}

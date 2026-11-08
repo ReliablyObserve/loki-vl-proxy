@@ -293,8 +293,9 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertLess(report.index("Require the snapshot jobs"), report.index("Download the head snapshot"))
 
     def test_a_query_plan_change_runs_the_oracles(self):
-        # The query-plan resolver is compared with Loki's tree only in the query-corpus scope.
-        self.assertIn("internal/(logql|logsql|translator|proxy|querycorpus|queryplan|rulesmigrate)/", self.body("plan"))
+        # The query-plan resolver is compared with Loki's tree, and the lowered queries and the builders they share
+        # with the translator (internal/translate) with both oracles, only in the query-corpus scope.
+        self.assertIn("internal/(logql|logsql|translator|translate|proxy|querycorpus|queryplan|rulesmigrate)/", self.body("plan"))
 
     def test_a_change_to_the_load_measurement_runs_the_perf_smoke(self):
         self.assertIn("check_quality_gate\\.py|load_abab\\.py", self.TEXT)

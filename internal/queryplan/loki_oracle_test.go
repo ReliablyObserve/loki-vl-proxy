@@ -44,6 +44,11 @@ type lokiFacts struct {
 	Offsets     []int64     `json:"offsets"`
 	Pipeline    []lokiStage `json:"pipeline"`
 	HasPipeline bool        `json:"has_pipeline"`
+	Matchers    []struct {
+		Name  string `json:"name"`
+		Op    string `json:"op"`
+		Value string `json:"value"`
+	} `json:"matchers"`
 }
 
 var parserKinds = map[logql.ParserType]string{
@@ -249,7 +254,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var problems []string
-	compared, lokiRejects, ambiguous := 0, 0, 0
+	compared, lokiRejects, ambiguous, selectors := 0, 0, 0, 0
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		var lf lokiFacts
 		if err := json.Unmarshal([]byte(line), &lf); err != nil {
@@ -280,6 +285,19 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		if sel == nil {
 			continue
 		}
+		// The stream selector the lowering turns into the VictoriaLogs filter: Loki's matchers, in Loki's order.
+		ms, lms := make([]string, len(sel.Matchers)), make([]string, len(lf.Matchers))
+		for i, m := range sel.Matchers {
+			ms[i] = m.Name + m.Op.String() + strconv.Quote(m.Value)
+		}
+		for i, m := range lf.Matchers {
+			lms[i] = m.Name + m.Op + strconv.Quote(m.Value)
+		}
+		selectors++
+		if !reflect.DeepEqual(ms, lms) {
+			problems = append(problems, fmt.Sprintf("%q: stream matchers %v, Loki's tree %v", r.q, ms, lms))
+			continue
+		}
 		mine, loki := ourStages(sel), significant(lf.Pipeline)
 		if !reflect.DeepEqual(mine, loki) {
 			problems = append(problems, fmt.Sprintf("%q: parser and drop stages %+v, Loki's tree %+v", r.q, mine, loki))
@@ -300,7 +318,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			problems = append(problems, fmt.Sprintf("%q: %d parsers, error policy %d; Loki's tree: %d parsers, error label dropped %v", r.q, sel.Sem.Parsers, sel.Sem.ErrorPolicy, parsers, dropped))
 		}
 	}
-	t.Logf("%d queries compared with Loki's tree, %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, lokiRejects, ambiguous)
+	t.Logf("%d queries compared with Loki's tree (%d stream selectors), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lokiRejects, ambiguous)
 	if compared < 1000 {
 		t.Fatalf("only %d queries compared", compared)
 	}

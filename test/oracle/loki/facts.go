@@ -50,6 +50,15 @@ type Facts struct {
 	Pipeline []Stage `json:"pipeline"`
 	// HasPipeline is false when there is no such log query.
 	HasPipeline bool `json:"has_pipeline"`
+	// Matchers are that log query's stream selector matchers, in Loki's order.
+	Matchers []Matcher `json:"matchers"`
+}
+
+// Matcher is a stream selector matcher as Loki's tree holds it: the label, the operator and the unquoted value.
+type Matcher struct {
+	Name  string `json:"name"`
+	Op    string `json:"op"`
+	Value string `json:"value"`
 }
 
 func facts(in, out string) error {
@@ -118,6 +127,10 @@ func factsOf(x FactsInput) (r Facts) {
 	if sel := pipelineUnderAggregations(expr); sel != nil {
 		r.HasPipeline = true
 		r.Pipeline = []Stage{}
+		r.Matchers = []Matcher{}
+		for _, m := range sel.Matchers() {
+			r.Matchers = append(r.Matchers, Matcher{Name: m.Name, Op: m.Type.String(), Value: m.Value})
+		}
 		if p, ok := sel.(*syntax.PipelineExpr); ok {
 			for _, st := range p.MultiStages {
 				r.Pipeline = append(r.Pipeline, stageOf(st))

@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 func TestCoverage_SanitizeHelpers(t *testing.T) {
-	if got := sanitizeFieldIdentifier(" `k8s . pod..name` "); got != "k8s.pod.name" {
+	if got := translate.SanitizeFieldIdentifier(" `k8s . pod..name` "); got != "k8s.pod.name" {
 		t.Fatalf("unexpected sanitized field identifier %q", got)
 	}
-	if got := sanitizeFieldIdentifier("..."); got != "" {
+	if got := translate.SanitizeFieldIdentifier("..."); got != "" {
 		t.Fatalf("expected empty identifier after trimming dots, got %q", got)
 	}
 

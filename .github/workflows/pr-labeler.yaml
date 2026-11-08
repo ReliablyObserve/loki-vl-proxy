@@ -46,7 +46,7 @@ jobs:
           FILES=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
 
           SCOPES=""
-          echo "$FILES" | grep -q "internal/translator" && SCOPES="$SCOPES,scope/translator"
+          echo "$FILES" | grep -Eq "internal/translat(e|or)/" && SCOPES="$SCOPES,scope/translator"
           echo "$FILES" | grep -q "internal/proxy" && SCOPES="$SCOPES,scope/proxy"
           echo "$FILES" | grep -q "internal/cache" && SCOPES="$SCOPES,scope/cache"
           echo "$FILES" | grep -q "internal/middleware" && SCOPES="$SCOPES,scope/middleware"

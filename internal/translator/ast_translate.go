@@ -3,6 +3,7 @@ package translator
 import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // ASTTranslateOptions controls how LogQL is translated to LogsQL.
@@ -24,11 +25,7 @@ type ASTTranslateOptions struct {
 }
 
 // ASTSelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes
-// (SelectorFilter): no query text is written or read on the way.
+// (translate.StreamSelectorFilter): no query text is written or read on the way.
 func ASTSelectorFilter(sel *logql.StreamSelector, opts ASTTranslateOptions) (logsql.FilterExpr, error) {
-	matchers := make([]SelectorMatcher, len(sel.Matchers))
-	for i, m := range sel.Matchers {
-		matchers[i] = SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
-	}
-	return SelectorFilter(matchers, opts.LabelFn, opts.StreamFields)
+	return translate.StreamSelectorFilter(sel.Matchers, opts.LabelFn, opts.StreamFields)
 }
