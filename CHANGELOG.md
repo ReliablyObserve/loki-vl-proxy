@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.102.0] - 2026-11-08
+
+### Fixed
+
+- `| logfmt --strict` and `| logfmt --keep-empty` (in any order, repeated,
+  before a field list) are accepted, where the proxy answered 400; `| json
+  --strict` and an unknown flag answer with Loki's error text. The stage is
+  answered as `| logfmt`: Loki's answer on well-formed lines without empty
+  values. Malformed lines and empty values still differ from Loki
+  (registry `semantics/logfmt-malformed-lines`).
+
 ## [2.101.0] - 2026-11-08
 
 ### Fixed
