@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fix(logql): a stream selector whose matcher value is not a string, such as
+  `{addr=ip("1.1.1.1")}` or `{a=5}`, answered 200 with no streams; it now
+  answers Loki's 400 (`parse error at line 1, col 4: syntax error: unexpected
+  ip, expecting STRING`) on `query`, `query_range` and the metadata routes
+  (`labels`, `label values`, `series`, `index/stats`, `index/volume`,
+  `index/volume_range`, `detected_labels`, `detected_fields`, `patterns`).
+  `ip()` stays valid in line and label filters. **Breaking:** clients sending
+  such selectors get Loki's 400 instead of an empty answer.
+
 - fix(logql): binary metric queries whose operand holds a compound duration
   (`latency > 1h5m`), a number in exponent form (`status >= 4e2`) or a
   large number in a nested operand (`(… * 1000000) / 2`) answered 400 `syntax error:

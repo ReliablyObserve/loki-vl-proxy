@@ -178,6 +178,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/query-range-window-budget` — A shifted log range does not reuse a window truncated by an earlier request's remaining limit | #929 | 0 | 0 |
 | `semantics/query-range-window-full-limit-reads` — A moved, longer or shorter log range reuses every history window an earlier range read (fixed) | fix/query-range-window-reuse-full-limit | 0 | 0 |
 | `semantics/query-range-window-lead-window` — A windowed log query reads its first window alone and stops there when it holds the limit (fixed) | #1074 | 0 | 0 |
+| `semantics/selector-values-are-strings` — a stream-selector matcher value that is not a string, such as ip("1.2.3.4"), answers 200 with no streams where Loki answers a 400 parse e... | #1180 | 0 | 0 |
 | `semantics/series-level-aggregation-bounded-memory` — count, min, max and avg over a range function, and a sum by over a rate/count ratio, answer wide ranges within the response bound, like Loki | #1056 | 0 | 0 |
 | `semantics/sub-second-step-grid` — a query_range step under a second answers a point every step at Loki's millisecond times, a step under a millisecond is Loki's 500 (fixed) | #1004 | 0 | 0 |
 | `semantics/topk-bottomk-without-strips-label` — topk without and bottomk without keep every label of the winning series, like Loki (fixed) | #736 | 0 | 0 |
