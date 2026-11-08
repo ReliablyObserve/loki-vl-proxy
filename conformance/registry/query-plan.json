@@ -1,0 +1,17 @@
+{
+  "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the in-repo corpus: how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count).",
+  "logical": {
+    "rows": 532,
+    "parsed": 478,
+    "built": 478,
+    "untyped_by_construct": {
+      "labelfilter_untyped": 0,
+      "line_format_raw": 9,
+      "opaque:approx_topk": 0,
+      "opaque:label_replace": 13,
+      "opaque:other": 0,
+      "opaque:vector": 0,
+      "parser_param_raw": 0
+    }
+  }
+}

@@ -31,6 +31,8 @@ linters:
     # and the proxy. logql may use logsql; logsql may use neither. Both may use
     # the stdlib and internal/querycorpus (a stdlib-only leaf). Test files are
     # out of scope: a test in package logql cannot import the translator anyway.
+    # The logical plan (queryplan) sits above logql and below the translator and
+    # the proxy: it reads the LogQL AST and nothing else.
     depguard:
       rules:
         logql:
@@ -50,6 +52,14 @@ linters:
           allow:
             - $gostd
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus
+        queryplan:
+          list-mode: strict
+          files:
+            - "**/internal/queryplan/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logql
   exclusions:
     rules:
       - path: _test\.go
