@@ -400,7 +400,7 @@ func (r *RangeAggregation) String() string {
 	}
 	inner := r.Inner.String() + rangeStr
 	if r.HasParam {
-		inner = fmt.Sprintf("%g,%s", r.Param, inner)
+		inner = formatNumber(r.Param) + "," + inner
 	}
 	s := fmt.Sprintf("%s(%s)", string(r.Op), inner)
 	if r.Grouping != nil && r.Grouping.String() != "" {
@@ -450,7 +450,7 @@ func (v *VectorAggregation) String() string {
 	}
 	b.WriteString(" (")
 	if v.HasParam {
-		fmt.Fprintf(&b, "%g,", v.Param)
+		b.WriteString(formatNumber(v.Param) + ",")
 	}
 	b.WriteString(v.Inner.String())
 	b.WriteByte(')')
@@ -526,7 +526,13 @@ type LiteralExpr struct {
 }
 
 func (l *LiteralExpr) String() string {
-	return fmt.Sprintf("%g", l.Value)
+	return formatNumber(l.Value)
+}
+
+// formatNumber prints a number the parser reads back to the same value: no
+// exponent (`1000000`, not `1e+06`), which the scanner cuts into `1e`, `+`, `06`.
+func formatNumber(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 func (l *LiteralExpr) expr() {}
