@@ -184,6 +184,29 @@ class RenderTest(unittest.TestCase):
         self.assertIn("**Distribution versus Loki in the run shown, both Loki profiles**", text)
         self.assertNotIn("Distribution versus Loki in the run shown", pe.render_quality_summary(inputs()))
 
+    def test_the_workload_tables_give_medians_with_the_verdict_icon(self):
+        text = pe.render_quality_summary(inputs())
+        self.assertIn("**By workload in the run shown**", text)
+        rows = [line for line in text.splitlines() if line.startswith("| ") and " / " in line and "**" in line]
+        # Drilldown: 0.10 s against 0.20 s is beyond 25% and 50 ms (faster); 0.03 against 0.04 is noise (on par).
+        self.assertIn("| Drilldown and Explore pages | 20 | 10 / 6 / 4 | 🟢 **0.10 s** | 0.20 s | 🟡 **0.03 s** | 0.04 s |", rows)
+        self.assertEqual(len([r for r in rows if r.startswith("| Metadata and label browser")]), 1)
+        # A metadata call with no first-request times still renders, with dashes.
+        self.assertIn("| Labels (label browser) | 4 | 4 | ⚪ **—** | — | 🟡 **0.01 s** | 0.03 s |", text)
+        self.assertIn("**🟢 Where the proxy is better than Loki**", text)
+        self.assertIn("**🔴 Where it is worse**", text)
+        self.assertIn("🔴 Above 2× Loki", pe.render_quality_summary(inputs(profile_bands={"aligned": {"cold": {
+            "rows": 1, "below": 1, "close": 0, "between": 0, "above": 0, "loki_failed": 0, "proxy_failed": 0,
+            "cache_served": 0}}})))
+
+    def test_open_differences_are_split_by_where_grafana_shows_them(self):
+        found = [{"id": f"c{i}", "title": "A difference", "status": "open", "impact": imp}
+                 for i, imp in enumerate(["explore-visible"] * 3 + ["drilldown-visible", "api-only", "edge"])]
+        found.append({"id": "d", "title": "A difference", "status": "documented", "impact": "explore-visible"})
+        text = pe.render_quality_summary(inputs(differences=found))
+        self.assertIn("| Open differences visible in Grafana (registry impact) | **4 of 6**: 3 Explore, 1 Logs Drilldown, "
+                      "0 Grafana datasource; 1 API only, 1 edge cases |", text)
+
     def test_no_history_wording(self):
         text = pe.render_quality_summary(inputs()).lower()
         for word in ("fixed since", "changelog", "pull request", "#8"):

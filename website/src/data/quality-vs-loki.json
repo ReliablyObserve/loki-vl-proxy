@@ -1,0 +1,139 @@
+{
+  "answers": {
+    "differs": 51,
+    "not compared": 15,
+    "same": 713
+  },
+  "commits": [
+    "e4a743f675"
+  ],
+  "date": "2026-11-08",
+  "differences": {
+    "open": 83,
+    "open_by_impact": {
+      "api-only": 12,
+      "drilldown-visible": 13,
+      "edge": 13,
+      "explore-visible": 44,
+      "grafana-datasource": 1
+    },
+    "ranked": 106
+  },
+  "distribution": [
+    {
+      "above": 3,
+      "below": 352,
+      "between": 3,
+      "close": 202,
+      "profile": "loki-defaults",
+      "request": "first",
+      "rows": 560
+    },
+    {
+      "above": 0,
+      "below": 208,
+      "between": 1,
+      "close": 550,
+      "profile": "loki-defaults",
+      "request": "repeat",
+      "rows": 759
+    },
+    {
+      "above": 1,
+      "below": 308,
+      "between": 3,
+      "close": 128,
+      "profile": "aligned",
+      "request": "first",
+      "rows": 440
+    },
+    {
+      "above": 0,
+      "below": 19,
+      "between": 0,
+      "close": 504,
+      "profile": "aligned",
+      "request": "repeat",
+      "rows": 523
+    }
+  ],
+  "loki": "3.7.9",
+  "noise": {
+    "seconds": 0.05,
+    "share": 0.25
+  },
+  "profile": "loki-defaults",
+  "ranges": [
+    "1h",
+    "24h"
+  ],
+  "read_api": {
+    "compared_with_loki": 19,
+    "endpoints": 27,
+    "proven": 12,
+    "routed": 25
+  },
+  "sets": 39,
+  "workloads": [
+    {
+      "compared": 8,
+      "faster": 3,
+      "first": {
+        "loki": 0.121,
+        "proxy": 0.12
+      },
+      "name": "Metadata and label browser",
+      "par": 2,
+      "repeat": {
+        "loki": 0.099,
+        "proxy": 0.018
+      },
+      "slower": 3
+    },
+    {
+      "compared": 117,
+      "faster": 83,
+      "first": {
+        "loki": 0.291,
+        "proxy": 0.067
+      },
+      "name": "Drilldown and Explore pages",
+      "par": 33,
+      "repeat": {
+        "loki": 0.052,
+        "proxy": 0.011
+      },
+      "slower": 1
+    },
+    {
+      "compared": 75,
+      "faster": 28,
+      "first": {
+        "loki": 0.061,
+        "proxy": 0.01
+      },
+      "name": "Log queries",
+      "par": 47,
+      "repeat": {
+        "loki": 0.059,
+        "proxy": 0.01
+      },
+      "slower": 0
+    },
+    {
+      "compared": 360,
+      "faster": 238,
+      "first": {
+        "loki": 0.17,
+        "proxy": 0.051
+      },
+      "name": "Metric queries",
+      "par": 120,
+      "repeat": {
+        "loki": 0.021,
+        "proxy": 0.005
+      },
+      "slower": 2
+    }
+  ]
+}

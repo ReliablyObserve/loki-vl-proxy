@@ -24,7 +24,8 @@ Fails when:
   * a generated report is stale (performance, coverage map and its published copy
     docs/compatibility-coverage.md, gaps, translation map, roadmap, compatibility matrix,
     ranked parity gaps, the matrix-link json and the census) or the "Quality and performance vs Loki" section of README.md and
-    docs/real-window-compatibility-gaps.md (between its quality-summary markers),
+    docs/real-window-compatibility-gaps.md (between its quality-summary markers) or the
+    website's copy of its figures (website/src/data/quality-vs-loki.json),
   * the method-level scope is inconsistent: a write method of an endpoint is neither listed
     in its state's out_of_scope_methods (with the owner decision) nor allowed (delete), or
     an endpoint with every method out of scope is not not-applicable, or a deprecated-read
@@ -93,6 +94,8 @@ REPORTS = (
     # the evidence, so it runs after every generator above.
     ("perf_evidence.py", "README.md", "--quality-summary"),
     ("perf_evidence.py", "docs/real-window-compatibility-gaps.md", "--quality-summary"),
+    # The same figures as JSON for the website.
+    ("perf_evidence.py", "website/src/data/quality-vs-loki.json", "--site-data"),
 )
 
 

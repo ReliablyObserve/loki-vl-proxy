@@ -367,12 +367,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--quality-summary", metavar="PATH", help="rewrite the generated section of PATH and nothing else")
+    parser.add_argument("--site-data", metavar="PATH", help="write the figures of the quality summary as JSON for the website")
     args = parser.parse_args()
 
     spec = load_json(SHAPES)
     shape_sets = spec["sets"]
     if args.quality_summary:
         return write_quality_summary(args.quality_summary, shape_sets)
+    if args.site_data:
+        return write_site_data(args.site_data)
     known = registry_ids()
     problems = []
     covers = {}
@@ -891,7 +894,7 @@ def distribution_table(q):
            f"Bands are those of `bench/ab/over2x.py`: beyond {int(over2x.DIST_NOISE * 100)}% and "
            f"{int(over2x.MIN_GAP * 1000)} ms, and above 2× Loki also more than {int(over2x.MIN_GAP * 1000)} ms behind. "
            "The `aligned` profile runs the range-metric shapes only (the queries its setting changes).", "",
-           "| Loki profile | Request | Rows compared | Below Loki | Close to Loki | 1–2× Loki | Above 2× Loki "
+           "| Loki profile | Request | Rows compared | 🟢 Below Loki | 🟡 Close to Loki | 🟠 1–2× Loki | 🔴 Above 2× Loki "
            "| Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |",
            "|---|---|---:|---:|---:|---:|---:|---|"]
     for profile in sorted(bands, key=lambda p: -PROFILE_RANK.get(p, 0)):
@@ -903,6 +906,49 @@ def distribution_table(q):
             out.append(f"| `{profile}` | {label} | {n} | {share(d['below'], n)} | {share(d['close'], n)} | "
                        f"{share(d['between'], n)} | **{share(d['above'], n)}** | "
                        f"{d['loki_failed']} / {d['proxy_failed']} / {d['cache_served'] if mode == 'cold' else '—'} |")
+    return out
+
+
+VERDICT_ICON = {"faster": "🟢", "par": "🟡", "slower": "🔴"}
+
+
+def workload_tables(q):
+    """Per-workload and metadata medians of the run shown, with the verdict of the medians as an icon."""
+    s = q["summary"]
+
+    def verdict(cand, ref):
+        return VERDICT_ICON.get(compare(cand, ref), "⚪")
+
+    out = ["", "**By workload in the run shown**", "",
+           f"Medians over the comparable pairs of the `{q['profile']}` run shown. The icon compares the medians with "
+           f"the rule above (🟢 faster, 🟡 on par, 🔴 slower); the counts are of pairs. A repeat is the recorded p50 "
+           "of the repeated request, which may be a cache hit on either side.", "",
+           "| Workload | Pairs compared | 🟢 faster / 🟡 on par / 🔴 slower | First request: proxy | Loki | "
+           "Repeat: proxy | Loki |",
+           "|---|---:|:---:|---:|---:|---:|---:|"]
+    for name in WORKLOADS:
+        g = s["workloads"][name]
+        if not g["comparable"]:
+            continue
+        c = g["cold"]
+        cand_cold, ref_cold = median(g["cand_cold"]), median(g["ref_cold"])
+        cand_warm, ref_warm = median(g["cand_warm"]), median(g["ref_warm"])
+        out.append(f"| {name} | {g['comparable']} | {c.get('faster', 0)} / {c.get('par', 0)} / {c.get('slower', 0)} | "
+                   f"{verdict(cand_cold, ref_cold)} **{sec(cand_cold)}** | {sec(ref_cold)} | "
+                   f"{verdict(cand_warm, ref_warm)} **{sec(cand_warm)}** | {sec(ref_warm)} |")
+    kinds = s.get("metadata") or {}
+    if kinds:
+        out += ["", "Label browser and Drilldown metadata calls: every pair both sides answered with 200, including "
+                "the first requests Loki's results cache answered (counted in the third column; a Loki time near zero "
+                "there is its cache).", "",
+                "| Call | Pairs | Loki cache-answered | First request: proxy | Loki | Repeat: proxy | Loki |",
+                "|---|---:|---:|---:|---:|---:|---:|"]
+        for name, k in sorted(kinds.items()):
+            vals = {key: median([v for v in k.get(key, []) if v is not None])
+                    for key in ("cand_cold", "ref_cold", "cand_warm", "ref_warm")}
+            out.append(f"| {name} | {k['pairs']} | {k.get('served', 0)} | "
+                       f"{verdict(vals['cand_cold'], vals['ref_cold'])} **{sec(vals['cand_cold'])}** | {sec(vals['ref_cold'])} | "
+                       f"{verdict(vals['cand_warm'], vals['ref_warm'])} **{sec(vals['cand_warm'])}** | {sec(vals['ref_warm'])} |")
     return out
 
 
@@ -934,7 +980,7 @@ def render_quality_summary(q, target_is_docs=False):
               if q["profile"] == "aligned" else "")
            + other_profile_sentence(q, notes, other) + " "
            + SCOPE_SENTENCE, "",
-           "**Where the proxy is better than Loki**", ""]
+           "**🟢 Where the proxy is better than Loki**", ""]
     out += [f"- First request: **{cold.get('faster', 0)} of {comparable}** comparable pairs are faster "
             f"({pct(cold.get('faster', 0), comparable)}).",
             f"- Drilldown and Explore pages: **{drill['cold'].get('faster', 0)} of {drill['comparable']}** faster "
@@ -955,7 +1001,7 @@ def render_quality_summary(q, target_is_docs=False):
                    f"({first['below']} of {first['rows']} rows)"
                    + (f"; repeat: **{repeat['share_below']:.1f}%** ({repeat['below']} of {repeat['rows']})."
                       if repeat else ".") + f" The target is {q['targets'].get('share_below', 'most queries below Loki')}.")
-    out += ["", "**Where it is on par**", ""]
+    out += ["", "**🟡 Where it is on par**", ""]
     out += [f"- First request: **{cold.get('par', 0)} of {comparable}** pairs are within noise "
             f"({pct(cold.get('par', 0), comparable)}).",
             f"- Log queries: **{logs['cold'].get('par', 0)} of {logs['comparable']}** on par; metric queries: "
@@ -972,7 +1018,7 @@ def render_quality_summary(q, target_is_docs=False):
                f"({pct(results.get('same', 0), s['pairs'])}).")
     for claim in q["claims"]:
         out.append(f"- {claim[0].upper()}{claim[1:]}.")
-    out += ["", "**Where it is worse**", ""]
+    out += ["", "**🔴 Where it is worse**", ""]
     out += [f"- First request: **{cold.get('slower', 0)} of {comparable}** pairs are slower "
             f"({pct(cold.get('slower', 0), comparable)}): log queries **{logs['cold'].get('slower', 0)} of "
             f"{logs['comparable']}**, Drilldown and Explore pages **{drill['cold'].get('slower', 0)} of "
@@ -1012,6 +1058,7 @@ def render_quality_summary(q, target_is_docs=False):
     out.append(f"- Answers: **{results.get('differs', 0)} of {s['pairs']}** pairs return a different result from Loki, "
                f"and **{results.get('not compared', 0)}** could not be compared.")
     out += distribution_table(q)
+    out += workload_tables(q)
     stats = q["stats"].get("read_api", q["stats"])
     found = q["differences"]
     count = {k: sum(1 for c in found if c["status"] == k) for k in ("open", "documented", "owner-kept", "upstream")}
@@ -1028,7 +1075,18 @@ def render_quality_summary(q, target_is_docs=False):
             f"| Behaviour and feature items | {states.get('proven', 0)} proven, {states.get('partial', 0)} partial, "
             f"{states.get('gap', 0)} gaps |",
             f"| Known differences from Loki (ranked) | **{sum(count.values())}**: {count['open']} open, "
-            f"{count['documented']} documented, {count['owner-kept']} owner-kept, {count['upstream']} upstream |", ""]
+            f"{count['documented']} documented, {count['owner-kept']} owner-kept, {count['upstream']} upstream |"]
+    impact = {}
+    for c in found:
+        if c["status"] == "open":
+            impact[c.get("impact") or "unknown"] = impact.get(c.get("impact") or "unknown", 0) + 1
+    visible = [("explore-visible", "Explore"), ("drilldown-visible", "Logs Drilldown"), ("grafana-datasource", "Grafana datasource")]
+    shown = sum(impact.get(k, 0) for k, _ in visible)
+    if impact:
+        out.append(f"| Open differences visible in Grafana (registry impact) | **{shown} of {count['open']}**: "
+                   + ", ".join(f"{impact.get(k, 0)} {label}" for k, label in visible)
+                   + f"; {impact.get('api-only', 0)} API only, {impact.get('edge', 0)} edge cases |")
+    out.append("")
     if stats.get("unrouted"):
         out += ["Read routes not implemented: " + ", ".join(
             f"`{row['path']}`" + (" (optional planner gap, low priority)" if row["optional"] else "")
@@ -1046,6 +1104,56 @@ def render_quality_summary(q, target_is_docs=False):
     out += ["", "Details, the per-workload tables and the method: "
             + " · ".join(f"[{name}]({url})" for name, url in links(target_is_docs)) + "."]
     return "\n".join(out)
+
+
+SITE_DATA = "website/src/data/quality-vs-loki.json"
+
+
+def site_data(q):
+    """The figures of the quality summary for the website, from the inputs quality_inputs() reads."""
+    s = q["summary"]
+
+    def med(values):
+        return round(median(values), 3) if median(values) is not None else None
+
+    found = q["differences"]
+    open_rows = [c for c in found if c["status"] == "open"]
+    impact = {}
+    for c in open_rows:
+        impact[c.get("impact") or "unknown"] = impact.get(c.get("impact") or "unknown", 0) + 1
+    stats = q["stats"].get("read_api", q["stats"])
+    return {
+        "date": q["date"], "commits": [c[:10] for c in q["commits"]], "loki": q["loki"], "profile": q["profile"],
+        "sets": q["sets"], "ranges": [q["ranges"][0], q["ranges"][-1]],
+        "noise": {"share": NOISE, "seconds": MIN_DELTA},
+        "distribution": [
+            {"profile": p, "request": label, **{k: d[k] for k in ("rows", "below", "close", "between", "above")}}
+            for p in sorted(q.get("profile_bands") or {}, key=lambda p: -PROFILE_RANK.get(p, 0))
+            for mode, label in (("cold", "first"), ("warm", "repeat"), ("refresh", "refresh"))
+            for d in [(q["profile_bands"][p].get(mode))] if d],
+        "workloads": [
+            {"name": name, "compared": g["comparable"], "faster": g["cold"].get("faster", 0),
+             "par": g["cold"].get("par", 0), "slower": g["cold"].get("slower", 0),
+             "first": {"proxy": med(g["cand_cold"]), "loki": med(g["ref_cold"])},
+             "repeat": {"proxy": med(g["cand_warm"]), "loki": med(g["ref_warm"])}}
+            for name in WORKLOADS for g in [s["workloads"][name]] if g["comparable"]],
+        "answers": {k: s["results"].get(k, 0) for k in ("same", "differs", "not compared")},
+        "read_api": {"endpoints": stats["endpoints"], "routed": stats["implemented"],
+                     "compared_with_loki": stats["with_differential_tests"], "proven": stats["proven"]},
+        "differences": {"ranked": sum(1 for c in found if c["status"] in ("open", "documented", "owner-kept", "upstream")),
+                        "open": len(open_rows),
+                        "open_by_impact": dict(sorted(impact.items()))},
+    }
+
+
+def write_site_data(path):
+    try:
+        dump_json(path, site_data(quality_inputs()))
+    except (ValueError, KeyError, OSError) as error:
+        print(f"site data {path}: {error}", file=sys.stderr)
+        return 1
+    print(f"{path}: site data written")
+    return 0
 
 
 def replace_section(text, body):
