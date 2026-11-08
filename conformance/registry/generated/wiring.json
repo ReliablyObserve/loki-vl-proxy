@@ -12,6 +12,7 @@
     ],
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
+      "internal/logql/line_template_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go"
@@ -71,6 +72,9 @@
     "drilldown/patterns-one-series-per-level": [
       "internal/proxy/patterns_counts_test.go",
       "test/e2e-compat/patterns_counts_test.go"
+    ],
+    "formatter-line-format": [
+      "internal/logql/line_template_test.go"
     ],
     "heavy-metric-fetch-bounds": [
       "internal/proxy/backend_heavy_test.go",
@@ -1675,6 +1679,10 @@
     "internal/logql/label_filter_expr_test.go": [
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/line_template_test.go": [
+      "architecture-syntax-package-layering",
+      "formatter-line-format"
     ],
     "internal/logql/log_range_alternatives_test.go": [
       "semantics/line-filter-or-alternatives",
@@ -3492,7 +3500,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 373,
+  "tests_with_markers": 374,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3596,5 +3604,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 258
+  "wired_items": 259
 }

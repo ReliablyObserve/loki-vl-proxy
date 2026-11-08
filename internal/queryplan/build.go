@@ -262,7 +262,7 @@ func (b *builder) stage(s logql.Stage) error {
 		e.project(true, x.Labels, x.Matchers)
 	case *logql.LineFormatStage:
 		e.tag(tagLineFormat)
-		e.str(x.Template)
+		e.str(x.KeyText())
 	case *logql.LabelFormatStage:
 		e.tag(tagLabelFormat)
 		e.uint(uint64(len(x.Formats)))

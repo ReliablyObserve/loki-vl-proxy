@@ -6,7 +6,7 @@
     "built": 2473,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
-      "line_format_raw": 13,
+      "line_format_raw": 3,
       "opaque:approx_topk": 0,
       "opaque:label_replace": 8,
       "opaque:other": 0,

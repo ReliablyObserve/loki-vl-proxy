@@ -670,7 +670,11 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &LineFormatStage{Template: val}, nil
+		stage := &LineFormatStage{Template: val}
+		if p.canon == nil {
+			stage.Tmpl = typeLineTemplate(val)
+		}
+		return stage, nil
 
 	case "label_format":
 		p.advance()
