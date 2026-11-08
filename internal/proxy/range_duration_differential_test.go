@@ -177,8 +177,7 @@ func TestRangeAggregationDurationsKnownValues(t *testing.T) {
 	for lit, want := range map[string]time.Duration{
 		"1ms": time.Millisecond, "500ms": 500 * time.Millisecond, "30s": 30 * time.Second, "90s": 90 * time.Second,
 		"5m": 5 * time.Minute, "1h": time.Hour, "1.5h": 90 * time.Minute, "1d": 24 * time.Hour,
-		"7d": 7 * 24 * time.Hour, "1w": 7 * 24 * time.Hour, "1y": 365 * 24 * time.Hour, "5M": 5 * time.Minute,
-		"0s": 0, "5x": 0,
+		"7d": 7 * 24 * time.Hour, "1w": 7 * 24 * time.Hour, "1y": 365 * 24 * time.Hour, "0s": 0,
 	} {
 		expr, err := logqlpkg.Parse(`count_over_time({app="api"}[` + lit + `])`)
 		if err != nil {
@@ -186,6 +185,15 @@ func TestRangeAggregationDurationsKnownValues(t *testing.T) {
 		}
 		if got := expr.(*logqlpkg.RangeAggregation).RangeDuration; got != want {
 			t.Errorf("[%s]: RangeDuration=%v, want %v", lit, got, want)
+		}
+	}
+	// Loki's units are case-sensitive and closed: these are parse errors (Loki v3.7.9, recorded with the test oracle).
+	for lit, want := range map[string]string{
+		"5M": `parse error at line 0, col 28: unknown unit "M" in duration "5M"`,
+		"5x": `parse error at line 0, col 28: unknown unit "x" in duration "5x"`,
+	} {
+		if _, msg := logqlpkg.ValidateLogQLExpr(`count_over_time({app="api"}[` + lit + `])`); msg != want {
+			t.Errorf("[%s]: %q, Loki %q", lit, msg, want)
 		}
 	}
 	expr, err := logqlpkg.Parse(`rate({app="api"}[5m])`)

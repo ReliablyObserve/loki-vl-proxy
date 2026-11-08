@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Queries Loki rejects with a 400 parse error are rejected with Loki's error
+  text instead of being answered, so a broken query is reported to the client:
+  a by or without clause on a range aggregation that does not allow one
+  (`count_over_time(...) by (x)`), a missing or refused unwrap
+  (`sum_over_time({...}[5m])`, `count_over_time(... | unwrap x [5m])`), a
+  literal beside and, or, unless (`1 unless vector(2)`), an unknown duration
+  unit (`[5minutes]`, `[5M]`), the `@` modifier Loki 3.7 does not have, an
+  invalid label_replace regex, and `| bytes < 0B`.
+
 - LogQL `#` comments, negative offsets (`offset -1s`, which shifts the window
   forward) and compound durations in any unit order (`offset 1h2m20s`,
   `offset 2m1h`, `[1h2m]`) are accepted and answered like Loki, where the

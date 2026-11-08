@@ -1,6 +1,7 @@
 package logql_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -41,18 +42,21 @@ func TestParseAndValidate_Invalid(t *testing.T) {
 	}
 }
 
+// Loki v3.7 has no @ modifier: its lexer reads `@` as a name where `)` must follow, a 400 (recorded with the test
+// oracle). The proxy answers the same.
 func TestParseAndValidate_AtModifier(t *testing.T) {
-	valid := []string{
+	rejected := []string{
 		`rate({app="api-gateway"}[5m] @ 1000000000)`,
 		`rate({app="api-gateway"}[5m] @ start())`,
 		`rate({app="api-gateway"}[5m] @ end())`,
 		`bytes_rate({app="api"}[1h] @ 1609459200)`,
 		`sum by (app) (rate({app="api"}[5m] @ start()))`,
 	}
-	for _, q := range valid {
+	for _, q := range rejected {
 		t.Run(q, func(t *testing.T) {
-			if err := logql.ParseAndValidate(q); err != nil {
-				t.Errorf("expected valid @ modifier query to pass, got: %v", err)
+			err := logql.ParseAndValidate(q)
+			if err == nil || !strings.Contains(err.Error(), "syntax error: unexpected IDENTIFIER, expecting )") {
+				t.Errorf("got %v, want Loki's syntax error at the @", err)
 			}
 		})
 	}

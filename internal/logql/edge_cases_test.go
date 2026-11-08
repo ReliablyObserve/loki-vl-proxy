@@ -4,6 +4,7 @@ package logql_test
 // Organised by feature so gaps are easy to spot.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -953,8 +954,13 @@ func TestEdge_AtModifier_Extended(t *testing.T) {
 		// @ with offset — both can coexist
 		`rate({app="a"}[5m] offset 1h @ start())`,
 	}
+	// Loki v3.7 rejects every @ modifier (no @ in its grammar): a 400 at the @.
 	for _, q := range valid {
-		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+		t.Run(q, func(t *testing.T) {
+			if _, err := logql.Parse(q); err == nil || !strings.Contains(err.Error(), "unexpected IDENTIFIER, expecting )") {
+				t.Errorf("Parse(%q) = %v, want Loki's syntax error at the @", q, err)
+			}
+		})
 	}
 }
 

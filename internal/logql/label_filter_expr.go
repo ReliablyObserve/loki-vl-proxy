@@ -375,6 +375,10 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 			kind = "IP"
 		}
 	}
+	if p.tok.kind == lfWord && (value == "0B" || value == "0b") {
+		// Loki's lexer reads 0B as the prefix of a binary literal with no digits after it.
+		return nil, &LabelFilterSyntaxError{Offset: p.tok.start, Message: "decimal literal has no digits"}
+	}
 	allowed := kind == "NUMBER" || kind == "DURATION" || kind == "BYTES"
 	switch op {
 	case "=", "!=":
