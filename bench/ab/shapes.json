@@ -3436,6 +3436,14 @@
       "semantics/ip-filter-json-stats-pushdown",
       "loki_api_v1_query_range"
      ]
+    },
+    {
+     "name": "BL1 ratio, json status>=4e2 / all",
+     "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | status >= 4e2 [1m])) / sum(count_over_time({service_name=\"api-gateway\"} [1m]))",
+     "covers": [
+      "semantics/binary-operand-literals-reprint",
+      "loki_api_v1_query_range"
+     ]
     }
    ]
   },

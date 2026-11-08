@@ -103,6 +103,30 @@ func TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing(t *testing.T) {
 		{"topk over without", `topk(2, sum without (pod) (` + rate + `))`},
 		{"topk over label_replace", `topk(2, label_replace(` + rate + `, ` + lr + `))`},
 		{"sort over label_replace of without", `sort(label_replace(sum without (pod) (` + rate + `), ` + lr + `))`},
+
+		// Marker shapes a client can reach: arguments at the edges, invalid ones, and text of the query that looks
+		// like a marker (a line filter or a label value that holds `__without__:` or a whole `__lvp_lr:` marker),
+		// which the handlers have always read as one.
+		{"label_replace four", `label_replace(label_replace(label_replace(label_replace(` + rate + `, "a", "$1", "app", "(.*)-.*"), "b", "${1}", "a", "(.*)"), "c", "x", "b", ".*"), "d", "y", "c", ".*")`},
+		{"label_replace empty arguments", `label_replace(` + rate + `, "", "", "", "")`},
+		{"label_replace empty replacement", `label_replace(` + rate + `, "short", "", "app", "(.*)-.*")`},
+		{"label_replace braces", `label_replace(` + rate + `, "short", "${1}-x", "app", "(?P<h>.*)-.*")`},
+		{"label_replace invalid regexp", `label_replace(` + rate + `, "short", "$1", "app", "(")`},
+		{"label_replace invalid regexp under without", `label_replace(sum without (pod) (` + rate + `), "short", "$1", "app", "[a-")`},
+		{"label_replace one side of a binary", `label_replace(` + rate + `, ` + lr + `) / ` + rateY},
+		{"label_replace both sides of a binary", `label_replace(` + rate + `, ` + lr + `) / label_replace(` + rateY + `, ` + lr + `)`},
+		{"without over label_replace", `sum without (pod) (label_replace(` + rate + `, ` + lr + `))`},
+		{"without empty labels", `sum without () (` + rate + `)`},
+		{"without repeated label", `sum without (pod, pod) (` + rate + `)`},
+		{"without unicode label", `sum without (é) (` + rate + `)`},
+		{"line filter holding a without marker", `{app="x"} |= "__without__:pod"`},
+		{"line filter holding a without marker and an op", `{app="x"} |= "__without__:sum:pod,node"`},
+		{"metric over a line filter holding a without marker", `sum(count_over_time({app="x"} |= "__without__:pod" [1m]))`},
+		{"label value holding a without marker", `sum(count_over_time({app="__without__:pod"} [1m]))`},
+		{"line filter holding a half label_replace marker", `count_over_time({app="x"} |= "a__lvp_lr:YQ==__" [1m])`},
+		{"line filter holding a label_replace marker", `sum(count_over_time({app="x"} |= "__lvp_lr:c2hvcnQAJDEAYXBwACguKikAYQ==__" [1m]))`},
+		{"line filter holding a binary marker", `rate({app="x"} |= "__binary__:/:A|||B" [1m])`},
+		{"line filters holding separators", `rate({app="x"} |= "|||" [1m]) / rate({app="y"} |= "@@@on:app" [1m])`},
 	}
 	for _, tc := range cases {
 		for _, endpoint := range []string{"query", "query_range"} {
@@ -111,6 +135,9 @@ func TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing(t *testing.T) {
 				p := newTestProxy(t, srv.URL)
 				a := lrAsk(t, p, endpoint, tc.logql)
 				got := siteAnswer{code: a.code, vl: rec.requests(), series: seriesKeys(a)}
+				if a.code >= 400 {
+					got.body = a.body // Loki's error text, which must not change
+				}
 				want, ok := siteWants[tc.name+"/"+endpoint]
 				if !ok || fmt.Sprintf("%#v", got) != fmt.Sprintf("%#v", want) {
 					t.Errorf("%s %s: got\n\t%q: %#v,\nwant %#v\nqueries sent:\n%s", endpoint, tc.logql, tc.name+"/"+endpoint, got, want, strings.Join(rec.queryList(), "\n"))
@@ -132,6 +159,7 @@ type siteAnswer struct {
 	code   int
 	vl     []string
 	series []string
+	body   string // the error text of an answer of 400 or more
 }
 
 // siteWants holds the recorded answers, by "<case>/<endpoint>".
@@ -465,6 +493,397 @@ var siteWants = map[string]siteAnswer{
 		series: []string{
 			"{app=\"api-gateway\",instance=\"i1\",short=\"api\"} [][[1.70406726e+09 3]]",
 			"{app=\"web\",instance=\"i2\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"label_replace four/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",c=\"x\",d=\"y\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"label_replace four/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+		},
+		series: []string{
+			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{a=\"api\",app=\"api-gateway\",b=\"api\",c=\"x\",d=\"y\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",c=\"x\",d=\"y\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"label_replace empty arguments/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"label_replace empty arguments/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"label_replace empty replacement/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"label_replace empty replacement/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"label_replace braces/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api-x\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\",short=\"api-x\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"label_replace braces/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api-x\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\",short=\"api-x\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"label_replace invalid regexp/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+	},
+	"label_replace invalid regexp/query_range": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "parse error : invalid regex in label_replace: error parsing regexp: missing closing ): `^(?:()$`",
+	},
+	"label_replace invalid regexp under without/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "parse error : invalid regex in label_replace: error parsing regexp: invalid character class range: `a-)`",
+	},
+	"label_replace invalid regexp under without/query_range": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "parse error : invalid regex in label_replace: error parsing regexp: invalid character class range: `a-)`",
+	},
+	"label_replace one side of a binary/query": {
+		code: 200,
+		vl: []string{
+			"stats_query 799a59ff206658b1168d9ed9a2eeeb39c91a2b3fc661c47d1befe431d2efa057/7249",
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 1][]",
+		},
+	},
+	"label_replace one side of a binary/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+			"stats_query_range ab586bbcf57365d604ba3b81aff364d85ccad47b15871b67937e805cd2b87990/7213",
+		},
+		series: []string{
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+		},
+	},
+	"label_replace both sides of a binary/query": {
+		code: 200,
+		vl: []string{
+			"stats_query 799a59ff206658b1168d9ed9a2eeeb39c91a2b3fc661c47d1befe431d2efa057/7249",
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\",short=\"api\"} [1.70406726e+09 1][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 1][]",
+		},
+	},
+	"label_replace both sides of a binary/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"query c7ccd74cc4e9722ac757e820afe0a628a264b7cab5b38e3e9d0e5ff4a39f672e/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+			"stats_query_range ab586bbcf57365d604ba3b81aff364d85ccad47b15871b67937e805cd2b87990/7213",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\",short=\"api\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\",short=\"api\"} [][[1.70406726e+09 1]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+		},
+	},
+	"without over label_replace/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
+	},
+	"without over label_replace/query_range": {
+		code: 200,
+		vl: []string{
+			"query 7dd75bb9ec45c202214374b17493b592b04ca859aa739a13e7a910bbfb1d564c/98",
+		},
+		series: nil,
+	},
+	"without empty labels/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"without empty labels/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 1b006b89bec931de5ada49df9dc9156f9331ce54a06763bccd65f74d492a4702/7177",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"without repeated label/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\"} [1.70406726e+09 3][]",
+			"{app=\"web\",instance=\"i2\"} [1.70406726e+09 3][]",
+		},
+	},
+	"without repeated label/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 6d280a84c9413c55aec979fc55807bb6f9c32bceded855f5369e5ce6a5360fcc/7483",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"without unicode label/query": {
+		code: 200,
+		vl: []string{
+			"stats_query d241cc425be74c9dc306a09723738329c808909a995d869b77380a4b13b02c65/7249",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"without unicode label/query_range": {
+		code: 200,
+		vl: []string{
+			"query 9b836af0f04650e1c7ab62a2c0a683057e48e55a553788661023cd4758c007ee/1423",
+			"stats_query_range 7605dc4f9dd070aa1b7c223c2f1f5a113071b2ad8b83297497852929c4abbaa8/7213",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"line filter holding a without marker/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
+	},
+	"line filter holding a without marker/query_range": {
+		code: 200,
+		vl: []string{
+			"query c9f1e27fe1544e89da61f8a3b7c3bc544ed522391da34737d6fe3646cd8a7280/34",
+		},
+		series: nil,
+	},
+	"line filter holding a without marker and an op/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
+	},
+	"line filter holding a without marker and an op/query_range": {
+		code: 200,
+		vl: []string{
+			"query c9f1e27fe1544e89da61f8a3b7c3bc544ed522391da34737d6fe3646cd8a7280/34",
+		},
+		series: nil,
+	},
+	"metric over a line filter holding a without marker/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
+	},
+	"metric over a line filter holding a without marker/query_range": {
+		code: 200,
+		vl: []string{
+			"query c9f1e27fe1544e89da61f8a3b7c3bc544ed522391da34737d6fe3646cd8a7280/34",
+		},
+		series: nil,
+	},
+	"label value holding a without marker/query": {
+		code:   400,
+		vl:     nil,
+		series: nil,
+		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
+	},
+	"label value holding a without marker/query_range": {
+		code: 200,
+		vl: []string{
+			"query 900e23bf0b96259bf8aa213e65073c0cf816c40457db206af7b1e413ec7d2aa2/29",
+		},
+		series: nil,
+	},
+	"line filter holding a half label_replace marker/query": {
+		code: 200,
+		vl: []string{
+			"stats_query 1975188653ba4a480d9ef209cb530cac4c41ed5144a80f7becf8bf8894a2bd14/7158",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"line filter holding a half label_replace marker/query_range": {
+		code: 200,
+		vl: []string{
+			"query 51e4b11b7d71d3b2469d20f9dddc76d40a886c51d1b45d99fa56eea2c5c72be2/1443",
+			"stats_query_range 4608ed712de3bb6a76bc53c99d6a421ecb2c4dee4f4a237b31fe2b68a7e2211d/7122",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"line filter holding a label_replace marker/query": {
+		code: 200,
+		vl: []string{
+			"stats_query cb37ce8a2b412b6f97015fd6bbe1c077841f45aeb804753723b4be9b53c2d357/48",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"line filter holding a label_replace marker/query_range": {
+		code: 200,
+		vl: []string{
+			"stats_query_range e6c3e13884f8607e11676f015654c2a3d25be45b85b357bfc783f9b138b3e57f/28",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"line filter holding a binary marker/query": {
+		code: 200,
+		vl: []string{
+			"stats_query 3de5747eba0556eac44efad80d40527703a5db5f6924082e84a6dd377d70336b/7277",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]",
+		},
+	},
+	"line filter holding a binary marker/query_range": {
+		code: 200,
+		vl: []string{
+			"query 440d207d4f5c4d5e0673410a852f49e4a5b00a6b4c1bbfecf4682a7dd6b67792/1451",
+			"stats_query_range 606676423d5dd3a41dded69a27370ca6b2a5cc489b3894b4ac3b709c0bd98f24/7241",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
+		},
+	},
+	"line filters holding separators/query": {
+		code: 200,
+		vl: []string{
+			"stats_query 8a1bcc15c9f8b92f321f1647f424e683bca0293bc789a881a1abacb97ee72136/7262",
+			"stats_query 9d28c2bfd9478ff773daad4cb02030b5c47bc6c133f8f340dec84992106ad12b/7262",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 1][]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 1][]",
+		},
+	},
+	"line filters holding separators/query_range": {
+		code: 200,
+		vl: []string{
+			"query 1df733015b2cab6a6f526d1dbf47804e7de39394c4e93c745ac7241f49386d76/1436",
+			"query 3b34a419494892116ea6f83537ccb18be3b195bf968977c9b5859c5d82f467ea/1436",
+			"stats_query_range 038b5df5949aab88f7f5bca7f3aee1686cda190a89a8875c2e53534bc91e986f/7226",
+			"stats_query_range 31869d50fbdf5189657d7749143c004af6dae180a0e9da27ad46e71ba49363d4/7226",
+		},
+		series: []string{
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]",
+			"{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 1]]",
+			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 1]]",
 		},
 	},
 }

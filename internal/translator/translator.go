@@ -71,12 +71,42 @@ func ParseLabelReplaceMarker(query string) (string, *LabelReplaceSpec) {
 // per nesting level, and each must be applied in sequence.
 func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 	var specs []LabelReplaceSpec
+	// The query is the pieces kept so far (they hold no marker prefix) followed by rest, the part not read yet. A
+	// marker is cut out of the query and the search starts again from the start of what is left, so one that the cut
+	// makes out of the text on both sides of it is found too: it begins in the last bytes of the pieces. Reading each
+	// byte once keeps this linear in the query, where cutting the string for every marker was quadratic.
+	var pieceBuf [4]string
+	pieces, kept := pieceBuf[:0], 0 // kept is the length of the pieces together
+	rest, removed := query, false
 	for {
-		idx := strings.Index(query, labelReplacePrefix)
-		if idx < 0 {
-			break
+		// k is where the marker starts in the kept text, and used the bytes of its prefix that rest supplies.
+		k, used := kept, len(labelReplacePrefix)
+		var last [len(labelReplacePrefix) - 1]byte // the last bytes of the kept text
+		n := min(kept, len(last))
+		for i, got := len(pieces)-1, n; got > 0; i-- {
+			piece := pieces[i]
+			take := min(len(piece), got)
+			copy(last[got-take:got], piece[len(piece)-take:])
+			got -= take
 		}
-		tail := query[idx+len(labelReplacePrefix):]
+		for from := 0; from < n; from++ {
+			if m := n - from; string(last[from:n]) == labelReplacePrefix[:m] && len(rest) >= len(labelReplacePrefix)-m && rest[:len(labelReplacePrefix)-m] == labelReplacePrefix[m:] {
+				k, used = kept-m, len(labelReplacePrefix)-m
+				break
+			}
+		}
+		if k == kept {
+			idx := strings.Index(rest, labelReplacePrefix)
+			if idx < 0 {
+				break
+			}
+			if idx > 0 {
+				pieces, kept = append(pieces, rest[:idx]), kept+idx
+			}
+			rest = rest[idx:]
+			k, used = kept, len(labelReplacePrefix)
+		}
+		tail := rest[used:]
 		// The marker ends at the next "__" that closes it. Base64 chars are
 		// [A-Za-z0-9+/=], so "__" cannot appear inside the payload.
 		endIdx := strings.Index(tail, "__")
@@ -98,10 +128,34 @@ func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 			SrcLabel:    parts[2],
 			Regex:       parts[3],
 		})
-		// Strip this marker from the query and continue looking for more.
-		query = query[:idx] + query[idx+len(labelReplacePrefix)+endIdx+len("__"):]
+		// Cut this marker out of the query and continue looking for more.
+		for kept > k {
+			piece := pieces[len(pieces)-1]
+			if drop := kept - k; drop < len(piece) {
+				pieces[len(pieces)-1], kept = piece[:len(piece)-drop], k
+			} else {
+				pieces, kept = pieces[:len(pieces)-1], kept-len(piece)
+			}
+		}
+		rest, removed = tail[endIdx+len("__"):], true
 	}
-	return query, specs
+	if !removed {
+		return query, specs
+	}
+	// A query with its markers at the end, or all of it markers, is one of the pieces already.
+	if len(pieces) == 0 {
+		return rest, specs
+	}
+	if len(pieces) == 1 && rest == "" {
+		return pieces[0], specs
+	}
+	var clean strings.Builder
+	clean.Grow(kept + len(rest))
+	for _, piece := range pieces {
+		clean.WriteString(piece)
+	}
+	clean.WriteString(rest)
+	return clean.String(), specs
 }
 
 // DropCondition represents a matcher-form conditional drop from `| drop field=value`.
@@ -486,7 +540,17 @@ func appendWithoutMarker(query, op string, labels []string) string {
 // aggregation the proxy folds itself (empty for any other query) and the list
 // of labels to exclude.
 func ParseWithoutMarker(query string) (cleanQuery, op string, excludeLabels []string) {
-	idx := strings.LastIndex(query, WithoutMarkerSuffix)
+	// The last marker, found with Index (which scans many bytes at a time, where LastIndex does not): most queries
+	// carry none and are read once.
+	idx := -1
+	for from := 0; from < len(query); {
+		i := strings.Index(query[from:], WithoutMarkerSuffix)
+		if i < 0 {
+			break
+		}
+		idx = from + i
+		from = idx + 1
+	}
 	if idx < 0 {
 		return query, "", nil
 	}

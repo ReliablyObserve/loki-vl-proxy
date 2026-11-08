@@ -148,6 +148,35 @@ operators may raise or remove. No limit is the safety mechanism.
   (first, repeat, refresh), their growth with replicas and clients, and the
   memory and concurrency bounds. See CONTRIBUTING.md, Performance Rules.
 
+## Security review in every change
+
+Every feature, fix or refactor gets a small security review of what it adds or
+modifies, and every pull request records the result in its **Security review**
+section (see `.github/pull_request_template.md`). The proxy parses untrusted
+query text and headers for many tenants in front of a shared VictoriaLogs
+cluster, so check at least:
+
+- Untrusted input: which query text, parameters and headers reach the change,
+  and what a crafted value can make it do.
+- Resource bounds on crafted input: memory, CPU, regexp compilation, nesting
+  and recursion depth, fan-out, cache growth. Fuzz new parsers and decoders.
+- Tenant isolation: cache and plan keys carry the tenant scope; no answer is
+  reused across tenants or served to a peer for another tenant.
+- Query injection: LogsQL is built from typed nodes or properly quoted values,
+  never by splicing client text; client text never becomes proxy-internal
+  syntax.
+- Error bodies: clients see only the Loki error layer, never VictoriaLogs
+  messages, URLs or internal details.
+- Logs and telemetry: no credentials or tokens, bounded label cardinality.
+- Admin and peer routes keep their authentication.
+- Concurrency: no data races or goroutine leaks; work stops when its last
+  waiter cancels.
+- Dependencies: no new module without review; versions and checksums pinned.
+
+Write "no security-relevant surface" with the reason when nothing applies.
+Report a vulnerability privately as described in `SECURITY.md`, never in a
+public pull request or issue.
+
 ## Production investigations
 
 Cache investigations and operational checks must be reproducible in a deployed

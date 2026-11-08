@@ -86,9 +86,14 @@ type ScalarOp struct {
 // Post is the post-processing of a decoded query that runs after VictoriaLogs answers: the fold of a `without`
 // aggregation the proxy combines itself, then the label_replace calls.
 type Post struct {
-	Without      *FoldLevel
+	// Without is the fold, and Without.Without reports whether there is one (see Folds). It is a value, not a
+	// pointer, so reading a query costs no allocation.
+	Without      FoldLevel
 	LabelReplace []LabelReplace
 }
+
+// Folds reports whether the query carries a `without` fold.
+func (p Post) Folds() bool { return p.Without.Without }
 
 // Verbatim keeps the text of a query whose markers EncodePhysical cannot write back byte for byte: a marker in the
 // middle of the query, a padded or empty label list. In is the decoded query, and the proxy reads it as it reads
@@ -118,8 +123,7 @@ func Split(op Op) (core Op, post Post) {
 	}
 	if v, ok := op.(Fold); ok {
 		if len(v.Levels) > 0 {
-			level := &v.Levels[0]
-			post.Without = level
+			post.Without = v.Levels[0]
 		}
 		op = v.In
 	}
