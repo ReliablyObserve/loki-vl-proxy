@@ -23,6 +23,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -591,19 +592,21 @@ func parseTopKWrapper(logql string) (k int, descending bool, group *logqlpkg.Gro
 	if strings.TrimSpace(logql) == "" {
 		return 0, false, nil, false
 	}
-	parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
-	if err != nil {
+	// The query's plan (resolvedPlan): one parse per query text, shared with the other plan reads.
+	p := resolvedPlan(strings.TrimSpace(logql))
+	if p == nil {
 		return 0, false, nil, false
 	}
-	va, isVA := parsed.(*logqlpkg.VectorAggregation)
-	if !isVA || !va.HasParam || int(va.Param) <= 0 {
+	rank, isRank := p.Root.(*queryplan.Rank)
+	if !isRank || rank.K <= 0 {
 		return 0, false, nil, false
 	}
-	switch va.Op {
+	// The grouping is the shared plan's: callers read it and never change it.
+	switch rank.Op {
 	case logqlpkg.VectorTopK:
-		return int(va.Param), true, va.Grouping, true
+		return rank.K, true, rank.By, true
 	case logqlpkg.VectorBottomK:
-		return int(va.Param), false, va.Grouping, true
+		return rank.K, false, rank.By, true
 	}
 	return 0, false, nil, false
 }
