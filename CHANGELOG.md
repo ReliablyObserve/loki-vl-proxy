@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The LogQL parser applies Loki's input size limit (131,072 bytes) on every
+  parse, as Loki's parser does, not only where a handler validates the query
+  first. Every handler already answered Loki's `input size too long` error;
+  internal parses of a query now stop at the same size. No change for any
+  query Loki accepts.
+
 ### Fixed
 
 - fix(logql): binary metric queries whose operand holds a compound duration

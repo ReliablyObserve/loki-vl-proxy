@@ -32,6 +32,11 @@ func newParseError(line, col int, msg string) *ParseError {
 // It accepts log queries, range aggregations, and vector aggregations.
 func Parse(input string) (Expr, error) {
 	querycorpus.Record(querycorpus.LogQL, input)
+	// Loki rejects a query this long before lexing it; doing the same bounds how deep a query can nest, and so
+	// the recursion of every parse, for whatever query length the handlers accept.
+	if msg := InputSizeError(input); msg != "" {
+		return nil, &ParseError{Msg: msg}
+	}
 	p := &parser{sc: newScanner(input)}
 	p.advance()
 	expr, err := p.parseExpr()
