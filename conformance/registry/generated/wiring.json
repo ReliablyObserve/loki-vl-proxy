@@ -15,7 +15,8 @@
       "internal/logql/line_template_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go",
-      "internal/logsql/pipe_math_as_test.go"
+      "internal/logsql/pipe_math_as_test.go",
+      "internal/proxy/plan_predicate_parity_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
@@ -2339,6 +2340,9 @@
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
     ],
+    "internal/proxy/plan_predicate_parity_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/proxy_helpers_test.go": [
       "semantics/absent-over-time-semantics"
     ],
@@ -3500,7 +3504,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 374,
+  "tests_with_markers": 375,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
