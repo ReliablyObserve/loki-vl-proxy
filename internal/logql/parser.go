@@ -622,28 +622,9 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		start := p.sc.pos
 		p.advance()
 		stage := &ParserStage{Type: ParserLogfmt}
-		for p.cur.Typ == TokMinus {
-			at := p.pos()
-			rest := p.sc.src[at:]
-			flag := ""
-			switch {
-			case flagAt(rest, "--strict"):
-				flag, stage.Strict = "--strict", true
-			case flagAt(rest, "--keep-empty"):
-				flag, stage.KeepEmpty = "--keep-empty", true
-			case strings.HasPrefix(rest, "--"):
-				// Loki reads `--foo` as two minus signs before a name.
-				return nil, p.errorAt(at+2, "IDENTIFIER", "NUMBER", false)
-			}
-			if flag == "" {
-				break
-			}
-			if p.flagSpans != nil {
-				*p.flagSpans = append(*p.flagSpans, [2]int{at, at + len(flag)})
-			}
-			p.sc.pos = at + len(flag)
-			start = p.sc.pos
-			p.advance()
+		start, err := p.logfmtFlags(stage, start)
+		if err != nil {
+			return nil, err
 		}
 		param, fields, err := p.consumeExplicitFieldList(start)
 		if err != nil {
@@ -949,6 +930,34 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 
 // syntaxError reports an unexpected current token the way Loki's yacc parser
 // does ("syntax error: unexpected $end, expecting STRING").
+// logfmtFlags reads the --strict and --keep-empty flags after `logfmt` into
+// stage, and returns where the field list starts.
+func (p *parser) logfmtFlags(stage *ParserStage, start int) (int, error) {
+	for p.cur.Typ == TokMinus {
+		at := p.pos()
+		rest := p.sc.src[at:]
+		flag := ""
+		switch {
+		case flagAt(rest, "--strict"):
+			flag, stage.Strict = "--strict", true
+		case flagAt(rest, "--keep-empty"):
+			flag, stage.KeepEmpty = "--keep-empty", true
+		case strings.HasPrefix(rest, "--"):
+			// Loki reads `--foo` as two minus signs before a name.
+			return 0, p.errorAt(at+2, "IDENTIFIER", "NUMBER", false)
+		default:
+			return start, nil
+		}
+		if p.flagSpans != nil {
+			*p.flagSpans = append(*p.flagSpans, [2]int{at, at + len(flag)})
+		}
+		p.sc.pos = at + len(flag)
+		start = p.sc.pos
+		p.advance()
+	}
+	return start, nil
+}
+
 // flagAt reports s starting with flag, not followed by a name character.
 func flagAt(s, flag string) bool {
 	if !strings.HasPrefix(s, flag) {
@@ -958,7 +967,7 @@ func flagAt(s, flag string) bool {
 		return true
 	}
 	c := s[len(flag)]
-	return !(c == '_' || c == '-' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z')
+	return c != '_' && c != '-' && (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z')
 }
 
 // offsetDuration reads the duration after `offset` as Loki's lexer does: a
