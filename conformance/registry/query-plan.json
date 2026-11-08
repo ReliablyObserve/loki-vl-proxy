@@ -1,9 +1,9 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2529,
-    "parsed": 2473,
-    "built": 2473,
+    "rows": 2530,
+    "parsed": 2474,
+    "built": 2474,
     "untyped_by_construct": {
       "labelfilter_untyped": 0,
       "line_format_raw": 3,
@@ -16,8 +16,8 @@
   },
   "logical_key_sound": {
     "v1.49 identity": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -25,8 +25,8 @@
       "unsound": 0
     },
     "v1.49 stream fields": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -34,8 +34,8 @@
       "unsound": 0
     },
     "v1.49 underscores": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -43,8 +43,8 @@
       "unsound": 0
     },
     "v1.53 identity": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -52,8 +52,8 @@
       "unsound": 0
     },
     "v1.53 no body scan": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -61,8 +61,8 @@
       "unsound": 0
     },
     "v1.53 no body scan, stream fields, keepLine": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 0,
@@ -70,8 +70,8 @@
       "unsound": 0
     },
     "v1.53 stream fields": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -79,8 +79,8 @@
       "unsound": 0
     },
     "v1.53 stream fields and labels": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -88,8 +88,8 @@
       "unsound": 0
     },
     "v1.53 stream labels": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -97,8 +97,8 @@
       "unsound": 0
     },
     "v1.53 stream labels keepLine": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 0,
@@ -106,8 +106,8 @@
       "unsound": 0
     },
     "v1.53 underscores": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 5,
@@ -115,8 +115,8 @@
       "unsound": 0
     },
     "v1.53 underscores keepLine": {
-      "rows": 2473,
-      "keys": 2419,
+      "rows": 2474,
+      "keys": 2420,
       "shared_texts": 54,
       "text_only": 0,
       "phrase_text": 0,
@@ -125,12 +125,12 @@
     }
   },
   "predicate_parity": {
-    "rows": 2529,
-    "validated": 2447,
+    "rows": 2530,
+    "validated": 2448,
     "attributes": {
       "drop_error_only": {
         "predicate": "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(handler query text).BaseQuery) against an error-only drop as the last stage",
-        "compared": 1895,
+        "compared": 1896,
         "explained": [
           {
             "query": "sum by (app) (rate({env=\"production\"}[5m] | json | drop __error__))",
@@ -154,12 +154,12 @@
       },
       "offset": {
         "predicate": "extractLogQLOffset(handler query text)",
-        "compared": 2447,
+        "compared": 2448,
         "explained": []
       },
       "ungrouped": {
         "predicate": "hasOuterAggregationWithoutBy(handler query text)",
-        "compared": 2447,
+        "compared": 2448,
         "explained": [
           {
             "query": "avg(avg(avg(count_over_time({app=\"uw\"} [5m])) by (pod, zone, svc)) by (pod, zone)) by (zone)",

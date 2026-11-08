@@ -95,6 +95,9 @@
     "limits/metadata-scan-queue-429 | query",
     "limits/multi-tenant-limit-combination | applies_to",
     "limits/multi-tenant-limit-combination | compare:exact",
+    "limits/parser-metric-raw-rows-body-cap | compare:observed",
+    "limits/parser-metric-raw-rows-body-cap | gap:open",
+    "limits/parser-metric-raw-rows-body-cap | query",
     "limits/per-tenant-override | applies_to",
     "limits/per-tenant-override | compare:exact",
     "limits/published-equals-enforced | applies_to",
@@ -1941,7 +1944,7 @@
       "any": 28,
       "api": 41,
       "drilldown": 49,
-      "explore": 151,
+      "explore": 152,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -1965,7 +1968,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 100,
+    "unwired_items": 101,
     "wired_items": 259
   },
   "gates": [
