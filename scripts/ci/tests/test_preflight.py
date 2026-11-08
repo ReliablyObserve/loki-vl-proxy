@@ -130,6 +130,14 @@ class PackageMappingTest(unittest.TestCase):
         self.assertEqual(pf.plan("base", root=self.t.root, files=["docs/a.md", "bench/README.md"])["packages"], "")
         self.assertEqual(pf.plan("base", root=self.t.root, files=["bench/README.md"])["bench"], "0")
 
+    def test_query_corpus_inputs_select_the_querycorpus_tests(self):
+        self.t.write("internal/querycorpus/corpus.go")
+        for path in ("conformance/registry/cases/semantics/x.yaml", "conformance/registry/query-plan.json",
+                     "bench/ab/shapes.json", "test/e2e-compat/query-semantics-matrix.json"):
+            self.assertEqual(pf.plan("base", root=self.t.root, files=[path])["packages"], "./internal/querycorpus", path)
+        for path in ("conformance/reports/census.md", "bench/ab/history/trend.md", "test/e2e-compat/x_test.go"):
+            self.assertNotIn("internal/querycorpus", pf.plan("base", root=self.t.root, files=[path])["packages"], path)
+
 
 class ProxySelectionTest(unittest.TestCase):
     def setUp(self):
