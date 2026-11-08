@@ -433,6 +433,7 @@
       "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go",
       "test/e2e-compat/binary_operand_literals_test.go",
+      "test/e2e-compat/comments_offsets_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
@@ -903,6 +904,11 @@
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
+    "semantics/comments-signed-compound-offsets": [
+      "internal/logql/comments_offsets_test.go",
+      "internal/proxy/unknown_logql_names_test.go",
+      "test/e2e-compat/comments_offsets_test.go"
+    ],
     "semantics/count-values-unsupported": [
       "internal/logql/count_values_test.go",
       "internal/proxy/count_values_test.go",
@@ -1240,6 +1246,9 @@
       "internal/logql/loki_unknown_names_test.go",
       "internal/proxy/unknown_logql_names_test.go",
       "test/e2e-compat/operators_not_in_loki_test.go"
+    ],
+    "semantics/proxy-rejects-valid-logql": [
+      "internal/logql/comments_offsets_test.go"
     ],
     "semantics/query-range-step-alignment": [
       "cmd/proxy/main_test.go",
@@ -1635,7 +1644,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 434,
+  "registry_items": 435,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1661,6 +1670,10 @@
     "internal/config/registry_test.go": [
       "limits/every-cap-is-a-flag",
       "operator-configurable-limits"
+    ],
+    "internal/logql/comments_offsets_test.go": [
+      "semantics/comments-signed-compound-offsets",
+      "semantics/proxy-rejects-valid-logql"
     ],
     "internal/logql/count_values_test.go": [
       "semantics/count-values-unsupported"
@@ -2625,6 +2638,7 @@
       "semantics/non-sum-vector-aggregation-unreduced"
     ],
     "internal/proxy/unknown_logql_names_test.go": [
+      "semantics/comments-signed-compound-offsets",
       "semantics/proxy-accepts-operators-not-in-loki"
     ],
     "internal/proxy/unwrap_bytes_gate_property_test.go": [
@@ -2911,6 +2925,10 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/binary-operand-literals-reprint"
+    ],
+    "test/e2e-compat/comments_offsets_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/comments-signed-compound-offsets"
     ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
@@ -3504,7 +3522,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 375,
+  "tests_with_markers": 377,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3574,7 +3592,6 @@
     "semantics/parse-error-labels-on-log-lines",
     "semantics/pattern-line-filter-invalid-captures",
     "semantics/proxy-accepts-invalid-logql",
-    "semantics/proxy-rejects-valid-logql",
     "semantics/quantile-over-time-out-of-range",
     "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/ruler-empty-list-status",
@@ -3609,5 +3626,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 259
+  "wired_items": 261
 }
