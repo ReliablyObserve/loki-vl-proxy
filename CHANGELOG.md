@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.104.0] - 2026-11-08
+
 ### Changed
 
 - The query plan has a lowering stage (internal/queryplan/lower) that turns a
