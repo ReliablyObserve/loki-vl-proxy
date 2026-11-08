@@ -19,6 +19,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -1825,22 +1826,22 @@ func dropEmptyInputGuard(body []byte) []byte {
 }
 
 // proxyBinaryMetricQueryRangeVM evaluates with vector matching (on/ignoring/group_left/group_right).
-func (p *Proxy) proxyBinaryMetricQueryRangeVM(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string, vm *translator.VectorMatchInfo) {
-	p.proxyBinaryMetricVM(w, r, op, leftQL, rightQL, "stats_query_range", "matrix", vm)
+func (p *Proxy) proxyBinaryMetricQueryRangeVM(w http.ResponseWriter, r *http.Request, op string, left, right physical.Op, vm *translator.VectorMatchInfo) {
+	p.proxyBinaryMetricVM(w, r, op, left, right, "stats_query_range", "matrix", vm)
 }
 
-func (p *Proxy) proxyBinaryMetricQueryVM(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string, vm *translator.VectorMatchInfo) {
-	p.proxyBinaryMetricVM(w, r, op, leftQL, rightQL, "stats_query", "vector", vm)
+func (p *Proxy) proxyBinaryMetricQueryVM(w http.ResponseWriter, r *http.Request, op string, left, right physical.Op, vm *translator.VectorMatchInfo) {
+	p.proxyBinaryMetricVM(w, r, op, left, right, "stats_query", "vector", vm)
 }
 
-func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string, vm *translator.VectorMatchInfo) {
+func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op string, left, right physical.Op, vlEndpoint, resultType string, vm *translator.VectorMatchInfo) {
 	if expr := binaryExprForRequest(r); expr != nil {
 		p.proxyBinaryLogQL(w, r, expr, resultType)
 		return
 	}
 	// If no vector matching, fall back to default behavior
 	if vm == nil || (!vm.MatchOn && vm.GroupSide == "" && len(vm.On) == 0 && len(vm.Ignoring) == 0 && len(vm.GroupLeft) == 0 && len(vm.GroupRight) == 0) {
-		p.proxyBinaryMetric(w, r, op, leftQL, rightQL, vlEndpoint, resultType)
+		p.proxyBinaryMetric(w, r, op, left, right, vlEndpoint, resultType)
 		return
 	}
 
@@ -1887,15 +1888,15 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		return params
 	}
 
-	leftIsScalar := translator.IsScalar(leftQL)
-	rightIsScalar := translator.IsScalar(rightQL)
+	leftIsScalar := isScalarOperand(left)
+	rightIsScalar := isScalarOperand(right)
 
 	var leftBody, rightBody []byte
 	var leftErr, rightErr error
-	// Nested marker operands share the request's bounded work budget.
-	leftBody, _, leftErr = p.resolveBinOpBody(r, leftQL, vlEndpoint, resultType, buildParams)
+	// Nested binary operands share the request's bounded work budget.
+	leftBody, _, leftErr = p.resolveBinOpBody(r, left, vlEndpoint, resultType, buildParams)
 	if leftErr == nil {
-		rightBody, _, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
+		rightBody, _, rightErr = p.resolveBinOpBody(r, right, vlEndpoint, resultType, buildParams)
 	}
 	if leftErr != nil {
 		p.writeErr(w, r.Context(), leftErr)
@@ -1908,7 +1909,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 
 	var result []byte
 	if leftIsScalar || rightIsScalar {
-		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, operandText(left), operandText(right))
 	} else {
 		var err error
 		result, err = matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
@@ -1927,7 +1928,8 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	w.Write(result)
 }
 
-func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string) {
+func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op string, left, right physical.Op, vlEndpoint, resultType string) {
+	leftQL, rightQL := operandText(left), operandText(right)
 	isRange := vlEndpoint == "stats_query_range"
 
 	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
@@ -1970,21 +1972,21 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		return params
 	}
 
-	// Check if either side is a scalar or a nested binary marker.
-	leftIsScalar := translator.IsScalar(leftQL)
-	rightIsScalar := translator.IsScalar(rightQL)
-	leftIsMarker := strings.HasPrefix(leftQL, translator.BinaryMetricPrefix)
-	rightIsMarker := strings.HasPrefix(rightQL, translator.BinaryMetricPrefix)
+	// Check if either side is a scalar or a nested binary expression.
+	leftIsScalar := isScalarOperand(left)
+	rightIsScalar := isScalarOperand(right)
+	_, leftIsBinary := left.(physical.Binary)
+	_, rightIsBinary := right.(physical.Binary)
 
 	var leftBody, rightBody []byte
 	var leftErr, rightErr error
 
-	// When either side is a nested binary marker, resolve it recursively.
+	// When either side is a nested binary expression, resolve it recursively.
 	// Otherwise fall through to the plain VL fetch paths.
-	if leftIsMarker || rightIsMarker {
-		leftBody, leftIsScalar, leftErr = p.resolveBinOpBody(r, leftQL, vlEndpoint, resultType, buildParams)
+	if leftIsBinary || rightIsBinary {
+		leftBody, leftIsScalar, leftErr = p.resolveBinOpBody(r, left, vlEndpoint, resultType, buildParams)
 		if leftErr == nil {
-			rightBody, rightIsScalar, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
+			rightBody, rightIsScalar, rightErr = p.resolveBinOpBody(r, right, vlEndpoint, resultType, buildParams)
 		}
 	} else if !leftIsScalar && !rightIsScalar {
 		// Run both non-scalar VL fetches concurrently.
@@ -2057,17 +2059,17 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	w.Write(result)
 }
 
-// resolveBinOpBody returns the result body for one side of a binary expression.
-// Handles scalar strings, nested binary markers, and plain VL queries.
-func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType string, buildParams func(string) url.Values) (body []byte, isScalar bool, err error) {
-	if translator.IsScalar(query) {
-		return []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + query + `"]}}`), true, nil
-	}
-	if strings.HasPrefix(query, translator.BinaryMetricPrefix) {
-		body, err = p.evalBinaryMarker(r, query, vlEndpoint, resultType, buildParams)
+// resolveBinOpBody returns the result body for one side of a binary expression: a number, a nested binary
+// expression, or the query VictoriaLogs answers (any other operator is sent as the text the translator wrote).
+func (p *Proxy) resolveBinOpBody(r *http.Request, operand physical.Op, vlEndpoint, resultType string, buildParams func(string) url.Values) (body []byte, isScalar bool, err error) {
+	switch v := operand.(type) {
+	case physical.ScalarOp:
+		return []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + v.Text + `"]}}`), true, nil
+	case physical.Binary:
+		body, err = p.evalBinary(r, v, vlEndpoint, resultType, buildParams)
 		return body, false, err
 	}
-	resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(query))
+	resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(operandText(operand)))
 	if e != nil {
 		return nil, false, e
 	}
@@ -2082,31 +2084,51 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType 
 	return body, false, nil
 }
 
-// evalBinaryMarker recursively evaluates a __binary__: expression marker.
-func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType string, buildParams func(string) url.Values) ([]byte, error) {
+// evalBinary recursively evaluates a nested binary expression.
+func (p *Proxy) evalBinary(r *http.Request, b physical.Binary, vlEndpoint, resultType string, buildParams func(string) url.Values) ([]byte, error) {
 	var err error
 	r, err = nextBinaryEvaluation(r)
 	if err != nil {
 		return nil, err
 	}
-	op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(marker)
-	if !ok {
-		return nil, fmt.Errorf("invalid binary expression marker")
-	}
-
-	leftBody, leftScalar, err := p.resolveBinOpBody(r, left, vlEndpoint, resultType, buildParams)
+	leftBody, leftScalar, err := p.resolveBinOpBody(r, b.L, vlEndpoint, resultType, buildParams)
 	if err != nil {
 		return nil, err
 	}
-	rightBody, rightScalar, err := p.resolveBinOpBody(r, right, vlEndpoint, resultType, buildParams)
+	rightBody, rightScalar, err := p.resolveBinOpBody(r, b.R, vlEndpoint, resultType, buildParams)
 	if err != nil {
 		return nil, err
 	}
 
 	if !leftScalar && !rightScalar {
-		return matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
+		return matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, b.Op, resultType, binaryMatching(b.Match), false)
 	}
-	return combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftScalar, rightScalar, left, right), nil
+	return combineBinaryMetricResults(leftBody, rightBody, b.Op, resultType, leftScalar, rightScalar, operandText(b.L), operandText(b.R)), nil
+}
+
+// binaryOperand is a translated operand of a binary expression as its physical operator: a number, a nested
+// binary expression, or a query (translator.DecodePhysical).
+func binaryOperand(logsql string) (physical.Op, error) {
+	return translator.DecodePhysical(logsql)
+}
+
+func isScalarOperand(op physical.Op) bool {
+	_, ok := op.(physical.ScalarOp)
+	return ok
+}
+
+// operandText is the text the translator wrote for an operand: what VictoriaLogs is sent for a query operand,
+// and the number as written for a scalar one.
+func operandText(op physical.Op) string {
+	return translator.EncodePhysical(op)
+}
+
+// binaryMatching is the vector matching of a nested binary expression, empty (not nil) without modifiers.
+func binaryMatching(m *physical.Matching) *translator.VectorMatchInfo {
+	if m == nil {
+		return &translator.VectorMatchInfo{}
+	}
+	return &translator.VectorMatchInfo{MatchOn: m.MatchOn, GroupSide: m.GroupSide, On: m.On, Ignoring: m.Ignoring, GroupLeft: m.GroupLeft, GroupRight: m.GroupRight}
 }
 
 // combineBinaryMetricResults applies arithmetic op to two VL stats results.

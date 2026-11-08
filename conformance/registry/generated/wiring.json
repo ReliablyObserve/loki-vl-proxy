@@ -16,6 +16,7 @@
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go",
       "internal/logsql/pipe_math_as_test.go",
+      "internal/proxy/binary_operand_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/querycorpus/plan_shadow_test.go",
@@ -1855,6 +1856,9 @@
       "loki_api_v1_query",
       "semantics/scalar-sample-time-units"
     ],
+    "internal/proxy/binary_operand_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/capture_error_replay_test.go": [
       "limits/series-limit-error",
       "semantics/error-layer-backend-text",
@@ -3562,7 +3566,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 384,
+  "tests_with_markers": 385,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -686,7 +687,14 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 			return
 		}
-		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		left, leftErr := binaryOperand(leftLogsql)
+		right, rightErr := binaryOperand(rightLogsql)
+		if err := errors.Join(leftErr, rightErr); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
+			return
+		}
+		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, left, right, binOpExprToVMInfo(binOp))
 		dispatched = true
 	}
 

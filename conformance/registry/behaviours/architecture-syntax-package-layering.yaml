@@ -262,3 +262,22 @@ decisions:
     code: [internal/translate/selector.go, internal/queryplan/lower/lower.go, internal/translator/ast_translate.go, test/oracle/loki/facts.go, .golangci.yml]
     tests: [TestSelectorFilterMatchers, TestPlanLowersBareSelectors, TestPlanDelegatesEveryConstruct, TestPlanShadow, TestVLOracle, TestPlanMatchesLokiOracle, TestPlanRouteParity]
     quality: 'No handler reads the lowering yet. The open selector difference (semantics/stream-label-selector-shadowed-by-ingest-json-key) changes the filter of every query on such a label and stays its own change: the shadow requires the lowering to equal the string translator.'
+  - id: binary-handlers-read-physical-operands
+    chosen: 'The binary-expression handlers carry each operand as its physical operator (translator.DecodePhysical, once per side) instead of its text: a ScalarOp is a number, a Binary a nested expression evaluated from its operands, operator and matching, and any other operator is sent to VictoriaLogs as the text the translator wrote (EncodePhysical, its exact inverse). IsScalar, the __binary__ prefix test and ParseBinaryMetricExprFull leave the handlers'
+    over: [translating the whole query once and reading its operands, rebuilding the operands from the LogQL tree, evaluating a Fold or LabelMap operand natively]
+    why: |
+      Step nine of architecture B (owner 2026-11-08). The codec is the one
+      sanctioned reader of the translator's text until the lowering produces
+      the operators, so the handlers stop reading markers: lowering_marker_reads
+      34 → 25. Each side is still translated from its own text (the AST's
+      String), because translating the whole query and taking its operands
+      would change the operand text on the rows whose reprint differs; that is
+      a step with its own route proof. A Fold or LabelMap operand (78 of the
+      570 corpus operands) is sent as its text as before: those queries are
+      served by the binary-aggregation and range-metric routes. A nested
+      expression's matching is empty, not nil, without modifiers, as the text
+      reader answered.
+    evidence: 'internal/proxy/binary_operand_test.go TestBinaryOperandsReadLikeTheirText (570 operands: 332 VLQuery, 142 ScalarOp, 72 Fold, 18 Binary, 6 LabelMap); route parity digests unchanged; base vs PR route-parity dumps: every binary run sends the same VictoriaLogs requests (the 39 runs that differ are `| json` metric probe races, the same between two base runs) (2026-11-08)'
+    code: [internal/proxy/metric_binary.go, internal/proxy/query_translation.go, internal/proxy/metric_agg.go]
+    tests: [TestBinaryOperandsReadLikeTheirText, TestBinaryMatchingOfNestedExpressions, TestPlanRouteParity]
+    quality: 'Behaviour-neutral: the requests and answers do not change; the operands are still the string translator''s.'
