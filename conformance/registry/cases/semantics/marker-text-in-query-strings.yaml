@@ -1,0 +1,49 @@
+id: semantics/marker-text-in-query-strings
+title: A string in a query that holds the proxy's post-processing marker text is matched as text
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  The translator writes the post-processing the proxy applies after
+  VictoriaLogs answers (a `without` fold, `label_replace` calls) after the
+  translated query, as marker text (`__without__:pod`, `__lvp_lr:…__`). A
+  query whose line filter, label filter value or stream label value held that
+  text (`{app="x"} |= "__without__:pod"`) was read as if the proxy had written
+  it: the query was cut at the string, VictoriaLogs rejected what was left,
+  and the client got an error where Loki matches the text.
+
+  Fixed: the translator appends its markers after the query and no marker
+  holds a quote, while a client's text reaches the translated query only inside
+  a quoted string, so markers are read after the last quote only. The whole
+  query, the string included, reaches VictoriaLogs. A label_format name, the
+  one place a query writes a name outside quotes, cannot hold a marker: Loki's
+  grammar and the proxy's validation reject the colon.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="api-gateway"} |= "__without__:pod"'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.values]
+  expect: |
+    200 with Loki's lines.
+gap:
+  status: fixed
+  visual: none
+  visual_reason: 'no Grafana panel builds a query holding the proxy''s marker text; the answers are pinned by the route-level and corpus tests'
+  fixed_by: '#1189'
+  impact: explore-visible
+  effort: S
+  area: 'internal/translator/physical_codec.go (SplitPost, afterLastQuote), internal/translator/translator.go (parseWithoutMarkerFrom, parseLabelReplaceMarkersFrom)'
+  loki: 'Loki matches the string as text'
+  proxy: 'markers are read after the last quote of the translated query only'
+  planned_test: 'TestCompat_MarkerTextInStrings (test/e2e-compat, group semantics: log queries and metrics over the strings, query and query_range, equal to Loki); TestClientTextIsNeverReadAsAMarker, FuzzSplitPostOnTranslatorOutput, TestSplitPostEdgeTable (internal/querycorpus); TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing (internal/proxy, the line filter, label value and label_replace text shapes through query and query_range)'
+  clusters: []

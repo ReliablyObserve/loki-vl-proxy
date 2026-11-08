@@ -7,12 +7,27 @@ import "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 // ParseAllLabelReplaceMarkers returned, for any text. A query without markers is returned as it is, without an
 // allocation.
 func SplitPost(s string) (clean string, post physical.Post) {
-	clean, op, labels := ParseWithoutMarker(s)
-	clean, post.LabelReplace = ParseAllLabelReplaceMarkers(clean)
+	// The translator appends its markers after the query, and no marker holds a quote, while text a client wrote
+	// reaches the query only inside a quoted string. Markers are therefore read after the last quote only: one inside
+	// a string (`|= "__without__:pod"`) is the client's text.
+	from := afterLastQuote(s)
+	clean, op, labels := parseWithoutMarkerFrom(s, from)
+	// The clean query keeps the text up to the quote, so the label_replace markers are read from the same offset.
+	clean, post.LabelReplace = parseLabelReplaceMarkersFrom(clean, from)
 	if op != "" || len(labels) > 0 {
 		post.Without = physical.FoldLevel{Op: op, Labels: labels, Without: true}
 	}
 	return clean, post
+}
+
+// afterLastQuote is the offset just past the last quote character of s (", ' or `), or 0 when s has none.
+func afterLastQuote(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if c := s[i]; c == '"' || c == '\'' || c == '`' {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // DecodePhysical reads a translated query into its physical operators: the post-processing markers become Fold and

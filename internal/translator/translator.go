@@ -70,6 +70,12 @@ func ParseLabelReplaceMarker(query string) (string, *LabelReplaceSpec) {
 // chained label_replace(label_replace(...)) calls: the translator embeds one marker
 // per nesting level, and each must be applied in sequence.
 func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
+	return parseLabelReplaceMarkersFrom(query, 0)
+}
+
+// parseLabelReplaceMarkersFrom is ParseAllLabelReplaceMarkers reading markers from offset from on: the text before it
+// is kept as it is.
+func parseLabelReplaceMarkersFrom(query string, from int) (string, []LabelReplaceSpec) {
 	var specs []LabelReplaceSpec
 	// The query is the pieces kept so far (they hold no marker prefix) followed by rest, the part not read yet. A
 	// marker is cut out of the query and the search starts again from the start of what is left, so one that the cut
@@ -78,6 +84,12 @@ func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 	var pieceBuf [4]string
 	pieces, kept := pieceBuf[:0], 0 // kept is the length of the pieces together
 	rest, removed := query, false
+	// headOnly: the pieces are query[:kept] and rest is query[kept:], so a piece found next extends the first one.
+	headOnly := false
+	if from > 0 {
+		// The kept text ends with a quote, which no marker prefix holds, so no marker starts in it.
+		pieces, kept, rest, headOnly = append(pieces, query[:from]), from, query[from:], true
+	}
 	for {
 		// k is where the marker starts in the kept text, and used the bytes of its prefix that rest supplies.
 		k, used := kept, len(labelReplacePrefix)
@@ -100,7 +112,9 @@ func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 			if idx < 0 {
 				break
 			}
-			if idx > 0 {
+			if idx > 0 && headOnly {
+				pieces[0], kept = query[:kept+idx], kept+idx
+			} else if idx > 0 {
 				pieces, kept = append(pieces, rest[:idx]), kept+idx
 			}
 			rest = rest[idx:]
@@ -137,7 +151,7 @@ func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
 				pieces, kept = pieces[:len(pieces)-1], kept-len(piece)
 			}
 		}
-		rest, removed = tail[endIdx+len("__"):], true
+		rest, removed, headOnly = tail[endIdx+len("__"):], true, false
 	}
 	if !removed {
 		return query, specs
@@ -540,10 +554,15 @@ func appendWithoutMarker(query, op string, labels []string) string {
 // aggregation the proxy folds itself (empty for any other query) and the list
 // of labels to exclude.
 func ParseWithoutMarker(query string) (cleanQuery, op string, excludeLabels []string) {
+	return parseWithoutMarkerFrom(query, 0)
+}
+
+// parseWithoutMarkerFrom is ParseWithoutMarker reading a marker that starts at offset start or later.
+func parseWithoutMarkerFrom(query string, start int) (cleanQuery, op string, excludeLabels []string) {
 	// The last marker, found with Index (which scans many bytes at a time, where LastIndex does not): most queries
 	// carry none and are read once.
 	idx := -1
-	for from := 0; from < len(query); {
+	for from := start; from < len(query); {
 		i := strings.Index(query[from:], WithoutMarkerSuffix)
 		if i < 0 {
 			break

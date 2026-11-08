@@ -290,11 +290,12 @@ func TestPhysicalCodecRoundTrip(t *testing.T) {
 
 			assertSplitPost(t, s)
 
-			// The proxy's two-step strip, as it ran before the codec.
-			wantClean, wantOp, wantLabels := translator.ParseWithoutMarker(s)
-			wantClean, wantSpecs := translator.ParseAllLabelReplaceMarkers(wantClean)
+			// The proxy's two-step strip, as it ran before the codec, on the text after the last quote, where the
+			// translator writes its markers (referenceSplit).
+			wantClean, wantOp, wantLabels, wantSpecs := referenceSplit(s)
 			// The label_replace markers were also read from the text before the without marker left it.
-			if _, onRaw := translator.ParseAllLabelReplaceMarkers(s); fmt.Sprintf("%#v", onRaw) != fmt.Sprintf("%#v", wantSpecs) {
+			after := strings.LastIndexAny(s, "\"'`") + 1
+			if _, onRaw := translator.ParseAllLabelReplaceMarkers(s[after:]); fmt.Sprintf("%#v", onRaw) != fmt.Sprintf("%#v", wantSpecs) {
 				t.Fatalf("%s: query %q\nlabel_replace of the whole text differs: got %#v, want %#v", prof.name, q, onRaw, wantSpecs)
 			}
 			core, post := physical.Split(op)
