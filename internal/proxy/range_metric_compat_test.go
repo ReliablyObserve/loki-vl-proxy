@@ -896,7 +896,9 @@ func TestHasPostParserPipeStage(t *testing.T) {
 	}
 }
 
-func TestHasDropErrorOnlyPostParserStage(t *testing.T) {
+// TestQueryDropsOnlyErrorAfterParser: the explicit opt-in to VictoriaLogs' count-all stats is a parser followed only
+// by `| drop __error__` (with or without __error_details__), read from the query's plan in every spelling.
+func TestQueryDropsOnlyErrorAfterParser(t *testing.T) {
 	cases := []struct {
 		query string
 		want  bool
@@ -904,21 +906,38 @@ func TestHasDropErrorOnlyPostParserStage(t *testing.T) {
 		{`{app="a"} | json | drop __error__`, true},
 		{`{app="a"} | logfmt | drop __error__, __error_details__`, true},
 		{`{app="a"} | json | drop __error_details__, __error__`, true},
-		// No post-parser stage — not a drop-error opt-in.
+		{`sum by (app) (rate({app="a"} | json | drop __error__ [5m]))`, true},
+		// the pipeline after the range, a parenthesised log query, an offset: the same pipeline
+		{`sum by (app) (rate({app="a"}[5m] | json | drop __error__))`, true},
+		{`sum by (level) (count_over_time(({app="a"} | json | drop __error__)[1m]))`, true},
+		{`sum by (level) (count_over_time(({app="a"} | json | drop __error__)[1m] offset 5m))`, true},
+		{`label_replace(sum(rate({app="a"} | json | drop __error__ [5m])), "b", "$1", "app", "(.*)")`, true},
+		{`topk(3, sum by (app) (rate({app="a"} | json | drop __error__ [5m])))`, true},
+		// No post-parser stage: not a drop-error opt-in.
 		{`{app="a"} | json`, false},
-		// Filtering stage — not a drop-error opt-in.
+		// Filtering stage: not a drop-error opt-in.
 		{`{app="a"} | json | status >= 400`, false},
-		// __error__ filter (not drop) — not a drop-error opt-in.
+		// __error__ filter (not drop): not a drop-error opt-in.
 		{`{app="a"} | json | __error__ = ""`, false},
 		// No parser at all.
 		{`{app="a"}`, false},
-		// drop __error__ but also another filter after — not a drop-error-only stage.
+		{`{app="a"} | drop __error__`, false},
+		// drop __error__ but also another stage after or before it: not a drop-error-only stage.
 		{`{app="a"} | json | drop __error__ | status >= 400`, false},
+		{`{app="a"} | json | status >= 400 | drop __error__`, false},
+		// a drop of other labels too, or a conditional drop, or __error_details__ alone
+		{`{app="a"} | json | drop __error__, b`, false},
+		{`{app="a"} | json | drop __error__="JSONParserErr"`, false},
+		{`{app="a"} | json | drop __error_details__`, false},
+		// a binary expression: each side is answered on its own
+		{`sum(rate({app="a"} | json | drop __error__ [5m])) / sum(rate({app="b"}[5m]))`, false},
+		// not a query
+		{`sum(`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			if got := hasDropErrorOnlyPostParserStage(tc.query); got != tc.want {
-				t.Fatalf("hasDropErrorOnlyPostParserStage(%q) = %v, want %v", tc.query, got, tc.want)
+			if got := queryDropsOnlyErrorAfterParser(tc.query); got != tc.want {
+				t.Fatalf("queryDropsOnlyErrorAfterParser(%q) = %v, want %v", tc.query, got, tc.want)
 			}
 		})
 	}

@@ -1,0 +1,46 @@
+id: semantics/drop-error-pipeline-spellings
+title: '`| drop __error__` after a parser keeps the lines the parser fails on, in every spelling of the range pipeline'
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  A metric over `| json | drop __error__` counts every line, the ones the
+  parser fails on included: the drop removes the error label instead of the
+  lines. On a tumbling range (range = step) the proxy answers it with
+  VictoriaLogs' native stats, which count every line, and otherwise with its
+  own evaluation. Which route a query took was read from its text, and two
+  spellings Loki accepts for the same pipeline were missed: the pipeline
+  written after the range (`count_over_time({...}[1m] | json | drop
+  __error__)`) and a parenthesised log query (`count_over_time(({...} | json |
+  drop __error__)[1m])`). They took the slow route.
+
+  Fixed: the route reads the opt-in from the query's resolved logical plan
+  (queryplan.Resolve), which finds the range's pipeline in every spelling.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({service_name="api-gateway"}[1m] | json | drop __error__))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, matrix.values]
+  expect: |
+    200 with Loki's values: every line counted, the same for each spelling.
+gap:
+  status: fixed
+  visual: none
+  visual_reason: 'Grafana and Drilldown write the pipeline inside the range; the other spellings come from hand-written queries, and the answers are pinned by the e2e test against Loki'
+  fixed_by: 'pending'
+  impact: explore-visible
+  effort: S
+  area: 'internal/proxy/query_plan.go (queryDropsOnlyErrorAfterParser), internal/proxy/range_metric_compat.go, internal/proxy/query_translation.go'
+  loki: 'Loki applies a pipeline written after the range, or in a parenthesised log query, like one written inside the range'
+  proxy: 'the native-stats route reads the drop-error opt-in from the resolved plan'
+  planned_test: 'TestRangeMetricCompatibilityDropErrorSpellings (test/e2e-compat, group semantics: four spellings, step = range and step < range, equal to Loki and to each other); TestQueryDropsOnlyErrorAfterParser (internal/proxy)'
+  clusters: []
