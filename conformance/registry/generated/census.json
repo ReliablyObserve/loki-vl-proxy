@@ -458,6 +458,9 @@
     "semantics/label-filter-before-parser-pushdown | perf",
     "semantics/label-filter-before-parser-pushdown | perf:locked",
     "semantics/label-filter-before-parser-pushdown | query",
+    "semantics/label-filter-before-parser-reads-ingest-json-key | compare:observed",
+    "semantics/label-filter-before-parser-reads-ingest-json-key | gap:open",
+    "semantics/label-filter-before-parser-reads-ingest-json-key | query",
     "semantics/label-filter-expression-syntax | compare:observed",
     "semantics/label-filter-expression-syntax | gap:fixed",
     "semantics/label-filter-expression-syntax | perf",
@@ -1967,7 +1970,7 @@
     "case_consumers": {
       "any": 28,
       "api": 42,
-      "drilldown": 49,
+      "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
       "operator": 4
@@ -1992,7 +1995,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 100,
+    "unwired_items": 101,
     "wired_items": 263
   },
   "gates": [
