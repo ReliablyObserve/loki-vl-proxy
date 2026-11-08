@@ -131,6 +131,9 @@ func TestCommentsAndOffsetSpellingsSendTheSameBackendRequests(t *testing.T) {
 		{`max(count_over_time({app="a"}[5m] offset 1h2m))`, `max(count_over_time({app="a"}[5m] offset 62m))`},
 		{`max(count_over_time({app="a"}[5m] offset -1m))`, `max(count_over_time({app="a"}[5m] offset -60s))`},
 		{`sum(rate({app="a"}[1h2m]))`, `sum(rate({app="a"}[62m]))`},
+		// logfmt's flags are read and the stage is answered as `| logfmt` (semantics/logfmt-malformed-lines).
+		{`sum by (b) (count_over_time({app="a"} | logfmt --strict --keep-empty [5m]))`, `sum by (b) (count_over_time({app="a"} | logfmt [5m]))`},
+		{`{app="a"} | logfmt --strict b`, `{app="a"} | logfmt b`},
 	})
 }
 

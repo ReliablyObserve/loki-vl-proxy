@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unit (`[5minutes]`, `[5M]`), the `@` modifier Loki 3.7 does not have, an
   invalid label_replace regex, and `| bytes < 0B`.
 
+## [2.101.0] - 2026-11-08
+
+### Fixed
+
+- `| logfmt --strict` and `| logfmt --keep-empty` (in any order, repeated,
+  before a field list) are accepted, where the proxy answered 400; `| json
+  --strict` and an unknown flag answer with Loki's error text. The stage is
+  answered as `| logfmt`: Loki's answer on well-formed lines without empty
+  values. Malformed lines and empty values still differ from Loki
+  (registry `semantics/logfmt-malformed-lines`).
+
 - LogQL `#` comments, negative offsets (`offset -1s`, which shifts the window
   forward) and compound durations in any unit order (`offset 1h2m20s`,
   `offset 2m1h`, `[1h2m]`) are accepted and answered like Loki, where the

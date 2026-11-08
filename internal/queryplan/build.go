@@ -229,7 +229,15 @@ func (b *builder) stage(s logql.Stage) error {
 		}
 	case *logql.ParserStage:
 		e.tag(tagParse)
-		e.b = append(e.b, byte(x.Type))
+		// The logfmt flags ride on the type byte, so a stage without them keeps its key.
+		t := byte(x.Type)
+		if x.Strict {
+			t |= parseFlagStrict
+		}
+		if x.KeepEmpty {
+			t |= parseFlagKeepEmpty
+		}
+		e.b = append(e.b, t)
 		// Param is the source of a regexp or pattern parser; for json and
 		// logfmt it is the argument text, which the field list covers.
 		source := x.Type == logql.ParserRegexp || x.Type == logql.ParserPattern

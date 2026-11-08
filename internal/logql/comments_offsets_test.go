@@ -145,3 +145,43 @@ func FuzzStripComments(f *testing.F) {
 		}
 	})
 }
+
+// logfmt's --strict and --keep-empty flags, with Loki v3.7.9's own answers (recorded with the test oracle):
+// accepted in any order and repeated, after the parser and before a field list; json has no flag; an unknown one
+// is two minus signs before a name.
+// conformance: semantics/proxy-rejects-valid-logql
+func TestLogfmtFlagsLikeLoki(t *testing.T) {
+	cases := []struct {
+		query, lokiErr, printed string
+	}{
+		{`{a="x"} | logfmt --strict`, "", `{a="x"} | logfmt --strict`},
+		{`{a="x"} | logfmt --keep-empty`, "", `{a="x"} | logfmt --keep-empty`},
+		{`{a="x"} | logfmt --strict --keep-empty a, b="c"`, "", `{a="x"} | logfmt --strict --keep-empty a, b="c"`},
+		{`{a="x"} | logfmt --keep-empty --strict`, "", `{a="x"} | logfmt --strict --keep-empty`},
+		{`{a="x"} | logfmt --strict --strict`, "", `{a="x"} | logfmt --strict`},
+		{"{a=\"x\"} | logfmt # c\n --strict", "", `{a="x"} | logfmt --strict`},
+		{`{a="x"} | json --strict`, "parse error at line 0, col 16: syntax error: unexpected FUNCTION_FLAG", ""},
+		{`{a="x"} | logfmt --foo`, "parse error at line 1, col 20: syntax error: unexpected IDENTIFIER, expecting NUMBER", ""},
+	}
+	for _, c := range cases {
+		expr, msg := ValidateLogQLExpr(c.query)
+		if msg != c.lokiErr {
+			t.Errorf("%q: %q, Loki %q", c.query, msg, c.lokiErr)
+			continue
+		}
+		if msg == "" && expr.String() != c.printed {
+			t.Errorf("%q prints %q, want %q", c.query, expr.String(), c.printed)
+		}
+	}
+	for in, want := range map[string]string{
+		`{a="x"} | logfmt --strict`:                            `{a="x"} | logfmt `,
+		`{a="x"} | logfmt --keep-empty --strict a`:             `{a="x"} | logfmt   a`,
+		`{a="x"} |= "--strict" | logfmt`:                       `{a="x"} |= "--strict" | logfmt`,
+		`{a="x"} | json --strict`:                              `{a="x"} | json --strict`,
+		`sum(count_over_time({a="x"} | logfmt --strict [1m]))`: `sum(count_over_time({a="x"} | logfmt  [1m]))`,
+	} {
+		if got := StripParserFlags(in); got != want {
+			t.Errorf("StripParserFlags(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

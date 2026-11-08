@@ -359,7 +359,14 @@ func (d *describer) stage(s Stage) {
 		if x.Type == logql.ParserRegexp || x.Type == logql.ParserPattern {
 			source = x.Param
 		}
-		d.tok("type=%d source=%s", x.Type, strconv.Quote(source))
+		t := int(x.Type)
+		if x.Strict {
+			t |= parseFlagStrict
+		}
+		if x.KeepEmpty {
+			t |= parseFlagKeepEmpty
+		}
+		d.tok("type=%d source=%s", t, strconv.Quote(source))
 		d.tok("fields=%d", len(x.Fields))
 		for _, f := range x.Fields {
 			d.tok("field %s=%s", strconv.Quote(f.Name), strconv.Quote(f.Expression))
