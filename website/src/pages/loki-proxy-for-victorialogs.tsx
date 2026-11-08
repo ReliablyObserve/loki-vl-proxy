@@ -2,8 +2,14 @@ import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
 import Heading from '@theme/Heading';
 import MarketingLayout from '@site/src/components/MarketingLayout';
+import QualityVsLoki from '@site/src/components/QualityVsLoki';
+import quality from '@site/src/data/quality-vs-loki.json';
 import styles from '@site/src/components/marketing.module.css';
 import {coreFaqs} from '@site/src/data/faqs';
+
+const firstRequests = quality.distribution.find(
+  (row) => row.profile === quality.profile && row.request === 'first',
+);
 
 export default function LokiProxyForVictoriaLogs(): ReactNode {
   return (
@@ -18,9 +24,9 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
       secondaryCta={{label: 'See architecture details', to: '/docs/architecture/'}}
       highlights={[
         {
-          value: '1,006–1,717×',
-          label: 'Throughput vs Loki on heavy aggregation workloads (warm and cold proxy)',
-          detail: '30-second bench on Apple M5 Pro against Loki baseline.',
+          value: `${firstRequests?.below ?? 0} of ${firstRequests?.rows ?? 0}`,
+          label: `First requests below Loki v${quality.loki} in the latest daily A/B (${quality.date}, ${quality.profile})`,
+          detail: `Above 2× Loki: ${firstRequests?.above ?? 0}. Same data and hardware for both; generated daily.`,
         },
         {
           value: '~14 MB',
@@ -64,57 +70,7 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
         </div>
       </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <Heading as="h2" className={styles.sectionTitle}>
-            Measured throughput vs Loki baseline (30s bench, Apple M5 Pro)
-          </Heading>
-          <p className={styles.sectionLead}>
-            All figures are multiples of the Loki baseline at the same workload.
-            &ldquo;Warm&rdquo; means L1 cache was populated; &ldquo;cold&rdquo;
-            means a fresh process with no prior cache state.
-          </p>
-        </div>
-        <div className={styles.tableWrap}>
-          <table className={styles.comparisonTable}>
-            <thead>
-              <tr>
-                <th>Workload</th>
-                <th>Proxy warm</th>
-                <th>Proxy cold</th>
-                <th>VL native</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Small / metadata</td>
-                <td>13.7×</td>
-                <td>78×</td>
-                <td>4.8×</td>
-              </tr>
-              <tr>
-                <td>Heavy / aggregations</td>
-                <td>1,006×</td>
-                <td>1,717×</td>
-                <td>25.6×</td>
-              </tr>
-              <tr>
-                <td>Compute (c=100)</td>
-                <td>—</td>
-                <td>101×</td>
-                <td>19× (5.3× slower than cold proxy)</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p>
-          Cold proxy at c=100 concurrency is 101× faster than Loki and 5.3×
-          faster than VictoriaLogs native on the compute workload. The proxy&apos;s
-          request coalescer collapses redundant parallel requests, which is why
-          the cold-proxy number often beats the VL native number on concurrent
-          read patterns.
-        </p>
-      </section>
+      <QualityVsLoki />
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>

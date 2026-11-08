@@ -177,6 +177,20 @@ Write "no security-relevant surface" with the reason when nothing applies.
 Report a vulnerability privately as described in `SECURITY.md`, never in a
 public pull request or issue.
 
+## Published numbers
+
+Every number the README, `docs/` and the website state is generated and kept current: a generator writes it, a
+scheduled run (daily or weekly) re-measures it, and a gate fails when the committed copy is stale. The comparison
+with Loki is the model: `conformance/scripts/perf_evidence.py --quality-summary` and `--site-data`, run by
+`bench/ab/daily.py`, checked by `scripts/ci/check_conformance.py`.
+
+- A figure that is not generated yet is labelled with its date, commit and method, and never presented as current.
+- Show the whole distribution, not only medians: the p90 and the slowest queries, by time range, and the heaviest
+  queries users wait for, next to Loki's.
+- State the current measured position only. README, docs and marketing pages do not compare with earlier
+  versions of the proxy ("regression", "no longer", "improved from") or explain why a past build was slower; that
+  history belongs to pull requests and the changelog.
+
 ## Production investigations
 
 Cache investigations and operational checks must be reproducible in a deployed

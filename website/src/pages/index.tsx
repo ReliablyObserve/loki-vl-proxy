@@ -4,6 +4,7 @@ import Heading from '@theme/Heading';
 import ThemedImage from '@theme/ThemedImage';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import MarketingLayout from '@site/src/components/MarketingLayout';
+import QualityVsLoki from '@site/src/components/QualityVsLoki';
 import styles from '@site/src/components/marketing.module.css';
 import {coreFaqs} from '@site/src/data/faqs';
 
@@ -173,6 +174,8 @@ export default function Home(): ReactNode {
           />
         </div>
       </section>
+
+      <QualityVsLoki />
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
