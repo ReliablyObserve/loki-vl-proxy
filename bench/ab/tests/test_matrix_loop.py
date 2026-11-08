@@ -1,7 +1,7 @@
 """perf_matrix.py's loop: no sleep per request, CPU read from the sampler afterwards, one Loki timeout per shape and range.
 
 The loop is driven by rows recorded in a real run (fixtures/raw-unwrap-sum-without-w8-w9.json: the
-daily run of 2026-10-27, where Loki timed out at 180 s on W8 at 6h and at 24h on all 7 runs). Every
+weekly run of 2026-10-27, where Loki timed out at 180 s on W8 at 6h and at 24h on all 7 runs). Every
 request is answered from the recorded rows of its target, in order, with the recorded window checked.
 """
 import argparse
@@ -250,7 +250,7 @@ class LokiTimeoutTest(unittest.TestCase):
         self.assertEqual(sorted(loki), [("loki", W8, "1h", r) for r in range(7)]
                          + [("loki", W8, "24h", 0), ("loki", W8, "6h", 0)])
         # the proxies still run every run of every range
-        for target, runs in (("release", 7 + 7 + 3), ("main", 21)):  # the daily run caps the baseline's 24h runs at 3
+        for target, runs in (("release", 7 + 7 + 3), ("main", 21)):  # the weekly run caps the baseline's 24h runs at 3
             self.assertEqual(len([s for s in replay.sent if s[0] == target and s[1] == W8]), runs)
         self.assertEqual([t["range"] for t in written["timeouts"]], ["6h", "24h"])
         self.assertEqual({t["run"] for t in written["timeouts"]}, {0})

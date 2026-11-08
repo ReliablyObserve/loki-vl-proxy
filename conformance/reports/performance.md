@@ -105,8 +105,8 @@ target) and 1 with one (accepted up to the bound).
 
 ## Above 2× Loki (must fix)
 
-Rows the daily run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range
-slower than 2× Loki on any mode is a defect. The daily run keeps the list: it adds a row after two consecutive
+Rows the weekly run measured above 2× Loki (proxy time > 2 x Loki time and more than 50 ms slower; both answer 200; on cold, Loki's results cache did not answer), from `bench/ab/history/over-2x-loki.json`. A shape × range
+slower than 2× Loki on any mode is a defect. The weekly run keeps the list: it adds a row after two consecutive
 runs above 2× and removes one after two consecutive runs within 2×; a pull request that adds or worsens one is flagged by `perf-smoke`. A row is
 above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;
 rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.
@@ -121,7 +121,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 
 ## Slower than Loki on first load
 
-Rows the newest daily run measured; rows it does not re-measure are listed under [Not re-measured by the daily run](#not-re-measured-by-the-daily-run) and are not ranked.
+Rows the newest weekly run measured; rows it does not re-measure are listed under [Not re-measured by the weekly run](#not-re-measured-by-the-daily-run) and are not ranked.
 
 | shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |
 |---|---|---|---|---|---|---|
@@ -144,9 +144,9 @@ earlier set primed, and they are unknown here.
 
 None measured.
 
-## Not re-measured by the daily run
+## Not re-measured by the weekly run
 
-Rows slower than Loki cold, or answered with an error, in an older run that the newest daily run does not
+Rows slower than Loki cold, or answered with an error, in an older run that the newest weekly run does not
 measure (7d, or a set or shape it does not run). They keep that run's figures: often a pull request's branch build, and without
 Loki's cache counters the Loki cold time is unverified. Shown for reference; not ranked and not counted
 as slower above or in the registry table. Re-measure them before acting on them.
@@ -282,5 +282,5 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `severity/detected-level-stage-side-effects` | 5 × 3 ranges | 15 same | worst 0.12s / 0.01s (24h) | 0.57s / 0.02s | same | not locked |
 
 † Loki's results cache answered that cold run: not a computed time, and in no comparison.
-‡ No row of the item was re-measured by the newest daily run: the worst row is from the dated older run.
-The worst row and the slower count use the rows the newest daily run measured.
+‡ No row of the item was re-measured by the newest weekly run: the worst row is from the dated older run.
+The worst row and the slower count use the rows the newest weekly run measured.

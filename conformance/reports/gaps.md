@@ -140,7 +140,7 @@ cold request (bench/ab runs; details in [performance.md](performance.md)). Warm 
 p50 of the runs after the first, on the worst cold row; `also slower warm` counts the rows
 slower warm too (— when no row comes from a run that can say). Rows Loki's results cache
 answered (by its own counters or the identical-answer heuristic) are excluded, and so are rows the
-newest daily run did not re-measure (listed apart in performance.md).
+newest weekly run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|

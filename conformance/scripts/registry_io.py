@@ -173,7 +173,7 @@ def scope_problems():
 #     max_ratio: 2.0          # the hard bound: a locked row above it is a regression (at most PERF_MAX)
 #     target_ratio: 1.0       # the target: a row between it and max_ratio needs an effort_exception
 #     modes: [cold, warm, refresh]
-#     locked: true            # every row measured within max_ratio on the daily run; set by people only
+#     locked: true            # every row measured within max_ratio on the weekly run; set by people only
 #     locked_since: '2026-10-27'
 #     effort_exception: null  # or the two keys below, one line each
 #       reason: 'why going below Loki is high effort now (quote the evidence)'
@@ -330,7 +330,7 @@ def perf_blocks(root=REGISTRY_ROOT, texts=None):
 def perf_problems(covered, over_2x_rows=(), shape_covers=None, root=REGISTRY_ROOT):
     """The conformance gate's check of the perf: blocks: every item an A/B shape covers has a valid one, no other
     item has one, and no locked item covers a row on the above-2× list (a locked row is within its bound; the
-    list gains a row only after two runs above 2×, and a locked row above its bound is a regression the daily run fails on). covered: the ids bench/ab/shapes.json covers;
+    list gains a row only after two runs above 2×, and a locked row above its bound is a regression the weekly run fails on). covered: the ids bench/ab/shapes.json covers;
     shape_covers: (set, shape) -> ids, for the list check."""
     blocks = perf_blocks(root)
     problems = []

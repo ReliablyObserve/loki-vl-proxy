@@ -109,7 +109,7 @@ class CandidateTest(unittest.TestCase):
             self.assertIn("Nothing was committed", text)
             self.assertIn("40.0% (2026-10-27)", text)
             self.assertIn("the `baseline` label is set", text)
-            self.assertIn("next daily run", text)  # acceptance.json is rebuilt from the history, not replaced
+            self.assertIn("next weekly run", text)  # acceptance.json is rebuilt from the history, not replaced
             self.assertIn("not the same ones", text)
 
     def test_an_invalid_run_writes_no_baseline(self):

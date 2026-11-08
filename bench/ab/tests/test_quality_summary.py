@@ -131,14 +131,14 @@ class RenderTest(unittest.TestCase):
         last = {"aligned": "2026-10-28", "loki-defaults": "2026-11-02"}
         stale = pe.render_quality_summary(inputs(profile="loki-defaults", date="2026-11-02", profile_last=last))
         self.assertIn("The `aligned` profile (", stale)
-        self.assertIn("did not run on 2026-11-02 (its newest daily run is 2026-10-28), so it is not shown, and no row is "
+        self.assertIn("did not run on 2026-11-02 (its newest weekly run is 2026-10-28), so it is not shown, and no row is "
                       "judged in it.", stale)
         self.assertNotIn("is measured too", stale)
         ran = pe.render_quality_summary(inputs(profile="loki-defaults", date="2026-11-02",
                                                profile_last={"aligned": "2026-11-02", "loki-defaults": "2026-11-02"}))
         self.assertIn("is measured too: the distribution table below shows both profiles", ran)
         never = pe.render_quality_summary(inputs(profile="loki-defaults", profile_last={"aligned": "", "loki-defaults": "x"}))
-        self.assertIn("The `aligned` profile has no valid daily run yet.", never)
+        self.assertIn("The `aligned` profile has no valid weekly run yet.", never)
 
     def test_the_top_open_differences_are_ranked_and_exclude_fixed_rows(self):
         text = pe.render_quality_summary(inputs())

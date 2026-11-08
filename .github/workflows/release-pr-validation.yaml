@@ -1,7 +1,7 @@
 name: Release PR Validation
 
 # Scope guard for the pull requests the release bot opens: the release metadata
-# PR (release/metadata-v<version>) and the daily performance PR
+# PR (release/metadata-v<version>) and the weekly performance PR
 # (bench/daily-perf). Both are opened with auto-merge armed, so a merge happens
 # right after the maintainer approves and the required checks pass. This check
 # makes sure those PRs carry only what the bot is supposed to write.

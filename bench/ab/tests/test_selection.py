@@ -117,7 +117,7 @@ class CheckTest(unittest.TestCase):
 
     def test_level_filter_sets_are_seed_specific(self):
         # The default seed stores a level label on every stream; --no-level-label leaves the level in the line only.
-        # The per-PR smoke and the daily run seed only the default stack, and an empty answer on both sides compares
+        # The per-PR smoke and the weekly run seed only the default stack, and an empty answer on both sides compares
         # as "same", so every set selected automatically must answer with data there. level-filter must also answer
         # on the line-only seed, so it carries neither the stream label forms nor detected_level="unknown" alone.
         sets = selection.load_shapes()["sets"]
@@ -128,7 +128,7 @@ class CheckTest(unittest.TestCase):
             self.assertNotRegex(shape["query"], r"\} \| level(=|=~|!=)", shape["name"])  # stream label: empty on the line-only seed
             self.assertNotIn('detected_level="unknown"', shape["query"], shape["name"])  # empty on the stored seed
             self.assertNotRegex(shape["query"], r"(?<![_a-z])level_extracted", shape["name"])  # empty on the line-only seed
-        self.assertNotIn("level-filter-body-only", sets)  # would run empty in CI and the daily run
+        self.assertNotIn("level-filter-body-only", sets)  # would run empty in CI and the weekly run
 
 
 if __name__ == "__main__":
