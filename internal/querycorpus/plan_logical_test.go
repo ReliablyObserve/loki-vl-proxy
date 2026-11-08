@@ -1,5 +1,3 @@
-//go:build !corpuscapture
-
 package querycorpus_test
 
 import (
@@ -14,6 +12,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -119,6 +118,7 @@ func countUntyped(root queryplan.Node, c map[string]int) {
 // TestLogicalBuildTotal: every corpus query logql.Parse accepts builds into a logical plan. The spots the plan holds
 // as text are counted per construct in the `logical` section of query-plan.json; the counts may only fall.
 func TestLogicalBuildTotal(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	got := logicalSection{Untyped: map[string]int{
 		"opaque:label_replace": 0, "opaque:vector": 0, "opaque:approx_topk": 0, "opaque:other": 0,
 		"labelfilter_untyped": 0, "line_format_raw": 0, "parser_param_raw": 0,
@@ -172,6 +172,7 @@ func TestLogicalBuildTotal(t *testing.T) {
 
 // TestLogicalKeyDistinct: queries Loki reads differently never share a key.
 func TestLogicalKeyDistinct(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	r := `rate({app="a"}[5m])`
 	pairs := [][2]string{
 		{`sum by (a) (` + r + `)`, `sum without (a) (` + r + `)`},
@@ -434,6 +435,7 @@ func firstDiff(a, b reflect.Value, path string) string {
 // (spelling_divergent); both fall as the proxy evaluates the logical plan. The counts are the `logical_key_sound`
 // section of query-plan.json; LVP_QUERY_PLAN_UPDATE=1 rewrites it.
 func TestLogicalKeySound(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	type row struct {
 		text string
 		key  string

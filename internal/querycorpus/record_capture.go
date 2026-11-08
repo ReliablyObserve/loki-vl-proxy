@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Entry is one recorded query.
@@ -40,7 +41,17 @@ var (
 	// Table-driven tests send many queries from one stack, so each stack is
 	// resolved to function names once.
 	stacks = map[string]caller{}
+	// paused counts the PauseRecording calls not yet resumed: while it is above 0 nothing is recorded.
+	paused atomic.Int64
 )
+
+// PauseRecording stops recording until the returned function is called. A test that translates corpus rows itself
+// (the codec and plan tests) pauses it, so the corpus a capture run builds holds what the other tests send and the
+// test still runs in the capture run.
+func PauseRecording() (resume func()) {
+	paused.Add(1)
+	return func() { paused.Add(-1) }
+}
 
 type caller struct {
 	src, via string
@@ -57,7 +68,7 @@ func Record(kind Kind, query string) {
 // record writes one entry; skip is runtime.Callers' skip that makes the first
 // frame the function that called into this package.
 func record(kind Kind, query, path string, skip int) {
-	if dir == "" {
+	if dir == "" || paused.Load() > 0 {
 		return
 	}
 	var pcs [128]uintptr
