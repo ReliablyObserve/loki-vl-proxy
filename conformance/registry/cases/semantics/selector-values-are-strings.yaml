@@ -51,7 +51,7 @@ compare:
     Loki's 400 `parse error at line 1, col 15: syntax error: unexpected ip, expecting STRING`.
 gap:
   status: fixed
-  fixed_by: 'TBD'
+  fixed_by: '#1180'
   impact: explore-visible
   visual: none
   visual_reason: 'a status and error text change on a selector no Grafana or Drilldown panel builds; the status and text are pinned by TestCompat_SelectorValueMustBeString against Loki and the parser table TestSelectorMatcherValueMustBeString'
