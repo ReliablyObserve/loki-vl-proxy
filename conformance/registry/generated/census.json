@@ -1239,6 +1239,7 @@
     "internal/proxy/plain_stream_labels_test.go | loki_api_v1_query_range",
     "internal/proxy/plain_stream_labels_test.go | semantics/plain-name-after-parser-reads-stream-label",
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
+    "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/quantile_histogram_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
@@ -1971,7 +1972,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 381,
+      "go": 382,
       "playwright": 1
     },
     "page_kinds": {
