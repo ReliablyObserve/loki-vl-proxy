@@ -161,6 +161,17 @@ class CollectQualityMetricsTest(unittest.TestCase):
         self.assertEqual(run["result"]["tests"]["count"], 12000)
         self.assertEqual(len(run["result"]["tests"]["outcomes"]), 12000)
 
+    def test_a_perf_only_run_measures_nothing_but_performance(self):
+        run = self.run_script("perf-only", extra_env={"QUALITY_SKIP_PERF": "0", "QUALITY_SKIP_LOAD": "1",
+                                                     "QUALITY_PERF_ONLY": "1"})
+        self.assertEqual(run["test_runs"], [])
+        self.assertEqual([c for c in run["calls"] if c.startswith("go test -v -tags=e2e")], [])
+        # No stack starts; the exit trap's `docker compose down` has nothing to stop.
+        self.assertEqual([c for c in run["calls"] if c.startswith("docker") and " up " in c + " "], [])
+        self.assertTrue(any("-bench" in c for c in run["calls"]), run["calls"])
+        self.assertEqual(run["result"]["performance"]["mode"], "full")
+        self.assertEqual(run["result"]["tests"], {"count": 0, "coverage_pct": 0})
+
     def test_the_compatibility_scores_are_still_measured_with_a_snapshot(self):
         scored = [c for c in self.read_back["calls"] if c.startswith("go test -v -tags=e2e")]
         self.assertEqual(len(scored), 3)
@@ -209,32 +220,66 @@ class CollectQualityMetricsTest(unittest.TestCase):
 class WorkflowWiringTest(unittest.TestCase):
     TEXT = (REPO / ".github" / "workflows" / "pr-quality-report.yaml").read_text()
 
+    @classmethod
+    def setUpClass(cls):
+        from scripts.ci.change_scope import parse_jobs
+        cls.jobs = parse_jobs(cls.TEXT)
+
+    def body(self, name):
+        return self.jobs[name]["body"]
+
+    def test_the_snapshots_and_the_performance_run_in_parallel_and_meet_in_report(self):
+        for name in ("head", "base", "perf"):
+            with self.subTest(name):
+                self.assertEqual(self.jobs[name]["needs"], ["scope", "plan"])
+        self.assertEqual(self.jobs["report"]["needs"], ["scope", "plan", "head", "base", "perf"])
+        self.assertIn("needs.plan.outputs.run_perf == 'true'", self.jobs["perf"]["if"])
+
     def test_only_the_base_collection_reads_the_snapshot(self):
-        head = self.TEXT.index("collect_quality_metrics.sh\" /tmp/pr-head-quality.json")
-        base = self.TEXT.index("QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json")
         self.assertEqual(self.TEXT.count("QUALITY_TESTS_SNAPSHOT"), 1)
-        self.assertLess(head, base)
+        self.assertIn("QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json", self.body("base"))
+        self.assertIn('collect_quality_metrics.sh" /tmp/pr-head-quality.json', self.body("head"))
 
     def test_the_cache_key_names_the_base_commit_and_the_script(self):
         self.assertIn("github.event.pull_request.base.sha }}\n", self.TEXT)
-        self.assertIn("hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py')", self.TEXT)
+        self.assertIn("hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py')", self.body("base"))
 
     def test_a_zero_collection_is_not_saved(self):
-        self.assertIn("jq -e '.tests.count > 0' /tmp/pr-base-quality.json", self.TEXT)
+        self.assertIn("jq -e '.tests.count > 0' /tmp/pr-base-quality.json", self.body("base"))
 
     def test_failure_diagnostics_are_uploaded(self):
-        self.assertIn("QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head", self.TEXT)
-        self.assertIn("QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base", self.TEXT)
-        self.assertIn("name: pr-quality-diagnostics", self.TEXT)
+        self.assertIn("QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head", self.body("head"))
+        self.assertIn("QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base", self.body("base"))
+        self.assertIn("name: pr-quality-diagnostics-head", self.body("head"))
+        self.assertIn("name: pr-quality-diagnostics-base", self.body("base"))
 
-    def test_the_load_test_is_skipped_in_the_collection_and_run_for_both_trees_together(self):
-        collect = self.TEXT.index("Collect base and PR quality snapshots")
+    def test_the_snapshots_skip_the_performance_that_one_runner_measures_for_both_trees(self):
+        self.assertIn('QUALITY_SKIP_PERF: "1"', self.body("head"))
+        self.assertIn("QUALITY_SKIP_PERF=1", self.body("base"))
+        perf = self.body("perf")
         self.assertEqual(self.TEXT.count('QUALITY_SKIP_LOAD: "1"'), 1)
-        abab = self.TEXT.index("scripts/ci/load_abab.py")
-        self.assertGreater(abab, self.TEXT.index("QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json"))
-        self.assertLess(abab, self.TEXT.index("pr_evidence.py --provenance"))
-        self.assertIn("--base-dir /tmp/loki-vl-proxy-base --head-dir \"$WORKSPACE\"", self.TEXT)
-        self.assertGreater(abab, collect)
+        self.assertIn('QUALITY_SKIP_LOAD: "1"', perf)
+        self.assertIn('QUALITY_PERF_ONLY: "1"', perf)
+        head, base = perf.index("/tmp/pr-head-perf.json"), perf.index("/tmp/pr-base-perf.json")
+        abab = perf.index("scripts/ci/load_abab.py")
+        self.assertLess(max(head, base), abab)
+        self.assertIn("--base-dir /tmp/loki-vl-proxy-base --head-dir \"$WORKSPACE\"", perf)
+        self.assertNotIn("load_abab.py", self.body("head") + self.body("base") + self.body("report"))
+
+    def test_report_takes_the_performance_from_the_perf_job(self):
+        report = self.body("report")
+        self.assertIn("name: pr-quality-perf", report)
+        self.assertIn("if: needs.perf.result == 'success'", report)
+        self.assertIn(".performance = $perf[0].performance", report)
+        self.assertLess(report.index(".performance = $perf[0].performance"), report.index("pr_evidence.py --provenance"))
+        self.assertLess(report.index("render_pr_report.sh"), report.index("check_quality_gate.py"))
+
+    def test_the_report_artifact_keeps_its_name_and_files(self):
+        # pr_evidence.py reads these three files from the pr-quality-report artifact.
+        report = self.body("report")
+        self.assertIn("name: pr-quality-report\n", report)
+        for name in ("/tmp/pr-base-quality.json", "/tmp/pr-head-quality.json", "/tmp/quality-meta.json"):
+            self.assertIn(name, report)
 
     def test_a_change_to_the_load_measurement_runs_the_perf_smoke(self):
         self.assertIn("check_quality_gate\\.py|load_abab\\.py", self.TEXT)

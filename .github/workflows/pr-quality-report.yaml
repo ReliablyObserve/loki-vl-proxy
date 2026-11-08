@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+# The report runs as parallel jobs that meet in `report` (the required check):
+#   plan  - what this pull request needs measured (perf smoke, query corpus);
+#   head  - the PR's tests, coverage, compatibility scores and query corpus;
+#   base  - the base commit's tests, coverage and compatibility scores;
+#   perf  - the benchmarks and the load test of both trees, on one runner, because
+#           throughput and CPU timings are only comparable on the same machine;
+#   report - merges the snapshots, renders the report, enforces the gate and comments.
 jobs:
   scope:
     name: scope
@@ -16,45 +23,20 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] workspace-relative form, as the workflow pin test and the pinned actionlint expect
 
-  report:
+  plan:
     needs: [scope]
     # The base-vs-PR snapshots and load benchmarks measure runtime changes.
     # Forced CI on docs or workflow files does not need this report.
     if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',pr-quality-report/report,')) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      pull-requests: write
-    env:
-      PROXY_IMAGE: loki-vl-proxy:pr-quality
+    outputs:
+      run_perf: ${{ steps.perf-scope.outputs.run_perf }}
+      query_corpus: ${{ steps.perf-scope.outputs.query_corpus }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 2
           persist-credentials: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        with:
-          go-version: "1.27.3"
-          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
-          # The VictoriaLogs parse oracle is a module of its own; its downloads join the cache.
-          cache-dependency-path: |
-            go.sum
-            test/oracle/vl/go.sum
-            test/oracle/vl/go.v*.sum
-            test/oracle/loki/go.sum
-
-      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ env.PROXY_IMAGE }}
-          load: true
-          cache-from: type=gha,scope=pr-quality-proxy
-          cache-to: type=gha,mode=max,scope=pr-quality-proxy
 
       - name: Detect perf-sensitive scope
         id: perf-scope
@@ -92,9 +74,120 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  head:
+    needs: [scope, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:pr-quality
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
+          # The VictoriaLogs parse oracle is a module of its own; its downloads join the cache.
+          cache-dependency-path: |
+            go.sum
+            test/oracle/vl/go.sum
+            test/oracle/vl/go.v*.sum
+            test/oracle/loki/go.sum
+
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=pr-quality-proxy
+          cache-to: type=gha,mode=max,scope=pr-quality-proxy
+
+
+      # The corpus main's push run built for the base commit (query-corpus.yaml): the PR's corpus is compared
+      # with it. A miss (main has not built it yet) compares and gates nothing; the counts are still shown.
+      - name: Restore the base commit's query corpus
+        if: needs.plan.outputs.query_corpus == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: /tmp/query-corpus
+          key: query-corpus-v1-${{ github.event.pull_request.base.sha }}
+
+      - name: Collect the PR quality snapshot
+        env:
+          WORKSPACE: ${{ github.workspace }}
+          PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
+          # The perf job measures the benchmarks and the load test of both trees together.
+          QUALITY_SKIP_PERF: "1"
+          QUALITY_QUERY_CORPUS_OUT: ${{ needs.plan.outputs.query_corpus == 'true' && '/tmp/pr-head-query-corpus.jsonl.gz' || '' }}
+          QUALITY_QUERY_CORPUS_BASE: /tmp/query-corpus/query-corpus.jsonl.gz
+          QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head
+        run: bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
+
+      - name: Upload the PR snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-head
+          if-no-files-found: error
+          path: |
+            /tmp/pr-head-quality.json
+            /tmp/pr-head-query-corpus.jsonl.gz
+            /tmp/pr-head-query-corpus.summary.json
+            /tmp/pr-head-query-corpus.vl-*.jsonl.gz
+            /tmp/pr-head-query-corpus.vl-*.constructs.json
+            /tmp/pr-head-query-corpus.loki-*
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-diagnostics-head
+          if-no-files-found: ignore
+          path: /tmp/pr-quality-diagnostics/
+
+  base:
+    needs: [scope, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:pr-quality
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
+          # The VictoriaLogs parse oracle is a module of its own; its downloads join the cache.
+          cache-dependency-path: |
+            go.sum
+            test/oracle/vl/go.sum
+            test/oracle/vl/go.v*.sum
+            test/oracle/loki/go.sum
+
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003  # v4
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=pr-quality-proxy
+          cache-to: type=gha,mode=max,scope=pr-quality-proxy
+
+
       # The base commit's test count and coverage depend only on that commit, so
       # a later run of this pull request against the same base reads them back
-      # instead of running every test again. (Timings are not cached: see below.)
+      # instead of running every test again. (Timings are not cached: see the perf job.)
       - name: Restore the base commit's test count and coverage
         id: base-tests
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6  # zizmor: ignore[cache-poisoning] JSON measurements read as data by the quality script; no cached code executes
@@ -102,59 +195,165 @@ jobs:
           path: /tmp/pr-base-tests.json
           key: pr-quality-base-tests-${{ hashFiles('scripts/ci/collect_quality_metrics.sh', 'scripts/ci/pr_evidence.py') }}-${{ github.event.pull_request.base.sha }}
 
-      # The corpus main's push run built for the base commit (query-corpus.yaml): the PR's corpus is compared
-      # with it. A miss (main has not built it yet) compares and gates nothing; the counts are still shown.
-      - name: Restore the base commit's query corpus
-        if: steps.perf-scope.outputs.query_corpus == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
-        with:
-          path: /tmp/query-corpus
-          key: query-corpus-v1-${{ github.event.pull_request.base.sha }}
-
-      - name: Collect base and PR quality snapshots
+      - name: Check out the base commit
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+
+      - name: Collect the base quality snapshot
+        env:
           WORKSPACE: ${{ github.workspace }}
           PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
           BASE_TESTS_CACHE_HIT: ${{ steps.base-tests.outputs.cache-hit }}
-          QUALITY_SKIP_PERF: ${{ steps.perf-scope.outputs.run_perf == 'true' && '0' || '1' }}
-          # The load test is measured below with base and head alternating, not once per tree.
-          QUALITY_SKIP_LOAD: "1"
-          QUALITY_QUERY_CORPUS_OUT: ${{ steps.perf-scope.outputs.query_corpus == 'true' && '/tmp/pr-head-query-corpus.jsonl.gz' || '' }}
-          QUALITY_QUERY_CORPUS_BASE: /tmp/query-corpus/query-corpus.jsonl.gz
-          QUALITY_DIAGNOSTICS_DIR: /tmp/pr-quality-diagnostics/head
         run: |
           set -euo pipefail
-
-          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
-
-          # Base and PR are measured in this job, on this runner, every time:
-          # throughput and CPU timings are only comparable on the same machine.
-          # (A base snapshot cached from another runner made unchanged code
-          # look 40% slower or faster depending on which machine measured it.)
-          # Only the test count and coverage of the base are taken from the cache
-          # above: they are the same on every machine.
-          bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
-          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
           (
             cd /tmp/loki-vl-proxy-base
             # The base corpus comes from the main-branch run, not from here.
             QUALITY_DIAGNOSTICS_DIR=/tmp/pr-quality-diagnostics/base \
               QUALITY_TESTS_SNAPSHOT=/tmp/pr-base-tests.json \
               QUALITY_QUERY_CORPUS_OUT='' \
+              QUALITY_SKIP_PERF=1 \
               bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
           )
-          # The high-concurrency load test runs on both trees alternately (base, head,
-          # base, head, ...) so a slow or fast stretch of the runner hits both alike. One
-          # run per tree, minutes apart, differed by 28-34% on identical code.
-          if [ "$QUALITY_SKIP_PERF" = "0" ]; then
-            python3 "$WORKSPACE/scripts/ci/load_abab.py" \
-              --base-dir /tmp/loki-vl-proxy-base --head-dir "$WORKSPACE" \
-              --base-json /tmp/pr-base-quality.json --head-json /tmp/pr-head-quality.json
-          fi
           # Save them for the next run unless the collection fell back to zeros.
           if [ "$BASE_TESTS_CACHE_HIT" != "true" ] && jq -e '.tests.count > 0' /tmp/pr-base-quality.json >/dev/null; then
             jq -c '.tests' /tmp/pr-base-quality.json > /tmp/pr-base-tests.json
+          fi
+
+      - name: Upload the base snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-base
+          if-no-files-found: error
+          path: /tmp/pr-base-quality.json
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-diagnostics-base
+          if-no-files-found: ignore
+          path: /tmp/pr-quality-diagnostics/
+
+      - name: Clean up base worktree
+        if: always()
+        run: git worktree remove --force /tmp/loki-vl-proxy-base || true
+
+  perf:
+    needs: [scope, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.run_perf == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: "1.27.3"
+          cache: true  # zizmor: ignore[cache-poisoning] test stack only, its images are loaded and never published
+          # The VictoriaLogs parse oracle is a module of its own; its downloads join the cache.
+          cache-dependency-path: |
+            go.sum
+            test/oracle/vl/go.sum
+            test/oracle/vl/go.v*.sum
+            test/oracle/loki/go.sum
+
+      - name: Check out the base commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+
+      - name: Measure both trees
+        env:
+          WORKSPACE: ${{ github.workspace }}
+          # The load test is measured below with base and head alternating, not once per tree.
+          QUALITY_SKIP_LOAD: "1"
+          QUALITY_PERF_ONLY: "1"
+          QUALITY_QUERY_CORPUS_OUT: ""
+        run: |
+          set -euo pipefail
+          # Base and PR are measured in this job, on this runner, every time:
+          # throughput and CPU timings are only comparable on the same machine.
+          # (A base snapshot cached from another runner made unchanged code
+          # look 40% slower or faster depending on which machine measured it.)
+          bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-perf.json
+          (cd /tmp/loki-vl-proxy-base && bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-perf.json)
+          # The high-concurrency load test runs on both trees alternately (base, head,
+          # base, head, ...) so a slow or fast stretch of the runner hits both alike. One
+          # run per tree, minutes apart, differed by 28-34% on identical code.
+          python3 "$WORKSPACE/scripts/ci/load_abab.py" \
+            --base-dir /tmp/loki-vl-proxy-base --head-dir "$WORKSPACE" \
+            --base-json /tmp/pr-base-perf.json --head-json /tmp/pr-head-perf.json
+
+      - name: Upload the performance of both trees
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: pr-quality-perf
+          if-no-files-found: error
+          path: |
+            /tmp/pr-base-perf.json
+            /tmp/pr-head-perf.json
+
+      - name: Clean up base worktree
+        if: always()
+        run: git worktree remove --force /tmp/loki-vl-proxy-base || true
+
+  report:
+    needs: [scope, plan, head, base, perf]
+    if: ${{ !cancelled() && (needs.scope.outputs.evidence == 'true' || contains(format(',{0},', needs.scope.outputs.jobs), ',pr-quality-report/report,')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Download the head snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: pr-quality-head
+          path: /tmp
+
+      - name: Download the base snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: pr-quality-base
+          path: /tmp
+
+      - name: Download the perf snapshot
+        if: needs.perf.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: pr-quality-perf
+          path: /tmp
+
+      - name: Merge the snapshots and render the report
+        env:
+          WORKSPACE: ${{ github.workspace }}
+          PERF_RESULT: ${{ needs.perf.result }}
+        run: |
+          set -euo pipefail
+          # Each snapshot job produced its tree's tests, coverage and compatibility; the perf
+          # job produced both trees' performance. A skipped perf job leaves "skipped" in place.
+          if [ "$PERF_RESULT" = "success" ]; then
+            for tree in base head; do
+              jq --slurpfile perf "/tmp/pr-${tree}-perf.json" '.performance = $perf[0].performance' \
+                "/tmp/pr-${tree}-quality.json" > "/tmp/pr-${tree}-quality.json.new"
+              mv "/tmp/pr-${tree}-quality.json.new" "/tmp/pr-${tree}-quality.json"
+            done
           fi
 
           python3 scripts/ci/pr_evidence.py --provenance /tmp/quality-meta.json
@@ -188,14 +387,6 @@ jobs:
             /tmp/pr-head-query-corpus.vl-*.jsonl.gz
             /tmp/pr-head-query-corpus.vl-*.constructs.json
             /tmp/pr-head-query-corpus.loki-*
-
-      - name: Upload quality diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
-        with:
-          name: pr-quality-diagnostics
-          if-no-files-found: ignore
-          path: /tmp/pr-quality-diagnostics/
 
       - name: Publish sticky PR comment
         # Fork PRs run with a read-only token — skip silently rather than failing.
@@ -248,7 +439,3 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: python3 scripts/ci/query_semantics_comment.py /tmp/pr-base-quality.json /tmp/pr-head-quality.json "$PR_NUMBER"
-
-      - name: Clean up base worktree
-        if: always()
-        run: git worktree remove --force /tmp/loki-vl-proxy-base || true
