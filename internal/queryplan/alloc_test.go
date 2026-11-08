@@ -186,8 +186,11 @@ func TestBuildResourceBounds(t *testing.T) {
 	}
 	for _, s := range shapes {
 		t.Run(s.name, func(t *testing.T) {
+			// The largest input that fits under Loki's input size (the parser rejects a longer query), and a quarter.
+			unit := len(s.build(2)) - len(s.build(1))
+			large := (logql.MaxInputSize - 1 - len(s.build(0))) / unit
 			var perUnit [2]float64
-			for i, n := range []int{20000, 80000} {
+			for i, n := range []int{large / 4, large} {
 				q := s.build(n)
 				e, err := logql.Parse(q)
 				if err != nil {
