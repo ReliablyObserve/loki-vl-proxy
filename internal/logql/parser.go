@@ -947,7 +947,26 @@ func (p *parser) offsetDuration() (string, time.Duration, error) {
 		}
 	}
 	p.advance()
+	// A second duration right after (`offset 1h 2m`, `offset 1h-2m`): Loki's lexer
+	// reads it as one more DURATION token.
+	if p.cur.Typ == TokDuration || (p.cur.Typ == TokMinus && signedDurationAt(p.sc.src, p.pos())) {
+		return "", 0, p.errorAt(p.pos(), "DURATION", ")", true)
+	}
 	return val, d, nil
+}
+
+// signedDurationAt reports a minus at src[i] followed right away by text Go's
+// time.ParseDuration reads with the sign: what Loki's lexer takes as one DURATION.
+func signedDurationAt(src string, i int) bool {
+	j := i + 1
+	for j < len(src) && (src[j] == '.' || src[j] >= '0' && src[j] <= '9' || src[j] >= 'a' && src[j] <= 'z' || src[j] >= 'A' && src[j] <= 'Z' || src[j] >= 0x80) {
+		j++
+	}
+	if j == i+1 {
+		return false
+	}
+	_, err := time.ParseDuration(src[i:j])
+	return err == nil
 }
 
 func (p *parser) syntaxError(expecting string) error {

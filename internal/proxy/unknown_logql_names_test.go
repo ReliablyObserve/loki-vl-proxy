@@ -105,7 +105,7 @@ func TestUnknownLogQLNamesRejectedLikeLoki(t *testing.T) {
 //
 // conformance: semantics/proxy-accepts-operators-not-in-loki
 func TestUppercaseKeywordsSendTheLowercaseBackendRequests(t *testing.T) {
-	cases := []struct{ upper, lower string }{
+	sameBackendRequests(t, []struct{ upper, lower string }{
 		{`TOPK(3, RATE({app="a"}[5m]))`, `topk(3, rate({app="a"}[5m]))`},
 		{`SUM BY (app) (COUNT_OVER_TIME({app="a"} |= "ERROR" [5m]))`, `sum by (app) (count_over_time({app="a"} |= "ERROR" [5m]))`},
 		{`SUM(RATE({app="a"}[5m])) BY (app)`, `sum(rate({app="a"}[5m])) by (app)`},
@@ -115,7 +115,29 @@ func TestUppercaseKeywordsSendTheLowercaseBackendRequests(t *testing.T) {
 		{`SUM(RATE({app="a"}[5m])) > BOOL 1`, `sum(rate({app="a"}[5m])) > bool 1`},
 		{`MAX(COUNT_OVER_TIME({app="a"}[5m] OFFSET 1m))`, `max(count_over_time({app="a"}[5m] offset 1m))`},
 		{`{app="a"} | JSON | DROP pod`, `{app="a"} | json | drop pod`},
-	}
+	})
+}
+
+// Loki's lexer skips `#` comments to the end of their line (outside strings), and reads a compound duration
+// (1h2m) and a signed offset (offset -1m) as one duration. A commented query sends the backend requests of the
+// query without its comments, and an offset sends the requests of the same offset in another spelling.
+//
+// conformance: semantics/comments-signed-compound-offsets
+func TestCommentsAndOffsetSpellingsSendTheSameBackendRequests(t *testing.T) {
+	sameBackendRequests(t, []struct{ upper, lower string }{
+		{"sum(rate({app=\"a\"}[5m])) # by app\n", `sum(rate({app="a"}[5m]))`},
+		{"# all apps\nsum by (app) (count_over_time({app=\"a\"} |= \"x#y\" [5m]))", `sum by (app) (count_over_time({app="a"} |= "x#y" [5m]))`},
+		{"{app=\"a\" # the app\n} |= \"e\" # errors", `{app="a"} |= "e"`},
+		{`max(count_over_time({app="a"}[5m] offset 1h2m))`, `max(count_over_time({app="a"}[5m] offset 62m))`},
+		{`max(count_over_time({app="a"}[5m] offset -1m))`, `max(count_over_time({app="a"}[5m] offset -60s))`},
+		{`sum(rate({app="a"}[1h2m]))`, `sum(rate({app="a"}[62m]))`},
+	})
+}
+
+// sameBackendRequests asserts that each query sends the backend requests of its pair, on query_range and query,
+// as a GET, a form-encoded POST and a multi-tenant GET.
+func sameBackendRequests(t *testing.T, cases []struct{ upper, lower string }) {
+	t.Helper()
 	// The same request three ways: a GET, a form-encoded POST and a multi-tenant
 	// GET that fans out per tenant.
 	run := func(t *testing.T, endpoint, variant, query string) []string {

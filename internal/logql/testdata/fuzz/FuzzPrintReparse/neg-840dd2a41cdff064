@@ -1,0 +1,2 @@
+go test fuzz v1
+string("count_over_time({a=\"x\"}[3s] offset -1s)")
