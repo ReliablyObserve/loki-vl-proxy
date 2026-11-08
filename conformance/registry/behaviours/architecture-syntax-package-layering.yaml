@@ -217,3 +217,25 @@ decisions:
     code: [internal/queryplan/lower/lower.go, internal/translator/ast_translate.go, .golangci.yml]
     tests: [TestPlanShadow, TestPlanShadowCatchesAWrongLowering, TestPlanDelegatesEveryConstruct]
     quality: 'No handler reads the lowering yet; every query is still translated by the string translator. The shadow holds the lowering to the string translator, the proxy''s own reading: from the first native construct, lowered queries are also checked against the VictoriaLogs oracle and, where the meaning is Loki''s, the Loki oracle, so the shadow does not lock in a translator misreading.'
+  - id: route-parity-harness
+    chosen: 'TestPlanRouteParity runs the real query handlers on every plan-corpus row under five request profiles (instant; range with step equal to, under and over the query''s range; a 24h chunk), each against a stub VictoriaLogs answering with data and empty, on a fresh proxy with every cache cold and windows pinned in the past. A run records its status, its VictoriaLogs requests and its route (the operations and rewrites of the request trace that the slow-query log already keeps). The route_parity section of query-plan.json gates mismatches at 0, lets native runs only rise, and holds one digest per profile and construct of every run''s status and route decisions, so a change that moves a route or a status fails until LVP_QUERY_PLAN_UPDATE=1 records it'
+    over: [a new trace hook at each dispatch branch, gating the VictoriaLogs request sets, holding the stub's answers to order the races, a cache-on pass and moving the log-window cache onto cache.Now now]
+    why: |
+      Step seven of architecture B (owner 2026-11-08). The request trace of
+      the slow-query log already records every route operation and rewrite,
+      so the harness reads it instead of adding hooks. The VictoriaLogs
+      request sets are recorded but not gated: on the concurrent probe routes
+      (the json and logfmt metric risk probes, the detected_level derivation)
+      the first answer cancels the other calls, so which of them reach
+      VictoriaLogs varies run to run: 18-28 of 24,300 runs differed between
+      two runs; holding each answer for 1 ms left 6-7, keeping only the calls
+      whose hold ended uncancelled 44-51, since the tie only moves. The status
+      and route decisions are stable (three runs and a -race run gave the
+      same digests). The first native route step compares each probe group as
+      a group. With windows in the past and every cache cold, no freshness
+      rule reads the clock, so the cache.Now move and the cache-on pass wait
+      for the step that keys the cache from the plan.
+    evidence: 'internal/proxy/plan_route_parity_test.go TestPlanRouteParity; conformance/registry/query-plan.json route_parity section (2026-11-08): 2,430 rows, 24,300 runs, native 0, mismatches 0, statuses 200 23,749 and 400 551'
+    code: [internal/proxy/slow_query_log.go]
+    tests: [TestPlanRouteParity, TestPlanRouteParityCatchesAWrongRoute]
+    quality: 'No handler reads a predicted route yet. VictoriaLogs request sets on the concurrent probe routes vary run to run in production too (which calls a probe race sends); recorded as a fleet-cost follow-up, not changed here.'
