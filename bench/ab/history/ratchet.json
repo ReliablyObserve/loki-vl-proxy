@@ -525,6 +525,27 @@
   "shape": "E8 instant logfmt by level_extracted"
  },
  {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "24h",
+  "set": "ip-label-filter",
+  "shape": "IP4 count, json ip=ip(CIDR)"
+ },
+ {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "6h",
+  "set": "ip-label-filter",
+  "shape": "IP4 count, json ip=ip(CIDR)"
+ },
+ {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "24h",
+  "set": "ip-label-filter",
+  "shape": "IP5 count, json ip=ip(range)"
+ },
+ {
   "added": "2026-11-04",
   "commit": "7eaf79cebe6920defe7814590730d9bc987e02d8",
   "range": "1h",
@@ -964,6 +985,20 @@
   "range": "6h",
   "set": "keep-series-grouping",
   "shape": "K5 rate, keep namespace"
+ },
+ {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "24h",
+  "set": "keep-series-grouping",
+  "shape": "K6 count by kept key, json"
+ },
+ {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "6h",
+  "set": "keep-series-grouping",
+  "shape": "K6 count by kept key, json"
  },
  {
   "added": "2026-11-04",
@@ -3038,6 +3073,13 @@
   "shape": "D1 logfmt ttl duration_seconds rate by service"
  },
  {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "24h",
+  "set": "unwrap-duration-seconds",
+  "shape": "D1 logfmt ttl duration_seconds rate by service"
+ },
+ {
   "added": "2026-10-22",
   "commit": "81acec5a8423e504ac94aee4831c9d0a06221d36",
   "range": "1h",
@@ -3248,6 +3290,13 @@
   "shape": "G7 duration() of a unit string"
  },
  {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "6h",
+  "set": "unwrap-gate",
+  "shape": "G7 duration() of a unit string"
+ },
+ {
   "added": "2026-11-07",
   "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
   "range": "1h",
@@ -3258,6 +3307,13 @@
   "added": "2026-11-06",
   "commit": "c4769d56d5c7a2ab85caaedf1e5c91285a8d8799",
   "range": "24h",
+  "set": "unwrap-gate",
+  "shape": "G8 bytes() of a number"
+ },
+ {
+  "added": "2026-11-08",
+  "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+  "range": "6h",
   "set": "unwrap-gate",
   "shape": "G8 bytes() of a number"
  },

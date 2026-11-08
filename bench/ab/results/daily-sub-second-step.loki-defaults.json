@@ -1,6 +1,6 @@
 {
  "label": "daily-sub-second-step-loki-defaults",
- "date": "2026-11-07",
+ "date": "2026-11-08",
  "set": "sub-second-step",
  "description": "A step under a second, the one Grafana sends for a short panel (intervalMs 200 over 5 minutes, 1,500 points): every sample is a point at Loki's millisecond time (semantics/sub-second-step-grid). SS1 is a window of 5 s over the 200 ms step, SS2 the unwrap average over a 5 minute window that the CI trace of the Explore unwrap test asked, SS3 a window of 1 s. Run with the control set.",
  "baseline": "release",
@@ -36,14 +36,14 @@
     "loki": 0.004
    },
    "p95": {
-    "release": 0.002,
+    "release": 0.003,
     "main": 0.002,
-    "loki": 0.005
+    "loki": 0.006
    },
    "cold": {
-    "release": 0.009,
+    "release": 0.008,
     "main": 0.002,
-    "loki": 0.008
+    "loki": 0.007
    },
    "status": {
     "release": "200",
@@ -93,7 +93,7 @@
       "result": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 42797
+       "bytesReceived": 42796
       },
       "statsResult": {
        "entriesFound": 6,
@@ -136,19 +136,19 @@
    "shape": "SS2 json duration_ms avg by service, 5m window on a 200ms step",
    "range": "5m-200ms",
    "p50": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.012
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.013
    },
    "p95": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.012
+    "main": 0.004,
+    "release": 0.005,
+    "loki": 0.014
    },
    "cold": {
-    "main": 0.007,
-    "release": 0.01,
-    "loki": 0.019
+    "main": 0.006,
+    "release": 0.006,
+    "loki": 0.018
    },
    "status": {
     "main": "200",
@@ -198,7 +198,7 @@
       "result": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 245991
+       "bytesReceived": 245999
       },
       "statsResult": {
        "entriesFound": 12,
@@ -247,13 +247,13 @@
    },
    "p95": {
     "release": 0.002,
-    "main": 0.003,
+    "main": 0.002,
     "loki": 0.005
    },
    "cold": {
-    "release": 0.002,
+    "release": 0.003,
     "main": 0.002,
-    "loki": 0.007
+    "loki": 0.008
    },
    "status": {
     "release": "200",
@@ -261,9 +261,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 2.78,
-    "main": 2.78,
-    "loki": 2.78
+    "release": 0,
+    "main": 0,
+    "loki": 0
    },
    "cache": {
     "loki": {
@@ -343,10 +343,10 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.4",
- "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
- "measured_at": "2026-11-07T03:21:07Z",
- "run": "42333584371.1",
+ "baseline_ref": "v2.94.0",
+ "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+ "measured_at": "2026-11-08T03:22:29Z",
+ "run": "42442427345.1",
  "proxy_align": {
   "release": "on",
   "main": "on"

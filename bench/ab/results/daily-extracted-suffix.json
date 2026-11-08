@@ -1,6 +1,6 @@
 {
  "label": "daily-extracted-suffix-aligned",
- "date": "2026-11-07",
+ "date": "2026-11-08",
  "set": "extracted-suffix",
  "description": "Parsed keys named like a stream label (level, service_name, app on the generator's streams) read as name_extracted: log entries over json and logfmt, label filters, drop and metric grouping on the renamed label. Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "E6 logfmt count by level_extracted",
    "range": "1h",
    "p50": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.005
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.004
    },
    "p95": {
     "release": 0.003,
-    "main": 0.003,
-    "loki": 0.005
+    "main": 0.004,
+    "loki": 0.006
    },
    "cold": {
-    "release": 0.019,
-    "main": 0.02,
-    "loki": 0.016
+    "release": 0.015,
+    "main": 0.009,
+    "loki": 0.012
    },
    "status": {
     "release": "200",
@@ -93,12 +93,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 167773
+       "bytesReceived": 167760
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1098
+       "bytesReceived": 1674
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -141,14 +141,14 @@
     "loki": 0.005
    },
    "p95": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.005
+    "main": 0.005,
+    "release": 0.005,
+    "loki": 0.008
    },
    "cold": {
-    "main": 0.021,
-    "release": 0.021,
-    "loki": 0.018
+    "main": 0.016,
+    "release": 0.016,
+    "loki": 0.017
    },
    "status": {
     "main": "200",
@@ -171,7 +171,7 @@
       "statsResult": {
        "entriesFound": 3,
        "entriesRequested": 3,
-       "bytesReceived": 549
+       "bytesReceived": 894
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -198,12 +198,12 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 484834
+       "bytesReceived": 484830
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1668
+       "bytesReceived": 2478
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -244,18 +244,18 @@
    "shape": "E7 json count by level_extracted",
    "range": "1h",
    "p50": {
-    "release": 0.041,
-    "main": 0.04,
-    "loki": 0.009
+    "release": 0.032,
+    "main": 0.032,
+    "loki": 0.007
    },
    "p95": {
-    "release": 0.044,
-    "main": 0.051,
-    "loki": 0.009
+    "release": 0.033,
+    "main": 0.034,
+    "loki": 0.008
    },
    "cold": {
-    "release": 0.104,
-    "main": 0.1,
+    "release": 0.084,
+    "main": 0.071,
     "loki": 0.052
    },
    "status": {
@@ -264,9 +264,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 183.59,
-    "main": 183.59,
-    "loki": 183.59
+    "release": 134.61,
+    "main": 134.61,
+    "loki": 134.61
    },
    "cache": {
     "loki": {
@@ -306,12 +306,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 249472
+       "bytesReceived": 249467
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1116
+       "bytesReceived": 1695
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -343,25 +343,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.02
+   "speedup": 1.0
   },
   {
    "shape": "E7 json count by level_extracted",
    "range": "3h",
    "p50": {
-    "main": 0.041,
-    "release": 0.041,
-    "loki": 0.009
+    "main": 0.032,
+    "release": 0.032,
+    "loki": 0.008
    },
    "p95": {
-    "main": 0.042,
-    "release": 0.042,
+    "main": 0.034,
+    "release": 0.033,
     "loki": 0.009
    },
    "cold": {
-    "main": 0.152,
-    "release": 0.157,
-    "loki": 0.068
+    "main": 0.115,
+    "release": 0.116,
+    "loki": 0.056
    },
    "status": {
     "main": "200",
@@ -369,9 +369,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 183.59,
-    "release": 183.59,
-    "loki": 183.59
+    "main": 134.61,
+    "release": 134.61,
+    "loki": 134.61
    },
    "cache": {
     "loki": {
@@ -384,7 +384,7 @@
       "statsResult": {
        "entriesFound": 3,
        "entriesRequested": 3,
-       "bytesReceived": 558
+       "bytesReceived": 906
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -411,12 +411,12 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 722686
+       "bytesReceived": 722673
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1692
+       "bytesReceived": 2402
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -454,10 +454,10 @@
    "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.4",
- "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
- "measured_at": "2026-11-07T03:21:07Z",
- "run": "42333584371.1",
+ "baseline_ref": "v2.94.0",
+ "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+ "measured_at": "2026-11-08T03:22:29Z",
+ "run": "42442427345.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
