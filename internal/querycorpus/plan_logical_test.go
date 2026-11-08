@@ -105,7 +105,7 @@ func countUntyped(root queryplan.Node, c map[string]int) {
 				case *queryplan.LineFormat:
 					c["line_format_raw"]++
 				case *queryplan.Parse:
-					if st.Param != "" && len(st.Fields) == 0 {
+					if (st.Type == logql.ParserJSON || st.Type == logql.ParserLogfmt) && st.Param != "" && len(st.Fields) == 0 {
 						c["parser_param_raw"]++
 					}
 				}

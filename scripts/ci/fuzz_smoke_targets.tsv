@@ -103,3 +103,5 @@ smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a tra
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
 smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
 smoke	internal/translator	FuzzPhysicalCodec	12s	-	physical-plan codec round trip
+smoke	internal/queryplan	FuzzKeyDecode	12s	-	logical key decodes to the fields of its plan, to the last byte
+smoke	internal/queryplan	FuzzKeyDistinctMutations	12s	-	semantic mutations change the logical key, spelling ones keep it

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func mustBuild(t testing.TB, q string, in Inputs) *Plan {
 func stageNames(sel *LogSelect) []string {
 	var out []string
 	for _, s := range sel.Stages {
-		out = append(out, fmt.Sprintf("%T", s))
+		out = append(out, strings.TrimSuffix(strings.TrimPrefix(fmt.Sprintf("%T", s), "*logql."), "Stage"))
 	}
 	return out
 }
@@ -41,49 +42,46 @@ func TestBuildLogSelectStages(t *testing.T) {
 		{q: `{app="x", env!="dev", pod=~"a.*", z!~"b"}`},
 		{q: `{app="x"} |= "a" or ip("1.2.3.4") != "b"`, stages: []string{"LineFilter", "LineFilter"}, check: func(t *testing.T, s []Stage) {
 			lf := s[0].(*LineFilter)
-			want := []LineMatch{{Value: "a"}, {Value: "1.2.3.4", IP: true}}
-			if lf.Op != logql.LineFilterContains || !reflect.DeepEqual(lf.Alts, want) {
+			want := []logql.LineFilterAlt{{Value: "1.2.3.4", IP: true}}
+			if lf.Op != logql.LineFilterContains || lf.Value != "a" || !reflect.DeepEqual(lf.Or, want) {
 				t.Errorf("line filter = %+v", lf)
 			}
 		}},
-		{q: `{app="x"} | json a="b", c`, stages: []string{"Parse"}, check: func(t *testing.T, s []Stage) {
+		{q: `{app="x"} | json a="b", c`, stages: []string{"Parser"}, check: func(t *testing.T, s []Stage) {
 			p := s[0].(*Parse)
-			if p.Kind != logql.ParserJSON || len(p.Fields) != 2 || p.Param == "" || p.Expr != "" {
+			if p.Type != logql.ParserJSON || len(p.Fields) != 2 || p.Param == "" {
 				t.Errorf("json parse = %+v", p)
 			}
 		}},
-		{q: `{app="x"} | regexp "(?P<a>.+)" | pattern "<a> <_>" | logfmt | unpack`, stages: []string{"Parse", "Parse", "Parse", "Parse"}, check: func(t *testing.T, s []Stage) {
-			if p := s[0].(*Parse); p.Kind != logql.ParserRegexp || p.Expr != "(?P<a>.+)" || p.Param != "" {
+		{q: `{app="x"} | regexp "(?P<a>.+)" | pattern "<a> <_>" | logfmt | unpack`, stages: []string{"Parser", "Parser", "Parser", "Parser"}, check: func(t *testing.T, s []Stage) {
+			if p := s[0].(*Parse); p.Type != logql.ParserRegexp || p.Param != "(?P<a>.+)" {
 				t.Errorf("regexp parse = %+v", p)
 			}
-			if p := s[1].(*Parse); p.Kind != logql.ParserPattern || p.Expr != "<a> <_>" {
+			if p := s[1].(*Parse); p.Type != logql.ParserPattern || p.Param != "<a> <_>" {
 				t.Errorf("pattern parse = %+v", p)
 			}
 		}},
 		{q: `{app="x"} | status>=500 and (a="1" or b=~"x")`, stages: []string{"LabelFilter"}, check: func(t *testing.T, s []Stage) {
-			if lf := s[0].(*LabelFilter); lf.Expr == nil || lf.Expr.Op != logql.LabelFilterAnd || lf.Raw != "" {
+			if lf := s[0].(*LabelFilter); lf.Expr == nil || lf.Expr.Op != logql.LabelFilterAnd {
 				t.Errorf("label filter = %+v", lf)
 			}
 		}},
-		{q: `{app="x"} | drop a, b | keep c | drop level="debug" | keep k!~"x"`, stages: []string{"Project", "Project", "Project", "Project"}, check: func(t *testing.T, s []Stage) {
-			if d := s[0].(*Project); d.Keep || !reflect.DeepEqual(d.Names, []string{"a", "b"}) {
+		{q: `{app="x"} | drop a, b | keep c | drop level="debug" | keep k!~"x"`, stages: []string{"Drop", "Keep", "Drop", "Keep"}, check: func(t *testing.T, s []Stage) {
+			if d := s[0].(*Drop); !reflect.DeepEqual(d.Labels, []string{"a", "b"}) {
 				t.Errorf("drop = %+v", d)
 			}
-			if k := s[1].(*Project); !k.Keep || len(k.Conds) != 0 {
-				t.Errorf("keep = %+v", k)
-			}
-			if c := s[2].(*Project); len(c.Conds) != 1 || c.Conds[0] != (Matcher{Name: "level", Value: "debug", Op: logql.MatchEq}) {
+			if c := s[2].(*Drop); len(c.Matchers) != 1 || c.Matchers[0] != (logql.DropMatcher{Name: "level", Op: "=", Value: "debug"}) {
 				t.Errorf("drop cond = %+v", c)
 			}
-			if c := s[3].(*Project); c.Conds[0].Op != logql.MatchNotRe {
+			if c := s[3].(*Keep); c.Matchers[0].Op != "!~" {
 				t.Errorf("keep cond = %+v", c)
 			}
 		}},
 		{q: `{app="x"} | line_format "{{.msg}}" | label_format a=b, c="{{.d}}" | decolorize`, stages: []string{"LineFormat", "LabelFormat", "Decolorize"}, check: func(t *testing.T, s []Stage) {
-			if lf := s[0].(*LineFormat); lf.Raw != "{{.msg}}" {
+			if lf := s[0].(*LineFormat); lf.Template != "{{.msg}}" {
 				t.Errorf("line_format = %+v", lf)
 			}
-			if lf := s[1].(*LabelFormat); len(lf.Entries) != 2 || !lf.Entries[0].Rename || lf.Entries[1].Rename {
+			if lf := s[1].(*LabelFormat); len(lf.Formats) != 2 || !lf.Formats[0].Rename || lf.Formats[1].Rename {
 				t.Errorf("label_format = %+v", lf)
 			}
 		}},
@@ -95,11 +93,7 @@ func TestBuildLogSelectStages(t *testing.T) {
 				t.Fatalf("root is not a LogSelect")
 			}
 			if c.stages != nil {
-				got := stageNames(sel)
-				for i := range got {
-					got[i] = got[i][len("*queryplan."):]
-				}
-				if !reflect.DeepEqual(got, c.stages) {
+				if got := stageNames(sel); !reflect.DeepEqual(got, c.stages) {
 					t.Fatalf("stages = %v, want %v", got, c.stages)
 				}
 			}
@@ -145,7 +139,7 @@ func TestBuildMetricNodes(t *testing.T) {
 	if !ok || ra.Op != logql.RangeRate || ra.Range != 5*time.Minute || ra.Offset != time.Hour || !ra.HasOffset {
 		t.Fatalf("range agg = %#v", va.In)
 	}
-	if got := stageNames(ra.In); !reflect.DeepEqual(got, []string{"*queryplan.Parse", "*queryplan.Unwrap"}) {
+	if got := stageNames(ra.In); !reflect.DeepEqual(got, []string{"Parser", "Unwrap"}) {
 		t.Errorf("stages = %v", got)
 	}
 	if p.Root.Props().Lookback != 65*time.Minute || p.Root.Props().Offset != time.Hour {
@@ -235,34 +229,78 @@ func TestBuildDeterministic(t *testing.T) {
 	}
 }
 
-func FuzzBuild(f *testing.F) {
-	for _, s := range []string{
-		`{app="nginx"}`,
-		`{app="nginx"} |= "a" or "b" != ip("1.2.3.4") | json a="b" | logfmt | status>=500 or (a="1" and b=~"x")`,
-		`{app="nginx"} | drop a, b="c" | keep d | line_format "{{.m}}" | label_format x=y | decolorize | regexp "(?P<a>.)" | pattern "<a>"`,
-		`sum by (app) (rate({app="api"} | json | unwrap duration(d) [5m] offset 1h))`,
-		`sum without () (count_over_time({app="api"}[1m]))`,
-		`quantile_over_time(0.99, {a="b"} | unwrap n [5m]) by (x)`,
-		`topk(5, bytes_rate({a="b"}[1m])) / on (a) group_left (b) sort(rate({a="b"}[1m]))`,
-		`label_replace(rate({a="b"}[1m]), "x", "y", "z", "w") + vector(1) + 3`,
-		`absent_over_time({a="b"}[5m]) and rate_counter({a="b"} | unwrap n [1m])`,
-		`not logql`, `{`, ``, `*`,
-	} {
-		f.Add(s)
+// An Expr the parser cannot produce is refused with an UnsupportedError and no plan, wherever it sits, and the
+// builds after it are not affected.
+func TestBuildRefusesWhatItHasNoNodeFor(t *testing.T) {
+	sel := &logql.StreamSelector{Matchers: []logql.LabelMatcher{{Name: "a", Value: "b"}}}
+	good := &logql.RangeAggregation{Op: logql.RangeRate, Inner: &logql.LogQuery{Selector: sel}, Range: "1m"}
+	bad := &logql.RangeAggregation{Op: logql.RangeRate, Inner: &logql.LiteralExpr{Value: 1}}
+	cases := map[string]logql.Expr{
+		"nothing":                nil,
+		"a selector as a stage":  &logql.LogQuery{Selector: sel, Pipeline: []logql.Stage{&logql.StreamSelector{}}},
+		"a literal as a range":   bad,
+		"under a vector":         &logql.VectorAggregation{Op: logql.VectorSum, Inner: bad},
+		"under a rank":           &logql.VectorAggregation{Op: logql.VectorTopK, Param: 1, HasParam: true, Inner: bad},
+		"left of a binary":       &logql.BinOpExpr{Op: "+", Left: bad, Right: good},
+		"right of a binary":      &logql.BinOpExpr{Op: "+", Left: good, Right: bad},
+		"in a range's selector":  &logql.RangeAggregation{Op: logql.RangeRate, Inner: &logql.LogQuery{Selector: sel, Pipeline: []logql.Stage{nil}}},
+		"a nil vector's operand": &logql.VectorAggregation{Op: logql.VectorSum},
 	}
-	f.Fuzz(func(t *testing.T, q string) {
-		expr, err := logql.Parse(q)
-		if err != nil {
-			return
+	for name, e := range cases {
+		var u *UnsupportedError
+		p, err := Build(e, Inputs{})
+		if p != nil || !errors.As(err, &u) || u.Error() == "" {
+			t.Errorf("%s: plan %v, error %v", name, p, err)
 		}
-		in := Inputs{Kind: KindRange, StreamLabels: []string{"app"}}
-		a, err := Build(expr, in)
-		if err != nil {
-			t.Fatalf("Build(%q): %v", q, err)
+	}
+	// A selector that is missing builds an empty one, and a range with no text reads as a zero range.
+	p, err := Build(&logql.LogQuery{}, Inputs{})
+	if err != nil || len(p.Root.(*LogSelect).Matchers) != 0 {
+		t.Errorf("a query without a selector: %v", err)
+	}
+	if p, err := Build(good, Inputs{}); err != nil || p.Root.(*RangeAgg).Range != 0 {
+		t.Errorf("a range without durations: %v", err)
+	}
+}
+
+// Every node reports its key, lookback and offset; the nodes of a query with offsets take the largest.
+func TestBuildProps(t *testing.T) {
+	p := mustBuild(t, `sum(rate({a="b"}[5m] offset 1h)) / sum(rate({a="b"}[1h] offset 10m)) + 1 + vector(1)`, Inputs{})
+	got := p.Root.Props()
+	if got.Lookback != 70*time.Minute || got.Offset != time.Hour {
+		t.Errorf("props = %+v", got)
+	}
+	var walk func(n Node)
+	walk = func(n Node) {
+		if len(n.Props().Key) == 0 {
+			t.Errorf("%T has no key", n)
 		}
-		b, err := Build(expr, in)
-		if err != nil || !bytes.Equal(a.Key, b.Key) || !bytes.HasPrefix(a.Key, a.Root.Props().Key) {
-			t.Fatalf("Build(%q) is not deterministic: %v", q, err)
+		switch x := n.(type) {
+		case *BinOp:
+			walk(x.L)
+			walk(x.R)
+		case *VectorAgg:
+			walk(x.In)
+		case *RangeAgg:
+			walk(x.In)
 		}
-	})
+	}
+	walk(p.Root)
+	if s := mustBuild(t, `1`, Inputs{}).Root.(*Scalar); s.V != 1 {
+		t.Errorf("scalar = %v", s.V)
+	}
+}
+
+// A bare stream selector is a log selector, at the root and as the input of a range aggregation.
+func TestBuildBareStreamSelector(t *testing.T) {
+	sel := &logql.StreamSelector{Matchers: []logql.LabelMatcher{{Name: "a", Value: "b"}}}
+	if p, err := Build(sel, Inputs{}); err != nil || len(p.Root.(*LogSelect).Matchers) != 1 {
+		t.Errorf("root selector: %v", err)
+	}
+	r := &logql.RangeAggregation{Op: logql.RangeCountOverTime, Inner: sel, Range: "1m", RangeDuration: time.Minute}
+	p, err := Build(r, Inputs{})
+	if err != nil || p.Root.(*RangeAgg).In == nil || p.Root.(*RangeAgg).Range != time.Minute {
+		t.Errorf("selector as a range input: %v", err)
+	}
+	checkKey(t, p, r, "bare selector")
 }

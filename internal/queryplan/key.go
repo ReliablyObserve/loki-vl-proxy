@@ -86,18 +86,27 @@ func (e *encoder) matching(m *Matching) {
 	}
 }
 
-func (e *encoder) matcher(m Matcher) {
-	e.str(m.Name)
-	e.b = append(e.b, byte(m.Op))
-	e.str(m.Value)
+// project writes a keep or drop stage.
+func (e *encoder) project(keep bool, names []string, conds []logql.DropMatcher) {
+	e.tag(tagProject)
+	e.bool(keep)
+	e.strs(names)
+	e.uint(uint64(len(conds)))
+	for _, c := range conds {
+		e.str(c.Name)
+		e.str(c.Op)
+		e.str(c.Value)
+	}
 }
 
-func (e *encoder) labelFilter(x *LFExpr) {
+// labelFilter writes a label filter tree and reports false when it is deeper than maxDepth.
+func (e *encoder) labelFilter(x *logql.LabelFilterExpr, depth int) bool {
+	if depth > maxDepth {
+		return false
+	}
 	e.b = append(e.b, byte(x.Op))
 	if x.Op != logql.LabelFilterLeaf {
-		e.labelFilter(x.Left)
-		e.labelFilter(x.Right)
-		return
+		return e.labelFilter(x.Left, depth+1) && e.labelFilter(x.Right, depth+1)
 	}
 	e.str(x.Name)
 	e.str(x.Cmp)
@@ -107,6 +116,7 @@ func (e *encoder) labelFilter(x *LFExpr) {
 		// A literal logql could not read leaves Value empty: keep the text apart.
 		e.str(x.Leaf)
 	}
+	return true
 }
 
 // inputs appends the logical inputs after the root's key.

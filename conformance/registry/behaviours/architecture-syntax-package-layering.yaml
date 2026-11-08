@@ -162,5 +162,5 @@ decisions:
     tests: [TestLogicalBuildTotal, TestLogicalKeySound, TestLogicalKeyDistinct, TestBuildAllocsGate, FuzzBuild]
     quality: 'No proxy change; the plan is built only in tests until the handlers take a Plan.'
     performance:
-      tracked: ['BenchmarkBuild ns/p50, ns/p99 (gate with LVP_QUERYPLAN_BENCH_GATE=1)', 'TestBuildAllocsGate: allocations at most 2x logql.Parse per row']
-      bound: 'Build p50 156-184 ns, p99 279-308 ns on the seed (gate p50 <= 2 us); about 7.7 allocations per query vs 12.2 for logql.Parse'
+      tracked: ['BenchmarkBuild ns/op, B/op, allocs/op, ns/p50, ns/p99 (p50 gate with LVP_QUERYPLAN_BENCH_GATE=1)', 'TestBuildAllocLocks: allocations of Build per query shape, and of AppendKey (0)', 'TestBuildAllocsGate: allocations at most 2x logql.Parse per row', 'TestBuildResourceBounds: allocations and key bytes linear in the query']
+      bound: 'Build on the 340 seed queries (2026-11-08, M5 Pro, interleaved benchstat n=10 against the first version): 238 ns/op (was 417), p50 154 ns (was 261), p99 346 ns (was 530), 504 B/op (was 1103), 2 allocs/op (was 7), against 12 allocs and 492 B for logql.Parse; the plan and its key are two allocations for a query of the usual shape'

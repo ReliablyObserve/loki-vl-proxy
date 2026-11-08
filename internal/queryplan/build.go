@@ -2,6 +2,7 @@ package queryplan
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
@@ -17,10 +18,29 @@ func unsupported(format string, args ...any) error {
 	return &UnsupportedError{Msg: fmt.Sprintf(format, args...)}
 }
 
+// scratch is the memory a build reuses: the key as it is written, and where each
+// node's part of it is, so the plan's key is allocated once, at its final size.
+type scratch struct {
+	key   []byte
+	seals []seal
+}
+
+// seal is the part of the key a node's subtree wrote.
+type seal struct {
+	p      *Props
+	ks, ke uint32
+}
+
+var scratchPool = sync.Pool{New: func() any { return &scratch{key: make([]byte, 0, 512), seals: make([]seal, 0, 8)} }}
+
+// maxPooledScratch is the largest key buffer put back in the pool.
+const maxPooledScratch = 64 << 10
+
 // Build converts a validated Expr into a logical plan. The conversion is
 // structural and total: every Expr the parser produces has a node, and none
 // reads or prints query text. The Expr must not change afterwards: the plan
-// shares its leaf values.
+// shares its leaf values and stages, and Build itself never changes it, so
+// the same Expr can be built again and from several goroutines.
 func Build(expr logql.Expr, in Inputs) (*Plan, error) {
 	if in.Compat != Compat37 {
 		return nil, unsupported("queryplan: unsupported compat version %d", in.Compat)
@@ -28,22 +48,83 @@ func Build(expr logql.Expr, in Inputs) (*Plan, error) {
 	if in.Kind > KindInstant {
 		return nil, unsupported("queryplan: unknown kind %d", in.Kind)
 	}
-	b := builder{e: encoder{b: make([]byte, 0, 512)}}
+	sc := scratchPool.Get().(*scratch)
+	p := new(Plan)
+	b := builder{e: encoder{b: sc.key[:0]}, plan: p, seals: sc.seals[:0]}
 	root, err := b.node(expr)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		n := len(b.e.b)
+		b.e.inputs(in)
+		key := make([]byte, len(b.e.b))
+		copy(key, b.e.b)
+		p.Root, p.In, p.Key = root, in, key
+		for _, s := range b.seals {
+			s.p.Key = key[s.ks:s.ke:s.ke]
+		}
+		root.Props().Key = key[:n:n]
+	} else {
+		p = nil
 	}
-	n := len(b.e.b)
-	root.Props().Key = b.e.b[:n:n]
-	b.e.inputs(in)
-	return &Plan{Root: root, In: in, Key: b.e.b}, nil
+	clear(b.seals)
+	sc.seals = b.seals[:0]
+	sc.key = b.e.b[:0]
+	if cap(sc.key) <= maxPooledScratch {
+		scratchPool.Put(sc)
+	}
+	return p, err
 }
 
-// builder writes one pre-order key while it builds the nodes. A node's Key is
-// the slice of that buffer its subtree wrote.
-type builder struct{ e encoder }
+// builder writes one pre-order key while it builds the nodes. A node's key is
+// the part of it its subtree wrote.
+type builder struct {
+	e     encoder
+	plan  *Plan
+	seals []seal
+	depth int
+	// used says which of the plan's inline nodes are taken.
+	usedSel, usedRng, usedVec bool
+}
+
+func (b *builder) newSelect() *LogSelect {
+	if !b.usedSel {
+		b.usedSel = true
+		return &b.plan.mem.sel
+	}
+	return new(LogSelect)
+}
+
+func (b *builder) newRange() *RangeAgg {
+	if !b.usedRng {
+		b.usedRng = true
+		return &b.plan.mem.rng
+	}
+	return new(RangeAgg)
+}
+
+func (b *builder) newVector() *VectorAgg {
+	if !b.usedVec {
+		b.usedVec = true
+		return &b.plan.mem.vec
+	}
+	return new(VectorAgg)
+}
+
+// maxDepth is how deep a query may nest (aggregations, binary operands, label filter groups). Build recurses
+// with the tree, and a Go stack that overflows ends the process, so a tree deeper than any real query is refused
+// with an UnsupportedError. The parser reads far deeper trees than this, so the limit is the first to apply.
+const maxDepth = 1 << 18
 
 func (b *builder) node(expr logql.Expr) (Node, error) {
+	if b.depth >= maxDepth {
+		return nil, unsupported("queryplan: query nested deeper than %d", maxDepth)
+	}
+	b.depth++
+	n, err := b.build(expr)
+	b.depth--
+	return n, err
+}
+
+func (b *builder) build(expr logql.Expr) (Node, error) {
 	switch x := expr.(type) {
 	case *logql.LogQuery:
 		return b.logSelect(x.Selector, x.Pipeline)
@@ -73,96 +154,86 @@ func (b *builder) node(expr logql.Expr) (Node, error) {
 	return nil, unsupported("queryplan: no node for %T", expr)
 }
 
-// seal sets the key of the subtree written since start.
+// seal records the part of the key the subtree wrote since start.
 func (b *builder) seal(p *Props, start int) {
-	end := len(b.e.b)
-	p.Key = b.e.b[start:end:end]
+	b.seals = append(b.seals, seal{p, uint32(start), uint32(len(b.e.b))})
 }
 
 func (b *builder) logSelect(sel *logql.StreamSelector, pipeline []logql.Stage) (*LogSelect, error) {
-	n := &LogSelect{}
+	n := b.newSelect()
 	start := len(b.e.b)
 	b.e.tag(tagLogSelect)
 	if sel != nil {
-		n.Matchers = make([]Matcher, len(sel.Matchers))
-		for i, m := range sel.Matchers {
-			n.Matchers[i] = Matcher{Name: m.Name, Value: m.Value, Op: m.Op}
-		}
+		n.Matchers = sel.Matchers
 	}
 	b.e.uint(uint64(len(n.Matchers)))
 	for _, m := range n.Matchers {
-		b.e.matcher(m)
+		b.e.str(m.Name)
+		b.e.b = append(b.e.b, byte(m.Op))
+		b.e.str(m.Value)
 	}
-	n.Stages = make([]Stage, 0, len(pipeline))
+	n.Stages = pipeline
 	b.e.uint(uint64(len(pipeline)))
 	for _, s := range pipeline {
-		st, err := b.stage(s)
-		if err != nil {
+		if err := b.stage(s); err != nil {
 			return nil, err
 		}
-		n.Stages = append(n.Stages, st)
 	}
 	b.seal(&n.p, start)
 	return n, nil
 }
 
-func (b *builder) stage(s logql.Stage) (Stage, error) {
+// stage writes a stage into the key. The stages are the AST's: Build only
+// refuses one it has no encoding for.
+func (b *builder) stage(s logql.Stage) error {
 	e := &b.e
 	switch x := s.(type) {
 	case *logql.LineFilterStage:
-		st := &LineFilter{Op: x.Op, Alts: make([]LineMatch, 1+len(x.Or))}
-		st.Alts[0] = LineMatch{Value: x.Value, IP: x.IP}
-		for i, a := range x.Or {
-			st.Alts[1+i] = LineMatch{Value: a.Value, IP: a.IP}
-		}
 		e.tag(tagLineFilter)
-		e.b = append(e.b, byte(st.Op))
-		e.uint(uint64(len(st.Alts)))
-		for _, a := range st.Alts {
+		e.b = append(e.b, byte(x.Op))
+		e.uint(uint64(1 + len(x.Or)))
+		e.str(x.Value)
+		e.bool(x.IP)
+		for _, a := range x.Or {
 			e.str(a.Value)
 			e.bool(a.IP)
 		}
-		return st, nil
 	case *logql.ParserStage:
-		st := &Parse{Kind: x.Type, Fields: x.Fields}
-		switch x.Type {
-		case logql.ParserRegexp, logql.ParserPattern:
-			st.Expr = x.Param
-		default:
-			st.Param = x.Param
-		}
 		e.tag(tagParse)
-		e.b = append(e.b, byte(st.Kind))
-		e.str(st.Expr)
-		// The field list is typed; its text is only kept apart when there is no list.
-		e.uint(uint64(len(st.Fields)))
-		for _, f := range st.Fields {
+		e.b = append(e.b, byte(x.Type))
+		// Param is the source of a regexp or pattern parser; for json and
+		// logfmt it is the argument text, which the field list covers.
+		source := x.Type == logql.ParserRegexp || x.Type == logql.ParserPattern
+		if source {
+			e.str(x.Param)
+		} else {
+			e.str("")
+		}
+		e.uint(uint64(len(x.Fields)))
+		for _, f := range x.Fields {
 			e.str(f.Name)
 			e.str(f.Expression)
 		}
-		if len(st.Fields) == 0 {
-			e.str(st.Param)
+		if !source && len(x.Fields) == 0 {
+			e.str(x.Param)
 		}
-		return st, nil
 	case *logql.LabelFilterStage:
-		st := &LabelFilter{Expr: x.Expr}
 		e.tag(tagLabelFilter)
 		e.bool(x.Expr != nil)
 		if x.Expr != nil {
-			e.labelFilter(x.Expr)
+			if !e.labelFilter(x.Expr, 0) {
+				return unsupported("queryplan: label filter nested deeper than %d", maxDepth)
+			}
 		} else {
-			st.Raw = x.Raw
-			e.str(st.Raw)
+			e.str(x.Raw)
 		}
-		return st, nil
 	case *logql.DropStage:
-		return b.project(false, x.Labels, x.Matchers), nil
+		e.project(false, x.Labels, x.Matchers)
 	case *logql.KeepStage:
-		return b.project(true, x.Labels, x.Matchers), nil
+		e.project(true, x.Labels, x.Matchers)
 	case *logql.LineFormatStage:
 		e.tag(tagLineFormat)
 		e.str(x.Template)
-		return &LineFormat{Raw: x.Template}, nil
 	case *logql.LabelFormatStage:
 		e.tag(tagLabelFormat)
 		e.uint(uint64(len(x.Formats)))
@@ -171,55 +242,21 @@ func (b *builder) stage(s logql.Stage) (Stage, error) {
 			e.str(f.Value)
 			e.bool(f.Rename)
 		}
-		return &LabelFormat{Entries: x.Formats}, nil
 	case *logql.DecolorizeStage:
 		e.tag(tagDecolorize)
-		return &Decolorize{}, nil
 	case *logql.UnwrapStage:
 		e.tag(tagUnwrap)
 		e.str(x.Label)
 		e.str(x.Converter)
-		return &Unwrap{Field: x.Label, Conv: x.Converter}, nil
+	default:
+		return unsupported("queryplan: no stage for %T", s)
 	}
-	return nil, unsupported("queryplan: no stage for %T", s)
-}
-
-func (b *builder) project(keep bool, names []string, conds []logql.DropMatcher) Stage {
-	st := &Project{Keep: keep, Names: names}
-	b.e.tag(tagProject)
-	b.e.bool(keep)
-	b.e.strs(names)
-	if len(conds) > 0 {
-		st.Conds = make([]Matcher, len(conds))
-	}
-	b.e.uint(uint64(len(conds)))
-	for i, c := range conds {
-		st.Conds[i] = Matcher{Name: c.Name, Value: c.Value, Op: dropOp(c.Op)}
-		b.e.str(c.Name)
-		b.e.str(c.Op)
-		b.e.str(c.Value)
-	}
-	return st
-}
-
-// dropOp reads the operator text of a keep or drop condition.
-func dropOp(op string) MatchOp {
-	switch op {
-	case "!=":
-		return logql.MatchNeq
-	case "=~":
-		return logql.MatchRe
-	case "!~":
-		return logql.MatchNotRe
-	}
-	return logql.MatchEq
+	return nil
 }
 
 func (b *builder) rangeAgg(x *logql.RangeAggregation) (Node, error) {
-	n := &RangeAgg{
-		Op: x.Op, Range: x.RangeDuration, Offset: x.OffsetDuration, HasOffset: x.HasOffset(),
-		By: x.Grouping,
-	}
+	n := b.newRange()
+	n.Op, n.Range, n.Offset, n.HasOffset, n.By = x.Op, x.RangeDuration, x.OffsetDuration, x.HasOffset(), x.Grouping
 	if x.HasParam {
 		n.Phi = x.Param
 	}
@@ -278,7 +315,8 @@ func (b *builder) vectorAgg(x *logql.VectorAggregation) (Node, error) {
 		b.seal(&n.p, start)
 		return n, nil
 	}
-	n := &VectorAgg{Op: x.Op, By: x.Grouping}
+	n := b.newVector()
+	n.Op, n.By = x.Op, x.Grouping
 	e.tag(tagVectorAgg)
 	e.str(string(n.Op))
 	e.grouping(n.By)

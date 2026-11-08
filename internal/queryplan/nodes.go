@@ -40,11 +40,11 @@ type Exposure struct {
 
 // Inputs are everything besides the Expr that decides the logical plan.
 type Inputs struct {
-	Kind   Kind
-	Compat Compat
 	// StreamLabels are the Loki stream label names, sorted and deduplicated by
 	// the caller; Build keeps them as given.
 	StreamLabels []string
+	Kind         Kind
+	Compat       Compat
 	Exposure     Exposure
 }
 
@@ -55,7 +55,18 @@ type Plan struct {
 	In   Inputs
 	// Key is Root's key followed by the encoded Inputs.
 	Key []byte
+	// mem holds the first node of each common kind, so a plan of the usual
+	// shape (aggregation over a range over a selector) is one allocation.
+	mem struct {
+		sel LogSelect
+		rng RangeAgg
+		vec VectorAgg
+	}
 }
+
+// AppendKey appends Key to dst and returns it. It allocates only when dst
+// lacks the capacity.
+func (p *Plan) AppendKey(dst []byte) []byte { return append(dst, p.Key...) }
 
 // Node is a logical node of the metric or log side.
 type Node interface {
@@ -66,7 +77,7 @@ type Node interface {
 type Props struct {
 	// Key is the canonical bytes of the subtree. It is self-delimiting and
 	// does not depend on Inputs, so a subtree has the same key alone as inside
-	// a larger query.
+	// a larger query. It is a slice of Plan.Key.
 	Key []byte
 	// Lookback is the largest range plus offset on any path below the node: the
 	// freshness input.
@@ -76,38 +87,44 @@ type Props struct {
 }
 
 // The leaf types below are the AST's own; a plan shares them with its Expr.
+// A Loki pipeline is a sequence of stages, which logql already types, so the
+// plan's stages are the AST's: logql types the remaining text (line_format
+// templates, parser flags) and the plan follows. Stage semantics the AST does
+// not say (error policy, extracted labels, level needs) go in PipelineSem.
 type (
+	// Matcher is a stream selector entry: name, operator and value.
+	Matcher = logql.LabelMatcher
 	// MatchOp is =, !=, =~ or !~.
 	MatchOp = logql.MatchOp
-	// LineOp is a line filter operator.
-	LineOp = logql.LineFilterOp
-	// ParserKind is json, logfmt, regexp, pattern or unpack.
-	ParserKind = logql.ParserType
-	// Extraction is one entry of a json or logfmt extraction list.
-	Extraction = logql.ExtractionField
-	// LFExpr is a parsed label filter: And, Or or Leaf with its typed value.
-	LFExpr = logql.LabelFilterExpr
-	// LabelFormatEntry is one `dst="template"` or `dst=src` entry.
-	LabelFormatEntry = logql.LabelFormat
 	// Grouping is a by or without clause. A nil *Grouping is no clause; `by ()`
 	// is a non-nil Grouping without labels.
 	Grouping = logql.Grouping
 	// Matching is the on, ignoring, group_left and group_right modifiers.
 	Matching = logql.VectorMatching
+
+	// Stage is a pipeline stage.
+	Stage = logql.Stage
+	// LineFilter is `|= "a" or "b"`: the alternatives are ORed for |=, |~ and |>
+	// and ANDed as negations for !=, !~ and !>.
+	LineFilter = logql.LineFilterStage
+	// Parse is a json, logfmt, regexp, pattern or unpack stage. Param is the
+	// regexp or pattern source, or a json or logfmt argument as written.
+	Parse = logql.ParserStage
+	// LabelFilter is a label filter stage; Expr is nil for a filter logql does
+	// not type, and Raw then holds its text.
+	LabelFilter = logql.LabelFilterStage
+	// Drop and Keep are the drop and keep stages, with names or conditions.
+	Drop = logql.DropStage
+	Keep = logql.KeepStage
+	// LineFormat is a line_format stage; the template is text until logql types it.
+	LineFormat = logql.LineFormatStage
+	// LabelFormat is a label_format stage.
+	LabelFormat = logql.LabelFormatStage
+	// Decolorize is a decolorize stage.
+	Decolorize = logql.DecolorizeStage
+	// Unwrap is an unwrap stage; Converter is as written: empty, bytes, duration, duration_seconds.
+	Unwrap = logql.UnwrapStage
 )
-
-// LabelSource says where a matcher's label comes from. The resolver sets it.
-type LabelSource uint8
-
-// LabelSourceUnresolved is the only source until the resolver exists.
-const LabelSourceUnresolved LabelSource = iota
-
-// Matcher is a stream selector entry or a conditional keep/drop entry.
-type Matcher struct {
-	Name, Value string
-	Op          MatchOp
-	Src         LabelSource
-}
 
 // ---- pipeline side ----
 
@@ -116,87 +133,16 @@ type LogSelect struct {
 	Matchers []Matcher
 	// Stages are in Loki order: a Loki pipeline is sequential.
 	Stages []Stage
-	// Sem is filled by the resolver; zero in this package.
-	Sem PipelineSem
+	// Sem is set by the resolver; nil in this package.
+	Sem *PipelineSem
 	p   Props
 }
 
 // Props implements Node.
 func (n *LogSelect) Props() *Props { return &n.p }
 
-// Stage is a pipeline stage.
-type Stage interface{ stage() }
-
-// LineMatch is one alternative of a line filter.
-type LineMatch struct {
-	Value string
-	IP    bool
-}
-
-// LineFilter is `|= "a" or "b"`: the alternatives are ORed for |=, |~ and |>
-// and ANDed as negations for !=, !~ and !>.
-type LineFilter struct {
-	Op   LineOp
-	Alts []LineMatch
-}
-
-// Parse is a parser stage.
-type Parse struct {
-	Kind   ParserKind
-	Fields []Extraction
-	// Expr is the source of a regexp or pattern parser.
-	Expr string
-	// Param is a json or logfmt stage's argument text as written (the field
-	// list, and the logfmt flags once logql types them).
-	Param string
-}
-
-// LabelFilter is a label filter stage.
-type LabelFilter struct {
-	Expr *LFExpr
-	// Raw is the stage text, only when Expr is nil (a filter logql does not type).
-	Raw string
-}
-
-// Project is a keep or drop stage.
-type Project struct {
-	Keep  bool
-	Names []string
-	Conds []Matcher
-}
-
-// LineFormat is a line_format stage.
-type LineFormat struct {
-	// Raw is the template as written; logql types it later.
-	Raw string
-}
-
-// LabelFormat is a label_format stage.
-type LabelFormat struct {
-	Entries []LabelFormatEntry
-}
-
-// Decolorize is a decolorize stage.
-type Decolorize struct{}
-
-// Unwrap is an unwrap stage.
-type Unwrap struct {
-	Field string
-	// Conv is the converter as written: empty, bytes, duration, duration_seconds.
-	Conv string
-}
-
-func (*LineFilter) stage()  {}
-func (*Parse) stage()       {}
-func (*LabelFilter) stage() {}
-func (*Project) stage()     {}
-func (*LineFormat) stage()  {}
-func (*LabelFormat) stage() {}
-func (*Decolorize) stage()  {}
-func (*Unwrap) stage()      {}
-
 // PipelineSem is the resolved semantics of a pipeline. The resolver fills it
-// in a later change; Build leaves it zero.
+// in a later change; Build leaves it nil.
 type PipelineSem struct {
 	Parsers      int
 	ErrorPolicy  ErrorPolicy
@@ -246,7 +192,7 @@ type RangeAgg struct {
 	Phi float64
 	// By is the range-level grouping of the unwrap functions.
 	By  *Grouping
-	Sem MetricSem
+	Sem *MetricSem
 	p   Props
 }
 

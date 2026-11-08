@@ -70,13 +70,10 @@ func BenchmarkBuild(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for _, e := range exprs {
-			if _, err := Build(e, in); err != nil {
-				b.Fatal(err)
-			}
+		if _, err := Build(exprs[i%len(exprs)], in); err != nil {
+			b.Fatal(err)
 		}
 	}
-	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(exprs)), "ns/query")
 	b.StopTimer()
 	p50, p99 := buildPercentiles(exprs, in)
 	b.ReportMetric(float64(p50.Nanoseconds()), "ns/p50")
@@ -110,13 +107,10 @@ func BenchmarkParseSeed(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for _, q := range queries {
-			if _, err := logql.Parse(q); err != nil {
-				b.Fatal(err)
-			}
+		if _, err := logql.Parse(queries[i%len(queries)]); err != nil {
+			b.Fatal(err)
 		}
 	}
-	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(queries)), "ns/query")
 }
 
 // raceBuild is whether the binary has the race detector, which slows Build and adds allocations.
