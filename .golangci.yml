@@ -33,6 +33,8 @@ linters:
     # operators sit beside them: the stdlib and logsql only, so the translator
     # and the logical plan can both build on them. Test files are
     # out of scope: a test in package logql cannot import the translator anyway.
+    # The logical plan (queryplan) sits above logql and below the translator and
+    # the proxy: it reads the LogQL AST and nothing else.
     depguard:
       rules:
         logql:
@@ -52,6 +54,14 @@ linters:
           allow:
             - $gostd
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus
+        queryplan:
+          list-mode: strict
+          files:
+            - "**/internal/queryplan/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logql
         physical:
           list-mode: strict
           files:

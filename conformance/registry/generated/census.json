@@ -1931,7 +1931,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 368,
+      "go": 369,
       "playwright": 1
     },
     "page_kinds": {
