@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `internal/queryplan` builds a logical plan from the parsed LogQL query, with
+  a binary key that holds only what changes Loki's answer and no
+  VictoriaLogs-side option. It is not wired into the handlers yet. No
+  behaviour change.
+
 ## [2.96.1] - 2026-11-08
 
 ### Fixed
@@ -19,11 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is now a parse error. Every query reads back as VictoriaLogs reads it.
 
 ### Changed
-
-- `internal/queryplan` builds a logical plan from the parsed LogQL query, with
-  a binary key that holds only what changes Loki's answer and no
-  VictoriaLogs-side option. It is not wired into the handlers yet. No
-  behaviour change.
 
 - The LogQL parser applies Loki's input size limit (131,072 bytes) on every
   parse, as Loki's parser does, not only where a handler validates the query
