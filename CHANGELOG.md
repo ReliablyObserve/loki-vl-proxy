@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.98.0] - 2026-11-08
+
 ### Changed
 
 - The LogQL parser types `line_format` templates: each stage keeps the parsed
