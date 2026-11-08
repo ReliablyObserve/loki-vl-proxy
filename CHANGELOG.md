@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fix(logsql): the LogsQL parser the proxy reads its own queries with (for
+  example to recognise a stats query) could panic on a `math` pipe holding an
+  invalid UTF-8 byte, and read some queries differently from VictoriaLogs: a
+  `#` comment inside a function filter's arguments, a quoted field name in
+  `values`, `uniq_values` and `json_values_topk`, and an unterminated string,
+  which is now a parse error. Every query reads back as VictoriaLogs reads it.
+
 - fix(logql): binary metric queries whose operand holds a compound duration
   (`latency > 1h5m`), a number in exponent form (`status >= 4e2`) or a
   large number in a nested operand (`(… * 1000000) / 2`) answered 400 `syntax error:
