@@ -81,7 +81,7 @@ func templateShape(t *template.Template) string {
 			continue
 		}
 		fmt.Fprintf(&b, "[%s]", d.Name())
-		shapeNode(&b, reflect.ValueOf(d.Tree.Root))
+		shapeNode(&b, reflect.ValueOf(d.Root))
 	}
 	return b.String()
 }

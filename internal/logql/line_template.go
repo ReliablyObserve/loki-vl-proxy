@@ -57,7 +57,7 @@ func typeLineTemplate(text string) *LineTemplate {
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name() < defs[j].Name() })
 	for _, d := range defs {
 		if d != t && d.Tree != nil {
-			w.walk(d.Tree.Root)
+			w.walk(d.Root)
 		}
 	}
 	return lt
