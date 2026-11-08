@@ -12,6 +12,12 @@ why: |
   by (app) 911 vs 83). The owner accepted the stream identity (state metric-
   series-identity, waiver metric-identity-metadata-and-dynamic-keys, expiry
   2027-03-31).
+  A statistic over the series follows the split: `stddev(count_over_time(
+  {env="production"}[5m]))` over a settled 1h window (2026-11-08) is 5.62 on
+  the proxy (60,584 series) and 5.02 on Loki (109,287 series, split by
+  trace_id, span_id and the other structured metadata), for every spelling of
+  stddev and stdvar; it is the same series-identity deviation, not a
+  difference of the statistic.
 request:
   method: GET
   path: /loki/api/v1/query

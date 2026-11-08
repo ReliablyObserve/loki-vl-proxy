@@ -1,0 +1,46 @@
+id: limits/parser-metric-raw-rows-body-cap
+title: A long-range parser metric read from raw rows fails with a bare 500 at the backend body limit, where Loki answers 200
+pending: true
+proves:
+  - operator-configurable-limits
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  `sum by (service_name) (count_over_time({env="production"} | json | drop
+  __error__ [5m]))` over 24h (step 60 or 300) is answered by Loki v3.7.9 with
+  200 (5 to 16 s on the e2e stack, 2026-11-08). The proxy answers 500
+  `Internal Server Error` after about 2.5 s, on main and on the query-plan
+  branch alike: it reads the query's rows from VictoriaLogs
+  (`/select/logsql/query` with `fields _time, _stream, _msg, level,
+  service_name, ...`), the read stops at the decoded backend body limit
+  (`backend_body_read`: decoded_bytes 268435456, the 256 MiB floor of
+  -backend-max-buffered-response-bytes), and the cut JSON surfaces as
+  `invalid backend metric row: unexpected end of JSON input`. Two rules are
+  broken: a metric must not be evaluated from raw rows when VictoriaLogs'
+  stats can answer it, and a limit that is hit answers with Loki's error and
+  names the flag that bounds it, never a bare 500.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (service_name) (count_over_time({env="production"} | json | drop __error__ [5m]))'
+    start: 'now-24h'
+    end: 'now'
+    step: '300'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, matrix.values]
+  expect: |
+    200 with Loki's values, from VictoriaLogs' stats; or, past an
+    operator-set limit, Loki's limit error naming the flag.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/proxy/range_metric_compat.go (the raw-row route of grouped parser metrics), internal/proxy/http_utils.go (decodedBodyLimit)'
+  loki: 'Loki answers the 24h range (200)'
+  proxy: '500 Internal Server Error when the raw-row body passes the decoded body limit'
+  planned_test: 'an e2e test against Loki over a long range (group semantics), a unit test that a body cut at the limit answers the limit error naming -backend-max-buffered-response-bytes'
+  clusters: []

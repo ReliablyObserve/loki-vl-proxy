@@ -1635,7 +1635,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 433,
+  "registry_items": 434,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3525,6 +3525,7 @@
     "drilldown/volume-detected-level-not-normalised",
     "limits/drilldown-7d-breakdown-response-limit",
     "limits/drilldown-breakdown-keeps-busiest",
+    "limits/parser-metric-raw-rows-body-cap",
     "limits/series-cap-and-byte-budget-interact",
     "loki_api_v1_cache_generation_numbers",
     "loki_api_v1_format_query",

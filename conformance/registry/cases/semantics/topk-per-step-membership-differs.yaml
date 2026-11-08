@@ -20,6 +20,12 @@ why: |
       31 or 33 with `{level="info", service_name="batch-etl"}` missing;
     * `topk(2, count_over_time({namespace="prod"}[3m]))`: the timestamps of
       a matched series differ.
+    * through Grafana (`/api/ds/query`, proxy datasource vs Loki direct,
+      2026-11-08, Loki v3.7.9, VictoriaLogs v1.53.0): `topk(3, sum by
+      (service_name) (rate({env="production"}[$__auto])))` returns 3 series
+      on the proxy at 5m, 15m and 24h (6 or 7 at 1h and 6h) and 8, 8, 9, 12
+      and 8 on Loki: the per-step members other than the last step's are
+      missing.
   Not isolated: a tie at the k-th place (Loki keeps its map order there) and
   a value difference in the operand both produce this; each row needs the
   operand compared step by step before a fix.
