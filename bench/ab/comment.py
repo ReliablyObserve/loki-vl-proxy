@@ -247,7 +247,7 @@ def locked_section(locked, mode):
     """Locked rows the PR takes above their bound: a regression of the acceptance lock."""
     icon, text = effect(mode)
     return [f"#### {icon} 🔒 Locked rows above their bound: {len(locked)}", "",
-            "These rows are locked in the registry (a `perf:` block with `locked: true` on an item their shape "
+            "These rows are locked in the registry (a `perf:` block with `locked: true` on an item their shape " +
             "covers, as committed on the base): every weekly run measured them within their bound, and this PR "
             f"takes them above it beyond noise. {text} How to read and clear one: `bench/ab/README.md`.", "",
             *over_2x_failing_table(locked), "",
@@ -284,7 +284,7 @@ def first_measurement_section(first):
     shown = first[:KNOWN_CAP]
     out = [f"#### 🟡 First measurement above 2× Loki: {len(first)} (warning, does not fail)", "",
            "These rows are above 2× Loki on this PR in a Loki profile where the base build did not run the profile's "
-           "setting (so it is never compared there), and the other profile has no comparable base build for them. "
+           "setting (so it is never compared there), and the other profile has no comparable base build for them. " +
            "The PR cannot be shown to have added them; the weekly run measures them once a build runs the profile.", "",
            *over_2x_table(shown, with_note=True)]
     if len(first) > len(shown):

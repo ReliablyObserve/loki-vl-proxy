@@ -540,8 +540,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         out += render_acceptance(latest, bounds)
     out += over_2x(over)
     out += ["## Slower than Loki on first load", "",
-            "Rows the newest weekly run measured; rows it does not re-measure are listed under "
-            "[Not re-measured by the weekly run](#not-re-measured-by-the-daily-run) and are not ranked.", ""]
+            "Rows the newest weekly run measured; rows it does not re-measure are listed under " +
+            "[Not re-measured by the weekly run](#not-re-measured-by-the-weekly-run) and are not ranked.", ""]
     if gaps:
         out += ["| shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |",
                 "|---|---|---|---|---|---|---|"]

@@ -121,7 +121,7 @@ rows measured before the profiles existed had an unaligned proxy side), `loki-de
 
 ## Slower than Loki on first load
 
-Rows the newest weekly run measured; rows it does not re-measure are listed under [Not re-measured by the weekly run](#not-re-measured-by-the-daily-run) and are not ranked.
+Rows the newest weekly run measured; rows it does not re-measure are listed under [Not re-measured by the weekly run](#not-re-measured-by-the-weekly-run) and are not ranked.
 
 | shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |
 |---|---|---|---|---|---|---|
