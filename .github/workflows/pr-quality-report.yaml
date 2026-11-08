@@ -53,10 +53,10 @@ jobs:
             RUN_PERF=true
           fi
           echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"
-          # A PR that changes query code or the tests and specs that send queries
-          # gets the query corpus built from its uncached test run.
+          # A PR that changes query code (the query plan included) or the tests and specs that send
+          # queries gets the query corpus built from its uncached test run, and the oracles run.
           QUERY_CORPUS=false
-          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|proxy|querycorpus|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
+          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|proxy|querycorpus|queryplan|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
             QUERY_CORPUS=true
           fi
           echo "query_corpus=${QUERY_CORPUS}" >> "$GITHUB_OUTPUT"
@@ -141,6 +141,15 @@ jobs:
             /tmp/pr-head-query-corpus.vl-*.jsonl.gz
             /tmp/pr-head-query-corpus.vl-*.constructs.json
             /tmp/pr-head-query-corpus.loki-*
+
+      # The resolved query plan against Loki's own syntax tree (test/oracle/loki facts): outer grouping, offsets,
+      # parser and drop stages, on every plan-corpus query both parsers accept. A difference fails this job, and
+      # report fails with it.
+      - name: Compare the query plan with Loki's tree
+        if: needs.plan.outputs.query_corpus == 'true'
+        env:
+          LVP_RUN_ORACLES: "1"
+        run: go test ./internal/queryplan -run '^TestPlanMatchesLokiOracle$' -count=1 -v
 
       - name: Upload quality diagnostics
         if: always()
@@ -320,6 +329,21 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+
+      # report is the required check: a failed snapshot job (its oracle step included) fails it, even when its
+      # artifact was uploaded before the failure. A skipped perf job (no perf-sensitive change) is fine.
+      - name: Require the snapshot jobs
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          HEAD_RESULT: ${{ needs.head.result }}
+          BASE_RESULT: ${{ needs.base.result }}
+          PERF_RESULT: ${{ needs.perf.result }}
+        run: |
+          set -euo pipefail
+          for r in "plan=$PLAN_RESULT" "head=$HEAD_RESULT" "base=$BASE_RESULT"; do
+            [ "${r#*=}" = "success" ] || { echo "::error::job ${r%%=*} ended ${r#*=}"; exit 1; }
+          done
+          case "$PERF_RESULT" in success|skipped) ;; *) echo "::error::job perf ended $PERF_RESULT"; exit 1 ;; esac
 
       - name: Download the head snapshot
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2

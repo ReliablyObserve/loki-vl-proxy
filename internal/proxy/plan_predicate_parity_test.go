@@ -57,49 +57,6 @@ func handlerQueryText(q string) (string, bool) {
 	return q, true
 }
 
-// dropErrorOnlyAtEnd is what hasDropErrorOnlyPostParserStage asks, in plan terms: the error label is dropped by the
-// only stage after the last parser, and that drop names only __error__ and __error_details__. The resolver's
-// ErrorDroppedLabel is wider (Loki drops the label with any unconditional drop after the last parser); the
-// native-stats route the predicate guards needs the narrow form.
-func dropErrorOnlyAtEnd(s *queryplan.LogSelect) bool {
-	at := s.Sem.ErrorAt
-	if s.Sem.ErrorPolicy != queryplan.ErrorDroppedLabel || at != len(s.Stages)-1 || at == 0 {
-		return false
-	}
-	if _, parser := s.Stages[at-1].(*queryplan.Parse); !parser {
-		return false
-	}
-	d := s.Stages[s.Sem.ErrorAt].(*queryplan.Drop)
-	if len(d.Matchers) != 0 {
-		return false
-	}
-	for _, l := range d.Labels {
-		if l != "__error__" && l != "__error_details__" {
-			return false
-		}
-	}
-	return true
-}
-
-// rangeUnderAggregations is the range aggregation at the top of n under label_replace calls and vector
-// aggregations or ranks: the one parseOriginalRangeMetricSpec reads. nil for any other shape.
-func rangeUnderAggregations(n queryplan.Node) *queryplan.RangeAgg {
-	for {
-		switch x := n.(type) {
-		case *queryplan.LabelReplace:
-			n = x.In
-		case *queryplan.VectorAgg:
-			n = x.In
-		case *queryplan.Rank:
-			n = x.In
-		case *queryplan.RangeAgg:
-			return x
-		default:
-			return nil
-		}
-	}
-}
-
 func offsetText(kind queryplan.OffsetKind, d string) string {
 	switch kind {
 	case queryplan.OffsetNone:
@@ -121,9 +78,7 @@ func TestPlanPredicateParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := paritySection{Rows: len(rows), Attributes: map[string]*parityAttribute{
-		"ungrouped":       {Predicate: "hasOuterAggregationWithoutBy(handler query text)", Diffs: []parityDiff{}},
-		"offset":          {Predicate: "extractLogQLOffset(handler query text)", Diffs: []parityDiff{}},
-		"drop_error_only": {Predicate: "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(handler query text).BaseQuery) against an error-only drop as the last stage", Diffs: []parityDiff{}},
+		"offset": {Predicate: "extractLogQLOffset(handler query text)", Diffs: []parityDiff{}},
 	}}
 	diff := func(attr, q string, old, new any) {
 		a := got.Attributes[attr]
@@ -148,8 +103,6 @@ func TestPlanPredicateParity(t *testing.T) {
 		got.Validated++
 		queryplan.Resolve(p)
 
-		diff("ungrouped", q, hasOuterAggregationWithoutBy(q), p.Sem.Ungrouped)
-
 		old := "none"
 		if d, _, err := extractLogQLOffset(q); err != nil {
 			old = "mixed"
@@ -160,12 +113,6 @@ func TestPlanPredicateParity(t *testing.T) {
 			old = "uniform " + d.String()
 		}
 		diff("offset", q, old, offsetText(p.Sem.OffsetKind, p.Sem.Offset.String()))
-
-		if spec, ok := parseOriginalRangeMetricSpec(q); ok {
-			if r := rangeUnderAggregations(p.Root); r != nil && r.In != nil {
-				diff("drop_error_only", q, hasDropErrorOnlyPostParserStage(spec.BaseQuery), dropErrorOnlyAtEnd(r.In))
-			}
-		}
 	}
 
 	path := filepath.Join(root, plancorpus.PlanPath)

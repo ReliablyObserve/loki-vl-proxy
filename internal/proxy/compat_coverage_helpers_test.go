@@ -62,7 +62,7 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	// Tumbling window (range == step) uses VL native stats for parser-stage queries too:
 	// the parser-stage guard was removed so that tumbling-window | json / | logfmt queries
 	// can use stats_query_range. Error-exclusion semantics are handled upstream at the
-	// call site (handleStatsCompatRange) via hasDropErrorOnlyPostParserStage before this function.
+	// call site (handleStatsCompatRange) via queryDropsOnlyErrorAfterParser before this function.
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false) {
 		t.Fatal("expected parser-stage rate to use manual fallback when range != step")
 	}

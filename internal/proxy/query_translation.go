@@ -1755,30 +1755,6 @@ func hasPostParserPipeStage(baseQuery string) bool {
 	return strings.HasPrefix(strings.TrimSpace(baseQuery[end:]), "|")
 }
 
-// dropErrorOnlyRE matches a pipe stage that drops only __error__ and/or
-// __error_details__ labels — e.g. "| drop __error__, __error_details__" or
-// "| drop __error__". Such stages do not filter log lines; they merely strip
-// parser-error metadata and signal that the caller has opted in to VL's
-// count-all semantics for native stats.
-var dropErrorOnlyRE = regexp.MustCompile(`^\|\s*drop\s+(?:__error__(?:\s*,\s*__error_details__)?|__error_details__(?:\s*,\s*__error__)?)\s*$`)
-
-// hasDropErrorOnlyPostParserStage returns true when the base query's only
-// post-parser stage is exactly a "| drop __error__[, __error_details__]" clause.
-// This indicates an explicit opt-in to VL's count-all semantics (count every
-// log line, including parse failures) rather than Loki's default of excluding
-// parse-failed lines from metric aggregation.
-func hasDropErrorOnlyPostParserStage(baseQuery string) bool {
-	end := lastParserStageEnd(baseQuery)
-	if end < 0 {
-		return false
-	}
-	tail := strings.TrimSpace(baseQuery[end:])
-	if !strings.HasPrefix(tail, "|") {
-		return false
-	}
-	return dropErrorOnlyRE.MatchString(tail)
-}
-
 // stripParserStages removes all extracting parser stages from a LogQL base query.
 func stripParserStages(baseQuery string) string {
 	result := baseQuery
@@ -1828,7 +1804,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	rangeNanos := spec.rangeWindow.Nanoseconds()
 	if spec.unwrapField == "" && isLogRangeWindowFunc(spec.funcName) && rangeNanos >= stepNanos &&
 		(!p.exactParserSeriesIdentity || !hasDynamicKeyParserStage(spec.baseQuery)) &&
-		(!hasPostParserPipeStage(spec.baseQuery) || (rangeNanos == stepNanos && hasDropErrorOnlyPostParserStage(spec.baseQuery))) {
+		(!hasPostParserPipeStage(spec.baseQuery) || (rangeNanos == stepNanos && queryDropsOnlyErrorAfterParser(originalQuery))) {
 		if p.tryBareParserLogRangeBuckets(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
 			return
 		}

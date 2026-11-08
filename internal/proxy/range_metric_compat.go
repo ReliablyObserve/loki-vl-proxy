@@ -23,6 +23,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -436,10 +437,10 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := statsRangeIsTumbling(origSpec.Window, step)
 	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
-	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
-	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
-	// can correctly identify the drop-error clause.
-	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) && !forceRawLevelRows {
+	// VL's count-all semantics (parse failures counted). The query's plan finds the
+	// pipeline of the range aggregation in every spelling (a pipeline after the range, a
+	// parenthesised log query).
+	if manualFunc != "quantile" && rangeEqualsStep && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && queryDropsOnlyErrorAfterParser(originalLogql) && !forceRawLevelRows {
 		return false
 	}
 	// Native step buckets answer sum, avg, max and min over time with unwrap
@@ -464,7 +465,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// A bare outer aggregation without by() collapses all streams into one empty-label
 	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
 	// collectRangeMetricSamples produces a single series — not one per stream.
-	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && queryOuterUngrouped(originalLogql) {
 		spec.ByExplicit = true
 	}
 	if manualFunc == "quantile" {
@@ -490,12 +491,11 @@ func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql
 	}
 	spec, specOk := parseStatsCompatSpec(logsqlQuery)
 	// Parser stages without an explicit drop-error opt-in require the manual path
-	// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
-	// pipeline without outer aggregation or range brackets) for the drop-error check.
+	// to preserve Loki's error-exclusion semantics; the query's plan reads the opt-in.
 	if !specOk || !queryUsesParserStages(spec.BaseQuery) {
 		return true
 	}
-	return hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) &&
+	return queryDropsOnlyErrorAfterParser(originalLogql) &&
 		!p.extractionListNeedsRawLevelRows(origSpec.BaseQuery, parseOriginalByLabels(originalLogql))
 }
 
@@ -545,7 +545,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
-	if manualFunc != "quantile" && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+	if manualFunc != "quantile" && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && queryDropsOnlyErrorAfterParser(originalLogql) {
 		return false
 	}
 	// Instant queries have no step: the range window is the entire lookback interval,
@@ -571,7 +571,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// A bare outer aggregation without by() collapses all streams into one empty-label
 	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
 	// collectRangeMetricSamples produces a single series — not one per stream.
-	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && queryOuterUngrouped(originalLogql) {
 		spec.ByExplicit = true
 	}
 	if manualFunc == "quantile" {
@@ -584,26 +584,6 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-// hasOuterAggregationWithoutBy reports whether logql starts with a bare outer aggregation
-// (sum, avg, max, min, count, …) that carries no by() or without() grouping modifier.
-// Loki evaluates such expressions as a single series with no label dimensions.
-func hasOuterAggregationWithoutBy(logql string) bool {
-	logql = strings.TrimSpace(logql)
-	logql = stripOuterLabelReplace(logql)
-	loc := outerAggregationRE.FindStringIndex(logql)
-	if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
-		return false
-	}
-	// Guard against prefix collisions: outerAggregationRE matches "count" as a prefix of
-	// "count_over_time". The text after the aggregation keyword (+ optional by/without
-	// clause) must start with "(" to be a genuine outer aggregation operator.
-	if !strings.HasPrefix(strings.TrimSpace(logql[loc[1]:]), "(") {
-		return false
-	}
-	matched := strings.ToLower(logql[:loc[1]])
-	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
-}
-
 // parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper
 // in any of Loki's spellings. Returns k, whether descending (true=topk,
 // false=bottomk) and its by()/without() clause, ok=true only when topk/bottomk
@@ -612,19 +592,21 @@ func parseTopKWrapper(logql string) (k int, descending bool, group *logqlpkg.Gro
 	if strings.TrimSpace(logql) == "" {
 		return 0, false, nil, false
 	}
-	parsed, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
-	if err != nil {
+	// The query's plan (resolvedPlan): one parse per query text, shared with the other plan reads.
+	p := resolvedPlan(strings.TrimSpace(logql))
+	if p == nil {
 		return 0, false, nil, false
 	}
-	va, isVA := parsed.(*logqlpkg.VectorAggregation)
-	if !isVA || !va.HasParam || int(va.Param) <= 0 {
+	rank, isRank := p.Root.(*queryplan.Rank)
+	if !isRank || rank.K <= 0 {
 		return 0, false, nil, false
 	}
-	switch va.Op {
+	// The grouping is the shared plan's: callers read it and never change it.
+	switch rank.Op {
 	case logqlpkg.VectorTopK:
-		return int(va.Param), true, va.Grouping, true
+		return rank.K, true, rank.By, true
 	case logqlpkg.VectorBottomK:
-		return int(va.Param), false, va.Grouping, true
+		return rank.K, false, rank.By, true
 	}
 	return 0, false, nil, false
 }
