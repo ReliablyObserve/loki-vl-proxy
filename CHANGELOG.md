@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The response cache keys' version tags are built by one function for every
-  key (compat edge, inner query_range, log windows) instead of three copies;
-  every key is byte-identical to before. No behaviour change.
+- The proxy's LogsQL parser reads back what the proxy sends to VictoriaLogs:
+  every pipe the translator emits (`extract`, `format`, `rename`, `replace`,
+  `pack_*`, `unpack_*` with their arguments, `stats` with `if` and
+  `by (_time:step offset)`, `math`, `coalesce`, `copy`) and the filter forms
+  (negations, implicit AND, field scopes, `_time` and `_stream` forms), as typed
+  nodes that print back to the same query. A value holding a line break or
+  carriage return is now written as an escaped string so it reads back the
+  same; VictoriaLogs answers these queries as before.
+
+## [2.93.0] - 2026-11-07
 
 ### Added
 
@@ -21,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no slow lines and keeps no per-request trace, while
   `loki_vl_proxy_slow_requests_total` still counts slow requests. Helm: the
   `slow-query-log-level` key of `extraArgs`.
+
+## [2.92.1] - 2026-11-07
+
+### Changed
+
+- The response cache keys' version tags are built by one function for every
+  key (compat edge, inner query_range, log windows) instead of three copies;
+  every key is byte-identical to before. No behaviour change.
 
 ## [2.92.0] - 2026-11-07
 

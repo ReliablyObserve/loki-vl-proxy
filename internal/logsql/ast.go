@@ -6,11 +6,19 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // quoteLogsQL wraps s in double-quotes and escapes any embedded backslashes or
 // double-quote characters so the result is always a valid LogsQL quoted string.
 func quoteLogsQL(s string) string {
+	// A line break cannot sit raw in a quoted string: VictoriaLogs reads the string the way Go does, and rejects
+	// one, or reads a raw carriage return as another character. Bytes that are not UTF-8 would not come back as
+	// they are either. Other control characters pass as they are.
+	if strings.ContainsAny(s, "\n\r") || !utf8.ValidString(s) {
+		return strconv.Quote(s)
+	}
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
 	return `"` + s + `"`
@@ -24,6 +32,64 @@ func quoteLogsQL(s string) string {
 // characters are escaped rather than sent raw.
 func quoteLogsQLPattern(s string) string {
 	return strconv.Quote(s)
+}
+
+// reservedWords are the words VictoriaLogs reads as keywords or filter functions where a filter can begin, so a
+// word that is one of them (or starts with one, before a . or -) has to be quoted.
+var reservedWords = map[string]bool{
+	"and": true, "or": true, "not": true, "offset": true, "in": true, "i": true, "exact": true, "re": true, "seq": true,
+	"range": true, "ipv4_range": true, "ipv6_range": true, "eq_field": true, "le_field": true, "lt_field": true,
+	"len_range": true, "string_range": true, "value_type": true, "contains_all": true, "contains_any": true,
+	"contains_common_case": true, "equals_common_case": true, "json_array_contains_any": true,
+	"pattern_match": true, "pattern_match_full": true, "pattern_match_prefix": true, "pattern_match_suffix": true,
+	"_time": true, "_stream": true, "_stream_id": true, "options": true,
+}
+
+// isWordRune reports whether r is a letter, a digit or _: what a LogsQL word is made of.
+func isWordRune(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// isReserved reports whether s starts with a reserved word.
+func isReserved(s string) bool {
+	end := strings.IndexFunc(s, func(r rune) bool { return !isWordRune(r) })
+	if end < 0 {
+		end = len(s)
+	}
+	return reservedWords[strings.ToLower(s[:end])]
+}
+
+// wordOrQuoted is s as a bare word when LogsQL reads it as one, else quoted: a word is made of letters, digits and
+// _, with . - / + $ inside, has a letter, digit or _, and does not start with a reserved word.
+func wordOrQuoted(s string) string {
+	plain := false
+	for i, r := range s {
+		switch {
+		case isWordRune(r):
+			plain = true
+		case r == '/' || (i > 0 && strings.ContainsRune(".-+$", r)):
+		default:
+			return quoteLogsQL(s)
+		}
+	}
+	if !plain || isReserved(s) {
+		return quoteLogsQL(s)
+	}
+	return s
+}
+
+// prefixValue is the value before the * of a prefix filter: empty for the empty prefix.
+func prefixValue(s string) string {
+	if s == "" {
+		return ""
+	}
+	return wordOrQuoted(s)
+}
+
+// fieldPrefix is "field:" for a field filter, empty for a filter on the message.
+func fieldPrefix(field string) string {
+	if field == "" {
+		return ""
+	}
+	return field + ":"
 }
 
 // QuoteValue wraps s in double-quotes and escapes embedded backslashes and
@@ -90,8 +156,13 @@ func (q Query) expr() {}
 // Word matches a single word anywhere in the log line.
 type Word struct{ Value string }
 
-func (w Word) String() string { return w.Value }
-func (w Word) filterExpr()    {}
+func (w Word) String() string {
+	if isReserved(w.Value) {
+		return quoteLogsQL(w.Value)
+	}
+	return w.Value
+}
+func (w Word) filterExpr() {}
 
 // Phrase matches an exact phrase (including spaces).
 type Phrase struct{ Value string }
@@ -102,13 +173,13 @@ func (p Phrase) filterExpr()    {}
 // Prefix matches log lines containing a word with the given prefix.
 type Prefix struct{ Value string }
 
-func (p Prefix) String() string { return p.Value + "*" }
+func (p Prefix) String() string { return prefixValue(p.Value) + "*" }
 func (p Prefix) filterExpr()    {}
 
 // Substring matches log lines containing the given substring.
 type Substring struct{ Value string }
 
-func (s Substring) String() string { return "*" + s.Value + "*" }
+func (s Substring) String() string { return "*" + wordOrQuoted(s.Value) + "*" }
 func (s Substring) filterExpr()    {}
 
 // Exact matches an exact value using the `=` operator.
@@ -124,22 +195,30 @@ func (r Regexp) String() string { return "~" + quoteLogsQLPattern(r.Pattern) }
 func (r Regexp) filterExpr()    {}
 
 // Sequence matches a sequence of words in order.
-type Sequence struct{ Parts []string }
+type Sequence struct {
+	Field string // empty is the message
+	Parts []string
+}
 
 func (s Sequence) String() string {
 	quoted := make([]string, len(s.Parts))
 	for i, p := range s.Parts {
 		quoted[i] = quoteLogsQL(p)
 	}
-	return "seq(" + strings.Join(quoted, ",") + ")"
+	return fieldPrefix(s.Field) + "seq(" + strings.Join(quoted, ",") + ")"
 }
 func (s Sequence) filterExpr() {}
 
 // CaseInsensitive wraps a value for case-insensitive matching.
-type CaseInsensitive struct{ Value string }
+type CaseInsensitive struct {
+	Field string // empty is the message
+	Value string
+}
 
-func (c CaseInsensitive) String() string { return "i(" + quoteLogsQL(c.Value) + ")" }
-func (c CaseInsensitive) filterExpr()    {}
+func (c CaseInsensitive) String() string {
+	return fieldPrefix(c.Field) + "i(" + quoteLogsQL(c.Value) + ")"
+}
+func (c CaseInsensitive) filterExpr() {}
 
 // Wildcard matches any log line.
 type Wildcard struct{}
@@ -176,6 +255,7 @@ const (
 	FieldOpContainsCommonCase                  // :contains_common_case("p1","p2")
 	FieldOpEqualsCommonCase                    // :equals_common_case("p1","p2")
 	FieldOpNotExact                            // :!"val" (the field has a value other than val)
+	FieldOpPhrase                              // :word or :"phrase" (the field has the word or phrase)
 )
 
 // FieldFilter matches a named field using the given operator and value.
@@ -190,61 +270,64 @@ type FieldFilter struct {
 }
 
 func (f FieldFilter) String() string {
-	var core string
+	var rest string
 	switch f.Op {
 	case FieldOpExact:
 		if f.GoQuoted {
-			core = f.Field + ":=" + quoteLogsQLPattern(f.Value)
+			rest = "=" + quoteLogsQLPattern(f.Value)
 		} else {
-			core = f.Field + ":=" + quoteLogsQL(f.Value)
+			rest = "=" + quoteLogsQL(f.Value)
 		}
 	case FieldOpRegexp:
-		core = f.Field + ":~" + quoteLogsQLPattern(f.Value)
+		rest = "~" + quoteLogsQLPattern(f.Value)
 	case FieldOpPrefix:
-		core = f.Field + ":" + f.Value + "*"
+		rest = prefixValue(f.Value) + "*"
 	case FieldOpSubstring:
-		core = f.Field + ":*" + f.Value + "*"
+		rest = "*" + wordOrQuoted(f.Value) + "*"
 	case FieldOpEmpty:
-		core = f.Field + `:""`
+		rest = `""`
 	case FieldOpAny:
-		core = f.Field + ":*"
+		rest = "*"
 	case FieldOpGT:
-		core = f.Field + ":>" + f.Value
+		rest = ">" + f.Value
 	case FieldOpGTE:
-		core = f.Field + ":>=" + f.Value
+		rest = ">=" + f.Value
 	case FieldOpLT:
-		core = f.Field + ":<" + f.Value
+		rest = "<" + f.Value
 	case FieldOpLTE:
-		core = f.Field + ":<=" + f.Value
+		rest = "<=" + f.Value
 	case FieldOpRange:
-		core = f.Field + ":range(" + f.Value + ")"
+		rest = "range(" + f.Value + ")"
 	case FieldOpIn:
-		core = f.Field + ":in(" + f.Value + ")"
+		rest = "in(" + f.Value + ")"
 	case FieldOpIPv4Range:
-		core = fmt.Sprintf(`%s:ipv4_range(%s)`, f.Field, f.Value)
+		rest = "ipv4_range(" + f.Value + ")"
 	case FieldOpIPv6Range:
-		core = fmt.Sprintf(`%s:ipv6_range(%s)`, f.Field, f.Value)
+		rest = "ipv6_range(" + f.Value + ")"
 	case FieldOpExactPrefix:
-		core = f.Field + ":=" + quoteLogsQL(f.Value) + "*"
+		rest = "=" + quoteLogsQL(f.Value) + "*"
 	case FieldOpEqField:
-		core = f.Field + ":eq_field(" + f.Value + ")"
+		rest = "eq_field(" + f.Value + ")"
 	case FieldOpLeField:
-		core = f.Field + ":le_field(" + f.Value + ")"
+		rest = "le_field(" + f.Value + ")"
 	case FieldOpStringRange:
-		core = f.Field + ":string_range(" + f.Value + ")"
+		rest = "string_range(" + f.Value + ")"
 	case FieldOpValueType:
-		core = f.Field + ":value_type(" + f.Value + ")"
+		rest = "value_type(" + f.Value + ")"
 	case FieldOpJSONArrayContainsAny:
-		core = f.Field + ":json_array_contains_any(" + f.Value + ")"
+		rest = "json_array_contains_any(" + f.Value + ")"
 	case FieldOpContainsCommonCase:
-		core = f.Field + ":contains_common_case(" + f.Value + ")"
+		rest = "contains_common_case(" + f.Value + ")"
 	case FieldOpEqualsCommonCase:
-		core = f.Field + ":equals_common_case(" + f.Value + ")"
+		rest = "equals_common_case(" + f.Value + ")"
 	case FieldOpNotExact:
-		core = f.Field + ":!" + quoteLogsQL(f.Value)
+		rest = "!" + quoteLogsQL(f.Value)
+	case FieldOpPhrase:
+		rest = wordOrQuoted(f.Value)
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
+	core := fieldPrefix(f.Field) + rest
 	if f.Negate {
 		return "NOT " + core
 	}
@@ -291,21 +374,34 @@ func (t TimeFilter) filterExpr()    {}
 
 // --- Logic combinators ---
 
+// filterPrec is how tightly a filter binds when printed beside others: OR loosest, then AND, then NOT and the rest.
+func filterPrec(f FilterExpr) int {
+	switch f.(type) {
+	case OrExpr, AnyOf:
+		return 1
+	case AndExpr, AllOf:
+		return 2
+	case NotExpr, Exclude:
+		return 3
+	}
+	return 4
+}
+
+// operand prints f inside a filter that binds with precedence prec, in parentheses when f binds more loosely.
+func operand(f FilterExpr, prec int) string {
+	if filterPrec(f) < prec {
+		return "(" + f.String() + ")"
+	}
+	return f.String()
+}
+
 // AndExpr is a logical AND of two filter expressions.
 type AndExpr struct {
 	Left, Right FilterExpr
 }
 
 func (a AndExpr) String() string {
-	left := a.Left.String()
-	if _, ok := a.Left.(OrExpr); ok {
-		left = "(" + left + ")"
-	}
-	right := a.Right.String()
-	if _, ok := a.Right.(OrExpr); ok {
-		right = "(" + right + ")"
-	}
-	return left + " AND " + right
+	return operand(a.Left, 2) + " AND " + operand(a.Right, 2)
 }
 
 func (a AndExpr) filterExpr() {}
@@ -324,8 +420,14 @@ func (o OrExpr) filterExpr() {}
 // Exclude is LogsQL's "-" negation of a filter: -level:*, -(a OR b).
 type Exclude struct{ Expr FilterExpr }
 
-func (e Exclude) String() string { return "-" + e.Expr.String() }
-func (e Exclude) filterExpr()    {}
+func (e Exclude) String() string {
+	// "-NOT x" would read as one word, "-NOT"
+	if _, ok := e.Expr.(NotExpr); ok {
+		return "-(" + e.Expr.String() + ")"
+	}
+	return "-" + operand(e.Expr, 3)
+}
+func (e Exclude) filterExpr() {}
 
 // Group is a filter in parentheses.
 type Group struct{ Expr FilterExpr }
@@ -339,7 +441,7 @@ type AllOf []FilterExpr
 func (a AllOf) String() string {
 	parts := make([]string, len(a))
 	for i, f := range a {
-		parts[i] = f.String()
+		parts[i] = operand(f, 2)
 	}
 	return strings.Join(parts, " ")
 }
@@ -362,14 +464,7 @@ type NotExpr struct {
 	Expr FilterExpr
 }
 
-func (n NotExpr) String() string {
-	s := n.Expr.String()
-	switch n.Expr.(type) {
-	case OrExpr, AndExpr:
-		return "NOT (" + s + ")"
-	}
-	return "NOT " + s
-}
+func (n NotExpr) String() string { return "NOT " + operand(n.Expr, 3) }
 
 func (n NotExpr) filterExpr() {}
 
@@ -384,41 +479,52 @@ func (a AnyCasePhrase) filterExpr()    {}
 
 // AnyCasePrefix matches a prefix case-insensitively using i(prefix*) syntax.
 // Corresponds to filter_any_case_prefix.go in VL upstream.
-type AnyCasePrefix struct{ Value string }
+type AnyCasePrefix struct {
+	Field string // empty is the message
+	Value string
+}
 
-func (a AnyCasePrefix) String() string { return "i(" + a.Value + "*)" }
-func (a AnyCasePrefix) filterExpr()    {}
+func (a AnyCasePrefix) String() string {
+	return fieldPrefix(a.Field) + "i(" + prefixValue(a.Value) + "*)"
+}
+func (a AnyCasePrefix) filterExpr() {}
 
 // ExactPrefix matches log lines where the message starts with the exact prefix.
 // Syntax: ="prefix"*
 type ExactPrefix struct{ Value string }
 
-func (e ExactPrefix) String() string { return `="` + e.Value + `"*` }
+func (e ExactPrefix) String() string { return "=" + quoteLogsQL(e.Value) + "*" }
 func (e ExactPrefix) filterExpr()    {}
 
 // ContainsAll matches log lines containing all of the given words or phrases.
 // Syntax: contains_all("w1","w2",...)
-type ContainsAll struct{ Parts []string }
+type ContainsAll struct {
+	Field string // empty is the message
+	Parts []string
+}
 
 func (c ContainsAll) String() string {
 	quoted := make([]string, len(c.Parts))
 	for i, p := range c.Parts {
-		quoted[i] = `"` + p + `"`
+		quoted[i] = quoteLogsQL(p)
 	}
-	return "contains_all(" + strings.Join(quoted, ",") + ")"
+	return fieldPrefix(c.Field) + "contains_all(" + strings.Join(quoted, ",") + ")"
 }
 func (c ContainsAll) filterExpr() {}
 
 // ContainsAny matches log lines containing any of the given words or phrases.
 // Syntax: contains_any("w1","w2",...)
-type ContainsAny struct{ Parts []string }
+type ContainsAny struct {
+	Field string // empty is the message
+	Parts []string
+}
 
 func (c ContainsAny) String() string {
 	quoted := make([]string, len(c.Parts))
 	for i, p := range c.Parts {
-		quoted[i] = `"` + p + `"`
+		quoted[i] = quoteLogsQL(p)
 	}
-	return "contains_any(" + strings.Join(quoted, ",") + ")"
+	return fieldPrefix(c.Field) + "contains_any(" + strings.Join(quoted, ",") + ")"
 }
 func (c ContainsAny) filterExpr() {}
 
@@ -489,6 +595,26 @@ func (p PatternMatch) String() string {
 }
 func (p PatternMatch) filterExpr() {}
 
+// FieldScope applies the filters in parentheses to a field: _msg:(i(error) OR i(warn)).
+type FieldScope struct {
+	Field string
+	Expr  FilterExpr
+}
+
+func (f FieldScope) String() string { return f.Field + ":(" + f.Expr.String() + ")" }
+func (f FieldScope) filterExpr()    {}
+
+// FilterFunc is a function-style filter whose arguments are kept as written: exact(...), re(...), lt_field(...),
+// pattern_match(...) and the like. The arguments are not inspected anywhere in the proxy.
+type FilterFunc struct {
+	Field string // empty is the message
+	Name  string
+	Args  string
+}
+
+func (f FilterFunc) String() string { return fieldPrefix(f.Field) + f.Name + "(" + f.Args + ")" }
+func (f FilterFunc) filterExpr()    {}
+
 // --- DeferredExpr ---
 
 // DeferredExpr holds a raw expression string for deferred/opaque nodes.
@@ -506,15 +632,64 @@ func (d DeferredExpr) statsFunc()     {}
 // Core pipe types
 // ---------------------------------------------------------------------------
 
+// unpackString prints an unpack_json or unpack_logfmt pipe, name being "| unpack_json" or "| unpack_logfmt" (the
+// literal stays in each String method, where conformance/scripts/sync_vl_surface.py looks for it):
+// | unpack_json [if (cond)] [from f] [fields (a, b)] [preserve_keys (k)] [result_prefix "p"] [keep_original_fields | skip_empty_results]
+// Names are as written, quotes included.
+func unpackString(name string, cond FilterExpr, from string, fields, preserveKeys []string, resultPrefix string, keepOriginal, skipEmpty bool) string {
+	var b strings.Builder
+	b.WriteString(name)
+	b.WriteString(ifString(cond))
+	if from != "" {
+		b.WriteString(" from " + from)
+	}
+	if len(fields) > 0 {
+		b.WriteString(" fields (" + strings.Join(fields, ", ") + ")")
+	}
+	if len(preserveKeys) > 0 {
+		b.WriteString(" preserve_keys (" + strings.Join(preserveKeys, ", ") + ")")
+	}
+	if resultPrefix != "" {
+		b.WriteString(" result_prefix " + quoteLogsQL(resultPrefix))
+	}
+	b.WriteString(flagsString(keepOriginal, skipEmpty))
+	return b.String()
+}
+
+// ifString is the " if (cond)" argument of a pipe, empty without a condition.
+func ifString(cond FilterExpr) string {
+	if cond == nil {
+		return ""
+	}
+	return " if (" + cond.String() + ")"
+}
+
+// flagsString is the keep_original_fields or skip_empty_results flag a pipe was given.
+func flagsString(keepOriginal, skipEmpty bool) string {
+	switch {
+	case keepOriginal:
+		return " keep_original_fields"
+	case skipEmpty:
+		return " skip_empty_results"
+	}
+	return ""
+}
+
 // PipeUnpackJSON unpacks JSON fields from log lines.
 // When From is non-empty the syntax is "| unpack_json from <From>".
-type PipeUnpackJSON struct{ From string }
+type PipeUnpackJSON struct {
+	From         string // empty is _msg
+	If           FilterExpr
+	Fields       []string // the fields to unpack, empty for all
+	PreserveKeys []string // the keys whose nested objects stay JSON text
+	ResultPrefix string
+	// KeepOriginalFields keeps the fields already set; SkipEmptyResults skips empty results.
+	KeepOriginalFields bool
+	SkipEmptyResults   bool
+}
 
 func (p PipeUnpackJSON) String() string {
-	if p.From != "" {
-		return "| unpack_json from " + p.From
-	}
-	return "| unpack_json"
+	return unpackString("| unpack_json", p.If, p.From, p.Fields, p.PreserveKeys, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeUnpackJSON) pipe() {}
 
@@ -541,19 +716,27 @@ type GroupKey struct {
 	Field string
 	// Bucket groups by the field's value rounded down to a bucket, such as a step for _time ("_time:60s").
 	Bucket string
+	// Offset shifts the buckets ("_time:5m offset 1h"); it needs a Bucket.
+	Offset string
 }
 
 func (k GroupKey) String() string {
+	s := k.Field
 	if k.Bucket != "" {
-		return k.Field + ":" + k.Bucket
+		s += ":" + k.Bucket
+		if k.Offset != "" {
+			s += " offset " + k.Offset
+		}
 	}
-	return k.Field
+	return s
 }
 
 // StatsFuncAlias pairs a StatsFunc with its output alias.
 type StatsFuncAlias struct {
 	Func  StatsFunc
 	Alias string
+	// If limits the function to the rows that match: count() if (level:error) as errors.
+	If FilterExpr
 }
 
 // SortField is a single field in a sort expression, with optional descending flag.
@@ -566,42 +749,69 @@ type SortField struct {
 
 // PipeUnpackLogfmt unpacks logfmt key=value pairs from log lines.
 // When From is non-empty the syntax is "| unpack_logfmt from <From>".
-type PipeUnpackLogfmt struct{ From string }
+type PipeUnpackLogfmt struct {
+	From         string // empty is _msg
+	If           FilterExpr
+	Fields       []string // the fields to unpack, empty for all
+	ResultPrefix string
+	// KeepOriginalFields keeps the fields already set; SkipEmptyResults skips empty results.
+	KeepOriginalFields bool
+	SkipEmptyResults   bool
+}
 
 func (p PipeUnpackLogfmt) String() string {
-	if p.From != "" {
-		return "| unpack_logfmt from " + p.From
-	}
-	return "| unpack_logfmt"
+	return unpackString("| unpack_logfmt", p.If, p.From, p.Fields, nil, p.ResultPrefix, p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeUnpackLogfmt) pipe() {}
 
-// PipeExtract extracts fields from a log line using a pattern.
+// PipeExtract extracts fields from a log line using a pattern:
+// | extract [if (cond)] "pattern" [from f] [keep_original_fields | skip_empty_results]
 type PipeExtract struct {
 	Pattern string
-	From    string // source field, e.g. "_msg"
-	If      string // optional condition WITHOUT surrounding parens
+	From    string     // source field as written, e.g. "_msg"; empty is _msg
+	If      FilterExpr // optional condition
+	// KeepOriginalFields keeps the fields already set; SkipEmptyResults skips empty results.
+	KeepOriginalFields bool
+	SkipEmptyResults   bool
 }
 
 func (p PipeExtract) String() string {
-	s := fmt.Sprintf(`| extract %q from %s`, p.Pattern, p.From)
-	if p.If != "" {
-		s += " if (" + p.If + ")"
+	s := "| extract" + ifString(p.If) + " " + strconv.Quote(p.Pattern)
+	if p.From != "" {
+		s += " from " + p.From
 	}
-	return s
+	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeExtract) pipe() {}
 
-// PipeExtractRegexp extracts fields using a named-capture regular expression.
+// PipeExtractRegexp extracts fields using a named-capture regular expression:
+// | extract_regexp [if (cond)] "pattern" [from f] [keep_original_fields | skip_empty_results]
 type PipeExtractRegexp struct {
 	Pattern string
-	From    string
+	From    string // empty is _msg
+	If      FilterExpr
+	// KeepOriginalFields keeps the fields already set; SkipEmptyResults skips empty results.
+	KeepOriginalFields bool
+	SkipEmptyResults   bool
 }
 
 func (p PipeExtractRegexp) String() string {
-	return fmt.Sprintf("| extract_regexp `%s` from %s", p.Pattern, p.From)
+	s := "| extract_regexp" + ifString(p.If) + " " + rawOrQuoted(p.Pattern)
+	if p.From != "" {
+		s += " from " + p.From
+	}
+	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeExtractRegexp) pipe() {}
+
+// rawOrQuoted writes a regular expression as a backquoted string, which keeps its backslashes as they are, or, when
+// it has a backquote or a control character, as a Go-quoted one.
+func rawOrQuoted(s string) string {
+	if strings.ContainsAny(s, "`") || strings.ContainsFunc(s, unicode.IsControl) || !utf8.ValidString(s) {
+		return strconv.Quote(s)
+	}
+	return "`" + s + "`"
+}
 
 // --- Fields pipe stages ---
 
@@ -619,14 +829,23 @@ func (p PipeDelete) pipe()          {}
 
 // --- Transform pipe stages ---
 
-// PipeFormat formats log fields into a new field using a template.
+// PipeFormat formats log fields into a new field using a template:
+// | format [if (cond)] "template" [as f] [keep_original_fields | skip_empty_results]
 type PipeFormat struct {
 	Template    string
-	ResultField string
+	ResultField string // empty is _msg
+	If          FilterExpr
+	// KeepOriginalFields keeps the value already set; SkipEmptyResults skips an empty result.
+	KeepOriginalFields bool
+	SkipEmptyResults   bool
 }
 
 func (p PipeFormat) String() string {
-	return fmt.Sprintf(`| format %q as %s`, p.Template, p.ResultField)
+	s := "| format" + ifString(p.If) + " " + strconv.Quote(p.Template)
+	if p.ResultField != "" {
+		s += " as " + p.ResultField
+	}
+	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
 }
 func (p PipeFormat) pipe() {}
 
@@ -642,53 +861,84 @@ func (p PipeRename) String() string {
 }
 func (p PipeRename) pipe() {}
 
-// PipeReplace replaces occurrences of a substring in a field.
+// PipeReplace replaces occurrences of a substring in a field:
+// | replace [if (cond)] ("old", "new") [at f] [limit N]
 type PipeReplace struct {
-	Field string
+	Field string // empty is _msg
 	Old   string
 	New   string
+	If    FilterExpr
+	Limit int // 0 replaces every occurrence
 }
 
 func (p PipeReplace) String() string {
-	return fmt.Sprintf(`| replace (%s, %q, %q)`, p.Field, p.Old, p.New)
+	s := fmt.Sprintf(`| replace%s (%s, %s)`, ifString(p.If), strconv.Quote(p.Old), strconv.Quote(p.New))
+	return s + atLimitString(p.Field, p.Limit)
 }
 func (p PipeReplace) pipe() {}
 
-// PipeReplaceRegexp replaces regex matches in a field with a replacement string.
+// atLimitString is the " at f" and " limit N" arguments of replace and replace_regexp.
+func atLimitString(field string, limit int) string {
+	s := ""
+	if field != "" {
+		s += " at " + field
+	}
+	if limit > 0 {
+		s += " limit " + strconv.Itoa(limit)
+	}
+	return s
+}
+
+// PipeReplaceRegexp replaces regex matches in a field with a replacement string:
+// | replace_regexp [if (cond)] ("regexp", "replacement") [at f] [limit N]
 type PipeReplaceRegexp struct {
-	Field       string
+	Field       string // empty is _msg
 	Regex       string
 	Replacement string
+	If          FilterExpr
+	Limit       int // 0 replaces every match
 }
 
 func (p PipeReplaceRegexp) String() string {
 	// VictoriaLogs' syntax: replace_regexp ("regexp", "replacement") at field. The regexp is a raw (backquoted)
 	// string, so its backslashes and Unicode classes reach VictoriaLogs as written.
-	return fmt.Sprintf("| replace_regexp (`%s`, %q) at %s", p.Regex, p.Replacement, p.Field)
+	s := fmt.Sprintf("| replace_regexp%s (%s, %s)", ifString(p.If), rawOrQuoted(p.Regex), strconv.Quote(p.Replacement))
+	return s + atLimitString(p.Field, p.Limit)
 }
 func (p PipeReplaceRegexp) pipe() {}
 
-// PipePackJSON packs the listed fields into a JSON value stored in ResultField.
+// PipePackJSON packs the listed fields into a JSON value stored in ResultField:
+// | pack_json [fields (a, b)] [as f]
 type PipePackJSON struct {
 	Fields      []string
-	ResultField string
+	ResultField string // empty is _msg
 }
 
-func (p PipePackJSON) String() string {
-	return fmt.Sprintf("| pack_json fields (%s) as %s", strings.Join(p.Fields, ", "), p.ResultField)
-}
-func (p PipePackJSON) pipe() {}
+func (p PipePackJSON) String() string { return packString("| pack_json", p.Fields, p.ResultField) }
+func (p PipePackJSON) pipe()          {}
 
-// PipePackLogfmt packs the listed fields into a logfmt value stored in ResultField.
+// PipePackLogfmt packs the listed fields into a logfmt value stored in ResultField:
+// | pack_logfmt [fields (a, b)] [as f]
 type PipePackLogfmt struct {
 	Fields      []string
-	ResultField string
+	ResultField string // empty is _msg
 }
 
 func (p PipePackLogfmt) String() string {
-	return fmt.Sprintf("| pack_logfmt fields (%s) as %s", strings.Join(p.Fields, ", "), p.ResultField)
+	return packString("| pack_logfmt", p.Fields, p.ResultField)
 }
 func (p PipePackLogfmt) pipe() {}
+
+func packString(name string, fields []string, result string) string {
+	s := name
+	if len(fields) > 0 {
+		s += " fields (" + strings.Join(fields, ", ") + ")"
+	}
+	if result != "" {
+		s += " as " + result
+	}
+	return s
+}
 
 // --- Aggregation pipe stages ---
 
@@ -853,9 +1103,12 @@ type PipeCoalesce struct {
 func (p PipeCoalesce) String() string {
 	s := "| coalesce(" + strings.Join(p.Fields, ", ") + ")"
 	if p.Default != "" {
-		s += ` default "` + p.Default + `"`
+		s += " default " + quoteLogsQL(p.Default)
 	}
-	return s + " as " + p.Result
+	if p.Result != "" {
+		s += " as " + p.Result
+	}
+	return s
 }
 func (p PipeCoalesce) pipe() {}
 
@@ -916,7 +1169,7 @@ func (p PipeFieldValues) pipe() {}
 type PipeGenerateSequence struct{ Limit int }
 
 func (p PipeGenerateSequence) String() string {
-	return fmt.Sprintf("| generate_sequence limit %d", p.Limit)
+	return fmt.Sprintf("| generate_sequence %d", p.Limit)
 }
 func (p PipeGenerateSequence) pipe() {}
 
@@ -1156,6 +1409,7 @@ func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) stri
 			b.WriteString(", ")
 		}
 		b.WriteString(fa.Func.String())
+		b.WriteString(ifString(fa.If))
 		if fa.Alias != "" {
 			b.WriteString(" as ")
 			b.WriteString(fa.Alias)
@@ -1167,10 +1421,13 @@ func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) stri
 // --- Stats functions (26 total) ---
 
 // Count counts the number of log entries.
-type Count struct{}
+type Count struct {
+	// Fields are the fields to count rows with a value in; none counts every row.
+	Fields []string
+}
 
-func (Count) String() string { return "count()" }
-func (Count) statsFunc()     {}
+func (c Count) String() string { return "count(" + strings.Join(c.Fields, ", ") + ")" }
+func (Count) statsFunc()       {}
 
 // Sum computes the sum of a numeric field.
 type Sum struct{ Field string }

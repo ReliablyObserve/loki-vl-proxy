@@ -102,3 +102,16 @@ decisions:
     code: [internal/logql/duration.go, internal/logql/parser.go, internal/proxy/time_utils.go, internal/proxy/query_range_steps.go, internal/proxy/ordered_json_metric.go, internal/proxy/unwrap_conversion_error.go, internal/proxy/binary_aggregation.go, internal/proxy/rate_counter_singletons.go, internal/proxy/limits_enforcement.go, internal/proxy/query_translation.go]
     tests: [TestRangeAggregationDurations, TestRangeAggregationDurationsMatchOldHelpers, TestCorpusRangeAggregationDurationsMatchOldHelpers, TestOldLokiDurationOverflowIsTheOnlyDisagreement, TestLabelFormatMentionsLineMatchesRawCheck]
     quality: 'Every handler reads the same window and offset presence as before; one unit-sum parser for the whole tree.'
+  - id: logsql-reads-what-we-send
+    chosen: 'internal/logsql parses every LogsQL query the proxy sends into typed nodes (opaque-but-exact only for constructs the proxy never inspects) and prints it back to a query VictoriaLogs reads the same'
+    over: [leaving most sent queries unreadable (the request plan could not hold a LogsQL AST), opaque text for every unsupported pipe]
+    why: |
+      Owner-approved AST plan (A1.1, 2026-11-07): the request plan holds the
+      lowered LogsQL as an AST, so the parser must read everything the
+      translator emits before the translator can return an AST. Line-break
+      values are Go-quoted so parse(print(x)) round-trips; on the compose stack
+      (VictoriaLogs v1.53.0) the queries answer as before.
+    evidence: 'local corpus capture (2026-11-07): goldens read 867 -> 22,060 of 24,391 (the rest are proxy-internal markers by design, 14 field names with a colon), sent queries 476 -> 9,036 of 9,044; every printed form means the same to VictoriaLogs (oracle, v1.51.1 locally); wrong accepts 54 -> 10, all semantic checks; compose stack line-break queries equal on Loki, main and this change'
+    code: [internal/logsql/parser.go, internal/logsql/scanner.go, internal/logsql/ast.go]
+    tests: [TestParseReadsTranslatorQueries, TestParseRejectsWhatVictoriaLogsRejects, TestParsePipesAreTyped, TestParseFiltersAreTyped, TestBuiltPipesReadBack, FuzzParseRoundTrip]
+    quality: 'Every parsed query prints back to text that parses to the same AST; no corpus query loses meaning for VictoriaLogs; the oracle wrong-accept count only falls.'

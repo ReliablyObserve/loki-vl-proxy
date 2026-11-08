@@ -201,7 +201,7 @@ func TestParseNewPipesV2(t *testing.T) {
 		{`* | field_values status`, `* | field_values status`},
 		{`* | field_values status limit 50`, `* | field_values status limit 50`},
 		// generate_sequence
-		{`* | generate_sequence limit 100`, `* | generate_sequence limit 100`},
+		{`* | generate_sequence 100`, `* | generate_sequence 100`},
 		// hash
 		{`* | hash(host, app) as h`, `* | hash(host, app) as h`},
 		// join
