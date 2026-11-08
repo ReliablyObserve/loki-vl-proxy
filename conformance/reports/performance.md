@@ -71,7 +71,7 @@ The owner's rule (2026-10-28): at most 2× Loki in the worst case; close to Loki
 for most queries. Each registry item an A/B shape covers carries a `perf:` block (`max_ratio` 2.0, the
 hard bound; `target_ratio` 1.0); a locked item's rows above their bound are a regression on the daily
 run and in perf-smoke, and a row between 1× and 2× needs an `effort_exception` on an item that covers it.
-29 of 107 items are locked; 5 carry an effort exception.
+29 of 108 items are locked; 5 carry an effort exception.
 
 Rows compared: both sides answered 200 and, on cold, Loki's results cache did not answer (the
 definitions of `bench/ab/over2x.py`). Unlike the summary above, warm is counted for every run as
@@ -230,6 +230,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `range_function-count-over-time` | 2 × 4 ranges | 7 same | worst 0.37s / 0.01s (24h) | 2.90s / 0.04s | same | locked 2026-10-27 |
 | `range_function-rate` | 5 × 5 ranges | 14 same | worst 0.64s / 0.01s (24h) | 3.37s / 0.09s | differs | not locked |
 | `semantics/aggregation-over-binary-dropped` | 5 × 5 ranges | 11 same | worst 2.95s / 0.14s (24h-20s) | 32.33s / 0.12s | differs | not locked |
+| `semantics/binary-operand-literals-reprint` | — | not measured | | | | not locked |
 | `semantics/detected-fields-empty-answer` | 2 × 3 ranges | 6 same | worst 0.12s / 0.00s (24h) | 0.25s † / 0.01s | differs | not locked |
 | `semantics/detected-fields-no-logfmt-token-fields` | 1 × 3 ranges | 3 same | worst 0.12s / 0.00s (24h) | 0.18s † / 0.11s | differs | not locked |
 | `semantics/detected-level-filter-before-parser-pushdown` | 3 × 3 ranges | 9 same | worst 0.35s / 0.03s (24h) | 2.95s / 0.03s | same | not locked |
