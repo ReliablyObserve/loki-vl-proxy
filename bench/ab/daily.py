@@ -32,6 +32,7 @@ fresh runner and opens a bot pull request with what it writes:
   README.md, docs/real-window-         the "Quality and performance vs Loki" section
   compatibility-gaps.md               between the quality-summary markers
   website/src/data/quality-vs-loki.json the same figures for the website
+  bench/ab/history/translation-overhead.json and the README's translation overhead table
 
   python3 bench/ab/daily.py --out /tmp/ab-daily                 # everything
   python3 bench/ab/daily.py --out /tmp/ab-daily --sets control --max-range 3h --runs 3 --no-write
@@ -235,6 +236,9 @@ def main():
     for target in QUALITY_SUMMARY_FILES:
         subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--quality-summary", target],
                        cwd=ROOT, check=True)
+    # The README's translation overhead table is measured on the same machine and rendered from its results.
+    subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/translation_overhead.py"), "--measure", "--readme",
+                    "README.md"], cwd=ROOT, check=True)
     # The website shows the same figures (perf_evidence.py --site-data).
     subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--site-data", SITE_DATA_FILE],
                    cwd=ROOT, check=True)

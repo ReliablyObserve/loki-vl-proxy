@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`querycorpus.PauseRecording`), so the pull request quality report counts
   the same tests on both sides. Test tooling only; no behaviour change.
 
+## [2.97.1] - 2026-11-08
+
 ### Fixed
 
 - fix: a query whose line filter, label filter value or stream label value

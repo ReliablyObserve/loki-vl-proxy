@@ -96,6 +96,8 @@ REPORTS = (
     ("perf_evidence.py", "docs/real-window-compatibility-gaps.md", "--quality-summary"),
     # The same figures as JSON for the website.
     ("perf_evidence.py", "website/src/data/quality-vs-loki.json", "--site-data"),
+    # The README's translation overhead table, rendered from the daily run's committed results.
+    ("translation_overhead.py", "README.md", "--readme"),
 )
 
 
