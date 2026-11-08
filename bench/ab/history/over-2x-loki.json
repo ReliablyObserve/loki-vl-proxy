@@ -7,12 +7,12 @@
  "rows": [
   {
    "commit": "507915a5d2cf350efe907aa11ada7ae5c22ca0a5",
-   "loki_s": 0.188,
+   "loki_s": 0.13,
    "mode": "cold",
    "profile": "aligned",
-   "proxy_s": 0.413,
+   "proxy_s": 0.273,
    "range": "6h",
-   "ratio": 2.2,
+   "ratio": 2.1,
    "set": "level-filter-stored",
    "shape": "LS8 json count by level_extracted, collision",
    "since": "2026-10-28"

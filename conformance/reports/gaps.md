@@ -144,20 +144,12 @@ newest daily run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
-| `operator-keep` | 3 | 4.08s (K6 count by kept key, json, 24h) | 0.80s | 0.01s | 0.01s | — |
-| `semantics/keep-leaves-labels-loki-drops` | 3 | 4.08s (K6 count by kept key, json, 24h) | 0.80s | 0.01s | 0.01s | — |
-| `explore-logs-volume-json` | 1 | 4.56s (A explore volume, 2 filters, drop, 24h) | 3.32s | 0.03s | 0.08s | — |
-| `parser-error-and-label-collision` | 4 | 4.56s (A explore volume, 2 filters, drop, 24h) | 3.32s | 0.03s | 0.08s | — |
-| `semantics/json-filter-pushdown-translated-label` | 1 | 4.56s (A explore volume, 2 filters, drop, 24h) | 3.32s | 0.03s | 0.08s | — |
-| `semantics/json-filter-pushdown-underscore-label` | 3 | 4.56s (A explore volume, 2 filters, drop, 24h) | 3.32s | 0.03s | 0.08s | — |
-| `parsed-label-series-identity` | 2 | 4.66s (F field breakdown service_version (explore), 24h) | 3.58s | 0.04s | 0.08s | — |
-| `semantics/json-label-spelling-probe` | 2 | 4.66s (F field breakdown service_version (explore), 24h) | 3.58s | 0.04s | 0.08s | — |
-| `quality/json-label-probe-gates` | 3 | 1.20s (X1 json filter level_extracted, by level, 6h) | 0.87s | 0.05s | 0.05s | — |
-| `semantics/extracted-suffix-collision` | 3 | 1.20s (X1 json filter level_extracted, by level, 6h) | 0.87s | 0.05s | 0.05s | — |
-| `semantics/json-extracted-metric-pushdown` | 3 | 1.20s (X1 json filter level_extracted, by level, 6h) | 0.87s | 0.05s | 0.05s | — |
-| `drilldown-service-landing` | 1 | 0.11s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.04s | 0.01s | 0.09s | — |
-| `severity-detected-level-derivation` | 1 | 0.11s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.04s | 0.01s | 0.09s | — |
-| `severity/detected-level-filter-json-level` | 1 | 0.11s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.04s | 0.01s | 0.09s | — |
-| `semantics/pattern-line-filter-anchoring` | 1 | 0.18s (A5 drilldown exclude, volume by detected_level, 24h) | 0.13s | 0.01s | 0.00s | — |
-| `semantics/ip-filter-json-stats-pushdown` | 1 | 0.25s (IP5 count, json ip=ip(range), 24h) | 0.20s | 0.03s | 0.01s | — |
-| `semantics/ip-label-filter-missing-label` | 1 | 0.25s (IP5 count, json ip=ip(range), 24h) | 0.20s | 0.03s | 0.01s | — |
+| `drilldown/patterns-full-range-counts` | 3 | 0.97s (DP2 patterns of an environment, 1h) | 0.43s | 0.09s | 0.20s | — |
+| `drilldown/patterns-one-series-per-level` | 3 | 0.97s (DP2 patterns of an environment, 1h) | 0.43s | 0.09s | 0.20s | — |
+| `parser-error-and-label-collision` | 2 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
+| `quality/query-range-settled-steps` | 1 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
+| `semantics/unwrap-conversion-error` | 1 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
+| `quality/json-label-probe-gates` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
+| `semantics/extracted-suffix-collision` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
+| `semantics/json-extracted-metric-pushdown` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
+| `semantics/pattern-line-filter-anchoring` | 1 | 0.16s (A5 drilldown exclude, volume by detected_level, 24h) | 0.10s | 0.01s | 0.01s | — |
