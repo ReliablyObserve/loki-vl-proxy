@@ -899,7 +899,7 @@ def distribution_table(q):
            f"Bands are those of `bench/ab/over2x.py`: beyond {int(over2x.DIST_NOISE * 100)}% and "
            f"{int(over2x.MIN_GAP * 1000)} ms, and above 2× Loki also more than {int(over2x.MIN_GAP * 1000)} ms behind. "
            "The `aligned` profile runs the range-metric shapes only (the queries its setting changes).", "",
-           "| Loki profile | Request | Rows compared | 🟢 Below Loki | 🟡 Close to Loki | 🟠 1–2× Loki | 🔴 Above 2× Loki "
+           "| Loki profile | Request | Rows compared | 🟢 Below Loki | 🟡 Close to Loki | 🟠 1–2× Loki | 🔴 Above 2× Loki " +
            "| Not judged: Loki not 200 / proxy not 200 / first request from Loki's cache |",
            "|---|---|---:|---:|---:|---:|---:|---|"]
     for profile in sorted(bands, key=lambda p: -PROFILE_RANK.get(p, 0)):
@@ -958,8 +958,8 @@ def workload_tables(q):
 
     out = ["", "**By workload in the run shown**", "",
            f"First request and repeat of the comparable pairs of the `{q['profile']}` run, as p50 · p90 · slowest "
-           "pair: the median hides the heavy queries, the p90 and the slowest show them. The counts are of pairs, "
-           "with the rule above (🟢 faster, 🟡 on par, 🔴 slower). A repeat is the recorded p50 of the repeated "
+           "pair: the median hides the heavy queries, the p90 and the slowest show them. The counts are of pairs, " +
+           "with the rule above (🟢 faster, 🟡 on par, 🔴 slower). A repeat is the recorded p50 of the repeated " +
            "request, which may be a cache hit on either side.", "",
            "| Workload | Pairs | 🟢 / 🟡 / 🔴 | First request: proxy | Loki | Repeat p50: proxy | Loki |",
            "|---|---:|:---:|---:|---:|---:|---:|"]
@@ -986,14 +986,14 @@ def workload_tables(q):
     if rows:
         heavy = sorted(rows, key=lambda r: -r["loki"])[:10]
         out += ["", "**The heaviest queries for Loki in the run shown**", "",
-                "The 10 comparable pairs Loki takes longest to answer on a first request: the queries a user waits "
+                "The 10 comparable pairs Loki takes longest to answer on a first request: the queries a user waits " +
                 "for. The multiple is Loki's time over the proxy's, or the reverse when the proxy is slower.", "",
                 "| Query shape | Range | Workload | Proxy | Loki | Proxy vs Loki |", "|---|---|---|---:|---:|---|"]
         out += [f"| {code(r['shape'])} | {r['range']} | {r['workload']} | **{sec(r['proxy'])}**"
                 f"{' ‡' if maybe_cached(r) else ''} | {sec(r['loki'])} | {ratio(r)} |" for r in heavy]
         if any(maybe_cached(r) for r in heavy):
             out += ["", f"‡ The proxy answered a first request over 6h or more in under {int(MIN_DELTA * 1000)} ms: "
-                    "probably from its own cache, warmed by an earlier set of the daily run that sent the same query. "
+                    "probably from its own cache, warmed by an earlier set of the daily run that sent the same query. " +
                     "The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy."]
         losses = sorted((r for r in rows if r["verdict"] == "slower"), key=lambda r: -(r["proxy"] / r["loki"]))[:5]
         if losses:
@@ -1003,8 +1003,8 @@ def workload_tables(q):
                     f"{ratio(r)} |" for r in losses]
     kinds = s.get("metadata") or {}
     if kinds:
-        out += ["", "Label browser and Drilldown metadata calls: every pair both sides answered with 200, including "
-                "the first requests Loki's results cache answered (counted in the third column; a Loki time near zero "
+        out += ["", "Label browser and Drilldown metadata calls: every pair both sides answered with 200, including " +
+                "the first requests Loki's results cache answered (counted in the third column; a Loki time near zero " +
                 "there is its cache). Medians.", "",
                 "| Call | Pairs | Loki cache-answered | First request: proxy | Loki | Repeat: proxy | Loki |",
                 "|---|---:|---:|---:|---:|---:|---:|"]
@@ -1181,7 +1181,7 @@ def render_quality_summary(q, target_is_docs=False):
     readiness = client_readiness(q)
     if readiness:
         out += ["**Readiness by client**", "",
-                "The Loki endpoints each client calls (registry `consumers`), with the same evidence as above, and "
+                "The Loki endpoints each client calls (registry `consumers`), with the same evidence as above, and " +
                 "the open differences filed as visible to that client.", "",
                 "| Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |",
                 "|---|---:|---:|---:|---:|---:|"]
