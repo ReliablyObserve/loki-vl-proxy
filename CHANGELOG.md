@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.97.1] - 2026-11-08
+
 ### Fixed
 
 - fix: a query whose line filter, label filter value or stream label value
