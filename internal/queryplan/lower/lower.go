@@ -1,7 +1,8 @@
 // Package lower lowers a logical plan (internal/queryplan) to the physical
-// operators the proxy runs (internal/queryplan/physical) under a Profile. It
-// sits above both and below the translator and the proxy, which it never
-// imports. A construct is lowered natively once its lowering lands, held to
+// operators the proxy runs (internal/queryplan/physical) under a Profile,
+// building the VictoriaLogs filters with the builders it shares with the
+// string translator (internal/translate). It sits above them and below the
+// translator and the proxy, which it never imports. A construct is lowered natively once its lowering lands, held to
 // the string translator's operators by the shadow harness; until then Plan
 // answers ErrNotLowered and the proxy uses the string translator.
 package lower
@@ -14,6 +15,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // Profile is what changes the VictoriaLogs query a plan lowers to: the
@@ -50,8 +52,24 @@ func (e *NotLoweredError) Is(target error) bool { return target == ErrNotLowered
 // under every profile (internal/querycorpus TestPlanShadow); until then Plan
 // answers ErrNotLowered naming the construct.
 func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
-	_ = prof
+	if sel, ok := p.Root.(*queryplan.LogSelect); ok {
+		return logSelect(sel, prof)
+	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
+}
+
+// logSelect lowers a log query. A bare selector is its stream filter (translate.StreamSelectorFilter, the filter
+// the string translator writes; keeping the line aside adds nothing without a line_format); a pipeline is not
+// lowered yet.
+func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
+	if len(sel.Stages) > 0 {
+		return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
+	}
+	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
+	if err != nil {
+		return nil, err
+	}
+	return physical.VLQuery{Text: f.String()}, nil
 }
 
 // Construct is the kind of the node at the top of a plan, the unit the shadow

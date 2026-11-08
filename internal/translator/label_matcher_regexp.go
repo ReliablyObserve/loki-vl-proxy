@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // selectorRegexpFieldFilter is the LogsQL filter for a stream-selector
@@ -16,12 +16,7 @@ import (
 // vendor/github.com/prometheus/prometheus/model/labels/regexp.go:76), so it
 // matches the whole value and '.' matches newlines.
 func selectorRegexpFieldFilter(label, pattern string, negate bool) string {
-	return selectorRegexpFilter(label, pattern, negate).String()
-}
-
-// selectorRegexpFilter is selectorRegexpFieldFilter as a filter node.
-func selectorRegexpFilter(label, pattern string, negate bool) logsql.FilterExpr {
-	return wholeValueRegexpFilterExpr(label, pattern, negate, true)
+	return translate.SelectorRegexpFilter(label, pattern, negate).String()
 }
 
 // labelFilterRegexpFieldFilter is the LogsQL filter for a label filter
@@ -43,7 +38,7 @@ func LabelFilterRegexpFieldFilter(field, value string, negate bool) string {
 func NewLabelFilterCondition(field, op, value string) (DropCondition, error) {
 	dc := DropCondition{Field: field, Op: op, Value: value}
 	if op == "=~" || op == "!~" {
-		re, err := regexp.Compile(anchorLabelFilterPattern(lokiLabelFilterPattern(value)))
+		re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(value)))
 		if err != nil {
 			return dc, fmt.Errorf("invalid regex %q in label filter: %w", value, err)
 		}
@@ -96,158 +91,7 @@ func (dc DropCondition) IPFilter(field string) (filter string, ok bool) {
 //   - a plain literal becomes an exact filter (field:="v");
 //   - ".*v.*" with a plain literal v becomes the substring regexp v.
 func wholeValueRegexpFilter(label, pattern string, negate, dotNL bool) string {
-	return wholeValueRegexpFilterExpr(label, pattern, negate, dotNL).String()
-}
-
-// wholeValueRegexpFilterExpr is wholeValueRegexpFilter as a filter node.
-func wholeValueRegexpFilterExpr(label, pattern string, negate, dotNL bool) logsql.FilterExpr {
-	switch {
-	case pattern == ".*" || pattern == keepAllPattern:
-		return buildFieldFilter(label, logsql.FieldOpRegexp, ".*", negate)
-	case pattern == ".+" || pattern == nonEmptyPattern:
-		return buildFieldFilter(label, logsql.FieldOpRegexp, ".+", negate)
-	case pattern != "" && regexp.QuoteMeta(pattern) == pattern && exactQuotable(pattern):
-		// No metacharacter: the literal itself, without parsing it.
-		return buildFieldFilter(label, logsql.FieldOpExact, pattern, negate)
-	}
-	flags := syntax.Perl
-	if dotNL {
-		flags |= syntax.DotNL
-	}
-	if reg, err := syntax.Parse(pattern, flags); err == nil {
-		reg = reg.Simplify()
-		switch {
-		case isAnyCharRepeat(reg, syntax.OpStar):
-			return buildFieldFilter(label, logsql.FieldOpRegexp, ".*", negate)
-		case isAnyCharRepeat(reg, syntax.OpPlus):
-			return buildFieldFilter(label, logsql.FieldOpRegexp, ".+", negate)
-		}
-		if literal, ok := plainLiteral(reg); ok {
-			return buildFieldFilter(label, logsql.FieldOpExact, literal, negate)
-		}
-		if reg.Op == syntax.OpConcat && len(reg.Sub) == 3 && isAnyCharRepeat(reg.Sub[0], syntax.OpStar) && isAnyCharRepeat(reg.Sub[2], syntax.OpStar) {
-			if literal, ok := plainLiteral(reg.Sub[1]); ok {
-				return buildFieldFilter(label, logsql.FieldOpRegexp, regexp.QuoteMeta(literal), negate)
-			}
-		}
-		if !dotNL && strings.Contains(pattern, "|") {
-			// A label filter's literal alternation is Loki's OR of equality
-			// checks; VictoriaLogs compares the unpacked values faster than it
-			// runs the anchored regexp on each.
-			if values, ok := literalSet(reg, maxExactAlternatives); ok {
-				return exactAlternativesFilter(label, values, negate)
-			}
-		}
-	}
-	anchored := logsql.AnchorLabelMatcherRegex(pattern)
-	if !dotNL {
-		anchored = anchorLabelFilterPattern(pattern)
-	}
-	return buildFieldFilter(label, logsql.FieldOpRegexp, anchored, negate)
-}
-
-// anchorLabelFilterPattern anchors a lokiLabelFilterPattern result the way
-// Loki does, ^(?:pattern)$, spelled so '.' keeps not matching a newline in
-// VictoriaLogs too.
-func anchorLabelFilterPattern(pattern string) string {
-	if strings.Contains(pattern, ".") {
-		return "^(?-s:" + pattern + ")$"
-	}
-	return "^(?:" + pattern + ")$"
-}
-
-func plainLiteral(reg *syntax.Regexp) (string, bool) {
-	if reg.Op != syntax.OpLiteral || reg.Flags&syntax.FoldCase != 0 || !exactQuotable(string(reg.Rune)) {
-		return "", false
-	}
-	return string(reg.Rune), true
-}
-
-// exactQuotable reports whether an exact filter can carry the literal: its
-// quoting escapes only '"' and '\', so a control character stays in the
-// regexp form, which is quoted with Go's rules.
-func exactQuotable(literal string) bool {
-	return logsql.QuoteValue(literal) == strconv.Quote(literal)
-}
-
-// exactAlternatives is `(label:="a" OR label:="b")`, negated with '-'.
-// exactAlternativesFilter is the exact filters a literal alternation becomes: (label:="a" OR label:="b"),
-// excluded when negate.
-func exactAlternativesFilter(label string, values []string, negate bool) logsql.FilterExpr {
-	exact := make(logsql.AnyOf, len(values))
-	for i, v := range values {
-		exact[i] = buildFieldFilter(label, logsql.FieldOpExact, v, false)
-	}
-	filter := logsql.FilterExpr(logsql.Group{Expr: exact})
-	if negate {
-		return logsql.Exclude{Expr: filter}
-	}
-	return filter
-}
-
-// maxExactAlternatives bounds the exact filters a literal alternation becomes.
-const maxExactAlternatives = 16
-
-// literalSet returns the values a regexp matching a finite set of non-empty
-// literals matches, at most limit of them: literals, alternations, character
-// classes and their concatenations (Go's parser factors `api|apx` into
-// `ap[ix]`).
-func literalSet(reg *syntax.Regexp, limit int) ([]string, bool) {
-	var values []string
-	switch reg.Op {
-	case syntax.OpLiteral:
-		if v, ok := plainLiteral(reg); ok {
-			values = []string{v}
-		}
-	case syntax.OpCapture:
-		return literalSet(reg.Sub[0], limit)
-	case syntax.OpCharClass:
-		if reg.Flags&syntax.FoldCase != 0 {
-			return nil, false
-		}
-		for i := 0; i+1 < len(reg.Rune); i += 2 {
-			for r := reg.Rune[i]; r <= reg.Rune[i+1]; r++ {
-				if len(values) == limit {
-					return nil, false
-				}
-				values = append(values, string(r))
-			}
-		}
-	case syntax.OpAlternate:
-		for _, sub := range reg.Sub {
-			vs, ok := literalSet(sub, limit-len(values))
-			if !ok {
-				return nil, false
-			}
-			values = append(values, vs...)
-		}
-	case syntax.OpConcat:
-		values = []string{""}
-		for _, sub := range reg.Sub {
-			vs, ok := literalSet(sub, limit)
-			if !ok || len(values)*len(vs) > limit {
-				return nil, false
-			}
-			product := make([]string, 0, len(values)*len(vs))
-			for _, prefix := range values {
-				for _, v := range vs {
-					product = append(product, prefix+v)
-				}
-			}
-			values = product
-		}
-	}
-	for _, v := range values {
-		if v == "" || !exactQuotable(v) {
-			return nil, false
-		}
-	}
-	return values, len(values) > 0 && len(values) <= limit
-}
-
-// isAnyCharRepeat reports whether reg is (?s:.)* (op OpStar) or (?s:.)+.
-func isAnyCharRepeat(reg *syntax.Regexp, op syntax.Op) bool {
-	return reg.Op == op && reg.Sub[0].Op == syntax.OpAnyChar
+	return translate.WholeValueRegexpFilterExpr(label, pattern, negate, dotNL).String()
 }
 
 // lokiLabelFilterPattern returns the pattern whose whole-value match,
@@ -286,17 +130,11 @@ func lokiLabelFilterPattern(value string) string {
 	return value
 }
 
-// The patterns of the simplifier's filters (see lokiLabelFilterPattern).
-const (
-	keepAllPattern  = "(?s:.*)"
-	nonEmptyPattern = "(?s:.+)"
-)
-
 func containsPattern(literal string, foldCase bool) string {
 	if literal == "" {
-		return keepAllPattern // newContainsFilter (filter.go:556)
+		return translate.KeepAllPattern // newContainsFilter (filter.go:556)
 	}
-	return keepAllPattern + quoteLiteralPattern(literal, foldCase) + keepAllPattern
+	return translate.KeepAllPattern + quoteLiteralPattern(literal, foldCase) + translate.KeepAllPattern
 }
 
 func quoteLiteralPattern(literal string, foldCase bool) string {
@@ -311,12 +149,12 @@ func quoteLiteralPattern(literal string, foldCase bool) string {
 func orPatterns(branches []string) string {
 	kept := branches[:0:0]
 	for _, b := range branches {
-		if b != keepAllPattern {
+		if b != translate.KeepAllPattern {
 			kept = append(kept, b)
 		}
 	}
 	if len(kept) == 0 {
-		return keepAllPattern
+		return translate.KeepAllPattern
 	}
 	return strings.Join(kept, "|")
 }
@@ -348,14 +186,14 @@ func simplifiedLabelFilter(reg *syntax.Regexp) (string, bool) {
 		return quoteLiteralPattern(string(reg.Rune), isFoldCase(reg)), true
 	case syntax.OpStar:
 		if reg.Sub[0].Op == syntax.OpAnyCharNotNL {
-			return keepAllPattern, true
+			return translate.KeepAllPattern, true
 		}
 	case syntax.OpPlus:
 		if len(reg.Sub) == 1 && reg.Sub[0].Op == syntax.OpAnyCharNotNL {
-			return nonEmptyPattern, true
+			return translate.NonEmptyPattern, true
 		}
 	case syntax.OpEmptyMatch:
-		return keepAllPattern, true
+		return translate.KeepAllPattern, true
 	}
 	return "", false
 }

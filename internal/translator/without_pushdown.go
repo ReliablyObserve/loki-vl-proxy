@@ -3,6 +3,8 @@ package translator
 import (
 	"slices"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // withoutSeriesStats is the pipe that keeps a row per series (the stream and
@@ -246,7 +248,7 @@ func derivedLabel(name string) bool {
 	case "level", "detected_level", "service_name", "_stream", "_msg", "_time":
 		return true
 	}
-	return slices.Contains(syntheticServiceNameFields, name)
+	return slices.Contains(translate.SyntheticServiceNameFields, name)
 }
 
 // streamPairCut returns the two pipes that remove the pair of label name from

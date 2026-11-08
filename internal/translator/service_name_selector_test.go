@@ -5,12 +5,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // deriveServiceNameForTest is the read-path service_name derivation:
 // the first non-empty field in priority order, else unknown_service.
 func deriveServiceNameForTest(stream map[string]string) string {
-	for _, field := range syntheticServiceNameFields {
+	for _, field := range translate.SyntheticServiceNameFields {
 		if v := strings.TrimSpace(stream[field]); v != "" {
 			return v
 		}

@@ -1505,6 +1505,7 @@
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
+    "internal/translate/selector_test.go | architecture-syntax-package-layering",
     "internal/translator/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity/detected-level-filter-json-level",
@@ -1975,7 +1976,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 382,
+      "go": 383,
       "playwright": 1
     },
     "page_kinds": {

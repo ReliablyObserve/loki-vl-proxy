@@ -56,7 +56,7 @@ jobs:
           # A PR that changes query code (the query plan included) or the tests and specs that send
           # queries gets the query corpus built from its uncached test run, and the oracles run.
           QUERY_CORPUS=false
-          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|proxy|querycorpus|queryplan|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
+          if echo "$FILES" | grep -Eq '^(internal/(logql|logsql|translator|translate|proxy|querycorpus|queryplan|rulesmigrate)/|test/|conformance/registry/|bench/(ab|visual)/)'; then
             QUERY_CORPUS=true
           fi
           echo "query_corpus=${QUERY_CORPUS}" >> "$GITHUB_OUTPUT"

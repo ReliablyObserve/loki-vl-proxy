@@ -16,6 +16,9 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/ReliablyObserve/Loki-VL-proxy/test/oraclerun"
 )
@@ -186,9 +189,9 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 }
 
-// typedSelectorPair is, for a client LogQL row that is a bare stream selector, the filter the typed selector
-// translation builds (translator.ASTSelectorFilter) and the one the string translator writes for it, both for version v:
-// VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile is left out: every route
+// typedSelectorPair is, for a client LogQL row that is a bare stream selector, the query the plan lowers to
+// (lower.Plan, the stream filter translate.StreamSelectorFilter builds) and the one the string translator writes
+// for it, both for version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile is left out: every route
 // answers Loki's rejection of it before it translates anything.
 func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
@@ -206,15 +209,29 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 		}
 	}
 	identity := func(s string) string { return s }
-	f, err := translator.ASTSelectorFilter(lq.Selector, translator.ASTTranslateOptions{LabelFn: identity})
+	expr, err := logql.Parse(r.Query)
 	if err != nil {
 		return "", "", false
 	}
-	built, err = translator.TranslateLogQLWithCapabilities(r.Query, identity, nil, logsql.CapabilitiesFor(strings.TrimPrefix(v, "v")))
+	plan, err := queryplan.Build(expr, queryplan.Inputs{})
 	if err != nil {
 		return "", "", false
 	}
-	return f.String(), built, true
+	queryplan.Resolve(plan)
+	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
+	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
+	if err != nil {
+		return "", "", false
+	}
+	q, ok := op.(physical.VLQuery)
+	if !ok {
+		return "", "", false
+	}
+	built, err = translator.TranslateLogQLWithCapabilities(r.Query, identity, nil, caps)
+	if err != nil {
+		return "", "", false
+	}
+	return q.Text, built, true
 }
 
 // TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned
