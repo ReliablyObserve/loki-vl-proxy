@@ -1482,6 +1482,7 @@
       "internal/proxy/detected_level_test.go",
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
+      "internal/translator/detected_level_chain_memo_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
       "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
@@ -2740,6 +2741,9 @@
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
+    "internal/translator/detected_level_chain_memo_test.go": [
+      "severity-detected-level-derivation"
+    ],
     "internal/translator/detected_level_filter_stage_test.go": [
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level"
@@ -3472,7 +3476,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 370,
+  "tests_with_markers": 371,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

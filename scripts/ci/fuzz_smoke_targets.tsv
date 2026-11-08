@@ -109,3 +109,4 @@ smoke	internal/querycorpus	FuzzPhysicalCodec	20s	-	physical-plan codec round tri
 smoke	internal/querycorpus	FuzzSplitPostMatchesLegacy	20s	-	SplitPost reads the markers like the old two-step strip
 smoke	internal/querycorpus	FuzzSplitPostOnTranslatorOutput	20s	-	SplitPost on the translator output of fuzzed LogQL
 smoke	internal/querycorpus	FuzzEncodeDecodeOps	20s	-	physical operators encode and decode back
+smoke	internal/translator	FuzzDetectedLevelChainKey	12s	-	detected-level chain memo key: one key, one chain

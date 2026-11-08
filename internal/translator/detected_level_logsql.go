@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"sync"
+	"sync/atomic"
 )
 
 // LogsQL builders for Loki's detected_level over VictoriaLogs rows.
@@ -192,6 +194,64 @@ type SharedUnpack struct {
 // from stay those without a stored level (-__dl_h:*), whatever rows the unpack
 // parsed for the plan.
 func BuildDetectedLevelChainShared(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence, shared *SharedUnpack) string {
+	// The chain is a function of its arguments alone, and the same few argument sets come back on every
+	// translation of a query that keeps the stream identity, so it is built once per set.
+	key := detectedLevelChainKey(existingFields, mode, present, shared)
+	if chain, ok := detectedLevelChains.Load(key); ok {
+		return chain.(string)
+	}
+	chain := buildDetectedLevelChainShared(existingFields, mode, present, shared)
+	if detectedLevelChainCount.Add(1) <= maxDetectedLevelChains {
+		detectedLevelChains.Store(key, chain)
+	}
+	return chain
+}
+
+// detectedLevelChains holds the chains built so far, by detectedLevelChainKey. The argument sets come from the
+// field lists the proxy knows and from the keys a query unpacks, so the memo is bounded: past
+// maxDetectedLevelChains sets a chain is built each time and not kept.
+var (
+	detectedLevelChains     sync.Map
+	detectedLevelChainCount atomic.Int64
+)
+
+const maxDetectedLevelChains = 4096
+
+// detectedLevelChainKey writes every argument of BuildDetectedLevelChainShared, each list length-prefixed so that
+// no two argument sets share a key; a nil present or shared differs from an empty one.
+func detectedLevelChainKey(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence, shared *SharedUnpack) string {
+	var b strings.Builder
+	list := func(items []string) {
+		b.WriteString(strconv.Itoa(len(items)))
+		for _, item := range items {
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(len(item)))
+			b.WriteByte(':')
+			b.WriteString(item)
+		}
+		b.WriteByte(';')
+	}
+	b.WriteString(strconv.Itoa(int(mode)))
+	b.WriteByte(';')
+	list(existingFields)
+	if present == nil {
+		b.WriteString("-;")
+	} else {
+		b.WriteString("p;")
+		list(present.Stored)
+		list(present.BodyKeys)
+	}
+	if shared == nil {
+		b.WriteString("-;")
+	} else {
+		b.WriteString("s;")
+		list(shared.Keys)
+		list([]string{shared.Cond})
+	}
+	return b.String()
+}
+
+func buildDetectedLevelChainShared(existingFields []string, mode DetectedLevelChainMode, present *DetectedLevelPresence, shared *SharedUnpack) string {
 	var sharedKeys []string
 	if shared != nil && mode == DetectedLevelChainGrouping {
 		sharedKeys = shared.Keys
