@@ -381,7 +381,7 @@ func (d *describer) stage(s Stage) {
 		d.project(true, x.Labels, x.Matchers)
 	case *LineFormat:
 		d.tok("stage %d", tagLineFormat)
-		d.tok("template=%s", strconv.Quote(x.Template))
+		d.tok("template=%s", strconv.Quote(x.KeyText()))
 	case *LabelFormat:
 		d.tok("stage %d", tagLabelFormat)
 		d.tok("formats=%d", len(x.Formats))

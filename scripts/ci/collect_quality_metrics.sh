@@ -333,14 +333,24 @@ if [ "${QUALITY_SKIP_PERF:-0}" = "1" ]; then
   PERF_MODE="skipped"
 fi
 
-tests_pid=""
-compat_pid=""
-capture_async tests_and_coverage '{"count":0,"coverage_pct":0}' 900 "$tests_file" tests_pid collect_tests_and_coverage
-capture_async compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 "$compat_file" compat_pid collect_compat
+TESTS_DEFAULT='{"count":0,"coverage_pct":0}'
+COMPAT_DEFAULT='{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}'
+if [ "${QUALITY_PERF_ONLY:-0}" = "1" ]; then
+  # The PR quality workflow measures performance in a job of its own, for both trees on one runner;
+  # this snapshot carries only .performance, and the tests and compatibility come from the other jobs.
+  log_step "collecting performance only (QUALITY_PERF_ONLY=1)"
+  printf '%s\n' "$TESTS_DEFAULT" >"$tests_file"
+  printf '%s\n' "$COMPAT_DEFAULT" >"$compat_file"
+else
+  tests_pid=""
+  compat_pid=""
+  capture_async tests_and_coverage "$TESTS_DEFAULT" 900 "$tests_file" tests_pid collect_tests_and_coverage
+  capture_async compat "$COMPAT_DEFAULT" 1800 "$compat_file" compat_pid collect_compat
 
-for pid in "$tests_pid" "$compat_pid"; do
-  wait "$pid"
-done
+  for pid in "$tests_pid" "$compat_pid"; do
+    wait "$pid"
+  done
+fi
 
 if [ "$PERF_MODE" = "full" ]; then
   log_step "running perf smoke in an isolated phase for stability"

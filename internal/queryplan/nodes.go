@@ -118,7 +118,8 @@ type (
 	// Drop and Keep are the drop and keep stages, with names or conditions.
 	Drop = logql.DropStage
 	Keep = logql.KeepStage
-	// LineFormat is a line_format stage; the template is text until logql types it.
+	// LineFormat is a line_format stage; Tmpl is the template logql typed, and
+	// the key reads its canonical form.
 	LineFormat = logql.LineFormatStage
 	// LabelFormat is a label_format stage.
 	LabelFormat = logql.LabelFormatStage
