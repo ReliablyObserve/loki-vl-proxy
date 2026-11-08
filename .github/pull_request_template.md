@@ -11,6 +11,13 @@
 
 - list checks/tests you ran locally or in CI
 
+## Security review (Required)
+
+- surface touched: query text, parameters, headers, tenant scope, cache keys, peer or admin routes, dependencies
+- what was checked (resource bounds on crafted input, isolation, injection, error bodies, logs, concurrency) and the tests or fuzz targets that pin it
+- findings and how they were handled, or "no security-relevant surface" with the reason
+- report a vulnerability privately as described in `SECURITY.md`, never here
+
 ## Cache efficiency evidence (Cache behavior changes)
 
 - [ ] Add a **main versus PR** matrix with measured commit SHAs, workload/config,

@@ -1208,6 +1208,18 @@
    ]
   },
   {
+   "id": "explore-binary-operand-literals",
+   "kind": "explore",
+   "query": "sum(count_over_time({service_name=\"api-gateway\"} | json | status >= 4e2 [$__auto])) / sum(count_over_time({service_name=\"api-gateway\"} [$__auto]))",
+   "covers": [
+    "semantics/binary-operand-literals-reprint",
+    "loki_api_v1_query_range"
+   ],
+   "fixes": [
+    "semantics/binary-operand-literals-reprint"
+   ]
+  },
+  {
    "id": "explore-unwrap-conversion-error",
    "kind": "explore",
    "query": "max by (service_name) (max_over_time({service_name=\"auth-service\"} | json | unwrap trace_id [1m]))",

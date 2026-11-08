@@ -151,6 +151,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `quality/unwrap-query-range-extent-cache` — an unwrap metric moved by a refresh or a re-run of a step or more reads only the VictoriaLogs buckets not read before, with the same answ... | TBD-PR | 0 | 0 |
 | `semantics/absent-over-time-semantics` — absent_over_time is the series valued 1 at the steps without data and nothing at the steps with data, after a parser too (fixed) | #737 | 0 | 0 |
 | `semantics/aggregation-over-binary-dropped` — A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed) | #741 | 0 | 0 |
+| `semantics/binary-operand-literals-reprint` — Binary metric queries keep compound duration and exponent literals in their operands | #1177 | 0 | 0 |
 | `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |
 | `semantics/error-layer-transport-text` — Backend transport failures use sanitized Loki errors for every client | #941 | 0 | 0 |
 | `semantics/first-last-over-time-translation` — first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open) | #1059 | 0 | 0 |

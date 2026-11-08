@@ -74,6 +74,7 @@ unscheduled	internal/cache	FuzzPeerCapacitySequences	-	-	fuzzed by the e2e-fleet
 smoke	internal/cache	FuzzPeerTTLMillisCompatibility	12s	-	peer t t l millis compatibility
 smoke	internal/logql	FuzzDottedNameError	12s	-	dotted name error
 smoke	internal/logql	FuzzParse	12s	-	parse
+smoke	internal/logql	FuzzPrintReparse	12s	-	print then parse again gives the same query
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip

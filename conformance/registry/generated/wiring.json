@@ -331,6 +331,7 @@
       "test/e2e-compat/bad_request_status_parity_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go",
+      "test/e2e-compat/binary_operand_literals_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
       "test/e2e-compat/drilldown_fields_json_path_test.go",
@@ -423,6 +424,7 @@
       "test/e2e-compat/bad_request_status_parity_test.go",
       "test/e2e-compat/binary_division_zero_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go",
+      "test/e2e-compat/binary_operand_literals_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
       "test/e2e-compat/detected_level_test.go",
       "test/e2e-compat/detected_level_unknown_stats_test.go",
@@ -883,6 +885,12 @@
       "internal/proxy/binary_matching_differential_test.go",
       "test/e2e-compat/binary_ignoring_matching_test.go"
     ],
+    "semantics/binary-operand-literals-reprint": [
+      "internal/logql/print_reparse_test.go",
+      "internal/proxy/binary_literal_reprint_test.go",
+      "internal/proxy/reprint_translation_test.go",
+      "test/e2e-compat/binary_operand_literals_test.go"
+    ],
     "semantics/client-cancellation-propagates": [
       "internal/proxy/backend_heavy_test.go"
     ],
@@ -1083,7 +1091,10 @@
       "internal/logql/label_filter_expr_golden_test.go",
       "internal/logql/label_filter_expr_syntax_test.go",
       "internal/logql/label_filter_expr_test.go",
+      "internal/logql/print_reparse_test.go",
+      "internal/proxy/binary_literal_reprint_test.go",
       "internal/proxy/label_filter_expression_test.go",
+      "internal/proxy/reprint_translation_test.go",
       "internal/translator/label_filter_expr_test.go",
       "test/e2e-compat/label_filter_expression_test.go"
     ],
@@ -1609,7 +1620,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 430,
+  "registry_items": 431,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1661,6 +1672,10 @@
     ],
     "internal/logql/parser_captures_test.go": [
       "parsed-label-series-identity"
+    ],
+    "internal/logql/print_reparse_test.go": [
+      "semantics/binary-operand-literals-reprint",
+      "semantics/label-filter-expression-syntax"
     ],
     "internal/logql/selector_value_test.go": [
       "semantics/selector-values-are-strings"
@@ -1768,6 +1783,10 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/binary-ignoring-matching"
+    ],
+    "internal/proxy/binary_literal_reprint_test.go": [
+      "semantics/binary-operand-literals-reprint",
+      "semantics/label-filter-expression-syntax"
     ],
     "internal/proxy/binary_matching_differential_test.go": [
       "loki_api_v1_query_range",
@@ -2359,6 +2378,10 @@
     "internal/proxy/recent_tail_bypass_clamp_test.go": [
       "semantics/metadata-answers-include-last-24h-like-loki"
     ],
+    "internal/proxy/reprint_translation_test.go": [
+      "semantics/binary-operand-literals-reprint",
+      "semantics/label-filter-expression-syntax"
+    ],
     "internal/proxy/response_key_fences_test.go": [
       "cache-response-key-versions"
     ],
@@ -2848,6 +2871,11 @@
       "loki_api_v1_query",
       "loki_api_v1_query_range",
       "semantics/binary-ignoring-matching"
+    ],
+    "test/e2e-compat/binary_operand_literals_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/binary-operand-literals-reprint"
     ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
@@ -3436,7 +3464,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 364,
+  "tests_with_markers": 368,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3539,5 +3567,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 256
+  "wired_items": 257
 }

@@ -87859,6 +87859,7 @@
       "warm_p50": 0.101
     }
   ],
+  "semantics/binary-operand-literals-reprint": [],
   "semantics/detected-fields-empty-answer": [
     {
       "baseline": "release",
