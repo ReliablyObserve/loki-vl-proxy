@@ -21,7 +21,7 @@ GROUPS = {
     "OpFmt": "formatter", "OpFilter": "filter", "OpConv": "conversion",
     "OpLabel": "label_op", "OpPipe": "pipeline_stage",
 }
-SEARCH_DIRS = ["internal/logql", "internal/translator", "internal/proxy"]
+SEARCH_DIRS = ["internal/logql", "internal/translator", "internal/translate", "internal/proxy"]
 
 
 def fetch(version):

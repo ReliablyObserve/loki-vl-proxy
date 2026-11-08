@@ -1,7 +1,8 @@
 // Package lower lowers a logical plan (internal/queryplan) to the physical
-// operators the proxy runs (internal/queryplan/physical) under a Profile. It
-// sits above both and below the translator and the proxy, which it never
-// imports. A construct is lowered natively once its lowering lands, held to
+// operators the proxy runs (internal/queryplan/physical) under a Profile,
+// building the VictoriaLogs filters with the builders it shares with the
+// string translator (internal/translate). It sits above them and below the
+// translator and the proxy, which it never imports. A construct is lowered natively once its lowering lands, held to
 // the string translator's operators by the shadow harness; until then Plan
 // answers ErrNotLowered and the proxy uses the string translator.
 package lower

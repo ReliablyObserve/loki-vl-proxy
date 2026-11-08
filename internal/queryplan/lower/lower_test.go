@@ -36,9 +36,6 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 			}
 			queryplan.Resolve(p)
 			for _, prof := range []Profile{{}, {KeepLine: true}, {StreamFields: map[string]bool{"app": true}}} {
-				if construct == "LogSelect pipeline" && prof.KeepLine {
-					continue
-				}
 				op, err := Plan(p, prof)
 				var nl *NotLoweredError
 				if op != nil || !errors.Is(err, ErrNotLowered) || !errors.As(err, &nl) || nl.Construct != construct {

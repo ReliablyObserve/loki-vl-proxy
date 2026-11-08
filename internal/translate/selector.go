@@ -98,7 +98,7 @@ func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 			return nil, &ParseError{Msg: fmt.Sprintf("unknown operator %q in stream matcher", m.Op), Pos: -1}
 		}
 		label := SanitizeFieldIdentifier(m.Name)
-		if !streamFields[detectedLevelLabel] && label == detectedLevelLabel {
+		if !streamFields[DetectedLevelLabel] && label == DetectedLevelLabel {
 			filter, err := detectedLevelMatcherFilter(m, negate, isRe)
 			if err != nil {
 				return nil, err
@@ -301,7 +301,7 @@ func ServiceNameMatcherFilterExpr(value string, neg, isRegex bool) logsql.Filter
 }
 
 // ServiceNameDerivedFilterExpr matches the rows whose derived service_name the matcher accepts: the first
-// non-empty field of SyntheticServiceNameFields, or unknownServiceNameValue when they are all empty.
+// non-empty field of SyntheticServiceNameFields, or UnknownServiceNameValue when they are all empty.
 func ServiceNameDerivedFilterExpr(value string, neg, isRegex bool) logsql.FilterExpr {
 	var re *regexp.Regexp
 	if isRegex {
@@ -337,9 +337,9 @@ func ServiceNameDerivedFilterExpr(value string, neg, isRegex bool) logsql.Filter
 		}
 		emptyPrefix = append(emptyPrefix, logsql.FieldFilter{Field: name, Op: logsql.FieldOpExact})
 	}
-	unknownMatches := value == unknownServiceNameValue
+	unknownMatches := value == UnknownServiceNameValue
 	if isRegex {
-		unknownMatches = re != nil && re.MatchString(unknownServiceNameValue)
+		unknownMatches = re != nil && re.MatchString(UnknownServiceNameValue)
 	}
 	if unknownMatches {
 		branches = append(branches, logsql.Group{Expr: emptyPrefix})
@@ -360,9 +360,10 @@ func ServiceNameDerivedFilterExpr(value string, neg, isRegex bool) logsql.Filter
 }
 
 const (
-	detectedLevelLabel = "detected_level"
-	// unknownServiceNameValue is the service_name Loki assigns when no source label is set.
-	unknownServiceNameValue = "unknown_service"
+	// DetectedLevelLabel is the label Loki derives the log level into.
+	DetectedLevelLabel = "detected_level"
+	// UnknownServiceNameValue is the service_name Loki assigns when no source label is set.
+	UnknownServiceNameValue = "unknown_service"
 )
 
 // AnchorLabelFilterPattern anchors a lokiLabelFilterPattern result the way

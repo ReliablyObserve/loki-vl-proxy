@@ -4279,7 +4279,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 }
 
 const (
-	detectedLevelLabel = "detected_level"
+	detectedLevelLabel = translate.DetectedLevelLabel
 	// matchNoRows is a LogsQL filter no row passes: an empty in() list.
 	matchNoRows = `_stream_id:in()`
 )
@@ -4367,7 +4367,7 @@ func streamMatcherValue(value string, isRegex bool) string {
 const (
 	// unknownServiceNameValue is the service_name Loki assigns when no source
 	// label exists (discover_service_name fallback).
-	unknownServiceNameValue = "unknown_service"
+	unknownServiceNameValue = translate.UnknownServiceNameValue
 	// matchNoStreamsFilter is a LogsQL filter that matches no rows.
 	matchNoStreamsFilter = "-*"
 )
