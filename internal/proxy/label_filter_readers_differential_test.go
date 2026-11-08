@@ -29,8 +29,36 @@ var (
 	oldNumericLabelFilterRE      = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9][0-9A-Za-z.]*\s*$`)
 	oldUnwrapComparisonRE        = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|>=|<=|>|<|=)\s*([^\s"'` + "`" + `(),]+)\s*$`)
 	oldHasFieldComparisonRE      = hasFieldComparisonRE
+	oldSelectorIPLeafRE          = regexp.MustCompile("(?i)\\b(ip)\\s*\\(\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`)\\s*\\)")
 	oldStripFieldComparisonStgRE = stripFieldComparisonStgRE
 )
+
+// oldSelectorReading is how the text readers read the text of a label filter
+// stage: as a stream selector, in which an ip("...") leaf was once taken as the
+// string `ip(...)` (the parser has since stopped accepting it as a selector
+// value, as Loki does). The leaf is rewritten to that string here, so the
+// reference keeps its meaning; an ip() pattern that is no address, prefix or
+// range, which the parser rejected, is still rejected.
+func oldSelectorReading(raw string) (*logqlpkg.LogQuery, error) {
+	var bad error
+	rewritten := oldSelectorIPLeafRE.ReplaceAllStringFunc(raw, func(leaf string) string {
+		m := oldSelectorIPLeafRE.FindStringSubmatch(leaf)
+		value := m[2][1 : len(m[2])-1]
+		if m[2][0] == '"' {
+			value, _ = strconv.Unquote(m[2])
+		}
+		if m[1] == "ip" {
+			if _, err := logqlpkg.ParseLogQuery(`{a="x"} |= ip(` + strconv.Quote(value) + `)`); err != nil {
+				bad = err
+			}
+		}
+		return strconv.Quote(m[1] + "(" + value + ")")
+	})
+	if bad != nil {
+		return nil, bad
+	}
+	return logqlpkg.ParseLogQuery("{" + rewritten + "}")
+}
 
 func oldHasFieldComparisonStages(query string) bool {
 	lq, err := logqlpkg.ParseLogQuery(query)
@@ -76,7 +104,7 @@ func oldLabelFilterConditions(raw string, before lineFieldExposure) []lineFieldF
 	if m := oldIPLabelFilterRE.FindStringSubmatch(raw); m != nil {
 		return []lineFieldFilter{{name: m[1], before: before}}
 	}
-	parsed, err := logqlpkg.ParseLogQuery("{" + raw + "}")
+	parsed, err := oldSelectorReading(raw)
 	if err != nil {
 		return nil
 	}

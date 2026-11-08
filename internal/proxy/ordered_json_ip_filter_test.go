@@ -16,9 +16,9 @@ import (
 
 // oldOrderedJSONLabelFilter is what compileOrderedJSONStage made of a label
 // filter before the stage carried its parsed filter: the text read again as a
-// stream selector, which keeps string comparisons only.
+// stream selector (oldSelectorReading), which keeps string comparisons only.
 func oldOrderedJSONLabelFilter(raw string) (translator.DropCondition, bool) {
-	parsed, err := logqlpkg.ParseLogQuery("{" + raw + "}")
+	parsed, err := oldSelectorReading(raw)
 	if err != nil || len(parsed.Selector.Matchers) != 1 {
 		return translator.DropCondition{}, false
 	}
