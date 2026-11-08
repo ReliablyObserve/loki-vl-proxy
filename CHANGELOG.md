@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   internal parses of a query now stop at the same size. No change for any
   query Loki accepts.
 
+- The query, query_range and metric post-aggregation handlers read the
+  without fold and label_replace calls the translator leaves in its LogsQL
+  through one typed decoder (the exact inverse of an encoder) instead of
+  stripping the marker text with two parsers each. The VictoriaLogs query and
+  every answer are byte-identical to before. No behaviour change.
+
 ### Fixed
 
 - fix(logql): binary metric queries whose operand holds a compound duration

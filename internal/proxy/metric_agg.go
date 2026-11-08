@@ -637,9 +637,9 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
 		return
 	}
-	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
-	translatedInner, transforms, regexErr := parseLabelTransformMarkers(translatedInner)
+	transforms, regexErr := newLabelTransforms(replaces)
 	if regexErr != "" {
 		p.writeError(w, http.StatusBadRequest, regexErr)
 		p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -769,9 +769,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		}
 		return
 	}
-	translatedInner, markerOp, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner, markerOp, withoutLabels, replaces := splitPostProcessing(translatedInner)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, originalQuery)
-	translatedInner, transforms, regexErr := parseLabelTransformMarkers(translatedInner)
+	transforms, regexErr := newLabelTransforms(replaces)
 	if regexErr != "" {
 		p.writeError(w, http.StatusBadRequest, regexErr)
 		p.metrics.RecordRequest("query_range", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))

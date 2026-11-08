@@ -1208,6 +1208,10 @@
     "internal/proxy/patterns_state_test.go | patterns-loki-mining",
     "internal/proxy/patterns_state_test.go | peer-cache-patterns",
     "internal/proxy/peer_push_identity_test.go | peer-cache-replication",
+    "internal/proxy/physical_sites_test.go | loki_api_v1_query",
+    "internal/proxy/physical_sites_test.go | loki_api_v1_query_range",
+    "internal/proxy/physical_sites_test.go | semantics/label-replace-new-label",
+    "internal/proxy/physical_sites_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/plain_stream_labels_test.go | loki_api_v1_query_range",
     "internal/proxy/plain_stream_labels_test.go | semantics/plain-name-after-parser-reads-stream-label",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
@@ -1459,6 +1463,14 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
+    "internal/querycorpus/physical_security_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_security_test.go | semantics/without-over-inner-aggregation-collapses",
+    "internal/querycorpus/physical_split_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_split_test.go | semantics/without-over-inner-aggregation-collapses",
+    "internal/querycorpus/plan_corpus_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/plan_corpus_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity/detected-level-filter-json-level",
@@ -1918,7 +1930,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 363,
+      "go": 368,
       "playwright": 1
     },
     "page_kinds": {
