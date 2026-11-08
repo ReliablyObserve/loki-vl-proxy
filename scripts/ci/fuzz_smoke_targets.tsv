@@ -102,3 +102,7 @@ smoke	internal/translator	FuzzResolveJSONBracketPath	12s	-	a JSON bracket path r
 smoke	internal/logql	FuzzVectorAggregationOverLogExpression	12s	-	a vector aggregation over a log expression fails with Loki parse error at the closing parenthesis
 smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a trailing keep regrouped by the kept labels, once
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
+smoke	internal/querycorpus	FuzzPhysicalCodec	20s	-	physical-plan codec round trip, seeded with the capture sample under 12 profiles
+smoke	internal/querycorpus	FuzzSplitPostMatchesLegacy	20s	-	SplitPost reads the markers like the old two-step strip
+smoke	internal/querycorpus	FuzzSplitPostOnTranslatorOutput	20s	-	SplitPost on the translator output of fuzzed LogQL
+smoke	internal/querycorpus	FuzzEncodeDecodeOps	20s	-	physical operators encode and decode back
