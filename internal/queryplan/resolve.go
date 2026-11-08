@@ -67,8 +67,10 @@ func Resolve(p *Plan) {
 	sem.Resolved = true
 	sem.Ungrouped = ungrouped(p.Root)
 	first := true
-	// An explicit stack: a plan nests as deep as Build allows (maxDepth).
-	stack := []Node{p.Root}
+	// An explicit stack: a plan nests as deep as Build allows (maxDepth). The
+	// array holds the usual depth without an allocation.
+	var buf [16]Node
+	stack := append(buf[:0], p.Root)
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]

@@ -149,3 +149,23 @@ func TestBuildAllocsGate(t *testing.T) {
 		t.Errorf("%d of %d seed queries are over the allocation gate", over, len(exprs))
 	}
 }
+
+// BenchmarkResolve is the resolver pass alone over the seed plans, each built once and resolved afresh.
+func BenchmarkResolve(b *testing.B) {
+	_, exprs := seedExprs(b)
+	plans := make([]*Plan, len(exprs))
+	for i, e := range exprs {
+		p, err := Build(e, Inputs{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		plans[i] = p
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p := plans[i%len(plans)]
+		p.Sem = PlanSem{}
+		Resolve(p)
+	}
+}
