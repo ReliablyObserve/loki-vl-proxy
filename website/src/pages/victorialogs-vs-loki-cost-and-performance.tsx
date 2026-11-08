@@ -2,6 +2,12 @@ import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
 import Heading from '@theme/Heading';
 import MarketingLayout from '@site/src/components/MarketingLayout';
+import QualityVsLoki from '@site/src/components/QualityVsLoki';
+import quality from '@site/src/data/quality-vs-loki.json';
+
+const firstRequests = quality.distribution.find(
+  (row) => row.profile === quality.profile && row.request === 'first',
+);
 import styles from '@site/src/components/marketing.module.css';
 import {coreFaqs} from '@site/src/data/faqs';
 
@@ -289,9 +295,9 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
           detail: 'Observed on production workload, not a synthetic benchmark.',
         },
         {
-          value: '1,006–1,717×',
-          label: 'Proxy throughput vs Loki on heavy aggregation workloads (warm and cold)',
-          detail: '30-second bench, Apple M5 Pro. Prefilter cuts ~81.6% of empty backend calls.',
+          value: `${firstRequests?.below ?? 0} of ${firstRequests?.rows ?? 0}`,
+          label: `First requests below Loki v${quality.loki} in the latest daily A/B (${quality.date}, ${quality.profile})`,
+          detail: `Above 2× Loki: ${firstRequests?.above ?? 0}. Same data and hardware for both; generated daily.`,
         },
         {
           value: '$13,403/month',
@@ -331,6 +337,8 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
         </div>
       </section>
 
+      <QualityVsLoki />
+
       <section className={styles.section}>
         <div className={styles.cardGrid}>
           <div className={styles.card}>
@@ -363,7 +371,6 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>What the proxy measurably contributes</h2>
             <ul className={styles.list}>
-              <li>Throughput vs Loki: 13.7× warm / 78× cold on small/metadata workloads; 1,006× warm / 1,717× cold on heavy aggregations; 101× cold at c=100 on compute workloads (5.3× faster than VL native).</li>
               <li>`query_range` warm hits in the published project benchmark land at `0.64–0.67 µs` versus `4.58 ms` on the cold delayed path.</li>
               <li>`detected_field_values` warm hits land at `0.71 µs` versus `2.76 ms` without Tier0.</li>
               <li>Peer-cache warm shadow-copy hits land at `52 ns` after the first owner fetch.</li>
