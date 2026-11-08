@@ -605,33 +605,8 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	stageStart := p.pos()
 
 	switch kw {
-	case "json":
-		start := p.sc.pos
-		p.advance()
-		if p.cur.Typ == TokMinus && (flagAt(p.sc.src[p.pos():], "--strict") || flagAt(p.sc.src[p.pos():], "--keep-empty")) {
-			// The flags are logfmt's only: Loki's grammar has no json flag.
-			return nil, p.errorAt(p.pos(), "FUNCTION_FLAG", "", true)
-		}
-		param, fields, err := p.consumeExplicitFieldList(start)
-		if err != nil {
-			return nil, err
-		}
-		return &ParserStage{Type: ParserJSON, Param: param, Fields: fields}, nil
-
-	case "logfmt":
-		start := p.sc.pos
-		p.advance()
-		stage := &ParserStage{Type: ParserLogfmt}
-		start, err := p.logfmtFlags(stage, start)
-		if err != nil {
-			return nil, err
-		}
-		param, fields, err := p.consumeExplicitFieldList(start)
-		if err != nil {
-			return nil, err
-		}
-		stage.Param, stage.Fields = param, fields
-		return stage, nil
+	case "json", "logfmt":
+		return p.parseJSONOrLogfmt(kw == "logfmt")
 
 	case "regexp":
 		p.advance()
@@ -930,6 +905,30 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 
 // syntaxError reports an unexpected current token the way Loki's yacc parser
 // does ("syntax error: unexpected $end, expecting STRING").
+// parseJSONOrLogfmt parses a json or logfmt stage after its keyword: logfmt's
+// flags, then the optional field list.
+func (p *parser) parseJSONOrLogfmt(logfmt bool) (Stage, error) {
+	start := p.sc.pos
+	p.advance()
+	stage := &ParserStage{Type: ParserJSON}
+	if logfmt {
+		stage.Type = ParserLogfmt
+		var err error
+		if start, err = p.logfmtFlags(stage, start); err != nil {
+			return nil, err
+		}
+	} else if p.cur.Typ == TokMinus && (flagAt(p.sc.src[p.pos():], "--strict") || flagAt(p.sc.src[p.pos():], "--keep-empty")) {
+		// The flags are logfmt's only: Loki's grammar has no json flag.
+		return nil, p.errorAt(p.pos(), "FUNCTION_FLAG", "", true)
+	}
+	param, fields, err := p.consumeExplicitFieldList(start)
+	if err != nil {
+		return nil, err
+	}
+	stage.Param, stage.Fields = param, fields
+	return stage, nil
+}
+
 // logfmtFlags reads the --strict and --keep-empty flags after `logfmt` into
 // stage, and returns where the field list starts.
 func (p *parser) logfmtFlags(stage *ParserStage, start int) (int, error) {
