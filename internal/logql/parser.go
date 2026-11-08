@@ -111,6 +111,8 @@ var rangeOps = map[string]RangeOp{
 type parser struct {
 	sc  *scanner
 	cur Token
+	// prevEnd is the byte offset where the token before cur ends.
+	prevEnd int
 	// canon is set by CanonicalizeLogRanges only.
 	canon *canonState
 }
@@ -143,6 +145,7 @@ func (p *parser) addRewrite(start, end int, text string) {
 
 func (p *parser) advance() Token {
 	prev := p.cur
+	p.prevEnd = p.sc.pos
 	p.cur = p.sc.next()
 	return prev
 }
@@ -775,11 +778,11 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 			return nil, p.syntaxError("IDENTIFIER")
 		}
 		name := p.cur.Val
-		appendStageToken(&raw, p.advance())
+		p.appendStageToken(&raw)
 		if p.cur.Typ != TokEq {
 			return nil, p.syntaxError("=")
 		}
-		appendStageToken(&raw, p.advance())
+		p.appendStageToken(&raw)
 		format := LabelFormat{Name: name}
 		switch p.cur.Typ {
 		case TokString, TokRawString:
@@ -789,12 +792,12 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 			return nil, p.syntaxError("IDENTIFIER or STRING")
 		}
 		format.Value = p.cur.Val
-		appendStageToken(&raw, p.advance())
+		p.appendStageToken(&raw)
 		formats = append(formats, format)
 		if p.cur.Typ != TokComma {
 			return &LabelFormatStage{Raw: raw.String(), Formats: formats}, nil
 		}
-		appendStageToken(&raw, p.advance())
+		p.appendStageToken(&raw)
 	}
 }
 
@@ -940,7 +943,7 @@ func (p *parser) consumeRestOfStage(prev TokType) string {
 			}
 		}
 		prev = p.cur.Typ
-		appendStageToken(&b, p.advance())
+		p.appendStageToken(&b)
 	}
 }
 
@@ -987,16 +990,21 @@ func zeroLineToken(name string) bool {
 	return false
 }
 
-// appendStageToken appends a token's source rendering to b. It inserts a space
-// when adjacent tokens would merge without one:
+// appendStageToken appends the current token's source rendering to b and
+// advances. It inserts a space when adjacent tokens would merge without one:
 //
 //	(a) alphanumeric + alphanumeric: `200`+`and` → `200and` (unparseable)
 //	(b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
-func appendStageToken(b *strings.Builder, tok Token) {
-	raw := tokenRaw(tok)
+//
+// Rule (a) does not apply to tokens that touch in the source: the scanner cuts
+// one literal into several (`1h5m` is `1h` `5m`, `1e3` is `1e` `3`), and a
+// space there would change it (`1h 5m`).
+func (p *parser) appendStageToken(b *strings.Builder) {
+	touches := p.prevEnd == p.pos()
+	raw := tokenRaw(p.advance())
 	if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
 		prev := b.String()[b.Len()-1]
-		if isAlphanumeric(prev) || prev == '"' || prev == '`' {
+		if (isAlphanumeric(prev) && !touches) || prev == '"' || prev == '`' {
 			b.WriteByte(' ')
 		}
 	}
