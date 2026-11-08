@@ -36,12 +36,12 @@ func typeLineTemplate(text string) *LineTemplate {
 	}
 	lt := &LineTemplate{Canonical: text, Simple: true}
 	if len(t.Templates()) == 1 {
-		lt.Canonical = t.Tree.Root.String()
+		lt.Canonical = t.Root.String()
 	} else {
 		lt.Simple = false
 	}
 	w := templateWalker{lt: lt, fields: map[string]bool{}, funcs: map[string]bool{}}
-	for _, n := range t.Tree.Root.Nodes {
+	for _, n := range t.Root.Nodes {
 		switch x := n.(type) {
 		case *parse.TextNode:
 		case *parse.ActionNode:
@@ -52,7 +52,7 @@ func typeLineTemplate(text string) *LineTemplate {
 			lt.Simple = false
 		}
 	}
-	w.walk(t.Tree.Root)
+	w.walk(t.Root)
 	defs := t.Templates()
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Name() < defs[j].Name() })
 	for _, d := range defs {
