@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.96.1] - 2026-11-08
+
 ### Fixed
 
 - fix(logsql): the LogsQL parser the proxy reads its own queries with (for
@@ -29,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. Every handler already answered Loki's `input size too long` error;
   internal parses of a query now stop at the same size. No change for any
   query Loki accepts.
+
+## [2.96.0] - 2026-11-08
+
+### Changed
 
 - The query, query_range and metric post-aggregation handlers read the
   without fold and label_replace calls the translator leaves in its LogsQL
