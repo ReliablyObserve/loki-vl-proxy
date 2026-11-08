@@ -515,6 +515,9 @@
     "semantics/nested-aggregation-outer-by-native-routes | gap:fixed",
     "semantics/nested-aggregation-outer-by-native-routes | perf",
     "semantics/nested-aggregation-outer-by-native-routes | query",
+    "semantics/nested-aggregation-query-length | compare:observed",
+    "semantics/nested-aggregation-query-length | gap:open",
+    "semantics/nested-aggregation-query-length | query",
     "semantics/non-sum-vector-aggregation-unreduced | compare:observed",
     "semantics/non-sum-vector-aggregation-unreduced | gap:fixed",
     "semantics/non-sum-vector-aggregation-unreduced | query",
@@ -1932,7 +1935,7 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 40,
+      "api": 41,
       "drilldown": 49,
       "explore": 151,
       "grafana-datasource": 2,
@@ -1958,7 +1961,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 99,
+    "unwired_items": 100,
     "wired_items": 258
   },
   "gates": [
