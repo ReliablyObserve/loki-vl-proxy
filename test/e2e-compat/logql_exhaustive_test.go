@@ -39,6 +39,10 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		{"binary_mod_on_log", `{level="info"} % 2`, "binary_on_log"},
 		{"binary_pow_on_log", `{level="info"} ^ 2`, "binary_on_log"},
 
+		// ── The @ modifier: Loki 3.7 has none (semantics/proxy-accepts-invalid-logql) ──
+		{"at_timestamp_modifier", `rate({app="api-gateway"}[5m] @ 1000000000)`, "at_modifier"},
+		{"at_start_modifier", `rate({app="api-gateway"}[5m] @ start())`, "at_modifier"},
+
 		// ── Malformed selectors ──
 		{"empty_value_selector", `{app=}`, "malformed"},
 		{"unclosed_brace", `{app="api-gateway"`, "malformed"},
@@ -943,18 +947,8 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 	}
 
 	gaps := []gap{
-		{
-			"at_timestamp_modifier",
-			`rate({app="api-gateway"}[5m] @ 1000000000)`,
-			"proxy_extension", 400, 200,
-			"proxy supports @ step-alignment modifier (maps to VL query time); Loki 3.7.1 parse error",
-		},
-		{
-			"at_start_modifier",
-			`rate({app="api-gateway"}[5m] @ start())`,
-			"proxy_extension", 400, 200,
-			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
-		},
+		// at_timestamp_modifier, at_start_modifier fixed: the proxy rejects the @ modifier like Loki 3.7 — moved to
+		// ErrorParity.
 		// stddev_outer_aggregation, stdvar_outer_aggregation, quantile_neg_error_code were
 		// proxy_bug/code_mismatch gaps but are now fixed — moved to QueryParity/ErrorParity.
 		// Subquery extensions were removed: every [range:step] form is now rejected

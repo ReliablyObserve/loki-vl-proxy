@@ -85,8 +85,10 @@ func TestRangeAggregationRulesLikeLoki(t *testing.T) {
 		{"{a=\"x\"} | bytes < 0B", "parse error at line 1, col 19: decimal literal has no digits"},
 		{"{a=\"x\"} | b < 0B", "parse error at line 1, col 15: decimal literal has no digits"},
 	} {
-		if _, msg := ValidateLogQLExpr(c.query); msg != c.lokiErr {
-			t.Errorf("%q: %q, Loki %q", c.query, msg, c.lokiErr)
-		}
+		t.Run(c.query, func(t *testing.T) {
+			if _, msg := ValidateLogQLExpr(c.query); msg != c.lokiErr {
+				t.Errorf("%q: %q, Loki %q", c.query, msg, c.lokiErr)
+			}
+		})
 	}
 }
