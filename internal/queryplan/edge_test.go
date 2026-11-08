@@ -172,7 +172,13 @@ func TestKeyEdgePairs(t *testing.T) {
 		{`vector(1)`, `vector(2)`, false, "vector argument"},
 		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace(` + r5 + `, "a", "b", "c", "e")`, false, "label_replace regexp"},
 		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace(` + r5 + `, "x", "b", "c", "d")`, false, "label_replace destination"},
-		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace( ` + r5 + `, "a", "b", "c", "d")`, false, "an opaque call keeps its text, spacing included"},
+		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace( ` + r5 + ` , "a" , "b", "c", "d" )`, true, "label_replace is typed: spacing is not part of it"},
+		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, "label_replace(" + r5 + ", `a`, \"b\", \"c\", \"d\")", true, "label_replace strings: a backquoted and a quoted string with one value"},
+		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace(` + r5 + `, "a", "b", "d", "c")`, false, "label_replace source and regexp swapped"},
+		{`label_replace(` + r5 + `, "a", "b", "c", "d")`, `label_replace(sum(` + r5 + `), "a", "b", "c", "d")`, false, "label_replace input"},
+		{`vector(1)`, `vector( 1 )`, true, "vector is typed: spacing is not part of it"},
+		{`vector(1)`, `vector(1.0)`, true, "vector value: the same number"},
+		{`approx_topk(3, sum by (a) (` + r5 + `))`, `approx_topk(3,sum by (a) (` + r5 + `))`, false, "an opaque call keeps its text, spacing included"},
 	}
 	equalKeys, distinctKeys := 0, 0
 	for _, c := range pairs {

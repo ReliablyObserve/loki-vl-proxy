@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The LogQL parser types `label_replace(...)` and `vector(x)` calls written
+  as Loki's grammar has them (the sample expression, the four strings, the
+  number) next to their text, and the logical query plan builds
+  `LabelReplace` and `VectorLit` nodes from them instead of keeping the call
+  as text. Not wired into the handlers yet; no behaviour change.
+
 - The query corpus codec and plan tests run in corpus-capture test runs too,
   with recording paused while they translate corpus rows
   (`querycorpus.PauseRecording`), so the pull request quality report counts

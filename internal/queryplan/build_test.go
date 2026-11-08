@@ -174,11 +174,18 @@ func TestBuildMetricNodes(t *testing.T) {
 	if s, ok := b.R.(*Scalar); !ok || s.V != 2 {
 		t.Errorf("right = %#v", b.R)
 	}
-	if _, ok := mustBuild(t, `label_replace(rate({a="b"}[1m]), "x", "y", "z", "w")`, Inputs{}).Root.(*Opaque); !ok {
-		t.Errorf("label_replace is not Opaque")
+	lr, ok := mustBuild(t, `label_replace(rate({a="b"}[1m]), "x", "y", "z", "w")`, Inputs{}).Root.(*LabelReplace)
+	if !ok || lr.Dst != "x" || lr.Replacement != "y" || lr.Src != "z" || lr.Regex != "w" {
+		t.Errorf("label_replace = %#v", lr)
+	} else if _, ok := lr.In.(*RangeAgg); !ok {
+		t.Errorf("label_replace input = %#v", lr.In)
 	}
-	if _, ok := mustBuild(t, `vector(1)`, Inputs{}).Root.(*Opaque); !ok {
-		t.Errorf("vector is not Opaque")
+	if v, ok := mustBuild(t, `vector(1.5)`, Inputs{}).Root.(*VectorLit); !ok || v.V != 1.5 {
+		t.Errorf("vector = %#v", mustBuild(t, `vector(1.5)`, Inputs{}).Root)
+	}
+	// approx_topk stays text until it is typed.
+	if _, ok := mustBuild(t, `approx_topk(3, sum by (a) (rate({a="b"}[1m])))`, Inputs{}).Root.(*Opaque); !ok {
+		t.Errorf("approx_topk is not Opaque")
 	}
 	if _, ok := mustBuild(t, `{a="b"}`, Inputs{}).Root.(*LogSelect); !ok {
 		t.Errorf("selector is not a LogSelect")

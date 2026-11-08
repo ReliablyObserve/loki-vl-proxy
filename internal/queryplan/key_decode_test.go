@@ -262,6 +262,13 @@ func (d *keyDecoder) node() {
 		d.tok("value=%d", d.float())
 	case tagOpaque:
 		d.tok("raw=%s", d.str())
+	case tagLabelReplace:
+		d.node()
+		for i := 0; i < 4; i++ {
+			d.tok("arg=%s", d.str())
+		}
+	case tagVectorLit:
+		d.tok("value=%d", d.float())
 	default:
 		d.fail("node tag %d at %d", tag, start)
 	}
@@ -451,6 +458,15 @@ func (d *describer) node(n Node, nodes *[]Node) {
 	case *Opaque:
 		d.tok("node %d", tagOpaque)
 		d.tok("raw=%s", strconv.Quote(x.Raw))
+	case *LabelReplace:
+		d.tok("node %d", tagLabelReplace)
+		d.node(x.In, nodes)
+		for _, a := range []string{x.Dst, x.Replacement, x.Src, x.Regex} {
+			d.tok("arg=%s", strconv.Quote(a))
+		}
+	case *VectorLit:
+		d.tok("node %d", tagVectorLit)
+		d.tok("value=%d", math.Float64bits(x.V))
 	}
 }
 
@@ -471,6 +487,10 @@ func rangeTexts(expr logql.Expr, out [][]string) [][]string {
 		return rangeTexts(x.Inner, out)
 	case *logql.BinOpExpr:
 		return rangeTexts(x.Right, rangeTexts(x.Left, out))
+	case *logql.OpaqueMetricExpr:
+		if x.Typed && x.Func == "label_replace" {
+			return rangeTexts(x.Inner, out)
+		}
 	}
 	return out
 }

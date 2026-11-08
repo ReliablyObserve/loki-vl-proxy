@@ -229,17 +229,33 @@ type Scalar struct {
 	p Props
 }
 
-// Opaque is a metric-level call logql keeps as text (label_replace, vector,
-// approx_topk) until it types them. It is a ratchet line, never lowered.
+// LabelReplace is label_replace(In, Dst, Replacement, Src, Regex): a per-series label rewrite after In.
+type LabelReplace struct {
+	In                           Node
+	Dst, Replacement, Src, Regex string
+	p                            Props
+}
+
+// VectorLit is vector(V): one series without labels, V at every step.
+type VectorLit struct {
+	V float64
+	p Props
+}
+
+// Opaque is a metric-level call logql keeps as text: approx_topk, and a
+// label_replace or vector call the parser could not type. It is a ratchet line,
+// never lowered.
 type Opaque struct {
 	Raw string
 	p   Props
 }
 
 // Props implements Node.
-func (n *RangeAgg) Props() *Props  { return &n.p }
-func (n *VectorAgg) Props() *Props { return &n.p }
-func (n *Rank) Props() *Props      { return &n.p }
-func (n *BinOp) Props() *Props     { return &n.p }
-func (n *Scalar) Props() *Props    { return &n.p }
-func (n *Opaque) Props() *Props    { return &n.p }
+func (n *RangeAgg) Props() *Props     { return &n.p }
+func (n *VectorAgg) Props() *Props    { return &n.p }
+func (n *Rank) Props() *Props         { return &n.p }
+func (n *BinOp) Props() *Props        { return &n.p }
+func (n *Scalar) Props() *Props       { return &n.p }
+func (n *Opaque) Props() *Props       { return &n.p }
+func (n *LabelReplace) Props() *Props { return &n.p }
+func (n *VectorLit) Props() *Props    { return &n.p }

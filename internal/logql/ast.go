@@ -538,10 +538,20 @@ func formatNumber(v float64) string {
 func (l *LiteralExpr) expr() {}
 
 // OpaqueMetricExpr holds the raw text of a metric-level function call that the
-// parser does not understand (label_replace, vector, approx_topk). It passes
-// through to VictoriaLogs without modification.
+// parser does not type as its own node (label_replace, vector, approx_topk). It
+// passes through to VictoriaLogs without modification.
+//
+// Func names the call. A label_replace or vector call written as Loki's grammar
+// has it also carries its parts (Typed): label_replace its sample expression
+// (Inner) and its four strings (Args: destination label, replacement, source
+// label, regexp, unquoted), vector its number (Value). Raw is the text either way.
 type OpaqueMetricExpr struct {
-	Raw string
+	Raw   string
+	Func  string
+	Typed bool
+	Inner Expr
+	Args  []string
+	Value float64
 }
 
 func (o *OpaqueMetricExpr) String() string { return o.Raw }

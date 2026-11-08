@@ -160,6 +160,7 @@ decisions:
     evidence: 'internal/querycorpus/plan_logical_test.go TestLogicalBuildTotal, TestLogicalKeySound, TestLogicalKeyDistinct; conformance/registry/query-plan.json logical and logical_key_sound sections (2026-11-08)'
     code: [internal/queryplan/nodes.go, internal/queryplan/build.go, internal/queryplan/key.go, .golangci.yml]
     tests: [TestLogicalBuildTotal, TestLogicalKeySound, TestLogicalKeyDistinct, TestBuildAllocsGate, FuzzBuild]
+    history: 'label_replace and vector typed (logql OpaqueMetricExpr.Typed with Inner/Args/Value, plan LabelReplace and VectorLit nodes): untyped label_replace 163 -> 8 (the eight are calls Loki rejects), vector 67 -> 0; two spellings of one label_replace now share a key, 0 unsound groups'
     quality: 'No proxy change; the plan is built only in tests until the handlers take a Plan.'
     performance:
       tracked: ['BenchmarkBuild ns/op, B/op, allocs/op, ns/p50, ns/p99 (p50 gate with LVP_QUERYPLAN_BENCH_GATE=1)', 'TestBuildAllocLocks: allocations of Build per query shape, and of AppendKey (0)', 'TestBuildAllocsGate: allocations at most 2x logql.Parse per row', 'TestBuildResourceBounds: allocations and key bytes linear in the query']
