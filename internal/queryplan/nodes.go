@@ -53,6 +53,8 @@ type Inputs struct {
 type Plan struct {
 	Root Node
 	In   Inputs
+	// Sem is what Resolve derives from the whole tree; zero until Resolve runs.
+	Sem PlanSem
 	// Key is Root's key followed by the encoded Inputs.
 	Key []byte
 	// mem holds the first node of each common kind, so a plan of the usual
@@ -141,8 +143,9 @@ type LogSelect struct {
 // Props implements Node.
 func (n *LogSelect) Props() *Props { return &n.p }
 
-// PipelineSem is the resolved semantics of a pipeline. The resolver fills it
-// in a later change; Build leaves it nil.
+// PipelineSem is the resolved semantics of a pipeline. Resolve fills Parsers,
+// ErrorPolicy and ErrorAt; the other fields are filled by later rules. Build
+// leaves it nil.
 type PipelineSem struct {
 	Parsers      int
 	ErrorPolicy  ErrorPolicy
@@ -164,6 +167,17 @@ type MetricSem struct {
 
 // ErrorPolicy says how a pipeline treats lines a parser fails on.
 type ErrorPolicy uint8
+
+const (
+	// ErrorNoParser: the pipeline has no parser stage, so no line carries a parser error.
+	ErrorNoParser ErrorPolicy = iota
+	// ErrorPropagate: a line a parser fails on carries __error__ (and __error_details__) to the end of the
+	// pipeline, unless a later stage filters or drops it.
+	ErrorPropagate
+	// ErrorDroppedLabel: the only stage after the last parser is `| drop __error__` (with or without
+	// __error_details__), so a line a parser fails on is kept without the error label.
+	ErrorDroppedLabel
+)
 
 // LevelNeed says how a query needs detected_level.
 type LevelNeed uint8
