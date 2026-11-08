@@ -281,6 +281,17 @@ class WorkflowWiringTest(unittest.TestCase):
         for name in ("/tmp/pr-base-quality.json", "/tmp/pr-head-quality.json", "/tmp/quality-meta.json"):
             self.assertIn(name, report)
 
+    def test_the_plan_is_compared_with_lokis_tree_and_report_requires_every_snapshot_job(self):
+        head = self.body("head")
+        self.assertIn("go test ./internal/queryplan -run '^TestPlanMatchesLokiOracle$'", head)
+        self.assertIn('LVP_RUN_ORACLES: "1"', head)
+        self.assertLess(head.index("TestPlanMatchesLokiOracle"), head.index("name: pr-quality-diagnostics-head"))
+        report = self.body("report")
+        self.assertIn("HEAD_RESULT: ${{ needs.head.result }}", report)
+        self.assertIn("BASE_RESULT: ${{ needs.base.result }}", report)
+        self.assertIn("success|skipped", report)
+        self.assertLess(report.index("Require the snapshot jobs"), report.index("Download the head snapshot"))
+
     def test_a_change_to_the_load_measurement_runs_the_perf_smoke(self):
         self.assertIn("check_quality_gate\\.py|load_abab\\.py", self.TEXT)
 

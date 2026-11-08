@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The outer-grouping check and the drop-error opt-in of metric queries are
+  read from the query's resolved logical plan (memoised per query text)
+  instead of from regular expressions over the query text. The plan reads
+  every spelling Loki accepts: a grouping written after the parentheses,
+  `by ()`, ranks, and a pipeline written after the range or as a
+  parenthesised log query. No measured change in answers or VictoriaLogs
+  requests on the stack.
+
 ## [2.98.0] - 2026-11-08
 
 ### Changed
