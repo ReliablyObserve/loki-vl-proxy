@@ -166,3 +166,37 @@ func FirstArgumentLen(s string) int {
 	}
 	return len(s)
 }
+
+// StripComments removes the `#` comments of a query (to the end of their line,
+// outside strings), which Loki's lexer skips. The handlers and the string
+// translator read the query text, so the request carries it without them. A
+// query the scanner cannot read to its end is returned as it is: validation
+// reports Loki's error for it.
+func StripComments(query string) string {
+	if !strings.Contains(query, "#") {
+		return query
+	}
+	var spans [][2]int
+	s := &scanner{src: query, comments: &spans}
+	for {
+		t := s.next()
+		if t.Typ == TokEOF {
+			break
+		}
+		if t.Typ == TokError {
+			return query
+		}
+	}
+	if len(spans) == 0 {
+		return query
+	}
+	var b strings.Builder
+	b.Grow(len(query))
+	last := 0
+	for _, sp := range spans {
+		b.WriteString(query[last:sp[0]])
+		last = sp[1]
+	}
+	b.WriteString(query[last:])
+	return b.String()
+}

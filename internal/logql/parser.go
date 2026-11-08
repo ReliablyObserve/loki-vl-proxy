@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -917,6 +918,57 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 
 // syntaxError reports an unexpected current token the way Loki's yacc parser
 // does ("syntax error: unexpected $end, expecting STRING").
+// offsetDuration reads the duration after `offset` as Loki's lexer does: a
+// duration (compound and fractional ones included: 1h2m20s, 1.5h, 1d), or a
+// minus written right before one Go's time.ParseDuration reads (-1s, -1h30m;
+// not -1d, not "- 1s"), which shifts the window forward.
+func (p *parser) offsetDuration() (string, time.Duration, error) {
+	if p.cur.Typ == TokMinus {
+		minus := p.pos()
+		p.advance()
+		if p.cur.Typ == TokDuration && p.pos() == minus+1 {
+			if d, err := time.ParseDuration("-" + p.cur.Val); err == nil {
+				text := "-" + p.cur.Val
+				p.advance()
+				return text, d, nil
+			}
+		}
+		return "", 0, p.errorAt(minus, "-", "DURATION", false)
+	}
+	if p.cur.Typ != TokDuration {
+		return "", 0, p.syntaxErrorAt("DURATION")
+	}
+	val := p.cur.Val
+	d, err := time.ParseDuration(val)
+	if err != nil || d < 0 {
+		var ok bool
+		if d, ok = ParseUnitDuration(val); !ok {
+			return "", 0, p.errorAt(p.pos(), "NUMBER", "DURATION", false)
+		}
+	}
+	p.advance()
+	// A second duration right after (`offset 1h 2m`, `offset 1h-2m`): Loki's lexer
+	// reads it as one more DURATION token.
+	if p.cur.Typ == TokDuration || (p.cur.Typ == TokMinus && signedDurationAt(p.sc.src, p.pos())) {
+		return "", 0, p.errorAt(p.pos(), "DURATION", ")", true)
+	}
+	return val, d, nil
+}
+
+// signedDurationAt reports a minus at src[i] followed right away by text Go's
+// time.ParseDuration reads with the sign: what Loki's lexer takes as one DURATION.
+func signedDurationAt(src string, i int) bool {
+	j := i + 1
+	for j < len(src) && (src[j] == '.' || src[j] >= '0' && src[j] <= '9' || src[j] >= 'a' && src[j] <= 'z' || src[j] >= 'A' && src[j] <= 'Z' || src[j] >= 0x80) {
+		j++
+	}
+	if j == i+1 {
+		return false
+	}
+	_, err := time.ParseDuration(src[i:j])
+	return err == nil
+}
+
 func (p *parser) syntaxError(expecting string) error {
 	msg := "syntax error: unexpected " + lokiTokenName(p.cur)
 	if expecting != "" {
@@ -1357,12 +1409,12 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// Optional offset modifier: [duration] offset 1h
 	if p.cur.Typ == TokIdent && p.cur.Val == "offset" {
 		p.advance() // consume "offset"
-		off, offErr := p.expect(TokDuration)
-		if offErr != nil {
-			return fmt.Errorf("logql: expected duration after offset: %w", offErr)
+		text, d, err := p.offsetDuration()
+		if err != nil {
+			return err
 		}
-		ra.Offset = off.Val
-		ra.OffsetDuration = parseDuration(off.Val)
+		ra.Offset = text
+		ra.OffsetDuration = d
 	}
 
 	// Optional @ modifier: [duration] @ <unix_timestamp | start() | end()>

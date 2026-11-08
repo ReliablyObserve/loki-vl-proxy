@@ -1,5 +1,5 @@
 id: semantics/proxy-rejects-valid-logql
-title: 'The proxy rejects LogQL Loki accepts: comments, negative and compound offsets, filters after a range, logfmt flags, ip() label filters (open)'
+title: 'The proxy rejects LogQL Loki accepts: logfmt flags and the families the differential run still lists (open)'
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -13,11 +13,18 @@ why: |
   rejects each with 400 (its own parse error, or `unsupported instant
   aggregation target`). Each query family is a separate small parser fix; the
   differential run lists them per cluster.
+
+  Since fixed, each with its own case: comments and negative, compound and
+  fractional offsets (semantics/comments-signed-compound-offsets). The parser
+  accepts these on 2026-11-08, their answers not yet compared with Loki: a
+  line filter after the range, ip() label filters, and the topk over
+  sum_over_time instant form. Still rejected: `| logfmt --strict` /
+  `--keep-empty`.
 request:
   method: GET
   path: /loki/api/v1/query_range
   params:
-    query: 'count_over_time({namespace="prod"}[3s] offset -1s)'
+    query: '{namespace="prod"} | logfmt --strict'
     start: 'now-1h'
     end: 'now'
     step: '60'

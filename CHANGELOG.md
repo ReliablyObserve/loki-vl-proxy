@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- LogQL `#` comments, negative offsets (`offset -1s`, which shifts the window
+  forward) and compound durations in any unit order (`offset 1h2m20s`,
+  `offset 2m1h`, `[1h2m]`) are accepted and answered like Loki, where the
+  proxy rejected them with its own parse error. The spellings Loki rejects
+  (`offset -1d`, `offset - 1s`, `offset 1h2x`, a second duration after the
+  offset) answer with Loki's error text.
+
 ### Changed
 
 - The outer-grouping check and the drop-error opt-in of metric queries are

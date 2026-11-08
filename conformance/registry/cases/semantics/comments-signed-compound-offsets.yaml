@@ -1,0 +1,51 @@
+id: semantics/comments-signed-compound-offsets
+title: '`#` comments, negative offsets and compound durations parse and answer like Loki'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer skips a `#` comment to the end of its line anywhere outside a
+  string, and reads a compound or fractional duration (`1h2m20s`, `2m1h`,
+  `1.5h`) and a minus written right before a duration Go's time.ParseDuration
+  reads (`offset -1s`, `offset -1h30m`) as one DURATION token; a negative
+  offset shifts the window forward. It rejects `offset -1d`, `offset - 1s`
+  and `offset +1s` (`unexpected -, expecting DURATION`), `offset 1h2x`
+  (`unexpected NUMBER, expecting DURATION`) and a second duration after the
+  offset (`unexpected DURATION, expecting )`). The proxy's parser rejected
+  every comment, negative offset and compound offset with its own error.
+
+  Fixed: the scanner skips comments and reads compound durations, the parser
+  reads a signed offset, and the request rewrite that writes keywords in lower
+  case also removes the comments (logql.StripComments), so the handlers and
+  the string translator read the query without them. Every accepted and
+  rejected spelling above answers with Loki's acceptance, offsets and error
+  text, recorded with the test oracle.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({namespace="prod"}[1m] offset -2m)) # shifted forward'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, matrix.values]
+  expect: |
+    200 with Loki's values.
+gap:
+  status: fixed
+  visual: none
+  visual_reason: 'Grafana and Drilldown write neither comments nor negative offsets; hand-written queries do, and the answers are pinned by the e2e test against Loki'
+  fixed_by: 'pending'
+  impact: api-only
+  effort: S
+  area: 'internal/logql/scanner.go (skipWS, scanNumberOrDuration), internal/logql/parser.go (offsetDuration), internal/logql/canonical.go (StripComments), internal/proxy/http_utils.go (lowercaseQueryKeywords)'
+  loki: 'comments skipped; signed, compound and fractional offsets read as one duration'
+  proxy: 'the same acceptance, offsets and error texts'
+  planned_test: 'TestRangeMetricCompatibilityCommentsAndOffsets (test/e2e-compat, group semantics: comments, negative, compound and fractional offsets, compound range, a shifted binary, step 60 and 30, equal to Loki); TestCommentsAndOffsetsLikeLoki, TestStripComments, FuzzStripComments (internal/logql); TestCommentsAndOffsetSpellingsSendTheSameBackendRequests (internal/proxy)'
+  clusters: []

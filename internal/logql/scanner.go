@@ -181,6 +181,8 @@ type scanner struct {
 	pos        int
 	braceDepth int32 // tracks {} nesting for != vs |= disambiguation
 	start      int32 // byte offset where the token last returned by next begins
+	// comments collects the spans of the comments skipped, when not nil (StripComments).
+	comments *[][2]int
 }
 
 func newScanner(src string) *scanner {
@@ -204,7 +206,22 @@ func (s *scanner) read() rune {
 func (s *scanner) skipWS() {
 	for {
 		r, size := s.peek()
-		if size == 0 || !unicode.IsSpace(r) {
+		if size == 0 {
+			return
+		}
+		if r == '#' {
+			// A comment runs to the end of its line, as in Loki's lexer. A string never
+			// reaches here: the string scanners read their quotes to the end.
+			start := s.pos
+			for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+				s.pos++
+			}
+			if s.comments != nil {
+				*s.comments = append(*s.comments, [2]int{start, s.pos})
+			}
+			continue
+		}
+		if !unicode.IsSpace(r) {
 			return
 		}
 		s.pos += size
@@ -452,6 +469,26 @@ func (s *scanner) scanIdent() Token {
 	return Token{Typ: TokIdent, Val: val}
 }
 
+// scanLetters advances over a run of letters.
+func (s *scanner) scanLetters() {
+	for {
+		r, size := s.peek()
+		if size == 0 || !unicode.IsLetter(r) {
+			return
+		}
+		s.pos += size
+	}
+}
+
+// isDurationUnit reports a unit a compound duration may continue after.
+func isDurationUnit(u string) bool {
+	switch strings.ToLower(u) {
+	case "ns", "us", "µs", "ms", "s", "m", "h", "d", "w", "y":
+		return true
+	}
+	return false
+}
+
 // scanNumberOrDuration scans an integer; if followed by time-unit letters it
 // returns TokDuration, otherwise TokNumber.
 func (s *scanner) scanNumberOrDuration() Token {
@@ -465,15 +502,27 @@ func (s *scanner) scanNumberOrDuration() Token {
 	}
 	// Check for duration unit suffix
 	unitStart := s.pos
-	for {
-		r, size := s.peek()
-		if size == 0 || !unicode.IsLetter(r) {
+	s.scanLetters()
+	hasUnit := s.pos > unitStart
+	// A compound duration (1h2m20s): after a duration unit, another number and unit
+	// continue the same token, as Go's time.ParseDuration reads them.
+	for s.pos > unitStart && isDurationUnit(s.src[unitStart:s.pos]) {
+		r, _ := s.peek()
+		if !unicode.IsDigit(r) {
 			break
 		}
-		s.pos += size
+		for {
+			r, size := s.peek()
+			if size == 0 || (!unicode.IsDigit(r) && r != '.') {
+				break
+			}
+			s.pos += size
+		}
+		unitStart = s.pos
+		s.scanLetters()
 	}
 	val := s.src[start:s.pos]
-	if s.pos > unitStart {
+	if hasUnit {
 		return Token{Typ: TokDuration, Val: val}
 	}
 	return Token{Typ: TokNumber, Val: val}

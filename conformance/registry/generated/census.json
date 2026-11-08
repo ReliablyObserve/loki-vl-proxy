@@ -311,6 +311,9 @@
     "semantics/binary-step-grid | gap:open",
     "semantics/binary-step-grid | query",
     "semantics/client-cancellation-propagates | compare:exact",
+    "semantics/comments-signed-compound-offsets | compare:observed",
+    "semantics/comments-signed-compound-offsets | gap:fixed",
+    "semantics/comments-signed-compound-offsets | query",
     "semantics/count-values-unsupported | compare:observed",
     "semantics/count-values-unsupported | gap:fixed",
     "semantics/count-values-unsupported | query",
@@ -835,6 +838,8 @@
     "internal/cache/peer_test.go | peer-cache-patterns",
     "internal/config/registry_test.go | limits/every-cap-is-a-flag",
     "internal/config/registry_test.go | operator-configurable-limits",
+    "internal/logql/comments_offsets_test.go | semantics/comments-signed-compound-offsets",
+    "internal/logql/comments_offsets_test.go | semantics/proxy-rejects-valid-logql",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/input_size_test.go | architecture-syntax-package-layering",
@@ -1401,6 +1406,7 @@
     "internal/proxy/tumbling_axis_parity_test.go | window-bounds-and-step-alignment",
     "internal/proxy/typed_fold_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/typed_fold_test.go | semantics/non-sum-vector-aggregation-unreduced",
+    "internal/proxy/unknown_logql_names_test.go | semantics/comments-signed-compound-offsets",
     "internal/proxy/unknown_logql_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/proxy/unwrap_bytes_gate_property_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/proxy/unwrap_bytes_gate_property_test.go | semantics/unwrap-sample-validity",
@@ -1565,6 +1571,8 @@
     "test/e2e-compat/binary_operand_literals_test.go | loki_api_v1_query",
     "test/e2e-compat/binary_operand_literals_test.go | loki_api_v1_query_range",
     "test/e2e-compat/binary_operand_literals_test.go | semantics/binary-operand-literals-reprint",
+    "test/e2e-compat/comments_offsets_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/comments_offsets_test.go | semantics/comments-signed-compound-offsets",
     "test/e2e-compat/compat_option_matrix_test.go | loki-compatible-profile",
     "test/e2e-compat/compat_option_matrix_test.go | profiles/detected-fields-dotted-json-keys",
     "test/e2e-compat/compat_option_matrix_test.go | profiles/dotted-name-parse-error",
@@ -1946,14 +1954,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 41,
+      "api": 42,
       "drilldown": 49,
       "explore": 153,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 375,
+      "go": 377,
       "playwright": 1
     },
     "page_kinds": {
@@ -1972,8 +1980,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
-    "wired_items": 260
+    "unwired_items": 100,
+    "wired_items": 262
   },
   "gates": [
     "A/B shape selection",

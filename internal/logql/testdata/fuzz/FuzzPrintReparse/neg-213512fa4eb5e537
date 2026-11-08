@@ -1,0 +1,2 @@
+go test fuzz v1
+string("rate({a=\"x\"}[1h2m3ms] offset -1h30m)")

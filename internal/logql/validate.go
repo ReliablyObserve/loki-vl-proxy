@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // MaxInputSize is Loki's syntax.maxInputSize: ParseExpr rejects any query of
@@ -98,6 +99,10 @@ func formatParseError(err error, raw string) string {
 
 	switch {
 	case strings.Contains(msg, "empty expression"):
+		if strings.TrimSpace(raw) != "" {
+			// Only comments: Loki's lexer reaches the end after them.
+			return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected $end", utf8.RuneCountInString(raw)+1)
+		}
 		return "parse error : syntax error: unexpected $end"
 	case strings.Contains(msg, "expected label operator") ||
 		strings.Contains(msg, "expected label value"):
