@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.101.0] - 2026-11-08
+
 ### Fixed
 
 - LogQL `#` comments, negative offsets (`offset -1s`, which shifts the window
