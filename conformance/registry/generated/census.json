@@ -933,6 +933,7 @@
     "internal/proxy/binary_matching_differential_test.go | semantics/binary-ignoring-matching",
     "internal/proxy/binary_matching_test.go | loki_api_v1_query",
     "internal/proxy/binary_matching_test.go | semantics/scalar-sample-time-units",
+    "internal/proxy/binary_operand_test.go | architecture-syntax-package-layering",
     "internal/proxy/capture_error_replay_test.go | limits/series-limit-error",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-backend-text",
     "internal/proxy/capture_error_replay_test.go | semantics/error-layer-body-shape",
@@ -1976,7 +1977,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 383,
+      "go": 384,
       "playwright": 1
     },
     "page_kinds": {

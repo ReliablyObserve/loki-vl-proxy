@@ -23,6 +23,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -391,15 +392,17 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 	return p.translateQueryWithContext(context.Background(), logql)
 }
 
-// translateBinOpSide translates one side of a binary expression.
-// Scalar literal expressions (e.g. "100") are returned as-is without translation,
-// since the translator cannot handle bare numeric literals and proxyBinaryMetric
-// already detects them via translator.IsScalar.
-func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (string, error) {
+// translateBinOpSide translates one side of a binary expression into its physical operator. A scalar literal
+// (e.g. "100") is read as it is written, without translation: the translator cannot handle bare numeric literals.
+func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (physical.Op, error) {
 	if lit, ok := expr.(*logqlpkg.LiteralExpr); ok {
-		return lit.String(), nil
+		return binaryOperand(lit.String())
 	}
-	return p.translateQueryWithContext(ctx, expr.String())
+	logsql, err := p.translateQueryWithContext(ctx, expr.String())
+	if err != nil {
+		return nil, err
+	}
+	return binaryOperand(logsql)
 }
 
 // translateLogResponseQuery translates the query of a query or query_range
