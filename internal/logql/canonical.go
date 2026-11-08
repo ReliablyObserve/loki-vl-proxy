@@ -200,3 +200,29 @@ func StripComments(query string) string {
 	b.WriteString(query[last:])
 	return b.String()
 }
+
+// StripParserFlags removes the logfmt flags of a query (`--strict`,
+// `--keep-empty`). The parser keeps them on the typed stage; the request text
+// the handlers and the string translator read carries the stage without them,
+// which they evaluate as `| logfmt`. A query that does not parse is returned as
+// it is: validation reports Loki's error for it.
+func StripParserFlags(query string) string {
+	if !strings.Contains(query, "--") {
+		return query
+	}
+	var spans [][2]int
+	p := &parser{sc: newScanner(query), flagSpans: &spans}
+	p.advance()
+	if _, err := p.parseExpr(); err != nil || p.cur.Typ != TokEOF || len(spans) == 0 {
+		return query
+	}
+	var b strings.Builder
+	b.Grow(len(query))
+	last := 0
+	for _, sp := range spans {
+		b.WriteString(query[last:sp[0]])
+		last = sp[1]
+	}
+	b.WriteString(query[last:])
+	return b.String()
+}

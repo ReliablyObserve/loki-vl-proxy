@@ -174,6 +174,8 @@ type parser struct {
 	prevEnd int
 	// canon is set by CanonicalizeLogRanges only.
 	canon *canonState
+	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
+	flagSpans *[][2]int
 }
 
 // pos is the byte offset of the current token in the input.
@@ -606,6 +608,10 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	case "json":
 		start := p.sc.pos
 		p.advance()
+		if p.cur.Typ == TokMinus && (flagAt(p.sc.src[p.pos():], "--strict") || flagAt(p.sc.src[p.pos():], "--keep-empty")) {
+			// The flags are logfmt's only: Loki's grammar has no json flag.
+			return nil, p.errorAt(p.pos(), "FUNCTION_FLAG", "", true)
+		}
 		param, fields, err := p.consumeExplicitFieldList(start)
 		if err != nil {
 			return nil, err
@@ -615,11 +621,36 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	case "logfmt":
 		start := p.sc.pos
 		p.advance()
+		stage := &ParserStage{Type: ParserLogfmt}
+		for p.cur.Typ == TokMinus {
+			at := p.pos()
+			rest := p.sc.src[at:]
+			flag := ""
+			switch {
+			case flagAt(rest, "--strict"):
+				flag, stage.Strict = "--strict", true
+			case flagAt(rest, "--keep-empty"):
+				flag, stage.KeepEmpty = "--keep-empty", true
+			case strings.HasPrefix(rest, "--"):
+				// Loki reads `--foo` as two minus signs before a name.
+				return nil, p.errorAt(at+2, "IDENTIFIER", "NUMBER", false)
+			}
+			if flag == "" {
+				break
+			}
+			if p.flagSpans != nil {
+				*p.flagSpans = append(*p.flagSpans, [2]int{at, at + len(flag)})
+			}
+			p.sc.pos = at + len(flag)
+			start = p.sc.pos
+			p.advance()
+		}
 		param, fields, err := p.consumeExplicitFieldList(start)
 		if err != nil {
 			return nil, err
 		}
-		return &ParserStage{Type: ParserLogfmt, Param: param, Fields: fields}, nil
+		stage.Param, stage.Fields = param, fields
+		return stage, nil
 
 	case "regexp":
 		p.advance()
@@ -918,6 +949,18 @@ func (p *parser) parseLabelFormat() (Stage, error) {
 
 // syntaxError reports an unexpected current token the way Loki's yacc parser
 // does ("syntax error: unexpected $end, expecting STRING").
+// flagAt reports s starting with flag, not followed by a name character.
+func flagAt(s, flag string) bool {
+	if !strings.HasPrefix(s, flag) {
+		return false
+	}
+	if len(s) == len(flag) {
+		return true
+	}
+	c := s[len(flag)]
+	return !(c == '_' || c == '-' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z')
+}
+
 // offsetDuration reads the duration after `offset` as Loki's lexer does: a
 // duration (compound and fractional ones included: 1h2m20s, 1.5h, 1d), or a
 // minus written right before one Go's time.ParseDuration reads (-1s, -1h30m;

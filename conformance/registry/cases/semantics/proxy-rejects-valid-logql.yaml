@@ -1,5 +1,5 @@
 id: semantics/proxy-rejects-valid-logql
-title: 'The proxy rejects LogQL Loki accepts: logfmt flags and the families the differential run still lists (open)'
+title: 'LogQL Loki accepts that the proxy rejected: comments, signed and compound offsets, logfmt flags (fixed)'
 proves:
   - loki_api_v1_query_range
   - loki_api_v1_query
@@ -18,8 +18,11 @@ why: |
   fractional offsets (semantics/comments-signed-compound-offsets). The parser
   accepts these on 2026-11-08, their answers not yet compared with Loki: a
   line filter after the range, ip() label filters, and the topk over
-  sum_over_time instant form. Still rejected: `| logfmt --strict` /
-  `--keep-empty`.
+  sum_over_time instant form. Since fixed too: `| logfmt --strict` /
+  `--keep-empty`, read in any order and repeated, before a field list, with
+  Loki's errors for `| json --strict` and an unknown flag. The stage is
+  answered as `| logfmt`, which is Loki's answer for well-formed lines; how
+  malformed lines and empty values differ is semantics/logfmt-malformed-lines.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -37,13 +40,14 @@ compare:
   expect: |
     200 with Loki's answer.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 'pending'
   impact: api-only
   effort: M
   area: 'internal/logql parser (lexer: comments, signed durations, flags) + translator'
   loki: 'pkg/logql/syntax/lex.go:149 comments, :90-91 OpStrict/OpKeepEmpty; syntax.y offsetExpr; pkg/logql/log/ip.go'
   proxy: '400'
-  planned_test: 'TestCompat_LogQLSurfaceAccepted (test/e2e-compat, group semantics), one subtest per family'
+  planned_test: 'TestRangeMetricCompatibilityLogfmtFlags and TestRangeMetricCompatibilityCommentsAndOffsets (test/e2e-compat, group semantics, against Loki); TestLogfmtFlagsLikeLoki, TestCommentsAndOffsetsLikeLoki (internal/logql, Loki''s recorded answers)'
   clusters:
     - 02fa6772
     - 048082ab
