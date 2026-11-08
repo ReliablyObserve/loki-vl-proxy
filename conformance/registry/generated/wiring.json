@@ -13,7 +13,8 @@
     "architecture-syntax-package-layering": [
       "internal/logql/input_size_test.go",
       "internal/logsql/parser_read_test.go",
-      "internal/logsql/parser_typed_test.go"
+      "internal/logsql/parser_typed_test.go",
+      "internal/logsql/pipe_math_as_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
@@ -1691,6 +1692,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/logsql/parser_typed_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/pipe_math_as_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/metrics/request_flow_test.go": [

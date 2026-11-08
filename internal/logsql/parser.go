@@ -17,7 +17,11 @@ import (
 func Parse(input string) (*Query, error) {
 	querycorpus.Record(querycorpus.LogsQL, input)
 	p := newParser(input)
-	return p.parseQuery()
+	q, err := p.parseQuery()
+	if err == nil && p.scanErr != "" {
+		return nil, fmt.Errorf("logsql: %s", p.scanErr)
+	}
+	return q, err
 }
 
 // ParseFilter parses only a filter expression (no pipes).
@@ -30,6 +34,9 @@ func ParseFilter(input string) (FilterExpr, error) {
 	}
 	if p.peek().Typ != TokEOF {
 		return nil, fmt.Errorf("logsql: unexpected token after filter: %q", p.peek().Val)
+	}
+	if p.scanErr != "" {
+		return nil, fmt.Errorf("logsql: %s", p.scanErr)
 	}
 	return f, nil
 }
@@ -45,6 +52,9 @@ type parser struct {
 	// came before it.
 	bufRaw   string
 	bufSpace bool
+	// scanErr is the first token the scanner could not read (an unterminated string, say): a query holding one
+	// is rejected even where a parse path would read the error token as a word.
+	scanErr string
 }
 
 func newParser(input string) *parser {
@@ -55,6 +65,9 @@ func newParser(input string) *parser {
 func (p *parser) peek() Token {
 	if p.buf == nil {
 		tok := p.sc.Next()
+		if tok.Typ == TokError && p.scanErr == "" {
+			p.scanErr = tok.Val
+		}
 		p.buf = &tok
 		p.bufRaw, p.bufSpace = p.sc.Raw(), p.sc.SpaceBefore()
 	}
@@ -1033,12 +1046,48 @@ func (p *parser) consumeUntilRParen() (string, error) {
 		case TokRParen:
 			depth--
 			if depth == 0 {
-				return strings.TrimSpace(p.sc.src[start:p.sc.start]), nil
+				return strings.TrimSpace(withoutComments(p.sc.src[start:p.sc.start])), nil
 			}
 		case TokEOF, TokError:
 			return "", fmt.Errorf("logsql: unclosed parenthesis")
 		}
 	}
+}
+
+// withoutComments is raw source text without its `#` comments, which run to the end of the line outside quoted
+// strings: what the scanner reads, so text cut from the source prints back to the same query.
+func withoutComments(raw string) string {
+	if !strings.Contains(raw, "#") {
+		return raw
+	}
+	var b strings.Builder
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		switch {
+		case quote != 0:
+			b.WriteByte(c)
+			if c == '\\' && quote != '`' && i+1 < len(raw) {
+				i++
+				b.WriteByte(raw[i])
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+			b.WriteByte(c)
+		case c == '#':
+			for i < len(raw) && raw[i] != '\n' {
+				i++
+			}
+			if i < len(raw) {
+				b.WriteByte('\n')
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -1827,8 +1876,10 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		if _, err := p.expect(TokLParen); err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
-		fieldTok := p.advance()
-		field := fieldTok.Val
+		field, err := p.expectIdent() // a quoted name keeps its quotes, as in the other stats functions
+		if err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
 		if p.peek().Typ == TokComma {
 			p.advance()
 		}
@@ -1845,8 +1896,10 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		if _, err := p.expect(TokLParen); err != nil {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
-		fieldTok := p.advance()
-		field := fieldTok.Val
+		field, err := p.expectIdent() // a quoted name keeps its quotes, as in the other stats functions
+		if err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
 		if p.peek().Typ == TokComma {
 			p.advance()
 		}
@@ -2416,6 +2469,17 @@ func (p *parser) rawToPipe() string {
 	return strings.TrimSpace(rest[:n])
 }
 
+// lastSpacedAs is the byte offset of the last " as " in s, in any case, or -1. It compares bytes, so the offset
+// is valid in s whatever its encoding (strings.ToLower changes the length of invalid UTF-8).
+func lastSpacedAs(s string) int {
+	for i := len(s) - 4; i >= 0; i-- {
+		if s[i] == ' ' && s[i+1]|0x20 == 'a' && s[i+2]|0x20 == 's' && s[i+3] == ' ' {
+			return i
+		}
+	}
+	return -1
+}
+
 // parsePipeMath parses both forms:
 //   - alias:=expr  (legacy form, our internal parser)
 //   - expr as alias (VL canonical form, output of String())
@@ -2435,8 +2499,7 @@ func (p *parser) parsePipeMath() (Pipe, error) {
 	}
 
 	// Try expr as alias form (scan for last " as " separator).
-	lower := strings.ToLower(chunk)
-	if idx := strings.LastIndex(lower, " as "); idx >= 0 {
+	if idx := lastSpacedAs(chunk); idx >= 0 {
 		expr := strings.TrimSpace(chunk[:idx])
 		alias := strings.TrimSpace(chunk[idx+4:])
 		if expr != "" && alias != "" && !strings.ContainsAny(alias, " \t+-*/()") {
