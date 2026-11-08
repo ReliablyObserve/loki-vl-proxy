@@ -115,3 +115,26 @@ decisions:
     code: [internal/logsql/parser.go, internal/logsql/scanner.go, internal/logsql/ast.go]
     tests: [TestParseReadsTranslatorQueries, TestParseRejectsWhatVictoriaLogsRejects, TestParsePipesAreTyped, TestParseFiltersAreTyped, TestBuiltPipesReadBack, FuzzParseRoundTrip]
     quality: 'Every parsed query prints back to text that parses to the same AST; no corpus query loses meaning for VictoriaLogs; the oracle wrong-accept count only falls.'
+  - id: physical-payloads-replace-marker-reads
+    chosen: 'The post-processing the translator writes into its LogsQL text (the without fold, label_replace calls, binary expressions, scalars) is read once into typed operators (internal/queryplan/physical) by translator.DecodePhysical, the exact inverse of translator.EncodePhysical; the query and query_range handlers and the metric post-aggregation handlers read the operators instead of calling the marker parsers'
+    over: [each handler stripping the without marker and then the label_replace markers with its own pair of calls, a new marker grammar or a re-parse of the LogsQL text]
+    why: |
+      First step of moving the proxy from in-band marker text to a typed
+      physical plan (owner 2026-11-08, architecture B). The codec is built from
+      the existing marker parsers only, so it reads exactly what they read: on
+      2,525 queries (bench shapes, the semantics matrix, registry cases and a
+      1,991-row stratified sample of the client query corpus) under 12
+      translator profiles, 22,836 translated rows (6,813 with markers) decode
+      and encode back byte for byte, the clean query equals the old two-step
+      strip and the without and label_replace parts equal the old parsers'.
+      Text the encoder cannot write back byte for byte (a padded or empty
+      label list, a marker in the middle) stays Verbatim, read like before.
+      The VictoriaLogs query and the answer are unchanged on 15 marker shapes
+      through the real handlers.
+    evidence: 'internal/querycorpus/plan_corpus_test.go TestPhysicalCodecRoundTrip, internal/proxy/physical_sites_test.go, internal/proxy/physical_sites_bench_test.go (2026-11-08)'
+    code: [internal/queryplan/physical/ops.go, internal/translator/physical_codec.go, internal/translator/translator.go, internal/proxy/vector_matching.go, internal/proxy/proxy.go, internal/proxy/metric_agg.go, internal/proxy/ordered_json_metric.go]
+    tests: [TestPhysicalCodecRoundTrip, TestPhysicalCodecEdgeTable, TestPhysicalCodecRoundTripsTranslatorOutput, TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing, TestScalarValueMatchesParseFloat, FuzzPhysicalCodec]
+    quality: 'Byte-identical VictoriaLogs queries and answers; lowering_marker_reads 41 → 34 in query-text-sites.json, may only fall.'
+    performance:
+      tracked: ['benchstat: BenchmarkSplitPostProcessing old vs new over the capture sample']
+      bound: 'splitPostProcessing 2.30 µs vs 2.20 µs for the old strip (count 10), 153 B and 2 allocs vs 81 B and 0'

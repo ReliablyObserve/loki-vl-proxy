@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -912,17 +913,38 @@ type labelTransforms struct {
 	replaces []translator.LabelReplaceSpec
 }
 
-// parseLabelTransformMarkers strips the label_replace markers
-// the translator left in a query. It returns Loki's parse error text when a
+// splitPostProcessing reads the markers the translator left in a query through the physical-plan codec. It returns
+// the clean query, the operator and labels of the `without` fold the proxy applies (empty and nil without one) and
+// the label_replace calls, innermost first.
+func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string, replaces []translator.LabelReplaceSpec) {
+	low, _ := translator.DecodePhysical(translated)
+	core, post := physical.Split(low)
+	if post.Without != nil {
+		markerOp, withoutLabels = post.Without.Op, post.Without.Labels
+	}
+	if q, ok := core.(physical.VLQuery); ok {
+		clean = q.Text
+	} else {
+		clean = translator.EncodePhysical(core)
+	}
+	return clean, markerOp, withoutLabels, post.LabelReplace
+}
+
+// newLabelTransforms holds the label_replace calls of a query. It returns Loki's parse error text when a
 // label_replace regexp does not compile.
-func parseLabelTransformMarkers(logsql string) (string, labelTransforms, string) {
-	logsql, replaces := translator.ParseAllLabelReplaceMarkers(logsql)
+func newLabelTransforms(replaces []translator.LabelReplaceSpec) (labelTransforms, string) {
 	for _, spec := range replaces {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			return logsql, labelTransforms{}, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err)
+			return labelTransforms{}, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err)
 		}
 	}
-	return logsql, labelTransforms{replaces: replaces}, ""
+	return labelTransforms{replaces: replaces}, ""
+}
+
+// parseLabelTransformMarkers reads the label_replace markers the translator left in a query.
+func parseLabelTransformMarkers(translated string) (labelTransforms, string) {
+	_, _, _, replaces := splitPostProcessing(translated)
+	return newLabelTransforms(replaces)
 }
 
 // apply runs the transforms over a matrix or vector answer.

@@ -154,7 +154,7 @@ func (p *Proxy) handleOrderedJSONMetricUnderTransform(w http.ResponseWriter, r *
 	if err != nil {
 		return false
 	}
-	_, transforms, invalid := parseLabelTransformMarkers(translated)
+	transforms, invalid := parseLabelTransformMarkers(translated)
 	if invalid != "" || len(transforms.replaces) == 0 {
 		return false
 	}
