@@ -13,10 +13,9 @@ only; the parser understands the block layout the workflows use) and assert:
   form `contains(format(',{0},', ...), ',<workflow>/<job>,')`, so `ci/test` never
   matches `ci/test-shard`; the registry in change_scope.py and ci.yaml list the
   same jobs, the same needs and the same aggregates;
-- no job downstream of `test` can run when `test` failed, and only the jobs that
-  follow `test` for ordering, with exactly the gate below, can run when `test` was
-  skipped; the jobs that read what `test` or `image` produce keep the implicit
-  success();
+- only the job that reads what `test` produces (conformance) depends on it, with
+  the implicit success(), so no job downstream of `test` runs when it failed; every
+  other job starts without waiting for the unit tests;
 - the aggregators pass on skipped groups only when scope says `false` and the
   group was not selected;
 - the baseline output reaches only the three heavy workflows, only through
@@ -56,15 +55,13 @@ def lane_gate(lane, job_id):
     return "${{ !cancelled() && (needs.scope.outputs.%s != 'false' || %s) }}" % (lane, sel(job_id))
 
 
-TEST_OK = "(needs.test.result == 'success' || needs.test.result == 'skipped')"
 CANONICAL_GATE = "${{ !cancelled() && (needs.scope.outputs.product != 'false' || %s) }}"
 STACK_GATE = "${{ !cancelled() && (needs.scope.outputs.stack != 'false' || %s) }}"
-# A job that follows `test` only to run after it: a skipped `test` (nothing selected it) is fine, a
-# failed one is not. The status function is explicit, so the job states what it accepts.
-ORDERED_GATE = "${{ !cancelled() && " + TEST_OK + " && (needs.scope.outputs.product != 'false' || %s) }}"
-# The same for a stack job: it also needs the image, which only runs for a stack path or a selected job.
-STACK_AFTER_TEST_GATE = ("${{ !cancelled() && needs.image.result == 'success' && " + TEST_OK
-                         + " && (needs.scope.outputs.stack != 'false' || %s) }}")
+# A stack job: it needs the image, which only runs for a stack path or a selected job.
+STACK_IMAGE_GATE = "${{ !cancelled() && needs.image.result == 'success' && (needs.scope.outputs.stack != 'false' || %s) }}"
+# Jobs that read nothing `test` produces: they start next to the unit test shards.
+INDEPENDENT_OF_TEST = ("tuple-contract", "fuzz-smoke-shard", "race-stress-shard", "docker", "stress-tests",
+                       "memory-leak-tests", "tuple-smoke", "e2e-compat-group", "e2e-fleet", "e2e-ui")
 # A job that downloads what `test` produced: no status function, so it runs only after a green `test`.
 NEEDS_RUN_GATE = "${{ needs.scope.outputs.product != 'false' || %s }}"
 
@@ -73,16 +70,16 @@ CI_GATES = {
     "test": CANONICAL_GATE,
     "bench": CANONICAL_GATE,
     "image": STACK_GATE,
-    "tuple-smoke": STACK_AFTER_TEST_GATE,
-    "e2e-compat-group": STACK_AFTER_TEST_GATE,
-    "e2e-fleet": STACK_AFTER_TEST_GATE,
-    "e2e-ui": STACK_AFTER_TEST_GATE,
-    "tuple-contract": ORDERED_GATE,
-    "fuzz-smoke-shard": ORDERED_GATE,
-    "race-stress-shard": ORDERED_GATE,
-    "docker": ORDERED_GATE,
-    "stress-tests": ORDERED_GATE,
-    "memory-leak-tests": ORDERED_GATE,
+    "tuple-smoke": STACK_IMAGE_GATE,
+    "e2e-compat-group": STACK_IMAGE_GATE,
+    "e2e-fleet": STACK_IMAGE_GATE,
+    "e2e-ui": STACK_IMAGE_GATE,
+    "tuple-contract": CANONICAL_GATE,
+    "fuzz-smoke-shard": CANONICAL_GATE,
+    "race-stress-shard": CANONICAL_GATE,
+    "docker": CANONICAL_GATE,
+    "stress-tests": CANONICAL_GATE,
+    "memory-leak-tests": CANONICAL_GATE,
     "conformance": NEEDS_RUN_GATE,
 }
 AGGREGATORS = {"e2e-compat": "e2e-compat-group", "race-stress": "race-stress-shard", "fuzz-smoke": "fuzz-smoke-shard"}
@@ -212,10 +209,9 @@ def ci_problems(text):
             continue
         if reaches(jobs, name, {"test"}) and job["if"] and STATUS_FUNCTIONS.search(job["if"]):
             found.append(f"{name} is downstream of test but its if: bypasses success(): {job['if']}")
-    for name in ("fuzz-smoke-shard", "race-stress-shard", "tuple-contract", "docker", "stress-tests", "memory-leak-tests",
-                 "tuple-smoke", "e2e-compat-group", "e2e-fleet", "e2e-ui"):
-        if name in jobs and not {"scope", "test"} <= set(jobs[name]["needs"]):
-            found.append(f"{name} must need scope and test, got {sorted(jobs[name]['needs'])}")
+    for name in INDEPENDENT_OF_TEST:
+        if name in jobs and reaches(jobs, name, {"test", "test-shard"}):
+            found.append(f"{name} waits for the unit tests but reads nothing they produce")
     for name in ("tuple-smoke", "e2e-compat-group", "e2e-fleet", "e2e-ui"):
         if name in jobs and "image" not in jobs[name]["needs"]:
             found.append(f"{name} must need the image")
@@ -232,7 +228,7 @@ class ScopeWiringTest(unittest.TestCase):
         for name in ("scope", "test", "lint", "helm", "bench", "conformance", "e2e-compat", "race-stress"):
             self.assertIn(name, self.jobs)
         self.assertEqual(self.jobs["e2e-compat"]["needs"], ["scope", "e2e-compat-group"])
-        self.assertEqual(self.jobs["docker"]["needs"], ["scope", "test"])
+        self.assertEqual(self.jobs["docker"]["needs"], ["scope"])
 
     def test_ci_scope_wiring(self):
         self.assertEqual(ci_problems(self.text), [])
@@ -276,10 +272,10 @@ class ScopeWiringTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(self.jobs[name]["if"], expected_gate(name))
                 self.assertIn(sel("ci/" + name), self.jobs[name]["if"])
-                if CI_GATES[name] == STACK_AFTER_TEST_GATE:
-                    self.assertEqual(self.jobs[name]["needs"], ["scope", "test", "image"])
-                if CI_GATES[name] == ORDERED_GATE:
-                    self.assertEqual(self.jobs[name]["needs"], ["scope", "test"])
+                if CI_GATES[name] == STACK_IMAGE_GATE:
+                    self.assertEqual(self.jobs[name]["needs"], ["scope", "image"])
+                if name in INDEPENDENT_OF_TEST and CI_GATES[name] == CANONICAL_GATE:
+                    self.assertEqual(self.jobs[name]["needs"], ["scope"])
         self.assertEqual(self.jobs["image"]["needs"], ["scope"])
 
     def test_the_registry_and_ci_yaml_list_the_same_jobs(self):
@@ -287,14 +283,15 @@ class ScopeWiringTest(unittest.TestCase):
         self.assertEqual(ALL_CI, {"ci/" + name for name in CI_JOBS})
         self.assertLessEqual(ALL_CI, ALL_JOBS)
 
-    def test_a_job_that_follows_test_for_ordering_accepts_a_skipped_test_only(self):
-        # Selecting fuzz-smoke must not run the unit tests; a failed or cancelled test still stops it.
-        for name in ("tuple-contract", "fuzz-smoke-shard", "race-stress-shard", "docker", "stress-tests",
-                     "memory-leak-tests", "tuple-smoke", "e2e-compat-group", "e2e-fleet", "e2e-ui"):
+    def test_only_the_job_that_reads_the_unit_results_waits_for_test(self):
+        # The fuzz, race, stress and stack jobs start next to the unit test shards, not after them.
+        for name in INDEPENDENT_OF_TEST:
             with self.subTest(name):
-                self.assertIn(TEST_OK, self.jobs[name]["if"])
-                self.assertIn("!cancelled()", self.jobs[name]["if"])
-                self.assertNotIn("needs.test.result != ", self.jobs[name]["if"])
+                self.assertNotIn("test", self.jobs[name]["needs"])
+                self.assertNotIn("needs.test.", self.jobs[name]["if"])
+                self.assertFalse(reaches(self.jobs, name, {"test", "test-shard"}))
+        waiting = {name for name, job in self.jobs.items() if "test" in job["needs"]}
+        self.assertEqual(waiting, {"conformance"})
         # The job that downloads test's artifacts keeps the implicit success().
         self.assertNotRegex(self.jobs["conformance"]["if"], STATUS_FUNCTIONS)
 
@@ -584,21 +581,26 @@ class ScopeWiringTest(unittest.TestCase):
             "image gated on the product lane": text.replace(
                 "  image:\n    needs: [scope]\n" + gate_of("image"),
                 "  image:\n    needs: [scope]\n    if: " + CANONICAL_GATE % sel("ci/image") + "\n", 1),
-            "stack job runs after a failed test": text.replace(
-                gate_of("e2e-ui"), gate_of("e2e-ui").replace(TEST_OK, "needs.test.result != 'cancelled'"), 1),
-            "ordered job runs after a failed test": text.replace(
-                gate_of("docker"), gate_of("docker").replace(TEST_OK, "needs.test.result != 'cancelled'"), 1),
-            "ordered job needs a green test": text.replace(
-                gate_of("tuple-contract"), gate_of("tuple-contract").replace(TEST_OK, "needs.test.result == 'success'"), 1),
+            "stack job waits for the unit tests": text.replace(
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, image]",
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]", 1),
+            "job waits for the unit tests": text.replace(
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope]",
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope, test]", 1),
+            "job waits for one unit test shard": text.replace(
+                "  fuzz-smoke-shard:\n    name: fuzz-smoke-shard (${{ matrix.shard }})\n    runs-on: ubuntu-latest\n    needs: [scope]",
+                "  fuzz-smoke-shard:\n    name: fuzz-smoke-shard (${{ matrix.shard }})\n    runs-on: ubuntu-latest\n    needs: [scope, test-shard]", 1),
+            "job gated on the unit test result": text.replace(
+                gate_of("tuple-contract"), gate_of("tuple-contract").replace("!cancelled() && ", "!cancelled() && needs.test.result == 'success' && ", 1), 1),
             "stack job without scope in needs": text.replace(
-                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]",
-                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [test, image]", 1),
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [scope, image]",
+                "  tuple-smoke:\n    runs-on: ubuntu-latest\n    needs: [image]", 1),
             "stack job ignores the image": text.replace(
-                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n" + gate_of("e2e-ui"),
-                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, test, image]\n    if: " + CANONICAL_GATE % sel("ci/e2e-ui") + "\n", 1),
-            "other job downstream of test uses the stack route": text.replace(
-                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope, test]\n" + gate_of("docker"),
-                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope, test]\n    if: " + STACK_AFTER_TEST_GATE % sel("ci/docker") + "\n", 1),
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, image]\n" + gate_of("e2e-ui"),
+                "  e2e-ui:\n    runs-on: ubuntu-latest\n    needs: [scope, image]\n    if: " + CANONICAL_GATE % sel("ci/e2e-ui") + "\n", 1),
+            "a product job uses the stack route": text.replace(
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope]\n" + gate_of("docker"),
+                "  docker:\n    runs-on: ubuntu-latest\n    needs: [scope]\n    if: " + STACK_IMAGE_GATE % sel("ci/docker") + "\n", 1),
             "aggregator ignores the stack lane": text.replace(
                 ' && [ "$STACK" = "false" ] && [ "$SELECTED" != "true" ]; then', ' && [ "$SELECTED" != "true" ]; then', 1),
             "aggregator passes a selected group that was skipped": text.replace(

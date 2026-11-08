@@ -20,21 +20,21 @@ jobs:
   # nested, so product implies stack implies perf). A job skips only when this
   # job succeeds with its lane "false"; a scope failure or an empty output runs
   # it. Product jobs carry the product gate. Jobs that start a compose stack
-  # carry the stack gate (`image`) or, when they also follow `test`, the stack
+  # carry the stack gate (`image`) or, when they also need the image, the stack
   # gate written out below, so a change that only touches a stack config runs
-  # the stack without the unit tests. Jobs that depend on `test` otherwise skip
-  # with it.
+  # the stack without the unit tests. Only conformance, which reads the unit
+  # results, waits for `test`: every other job starts as soon as scope (and,
+  # for the stack jobs, the image) is done, next to the unit test shards.
   #
   # A forced run (the ci-full label, a push to main) of a change that only
   # touches mapped infra paths reports every lane "false" and `jobs`, the
   # "ci/<job>" ids it still has to run (scripts/ci/change_scope.py: JOB_MAP, and
   # the job blocks of this file). Every job below that the list can select reads
-  # it next to its lane gate. The jobs that follow `test` only for ordering
+  # it next to its lane gate. Selecting a job that does not read `test`
   # (tuple-contract, the fuzz and race shards, docker, stress-tests,
-  # memory-leak-tests and the stack jobs) accept a skipped `test`, so selecting
-  # one of them does not run the unit tests; the jobs that read what `test` or
-  # `image` produce (conformance, the stack jobs and `test` itself) are selected
-  # together with it.
+  # memory-leak-tests and the stack jobs) does not run the unit tests; the jobs
+  # that read what `test` or `image` produce (conformance, the stack jobs and
+  # `test` itself) are selected together with it.
   scope:
     permissions:
       contents: read
@@ -324,8 +324,8 @@ jobs:
 
   tuple-contract:
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-contract,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-contract,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -345,8 +345,8 @@ jobs:
   fuzz-smoke-shard:
     name: fuzz-smoke-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/fuzz-smoke-shard,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/fuzz-smoke-shard,')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -442,8 +442,8 @@ jobs:
     # concurrent-regression step so no proxy shard does.
     name: race-stress-shard (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/race-stress-shard,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/race-stress-shard,')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -575,7 +575,7 @@ jobs:
   # Builds the proxy image once for the jobs that run a stack (tuple-smoke,
   # e2e-compat, e2e-fleet, e2e-ui): each loads this artifact instead of building
   # the same image (about 45 s of build and cache export per job). It does not
-  # wait for `test`, so the image is ready when they start.
+  # wait for `test`, and neither do the stack jobs: they start when it is done.
   image:
     needs: [scope]
     if: ${{ !cancelled() && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/image,')) }}
@@ -605,8 +605,8 @@ jobs:
 
   tuple-smoke:
     runs-on: ubuntu-latest
-    needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-smoke,')) }}
+    needs: [scope, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/tuple-smoke,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
       PROXY_URL: http://127.0.0.1:13100
@@ -1146,8 +1146,8 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/docker,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/docker,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -1162,8 +1162,8 @@ jobs:
 
   e2e-compat-group:
     runs-on: ubuntu-latest
-    needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-compat-group,')) }}
+    needs: [scope, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-compat-group,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ci
     strategy:
@@ -1278,8 +1278,8 @@ jobs:
 
   e2e-fleet:
     runs-on: ubuntu-latest
-    needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-fleet,')) }}
+    needs: [scope, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-fleet,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
@@ -1363,8 +1363,8 @@ jobs:
 
   e2e-ui:
     runs-on: ubuntu-latest
-    needs: [scope, test, image]
-    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-ui,')) }}
+    needs: [scope, image]
+    if: ${{ !cancelled() && needs.image.result == 'success' && (needs.scope.outputs.stack != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/e2e-ui,')) }}
     env:
       PROXY_IMAGE: loki-vl-proxy:e2e-ui
     strategy:
@@ -1496,8 +1496,8 @@ jobs:
 
   stress-tests:
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/stress-tests,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/stress-tests,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
@@ -1523,8 +1523,8 @@ jobs:
 
   memory-leak-tests:
     runs-on: ubuntu-latest
-    needs: [scope, test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/memory-leak-tests,')) }}
+    needs: [scope]
+    if: ${{ !cancelled() && (needs.scope.outputs.product != 'false' || contains(format(',{0},', needs.scope.outputs.jobs), ',ci/memory-leak-tests,')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
