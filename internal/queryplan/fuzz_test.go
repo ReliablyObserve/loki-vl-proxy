@@ -238,3 +238,41 @@ func TestKeyMutationsOnCorpus(t *testing.T) {
 	}
 	t.Logf("mutations applied: %v", applied)
 }
+
+// Resolve is total on every plan Build makes, deterministic, idempotent, and leaves the key as it was.
+func FuzzResolve(f *testing.F) {
+	seedQueries(f)
+	f.Fuzz(func(t *testing.T, q string) {
+		expr, err := parseCanon(q)
+		if err != nil {
+			return
+		}
+		a, err := Build(expr, Inputs{})
+		if err != nil {
+			return
+		}
+		b, _ := Build(expr, Inputs{})
+		key := string(a.Key)
+		Resolve(a)
+		Resolve(b)
+		if !reflect.DeepEqual(a.Sem, b.Sem) {
+			t.Fatalf("%q: two resolves differ: %+v %+v", q, a.Sem, b.Sem)
+		}
+		again := a.Sem
+		Resolve(a)
+		if !reflect.DeepEqual(again, a.Sem) || string(a.Key) != key {
+			t.Fatalf("%q: Resolve is not idempotent or changed the key", q)
+		}
+		if s := firstSelect(a.Root); s != nil {
+			if s.Sem == nil {
+				t.Fatalf("%q: a pipeline is not resolved", q)
+			}
+			if (s.Sem.Parsers == 0) != (s.Sem.ErrorPolicy == ErrorNoParser) {
+				t.Fatalf("%q: %d parsers and error policy %d", q, s.Sem.Parsers, s.Sem.ErrorPolicy)
+			}
+			if (s.Sem.ErrorPolicy == ErrorDroppedLabel) != (s.Sem.ErrorAt >= 0) {
+				t.Fatalf("%q: error policy %d at %d", q, s.Sem.ErrorPolicy, s.Sem.ErrorAt)
+			}
+		}
+	})
+}

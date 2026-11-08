@@ -104,6 +104,7 @@ smoke	internal/logql	FuzzVectorAggregationOverLogExpression	12s	-	a vector aggre
 smoke	internal/proxy	FuzzKeepSeriesGrouping	12s	-	a range aggregation over a trailing keep regrouped by the kept labels, once
 smoke	internal/translator	FuzzNarrowUnwrapLogfmtUnpack	12s	-	narrowed logfmt unpack of an unwrap metric names every label it reads
 smoke	internal/queryplan	FuzzBuild	12s	-	logical plan build and key
+smoke	internal/queryplan	FuzzResolve	12s	-	resolver total, deterministic, idempotent, key unchanged
 smoke	internal/queryplan	FuzzKeyDecode	12s	-	logical key decodes to the fields of its plan, to the last byte
 smoke	internal/queryplan	FuzzKeyDistinctMutations	12s	-	semantic mutations change the logical key, spelling ones keep it
 smoke	internal/querycorpus	FuzzPhysicalCodec	20s	-	physical-plan codec round trip, seeded with the capture sample under 12 profiles

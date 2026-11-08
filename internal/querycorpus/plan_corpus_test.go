@@ -13,24 +13,18 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// The corpus the plan tests run over: the curated rows every test reads from its own source (the A/B shapes, the
-// semantics matrix and the registry cases), and a committed sample of the captured client queries.
-const (
-	shapesPath        = "../../bench/ab/shapes.json"
-	semanticsPath     = "../../test/e2e-compat/query-semantics-matrix.json"
-	registryCasesDir  = "../../conformance/registry/cases"
-	captureSamplePath = "testdata/plan-capture-sample.json"
-)
+// The corpus the plan tests run over (plancorpus): the curated rows every test reads from its own source (the A/B
+// shapes, the semantics matrix and the registry cases), and a committed sample of the captured client queries.
+const captureSamplePath = "testdata/plan-capture-sample.json"
 
 // captureSample is testdata/plan-capture-sample.json. The full captured corpus is a CI artifact, not a committed
 // file, so the sample is what a local run has of it: about 2,000 client LogQL rows, stratified by the markers their
@@ -43,111 +37,22 @@ type captureSample struct {
 	} `json:"rows"`
 }
 
-// curatedQueries are the query texts of the shapes, the semantics matrix and the registry cases (`query` and `expr`
-// parameters), without duplicates, in a fixed order.
+// curatedQueries are the query texts of the shapes, the semantics matrix and the registry cases (plancorpus.Curated).
 func curatedQueries(t *testing.T) []string {
 	t.Helper()
-	seen := map[string]bool{}
-	add := func(q string) {
-		if strings.TrimSpace(q) != "" {
-			seen[q] = true
-		}
-	}
-	var shapes struct {
-		Sets map[string]struct {
-			Shapes []struct {
-				Query string `json:"query"`
-			} `json:"shapes"`
-		} `json:"sets"`
-	}
-	readJSON(t, shapesPath, &shapes)
-	for _, set := range shapes.Sets {
-		for _, s := range set.Shapes {
-			add(s.Query)
-		}
-	}
-	var matrix struct {
-		Cases []struct {
-			Query   string   `json:"query"`
-			Queries []string `json:"queries"`
-		} `json:"cases"`
-		Performance []struct {
-			Query   string   `json:"query"`
-			Queries []string `json:"queries"`
-		} `json:"performance_cases"`
-	}
-	readJSON(t, semanticsPath, &matrix)
-	for _, c := range matrix.Cases {
-		add(c.Query)
-		for _, q := range c.Queries {
-			add(q)
-		}
-	}
-	for _, c := range matrix.Performance {
-		add(c.Query)
-		for _, q := range c.Queries {
-			add(q)
-		}
-	}
-	err := filepath.WalkDir(registryCasesDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
-			return err
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var doc any
-		if err := yaml.Unmarshal(b, &doc); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		var walk func(any)
-		walk = func(n any) {
-			switch v := n.(type) {
-			case map[string]any:
-				for k, val := range v {
-					if s, ok := val.(string); ok && (k == "query" || k == "expr") {
-						add(s)
-					} else {
-						walk(val)
-					}
-				}
-			case []any:
-				for _, e := range v {
-					walk(e)
-				}
-			}
-		}
-		walk(doc)
-		return nil
-	})
+	out, err := plancorpus.Curated("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := make([]string, 0, len(seen))
-	for q := range seen {
-		out = append(out, q)
-	}
-	sort.Strings(out)
 	return out
 }
 
-// planCorpus is the curated rows and the capture sample, without duplicates.
+// planCorpus is the curated rows and the capture sample, without duplicates (plancorpus.Queries).
 func planCorpus(t *testing.T) []string {
 	t.Helper()
-	var sample captureSample
-	readJSON(t, captureSamplePath, &sample)
-	seen := map[string]bool{}
-	var out []string
-	for _, q := range curatedQueries(t) {
-		seen[q] = true
-		out = append(out, q)
-	}
-	for _, r := range sample.Rows {
-		if !seen[r.Query] {
-			seen[r.Query] = true
-			out = append(out, r.Query)
-		}
+	out, err := plancorpus.Queries("../..")
+	if err != nil {
+		t.Fatal(err)
 	}
 	return out
 }
