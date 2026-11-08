@@ -198,3 +198,22 @@ decisions:
     performance:
       tracked: ['BenchmarkResolve ns/op, B/op, allocs/op', 'TestResolveAllocLocks: one allocation per pipeline plus the rule list']
       bound: 'Resolve on the seed plans (2026-11-08, M5 Pro, GOMAXPROCS=4, count=5): 34 ns/op, 108 B/op, 1 alloc/op, against 152 ns and 2 allocs for Build'
+  - id: lowering-shadow-harness
+    chosen: 'internal/queryplan/lower turns a resolved plan into the physical operators (lower.Plan with a Profile: capabilities, label translation, stream fields, keep-line); a construct it does not lower yet returns NotLoweredError naming the construct (errors.Is ErrNotLowered) and the string translator answers. TestPlanShadow runs every plan-corpus row under the 12 translator profiles and compares the lowering with the operators the string translator''s output decodes to, by structure (parsed LogsQL with default spellings folded, and the operator tree); the shadow section of query-plan.json gates mismatches at 0 and lets native rows only rise. The TranslateAST prototype, a second LogQL-to-LogsQL path no handler called, is deleted'
+    over: [lowering inside internal/queryplan/physical, comparing LogsQL text, keeping TranslateAST as the native path, gating delegated counts]
+    why: |
+      Step six of architecture B (owner 2026-11-08). physical may import only
+      the standard library and logsql, so the lowering is its own package with
+      a depguard rule (stdlib, logql, logsql, queryplan, physical). Comparing
+      operators instead of text lets the lowering spell LogsQL differently as
+      long as VictoriaLogs reads the same query. TranslateAST covered part of
+      the language with its own fall-through and its own tests; the shadow
+      harness replaces it with one path held to the string translator on the
+      whole corpus, so each later lowering step lands construct by construct
+      with 0 mismatches. Delegated counts move with the corpus and are reported
+      only. TestPlanShadowCatchesAWrongLowering proves the gate fails a
+      lowering that answers a different query or adds a post-processing step.
+    evidence: 'internal/querycorpus/plan_shadow_test.go TestPlanShadow; conformance/registry/query-plan.json shadow section (2026-11-08): 22,809 rows × profiles, native 0, mismatches 0'
+    code: [internal/queryplan/lower/lower.go, internal/translator/ast_translate.go, .golangci.yml]
+    tests: [TestPlanShadow, TestPlanShadowCatchesAWrongLowering, TestPlanDelegatesEveryConstruct]
+    quality: 'No handler reads the lowering yet; every query is still translated by the string translator. The shadow holds the lowering to the string translator, the proxy''s own reading: from the first native construct, lowered queries are also checked against the VictoriaLogs oracle and, where the meaning is Loki''s, the Loki oracle, so the shadow does not lock in a translator misreading.'

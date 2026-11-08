@@ -34,7 +34,9 @@ linters:
     # and the logical plan can both build on them. Test files are
     # out of scope: a test in package logql cannot import the translator anyway.
     # The logical plan (queryplan) sits above logql and below the translator and
-    # the proxy: it reads the LogQL AST and nothing else.
+    # the proxy: it reads the LogQL AST and nothing else. The lowering (lower)
+    # sits above the logical plan and the operators, and below the translator
+    # and the proxy, which it never imports.
     depguard:
       rules:
         logql:
@@ -70,6 +72,17 @@ linters:
           allow:
             - $gostd
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql
+        lower:
+          list-mode: strict
+          files:
+            - "**/internal/queryplan/lower/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logql
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical
   exclusions:
     rules:
       - path: _test\.go

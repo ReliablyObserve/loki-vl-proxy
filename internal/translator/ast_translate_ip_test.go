@@ -1,22 +1,12 @@
 package translator
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-)
-
+// An ip() line filter and the same text as a quoted literal are different queries: the string translator writes
+// them differently.
 func TestIPCallAndLiteralTranslateDistinctly(t *testing.T) {
-	call, err := logql.ParseLogQuery(`{app="a"} |= ip("10.0.0.1")`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	literal, err := logql.ParseLogQuery(`{app="a"} |= "ip(10.0.0.1)"`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	callQL, callErr := TranslateAST(call, ASTTranslateOptions{})
-	literalQL, literalErr := TranslateAST(literal, ASTTranslateOptions{})
+	callQL, callErr := TranslateLogQL(`{app="a"} |= ip("10.0.0.1")`)
+	literalQL, literalErr := TranslateLogQL(`{app="a"} |= "ip(10.0.0.1)"`)
 	if callErr != nil || literalErr != nil || callQL == literalQL {
 		t.Fatalf("IP call translated as literal: call=%s literal=%s errors=%v/%v", callQL, literalQL, callErr, literalErr)
 	}

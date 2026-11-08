@@ -5,20 +5,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 func TestLineFilterLiteralTranslation(t *testing.T) {
 	translations := map[string]func(string) (string, error){
 		"string": TranslateLogQL,
-		"typed": func(q string) (string, error) {
-			expr, err := logql.Parse(q)
-			if err != nil {
-				return "", err
-			}
-			return TranslateAST(expr, ASTTranslateOptions{})
-		},
 	}
 	for name, translate := range translations {
 		for _, literal := range []string{"ip(bad)", "a.b", "[error]", "a|b", "^a$", ".*", "a+b?", "{x}", `C:\logs\`, "line\nnext", `say "hello"`} {

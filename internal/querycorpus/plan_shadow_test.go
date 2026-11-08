@@ -1,0 +1,247 @@
+package querycorpus_test
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"reflect"
+	"sort"
+	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+)
+
+// The lowering shadow: every plan-corpus row under each of the 12 profiles, the operators the native lowering
+// (lower.Plan) writes against the operators the string translator's output decodes to (translator.DecodePhysical),
+// compared by structure (canonOp: the parsed LogsQL with its default spellings folded, and the operator tree). A
+// construct with no native lowering yet is delegated to the string translator and counted by construct. The
+// shadow section of query-plan.json holds the counts: mismatches stay 0 and native only rises.
+
+type shadowSection struct {
+	// Rows are the corpus rows × profiles the string translator translates.
+	Rows     int `json:"rows"`
+	Profiles int `json:"profiles"`
+	// Native are the rows the lowering answers, each equal to the string translator's operators.
+	Native int `json:"native"`
+	// Mismatches are the rows where the lowering answers differently, or answers a query the translator rejects.
+	Mismatches int `json:"mismatches"`
+	// DelegatedByConstruct counts, by the construct at the top of the plan, the rows answered by the string
+	// translator because the lowering does not cover them yet (reported, not gated: it grows with the corpus).
+	DelegatedByConstruct map[string]int `json:"delegated_by_construct"`
+}
+
+// shadowSlice is one profile × construct of a shadow run: the slice a failure names.
+type shadowSlice struct {
+	rows, native, mismatches, delegated int
+	problems                            []string
+}
+
+// lowering is what the harness holds to the string translator: the native lowering, or a test's stand-in.
+type lowering func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error)
+
+func nativeLowering(_ string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
+	return lower.Plan(p, prof.lowerProfile())
+}
+
+func (p planProfile) lowerProfile() lower.Profile {
+	return lower.Profile{Caps: p.caps, Label: p.labelFn, StreamFields: p.stream, KeepLine: p.keepLine}
+}
+
+// runShadow compares lowerFn with the string translator on the first limit corpus rows (all when limit is 0) and
+// returns the counts and the mismatching rows.
+func runShadow(t *testing.T, lowerFn lowering, limit int) (shadowSection, []string) {
+	sec, problems, _ := runShadowSlices(t, lowerFn, limit)
+	return sec, problems
+}
+
+// runShadowSlices is runShadow with the counts of each profile × construct (the construct at the top of the plan).
+func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, []string, map[[2]string]*shadowSlice) {
+	t.Helper()
+	corpus := planCorpus(t)
+	if limit > 0 && limit < len(corpus) {
+		corpus = corpus[:limit]
+	}
+	profiles := planProfiles()
+	sec := shadowSection{Profiles: len(profiles), DelegatedByConstruct: map[string]int{}}
+	var problems []string
+	slices := map[[2]string]*shadowSlice{}
+	for _, q := range corpus {
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		if err != nil {
+			continue
+		}
+		plan, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			continue
+		}
+		queryplan.Resolve(plan)
+		construct := lower.Construct(plan.Root)
+		for _, prof := range profiles {
+			sl := slices[[2]string{prof.name, construct}]
+			if sl == nil {
+				sl = &shadowSlice{}
+				slices[[2]string{prof.name, construct}] = sl
+			}
+			fail := func(msg string) {
+				sec.Mismatches++
+				sl.mismatches++
+				problems = append(problems, msg)
+				sl.problems = append(sl.problems, msg)
+			}
+			got, lerr := lowerFn(q, plan, prof)
+			legacy, ok := prof.translate(q)
+			if !ok {
+				if lerr == nil {
+					// Counted in the slice's rows (not the section's) so the slice's sum still holds.
+					sl.rows++
+					fail(fmt.Sprintf("%s: %q: lowered, the string translator rejects it", prof.name, q))
+				}
+				continue
+			}
+			sec.Rows++
+			sl.rows++
+			var nl *lower.NotLoweredError
+			switch {
+			case errors.As(lerr, &nl):
+				sec.DelegatedByConstruct[nl.Construct]++
+				sl.delegated++
+				continue
+			case errors.Is(lerr, lower.ErrNotLowered):
+				sec.DelegatedByConstruct["unnamed"]++
+				sl.delegated++
+				continue
+			case lerr != nil:
+				fail(fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
+				continue
+			}
+			want, err := translator.DecodePhysical(legacy)
+			if err != nil {
+				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
+			}
+			var u1, u2 bool
+			if !reflect.DeepEqual(canonOp(want, &u1), canonOp(got, &u2)) {
+				fail(fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
+				continue
+			}
+			sec.Native++
+			sl.native++
+		}
+	}
+	return sec, problems, slices
+}
+
+// TestPlanShadow holds the native lowering to the string translator on the whole corpus under every profile.
+// conformance: architecture-syntax-package-layering
+func TestPlanShadow(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
+	// One subtest per profile and construct: a mismatch names the slice it is in.
+	for _, prof := range planProfiles() {
+		t.Run(prof.name, func(t *testing.T) {
+			for _, c := range []string{"LogSelect", "RangeAgg", "VectorAgg", "Rank", "BinOp", "LabelReplace", "VectorLit", "Scalar", "Opaque"} {
+				sl := slices[[2]string{prof.name, c}]
+				if sl == nil {
+					continue
+				}
+				t.Run(c, func(t *testing.T) {
+					t.Logf("rows %d, native %d, delegated %d", sl.rows, sl.native, sl.delegated)
+					if sl.mismatches != 0 {
+						t.Errorf("%d rows lower unlike the string translator:\n%s", sl.mismatches, joinFirst(sl.problems, 10))
+					}
+					if sl.native+sl.delegated+sl.mismatches != sl.rows {
+						t.Errorf("rows %d are not native %d + delegated %d + mismatches %d", sl.rows, sl.native, sl.delegated, sl.mismatches)
+					}
+				})
+			}
+		})
+	}
+	file, err := readPlanFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want shadowSection
+	if raw, ok := file["shadow"]; ok {
+		if err := json.Unmarshal(raw, &want); err != nil {
+			t.Fatal(err)
+		}
+	}
+	constructs := make([]string, 0, len(got.DelegatedByConstruct))
+	for c := range got.DelegatedByConstruct {
+		constructs = append(constructs, c)
+	}
+	sort.Strings(constructs)
+	for _, c := range constructs {
+		t.Logf("delegated %-12s %d", c, got.DelegatedByConstruct[c])
+	}
+	t.Logf("rows %d (%d profiles), native %d, mismatches %d", got.Rows, got.Profiles, got.Native, got.Mismatches)
+	if os.Getenv("LVP_QUERY_PLAN_UPDATE") == "1" {
+		writePlanSection(t, file, "shadow", got)
+	}
+	if got.Mismatches != 0 {
+		t.Fatalf("%d rows lower unlike the string translator:\n%s", got.Mismatches, joinFirst(problems, 20))
+	}
+	if got.Native < want.Native {
+		t.Fatalf("native fell from %d to %d: a construct that was lowered no longer is", want.Native, got.Native)
+	}
+	if os.Getenv("LVP_QUERY_PLAN_UPDATE") != "1" && got.Native > want.Native {
+		t.Fatalf("native rose from %d to %d: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestPlanShadow and commit %s", want.Native, got.Native, planPath)
+	}
+}
+
+// The harness itself: a lowering that answers what the string translator answers is native everywhere, and one
+// that answers anything else is a mismatch on every row it answers, a plain wrong query and a subtly changed one
+// alike. A lowering that answers a query the translator rejects is a mismatch too.
+func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	const rows = 300
+	echo := func(q string, _ *queryplan.Plan, prof planProfile) (physical.Op, error) {
+		s, ok := prof.translate(q)
+		if !ok {
+			return nil, &lower.NotLoweredError{Construct: "rejected"}
+		}
+		return translator.DecodePhysical(s)
+	}
+	sec, problems := runShadow(t, echo, rows)
+	t.Run("own operators are native", func(t *testing.T) {
+		if sec.Rows == 0 || sec.Native != sec.Rows || sec.Mismatches != 0 {
+			t.Fatalf("the string translator's own operators: %+v\n%s", sec, joinFirst(problems, 5))
+		}
+	})
+	wrong := func(string, *queryplan.Plan, planProfile) (physical.Op, error) {
+		return physical.VLQuery{Text: "*"}, nil
+	}
+	t.Run("a wrong query is a mismatch", func(t *testing.T) {
+		if bad, _ := runShadow(t, wrong, rows); bad.Native != 0 || bad.Mismatches < sec.Rows {
+			t.Fatalf("a lowering that answers `*` for everything: %+v", bad)
+		}
+	})
+	subtle := func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
+		op, err := echo(q, p, prof)
+		if err != nil {
+			return nil, err
+		}
+		return physical.LabelMap{Replace: []physical.LabelReplace{{DstLabel: "x"}}, In: op}, nil
+	}
+	t.Run("a changed post-processing is a mismatch", func(t *testing.T) {
+		if bad, _ := runShadow(t, subtle, rows); bad.Native != 0 || bad.Mismatches != sec.Rows {
+			t.Fatalf("a lowering that adds a label_replace to each answer: %+v", bad)
+		}
+	})
+}
+
+func joinFirst(lines []string, n int) string {
+	if len(lines) > n {
+		lines = append(lines[:n:n], fmt.Sprintf("... and %d more", len(lines)-n))
+	}
+	out := ""
+	for _, l := range lines {
+		out += l + "\n"
+	}
+	return out
+}
