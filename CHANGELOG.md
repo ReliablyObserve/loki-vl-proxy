@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stripping the marker text with two parsers each. The VictoriaLogs query and
   every answer are byte-identical to before. No behaviour change.
 
+## [2.95.0] - 2026-11-08
+
 ### Fixed
 
 - fix(logql): binary metric queries whose operand holds a compound duration
