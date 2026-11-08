@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`sum_over_time({...}[5m])`, `count_over_time(... | unwrap x [5m])`), a
   literal beside and, or, unless (`1 unless vector(2)`), an unknown duration
   unit (`[5minutes]`, `[5M]`), the `@` modifier Loki 3.7 does not have, an
-  invalid label_replace regex, and `| bytes < 0B`.
+  invalid label_replace regex, and `| bytes < 0B`. **Breaking:** clients that
+  sent such queries to the proxy (an `@` modifier, `count_over_time(...) by
+  (x)`, `[5M]`, `sum_over_time` without unwrap) get Loki's 400 instead of an
+  answer, as Loki answers them.
 
 ## [2.101.0] - 2026-11-08
 
