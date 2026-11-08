@@ -3,102 +3,57 @@ package querycorpus_test
 import (
 	"bytes"
 	"encoding/json"
-	"io/fs"
+	"fmt"
 	"os"
-	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // planPath holds the plan ratchets, one section each. This file reads and writes only its `logical` section and
 // leaves the others as they are: LVP_QUERY_PLAN_UPDATE=1 rewrites it.
 const planPath = "../../conformance/registry/query-plan.json"
 
-const planDescription = "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the in-repo corpus: how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count)."
+const planDescription = "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure."
+
+// readPlanFile is the sections of the ratchet file; a missing file has none.
+func readPlanFile() (map[string]json.RawMessage, error) {
+	file := map[string]json.RawMessage{}
+	b, err := os.ReadFile(planPath)
+	if err == nil {
+		err = json.Unmarshal(b, &file)
+	}
+	return file, err
+}
+
+// writePlanSection rewrites one section of the ratchet file and leaves the others as they are.
+func writePlanSection(t *testing.T, file map[string]json.RawMessage, name string, v any) {
+	t.Helper()
+	if _, ok := file["description"]; !ok {
+		file["description"], _ = json.Marshal(planDescription)
+	}
+	file[name], _ = json.Marshal(v)
+	out, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, append(out, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 type logicalSection struct {
 	Rows    int            `json:"rows"`
 	Parsed  int            `json:"parsed"`
 	Built   int            `json:"built"`
 	Untyped map[string]int `json:"untyped_by_construct"`
-}
-
-// planCorpus is the in-repo query corpus: every string of the benchmark shapes and the semantics matrix that
-// holds a selector, and the query and expr values of the registry rows.
-func planCorpus(t *testing.T) []string {
-	t.Helper()
-	seen := map[string]bool{}
-	add := func(s string) {
-		if strings.Contains(s, "{") {
-			seen[s] = true
-		}
-	}
-	var walkJSON func(v any)
-	walkJSON = func(v any) {
-		switch v := v.(type) {
-		case string:
-			add(v)
-		case []any:
-			for _, e := range v {
-				walkJSON(e)
-			}
-		case map[string]any:
-			for _, e := range v {
-				walkJSON(e)
-			}
-		}
-	}
-	for _, path := range []string{"../../bench/ab/shapes.json", "../../test/e2e-compat/query-semantics-matrix.json"} {
-		var doc any
-		readJSON(t, path, &doc)
-		walkJSON(doc)
-	}
-	var walkYAML func(v any, key string)
-	walkYAML = func(v any, key string) {
-		switch v := v.(type) {
-		case string:
-			if key == "query" || key == "expr" {
-				add(v)
-			}
-		case []any:
-			for _, e := range v {
-				walkYAML(e, key)
-			}
-		case map[string]any:
-			for k, e := range v {
-				walkYAML(e, k)
-			}
-		}
-	}
-	err := filepath.WalkDir("../../conformance/registry", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
-			return err
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var doc any
-		if yaml.Unmarshal(data, &doc) == nil { // a few prose-only rows are not strict YAML and hold no query
-			walkYAML(doc, "")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := make([]string, 0, len(seen))
-	for s := range seen {
-		out = append(out, s)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // planInputs is the logical input set a corpus row is built with: a metric query is a range query, the rest a log query.
@@ -168,7 +123,7 @@ func TestLogicalBuildTotal(t *testing.T) {
 	}}
 	for _, q := range planCorpus(t) {
 		got.Rows++
-		expr, err := logql.Parse(q)
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
 		}
@@ -181,35 +136,21 @@ func TestLogicalBuildTotal(t *testing.T) {
 		got.Built++
 		countUntyped(plan.Root, got.Untyped)
 	}
-	if got.Rows < 300 {
-		t.Fatalf("the corpus has %d rows, expected the shapes, the matrix and the registry", got.Rows)
+	if got.Rows < 2000 {
+		t.Fatalf("the corpus has %d rows, expected the curated sources and the capture sample", got.Rows)
 	}
 	if got.Built != got.Parsed {
 		t.Errorf("built %d of %d parsed rows", got.Built, got.Parsed)
 	}
 
-	file := map[string]json.RawMessage{}
-	b, err := os.ReadFile(planPath)
-	if err == nil {
-		err = json.Unmarshal(b, &file)
-	}
+	file, readErr := readPlanFile()
 	if os.Getenv("LVP_QUERY_PLAN_UPDATE") == "1" {
-		if _, ok := file["description"]; !ok {
-			file["description"], _ = json.Marshal(planDescription)
-		}
-		file["logical"], _ = json.Marshal(got)
-		out, err := json.MarshalIndent(file, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(planPath, append(out, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writePlanSection(t, file, "logical", got)
 		t.Logf("wrote %s: %+v", planPath, got)
 		return
 	}
-	if err != nil {
-		t.Fatalf("read %s: %v", planPath, err)
+	if readErr != nil {
+		t.Fatalf("read %s: %v", planPath, readErr)
 	}
 	var want logicalSection
 	if err := json.Unmarshal(file["logical"], &want); err != nil {
@@ -311,4 +252,287 @@ func keyOf(t *testing.T, q string, in queryplan.Inputs) []byte {
 		t.Fatalf("build %q: %v", q, err)
 	}
 	return plan.Key
+}
+
+// keySoundSection is, per profile, how the logical keys group the corpus.
+type keySoundSection map[string]keySoundCounts
+
+type keySoundCounts struct {
+	Rows int `json:"rows"` // queries that parse
+	Keys int `json:"keys"` // distinct plan keys
+	// SharedTexts are the queries whose key an earlier query has too: the reuse the typed key already gives.
+	SharedTexts int `json:"shared_texts"`
+	// TextOnly are the queries whose translation differs from their group's first in text but not in structure.
+	TextOnly int `json:"text_only"`
+	// PhraseText are the queries whose translation and their group's first are both the query's own text as a
+	// phrase filter (the translator's fallback for a query it leaves to the proxy), which differ as the texts do.
+	PhraseText int `json:"phrase_text"`
+	// SpellingDivergent are the queries one of whose spellings the translator translates and another it leaves
+	// to the proxy as a phrase (parentheses, spacing): the translator reads the spelling, a logical key cannot.
+	SpellingDivergent int `json:"spelling_divergent"`
+	Unsound           int `json:"unsound"`
+}
+
+// translateOutcome is planProfile.translate with its error: the LogsQL (with markers) the proxy would hold for the
+// query under the profile.
+func (p planProfile) translateOutcome(q string) (string, error) {
+	q = logql.CanonicalizeLogRanges(q)
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return "", err
+	}
+	if p.keepLine {
+		if _, isLog := expr.(*logql.LogQuery); !isLog {
+			return "", fmt.Errorf("not a log query")
+		}
+		return translator.TranslateLogQueryKeepingLine(q, p.labelFn, p.stream, p.caps)
+	}
+	return translator.TranslateLogQLWithCapabilities(q, p.labelFn, p.stream, p.caps)
+}
+
+// translation is what the string translator made of one query under one profile, and the structure it compares by.
+type translation struct {
+	text     string // the translator's output, or its error message
+	canon    any    // the decoded operators with every query parsed; nil for an error
+	unparsed bool   // a query of canon did not parse, so canon holds its text
+	phrase   bool   // the translation is the query's own text as a phrase filter
+}
+
+func translateForKey(prof planProfile, q string) translation {
+	out, err := prof.translateOutcome(q)
+	if err != nil {
+		return translation{text: err.Error()}
+	}
+	op, err := translator.DecodePhysical(out)
+	if err != nil {
+		return translation{text: "decode: " + err.Error()}
+	}
+	tr := translation{text: out, phrase: out == `"`+logql.CanonicalizeLogRanges(q)+`"`}
+	tr.canon = canonOp(op, &tr.unparsed)
+	return tr
+}
+
+// The structure of a decoded translation: the operators, with each VictoriaLogs query parsed. Only the operators
+// the translator writes get a form; the text of a binary (Text, Tail) is not part of it, its parts are.
+type (
+	canonFold struct {
+		Levels []physical.FoldLevel
+		In     any
+	}
+	canonLabel struct {
+		Replace []physical.LabelReplace
+		In      any
+	}
+	canonBin struct {
+		Op    string
+		Bool  bool
+		Match *physical.Matching
+		L, R  any
+	}
+	canonScalar struct{ V float64 }
+)
+
+func canonOp(op physical.Op, unparsed *bool) any {
+	switch v := op.(type) {
+	case physical.Verbatim:
+		return canonOp(v.In, unparsed)
+	case physical.Fold:
+		return canonFold{v.Levels, canonOp(v.In, unparsed)}
+	case physical.LabelMap:
+		return canonLabel{v.Replace, canonOp(v.In, unparsed)}
+	case physical.Binary:
+		return canonBin{v.Op, v.Bool, v.Match, canonOp(v.L, unparsed), canonOp(v.R, unparsed)}
+	case physical.ScalarOp:
+		return canonScalar{v.V}
+	case physical.VLQuery:
+		q, err := logsql.Parse(v.Text)
+		if err != nil {
+			*unparsed = true
+			return strings.Join(strings.Fields(v.Text), " ")
+		}
+		foldDefaultFields(reflect.ValueOf(q))
+		return q
+	}
+	return op
+}
+
+// foldDefaultFields sets the fields that default to _msg to their empty spelling, so `from _msg` reads like no from.
+func foldDefaultFields(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if !v.IsNil() {
+			foldDefaultFields(v.Elem())
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			foldDefaultFields(v.Index(i))
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Field(i)
+			switch name := v.Type().Field(i).Name; {
+			case f.Kind() == reflect.String && f.CanSet() && f.String() == "_msg" && (name == "From" || name == "Field" || name == "ResultField"):
+				f.SetString("")
+			default:
+				foldDefaultFields(f)
+			}
+		}
+	}
+}
+
+// firstDiff is the path of the first field in which a and b differ, "" when they are equal.
+func firstDiff(a, b reflect.Value, path string) string {
+	if !a.IsValid() || !b.IsValid() {
+		if a.IsValid() == b.IsValid() {
+			return ""
+		}
+		return path + " (missing)"
+	}
+	if a.Type() != b.Type() {
+		return fmt.Sprintf("%s (%s vs %s)", path, a.Type(), b.Type())
+	}
+	if a.CanInterface() && b.CanInterface() && reflect.DeepEqual(a.Interface(), b.Interface()) {
+		return ""
+	}
+	switch a.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if a.IsNil() || b.IsNil() {
+			return path + " (nil vs set)"
+		}
+		return firstDiff(a.Elem(), b.Elem(), path)
+	case reflect.Struct:
+		for i := 0; i < a.NumField(); i++ {
+			if d := firstDiff(a.Field(i), b.Field(i), path+"."+a.Type().Field(i).Name); d != "" {
+				return d
+			}
+		}
+	case reflect.Slice:
+		if a.Len() != b.Len() {
+			return fmt.Sprintf("%s (length %d vs %d)", path, a.Len(), b.Len())
+		}
+		for i := 0; i < a.Len(); i++ {
+			if d := firstDiff(a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i)); d != "" {
+				return d
+			}
+		}
+	}
+	return path
+}
+
+// TestLogicalKeySound: queries with one logical key get one translation. For each of the 12 profiles, the queries
+// are grouped by Plan.Key; the profile fixes the physical inputs (label style, stream fields, capabilities) and the
+// logical inputs it has (the stream labels), so inside a group everything but the query text is equal. The string
+// translator's output for the queries of a group must have the same structure: the decoded operators with each
+// VictoriaLogs query parsed (the default spellings `from _msg` and `as _msg` read as omitted), compared field by
+// field, or as whitespace-normalised text when a query does not parse. A group whose queries differ in structure
+// has a key that merges what the translator keeps apart: the test fails with both texts and the first differing
+// field. A group that differs only in text is counted as text_only. Two cases a key cannot tell apart are counted
+// on their own: the translator's phrase fallback holds the query's own text (phrase_text), and it reads
+// parentheses and spacing, so it translates one spelling of a query and leaves another to the proxy
+// (spelling_divergent); both fall as the proxy evaluates the logical plan. The counts are the `logical_key_sound`
+// section of query-plan.json; LVP_QUERY_PLAN_UPDATE=1 rewrites it.
+func TestLogicalKeySound(t *testing.T) {
+	type row struct {
+		text string
+		key  string
+	}
+	var rows []row
+	for _, q := range planCorpus(t) {
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		if err != nil {
+			continue
+		}
+		plan, err := queryplan.Build(expr, planInputs(expr))
+		if err != nil {
+			t.Fatalf("Build(%q): %v", q, err)
+		}
+		rows = append(rows, row{q, string(plan.Key)})
+	}
+	if len(rows) < 2000 {
+		t.Fatalf("%d parsed rows: the corpus did not load", len(rows))
+	}
+	groups := map[string][]int{}
+	for i, r := range rows {
+		groups[r.key] = append(groups[r.key], i)
+	}
+	profiles := planProfiles()
+	if len(profiles) != 12 {
+		t.Fatalf("%d profiles, want 12", len(profiles))
+	}
+	got := keySoundSection{}
+	for _, prof := range profiles {
+		c := keySoundCounts{Rows: len(rows), Keys: len(groups), SharedTexts: len(rows) - len(groups)}
+		keys := make([]string, 0, len(groups))
+		for k, members := range groups {
+			if len(members) > 1 {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		reported := 0
+		for _, k := range keys {
+			members := groups[k]
+			first := translateForKey(prof, rows[members[0]].text)
+			for _, m := range members[1:] {
+				other := translateForKey(prof, rows[m].text)
+				diff := ""
+				switch {
+				case first.phrase && other.phrase:
+					c.PhraseText++
+					continue
+				case first.phrase != other.phrase && first.canon != nil && other.canon != nil:
+					c.SpellingDivergent++
+					continue
+				case first.canon == nil || other.canon == nil:
+					// An error or an undecodable translation: the messages must read alike.
+					if first.canon != nil || other.canon != nil {
+						diff = "translated vs " + map[bool]string{true: "failed", false: "translated"}[first.canon != nil]
+					} else if strings.Join(strings.Fields(first.text), " ") != strings.Join(strings.Fields(other.text), " ") {
+						// Two messages: the same error about different text, not a different outcome.
+						c.TextOnly++
+						continue
+					}
+				case first.unparsed || other.unparsed:
+					if d := firstDiff(reflect.ValueOf(first.canon), reflect.ValueOf(other.canon), "plan"); d != "" &&
+						strings.Join(strings.Fields(first.text), " ") != strings.Join(strings.Fields(other.text), " ") {
+						diff = d
+					}
+				default:
+					diff = firstDiff(reflect.ValueOf(first.canon), reflect.ValueOf(other.canon), "plan")
+				}
+				switch {
+				case diff != "":
+					c.Unsound++
+					if reported++; reported <= 5 {
+						t.Errorf("%s: one logical key, different translations (%s)\n  %q\n  %q\n  -> %q\n  -> %q",
+							prof.name, diff, rows[members[0]].text, rows[m].text, first.text, other.text)
+					}
+				case first.text != other.text:
+					c.TextOnly++
+				}
+			}
+		}
+		got[prof.name] = c
+		t.Logf("%-46s %+v", prof.name, c)
+	}
+
+	file, readErr := readPlanFile()
+	if os.Getenv("LVP_QUERY_PLAN_UPDATE") == "1" {
+		writePlanSection(t, file, "logical_key_sound", got)
+		t.Logf("wrote %s", planPath)
+		return
+	}
+	if readErr != nil {
+		t.Fatalf("read %s: %v", planPath, readErr)
+	}
+	var want keySoundSection
+	if err := json.Unmarshal(file["logical_key_sound"], &want); err != nil {
+		t.Fatalf("%s has no readable logical_key_sound section: %v", planPath, err)
+	}
+	for name, c := range got {
+		if w := want[name]; c != w {
+			t.Errorf("%s: %+v, the committed section has %+v: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestLogicalKeySound and commit %s",
+				name, c, w, strings.TrimPrefix(planPath, "../../"))
+		}
+	}
 }
