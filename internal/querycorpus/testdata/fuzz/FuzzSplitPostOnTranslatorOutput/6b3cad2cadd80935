@@ -1,0 +1,2 @@
+go test fuzz v1
+string("avg by(0000\"0000) (count without (0000000000) (rate(0000000[00])))")

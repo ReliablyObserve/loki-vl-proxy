@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -340,6 +341,11 @@ func FuzzSplitPostOnTranslatorOutput(f *testing.F) {
 			t.Skip()
 		}
 		checkPhysicalCodec(t, s)
+		// The handlers translate only a query that validates; in one that does
+		// not, a stray quote (`by(a"b)`) hides real code from withoutStrings.
+		if _, msg := logql.ValidateLogQLExpr(q); msg != "" {
+			return
+		}
 		code := strings.ToLower(withoutStrings(q))
 		_, post := translator.SplitPost(s)
 		if post.Folds() && !strings.Contains(code, "without") {
