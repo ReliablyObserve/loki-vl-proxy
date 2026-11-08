@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.96.1] - 2026-11-08
+
 ### Fixed
 
 - fix(logsql): the LogsQL parser the proxy reads its own queries with (for
