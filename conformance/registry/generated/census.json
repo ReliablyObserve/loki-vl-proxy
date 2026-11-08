@@ -334,7 +334,6 @@
     "semantics/detected-level-pipes-known-differences | gap:open",
     "semantics/detected-level-pipes-known-differences | query",
     "semantics/drop-error-pipeline-spellings | compare:observed",
-    "semantics/drop-error-pipeline-spellings | gap:fixed",
     "semantics/drop-error-pipeline-spellings | query",
     "semantics/drop-keep-plain-name-after-parser | compare:observed",
     "semantics/drop-keep-plain-name-after-parser | gap:open",
