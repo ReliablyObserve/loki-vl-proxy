@@ -1,6 +1,6 @@
 {
  "label": "daily-pattern-line-filter-loki-defaults",
- "date": "2026-11-07",
+ "date": "2026-11-08",
  "set": "pattern-line-filter",
  "description": "Pattern line filters (PR for semantics/pattern-line-filter): an empty pattern matches only the empty line (Loki pkg/logql/log/pattern), so `|> \"\"` keeps no line and `!> \"\"` keeps every one; the proxy translated it to match-all. P1 and P2 are log queries over the api-gateway streams, P3 is a count_over_time over a pattern that matches no nginx line and P4 over a pattern that matches every GET request line (the access log has the method after an opening quote). Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "P1 api-gateway empty pattern",
    "range": "1h",
    "p50": {
-    "release": 0.008,
-    "main": 0.008,
-    "loki": 0.009
+    "release": 0.012,
+    "main": 0.01,
+    "loki": 0.014
    },
    "p95": {
-    "release": 0.008,
-    "main": 0.008,
-    "loki": 0.011
+    "release": 0.016,
+    "main": 0.018,
+    "loki": 0.016
    },
    "cold": {
-    "release": 0.015,
-    "main": 0.008,
-    "loki": 0.029
+    "release": 0.013,
+    "main": 0.007,
+    "loki": 0.052
    },
    "status": {
     "release": "200",
@@ -135,25 +135,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 1.2
   },
   {
    "shape": "P2 api-gateway not empty pattern, line filter",
    "range": "1h",
    "p50": {
-    "main": 0.025,
-    "release": 0.026,
-    "loki": 0.024
+    "main": 0.024,
+    "release": 0.022,
+    "loki": 0.021
    },
    "p95": {
-    "main": 0.046,
-    "release": 0.057,
-    "loki": 0.031
+    "main": 0.028,
+    "release": 0.025,
+    "loki": 0.022
    },
    "cold": {
-    "main": 0.026,
-    "release": 0.025,
-    "loki": 0.054
+    "main": 0.028,
+    "release": 0.019,
+    "loki": 0.02
    },
    "status": {
     "main": "200",
@@ -161,9 +161,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 15.88,
-    "release": 15.88,
-    "loki": 15.88
+    "main": 7.88,
+    "release": 7.88,
+    "loki": 7.88
    },
    "cache": {
     "loki": {
@@ -237,7 +237,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.04
+   "speedup": 0.92
   },
   {
    "shape": "P3 nginx count_over_time, pattern with spaces",
@@ -248,12 +248,12 @@
     "loki": 0.005
    },
    "p95": {
-    "release": 0.002,
+    "release": 0.003,
     "main": 0.002,
-    "loki": 0.005
+    "loki": 0.006
    },
    "cold": {
-    "release": 0.005,
+    "release": 0.004,
     "main": 0.004,
     "loki": 0.011
    },
@@ -263,9 +263,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 15.88,
-    "main": 15.88,
-    "loki": 15.88
+    "release": 7.88,
+    "main": 7.88,
+    "loki": 7.88
    },
    "stale": [
     "release",
@@ -315,7 +315,7 @@
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1119
+       "bytesReceived": 1116
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -353,14 +353,14 @@
    "shape": "P4 nginx count_over_time, GET request pattern",
    "range": "1h",
    "p50": {
-    "main": 0.002,
+    "main": 0.003,
     "release": 0.002,
-    "loki": 0.004
+    "loki": 0.005
    },
    "p95": {
     "main": 0.003,
-    "release": 0.002,
-    "loki": 0.004
+    "release": 0.003,
+    "loki": 0.006
    },
    "cold": {
     "main": 0.004,
@@ -373,9 +373,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 15.88,
-    "release": 15.88,
-    "loki": 15.88
+    "main": 7.88,
+    "release": 7.88,
+    "loki": 7.88
    },
    "cache": {
     "loki": {
@@ -388,7 +388,7 @@
       "statsResult": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 376
+       "bytesReceived": 374
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -415,7 +415,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85943
+       "bytesReceived": 85944
       },
       "statsResult": {
        "entriesFound": 6,
@@ -452,13 +452,13 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.67
   }
  ],
- "baseline_ref": "v2.83.4",
- "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
- "measured_at": "2026-11-07T03:21:07Z",
- "run": "42333584371.1",
+ "baseline_ref": "v2.94.0",
+ "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+ "measured_at": "2026-11-08T03:22:29Z",
+ "run": "42442427345.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
