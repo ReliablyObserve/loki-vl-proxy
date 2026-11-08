@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- perf: the detected-level derivation a range aggregation without an outer
+  aggregation adds (so its series carry `detected_level`, like Loki's) is
+  built once per field set and reused: translating `rate({...}[5m])` takes
+  5.6 µs and 74 allocations instead of 18.9 µs and 505. The LogsQL sent to
+  VictoriaLogs is byte-identical.
+
 ## [2.96.1] - 2026-11-08
 
 ### Fixed
@@ -19,12 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is now a parse error. Every query reads back as VictoriaLogs reads it.
 
 ### Changed
-
-- perf: the detected-level derivation a range aggregation without an outer
-  aggregation adds (so its series carry `detected_level`, like Loki's) is
-  built once per field set and reused: translating `rate({...}[5m])` takes
-  5.6 µs and 74 allocations instead of 18.9 µs and 505. The LogsQL sent to
-  VictoriaLogs is byte-identical.
 
 - The LogQL parser applies Loki's input size limit (131,072 bytes) on every
   parse, as Loki's parser does, not only where a handler validates the query
