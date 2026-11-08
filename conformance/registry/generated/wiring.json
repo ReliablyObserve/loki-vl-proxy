@@ -312,6 +312,7 @@
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/parenthesized_range_test.go",
+      "internal/proxy/physical_sites_test.go",
       "internal/proxy/selector_value_test.go",
       "internal/proxy/series_limit_routes_test.go",
       "internal/proxy/sum_without_differential_test.go",
@@ -387,6 +388,7 @@
       "internal/proxy/ordered_json_result_cache_test.go",
       "internal/proxy/ordered_json_steps_cache_test.go",
       "internal/proxy/parenthesized_range_test.go",
+      "internal/proxy/physical_sites_test.go",
       "internal/proxy/plain_stream_labels_test.go",
       "internal/proxy/query_range_steps_middleware_test.go",
       "internal/proxy/query_range_steps_test.go",
@@ -1113,7 +1115,12 @@
     "semantics/label-replace-new-label": [
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
+      "internal/proxy/physical_sites_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
+      "internal/querycorpus/physical_codec_test.go",
+      "internal/querycorpus/physical_security_test.go",
+      "internal/querycorpus/physical_split_test.go",
+      "internal/querycorpus/plan_corpus_test.go",
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
     "semantics/label-replace-range-binary-marker": [
@@ -1433,9 +1440,14 @@
       "test/e2e-compat/unwrap_sum_without_test.go"
     ],
     "semantics/without-over-inner-aggregation-collapses": [
+      "internal/proxy/physical_sites_test.go",
       "internal/proxy/sliding_without_cut_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "internal/proxy/without_pushdown_differential_test.go",
+      "internal/querycorpus/physical_codec_test.go",
+      "internal/querycorpus/physical_security_test.go",
+      "internal/querycorpus/physical_split_test.go",
+      "internal/querycorpus/plan_corpus_test.go",
       "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go"
     ],
@@ -2290,6 +2302,12 @@
     "internal/proxy/peer_push_identity_test.go": [
       "peer-cache-replication"
     ],
+    "internal/proxy/physical_sites_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
     "internal/proxy/plain_stream_labels_test.go": [
       "loki_api_v1_query_range",
       "semantics/plain-name-after-parser-reads-stream-label"
@@ -2694,6 +2712,22 @@
       "semantics/nested-aggregation-outer-by-native-routes",
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
+    ],
+    "internal/querycorpus/physical_codec_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/querycorpus/physical_security_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/querycorpus/physical_split_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/querycorpus/plan_corpus_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
@@ -3430,7 +3464,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 363,
+  "tests_with_markers": 368,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
