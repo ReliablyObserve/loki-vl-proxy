@@ -217,7 +217,7 @@ func physicalShapes(op physical.Op) []string {
 		op = v.In
 	}
 	core, post := physical.Split(op)
-	if post.Without != nil {
+	if post.Folds() {
 		shapes = append(shapes, "without")
 		if post.Without.Op != "" {
 			shapes = append(shapes, "without-op:"+post.Without.Op)
@@ -243,7 +243,7 @@ func physicalShapes(op physical.Op) []string {
 			case physical.Binary:
 				shapes = append(shapes, "binary-nested")
 			}
-			if sidePost.Without != nil || len(sidePost.LabelReplace) > 0 {
+			if sidePost.Folds() || len(sidePost.LabelReplace) > 0 {
 				shapes = append(shapes, "binary-side-markers")
 			}
 		}
@@ -288,6 +288,8 @@ func TestPhysicalCodecRoundTrip(t *testing.T) {
 				t.Errorf("%s: query %q\ntranslated text %q is not written back by structure", prof.name, q, s)
 			}
 
+			assertSplitPost(t, s)
+
 			// The proxy's two-step strip, as it ran before the codec.
 			wantClean, wantOp, wantLabels := translator.ParseWithoutMarker(s)
 			wantClean, wantSpecs := translator.ParseAllLabelReplaceMarkers(wantClean)
@@ -301,7 +303,7 @@ func TestPhysicalCodecRoundTrip(t *testing.T) {
 			}
 			var gotOp string
 			var gotLabels []string
-			if post.Without != nil {
+			if post.Folds() {
 				gotOp, gotLabels = post.Without.Op, post.Without.Labels
 			}
 			if gotOp != wantOp || fmt.Sprintf("%#v", gotLabels) != fmt.Sprintf("%#v", wantLabels) {
@@ -430,24 +432,4 @@ func construct(q string) string {
 		return "literal"
 	}
 	return fmt.Sprintf("%T", expr)
-}
-
-// rebuilt is op with the text of every Binary dropped, so EncodePhysical writes it from the operands, the way it
-// writes a Binary built without text.
-func rebuilt(op physical.Op) physical.Op {
-	switch v := op.(type) {
-	case physical.Binary:
-		v.Text, v.L, v.R = "", rebuilt(v.L), rebuilt(v.R)
-		return v
-	case physical.Fold:
-		v.In = rebuilt(v.In)
-		return v
-	case physical.LabelMap:
-		v.In = rebuilt(v.In)
-		return v
-	case physical.Verbatim:
-		v.In = rebuilt(v.In)
-		return v
-	}
-	return op
 }

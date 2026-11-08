@@ -137,4 +137,4 @@ decisions:
     quality: 'Byte-identical VictoriaLogs queries and answers; lowering_marker_reads 41 → 34 in query-text-sites.json, may only fall.'
     performance:
       tracked: ['benchstat: BenchmarkSplitPostProcessing old vs new over the capture sample']
-      bound: 'splitPostProcessing 2.30 µs vs 2.20 µs for the old strip (count 10), 153 B and 2 allocs vs 81 B and 0'
+      bound: 'translator.SplitPost through splitPostProcessing vs the original two-step strip over the capture sample (count 10): all rows 1.23 µs vs 2.33 µs (-47%), 75 B vs 81 B, 0 allocs vs 0; rows without a marker 1.00 µs vs 2.66 µs (-62%), 0 B and 0 allocs both; locked by TestSplitPostAllocations (0 allocs without a marker, never more than the old strip with one)'

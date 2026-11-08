@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -917,15 +916,9 @@ type labelTransforms struct {
 // the clean query, the operator and labels of the `without` fold the proxy applies (empty and nil without one) and
 // the label_replace calls, innermost first.
 func splitPostProcessing(translated string) (clean, markerOp string, withoutLabels []string, replaces []translator.LabelReplaceSpec) {
-	low, _ := translator.DecodePhysical(translated)
-	core, post := physical.Split(low)
-	if post.Without != nil {
+	clean, post := translator.SplitPost(translated)
+	if post.Folds() {
 		markerOp, withoutLabels = post.Without.Op, post.Without.Labels
-	}
-	if q, ok := core.(physical.VLQuery); ok {
-		clean = q.Text
-	} else {
-		clean = translator.EncodePhysical(core)
 	}
 	return clean, markerOp, withoutLabels, post.LabelReplace
 }

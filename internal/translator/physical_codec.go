@@ -2,6 +2,19 @@ package translator
 
 import "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 
+// SplitPost reads only the markers of a translated query: the clean query and the post-processing, without decoding
+// the query itself. They are what physical.Split(DecodePhysical(s)) gives, and what ParseWithoutMarker followed by
+// ParseAllLabelReplaceMarkers returned, for any text. A query without markers is returned as it is, without an
+// allocation.
+func SplitPost(s string) (clean string, post physical.Post) {
+	clean, op, labels := ParseWithoutMarker(s)
+	clean, post.LabelReplace = ParseAllLabelReplaceMarkers(clean)
+	if op != "" || len(labels) > 0 {
+		post.Without = physical.FoldLevel{Op: op, Labels: labels, Without: true}
+	}
+	return clean, post
+}
+
 // DecodePhysical reads a translated query into its physical operators: the post-processing markers become Fold and
 // LabelMap around the query, and a binary expression or a number becomes Binary or ScalarOp. It is built from the
 // readers the proxy used on the text and in the order it used them: the `without` marker first (it leaves a trailing
@@ -13,14 +26,13 @@ import "github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 //
 // The codec lives in the translator because it reads the translator's text; it goes with the translator.
 func DecodePhysical(s string) (physical.Op, error) {
-	clean, op, labels := ParseWithoutMarker(s)
-	clean, specs := ParseAllLabelReplaceMarkers(clean)
+	clean, post := SplitPost(s)
 	out := decodeCore(clean)
-	if op != "" || len(labels) > 0 {
-		out = physical.Fold{Levels: []physical.FoldLevel{{Op: op, Labels: labels, Without: true}}, In: out}
+	if post.Folds() {
+		out = physical.Fold{Levels: []physical.FoldLevel{post.Without}, In: out}
 	}
-	if len(specs) > 0 {
-		out = physical.LabelMap{Replace: specs, In: out}
+	if len(post.LabelReplace) > 0 {
+		out = physical.LabelMap{Replace: post.LabelReplace, In: out}
 	}
 	// A marker the encoder would write elsewhere or differently (not one the translator wrote) keeps the text.
 	if len(clean) != len(s) && !encodesTo(out, s) {
@@ -132,11 +144,11 @@ func EncodePhysical(op physical.Op) string {
 		}
 		return s
 	case physical.LabelMap:
-		s := EncodePhysical(v.In)
+		b := append([]byte(nil), EncodePhysical(v.In)...)
 		for _, spec := range v.Replace {
-			s += labelReplaceMarker(spec)
+			b = appendLabelReplaceMarker(b, spec)
 		}
-		return s
+		return string(b)
 	}
 	return ""
 }

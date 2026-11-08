@@ -1106,8 +1106,10 @@
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/physical_sites_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
+      "internal/querycorpus/physical_codec_test.go",
+      "internal/querycorpus/physical_security_test.go",
+      "internal/querycorpus/physical_split_test.go",
       "internal/querycorpus/plan_corpus_test.go",
-      "internal/translator/physical_codec_test.go",
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
     "semantics/label-replace-range-binary-marker": [
@@ -1431,8 +1433,10 @@
       "internal/proxy/sliding_without_cut_test.go",
       "internal/proxy/without_open_shapes_test.go",
       "internal/proxy/without_pushdown_differential_test.go",
+      "internal/querycorpus/physical_codec_test.go",
+      "internal/querycorpus/physical_security_test.go",
+      "internal/querycorpus/physical_split_test.go",
       "internal/querycorpus/plan_corpus_test.go",
-      "internal/translator/physical_codec_test.go",
       "internal/translator/without_pushdown_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go"
     ],
@@ -2686,6 +2690,18 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/physical_codec_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/querycorpus/physical_security_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
+    "internal/querycorpus/physical_split_test.go": [
+      "semantics/label-replace-new-label",
+      "semantics/without-over-inner-aggregation-collapses"
+    ],
     "internal/querycorpus/plan_corpus_test.go": [
       "semantics/label-replace-new-label",
       "semantics/without-over-inner-aggregation-collapses"
@@ -2756,10 +2772,6 @@
     ],
     "internal/translator/pattern_line_filter_test.go": [
       "semantics/pattern-line-filter"
-    ],
-    "internal/translator/physical_codec_test.go": [
-      "semantics/label-replace-new-label",
-      "semantics/without-over-inner-aggregation-collapses"
     ],
     "internal/translator/regexp_escaping_test.go": [
       "loki_api_v1_query_range"
@@ -3424,7 +3436,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 362,
+  "tests_with_markers": 364,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

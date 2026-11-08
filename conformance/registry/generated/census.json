@@ -1452,6 +1452,12 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
+    "internal/querycorpus/physical_security_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_security_test.go | semantics/without-over-inner-aggregation-collapses",
+    "internal/querycorpus/physical_split_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_split_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/plan_corpus_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/plan_corpus_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
@@ -1483,8 +1489,6 @@
     "internal/translator/parsed_key_variants_test.go | profiles/sanitized-json-key-grouping",
     "internal/translator/pattern_line_filter_anchoring_test.go | semantics/pattern-line-filter-anchoring",
     "internal/translator/pattern_line_filter_test.go | semantics/pattern-line-filter",
-    "internal/translator/physical_codec_test.go | semantics/label-replace-new-label",
-    "internal/translator/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/translator/regexp_escaping_test.go | loki_api_v1_query_range",
     "internal/translator/series_aggregation_test.go | metric-series-identity",
     "internal/translator/stream_tag_restore_test.go | semantics/stream-label-shadowed-by-ingest-json-key",
@@ -1912,7 +1916,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 361,
+      "go": 363,
       "playwright": 1
     },
     "page_kinds": {
