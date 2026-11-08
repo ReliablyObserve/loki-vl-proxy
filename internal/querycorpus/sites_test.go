@@ -31,7 +31,7 @@ const module = "github.com/ReliablyObserve/Loki-VL-proxy/"
 //	text_built              any other LogQL or LogsQL literal: query text built as a string
 //	deferred_raw            a logsql.DeferredExpr literal: raw text inside the LogsQL AST
 //	translator_string_ops   every strings and regexp call in internal/translator, the string translator the AST
-//	                        translation replaces
+//	                        translation replaces, and in internal/translate, the builders moved out of it
 //	lowering_marker_reads   a place in internal/proxy that reads the translator's in-band markers or the text of
 //	                        a translated query instead of a typed plan: a selector of markerReaders, a call of
 //	                        proxyTextReaders or the literal "__rate_counter__"
@@ -148,7 +148,8 @@ func countFile(counts siteCounts, rel string, f *ast.File) {
 		}
 		imports[name] = p
 	}
-	translator := strings.HasPrefix(rel, "internal/translator/")
+	// The builders moved out of the string translator (internal/translate) count with it until they are typed.
+	translator := strings.HasPrefix(rel, "internal/translator/") || strings.HasPrefix(rel, "internal/translate/")
 	read := map[*ast.BasicLit]bool{} // literals already counted as a string read
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch v := n.(type) {

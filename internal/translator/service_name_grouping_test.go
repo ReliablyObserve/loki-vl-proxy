@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 func underscoreLabelsForTest(label string) string {
@@ -63,7 +64,7 @@ func TestServiceNameGroupingFallsBackToFormatPipes(t *testing.T) {
 	}
 	var want strings.Builder
 	want.WriteString(`env:="prod" `)
-	for _, field := range syntheticServiceNameFields[1:] {
+	for _, field := range translate.SyntheticServiceNameFields[1:] {
 		want.WriteString(`| format "<` + field + `>" as service_name keep_original_fields `)
 	}
 	want.WriteString(`| format "unknown_service" as service_name keep_original_fields | stats by (service_name) count()`)

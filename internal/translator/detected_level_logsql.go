@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"sync"
 	"sync/atomic"
 )
@@ -616,7 +617,7 @@ func newDetectedLevelMatcher(op, value string) (detectedLevelMatcher, error) {
 	case "=~", "!~":
 		// Loki's label filter regexp, simplified as Loki does
 		// (lokiLabelFilterPattern): `=~""` keeps every line.
-		re, err := regexp.Compile(anchorLabelFilterPattern(lokiLabelFilterPattern(value)))
+		re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(value)))
 		if err != nil {
 			return m, fmt.Errorf("invalid detected_level regexp %q: %w", value, err)
 		}
@@ -687,7 +688,7 @@ func (m detectedLevelMatcher) storedTextClause(field string, targets []string) s
 	case m.re != nil:
 		// Loki's label filter regexp, simplified as Loki does
 		// (lokiLabelFilterPattern), over the whole stored word.
-		alts = append(alts, "("+f+":~"+quoteLevelRegexp(anchorLabelFilterPattern(lokiLabelFilterPattern(m.value)))+" !"+f+":~"+known+")")
+		alts = append(alts, "("+f+":~"+quoteLevelRegexp(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(m.value)))+" !"+f+":~"+known+")")
 	case m.value != "" && !isKnownLevelSpelling(m.value):
 		alts = append(alts, f+":="+logsql.QuoteValue(m.value))
 	}
@@ -1149,7 +1150,7 @@ func (m detectedLevelMatcher) rawStoredValues() (raws []string, anyRaw bool) {
 			return nil, true
 		}
 		var ok bool
-		if values, ok = literalSet(reg.Simplify(), maxExactAlternatives); !ok {
+		if values, ok = translate.LiteralSet(reg.Simplify(), translate.MaxExactAlternatives); !ok {
 			return nil, true
 		}
 	}
