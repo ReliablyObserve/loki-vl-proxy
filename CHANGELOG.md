@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The binary-expression handlers read each operand as a typed query-plan
+  operator (a number, a nested expression or a VictoriaLogs query) instead of
+  parsing the translator's markers out of its text. The requests sent to
+  VictoriaLogs and the answers do not change.
+
 - The stream-selector filter builders moved out of the string translator into
   a package of their own that the translator and the query-plan lowering both
   call, and the lowering now translates log queries without pipeline stages
