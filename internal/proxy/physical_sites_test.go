@@ -746,18 +746,18 @@ var siteWants = map[string]siteAnswer{
 		series: nil,
 		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
 	},
-	"line filter holding a without marker/query_range": siteAnswer{code: 200, vl: []string{"query 1d9a16652b64fcd24709237c216b2467c69869c0b69cd5a29110c698cad5eb14/50"}, series: []string(nil), body: ""},
+	"line filter holding a without marker/query_range": {code: 200, vl: []string{"query 1d9a16652b64fcd24709237c216b2467c69869c0b69cd5a29110c698cad5eb14/50"}, series: []string(nil), body: ""},
 	"line filter holding a without marker and an op/query": {
 		code:   400,
 		vl:     nil,
 		series: nil,
 		body:   "log queries are not supported as an instant query type, please change your query to a range query type",
 	},
-	"line filter holding a without marker and an op/query_range":     siteAnswer{code: 200, vl: []string{"query 97d919f4cb24709f0459d1561316762997dbe5234b33ba1163e395c340dc657e/59"}, series: []string(nil), body: ""},
-	"metric over a line filter holding a without marker/query":       siteAnswer{code: 200, vl: []string{"stats_query f83f5838e7421bc3b9a966ad3f1174c25c00e20c4c464a421f6234e08bd84f63/63"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
-	"metric over a line filter holding a without marker/query_range": siteAnswer{code: 200, vl: []string{"stats_query_range 6f84431cab138a4f6b1c5b756c8417bd45fda69da3b92d2b0b3923d9f17b71d6/43"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
-	"label value holding a without marker/query":                     siteAnswer{code: 200, vl: []string{"stats_query cf220dc93f77cca9f006c5e1ba181210ce1fa5b7fb981c1b8f3c469aa8212aa9/58"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
-	"label value holding a without marker/query_range":               siteAnswer{code: 200, vl: []string{"stats_query_range 43a31f4b4686e4a4c3e7b307e2be82c8998628937adc14b4ae0cac196454e792/38"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
+	"line filter holding a without marker and an op/query_range":     {code: 200, vl: []string{"query 97d919f4cb24709f0459d1561316762997dbe5234b33ba1163e395c340dc657e/59"}, series: []string(nil), body: ""},
+	"metric over a line filter holding a without marker/query":       {code: 200, vl: []string{"stats_query f83f5838e7421bc3b9a966ad3f1174c25c00e20c4c464a421f6234e08bd84f63/63"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
+	"metric over a line filter holding a without marker/query_range": {code: 200, vl: []string{"stats_query_range 6f84431cab138a4f6b1c5b756c8417bd45fda69da3b92d2b0b3923d9f17b71d6/43"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
+	"label value holding a without marker/query":                     {code: 200, vl: []string{"stats_query cf220dc93f77cca9f006c5e1ba181210ce1fa5b7fb981c1b8f3c469aa8212aa9/58"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
+	"label value holding a without marker/query_range":               {code: 200, vl: []string{"stats_query_range 43a31f4b4686e4a4c3e7b307e2be82c8998628937adc14b4ae0cac196454e792/38"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
 	"line filter holding a half label_replace marker/query": {
 		code: 200,
 		vl: []string{
@@ -781,8 +781,8 @@ var siteWants = map[string]siteAnswer{
 			"{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]",
 		},
 	},
-	"line filter holding a label_replace marker/query":       siteAnswer{code: 200, vl: []string{"stats_query 31e37fdf1b8904f5dae30c2f4a8ac6181e94be28eb6306718c0f6ae91ff14934/87"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
-	"line filter holding a label_replace marker/query_range": siteAnswer{code: 200, vl: []string{"stats_query_range db10bfd2168737c8b87bd33d59f042da21f727b0dcbdecacce17bc49b3d0dbb5/67"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
+	"line filter holding a label_replace marker/query":       {code: 200, vl: []string{"stats_query 31e37fdf1b8904f5dae30c2f4a8ac6181e94be28eb6306718c0f6ae91ff14934/87"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [1.70406726e+09 1][]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [1.70406726e+09 2][]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [1.70406726e+09 3][]"}, body: ""},
+	"line filter holding a label_replace marker/query_range": {code: 200, vl: []string{"stats_query_range db10bfd2168737c8b87bd33d59f042da21f727b0dcbdecacce17bc49b3d0dbb5/67"}, series: []string{"{app=\"api-gateway\",instance=\"i1\",pod=\"p1\"} [][[1.70406726e+09 1]]", "{app=\"api-gateway\",instance=\"i1\",pod=\"p2\"} [][[1.70406726e+09 2]]", "{app=\"web\",instance=\"i2\",pod=\"p1\"} [][[1.70406726e+09 3]]"}, body: ""},
 	"line filter holding a binary marker/query": {
 		code: 200,
 		vl: []string{
