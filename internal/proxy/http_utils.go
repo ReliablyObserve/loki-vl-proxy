@@ -65,13 +65,14 @@ var (
 )
 
 // lowercaseQueryKeywords writes the keywords of the query parameter in lower
-// case before any handler reads it. Loki's lexer is case-insensitive for them
-// (SUM BY, TOPK(...), RATE(...), OFFSET), and the translator and the handlers
-// match the lower-case spelling.
+// case, and removes its `#` comments, before any handler reads it. Loki's lexer
+// is case-insensitive for keywords (SUM BY, TOPK(...), RATE(...), OFFSET) and
+// skips comments; the translator and the handlers match the lower-case spelling
+// and read the query text without comments.
 func lowercaseQueryKeywords(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if query := r.FormValue("query"); query != "" {
-			if lower := logql.LowercaseKeywords(query); lower != query {
+			if lower := logql.LowercaseKeywords(logql.StripComments(query)); lower != query {
 				setRequestQuery(r, lower)
 			}
 		}
