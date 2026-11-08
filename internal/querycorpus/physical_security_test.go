@@ -8,18 +8,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// Text a client controls reaches the translated query inside strings (a line filter, a label value, a label name in
-// label_format). The markers are text inside that query, so a string that holds one is read as one by the helpers
-// the proxy has always used, and SplitPost reads exactly what they read. This pins both halves: what is read (so a
-// change to the reading shows) and that it equals the old strip. The cases that are read as a marker are a known
-// weakness of the in-band markers, which the typed physical plan removes; each flips to "not read" when a client's
-// text can no longer become a marker.
+// Text a client controls reaches the translated query inside strings (a line filter, a label value, a label filter
+// value). The translator writes its markers after the query and no marker holds a quote, so SplitPost reads markers
+// after the last quote only: a client's string that holds marker text is text, never a without fold or a
+// label_replace the client did not write. A label_format name outside quotes cannot hold one either: Loki's grammar
+// rejects the colon, and so does the proxy's validation, before anything is translated.
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
-func TestClientTextThatLooksLikeAMarkerIsReadLikeBefore(t *testing.T) {
+func TestClientTextIsNeverReadAsAMarker(t *testing.T) {
+	if msg := logql.ValidateLogQL(`{app="x"} | label_format __without__:a=b`); msg == "" {
+		t.Errorf("a label_format name holding a marker passes validation")
+	}
 	const injectedReplace = `c2hvcnQAJDEAYXBwACguKikAYQ==` // base64 of "short\x00$1\x00app\x00(.*)\x00a"
 	for _, tc := range []struct {
 		name, logql string
@@ -27,14 +30,15 @@ func TestClientTextThatLooksLikeAMarkerIsReadLikeBefore(t *testing.T) {
 		replaces    int  // ... and as this many label_replace calls
 		binary      bool // ... or as a binary expression
 	}{
-		{name: "line filter", logql: `{app="x"} |= "__without__:pod"`, folds: true},
-		{name: "line filter with an op", logql: `{app="x"} |= "__without__:sum:pod,node"`, folds: true},
-		{name: "regexp line filter", logql: `{app="x"} |~ "a__without__:b"`, folds: true},
-		{name: "label value", logql: `{app="__without__:pod"}`, folds: true},
-		{name: "label filter value", logql: `sum by (a) (count_over_time({app="x"} | json | x="__without__:pod" [1m]))`, folds: true},
-		{name: "label_format name", logql: `{app="x"} | label_format __without__:a=b`, folds: true},
-		{name: "a whole label_replace marker", logql: `{app="x"} |= "__lvp_lr:` + injectedReplace + `__"`, replaces: 1},
-		{name: "a whole label_replace marker with four parts", logql: `{app="x"} |= "__lvp_lr:` + "c2hvcnQAJDEAYXBwACguKikA" + `__"`, replaces: 1},
+		{name: "line filter", logql: `{app="x"} |= "__without__:pod"`},
+		{name: "line filter with an op", logql: `{app="x"} |= "__without__:sum:pod,node"`},
+		{name: "regexp line filter", logql: `{app="x"} |~ "a__without__:b"`},
+		{name: "label value", logql: `{app="__without__:pod"}`},
+		{name: "label filter value", logql: `sum by (a) (count_over_time({app="x"} | json | x="__without__:pod" [1m]))`},
+		{name: "a whole label_replace marker", logql: `{app="x"} |= "__lvp_lr:` + injectedReplace + `__"`},
+		{name: "both markers in two strings", logql: `{app="x"} |= "__lvp_lr:` + injectedReplace + `__" |= "__without__:pod"`},
+		{name: "a marker in a backquoted string", logql: "{app=\"x\"} |= `__without__:pod`"},
+		{name: "a whole label_replace marker with four parts", logql: `{app="x"} |= "__lvp_lr:` + "c2hvcnQAJDEAYXBwACguKikA" + `__"`},
 		{name: "a half label_replace marker", logql: `count_over_time({app="x"} |= "a__lvp_lr:YQ==__" [1m])`},
 		{name: "binary marker", logql: `rate({app="x"} |= "__binary__:/:A|||B" [1m])`},
 		{name: "separators inside the operands of a real binary expression", binary: true, logql: `rate({app="x"} |= "|||" [1m]) / rate({app="y"} |= "@@@on:app" [1m])`},
