@@ -505,6 +505,9 @@
     "semantics/lower-bound-exclusive | compare:observed",
     "semantics/lower-bound-exclusive | gap:fixed",
     "semantics/lower-bound-exclusive | query",
+    "semantics/marker-text-in-query-strings | compare:observed",
+    "semantics/marker-text-in-query-strings | gap:fixed",
+    "semantics/marker-text-in-query-strings | query",
     "semantics/metadata-answers-include-last-24h-like-loki | compare:exact",
     "semantics/metadata-answers-include-last-24h-like-loki | perf",
     "semantics/metadata-answers-include-last-24h-like-loki | perf:locked",
@@ -1467,6 +1470,7 @@
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/physical_security_test.go | semantics/label-replace-new-label",
+    "internal/querycorpus/physical_security_test.go | semantics/marker-text-in-query-strings",
     "internal/querycorpus/physical_security_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/physical_split_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_split_test.go | semantics/without-over-inner-aggregation-collapses",
@@ -1926,12 +1930,12 @@
       "any": 28,
       "api": 40,
       "drilldown": 49,
-      "explore": 150,
+      "explore": 151,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 368,
+      "go": 369,
       "playwright": 1
     },
     "page_kinds": {
@@ -1951,7 +1955,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 257
+    "wired_items": 258
   },
   "gates": [
     "A/B shape selection",

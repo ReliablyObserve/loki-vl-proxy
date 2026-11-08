@@ -169,6 +169,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/line-filter-or-alternatives` — Line filters with `or` alternatives match like Loki | #669 | 0 | 0 |
 | `semantics/logfmt-existence-filter-ungrouped-sum` — An ungrouped sum over `\| logfmt \| key!=""` retains parsed fields (fixed) | #968 | 0 | 0 |
 | `semantics/lower-bound-exclusive` — the raw-row range evaluator reads the window (t-range, t] for every range function (fixed) | TBD-PR | 0 | 0 |
+| `semantics/marker-text-in-query-strings` — A string in a query that holds the proxy's post-processing marker text is matched as text | TBD | 0 | 0 |
 | `semantics/nested-aggregation-outer-by-native-routes` — A vector aggregation over another one keeps every level's own by on the native routes (fixed) | #746 | 0 | 0 |
 | `semantics/non-sum-vector-aggregation-unreduced` — max, min, count and avg over a range function are one series per group on query_range, like Loki (fixed) | #734 | 0 | 0 |
 | `semantics/pattern-line-filter` — An empty pattern line filter (`\|> ""`, `!> ""`) matches only the empty line, like Loki (fixed) | #743 | 0 | 0 |
