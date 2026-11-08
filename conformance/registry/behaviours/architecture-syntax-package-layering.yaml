@@ -277,7 +277,7 @@ decisions:
       served by the binary-aggregation and range-metric routes. A nested
       expression's matching is empty, not nil, without modifiers, as the text
       reader answered.
-    evidence: 'internal/proxy/binary_operand_test.go TestBinaryOperandsReadLikeTheirText (570 operands: 332 VLQuery, 142 ScalarOp, 72 Fold, 18 Binary, 6 LabelMap); route parity digests unchanged; base vs PR route-parity dumps: every binary run sends the same VictoriaLogs requests (the 39 runs that differ are `| json` metric probe races, the same between two base runs) (2026-11-08)'
+    evidence: 'internal/proxy/binary_operand_test.go TestBinaryOperandsReadLikeTheirText (570 operands: 332 VLQuery, 142 ScalarOp, 72 Fold, 18 Binary, 6 LabelMap); route parity digests unchanged; route-parity dumps of three base runs and two PR runs: the 66 runs whose VictoriaLogs requests differ are all `| json`/`| logfmt` metric queries (none a binary expression) with identical status and route steps, the concurrent probe routes on which three base runs already differ among themselves (46 runs) (2026-11-08)'
     code: [internal/proxy/metric_binary.go, internal/proxy/query_translation.go, internal/proxy/metric_agg.go]
     tests: [TestBinaryOperandsReadLikeTheirText, TestBinaryMatchingOfNestedExpressions, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests and answers do not change; the operands are still the string translator''s.'
