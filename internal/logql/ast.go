@@ -177,6 +177,8 @@ const (
 type ParserStage struct {
 	Type  ParserType
 	Param string
+	// Strict and KeepEmpty are logfmt's --strict and --keep-empty flags.
+	Strict, KeepEmpty bool
 	// Fields holds the explicit `| json a="expr", b` / `| logfmt ...`
 	// extraction list; nil when the stage extracts every field.
 	Fields []ExtractionField
@@ -194,7 +196,14 @@ func (s *ParserStage) String() string {
 	case ParserJSON:
 		return strings.TrimSpace("| json " + s.Param)
 	case ParserLogfmt:
-		return strings.TrimSpace("| logfmt " + s.Param)
+		flags := ""
+		if s.Strict {
+			flags += "--strict "
+		}
+		if s.KeepEmpty {
+			flags += "--keep-empty "
+		}
+		return strings.TrimSpace("| logfmt " + flags + s.Param)
 	case ParserRegexp:
 		return "| regexp " + quoteParserArgument(s.Param)
 	case ParserPattern:

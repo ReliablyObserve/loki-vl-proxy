@@ -1,0 +1,50 @@
+id: semantics/logfmt-malformed-lines
+title: '`| logfmt` reads malformed lines like VictoriaLogs, not Loki; `--strict` and `--keep-empty` are answered as `| logfmt` (open)'
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  The proxy unpacks logfmt with VictoriaLogs' unpack_logfmt, which reads a
+  malformed line differently from Loki's logfmt parser (e2e stack, Loki
+  v3.7.9, VictoriaLogs v1.53.0, 2026-11-08):
+    * `a="unterminated b=2`: Loki no labels; the proxy `a="unterminated`, `b=2`
+    * `a=1 a=2`: Loki `a=1` (first wins); the proxy `a=2` (last wins)
+    * `a==1 b=2`: Loki `b=2`; the proxy `a==1`, `b=2`
+    * `a=1 "b"=2`: Loki `a=1`; the proxy `a=1`, `_b=2`
+  so `sum by (a) (count_over_time({...} | logfmt [5m]))` over those 12 probe
+  lines has 2 groups on Loki (`1`: 7, none: 5) and 5 on the proxy.
+  `--strict` makes Loki stop at the first malformed pair and label the line
+  `__error__="LogfmtParserErr"` with `__error_details__` (`logfmt syntax error
+  at pos 20 : unterminated quoted value`); `--keep-empty` keeps a standalone
+  key (`b` in `a=1 b`) and an empty value (`a=`) as labels with an empty
+  value. The proxy reads both flags and answers the stage as `| logfmt`: the
+  same answer on well-formed lines without empty values, these differences on
+  the others. A Loki-exact logfmt reader in the proxy fixes log queries within
+  their line limit; metrics also need VictoriaLogs to pick out the malformed
+  lines, so they keep native stats for the rest.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{service_name="cache-redis"} | logfmt --strict'
+    start: 'now-1h'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, streams.labels]
+  expect: |
+    Loki's parsed labels and error labels for every line.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator (unpack_logfmt), internal/proxy (a Loki-exact logfmt reader for log queries)'
+  loki: 'its logfmt parser: first value wins, malformed pairs skipped, --strict errors, --keep-empty empty labels'
+  proxy: 'VictoriaLogs unpack_logfmt; the flags read and not applied'
+  planned_test: 'an e2e test against Loki over malformed and empty-value lines, with and without the flags (group semantics)'
+  clusters: []

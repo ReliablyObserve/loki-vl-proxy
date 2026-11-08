@@ -91,7 +91,7 @@ func rateCounterUnderSum(query string) (label string, ungrouped, ok bool) {
 			// The proof re-parses the line as logfmt: one `| logfmt` that
 			// extracts every key. `| json` is left out (VictoriaLogs renders an
 			// array as text, Loki skips it), as are the other parsers.
-			if st.Type != logqlpkg.ParserLogfmt || st.Param != "" || len(st.Fields) != 0 {
+			if st.Type != logqlpkg.ParserLogfmt || st.Param != "" || len(st.Fields) != 0 || st.Strict || st.KeepEmpty {
 				return "", false, false
 			}
 			parsers++

@@ -129,3 +129,9 @@ func (e *encoder) inputs(in Inputs) {
 	e.bool(in.Exposure.DottedNames)
 	e.strs(in.StreamLabels)
 }
+
+// The logfmt flags in the type byte of a parse stage (the parser types are below 16).
+const (
+	parseFlagStrict    = 1 << 6
+	parseFlagKeepEmpty = 1 << 7
+)
