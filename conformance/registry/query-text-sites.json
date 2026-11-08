@@ -1,16 +1,15 @@
 {
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
-    "deferred_raw": 9,
+    "deferred_raw": 7,
     "lowering_marker_reads": 34,
     "parse_calls": 62,
     "string_reads": 54,
     "text_built": 213,
-    "translator_string_ops": 656
+    "translator_string_ops": 646
   },
   "files": {
     "deferred_raw": {
-      "internal/translator/ast_translate.go": 2,
       "internal/translator/translator.go": 7
     },
     "lowering_marker_reads": {
@@ -44,10 +43,11 @@
       "internal/proxy/proxy.go": 5,
       "internal/proxy/quantile_histogram.go": 1,
       "internal/proxy/query_extract.go": 1,
+      "internal/proxy/query_plan.go": 1,
       "internal/proxy/query_range_steps.go": 2,
       "internal/proxy/query_range_windowing.go": 1,
       "internal/proxy/query_translation.go": 4,
-      "internal/proxy/range_metric_compat.go": 2,
+      "internal/proxy/range_metric_compat.go": 1,
       "internal/proxy/rate_counter_singletons.go": 1,
       "internal/proxy/regexp_capture_fields.go": 1,
       "internal/proxy/stream_processing.go": 2,
@@ -99,7 +99,6 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
-      "internal/translator/ast_translate.go": 10,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
       "internal/translator/label_filter_expr.go": 6,
