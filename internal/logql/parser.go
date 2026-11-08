@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
@@ -447,12 +448,60 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 	}
 	p.advance()
 
-	valStr, err := p.expectStringOrRaw()
-	if err != nil {
-		return LabelMatcher{}, fmt.Errorf("logql: expected label value after %q: %w", name.Val, err)
+	// Loki's grammar takes a STRING here and nothing else: the ip("...") form
+	// belongs to line and label filters, not to a stream selector.
+	if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+		return LabelMatcher{}, p.selectorValueError()
 	}
 
-	return LabelMatcher{Name: name.Val, Op: op, Value: valStr}, nil
+	return LabelMatcher{Name: name.Val, Op: op, Value: p.advance().Val}, nil
+}
+
+// selectorValueError reports a stream-selector matcher value that is not a
+// string the way Loki does. Loki's lexer returns a function name (ip, rate,
+// sum, label_replace, ...) as its keyword token only when a '(' follows it, and
+// a duration as DURATION with no line.
+func (p *parser) selectorValueError() error {
+	name := lokiTokenName(p.cur)
+	zeroLine := p.cur.Typ == TokDuration || p.cur.Typ == TokLBracket || isLineFilterOperator(p.cur.Typ)
+	switch {
+	case p.cur.Typ == TokDuration:
+		name = "DURATION"
+	case p.cur.Typ == TokIdent && isLexerFunctionName(p.cur.Val):
+		name = "IDENTIFIER"
+		if strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), "(") {
+			name = lokiTokenName(Token{Typ: TokIdent, Val: strings.ToLower(p.cur.Val)})
+		}
+	}
+	pos := p.pos()
+	if p.cur.Typ == TokEOF {
+		pos = len(p.sc.src)
+	}
+	if p.cur.Typ == TokError || p.cur.Typ == TokAt {
+		// Loki's lexer reports a bad string literal itself, at the start of the string, and reads any other
+		// character that starts no token as an identifier.
+		switch p.cur.Val {
+		case "unterminated quoted string":
+			return p.errorMsgAt(pos, "literal not terminated", false)
+		case "invalid quoted string":
+			return p.errorMsgAt(pos, "invalid char escape", false)
+		}
+		name = "IDENTIFIER"
+	}
+	return p.errorAt(pos, name, "STRING", zeroLine)
+}
+
+// isLexerFunctionName reports whether Loki's lexer turns the identifier into a
+// keyword token only when a '(' follows it.
+func isLexerFunctionName(name string) bool {
+	if strings.EqualFold(name, "ip") || name == "label_replace" || name == "vector" {
+		return true
+	}
+	if _, ok := rangeOps[name]; ok {
+		return true
+	}
+	_, ok := vectorOps[name]
+	return ok
 }
 
 // parsePipelineStage parses one pipeline stage. Returns nil, nil when no more
