@@ -42,7 +42,7 @@ gap:
   status: fixed
   visual: graph
   visual_reason: 'explore-binary-operand-literals renders the ratio; main shows the 400 parse error where Loki draws the series.'
-  fixed_by: 'TBD'
+  fixed_by: '#1177'
   impact: explore-visible
   effort: S
   area: 'internal/logql/parser.go (appendStageToken, advance), internal/logql/ast.go (formatNumber)'
