@@ -584,6 +584,9 @@
     "semantics/scalar-sample-time-units | compare:observed",
     "semantics/scalar-sample-time-units | gap:fixed",
     "semantics/scalar-sample-time-units | query",
+    "semantics/selector-values-are-strings | compare:observed",
+    "semantics/selector-values-are-strings | gap:fixed",
+    "semantics/selector-values-are-strings | query",
     "semantics/series-level-aggregation-bounded-memory | compare:numeric",
     "semantics/series-level-aggregation-bounded-memory | gap:fixed",
     "semantics/series-level-aggregation-bounded-memory | perf",
@@ -827,6 +830,7 @@
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
+    "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
     "internal/logsql/parser_typed_test.go | architecture-syntax-package-layering",
@@ -1240,6 +1244,10 @@
     "internal/proxy/sanitized_json_key_filter_test.go | operator-configurable-limits",
     "internal/proxy/sanitized_json_key_filter_test.go | profiles/detected-fields-dotted-json-keys",
     "internal/proxy/sanitized_json_key_filter_test.go | profiles/sanitized-json-key-filter",
+    "internal/proxy/selector_value_test.go | loki_api_v1_query",
+    "internal/proxy/selector_value_test.go | loki_api_v1_query_range",
+    "internal/proxy/selector_value_test.go | semantics/selector-values-are-strings",
+    "internal/proxy/selector_value_test.go | status-400",
     "internal/proxy/series_limit_routes_test.go | limits/drilldown-partial-with-warning",
     "internal/proxy/series_limit_routes_test.go | limits/series-limit-error",
     "internal/proxy/series_limit_routes_test.go | loki_api_v1_query",
@@ -1755,6 +1763,10 @@
     "test/e2e-compat/row_limit_like_loki_limit_test.go | status-400",
     "test/e2e-compat/sanitized_json_key_filter_test.go | profiles/sanitized-json-key-filter",
     "test/e2e-compat/sanitized_json_key_grouping_test.go | profiles/sanitized-json-key-grouping",
+    "test/e2e-compat/selector_value_test.go | loki_api_v1_query",
+    "test/e2e-compat/selector_value_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/selector_value_test.go | semantics/selector-values-are-strings",
+    "test/e2e-compat/selector_value_test.go | status-400",
     "test/e2e-compat/series_count_aggregation_test.go | metric-series-identity",
     "test/e2e-compat/series_count_aggregation_test.go | series-limits-and-partial-results",
     "test/e2e-compat/series_level_aggregation_fine_step_test.go | loki_api_v1_query_range",
@@ -1887,12 +1899,12 @@
       "any": 28,
       "api": 40,
       "drilldown": 49,
-      "explore": 148,
+      "explore": 149,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 355,
+      "go": 358,
       "playwright": 1
     },
     "page_kinds": {
@@ -1912,7 +1924,7 @@
     "shape_covers_distinct": 107,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 255
+    "wired_items": 256
   },
   "gates": [
     "A/B shape selection",

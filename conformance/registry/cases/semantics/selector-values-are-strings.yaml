@@ -1,0 +1,63 @@
+id: semantics/selector-values-are-strings
+title: a stream-selector matcher value that is not a string, such as ip("1.2.3.4"), answers 200 with no streams where Loki answers a 400 parse error (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  A stream-selector matcher value is a string in Loki, and nothing else; the
+  ip("...") form exists for line filters (`|= ip("1.2.3.4")`) and label
+  filters (`| addr=ip("1.2.3.4")`). Loki 3.7.9 on the compose stack answers
+  every other value with a 400 text/plain parse error that expects STRING:
+    * `{a=ip("1.2.3.4")}`: `parse error at line 1, col 4: syntax error:
+      unexpected ip, expecting STRING`;
+    * `{a="1", addr!=ip("1.1.1.1")}`: `... col 15: syntax error: unexpected
+      ip, expecting STRING`;
+    * `{a=foo}`: `unexpected IDENTIFIER`; `{a=1}`: `unexpected NUMBER`;
+      `{a=1h}`: `parse error at line 0, col 4: ... unexpected DURATION`;
+      `{a=}`: `unexpected }`; `{a=json}`: `unexpected json`.
+  Loki's lexer names a function (ip, rate, sum, label_replace) as its keyword
+  token only when a `(` follows, so `{a=ip}` and `{a=rate}` are IDENTIFIER.
+
+  The proxy's selector parser took the value through the helper the line
+  filters use, which also accepts `ident("...")`, and stored `ip(1.2.3.4)` as
+  the matcher value: query and query_range answered 200 with no streams, and
+  the parse oracle's typed-selector check saw 14 `{...=ip(...)}` selectors.
+
+  Fixed (internal/logql/parser.go parseLabelMatcher, selectorValueError): a
+  matcher value must be a quoted or raw string; anything else is Loki's
+  `syntax error: unexpected <token>, expecting STRING` at that token, with the
+  line and column Loki reports (line 0 for a duration or range token). query
+  and query_range answer it as 400 text/plain before any VictoriaLogs call.
+  Line and label filters keep ip(). The oracle's typed-selector check leaves out a
+  selector whose regexp does not compile, which every route rejects before
+  any translation.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{a="1", addr!=ip("1.1.1.1")}'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Loki-Response-Encoding-Flags: categorize-labels
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 `parse error at line 1, col 15: syntax error: unexpected ip, expecting STRING`.
+gap:
+  status: fixed
+  fixed_by: 'TBD'
+  impact: explore-visible
+  visual: none
+  visual_reason: 'a status and error text change on a selector no Grafana or Drilldown panel builds; the status and text are pinned by TestCompat_SelectorValueMustBeString against Loki and the parser table TestSelectorMatcherValueMustBeString'
+  effort: S
+  area: 'internal/logql/parser.go parseLabelMatcher (a matcher value must be a string)'
+  loki: 'Loki 3.7.9 on the compose stack (400 parse error, expecting STRING)'
+  proxy: 'Loki''s 400 and text on query and query_range'
+  planned_test: 'TestCompat_SelectorValueMustBeString (test/e2e-compat, group semantics), query and query_range'
+  clusters: []
