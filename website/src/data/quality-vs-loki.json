@@ -4,6 +4,226 @@
     "not compared": 15,
     "same": 713
   },
+  "by_range": [
+    {
+      "faster": 24,
+      "loki": {
+        "max": 0.52,
+        "p50": 0.144,
+        "p90": 0.19
+      },
+      "pairs": 40,
+      "par": 16,
+      "proxy": {
+        "max": 0.24,
+        "p50": 0.025,
+        "p90": 0.058
+      },
+      "range": "1h",
+      "slower": 0,
+      "workload": "Drilldown and Explore pages"
+    },
+    {
+      "faster": 26,
+      "loki": {
+        "max": 1.921,
+        "p50": 0.499,
+        "p90": 0.91
+      },
+      "pairs": 36,
+      "par": 10,
+      "proxy": {
+        "max": 0.576,
+        "p50": 0.078,
+        "p90": 0.377
+      },
+      "range": "6h",
+      "slower": 0,
+      "workload": "Drilldown and Explore pages"
+    },
+    {
+      "faster": 32,
+      "loki": {
+        "max": 7.13,
+        "p50": 2.668,
+        "p90": 3.47
+      },
+      "pairs": 39,
+      "par": 6,
+      "proxy": {
+        "max": 3.344,
+        "p50": 0.28,
+        "p90": 1.379
+      },
+      "range": "24h",
+      "slower": 1,
+      "workload": "Drilldown and Explore pages"
+    },
+    {
+      "faster": 4,
+      "loki": {
+        "max": 0.166,
+        "p50": 0.055,
+        "p90": 0.095
+      },
+      "pairs": 30,
+      "par": 26,
+      "proxy": {
+        "max": 0.067,
+        "p50": 0.03,
+        "p90": 0.057
+      },
+      "range": "1h",
+      "slower": 0,
+      "workload": "Log queries"
+    },
+    {
+      "faster": 5,
+      "loki": {
+        "max": 0.099,
+        "p50": 0.066,
+        "p90": 0.099
+      },
+      "pairs": 7,
+      "par": 2,
+      "proxy": {
+        "max": 0.01,
+        "p50": 0.008,
+        "p90": 0.01
+      },
+      "range": "3h",
+      "slower": 0,
+      "workload": "Log queries"
+    },
+    {
+      "faster": 8,
+      "loki": {
+        "max": 0.28,
+        "p50": 0.061,
+        "p90": 0.271
+      },
+      "pairs": 19,
+      "par": 11,
+      "proxy": {
+        "max": 0.108,
+        "p50": 0.007,
+        "p90": 0.071
+      },
+      "range": "6h",
+      "slower": 0,
+      "workload": "Log queries"
+    },
+    {
+      "faster": 11,
+      "loki": {
+        "max": 1.086,
+        "p50": 0.078,
+        "p90": 1.08
+      },
+      "pairs": 19,
+      "par": 8,
+      "proxy": {
+        "max": 0.151,
+        "p50": 0.008,
+        "p90": 0.103
+      },
+      "range": "24h",
+      "slower": 0,
+      "workload": "Log queries"
+    },
+    {
+      "faster": 65,
+      "loki": {
+        "max": 2.822,
+        "p50": 0.092,
+        "p90": 0.21
+      },
+      "pairs": 128,
+      "par": 63,
+      "proxy": {
+        "max": 0.181,
+        "p50": 0.017,
+        "p90": 0.074
+      },
+      "range": "1h",
+      "slower": 0,
+      "workload": "Metric queries"
+    },
+    {
+      "faster": 76,
+      "loki": {
+        "max": 11.038,
+        "p50": 0.496,
+        "p90": 1.07
+      },
+      "pairs": 99,
+      "par": 22,
+      "proxy": {
+        "max": 0.894,
+        "p50": 0.087,
+        "p90": 0.31
+      },
+      "range": "6h",
+      "slower": 1,
+      "workload": "Metric queries"
+    },
+    {
+      "faster": 86,
+      "loki": {
+        "max": 22.028,
+        "p50": 2.554,
+        "p90": 4.067
+      },
+      "pairs": 97,
+      "par": 10,
+      "proxy": {
+        "max": 3.275,
+        "p50": 0.314,
+        "p90": 1.176
+      },
+      "range": "24h",
+      "slower": 1,
+      "workload": "Metric queries"
+    }
+  ],
+  "clients": [
+    {
+      "client": "explore",
+      "compared_with_loki": 10,
+      "endpoints": 10,
+      "name": "Grafana Explore",
+      "open_differences": 44,
+      "proven": 8,
+      "routed": 10
+    },
+    {
+      "client": "drilldown",
+      "compared_with_loki": 11,
+      "endpoints": 11,
+      "name": "Logs Drilldown",
+      "open_differences": 13,
+      "proven": 9,
+      "routed": 11
+    },
+    {
+      "client": "datasource",
+      "compared_with_loki": 6,
+      "endpoints": 6,
+      "name": "Grafana Loki datasource",
+      "open_differences": 1,
+      "proven": 4,
+      "routed": 6
+    },
+    {
+      "client": "api",
+      "compared_with_loki": 19,
+      "endpoints": 27,
+      "name": "Loki API clients",
+      "open_differences": 12,
+      "proven": 12,
+      "routed": 25
+    }
+  ],
   "commits": [
     "e4a743f675"
   ],
@@ -57,7 +277,146 @@
       "rows": 523
     }
   ],
+  "heaviest": [
+    {
+      "loki": 31.319,
+      "maybe_cached": false,
+      "proxy": 2.481,
+      "range": "24h-20s",
+      "shape": "F1 sum by over a ratio of two per-stream metrics, 20s step",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 22.028,
+      "maybe_cached": false,
+      "proxy": 2.386,
+      "range": "24h",
+      "shape": "B2 sum by over a ratio of two per-stream metrics",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 11.34,
+      "maybe_cached": false,
+      "proxy": 1.2,
+      "range": "24h-20s",
+      "shape": "F3 avg by service of rate, 20s step",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 11.038,
+      "maybe_cached": false,
+      "proxy": 0.631,
+      "range": "6h",
+      "shape": "B2 sum by over a ratio of two per-stream metrics",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 8.707,
+      "maybe_cached": true,
+      "proxy": 0.006,
+      "range": "24h-20s",
+      "shape": "F2 count by service of count_over_time, 20s step",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 8.343,
+      "maybe_cached": false,
+      "proxy": 2.703,
+      "range": "24h-20s",
+      "shape": "F4 sum of max by service,app, 20s step",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 7.13,
+      "maybe_cached": false,
+      "proxy": 0.699,
+      "range": "24h",
+      "shape": "DB1 label breakdown pod",
+      "verdict": "faster",
+      "workload": "Drilldown and Explore pages"
+    },
+    {
+      "loki": 5.125,
+      "maybe_cached": false,
+      "proxy": 1.799,
+      "range": "24h",
+      "shape": "SF9 volume, logfmt label_format rename",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 4.784,
+      "maybe_cached": false,
+      "proxy": 0.988,
+      "range": "24h",
+      "shape": "G10 logfmt latency_ms sum_over_time, production",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 4.705,
+      "maybe_cached": false,
+      "proxy": 0.957,
+      "range": "24h",
+      "shape": "E3 logfmt latency_ms rate, production",
+      "verdict": "faster",
+      "workload": "Metric queries"
+    }
+  ],
   "loki": "3.7.9",
+  "losses": [
+    {
+      "loki": 0.016,
+      "maybe_cached": false,
+      "proxy": 0.21,
+      "range": "1h",
+      "shape": "DP1 patterns of a plain-text service",
+      "verdict": "slower",
+      "workload": "Metadata and label browser"
+    },
+    {
+      "loki": 0.117,
+      "maybe_cached": false,
+      "proxy": 0.297,
+      "range": "6h",
+      "shape": "LS8 json count by level_extracted, collision",
+      "verdict": "slower",
+      "workload": "Metric queries"
+    },
+    {
+      "loki": 0.427,
+      "maybe_cached": false,
+      "proxy": 0.974,
+      "range": "1h",
+      "shape": "DP2 patterns of an environment",
+      "verdict": "slower",
+      "workload": "Metadata and label browser"
+    },
+    {
+      "loki": 0.095,
+      "maybe_cached": false,
+      "proxy": 0.157,
+      "range": "24h",
+      "shape": "A5 drilldown exclude, volume by detected_level",
+      "verdict": "slower",
+      "workload": "Drilldown and Explore pages"
+    },
+    {
+      "loki": 0.154,
+      "maybe_cached": false,
+      "proxy": 0.242,
+      "range": "24h",
+      "shape": "DP2 patterns of an environment",
+      "verdict": "slower",
+      "workload": "Metadata and label browser"
+    }
+  ],
   "noise": {
     "seconds": 0.05,
     "share": 0.25
@@ -79,8 +438,16 @@
       "compared": 8,
       "faster": 3,
       "first": {
-        "loki": 0.121,
-        "proxy": 0.12
+        "loki": {
+          "max": 0.427,
+          "p50": 0.089,
+          "p90": 0.427
+        },
+        "proxy": {
+          "max": 0.974,
+          "p50": 0.058,
+          "p90": 0.974
+        }
       },
       "name": "Metadata and label browser",
       "par": 2,
@@ -94,8 +461,16 @@
       "compared": 117,
       "faster": 83,
       "first": {
-        "loki": 0.291,
-        "proxy": 0.067
+        "loki": {
+          "max": 7.13,
+          "p50": 0.291,
+          "p90": 2.825
+        },
+        "proxy": {
+          "max": 3.344,
+          "p50": 0.067,
+          "p90": 0.518
+        }
       },
       "name": "Drilldown and Explore pages",
       "par": 33,
@@ -109,8 +484,16 @@
       "compared": 75,
       "faster": 28,
       "first": {
-        "loki": 0.061,
-        "proxy": 0.01
+        "loki": {
+          "max": 1.086,
+          "p50": 0.061,
+          "p90": 0.229
+        },
+        "proxy": {
+          "max": 0.151,
+          "p50": 0.01,
+          "p90": 0.057
+        }
       },
       "name": "Log queries",
       "par": 47,
@@ -124,8 +507,16 @@
       "compared": 360,
       "faster": 238,
       "first": {
-        "loki": 0.17,
-        "proxy": 0.051
+        "loki": {
+          "max": 31.319,
+          "p50": 0.169,
+          "p90": 2.859
+        },
+        "proxy": {
+          "max": 3.275,
+          "p50": 0.051,
+          "p90": 0.524
+        }
       },
       "name": "Metric queries",
       "par": 120,

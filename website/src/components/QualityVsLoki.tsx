@@ -33,6 +33,70 @@ function verdict(proxy: number | null, loki: number | null): string {
   return beyond(loki, proxy) ? '🟢' : '🟡';
 }
 
+type Spread = {p50: number; p90: number; max: number} | null;
+
+function spread(s: Spread): string {
+  return s ? `${s.p50.toFixed(2)} · ${s.p90.toFixed(2)} · ${s.max.toFixed(2)} s` : '—';
+}
+
+const ICON: Record<string, string> = {faster: '🟢', par: '🟡', slower: '🔴'};
+
+type Pair = {
+  shape: string;
+  range: string;
+  workload: string;
+  verdict: string;
+  proxy: number;
+  loki: number;
+  maybe_cached: boolean;
+};
+
+function multiple(row: Pair): string {
+  const icon = ICON[row.verdict] ?? '⚪';
+  if (row.verdict === 'par' || !row.proxy || !row.loki) {
+    return `${icon} on par`;
+  }
+  return row.verdict === 'faster'
+    ? `${icon} ${(row.loki / row.proxy).toFixed(1)}× faster`
+    : `${icon} ${(row.proxy / row.loki).toFixed(1)}× slower`;
+}
+
+function PairTable({rows}: {rows: Pair[]}): ReactNode {
+  return (
+    <div className={styles.tableWrap}>
+      <table className={styles.comparisonTable}>
+        <thead>
+          <tr>
+            <th>Query shape</th>
+            <th>Range</th>
+            <th>Workload</th>
+            <th>Proxy</th>
+            <th>Loki</th>
+            <th>Proxy vs Loki</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.shape}-${r.range}`}>
+              <td>
+                <code>{r.shape}</code>
+              </td>
+              <td>{r.range}</td>
+              <td>{r.workload}</td>
+              <td>
+                <strong>{sec(r.proxy)}</strong>
+                {r.maybe_cached ? ' ‡' : ''}
+              </td>
+              <td>{sec(r.loki)}</td>
+              <td>{multiple(r)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function QualityVsLoki(): ReactNode {
   const impact = data.differences.open_by_impact as Record<string, number>;
   const visible =
@@ -89,11 +153,11 @@ export default function QualityVsLoki(): ReactNode {
           <thead>
             <tr>
               <th>Workload ({data.profile})</th>
-              <th>Pairs compared</th>
+              <th>Pairs</th>
               <th>🟢 / 🟡 / 🔴</th>
-              <th>First request: proxy</th>
+              <th>First request p50 · p90 · slowest: proxy</th>
               <th>Loki</th>
-              <th>Repeat: proxy</th>
+              <th>Repeat p50: proxy</th>
               <th>Loki</th>
             </tr>
           </thead>
@@ -106,13 +170,90 @@ export default function QualityVsLoki(): ReactNode {
                   {w.faster} / {w.par} / {w.slower}
                 </td>
                 <td>
-                  {verdict(w.first.proxy, w.first.loki)} <strong>{sec(w.first.proxy)}</strong>
+                  <strong>{spread(w.first.proxy)}</strong>
                 </td>
-                <td>{sec(w.first.loki)}</td>
+                <td>{spread(w.first.loki)}</td>
                 <td>
                   {verdict(w.repeat.proxy, w.repeat.loki)} <strong>{sec(w.repeat.proxy)}</strong>
                 </td>
                 <td>{sec(w.repeat.loki)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className={styles.sectionLead}>
+        First request by the time range a user picks, p50 · p90 · slowest pair:
+      </p>
+      <div className={styles.tableWrap}>
+        <table className={styles.comparisonTable}>
+          <thead>
+            <tr>
+              <th>Workload</th>
+              <th>Range</th>
+              <th>Pairs</th>
+              <th>🟢 / 🟡 / 🔴</th>
+              <th>Proxy</th>
+              <th>Loki</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.by_range.map((r) => (
+              <tr key={`${r.workload}-${r.range}`}>
+                <td>{r.workload}</td>
+                <td>{r.range}</td>
+                <td>{r.pairs}</td>
+                <td>
+                  {r.faster} / {r.par} / {r.slower}
+                </td>
+                <td>
+                  <strong>{spread(r.proxy)}</strong>
+                </td>
+                <td>{spread(r.loki)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className={styles.sectionLead}>The heaviest queries for Loki, the ones a user waits for:</p>
+      <PairTable rows={data.heaviest} />
+      {data.heaviest.some((r) => r.maybe_cached) ? (
+        <p>
+          ‡ The proxy answered a first request over 6h or more in under {Math.round(data.noise.seconds * 1000)} ms:
+          probably from its own cache, warmed by an earlier set of the daily run that sent the same query. The run
+          records Loki&apos;s cache counters but not the proxy&apos;s, so this row is not a cold proxy.
+        </p>
+      ) : null}
+      {data.losses.length ? (
+        <>
+          <p className={styles.sectionLead}>Where the proxy loses most:</p>
+          <PairTable rows={data.losses} />
+        </>
+      ) : null}
+      <p className={styles.sectionLead}>
+        Readiness by client: the Loki endpoints each client calls, their evidence, and the open differences it shows.
+      </p>
+      <div className={styles.tableWrap}>
+        <table className={styles.comparisonTable}>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Loki endpoints it calls</th>
+              <th>Routed</th>
+              <th>Compared with Loki in tests</th>
+              <th>Proven</th>
+              <th>Open differences it shows</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.clients.map((c) => (
+              <tr key={c.client}>
+                <td>{c.name}</td>
+                <td>{c.endpoints}</td>
+                <td>{c.routed}</td>
+                <td>{c.compared_with_loki}</td>
+                <td>{c.proven}</td>
+                <td>{c.open_differences}</td>
               </tr>
             ))}
           </tbody>

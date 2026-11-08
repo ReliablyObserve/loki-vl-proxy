@@ -188,8 +188,9 @@ class RenderTest(unittest.TestCase):
         text = pe.render_quality_summary(inputs())
         self.assertIn("**By workload in the run shown**", text)
         rows = [line for line in text.splitlines() if line.startswith("| ") and " / " in line and "**" in line]
-        # Drilldown: 0.10 s against 0.20 s is beyond 25% and 50 ms (faster); 0.03 against 0.04 is noise (on par).
-        self.assertIn("| Drilldown and Explore pages | 20 | 10 / 6 / 4 | 🟢 **0.10 s** | 0.20 s | 🟡 **0.03 s** | 0.04 s |", rows)
+        # First requests as p50 · p90 · slowest; the repeat p50 of 0.03 against 0.04 s is noise (on par).
+        self.assertIn("| Drilldown and Explore pages | 20 | 10 / 6 / 4 | **0.10 · 0.10 · 0.10 s** | 0.20 · 0.20 · 0.20 s | "
+                      "🟡 **0.03 s** | 0.04 s |", rows)
         self.assertEqual(len([r for r in rows if r.startswith("| Metadata and label browser")]), 1)
         # A metadata call with no first-request times still renders, with dashes.
         self.assertIn("| Labels (label browser) | 4 | 4 | ⚪ **—** | — | 🟡 **0.01 s** | 0.03 s |", text)
@@ -206,6 +207,43 @@ class RenderTest(unittest.TestCase):
         text = pe.render_quality_summary(inputs(differences=found))
         self.assertIn("| Open differences visible in Grafana (registry impact) | **4 of 6**: 3 Explore, 1 Logs Drilldown, "
                       "0 Grafana datasource; 1 API only, 1 edge cases |", text)
+
+    def test_spread_heaviest_and_losses_show_the_slow_tail(self):
+        rows = [{"workload": pe.WORKLOADS[3], "shape": f"s{i}", "range": "24h", "verdict": "faster",
+                 "proxy": 0.1 * i, "loki": 1.0 * i, "proxy_repeat": None, "loki_repeat": None} for i in range(1, 13)]
+        rows.append({"workload": pe.WORKLOADS[3], "shape": "slow", "range": "1h", "verdict": "slower",
+                     "proxy": 0.9, "loki": 0.3, "proxy_repeat": None, "loki_repeat": None})
+        rows.append({"workload": pe.WORKLOADS[3], "shape": "hit", "range": "24h", "verdict": "faster",
+                     "proxy": 0.01, "loki": 50.0, "proxy_repeat": None, "loki_repeat": None})
+        q = inputs()
+        q["summary"]["rows"] = rows
+        text = pe.render_quality_summary(q)
+        self.assertIn("**By time range, first request**", text)
+        heavy = text.split("**The heaviest queries for Loki in the run shown**")[1].split("**Where")[0]
+        self.assertEqual(heavy.count("| `"), 10)
+        self.assertIn("| `hit` | 24h | Metric queries | **0.01 s** ‡ | 50.00 s | 🟢 5000.0× faster |", heavy)
+        self.assertIn("‡ The proxy answered a first request over 6h or more", heavy)
+        self.assertIn("| `slow` | 1h | Metric queries | **0.90 s** | 0.30 s | 🔴 3.0× slower |", text)
+        self.assertEqual(pe.percentile([3, 1, 2, 4], 0.5), 2)
+        self.assertEqual(pe.percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.9), 9)
+        self.assertEqual(pe.spread([0.1, 0.2, 5.0]), "0.20 · 5.00 · 5.00 s")
+        self.assertFalse(pe.maybe_cached({"range": "1h", "proxy": 0.01}))
+        self.assertTrue(pe.maybe_cached({"range": "24h-20s", "proxy": 0.01}))
+
+    def test_readiness_by_client_counts_the_endpoints_each_client_calls(self):
+        endpoints = [
+            {"id": "q", "consumers": ["explore", "api"], "execution": "hybrid", "tests_vs_loki": 2, "state": "proven"},
+            {"id": "l", "consumers": ["explore", "drilldown", "api"], "execution": "native_vl", "tests_vs_loki": 0,
+             "state": "partial"},
+            {"id": "s", "consumers": ["api"], "execution": "not_implemented", "tests_vs_loki": 0, "state": "gap"},
+        ]
+        found = [{"id": "d1", "title": "A difference", "status": "open", "impact": "explore-visible"},
+                 {"id": "d2", "title": "A difference", "status": "documented", "impact": "explore-visible"}]
+        text = pe.render_quality_summary(inputs(endpoints=endpoints, differences=found))
+        self.assertIn("| Grafana Explore | 2 | 2 (100%) | 1 (50%) | 1 (50%) | 1 |", text)
+        self.assertIn("| Logs Drilldown | 1 | 1 (100%) | 0 (0%) | 0 (0%) | 0 |", text)
+        self.assertIn("| Loki API clients | 3 | 2 (67%) | 1 (33%) | 1 (33%) | 0 |", text)
+        self.assertNotIn("Grafana Loki datasource |", text)
 
     def test_no_history_wording(self):
         text = pe.render_quality_summary(inputs()).lower()

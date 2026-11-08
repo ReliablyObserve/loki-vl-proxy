@@ -67,16 +67,62 @@ Rows compared: both sides answered 200 and, on a first request, Loki's results c
 
 **By workload in the run shown**
 
-Medians over the comparable pairs of the `loki-defaults` run shown. The icon compares the medians with the rule above (🟢 faster, 🟡 on par, 🔴 slower); the counts are of pairs. A repeat is the recorded p50 of the repeated request, which may be a cache hit on either side.
+First request and repeat of the comparable pairs of the `loki-defaults` run, as p50 · p90 · slowest pair: the median hides the heavy queries, the p90 and the slowest show them. The counts are of pairs, with the rule above (🟢 faster, 🟡 on par, 🔴 slower). A repeat is the recorded p50 of the repeated request, which may be a cache hit on either side.
 
-| Workload | Pairs compared | 🟢 faster / 🟡 on par / 🔴 slower | First request: proxy | Loki | Repeat: proxy | Loki |
+| Workload | Pairs | 🟢 / 🟡 / 🔴 | First request: proxy | Loki | Repeat p50: proxy | Loki |
 |---|---:|:---:|---:|---:|---:|---:|
-| Metadata and label browser | 8 | 3 / 2 / 3 | 🟡 **0.12 s** | 0.12 s | 🟢 **0.02 s** | 0.10 s |
-| Drilldown and Explore pages | 117 | 83 / 33 / 1 | 🟢 **0.07 s** | 0.29 s | 🟡 **0.01 s** | 0.05 s |
-| Log queries | 75 | 28 / 47 / 0 | 🟢 **0.01 s** | 0.06 s | 🟡 **0.01 s** | 0.06 s |
-| Metric queries | 360 | 238 / 120 / 2 | 🟢 **0.05 s** | 0.17 s | 🟡 **0.01 s** | 0.02 s |
+| Metadata and label browser | 8 | 3 / 2 / 3 | **0.06 · 0.97 · 0.97 s** | 0.09 · 0.43 · 0.43 s | 🟢 **0.02 s** | 0.10 s |
+| Drilldown and Explore pages | 117 | 83 / 33 / 1 | **0.07 · 0.52 · 3.34 s** | 0.29 · 2.83 · 7.13 s | 🟡 **0.01 s** | 0.05 s |
+| Log queries | 75 | 28 / 47 / 0 | **0.01 · 0.06 · 0.15 s** | 0.06 · 0.23 · 1.09 s | 🟡 **0.01 s** | 0.06 s |
+| Metric queries | 360 | 238 / 120 / 2 | **0.05 · 0.52 · 3.27 s** | 0.17 · 2.86 · 31.32 s | 🟡 **0.01 s** | 0.02 s |
 
-Label browser and Drilldown metadata calls: every pair both sides answered with 200, including the first requests Loki's results cache answered (counted in the third column; a Loki time near zero there is its cache).
+**By time range, first request**
+
+How each side grows with the range a user picks: p50 · p90 · slowest pair of each workload and range.
+
+| Workload | Range | Pairs | 🟢 / 🟡 / 🔴 | Proxy | Loki |
+|---|---|---:|:---:|---:|---:|
+| Drilldown and Explore pages | 1h | 40 | 24 / 16 / 0 | **0.03 · 0.06 · 0.24 s** | 0.14 · 0.19 · 0.52 s |
+| Drilldown and Explore pages | 6h | 36 | 26 / 10 / 0 | **0.08 · 0.38 · 0.58 s** | 0.50 · 0.91 · 1.92 s |
+| Drilldown and Explore pages | 24h | 39 | 32 / 6 / 1 | **0.28 · 1.38 · 3.34 s** | 2.67 · 3.47 · 7.13 s |
+| Log queries | 1h | 30 | 4 / 26 / 0 | **0.03 · 0.06 · 0.07 s** | 0.06 · 0.10 · 0.17 s |
+| Log queries | 3h | 7 | 5 / 2 / 0 | **0.01 · 0.01 · 0.01 s** | 0.07 · 0.10 · 0.10 s |
+| Log queries | 6h | 19 | 8 / 11 / 0 | **0.01 · 0.07 · 0.11 s** | 0.06 · 0.27 · 0.28 s |
+| Log queries | 24h | 19 | 11 / 8 / 0 | **0.01 · 0.10 · 0.15 s** | 0.08 · 1.08 · 1.09 s |
+| Metric queries | 1h | 128 | 65 / 63 / 0 | **0.02 · 0.07 · 0.18 s** | 0.09 · 0.21 · 2.82 s |
+| Metric queries | 6h | 99 | 76 / 22 / 1 | **0.09 · 0.31 · 0.89 s** | 0.50 · 1.07 · 11.04 s |
+| Metric queries | 24h | 97 | 86 / 10 / 1 | **0.31 · 1.18 · 3.27 s** | 2.55 · 4.07 · 22.03 s |
+
+**The heaviest queries for Loki in the run shown**
+
+The 10 comparable pairs Loki takes longest to answer on a first request: the queries a user waits for. The multiple is Loki's time over the proxy's, or the reverse when the proxy is slower.
+
+| Query shape | Range | Workload | Proxy | Loki | Proxy vs Loki |
+|---|---|---|---:|---:|---|
+| `F1 sum by over a ratio of two per-stream metrics, 20s step` | 24h-20s | Metric queries | **2.48 s** | 31.32 s | 🟢 12.6× faster |
+| `B2 sum by over a ratio of two per-stream metrics` | 24h | Metric queries | **2.39 s** | 22.03 s | 🟢 9.2× faster |
+| `F3 avg by service of rate, 20s step` | 24h-20s | Metric queries | **1.20 s** | 11.34 s | 🟢 9.5× faster |
+| `B2 sum by over a ratio of two per-stream metrics` | 6h | Metric queries | **0.63 s** | 11.04 s | 🟢 17.5× faster |
+| `F2 count by service of count_over_time, 20s step` | 24h-20s | Metric queries | **0.01 s** ‡ | 8.71 s | 🟢 1451.2× faster |
+| `F4 sum of max by service,app, 20s step` | 24h-20s | Metric queries | **2.70 s** | 8.34 s | 🟢 3.1× faster |
+| `DB1 label breakdown pod` | 24h | Drilldown and Explore pages | **0.70 s** | 7.13 s | 🟢 10.2× faster |
+| `SF9 volume, logfmt label_format rename` | 24h | Metric queries | **1.80 s** | 5.12 s | 🟢 2.8× faster |
+| `G10 logfmt latency_ms sum_over_time, production` | 24h | Metric queries | **0.99 s** | 4.78 s | 🟢 4.8× faster |
+| `E3 logfmt latency_ms rate, production` | 24h | Metric queries | **0.96 s** | 4.71 s | 🟢 4.9× faster |
+
+‡ The proxy answered a first request over 6h or more in under 50 ms: probably from its own cache, warmed by an earlier set of the daily run that sent the same query. The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy.
+
+**Where the proxy loses most in the run shown**
+
+| Query shape | Range | Workload | Proxy | Loki | Proxy vs Loki |
+|---|---|---|---:|---:|---|
+| `DP1 patterns of a plain-text service` | 1h | Metadata and label browser | **0.21 s** | 0.02 s | 🔴 13.1× slower |
+| `LS8 json count by level_extracted, collision` | 6h | Metric queries | **0.30 s** | 0.12 s | 🔴 2.5× slower |
+| `DP2 patterns of an environment` | 1h | Metadata and label browser | **0.97 s** | 0.43 s | 🔴 2.3× slower |
+| `A5 drilldown exclude, volume by detected_level` | 24h | Drilldown and Explore pages | **0.16 s** | 0.10 s | 🔴 1.7× slower |
+| `DP2 patterns of an environment` | 24h | Metadata and label browser | **0.24 s** | 0.15 s | 🔴 1.6× slower |
+
+Label browser and Drilldown metadata calls: every pair both sides answered with 200, including the first requests Loki's results cache answered (counted in the third column; a Loki time near zero there is its cache). Medians.
 
 | Call | Pairs | Loki cache-answered | First request: proxy | Loki | Repeat: proxy | Loki |
 |---|---:|---:|---:|---:|---:|---:|
@@ -96,6 +142,17 @@ Label browser and Drilldown metadata calls: every pair both sides answered with 
 | Behaviour and feature items | 6 proven, 21 partial, 3 gaps |
 | Known differences from Loki (ranked) | **106**: 83 open, 13 documented, 7 owner-kept, 3 upstream |
 | Open differences visible in Grafana (registry impact) | **58 of 83**: 44 Explore, 13 Logs Drilldown, 1 Grafana datasource; 12 API only, 13 edge cases |
+
+**Readiness by client**
+
+The Loki endpoints each client calls (registry `consumers`), with the same evidence as above, and the open differences filed as visible to that client.
+
+| Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |
+|---|---:|---:|---:|---:|---:|
+| Grafana Explore | 10 | 10 (100%) | 10 (100%) | 8 (80%) | 44 |
+| Logs Drilldown | 11 | 11 (100%) | 11 (100%) | 9 (82%) | 13 |
+| Grafana Loki datasource | 6 | 6 (100%) | 6 (100%) | 4 (67%) | 1 |
+| Loki API clients | 27 | 25 (93%) | 19 (70%) | 12 (44%) | 12 |
 
 Read routes not implemented: `/loki/api/v1/cache/generation_numbers`, `/loki/api/v1/index/shards` (optional planner gap, low priority).
 

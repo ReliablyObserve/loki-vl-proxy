@@ -40,7 +40,7 @@ The daily run of 2026-11-08 measured **6** shape and range pairs slower than Lok
 | A5 drilldown exclude, volume by detected_level | 24h | 0.16 s | 0.10 s | 0.01 s | 0.01 s |
 | E2 json duration_ms p95 by service | 24h | 0.95 s | 0.69 s | 0.01 s | 0.02 s |
 
-Above 2× Loki (the regression list kept by the daily run): **3** rows, all `LS8 json count by level_extracted, collision` on a first request (1h and 6h in `loki-defaults`, 6h in `aligned`). The json level and Drilldown volume shapes the daily run measures (X1, DLV1–DLV3, A, F) are no longer slower than Loki in it. The other 6 slower pairs of the latest saved runs come from older dedicated runs the daily run does not re-measure (listed under *Not re-measured by the daily run* in the report), so they are not judged fixed. The [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md) lists the registry items that cover each row and the rows the daily run does not re-measure. Two-day ranges are measured separately; see [Two-day ranges (48h)](#two-day-ranges-48h).
+Above 2× Loki (the list kept by the daily run): **3** rows, all `LS8 json count by level_extracted, collision` on a first request (1h and 6h in `loki-defaults`, 6h in `aligned`). The other 6 slower pairs of the latest saved runs come from dedicated runs the daily run does not repeat (listed under *Not re-measured by the daily run* in the report). The [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md) lists the registry items that cover each row and the rows the daily run does not re-measure. Two-day ranges are measured separately; see [Two-day ranges (48h)](#two-day-ranges-48h).
 
 ### Two-day ranges (48h)
 
@@ -153,7 +153,7 @@ The 400s are shapes rejected identically on both builds. The 502s are a detected
 
 ### Daily regression guard
 
-The daily A/B (`bench/ab/daily.py`, run from `main` against the last release and Loki) of 2026-10-27 (#874) reported 0 regressions. At that time the ratchet held 231 shape and range rows that were as good as Loki (37 added by that run); losing one fails the run. The run before it, on 2026-10-24 (#865), held 194. See the [current performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md#acceptance-versus-loki) and [daily trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md) for the latest guard state.
+The daily A/B (`bench/ab/daily.py`, run from `main` against the last release and Loki) keeps a ratchet of the shape and range rows that are as good as Loki; a run that loses one fails. The current guard state, the rows above 2× Loki and the trend are generated in the [performance evidence](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/conformance/reports/performance.md#acceptance-versus-loki) and the [daily trend](https://github.com/ReliablyObserve/loki-vl-proxy/blob/main/bench/ab/history/trend.md).
 
 ### Answers that differ
 

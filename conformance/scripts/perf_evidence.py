@@ -59,6 +59,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from registry_io import SCOPE_SENTENCE, dump_json, load_json, read_text, write_text  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "bench", "ab"))
+import coverage_map  # noqa: E402
 import over2x  # noqa: E402
 import parity_gaps  # noqa: E402
 import roadmap  # noqa: E402
@@ -276,14 +277,14 @@ def render_metadata(kinds):
 def summarize(latest, shape_sets):
     """Counts and medians over the latest run of every (set, shape, range), by the rules of measurement()."""
     by_name = {(s, sh["name"]): sh for s, v in shape_sets.items() for sh in v["shapes"]}
-    out = {"pairs": 0, "comparable": 0, "isolated": 0, "cold": {}, "warm": {}, "refresh": {}, "results": {},
+    out = {"pairs": 0, "comparable": 0, "isolated": 0, "cold": {}, "warm": {}, "refresh": {}, "results": {}, "rows": [],
            "workloads": {w: {"pairs": 0, "comparable": 0, "cold": {}, "cand_cold": [], "ref_cold": [],
                              "cand_warm": [], "ref_warm": []} for w in WORKLOADS}}
 
     def bump(counts, key):
         counts[key] = counts.get(key, 0) + 1
 
-    for (set_name, shape_name, _), (_, summary, row) in latest.items():
+    for (set_name, shape_name, rng), (_, summary, row) in latest.items():
         cand, ref = summary["candidate"], summary["reference"]
         group = out["workloads"][workload(set_name, by_name[(set_name, shape_name)])]
         out["pairs"] += 1
@@ -301,6 +302,9 @@ def summarize(latest, shape_sets):
             bump(group["cold"], cold)
             group["cand_cold"].append(row["cold"][cand])
             group["ref_cold"].append(row["cold"][ref])
+            out["rows"].append({"workload": workload(set_name, by_name[(set_name, shape_name)]), "shape": shape_name,
+                                "range": rng, "verdict": cold, "proxy": row["cold"][cand], "loki": row["cold"][ref],
+                                "proxy_repeat": row["p50"].get(cand), "loki_repeat": row["p50"].get(ref)})
         # p50 of a --cold summary holds first runs; warm and refresh need a run with its own windows.
         if summary.get("timing") != "cold" and row["p50"].get(cand) is not None and row["p50"].get(ref) is not None:
             group["cand_warm"].append(row["p50"][cand])
@@ -826,6 +830,7 @@ def quality_inputs():
         "stats": load_json(SUMMARY_JSON), "states": states, "differences": found,
         "claims": behaviour_claims(found),
         "ranked_signature": RANKED_TEST[0] in test_names(RANKED_TEST[1]),
+        "endpoints": coverage_map.collect()[1],
     }
 
 
@@ -912,35 +917,95 @@ def distribution_table(q):
 VERDICT_ICON = {"faster": "🟢", "par": "🟡", "slower": "🔴"}
 
 
+def percentile(values, share):
+    """Nearest-rank percentile of the values, None when there are none."""
+    values = sorted(v for v in values if v is not None)
+    if not values:
+        return None
+    return values[min(len(values) - 1, max(0, -(-int(round(share * 100)) * len(values) // 100) - 1))]
+
+
+def spread(values):
+    """p50 · p90 · slowest of the values, in seconds."""
+    if not [v for v in values if v is not None]:
+        return "—"
+    return " · ".join(f"{percentile(values, p):.2f}" for p in (0.5, 0.9)) + f" · {max(v for v in values if v is not None):.2f} s"
+
+
+def ratio(row):
+    """How the proxy compares with Loki on the first request of one pair, as an icon and a multiple."""
+    proxy, loki = row["proxy"], row["loki"]
+    icon = VERDICT_ICON[row["verdict"]]
+    if row["verdict"] == "par" or not proxy or not loki:
+        return f"{icon} on par"
+    return f"{icon} {loki / proxy:.1f}× faster" if row["verdict"] == "faster" else f"{icon} {proxy / loki:.1f}× slower"
+
+
+def maybe_cached(row):
+    """A first request over 6h or more the proxy answered in under the noise floor: likely its own cache, warmed
+    by an earlier set that sent the same query (the daily run records Loki's cache counters, not the proxy's)."""
+    head = re.match(r"(\d+[mhd])", row["range"])
+    return bool(head) and range_seconds(head.group(1)) >= 6 * 3600 and row["proxy"] < MIN_DELTA
+
+
 def workload_tables(q):
-    """Per-workload and metadata medians of the run shown, with the verdict of the medians as an icon."""
+    """The spread of the run shown by workload and by range, the heaviest queries and the largest losses."""
     s = q["summary"]
+    rows = s.get("rows") or []
 
     def verdict(cand, ref):
         return VERDICT_ICON.get(compare(cand, ref), "⚪")
 
     out = ["", "**By workload in the run shown**", "",
-           f"Medians over the comparable pairs of the `{q['profile']}` run shown. The icon compares the medians with "
-           f"the rule above (🟢 faster, 🟡 on par, 🔴 slower); the counts are of pairs. A repeat is the recorded p50 "
-           "of the repeated request, which may be a cache hit on either side.", "",
-           "| Workload | Pairs compared | 🟢 faster / 🟡 on par / 🔴 slower | First request: proxy | Loki | "
-           "Repeat: proxy | Loki |",
+           f"First request and repeat of the comparable pairs of the `{q['profile']}` run, as p50 · p90 · slowest "
+           "pair: the median hides the heavy queries, the p90 and the slowest show them. The counts are of pairs, "
+           "with the rule above (🟢 faster, 🟡 on par, 🔴 slower). A repeat is the recorded p50 of the repeated "
+           "request, which may be a cache hit on either side.", "",
+           "| Workload | Pairs | 🟢 / 🟡 / 🔴 | First request: proxy | Loki | Repeat p50: proxy | Loki |",
            "|---|---:|:---:|---:|---:|---:|---:|"]
     for name in WORKLOADS:
         g = s["workloads"][name]
         if not g["comparable"]:
             continue
         c = g["cold"]
-        cand_cold, ref_cold = median(g["cand_cold"]), median(g["ref_cold"])
         cand_warm, ref_warm = median(g["cand_warm"]), median(g["ref_warm"])
         out.append(f"| {name} | {g['comparable']} | {c.get('faster', 0)} / {c.get('par', 0)} / {c.get('slower', 0)} | "
-                   f"{verdict(cand_cold, ref_cold)} **{sec(cand_cold)}** | {sec(ref_cold)} | "
+                   f"**{spread(g['cand_cold'])}** | {spread(g['ref_cold'])} | "
                    f"{verdict(cand_warm, ref_warm)} **{sec(cand_warm)}** | {sec(ref_warm)} |")
+    ranged = [r for r in rows if re.fullmatch(r"\d+[mhd]", r["range"]) and r["workload"] != WORKLOADS[0]]
+    if ranged:
+        out += ["", "**By time range, first request**", "",
+                "How each side grows with the range a user picks: p50 · p90 · slowest pair of each workload and range.", "",
+                "| Workload | Range | Pairs | 🟢 / 🟡 / 🔴 | Proxy | Loki |", "|---|---|---:|:---:|---:|---:|"]
+        for name in WORKLOADS[1:]:
+            for rng in sorted({r["range"] for r in ranged if r["workload"] == name}, key=range_seconds):
+                group = [r for r in ranged if r["workload"] == name and r["range"] == rng]
+                counts = {v: sum(1 for r in group if r["verdict"] == v) for v in VERDICT_ICON}
+                out.append(f"| {name} | {rng} | {len(group)} | {counts['faster']} / {counts['par']} / {counts['slower']} | "
+                           f"**{spread([r['proxy'] for r in group])}** | {spread([r['loki'] for r in group])} |")
+    if rows:
+        heavy = sorted(rows, key=lambda r: -r["loki"])[:10]
+        out += ["", "**The heaviest queries for Loki in the run shown**", "",
+                "The 10 comparable pairs Loki takes longest to answer on a first request: the queries a user waits "
+                "for. The multiple is Loki's time over the proxy's, or the reverse when the proxy is slower.", "",
+                "| Query shape | Range | Workload | Proxy | Loki | Proxy vs Loki |", "|---|---|---|---:|---:|---|"]
+        out += [f"| {code(r['shape'])} | {r['range']} | {r['workload']} | **{sec(r['proxy'])}**"
+                f"{' ‡' if maybe_cached(r) else ''} | {sec(r['loki'])} | {ratio(r)} |" for r in heavy]
+        if any(maybe_cached(r) for r in heavy):
+            out += ["", f"‡ The proxy answered a first request over 6h or more in under {int(MIN_DELTA * 1000)} ms: "
+                    "probably from its own cache, warmed by an earlier set of the daily run that sent the same query. "
+                    "The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy."]
+        losses = sorted((r for r in rows if r["verdict"] == "slower"), key=lambda r: -(r["proxy"] / r["loki"]))[:5]
+        if losses:
+            out += ["", "**Where the proxy loses most in the run shown**", "",
+                    "| Query shape | Range | Workload | Proxy | Loki | Proxy vs Loki |", "|---|---|---|---:|---:|---|"]
+            out += [f"| {code(r['shape'])} | {r['range']} | {r['workload']} | **{sec(r['proxy'])}** | {sec(r['loki'])} | "
+                    f"{ratio(r)} |" for r in losses]
     kinds = s.get("metadata") or {}
     if kinds:
         out += ["", "Label browser and Drilldown metadata calls: every pair both sides answered with 200, including "
                 "the first requests Loki's results cache answered (counted in the third column; a Loki time near zero "
-                "there is its cache).", "",
+                "there is its cache). Medians.", "",
                 "| Call | Pairs | Loki cache-answered | First request: proxy | Loki | Repeat: proxy | Loki |",
                 "|---|---:|---:|---:|---:|---:|---:|"]
         for name, k in sorted(kinds.items()):
@@ -949,6 +1014,32 @@ def workload_tables(q):
             out.append(f"| {name} | {k['pairs']} | {k.get('served', 0)} | "
                        f"{verdict(vals['cand_cold'], vals['ref_cold'])} **{sec(vals['cand_cold'])}** | {sec(vals['ref_cold'])} | "
                        f"{verdict(vals['cand_warm'], vals['ref_warm'])} **{sec(vals['cand_warm'])}** | {sec(vals['ref_warm'])} |")
+    return out
+
+
+# The clients the registry names as consumers of an endpoint, and the impact a difference they show is filed under.
+CLIENTS = (("explore", "Grafana Explore", "explore-visible"), ("drilldown", "Logs Drilldown", "drilldown-visible"),
+           ("datasource", "Grafana Loki datasource", "grafana-datasource"), ("api", "Loki API clients", "api-only"))
+
+
+def client_readiness(q):
+    """Per client: the Loki endpoints it calls and their evidence, and the open differences it shows."""
+    # The read API only, as the scores above: optional deletion management is outside it.
+    rows = [r for r in q.get("endpoints") or [] if r["id"] not in coverage_map.WRITE_IN_SCOPE]
+    open_by_impact = {}
+    for c in q["differences"]:
+        if c["status"] == "open":
+            open_by_impact[c.get("impact")] = open_by_impact.get(c.get("impact"), 0) + 1
+    out = []
+    for key, name, impact in CLIENTS:
+        used = [r for r in rows if key in r["consumers"]]
+        if not used:
+            continue
+        out.append({"client": key, "name": name, "endpoints": len(used),
+                    "routed": sum(1 for r in used if r["execution"] != "not_implemented"),
+                    "compared_with_loki": sum(1 for r in used if r["tests_vs_loki"]),
+                    "proven": sum(1 for r in used if r["state"] == "proven"),
+                    "open_differences": open_by_impact.get(impact, 0)})
     return out
 
 
@@ -1087,6 +1178,17 @@ def render_quality_summary(q, target_is_docs=False):
                    + ", ".join(f"{impact.get(k, 0)} {label}" for k, label in visible)
                    + f"; {impact.get('api-only', 0)} API only, {impact.get('edge', 0)} edge cases |")
     out.append("")
+    readiness = client_readiness(q)
+    if readiness:
+        out += ["**Readiness by client**", "",
+                "The Loki endpoints each client calls (registry `consumers`), with the same evidence as above, and "
+                "the open differences filed as visible to that client.", "",
+                "| Client | Loki endpoints it calls | Routed | Compared with Loki in tests | Proven | Open differences it shows |",
+                "|---|---:|---:|---:|---:|---:|"]
+        out += [f"| {r['name']} | {r['endpoints']} | {r['routed']} ({pct(r['routed'], r['endpoints'])}) | "
+                f"{r['compared_with_loki']} ({pct(r['compared_with_loki'], r['endpoints'])}) | "
+                f"{r['proven']} ({pct(r['proven'], r['endpoints'])}) | {r['open_differences']} |" for r in readiness]
+        out.append("")
     if stats.get("unrouted"):
         out += ["Read routes not implemented: " + ", ".join(
             f"`{row['path']}`" + (" (optional planner gap, low priority)" if row["optional"] else "")
@@ -1116,6 +1218,13 @@ def site_data(q):
     def med(values):
         return round(median(values), 3) if median(values) is not None else None
 
+    def pcts(values):
+        values = [v for v in values if v is not None]
+        return {"p50": round(percentile(values, 0.5), 3), "p90": round(percentile(values, 0.9), 3),
+                "max": round(max(values), 3)} if values else None
+
+    rows = s.get("rows") or []
+
     found = q["differences"]
     open_rows = [c for c in found if c["status"] == "open"]
     impact = {}
@@ -1134,12 +1243,29 @@ def site_data(q):
         "workloads": [
             {"name": name, "compared": g["comparable"], "faster": g["cold"].get("faster", 0),
              "par": g["cold"].get("par", 0), "slower": g["cold"].get("slower", 0),
-             "first": {"proxy": med(g["cand_cold"]), "loki": med(g["ref_cold"])},
+             "first": {"proxy": pcts(g["cand_cold"]), "loki": pcts(g["ref_cold"])},
              "repeat": {"proxy": med(g["cand_warm"]), "loki": med(g["ref_warm"])}}
             for name in WORKLOADS for g in [s["workloads"][name]] if g["comparable"]],
+        "by_range": [
+            {"workload": name, "range": rng, "pairs": len(group),
+             **{v: sum(1 for r in group if r["verdict"] == v) for v in VERDICT_ICON},
+             "proxy": pcts([r["proxy"] for r in group]), "loki": pcts([r["loki"] for r in group])}
+            for name in WORKLOADS[1:]
+            for rng in sorted({r["range"] for r in rows if r["workload"] == name and re.fullmatch(r"\d+[mhd]", r["range"])},
+                              key=range_seconds)
+            for group in [[r for r in rows if r["workload"] == name and r["range"] == rng]]],
+        "heaviest": [
+            {"shape": r["shape"], "range": r["range"], "workload": r["workload"], "verdict": r["verdict"],
+             "proxy": round(r["proxy"], 3), "loki": round(r["loki"], 3), "maybe_cached": maybe_cached(r)}
+            for r in sorted(rows, key=lambda r: -r["loki"])[:10]],
+        "losses": [
+            {"shape": r["shape"], "range": r["range"], "workload": r["workload"], "verdict": r["verdict"],
+             "proxy": round(r["proxy"], 3), "loki": round(r["loki"], 3), "maybe_cached": maybe_cached(r)}
+            for r in sorted((r for r in rows if r["verdict"] == "slower"), key=lambda r: -(r["proxy"] / r["loki"]))[:5]],
         "answers": {k: s["results"].get(k, 0) for k in ("same", "differs", "not compared")},
         "read_api": {"endpoints": stats["endpoints"], "routed": stats["implemented"],
                      "compared_with_loki": stats["with_differential_tests"], "proven": stats["proven"]},
+        "clients": client_readiness(q),
         "differences": {"ranked": sum(1 for c in found if c["status"] in ("open", "documented", "owner-kept", "upstream")),
                         "open": len(open_rows),
                         "open_by_impact": dict(sorted(impact.items()))},
