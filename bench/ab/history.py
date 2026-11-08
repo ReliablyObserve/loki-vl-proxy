@@ -256,11 +256,11 @@ def moved(old, new):
 
 
 def secs(v, status=None):
+    # A non-200 answer still has a time: the time is shown, with the status code in parentheses.
+    text = "—" if v is None else (f"{v * 1000:.0f} ms" if v < 1 else f"{v:.2f} s")
     if status not in (None, "200"):
-        return f"**{status}**"
-    if v is None:
-        return "—"
-    return f"{v * 1000:.0f} ms" if v < 1 else f"{v:.2f} s"
+        return f"{text} (**{status}**)"
+    return text
 
 
 def previous(entries, days):

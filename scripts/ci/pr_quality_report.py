@@ -498,7 +498,10 @@ def perf_examples(artifacts):
         values = []
         for target in (b, p):
             status = mapping(row.get("status")).get(target)
-            values.append("HTTP " + cell(status) if status is not None and str(status) != "200" else ms(times.get(target)))
+            value = ms(times.get(target))
+            if status is not None and str(status) != "200":
+                value += " (HTTP " + cell(status) + ")"
+            values.append(value)
         identity = " / ".join(cell(x) for x in (summary.get("profile") or "unspecified", summary.get("set") or "unspecified set", row.get("shape"), row.get("range")))
         notes = []
         if any(t in summary.get("not_like_for_like", []) for t in (b, p)):
@@ -523,7 +526,7 @@ def perf_details(artifacts):
         for i, target in enumerate(targets):
             status = mapping(row.get("status")).get(target)
             if status is not None and str(status) != "200":
-                timings[i] = "HTTP " + cell(status)
+                timings[i] += " (HTTP " + cell(status) + ")"
         if targets[2] in row.get("cold_cache_served", []):
             timings[2] += " †"
         unlike = summary.get("not_like_for_like", [])

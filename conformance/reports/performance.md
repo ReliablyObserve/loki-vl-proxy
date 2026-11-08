@@ -153,20 +153,20 @@ as slower above or in the registry table. Re-measure them before acting on them.
 
 | shape | range | proxy cold | Loki cold | Loki cold verified | run (date, candidate) | registry items |
 |---|---|---|---|---|---|---|
-| json rate by level (no filter, no drop) | 3h | **400** | 0.07s | no (no cache counters) | plain-name-control (2026-10-06, branch) | `parser-error-and-label-collision`, `parser-json` |
-| json rate by level (no filter, no drop) | 6h | **400** | — | no (no cache counters) | unwrapwithout-control-long (2026-10-17, pr) | `parser-error-and-label-collision`, `parser-json` |
-| DB1 label breakdown pod | 7d | **502** | 180.00s | no (no cache counters) | pr624-final-drilldown-breakdown-exact (2026-09-30, branch) | `limits/drilldown-breakdown-exact`, `quality/query-range-extent-cache-large-answer`, `quality/stats-answer-transform-cost`, `quality/stats-tumbling-relabel-one-pass`, `series-limits-and-partial-results` |
-| DB4 json field breakdown batch_id | 7d | **502** | 155.58s | no (no cache counters) | pr624-final-drilldown-breakdown-exact (2026-09-30, branch) | `limits/drilldown-breakdown-exact`, `parser-json`, `quality/query-range-extent-cache-large-answer`, `quality/stats-answer-transform-cost`, `quality/stats-tumbling-relabel-one-pass`, `series-limits-and-partial-results` |
+| json rate by level (no filter, no drop) | 3h | 0.00s (**400**) | 0.07s | no (no cache counters) | plain-name-control (2026-10-06, branch) | `parser-error-and-label-collision`, `parser-json` |
+| json rate by level (no filter, no drop) | 6h | 0.00s (**400**) | — | no (no cache counters) | unwrapwithout-control-long (2026-10-17, pr) | `parser-error-and-label-collision`, `parser-json` |
+| DB1 label breakdown pod | 7d | 7.85s (**502**) | 180.00s | no (no cache counters) | pr624-final-drilldown-breakdown-exact (2026-09-30, branch) | `limits/drilldown-breakdown-exact`, `quality/query-range-extent-cache-large-answer`, `quality/stats-answer-transform-cost`, `quality/stats-tumbling-relabel-one-pass`, `series-limits-and-partial-results` |
+| DB4 json field breakdown batch_id | 7d | 4.35s (**502**) | 155.58s | no (no cache counters) | pr624-final-drilldown-breakdown-exact (2026-09-30, branch) | `limits/drilldown-breakdown-exact`, `parser-json`, `quality/query-range-extent-cache-large-answer`, `quality/stats-answer-transform-cost`, `quality/stats-tumbling-relabel-one-pass`, `series-limits-and-partial-results` |
 | drilldown landing volume | 7d | 0.12s | 0.03s | no (no cache counters) | backfilled-empty-buckets-metadata-inventory (2026-10-01, branch) | `backend-admission-and-heavy-query-queueing`, `quality/index-volume-settled-segments` |
 | E1 json duration_ms sum by service | 7d | 5.93s | 0.10s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
-| E2 json duration_ms p95 by service | 7d | **502** | 0.01s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
+| E2 json duration_ms p95 by service | 7d | 0.28s (**502**) | 0.01s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
 | E3 logfmt latency_ms rate, production | 7d | 13.13s | 0.01s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
 | E4 logfmt size_bytes max by service | 7d | 1.11s | 0.01s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
-| E6 logfmt ttl unit string (Loki 400) | 7d | **400** | 0.03s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
-| E7 json hexadecimal trace_id (Loki 400) | 7d | **400** | 0.10s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
+| E6 logfmt ttl unit string (Loki 400) | 7d | 2.33s (**400**) | 0.03s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
+| E7 json hexadecimal trace_id (Loki 400) | 7d | 4.07s (**400**) | 0.10s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
 | E8 json duration_ms sum by service, namespace prod | 7d | 9.29s | 0.01s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
 | E9 logfmt latency_ms sum by service, namespace prod | 7d | 9.86s | 0.03s | no (no cache counters) | unwraperr-conversion (2026-10-08, branch) | `parser-error-and-label-collision`, `quality/query-range-settled-steps`, `semantics/unwrap-conversion-error` |
-| U9 logfmt amount rate_counter (folded per series) | 7d | **502** | — | no (no cache counters) | unwrapsum-long (2026-10-11, pr) | `metric-series-identity`, `quality/query-range-settled-steps`, `semantics/unwrap-rate-counter-one-sample-series`, `semantics/unwrap-rate-ungrouped-sum-per-stream` |
+| U9 logfmt amount rate_counter (folded per series) | 7d | 0.21s (**502**) | — | no (no cache counters) | unwrapsum-long (2026-10-11, pr) | `metric-series-identity`, `quality/query-range-settled-steps`, `semantics/unwrap-rate-counter-one-sample-series`, `semantics/unwrap-rate-ungrouped-sum-per-stream` |
 
 ## By registry item
 
@@ -201,7 +201,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `parser-error-and-label-collision` | 44 × 6 ranges | 3 faster, 2 fixed, 130 same | worst 3.34s / 0.03s (24h) | 3.00s / 0.09s | differs; 2 slower than Loki cold | not locked |
 | `parser-json` | 10 × 6 ranges | 1 faster, 36 same | worst 0.79s / 0.01s (24h) | 2.48s / 0.07s | differs | not locked |
 | `parser-logfmt` | 7 × 5 ranges | 23 same | worst 2.34s / 0.42s (24h) | 4.19s / 0.43s | same | not locked |
-| `profiles/dotted-name-parse-error` | 2 × 4 ranges | 8 same | worst **400** / **400** (1h) | 0.00s / 0.00s | same | not locked |
+| `profiles/dotted-name-parse-error` | 2 × 4 ranges | 8 same | worst 0.00s (**400**) / 0.00s (**400**) (1h) | 0.00s / 0.00s | same | not locked |
 | `profiles/label-filter-on-line-field` | 3 × 4 ranges | 12 same | worst 0.22s / 0.01s (24h) | 1.97s † / 0.04s | same | locked 2026-10-27 |
 | `profiles/label-filter-regexp-anchoring` | 2 × 2 ranges | 4 same | worst 0.11s / 0.02s (6h) | 0.15s / 0.02s | same | not locked |
 | `profiles/stage-field-exposure` | 7 × 4 ranges | 28 same | worst 1.80s / 0.01s (24h) | 5.12s / 0.06s | same | not locked |
@@ -270,7 +270,7 @@ as slower above or in the registry table. Re-measure them before acting on them.
 | `semantics/unwrap-rate-ungrouped-sum-per-stream` | 9 × 5 ranges | 2 faster, 2 fixed, 23 same | worst 1.40s / 0.01s (24h) | 4.65s / 0.07s | differs | not locked |
 | `semantics/unwrap-sample-validity` | 14 × 4 ranges | 1 faster, 37 same | worst 0.17s / 0.01s (3h) | 0.57s † / 0.05s | differs | not locked; exception |
 | `semantics/unwrap-sum-without-collapses` | 8 × 5 ranges | 4 faster, 22 same | worst 0.54s / 0.02s (24h) | 3.14s / 0.08s | same | not locked; exception |
-| `semantics/vector-aggregation-over-log-selector-status` | 4 × 2 ranges | 4 same | worst **400** / **400** (1h) | 0.00s / 0.00s | same | not locked |
+| `semantics/vector-aggregation-over-log-selector-status` | 4 × 2 ranges | 4 same | worst 0.00s (**400**) / 0.00s (**400**) (1h) | 0.00s / 0.00s | same | not locked |
 | `semantics/without-nested-under-aggregation` | 3 × 3 ranges | 5 same | worst 0.17s / 0.01s (6h) | 1.26s / 0.03s | same | not locked |
 | `semantics/without-over-inner-aggregation-collapses` | 3 × 3 ranges | 5 same | worst 0.17s / 0.01s (6h) | 1.26s / 0.03s | same | not locked |
 | `semantics/without-sliding-sum-folded-buckets` | 5 × 4 ranges | 16 same | worst 0.79s / 0.01s (24h) | 2.52s / 0.03s | same | locked 2026-10-28 |

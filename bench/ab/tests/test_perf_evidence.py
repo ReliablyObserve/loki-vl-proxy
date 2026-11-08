@@ -237,7 +237,7 @@ class CurrentRowsTest(unittest.TestCase):
         self.assertIn("| cur | 24h |", ranked)
         self.assertNotIn("| old |", ranked)
         self.assertIn("| old | 7d | 13.00s | 0.01s | no (no cache counters) | t (2026-10-19, branch) |", apart)
-        self.assertIn("| err | 7d | **502** |", apart)
+        self.assertIn("| err | 7d | 1.00s (**502**) |", apart)
         self.assertIn("worst 0.30s / 0.50s (24h) | 0.10s / 0.05s | same; 1 slower than Loki cold", by_item)
 
     def test_an_item_with_only_stale_rows_shows_the_dated_older_run(self):
