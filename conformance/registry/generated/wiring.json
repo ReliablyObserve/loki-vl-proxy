@@ -12,7 +12,8 @@
     ],
     "architecture-syntax-package-layering": [
       "internal/logsql/parser_read_test.go",
-      "internal/logsql/parser_typed_test.go"
+      "internal/logsql/parser_typed_test.go",
+      "internal/logsql/pipe_math_as_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
@@ -1675,6 +1676,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/logsql/parser_typed_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/logsql/pipe_math_as_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/metrics/request_flow_test.go": [
@@ -3430,7 +3434,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 363,
+  "tests_with_markers": 364,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
