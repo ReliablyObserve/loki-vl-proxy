@@ -1,0 +1,127 @@
+{
+  "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the in-repo corpus: how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count).",
+  "logical": {
+    "rows": 2527,
+    "parsed": 2471,
+    "built": 2471,
+    "untyped_by_construct": {
+      "labelfilter_untyped": 0,
+      "line_format_raw": 13,
+      "opaque:approx_topk": 0,
+      "opaque:label_replace": 163,
+      "opaque:other": 0,
+      "opaque:vector": 67,
+      "parser_param_raw": 0
+    }
+  },
+  "logical_key_sound": {
+    "v1.49 identity": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.49 stream fields": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.49 underscores": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 identity": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 no body scan": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 no body scan, stream fields, keepLine": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 0,
+      "spelling_divergent": 0,
+      "unsound": 0
+    },
+    "v1.53 stream fields": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 stream fields and labels": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 stream labels": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 stream labels keepLine": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 0,
+      "spelling_divergent": 0,
+      "unsound": 0
+    },
+    "v1.53 underscores": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 5,
+      "spelling_divergent": 4,
+      "unsound": 0
+    },
+    "v1.53 underscores keepLine": {
+      "rows": 2471,
+      "keys": 2418,
+      "shared_texts": 53,
+      "text_only": 0,
+      "phrase_text": 0,
+      "spelling_divergent": 0,
+      "unsound": 0
+    }
+  }
+}
