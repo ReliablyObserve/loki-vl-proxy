@@ -154,6 +154,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/aggregation-over-binary-dropped` — A vector aggregation over a binary expression aggregates the whole binary, like Loki (fixed) | #741 | 0 | 0 |
 | `semantics/binary-operand-literals-reprint` — Binary metric queries keep compound duration and exponent literals in their operands | #1177 | 0 | 0 |
 | `semantics/detected-level-missing-from-stats-answers` — A bare or without() metric names its series by detected_level, "unknown" included, like Loki (fixed) | #750 | 0 | 0 |
+| `semantics/drop-error-pipeline-spellings` — `\| drop __error__` after a parser keeps the lines the parser fails on, in every spelling of the range pipeline | pending | 0 | 0 |
 | `semantics/error-layer-transport-text` — Backend transport failures use sanitized Loki errors for every client | #941 | 0 | 0 |
 | `semantics/first-last-over-time-translation` — first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open) | #1059 | 0 | 0 |
 | `semantics/instant-bare-range-detected-level-unknown` — an instant bare range function carries the detected_level=unknown label Loki puts on a stream with no level | #750 | 0 | 0 |

@@ -333,6 +333,9 @@
     "semantics/detected-level-pipes-known-differences | compare:exact",
     "semantics/detected-level-pipes-known-differences | gap:open",
     "semantics/detected-level-pipes-known-differences | query",
+    "semantics/drop-error-pipeline-spellings | compare:observed",
+    "semantics/drop-error-pipeline-spellings | gap:fixed",
+    "semantics/drop-error-pipeline-spellings | query",
     "semantics/drop-keep-plain-name-after-parser | compare:observed",
     "semantics/drop-keep-plain-name-after-parser | gap:open",
     "semantics/drop-keep-plain-name-after-parser | query",
@@ -1609,6 +1612,8 @@
     "test/e2e-compat/drilldown_volume_bytes_test.go | loki_api_v1_index_volume",
     "test/e2e-compat/drilldown_volume_segments_test.go | loki_api_v1_index_volume",
     "test/e2e-compat/drilldown_volume_segments_test.go | quality/index-volume-settled-segments",
+    "test/e2e-compat/drop_error_spellings_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/drop_error_spellings_test.go | semantics/drop-error-pipeline-spellings",
     "test/e2e-compat/error_body_like_loki_test.go | semantics/error-layer-body-shape",
     "test/e2e-compat/error_body_like_loki_test.go | status-400",
     "test/e2e-compat/error_body_like_loki_test.go | status-404",
@@ -1941,12 +1946,12 @@
       "any": 28,
       "api": 41,
       "drilldown": 49,
-      "explore": 151,
+      "explore": 152,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 374,
+      "go": 375,
       "playwright": 1
     },
     "page_kinds": {
@@ -1966,7 +1971,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 259
+    "wired_items": 260
   },
   "gates": [
     "A/B shape selection",

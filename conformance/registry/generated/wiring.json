@@ -441,6 +441,7 @@
       "test/e2e-compat/drilldown_fields_json_path_test.go",
       "test/e2e-compat/drilldown_high_cardinality_breakdown_test.go",
       "test/e2e-compat/drilldown_longrange_fields_burst_test.go",
+      "test/e2e-compat/drop_error_spellings_test.go",
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
@@ -932,6 +933,9 @@
     "semantics/detected-level-pipes-known-differences": [
       "internal/proxy/detected_level_presence_test.go",
       "internal/proxy/ordered_json_detected_level_test.go"
+    ],
+    "semantics/drop-error-pipeline-spellings": [
+      "test/e2e-compat/drop_error_spellings_test.go"
     ],
     "semantics/error-layer-backend-failure-status": [
       "internal/proxy/error_layer_gate_test.go",
@@ -1635,7 +1639,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 433,
+  "registry_items": 434,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2997,6 +3001,10 @@
       "loki_api_v1_index_volume",
       "quality/index-volume-settled-segments"
     ],
+    "test/e2e-compat/drop_error_spellings_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/drop-error-pipeline-spellings"
+    ],
     "test/e2e-compat/error_body_like_loki_test.go": [
       "semantics/error-layer-body-shape",
       "status-400",
@@ -3504,7 +3512,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 375,
+  "tests_with_markers": 376,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3608,5 +3616,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 259
+  "wired_items": 260
 }
