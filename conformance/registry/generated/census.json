@@ -826,6 +826,7 @@
     "internal/config/registry_test.go | operator-configurable-limits",
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
+    "internal/logql/input_size_test.go | architecture-syntax-package-layering",
     "internal/logql/label_filter_expr_golden_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_syntax_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -1929,7 +1930,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 367,
+      "go": 368,
       "playwright": 1
     },
     "page_kinds": {

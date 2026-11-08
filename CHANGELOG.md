@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The LogQL parser applies Loki's input size limit (131,072 bytes) on every
+  parse, as Loki's parser does, not only where a handler validates the query
+  first. Every handler already answered Loki's `input size too long` error;
+  internal parses of a query now stop at the same size. No change for any
+  query Loki accepts.
+
 - The query, query_range and metric post-aggregation handlers read the
   without fold and label_replace calls the translator leaves in its LogsQL
   through one typed decoder (the exact inverse of an encoder) instead of
