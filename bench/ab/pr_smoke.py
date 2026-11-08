@@ -673,7 +673,7 @@ def measure(args, sel, out, base_sha, meta=None, baseline=None, bounds=None):
     st = stack.stack_from(args)
     proxies, trees, summaries = [], {}, []
     mode = getattr(args, "profiles", "loki-defaults")
-    # The warm-up and the cold re-measure are the PR smoke's: a caller that builds its own args (the daily run
+    # The warm-up and the cold re-measure are the PR smoke's: a caller that builds its own args (the weekly run
     # has no use for them, and warming would move its run-0 conditions) gets neither.
     warm_rounds, cold_samples = getattr(args, "warm_rounds", 0), getattr(args, "cold_samples", 0)
     budget_left = getattr(args, "cold_budget_s", cold.BUDGET_S)

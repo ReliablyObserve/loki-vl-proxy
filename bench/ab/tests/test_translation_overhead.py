@@ -36,7 +36,7 @@ class ParseRenderTest(unittest.TestCase):
                    "rows": [{"benchmark": "BenchmarkTranslateLogQL_Simple", "ns": 2442, "allocs": 23},
                             {"benchmark": "BenchmarkTranslate_Rate", "ns": 5592, "allocs": 74}]}
         text = to.render(results)
-        self.assertIn("Measured on 2026-11-08 at commit `abcdef1234` by the daily run", text)
+        self.assertIn("Measured on 2026-11-08 at commit `abcdef1234` by the weekly run", text)
         self.assertIn("**2.4 to 5.6 µs per query**", text)
         self.assertIn("under 0.01% of wall time", text)
         self.assertIn('| Selector `{app="nginx"}` | 2.4 µs | 23 |', text)

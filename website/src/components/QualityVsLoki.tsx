@@ -1,7 +1,7 @@
 import type {ReactNode} from 'react';
 import Heading from '@theme/Heading';
 import styles from '@site/src/components/marketing.module.css';
-// Written by `conformance/scripts/perf_evidence.py --site-data` from the latest daily A/B run; the conformance gate
+// Written by `conformance/scripts/perf_evidence.py --site-data` from the latest weekly A/B run; the conformance gate
 // fails when it is stale, so the page never states figures the README does not.
 import data from '@site/src/data/quality-vs-loki.json';
 
@@ -109,7 +109,7 @@ export default function QualityVsLoki(): ReactNode {
           Measured against Loki v{data.loki}
         </Heading>
         <p className={styles.sectionLead}>
-          The latest daily A/B run, {data.date} at commit <code>{data.commits.join(', ')}</code>: the same data and
+          The latest weekly A/B run, {data.date} at commit <code>{data.commits.join(', ')}</code>: the same data and
           hardware for both, {data.sets} query-shape sets over {data.ranges[0]} to {data.ranges[1]}. A row is one
           query shape over one time range; faster or slower means beyond {Math.round(data.noise.share * 100)}% and{' '}
           {Math.round(data.noise.seconds * 1000)} ms, and a first request Loki&apos;s results cache answered is not
@@ -220,7 +220,7 @@ export default function QualityVsLoki(): ReactNode {
       {data.heaviest.some((r) => r.maybe_cached) ? (
         <p>
           ‡ The proxy answered a first request over 6h or more in under {Math.round(data.noise.seconds * 1000)} ms:
-          probably from its own cache, warmed by an earlier set of the daily run that sent the same query. The run
+          probably from its own cache, warmed by an earlier set of the weekly run that sent the same query. The run
           records Loki&apos;s cache counters but not the proxy&apos;s, so this row is not a cold proxy.
         </p>
       ) : null}

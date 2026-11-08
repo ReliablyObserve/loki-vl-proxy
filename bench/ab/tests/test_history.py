@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import history  # noqa: E402
 
 
-# The shapes.json fields last_commit reads: the 7d range is never part of a daily run.
+# The shapes.json fields last_commit reads: the 7d range is never part of a weekly run.
 SPEC = {"ranges": {"1h": [3600, 5], "24h": [86400, 60], "7d": [604800, 600]},
         "sets": {"control": {"ranges": ["1h", "24h", "7d"]}, "json-filter-pushdown": {"ranges": ["1h"]}}}
 

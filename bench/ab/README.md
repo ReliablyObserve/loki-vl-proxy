@@ -46,10 +46,10 @@ affected.
 | `pr_smoke.py` | The per-PR run: select, stack, seed, build base and PR, measure, re-measure what looks slower, render the comment. |
 | `comment.py` | Renders the PR comment and decides the `perf-smoke` check. |
 | `cold.py` | The warm-up before a build's first measured request and the cold re-measure of a flagged row (below, "Cold cells that one sample cannot fail"). |
-| `daily.py` | The daily run: last release vs `main` vs Loki, every set and range up to 24h. |
+| `daily.py` | The weekly run: last release vs `main` vs Loki, every set and range up to 24h. |
 | `history.py` | Appends the daily results to `history/<set>.jsonl` (`history/<set>.loki-defaults.jsonl` for the second profile) and renders `history/trend.md`. |
-| `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` (`daily-<set>.loki-defaults.json` for the second profile) from the daily run. Commit these; keep raw rows out of the repository. |
-| `history/` | Written by the daily run only: append-only JSONL per set and the generated trend report. |
+| `results/` | Saved summaries, `<date>-<label>.json` from pull requests and `daily-<set>.json` (`daily-<set>.loki-defaults.json` for the second profile) from the weekly run. Commit these; keep raw rows out of the repository. |
+| `history/` | Written by the weekly run only: append-only JSONL per set and the generated trend report. |
 
 ## Registry
 
@@ -289,7 +289,7 @@ evidence record names its profile:
   The confirm pass's own cold is a warm time for the proxies (window cache); a row whose first-pass
   cold is a finding gets its cold re-measured instead (`ᵐ`, "Cold cells that one sample cannot fail").
 - Files: `raw-<set>-<profile>.json`, `summary-<set>-<profile>.json`, `proxy-<build>-<profile>.log`;
-  the daily run writes `results/daily-<set>.json` (aligned, as before) and
+  the weekly run writes `results/daily-<set>.json` (aligned, as before) and
   `results/daily-<set>.loki-defaults.json`, `history/<set>.jsonl` and `history/<set>.loki-defaults.jsonl`.
   A summary or history line with no profile was written before the profiles existed: aligned, with an
   unaligned proxy side. `conformance` evidence takes the latest summary per row and prefers
@@ -306,7 +306,7 @@ evidence record names its profile:
   (`profiles.<p>.window_age_s`: seconds from the window's end to the request; the raw rows carry the
   request time as `at`). Limits: a block is 15-20 minutes tall and is traversed in two or three, so
   the lower blocks of a large selection are older than the horizon when they run (they then measure
-  what both profiles share), and the daily run keeps one `end` for all sets. Read a `loki-defaults`
+  what both profiles share), and the weekly run keeps one `end` for all sets. Read a `loki-defaults`
   Loki number next to the age of its window, not as a property of the profile alone.
 - The profiles run in the order `loki-defaults`, `aligned`; their blocks of windows are planned in
   that order. `loki-defaults` runs on the Loki the seed wrote to, which has the data in its
@@ -331,7 +331,7 @@ evidence record names its profile:
   check), a few seconds of proxy starts and the matrix of the range-metric subset of its selection:
   about 70 s on the 8 + 9 shapes above (the 190 s also holds the build of the older branch used as the
   flag-supporting build, 41 s against 14-19 s) and, on the 17-minute runs of the larger selections, about
-  10-20% (not measured on a hosted runner). The seed does not grow. The daily run runs the same two passes
+  10-20% (not measured on a hosted runner). The seed does not grow. The weekly run runs the same two passes
   with every shape in `loki-defaults` and the range-metric shapes in `aligned`; it skips `aligned` until a
   build supports the flag. Its duration was not available when this was written: compare the first
   two-profile run with the workflow's `timeout-minutes: 240` before relying on it.
@@ -479,7 +479,7 @@ What to look at on the result (`comment.md`, `summary-<set>.json`, `meta.json`):
 - `summary-<set>.json` is the set's final summary (confirmed rows included) and
   carries `isolated_windows: true`. Save that file to `results/`: `perf_evidence.py`
   records warm and refresh gaps only from summaries with this marker, because the
-  daily run's sets share windows.
+  weekly run's sets share windows.
 - The cold, warm and refresh columns together: a proxy that is close to Loki cold
   but far behind on warm or refresh is a cache problem, not a query-cost one.
 - `meta.json` `windows`: one block per set; no two sets share an `end`.
@@ -489,7 +489,7 @@ What to look at on the result (`comment.md`, `summary-<set>.json`, `meta.json`):
 
 ### The baseline run
 
-On a pull request into `main` that carries the `baseline` label, or whose shipped diff is big (see "Baseline run" in `CONTRIBUTING.md`), the smoke measures every shape of every set (`selection.py --all`) at the smoke's ranges instead of the selected ones, with a 90 minute budget (about 35 minutes on a hosted runner). `pr_smoke.py --baseline-candidate DIR` then writes `over-2x-loki.json` (the committed list with the set × range pairs this run measured replaced by this run's rows), `acceptance-day.json` (one day, in the shape of an entry of `history/acceptance.json`; a report, because `acceptance.json` is rebuilt from the history lines by every daily run), `candidate.md` and `meta.json`, and the comment ends with a "new baseline candidate" section. The CI job uploads DIR as the `perf-baseline-candidate` artifact. Nothing is written under `history/`: a person can copy `over-2x-loki.json` over the committed list in a pull request (the conformance gate checks it against the registry locks). The profile is the smoke's (4 runs, 1h, the smoke's line rate), not the daily run's (7 runs, up to 24h), so the numbers show the direction, and the 24h and 7d rows of the committed list stay as they are; the daily run that follows the merge writes the real new distribution.
+On a pull request into `main` that carries the `baseline` label, or whose shipped diff is big (see "Baseline run" in `CONTRIBUTING.md`), the smoke measures every shape of every set (`selection.py --all`) at the smoke's ranges instead of the selected ones, with a 90 minute budget (about 35 minutes on a hosted runner). `pr_smoke.py --baseline-candidate DIR` then writes `over-2x-loki.json` (the committed list with the set × range pairs this run measured replaced by this run's rows), `acceptance-day.json` (one day, in the shape of an entry of `history/acceptance.json`; a report, because `acceptance.json` is rebuilt from the history lines by every weekly run), `candidate.md` and `meta.json`, and the comment ends with a "new baseline candidate" section. The CI job uploads DIR as the `perf-baseline-candidate` artifact. Nothing is written under `history/`: a person can copy `over-2x-loki.json` over the committed list in a pull request (the conformance gate checks it against the registry locks). The profile is the smoke's (4 runs, 1h, the smoke's line rate), not the weekly run's (7 runs, up to 24h), so the numbers show the direction, and the 24h and 7d rows of the committed list stay as they are; the weekly run that follows the merge writes the real new distribution.
 
 ### Reading the comment
 
@@ -579,14 +579,14 @@ release build's 24h ranges are capped at 3 runs. It writes:
 | `history/<set>.jsonl`, `history/<set>.loki-defaults.jsonl` | one line per set and profile per run, append-only (the first file also holds every line written before the profiles existed): date, `measured_at` (UTC start of the run, the same on every line the run wrote), `run` (the CI run id and attempt), commit, baseline, runs, validity, and one row per shape × range in the column order its `cols` names (proxy status, warm p50, cold, Loki p50, cold and status, result vs Loki, release p50, verdict vs release, and whether Loki computed its cold run or its results cache answered it) |
 | `history/trend.md` | per set: proxy p50, day-over-day and week-over-week change (🟢/🔴 beyond 25% and 50 ms), Loki p50, proxy ÷ Loki warm and cold, result vs Loki and a 14-day sparkline |
 | `history/ratchet.json` | the rows that were as good as Loki, one entry per set × shape × range; the run only adds to it |
-| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the rows listed before the profiles existed were measured with an unaligned proxy side and live in `loki-defaults`, the profile that measures that side; `aligned` is empty until a build supports `-align-queries-with-step`, then it fills itself); the daily run adds a row after two consecutive full runs above 2× and removes one after two within 2× (see "Above 2× Loki" below) |
+| `history/over-2x-loki.json` | the rows above 2× Loki, one entry per profile × set × shape × range × mode (the rows listed before the profiles existed were measured with an unaligned proxy side and live in `loki-defaults`, the profile that measures that side; `aligned` is empty until a build supports `-align-queries-with-step`, then it fills itself); the weekly run adds a row after two consecutive full runs above 2× and removes one after two within 2× (see "Above 2× Loki" below) |
 | `history/acceptance.json` | per run of the history (a day with two runs has two entries) and per Loki profile, cold and warm: the rows compared and how many were below Loki, close to it, between 1× and 2× and above 2×, with the share below Loki and the share green (below Loki or close to it; the target is 95%) (see "Acceptance tiers and the registry lock" below); regenerated from the history lines every run (`history.py acceptance`) |
 | `conformance/registry/generated/perf-evidence.json`, `conformance/reports/performance.md`, `gaps.md` | regenerated from the new results |
 
 The files reach `main` through a bot pull request on the rolling branch
 `bench/daily-perf` (never a push to `main`); a day that was not merged yet is
 carried into the next day's pull request, so history has no gaps. Closing a
-daily pull request without merging does not drop its days while the branch
+weekly pull request without merging does not drop its days while the branch
 exists; delete `bench/daily-perf` to discard them. A run in which
 VictoriaLogs restarted writes nothing and fails.
 
@@ -636,14 +636,14 @@ the previous full one (a cold run is one sample); it repeats every run until
 fixed, with the range starting at the newest line the row was still as good as
 Loki (or the commit it entered at). Rows leave the list only by hand; the run
 counts the rows it did not measure (renamed or removed shapes), and an
-unreadable `ratchet.json` is reported and left untouched. The daily run takes
+unreadable `ratchet.json` is reported and left untouched. The weekly run takes
 `ratchet.json` from `main` and adds to it: it carries an open daily pull
 request's history lines, not its ratchet file, so a row removed on `main`
 stays removed.
 
 The run writes the alerts to `<out>/alerts.md` and `alerts.json` (not
 committed: they describe one run) and the job summary and artifact hold all of
-them. The daily pull request body gets the first 50 entries (`alerts-body.md`,
+them. The weekly pull request body gets the first 50 entries (`alerts-body.md`,
 regressions first) and a count of the rest, since a body is limited to 65,536
 characters. A final step fails the job when there is a regression or a ratchet
 loss, even when the pull request step failed, so the red run is the
@@ -655,7 +655,7 @@ so it has nothing to compare; it never fails on alerts.
 
 Any shape × range where the proxy is slower than 2× Loki, cold, warm or
 refresh, is a defect, as serious as a wrong answer. `over2x.py` holds the one
-definition the pull request smoke, the daily run and `perf_evidence.py` share:
+definition the pull request smoke, the weekly run and `perf_evidence.py` share:
 
 - above 2× Loki: proxy time more than 2 × Loki's time and more than 50 ms
   slower (the absolute noise floor of the daily report and `perf_evidence.py`,
@@ -673,7 +673,7 @@ measured against the stack's Loki with an unaligned proxy side. The `aligned` pr
 `-align-queries-with-step`, none had one, so it stopped running after 2026-10-28 and its frozen lines judged
 nothing. `history.py over-2x-reseed --write` moved those rows to `loki-defaults` (same proxy side, measured
 daily) and replayed the history of 2026-10-29 to 2026-11-02 through the rule below: 165 rows became 67 (45
-cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) keeps the list, symmetrically
+cold, 22 warm). Each weekly run (`history.py alerts`, full measurements only) keeps the list, symmetrically
 (a pull request never edits it):
 
 - a row is added once two consecutive full runs (in measured order; two runs of one commit, or of one day,
@@ -681,12 +681,12 @@ cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) kee
   decides nothing. Requiring a new commit would leave a pending row open for as long as main stays quiet, as
   the scheduled job does not run then) measure it comparable and above 2× (both answered 200, Loki's
   results cache did not answer the cold run, beyond the 50 ms floor). Its `since` is the first of the two
-  runs. A row above 2× on one run only is a warning at the top of the daily pull request body and a
+  runs. A row above 2× on one run only is a warning at the top of the weekly pull request body and a
   `::warning::` annotation ("pending add"), the way a listed row within 2× once is pending removal;
 - a listed row is removed once two consecutive full runs measure it
   comparable and within 2× (a run where Loki failed, or its cache answered the
   cold run, does not count either way). The state comes from the history
-  lines, so an unmerged daily pull request does not reset it;
+  lines, so an unmerged weekly pull request does not reset it;
 - a listed row's ratio is tightened when a run measures it lower, never raised;
 - a row is judged by the history of its own profile, and only while that profile
   runs: when a set's newest line of a profile is older than another profile's
@@ -695,13 +695,13 @@ cold, 22 warm). Each daily run (`history.py alerts`, full measurements only) kee
   not judged (`over_2x_stale`, `over_2x_unjudged`). When the align flag ships
   the `aligned` profile starts running and fills its own list by the same rule.
 
-The body of the daily pull request starts with `above-2× baseline: N rows ...; a new or
+The body of the weekly pull request starts with `above-2× baseline: N rows ...; a new or
 worsened row fails a pull request`.
 
 In each pull request, `over2x.gate` compares the PR build's rows with the list
 as committed on the base (so a pull request cannot list its own rows) and with
 the base build in the same run, which decides first because the smoke's data
-and ranges are not the daily run's:
+and ranges are not the weekly run's:
 
 | kind | when |
 |---|---|
@@ -734,7 +734,7 @@ The mode is set in `perf-ab.yaml` by `--over-2x-loki`:
   itself changes only by the daily rule (added after two consecutive runs above
   2×, removed after two within).
 - `warn` (the script's default, for local runs): the same rows are a ⚠️ section
-  at the top of the comment and `::warning::` annotations only. The daily run
+  at the top of the comment and `::warning::` annotations only. The weekly run
   only ever warns.
 
 To clear a flagged row: fix the path so the shape is within 2× Loki (target 1×)
@@ -782,18 +782,18 @@ perf:
 ```
 
 An item is locked once every comparable row of its shapes measured within its
-`max_ratio` in every mode on the daily run. The locks were seeded from the
+`max_ratio` in every mode on the weekly run. The locks were seeded from the
 daily results of 2026-10-27 (`over2x.py locks seed`): 29 of the 68 covered
-items, which lock 110 cold and 201 warm rows (the daily run has no refresh
+items, which lock 110 cold and 201 warm rows (the weekly run has no refresh
 pass, so refresh is bounded only in `perf-smoke`); the 39 others have a row
 above 2× (they stay on the above-2× list) or no comparable row. A row
 (set × shape × range × mode) is locked when any item that covers its shape is
 locked for that mode, and its bound is the smallest `max_ratio` of those
-items. Locks are set by people, in a pull request: the daily run lists the
+items. Locks are set by people, in a pull request: the weekly run lists the
 unlocked items whose rows were within their bound on its run and the previous
 one ("Ready to lock"), and `python3 bench/ab/over2x.py locks lock <id>` locks
 one after checking the latest daily results (it refuses an item with a row
-above its bound). The daily pull request never edits the registry. The
+above its bound). The weekly pull request never edits the registry. The
 conformance gate fails a `perf:` block that is malformed, a `max_ratio` above
 2.0, a covered item without a block, and a locked item that covers a row on the
 above-2× list.
@@ -811,7 +811,7 @@ What the lock does:
   locked row at its bound in the same gate as above. A new or worsened locked
   row is re-measured and then listed in the 🔒 section. Whether it fails the
   check follows `--over-2x-loki` (`warn` today).
-- **Lost below-Loki**: a row that was below Loki (the previous daily run, or
+- **Lost below-Loki**: a row that was below Loki (the previous weekly run, or
   the base build in the same pull request run) and is above Loki now, both
   beyond noise, is flagged, never failing.
 - **1–2× rows**: the daily alerts and `conformance/reports/performance.md` list
@@ -820,7 +820,7 @@ What the lock does:
   18 rows (two of them, "A explore volume, 2 filters, drop" over 6h and 24h
   cold, are on locked items).
 
-The distribution is ratcheted on the daily run: on the rows comparable on both
+The distribution is ratcheted on the weekly run: on the rows comparable on both
 runs, against the previous full run and the full run a week earlier, the share
 below Loki may not fall by more than 3 points and 5 rows, and the count above
 2× may not rise by more than 2 points and 5 rows; a move beyond both margins is
@@ -828,7 +828,7 @@ a regression. A row moves to a worse band there (and is flagged as lost
 below-Loki) only when the proxy's own time got slower beyond 25% and 50 ms, so
 Loki's cache timings and rows that cross a band edge by a few milliseconds do
 not count. Because the week-earlier comparison holds for seven days, a real
-move keeps the daily run red for up to a week unless it is fixed: that is the
+move keeps the weekly run red for up to a week unless it is fixed: that is the
 ratchet, not a flaky run.
 
 Replayed on the history of 2026-10-21 to 2026-10-27, the share below Loki moved
@@ -841,7 +841,7 @@ on 2026-10-27; going from the 2026-10-27 run back to the 2026-10-24 one trips
 the ratchet (warm rows above 2× Loki 98 → 195 of 462). In pull requests,
 reverting #758 trips 5 locked rows (J1 to J5 of `json-error-split`).
 
-The daily pull request shows the distribution with the owner's targets (most
+The weekly pull request shows the distribution with the owner's targets (most
 rows below Loki; no row above 2×) under "Acceptance versus Loki", and
 `conformance/reports/performance.md` shows it over the latest run of every
 shape × range, with the lock state of every item. `python3 bench/ab/over2x.py

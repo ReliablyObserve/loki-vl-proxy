@@ -12,7 +12,7 @@ pr_smoke.py --baseline-candidate DIR then writes, from that run's summaries:
                           where the compared rows sit against Loki (below, close,
                           1-2x, above 2x) per mode. A report, not a drop-in file:
                           history/acceptance.json is regenerated from history/*.jsonl
-                          by every daily run
+                          by every weekly run
   DIR/candidate.md        the "new baseline candidate" section of the PR comment
   DIR/meta.json           what was measured, on which commit
 
@@ -21,7 +21,7 @@ DIR as an artifact and the comment says where it is. Accepting means:
 
   over-2x-loki.json   a person copies it over bench/ab/history/over-2x-loki.json in a
                       pull request (check_conformance.py checks it against the registry
-                      locks; the daily run keeps it from there)
+                      locks; the weekly run keeps it from there)
   acceptance-day.json a report to read. It is not copied: acceptance.json is rebuilt from
                       the history lines, so the real new distribution is the next daily
                       run's, which runs whenever a measured path changed on main
@@ -70,7 +70,7 @@ def candidate_over_2x(summaries, committed, date="", commit=""):
     """(rows, added, removed): the list after this run, and how it differs from the committed one.
 
     A committed row whose set x range was measured is kept only if this run
-    measured it above 2x again (the daily run's two-runs rule is not applied
+    measured it above 2x again (the weekly run's two-runs rule is not applied
     here: a person decides whether one run is enough). Rows of pairs not
     measured stay as committed.
     """
@@ -113,7 +113,7 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
              f". Every shape of every set was measured at the smoke's ranges (1h, 4 runs). Nothing was committed. The " +
              f"`{ARTIFACT}` artifact of this run holds `over-2x-loki.json`, which a person can copy over " +
              "`bench/ab/history/over-2x-loki.json` to accept it, and `acceptance-day.json`, a report: the committed " +
-             "`acceptance.json` is rebuilt from the daily history, so the next daily run after the merge writes the real " +
+             "`acceptance.json` is rebuilt from the daily history, so the next weekly run after the merge writes the real " +
              "new distribution.", "",
              "| profile | mode | rows compared | below Loki | close | 1–2× | above 2× | share below | " +
              "committed share below |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
@@ -129,10 +129,10 @@ def render(day, committed, added, removed, rows, reasons=(), elapsed_s=0):
             lines.append(f"| {profile} | {mode} | {d['rows']} | {d['below']} | {d['close']} | {d['between']} | "
                          f"{d['above']} | {d['share_below']:.1f}% | "
                          + (f"{old['share_below']:.1f}% ({committed.get('date', '?')})" if old else "—") + " |")
-    lines += ["", "The committed column is the newest daily run (7 runs, ranges up to 24h): the direction is comparable, " +
+    lines += ["", "The committed column is the newest weekly run (7 runs, ranges up to 24h): the direction is comparable, " +
               "the rows are not the same ones.",
               "", f"Above-2× list: {len(rows)} rows after this run, {len(added)} added, {len(removed)} not above 2× in " +
-              "this run's profile (the daily run's two-run rule decides for the committed list). A profile that did not "
+              "this run's profile (the weekly run's two-run rule decides for the committed list). A profile that did not "
               "run leaves its committed rows as they are."]
     for title, keys in (("Added", added), ("Not above 2× in this run", removed)):
         if keys:
@@ -163,7 +163,7 @@ def write(out_dir, summaries, committed_rows, committed_acceptance, date="", com
         json.dump({"about": "A report: one baseline run's distribution of proxy ÷ Loki, in the shape of an entry of "
                             "bench/ab/history/acceptance.json (its days list), measured with the PR smoke's profile "
                             "(4 runs, 1h). Not a replacement for that file: it is regenerated from the history lines "
-                            "by every daily run. Not committed.",
+                            "by every weekly run. Not committed.",
                    "days": [day]}, f, indent=1, sort_keys=True, ensure_ascii=False)
         f.write("\n")
     meta = {"commit": commit, "date": date, "sets": [s["set"] for s in summaries],

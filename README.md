@@ -58,7 +58,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 <!-- quality-summary:start -->
 
-Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-08 at commit `e4a743f675` on the project's A/B stack: the same data, the same hardware, the latest valid daily run of each of 39 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
+Tested against Loki v3.7.9, the release the compatibility stack and CI pin. Timings were measured on 2026-11-08 at commit `e4a743f675` on the project's A/B stack: the same data, the same hardware, the latest valid weekly run of each of 39 query-shape sets over 1h to 24h. A pair is one query shape over one time range; "comparable" means both sides answered 200 and Loki's results cache did not answer the first request. Faster and slower mean beyond 25% and 50 ms; everything else is on par. A `topk` or `bottomk` answer is compared by its ranked points and their sum, not by its series count.
 
 Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); proxy builds run with their defaults. The `aligned` profile (the stack's Loki (align_queries_with_step on, max_cache_freshness_per_query 0s)) is measured too: the distribution table below shows both profiles, the rest of this section the one shown. The proxy serves Loki's read API; write endpoints such as push are not supported (ingest goes to VictoriaLogs directly). Optional deletion management is outside read API scores: its opt-in handler does not implement VictoriaLogs deletion. The alerting-rules read API remains in scope, including `/api/prom/rules*` for vmalert. The deprecated read aliases `/api/prom/label`, `/api/prom/label/{name}/values`, `/api/prom/query`, `/api/prom/series` and `/api/prom/tail` are unsupported and excluded from totals, gaps and compatibility scores (owner 2026-10-31); use the corresponding `/loki/api/v1` routes. No other write endpoint is planned.
 
@@ -87,7 +87,7 @@ Loki profile shown: `loki-defaults`, Loki with its own defaults (align_queries_w
 
 - First request: **6 of 560** pairs are slower (1%): log queries **0 of 75**, Drilldown and Explore pages **1 of 117**, metric queries **2 of 360**.
 - Between 1× and 2× Loki: **3** rows on the first request, **1** on a repeat; above 2× Loki: **3** on the first request and **0** on a repeat (the 2026-11-08 distribution).
-- **2 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **2** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 108 covered registry items are locked at the 2× bound.
+- **2 shape, range and mode rows are on the above-2× list for the `loki-defaults` profile** (more than 2× Loki and more than 50 ms slower): **2** on the first request, **0** on a repeat, **0** on a refresh. Each is a defect being fixed: a row joins the list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. 29 of 108 covered registry items are locked at the 2× bound.
 - In the run shown, **1** of those rows measured above 2× Loki and **1** within 2×.
 - Largest gaps on that list in the run shown, first request: `LS8 json count by level_extracted, collision` over 6h, **0.30 s** against **0.12 s**.
 - Answers: **51 of 779** pairs return a different result from Loki, and **15** could not be compared.
@@ -148,7 +148,7 @@ The 10 comparable pairs Loki takes longest to answer on a first request: the que
 | `G10 logfmt latency_ms sum_over_time, production` | 24h | Metric queries | **0.99 s** | 4.78 s | 🟢 4.8× faster |
 | `E3 logfmt latency_ms rate, production` | 24h | Metric queries | **0.96 s** | 4.71 s | 🟢 4.9× faster |
 
-‡ The proxy answered a first request over 6h or more in under 50 ms: probably from its own cache, warmed by an earlier set of the daily run that sent the same query. The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy.
+‡ The proxy answered a first request over 6h or more in under 50 ms: probably from its own cache, warmed by an earlier set of the weekly run that sent the same query. The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy.
 
 **Where the proxy loses most in the run shown**
 
@@ -208,7 +208,7 @@ Details, the per-workload tables and the method: [performance summary](conforman
 
 ## One-glance comparison
 
-The current position is generated from the latest daily A/B run in [Quality and performance vs Loki](#quality-and-performance-vs-loki-current) above: the distribution of every shape and range against Loki in both Loki profiles (🟢 below Loki, 🟡 close, 🟠 1–2×, 🔴 above 2×), the medians by workload, and the label browser and Drilldown metadata calls. The rules: a pair is one query shape over one time range, faster or slower means beyond 25% and 50 ms, and a first request Loki's results cache answered is not judged.
+The current position is generated from the latest weekly A/B run in [Quality and performance vs Loki](#quality-and-performance-vs-loki-current) above: the distribution of every shape and range against Loki in both Loki profiles (🟢 below Loki, 🟡 close, 🟠 1–2×, 🔴 above 2×), the medians by workload, and the label browser and Drilldown metadata calls. The rules: a pair is one query shape over one time range, faster or slower means beyond 25% and 50 ms, and a first request Loki's results cache answered is not judged.
 
 Method, every shape and range, the open gaps and the regression gate: [performance evidence](conformance/reports/performance.md#summary-versus-loki) · [performance guide](docs/performance.md#current-position-versus-loki) · [ranked differences](conformance/reports/parity-gaps.md). The earlier 2026-06-05, 36-query Drilldown comparison (including CPU and memory measurements) remains in [the historical benchmark](docs/honest-tldr.md), with its [reproduction script](bench/drilldown-vs-loki.sh) and [raw results](test/e2e-compat/results/).
 
@@ -216,13 +216,13 @@ Method, every shape and range, the open gaps and the regression gate: [performan
 
 ## Query Performance
 
-Latency against Loki by workload and for the label browser and Drilldown metadata calls is generated from the latest daily A/B run in [Quality and performance vs Loki](#quality-and-performance-vs-loki-current); every shape and range is in the [performance evidence](conformance/reports/performance.md#summary-versus-loki).
+Latency against Loki by workload and for the label browser and Drilldown metadata calls is generated from the latest weekly A/B run in [Quality and performance vs Loki](#quality-and-performance-vs-loki-current); every shape and range is in the [performance evidence](conformance/reports/performance.md#summary-versus-loki).
 
 ### Translation overhead
 
 <!-- translation-overhead:start -->
 
-Not measured yet: the daily performance run measures the translator benchmarks and writes this table (`conformance/scripts/translation_overhead.py`).
+Not measured yet: the weekly performance run measures the translator benchmarks and writes this table (`conformance/scripts/translation_overhead.py`).
 
 <!-- translation-overhead:end -->
 

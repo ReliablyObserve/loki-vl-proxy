@@ -1,6 +1,6 @@
-name: Perf daily
+name: Perf weekly
 
-# Daily full A/B run from main: the last release, main and Loki on a fresh
+# Weekly full A/B run from main: the last release, main and Loki on a fresh
 # stack, every shape set over its ranges up to 24h. Results, the append-only
 # history and the trend report are delivered through a bot pull request on
 # the rolling branch bench/daily-perf (never pushed to main). See
@@ -13,7 +13,7 @@ name: Perf daily
 #
 # The run compares each set's newest history line with the previous one and
 # reports regressions, improvements and the ratchet (bench/ab/history/ratchet.json,
-# rows as good as Loki) at the top of the daily pull request and in the job
+# rows as good as Loki) at the top of the weekly pull request and in the job
 # summary. A regression or a lost ratchet row turns the run red, which is the
 # notification; nothing else is opened or labelled. The above-2x Loki list
 # (bench/ab/history/over-2x-loki.json) is kept the same way: a row is added after
@@ -32,7 +32,7 @@ name: Perf daily
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "17 3 * * 1"
   workflow_dispatch:
     inputs:
       sets:
@@ -91,7 +91,7 @@ jobs:
           go-version: "1.27.3"
           cache: true
 
-      - name: Run the daily A/B (validation size)
+      - name: Run the weekly A/B (validation size)
         run: python3 bench/ab/daily.py --out "$OUT" --sets control --max-range 1h --runs 3
 
       - name: Publish trend
@@ -136,7 +136,7 @@ jobs:
           # a credential helper and nothing keeps a token in the git config.
           persist-credentials: false
 
-      - name: Carry history an unmerged daily PR already holds
+      - name: Carry history an unmerged weekly PR already holds
         env:
           READ_TOKEN: ${{ github.token }}
         run: |
@@ -166,7 +166,7 @@ jobs:
           if [ -n "$LAST" ] && git cat-file -e "${LAST}^{commit}" 2>/dev/null \
              && git diff --quiet "$LAST" HEAD -- "${MEASURED[@]}"; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipped: nothing measured changed on main since ${LAST:0:10}, the commit the last daily run measured." >> "$GITHUB_STEP_SUMMARY"
+            echo "Skipped: nothing measured changed on main since ${LAST:0:10}, the commit the last weekly run measured." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
@@ -179,7 +179,7 @@ jobs:
           # request or branch run saved can run inside it.
           cache: false
 
-      - name: Run the daily A/B
+      - name: Run the weekly A/B
         if: steps.measured.outputs.run != 'false'
         env:
           SETS: ${{ inputs.sets }}
@@ -271,7 +271,7 @@ jobs:
           TITLE="bench: daily performance report ${DATE}"
           BODY="$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
             "$ALERTS" \
-            "Daily A/B run from \`main\` ($(git rev-parse --short HEAD^1)): the last release vs \`main\` vs Loki direct on a fresh stack, every shape set over its ranges up to 24h." \
+            "Weekly A/B run from \`main\` ($(git rev-parse --short HEAD^1)): the last release vs \`main\` vs Loki direct on a fresh stack, every shape set over its ranges up to 24h." \
             "Updates \`bench/ab/results/daily-*.json\`, appends \`bench/ab/history/*.jsonl\`, regenerates \`bench/ab/history/trend.md\`, updates \`bench/ab/history/ratchet.json\` and the registry performance evidence. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             "Merging keeps the history continuous; an unmerged day is carried into the next day's PR.")"
           PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"

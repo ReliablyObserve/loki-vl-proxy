@@ -96,14 +96,14 @@ REPORTS = (
     ("perf_evidence.py", "docs/real-window-compatibility-gaps.md", "--quality-summary"),
     # The same figures as JSON for the website.
     ("perf_evidence.py", "website/src/data/quality-vs-loki.json", "--site-data"),
-    # The README's translation overhead table, rendered from the daily run's committed results.
+    # The README's translation overhead table, rendered from the weekly run's committed results.
     ("translation_overhead.py", "README.md", "--readme"),
 )
 
 
 def perf_acceptance_problems(shapes=SHAPES, over_2x=OVER_2X):
     """The perf: blocks against the shapes that cover registry items and the above-2× list (schema and
-    consistency only: measured values are the daily run's and perf-smoke's, never this gate's)."""
+    consistency only: measured values are the weekly run's and perf-smoke's, never this gate's)."""
     spec = load_json(shapes)
     covers = {(s, sh["name"]): list(sh.get("covers") or []) for s, v in spec["sets"].items() for sh in v["shapes"]}
     rows = load_json(over_2x).get("rows", []) if os.path.exists(over_2x) else []

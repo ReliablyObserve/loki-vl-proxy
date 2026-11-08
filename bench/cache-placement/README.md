@@ -115,7 +115,7 @@ default production startup warmers can still read VictoriaLogs.
 | exact | Same fixed historical windows, round-robin through three frontends; includes first visits to other frontends. |
 | frontend-prime | Three rounds through all frontends. |
 | warm-repeat | Replay only after that explicit frontend priming. |
-| shifted | Historical start/end move backward 60 seconds per repeat, matching the moving-window aspect of daily A/B. |
+| shifted | Historical start/end move backward 60 seconds per repeat, matching the moving-window aspect of weekly A/B. |
 | refresh | Historical start/end advance into previously unrequested windows. The initial historical end is 30 minutes before seeded history ends; refresh advances +60, +120, … seconds inside that history. |
 | recent-refresh | Advances windows in the immutable setup-time recent fixture. Each response records end age and eligibility for the default 120-second recent-tail and 24-hour metadata freshness windows. It is not a new-ingestion proof or necessarily near-now. |
 | restart | Restart every proxy with disk retained, then request the original fixed windows. |

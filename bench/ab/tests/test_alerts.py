@@ -644,7 +644,7 @@ def timed(p50=0.4, loki_p50=0.4, cold=0.9, loki_cold=0.9, **kw):
 
 
 class AcceptanceAlertsTest(unittest.TestCase):
-    """The daily run against the registry's perf: blocks and the distribution ratchet."""
+    """The weekly run against the registry's perf: blocks and the distribution ratchet."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()

@@ -116,20 +116,24 @@ class ParityRefreshWiring(unittest.TestCase):
         ends = [i for i in following if i > start]
         return parity[start : min(ends)] if ends else parity[start:]
 
-    def test_the_schedule_is_weekly_and_clear_of_the_perf_daily_window(self):
+    def test_the_schedule_is_weekly_and_clear_of_the_perf_window(self):
         parity, perf = text("parity-refresh.yaml"), text("perf-daily.yaml")
         parity_cron = re.search(r'cron: "(\d+) (\d+) \* \* (\d)"', parity)
         self.assertIsNotNone(parity_cron, "parity-refresh runs weekly (one weekday)")
-        perf_cron = re.search(r'cron: "(\d+) (\d+) \* \* \*"', perf)
-        self.assertIsNotNone(perf_cron, "perf-daily runs daily")
-        perf_start = int(perf_cron.group(2)) * 60 + int(perf_cron.group(1))
+        perf_cron = re.search(r'cron: "(\d+) (\d+) \* \* (\d)"', perf)
+        self.assertIsNotNone(perf_cron, "the perf run is weekly (one weekday)")
         perf_minutes = int(re.search(r"timeout-minutes: (\d+)\n    permissions:\n      contents: write", perf).group(1))
-        start = int(parity_cron.group(2)) * 60 + int(parity_cron.group(1))
-        # Daily, so the parity run's start must lie outside [perf start, perf start + its timeout) of the same day,
-        # and the parity run's own timeout must end before the next daily start.
         parity_minutes = int(re.search(r"timeout-minutes: (\d+)", self.job("refresh")).group(1))
-        self.assertTrue(start >= perf_start + perf_minutes, "starts after perf-daily's longest run ended")
-        self.assertTrue(start + parity_minutes <= 24 * 60 + perf_start, "ends before the next perf-daily start")
+        week = 7 * 24 * 60
+
+        def start(cron):
+            minute, hour, weekday = (int(cron.group(i)) for i in (1, 2, 3))
+            return weekday * 24 * 60 + hour * 60 + minute
+
+        # On a weekly clock the two runs must not overlap: each starts after the other's longest run ended.
+        p, q = start(perf_cron), start(parity_cron)
+        self.assertTrue((q - p) % week >= perf_minutes, "parity-refresh starts after the perf run's longest run ended")
+        self.assertTrue((p - q) % week >= parity_minutes, "the perf run starts after parity-refresh's longest run ended")
 
     def test_the_entrypoint_is_the_one_the_tests_and_the_docs_describe(self):
         self.assertIn('python3 bench/parity/refresh.py --out "$OUT" --mode full', self.job("refresh"))
