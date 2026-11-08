@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The LogQL parser types `line_format` templates: each stage keeps the parsed
+  template (its canonical form, the labels and functions it reads, and
+  whether it is plain text with `{{.label}}` references) next to its text.
+  The logical query plan keys on the canonical form, so two spellings of one
+  template (spacing inside actions, comments) share a plan. Not wired into
+  the handlers yet; no behaviour change.
+
 - The LogQL parser types `label_replace(...)` and `vector(x)` calls written
   as Loki's grammar has them (the sample expression, the four strings, the
   number) next to their text, and the logical query plan builds
