@@ -25,11 +25,7 @@ type ASTTranslateOptions struct {
 }
 
 // ASTSelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes
-// (translate.SelectorFilter): no query text is written or read on the way.
+// (translate.StreamSelectorFilter): no query text is written or read on the way.
 func ASTSelectorFilter(sel *logql.StreamSelector, opts ASTTranslateOptions) (logsql.FilterExpr, error) {
-	matchers := make([]translate.SelectorMatcher, len(sel.Matchers))
-	for i, m := range sel.Matchers {
-		matchers[i] = translate.SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
-	}
-	return translate.SelectorFilter(matchers, opts.LabelFn, opts.StreamFields)
+	return translate.StreamSelectorFilter(sel.Matchers, opts.LabelFn, opts.StreamFields)
 }

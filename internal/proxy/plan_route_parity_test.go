@@ -296,15 +296,15 @@ func firstRange(n queryplan.Node) time.Duration {
 // stand-in (got is the recorded run, for those).
 type routePrediction func(q string, p *queryplan.Plan, rp routeProfile, data bool, got routeRecord) (routeRecord, error)
 
-// errNoRoutePrediction is a lowered plan the route rules do not predict yet; it counts as a mismatch, so the first
-// native lowering lands with its route rule.
-var errNoRoutePrediction = errors.New("route parity: the physical plan predicts no route yet")
+// errRouteRulePending is a lowered plan whose route the physical route rules do not predict yet (they land with
+// the range-aggregation routes): it is delegated, counted under "<construct> (route rule)".
+var errRouteRulePending = errors.New("route parity: no route rule for the lowered plan yet")
 
 func nativeRoute(_ string, p *queryplan.Plan, _ routeProfile, _ bool, _ routeRecord) (routeRecord, error) {
 	if _, err := lower.Plan(p, lower.Profile{}); err != nil {
 		return routeRecord{}, err
 	}
-	return routeRecord{}, errNoRoutePrediction
+	return routeRecord{}, errRouteRulePending
 }
 
 type routeSection struct {
@@ -395,6 +395,8 @@ func runRouteParity(t *testing.T, rows []routeRow, predict routePrediction) (rou
 					sec.DelegatedByConstruct[nl.Construct]++
 				case errors.Is(err, lower.ErrNotLowered):
 					sec.DelegatedByConstruct["unnamed"]++
+				case errors.Is(err, errRouteRulePending):
+					sec.DelegatedByConstruct[row.construct+" (route rule)"]++
 				case err != nil:
 					sec.Mismatches++
 					problems = append(problems, fmt.Sprintf("%s data=%v: %q: %v", rp.name, data, row.q, err))

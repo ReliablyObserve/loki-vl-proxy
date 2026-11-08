@@ -44,6 +44,11 @@ type lokiFacts struct {
 	Offsets     []int64     `json:"offsets"`
 	Pipeline    []lokiStage `json:"pipeline"`
 	HasPipeline bool        `json:"has_pipeline"`
+	Matchers    []struct {
+		Name  string `json:"name"`
+		Op    string `json:"op"`
+		Value string `json:"value"`
+	} `json:"matchers"`
 }
 
 var parserKinds = map[logql.ParserType]string{
@@ -278,6 +283,18 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			continue
 		}
 		if sel == nil {
+			continue
+		}
+		// The stream selector the lowering turns into the VictoriaLogs filter: Loki's matchers, in Loki's order.
+		ms, lms := make([]string, len(sel.Matchers)), make([]string, len(lf.Matchers))
+		for i, m := range sel.Matchers {
+			ms[i] = m.Name + m.Op.String() + strconv.Quote(m.Value)
+		}
+		for i, m := range lf.Matchers {
+			lms[i] = m.Name + m.Op + strconv.Quote(m.Value)
+		}
+		if !reflect.DeepEqual(ms, lms) {
+			problems = append(problems, fmt.Sprintf("%q: stream matchers %v, Loki's tree %v", r.q, ms, lms))
 			continue
 		}
 		mine, loki := ourStages(sel), significant(lf.Pipeline)

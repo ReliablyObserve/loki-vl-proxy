@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
@@ -73,6 +74,15 @@ func WholeValueRegexpFilterExpr(label, pattern string, negate, dotNL bool) logsq
 // "=~" or "!~") and its unquoted value.
 type SelectorMatcher struct {
 	Name, Op, Value string
+}
+
+// StreamSelectorFilter is SelectorFilter for the parsed matchers of a stream selector.
+func StreamSelectorFilter(ms []logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool) (logsql.FilterExpr, error) {
+	matchers := make([]SelectorMatcher, len(ms))
+	for i, m := range ms {
+		matchers[i] = SelectorMatcher{Name: m.Name, Op: m.Op.String(), Value: m.Value}
+	}
+	return SelectorFilter(matchers, labelFn, streamFields)
 }
 
 // SelectorFilter is the VictoriaLogs filter for a bare stream selector, built as nodes: the filter the string
