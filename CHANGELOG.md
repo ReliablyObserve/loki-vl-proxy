@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan has a lowering stage (internal/queryplan/lower) that turns a
+  resolved plan into the operators sent to VictoriaLogs, held to the string
+  translator on every corpus query under each translator profile; it lowers no
+  construct yet, so every query is still translated as before. The unused
+  TranslateAST prototype is removed. No change to responses.
+
 ### Fixed
 
 - Queries Loki rejects with a 400 parse error are rejected with Loki's error
