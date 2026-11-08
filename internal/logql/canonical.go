@@ -12,7 +12,7 @@ import (
 // the keywords in lower case (LowercaseKeywords).
 func CanonicalizeLogRanges(query string) string {
 	query = LowercaseKeywords(query)
-	if !hasAlternativeLogRange(query) {
+	if !hasAlternativeLogRange(query) || InputSizeError(query) != "" {
 		return query
 	}
 	p := &parser{sc: newScanner(query), canon: &canonState{}}
