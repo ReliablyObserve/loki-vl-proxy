@@ -97,9 +97,11 @@ func TestResolveEveryPipelineOfABinaryExpression(t *testing.T) {
 func TestResolveUngrouped(t *testing.T) {
 	cases := map[string]bool{
 		`sum(rate({a="x"}[5m]))`:                                                true,
-		`sum by () (rate({a="x"}[5m]))`:                                         false,
+		`sum by () (rate({a="x"}[5m]))`:                                         true,
 		`sum by (a) (rate({a="x"}[5m]))`:                                        false,
 		`sum(rate({a="x"}[5m])) by (a)`:                                         false,
+		`sum without () (rate({a="x"}[5m]))`:                                    false,
+		`sum(rate({a="x"}[5m])) by ()`:                                          true,
 		`sum without (a) (rate({a="x"}[5m]))`:                                   false,
 		`topk(3, rate({a="x"}[5m]))`:                                            false,
 		`topk by (a) (3, rate({a="x"}[5m]))`:                                    false,

@@ -42,9 +42,10 @@ type PlanSem struct {
 	Resolved bool
 	// Ungrouped is true when the outermost aggregation, under any
 	// label_replace, is a vector aggregation (sum, avg, min, max, count,
-	// stddev, stdvar) without a by or without clause: Loki answers it as one
-	// series without labels. A rank (topk, bottomk, sort, sort_desc) keeps
-	// its series and their labels, so it is not ungrouped.
+	// stddev, stdvar) without grouping labels: no clause, or `by ()`, which
+	// Loki's tree holds alike. Loki answers it as one series without labels.
+	// A rank (topk, bottomk, sort, sort_desc) keeps its series and their
+	// labels, and `without ()` keeps every label, so neither is ungrouped.
 	Ungrouped bool
 	// OffsetKind and Offset are how the range aggregations shift their windows.
 	OffsetKind OffsetKind
@@ -105,15 +106,15 @@ func Resolve(p *Plan) {
 	sem.Resolved = true
 }
 
-// ungrouped reports a vector aggregation without a by or without clause at
-// the top of n, under any label_replace.
+// ungrouped reports a vector aggregation without grouping labels (no clause,
+// or `by ()`) at the top of n, under any label_replace.
 func ungrouped(n Node) bool {
 	for {
 		switch x := n.(type) {
 		case *LabelReplace:
 			n = x.In
 		case *VectorAgg:
-			return x.By == nil
+			return x.By == nil || (!x.By.Without && len(x.By.Labels) == 0)
 		default:
 			return false
 		}

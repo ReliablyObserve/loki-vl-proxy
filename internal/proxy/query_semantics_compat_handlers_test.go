@@ -508,7 +508,10 @@ func TestQueryOuterUngrouped(t *testing.T) {
 		{`sum by (app, level) (count_over_time({app="api"}[5m]))`, false},
 		{`sum(count_over_time({app="api"}[5m])) by (app)`, false},
 		{`stddev(bytes_over_time({app="api"}[1m])) by (route)`, false},
-		{`max(avg(count_over_time({app="uw"}[5m])) without (pod)) by ()`, false},
+		// `by ()` has no grouping labels: Loki's tree holds it like no clause
+		{`max(avg(count_over_time({app="uw"}[5m])) without (pod)) by ()`, true},
+		{`sum by () (count_over_time({app="api"}[5m]))`, true},
+		{`sum without () (count_over_time({app="api"}[5m]))`, false},
 		// with without(), before or after: grouped
 		{`sum without (pod) (count_over_time({app="api"}[5m]))`, false},
 		{`sum(bytes_over_time({app="uw"}[1m])) without (abc)`, false},
