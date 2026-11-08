@@ -1772,6 +1772,9 @@
     "test/e2e-compat/parenthesized_range_or_filters_test.go | loki_api_v1_query_range",
     "test/e2e-compat/parenthesized_range_or_filters_test.go | semantics/line-filter-or-alternatives",
     "test/e2e-compat/parenthesized_range_or_filters_test.go | semantics/parenthesized-log-range",
+    "test/e2e-compat/parsed_surface_answers_test.go | loki_api_v1_query",
+    "test/e2e-compat/parsed_surface_answers_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/parsed_surface_answers_test.go | semantics/proxy-rejects-valid-logql",
     "test/e2e-compat/parser_capture_identity_test.go | loki_api_v1_query",
     "test/e2e-compat/parser_capture_identity_test.go | parsed-label-series-identity",
     "test/e2e-compat/parser_error_matrix_test.go | semantics/json-error-filter-metric-split-pushdown",
@@ -1966,7 +1969,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 378,
+      "go": 379,
       "playwright": 1
     },
     "page_kinds": {
