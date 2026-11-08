@@ -97,9 +97,11 @@ func TestResolveEveryPipelineOfABinaryExpression(t *testing.T) {
 func TestResolveUngrouped(t *testing.T) {
 	cases := map[string]bool{
 		`sum(rate({a="x"}[5m]))`:                                                true,
-		`sum by () (rate({a="x"}[5m]))`:                                         false,
+		`sum by () (rate({a="x"}[5m]))`:                                         true,
 		`sum by (a) (rate({a="x"}[5m]))`:                                        false,
 		`sum(rate({a="x"}[5m])) by (a)`:                                         false,
+		`sum without () (rate({a="x"}[5m]))`:                                    false,
+		`sum(rate({a="x"}[5m])) by ()`:                                          true,
 		`sum without (a) (rate({a="x"}[5m]))`:                                   false,
 		`topk(3, rate({a="x"}[5m]))`:                                            false,
 		`topk by (a) (3, rate({a="x"}[5m]))`:                                    false,
@@ -200,6 +202,39 @@ func TestResolveAllocLocks(t *testing.T) {
 		})
 		if got > want {
 			t.Errorf("%q: %v allocations, want at most %v", q, got, want)
+		}
+	}
+}
+
+// The proxy memoises resolved plans by query text alone (internal/proxy resolvedPlan). That holds only while Resolve
+// reads nothing of Inputs but Compat: this fails the moment a resolver rule reads the stream labels, the kind or the
+// exposure, and the memo key must then carry the encoded Inputs (Plan.Key).
+func TestResolveReadsNoInputButCompat(t *testing.T) {
+	texts, exprs := corpus(t)
+	variants := []Inputs{
+		{StreamLabels: []string{"app", "env", "level", "service_name"}},
+		{Kind: KindRange},
+		{Kind: KindInstant},
+		{Exposure: Exposure{LokiProfile: true, DottedNames: true}},
+	}
+	for i, e := range exprs {
+		base, err := Build(e, Inputs{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		Resolve(base)
+		for _, in := range variants {
+			p, err := Build(e, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			Resolve(p)
+			if !reflect.DeepEqual(p.Sem, base.Sem) {
+				t.Fatalf("%q: Resolve reads Inputs %+v: %+v, without them %+v", texts[i], in, p.Sem, base.Sem)
+			}
+			if a, b := firstSelect(p.Root), firstSelect(base.Root); a != nil && !reflect.DeepEqual(a.Sem, b.Sem) {
+				t.Fatalf("%q: Resolve reads Inputs %+v in a pipeline: %+v, without them %+v", texts[i], in, a.Sem, b.Sem)
+			}
 		}
 	}
 }

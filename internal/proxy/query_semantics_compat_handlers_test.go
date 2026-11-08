@@ -487,33 +487,51 @@ func TestContract_Query_AbsentOverTimeCompatTranslateErrorReturnsBadRequest(t *t
 	}
 }
 
-// TestHasOuterAggregationWithoutBy guards the helper that drives the single-series
-// collapse for bare outer aggregations (no by/without clause). This is a regression
-// guard for the Drilldown "Logs" tab counter showing a label value instead of the count.
-func TestHasOuterAggregationWithoutBy(t *testing.T) {
+// TestQueryOuterUngrouped guards what drives the single-series collapse for bare outer aggregations (no by/without
+// clause): a regression guard for the Drilldown "Logs" tab counter showing a label value instead of the count. It
+// reads the query's plan, so every spelling Loki accepts answers the same, and a rank keeps its series.
+func TestQueryOuterUngrouped(t *testing.T) {
 	cases := []struct {
 		logql string
 		want  bool
 	}{
-		// bare outer aggregations — must collapse to one empty-label series
+		// bare outer aggregations: one empty-label series
 		{`sum(count_over_time({app="api"}[5m]))`, true},
 		{`avg(count_over_time({app="api"}[5m]))`, true},
 		{`max(bytes_rate({app="api"}[5m]))`, true},
 		{`min(rate({app="api"}[5m]))`, true},
-		// with prefix by() — must NOT collapse
+		{`sum (count_over_time({app="api"}[5m]))`, true},
+		{`label_replace(sum(rate({app="api"}[5m])), "b", "$1", "app", "(.*)")`, true},
+		{`sum(sum by (app) (rate({app="api"}[5m])))`, true},
+		// with a by() before or after the parentheses: grouped
 		{`sum by (app) (count_over_time({app="api"}[5m]))`, false},
 		{`sum by (app, level) (count_over_time({app="api"}[5m]))`, false},
-		// with without() — must NOT collapse
+		{`sum(count_over_time({app="api"}[5m])) by (app)`, false},
+		{`stddev(bytes_over_time({app="api"}[1m])) by (route)`, false},
+		// `by ()` has no grouping labels: Loki's tree holds it like no clause
+		{`max(avg(count_over_time({app="uw"}[5m])) without (pod)) by ()`, true},
+		{`sum by () (count_over_time({app="api"}[5m]))`, true},
+		{`sum without () (count_over_time({app="api"}[5m]))`, false},
+		// with without(), before or after: grouped
 		{`sum without (pod) (count_over_time({app="api"}[5m]))`, false},
-		// no outer aggregation — must NOT collapse
+		{`sum(bytes_over_time({app="uw"}[1m])) without (abc)`, false},
+		// a rank keeps each of its series with its labels
+		{`topk(2, sum by (app) (count_over_time({app="api"}[5m])))`, false},
+		{`bottomk(2, absent_over_time({app="ab",env="prod"}[5m]))`, false},
+		{`sort(sum(count_over_time({app="api"}[5m])))`, false},
+		{`sort_desc(rate({app="api"}[5m]))`, false},
+		// a binary expression has no grouping of its own
+		{`sum(count_over_time({app="api"}[1m])) / sum(count_over_time({app="api"}[1m]))`, false},
+		// no outer aggregation
 		{`count_over_time({app="api"}[5m])`, false},
 		{`rate({app="api"}[5m])`, false},
 		{`{app="api"} |= "error"`, false},
+		// not a query
+		{`sum(`, false},
 	}
 	for _, tc := range cases {
-		got := hasOuterAggregationWithoutBy(tc.logql)
-		if got != tc.want {
-			t.Errorf("hasOuterAggregationWithoutBy(%q) = %v, want %v", tc.logql, got, tc.want)
+		if got := queryOuterUngrouped(tc.logql); got != tc.want {
+			t.Errorf("queryOuterUngrouped(%q) = %v, want %v", tc.logql, got, tc.want)
 		}
 	}
 }

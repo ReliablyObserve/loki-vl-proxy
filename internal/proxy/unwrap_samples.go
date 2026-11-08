@@ -246,7 +246,7 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 	if isSumAllLogRange(query) {
 		return true
 	}
-	if len(spec.GroupBy) == 0 && !spec.ByExplicit && !hasOuterAggregationWithoutBy(originalLogql) {
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && !queryOuterUngrouped(originalLogql) {
 		return false
 	}
 	parser := queryUsesParserStages(spec.BaseQuery)
