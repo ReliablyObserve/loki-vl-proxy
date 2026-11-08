@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ip()` stays valid in line and label filters. **Breaking:** clients sending
   such selectors get Loki's 400 instead of an empty answer.
 
+## [2.94.0] - 2026-11-07
+
 ### Changed
 
 - The proxy's LogsQL parser reads back what the proxy sends to VictoriaLogs:
