@@ -138,3 +138,29 @@ decisions:
     performance:
       tracked: ['benchstat: BenchmarkSplitPostProcessing old vs new over the capture sample']
       bound: 'splitPostProcessing 2.30 µs vs 2.20 µs for the old strip (count 10), 153 B and 2 allocs vs 81 B and 0'
+  - id: logical-plan-vl-independent-key
+    chosen: 'internal/queryplan builds a logical plan from the LogQL AST (LogSelect with typed stages, RangeAgg, VectorAgg, Rank, BinOp, Scalar, Opaque for label_replace and vector until they are typed) and a binary key from it plus the request inputs that change Loki semantics (Kind, Compat, StreamLabels, Exposure); the physical inputs (VictoriaLogs name map, stream fields, capabilities, window, cache catalog, probes) never enter the logical key'
+    over: [a key from the query text, a key from the translated LogsQL, a key that includes VictoriaLogs-side options]
+    why: |
+      Step two of architecture B (owner 2026-11-08): one Loki-semantics plan,
+      independent of VictoriaLogs, that the physical planner and the cache key
+      read. Build reads the parsed tree only (no parser, no String(), no
+      strings or regexp on query text) and is total: every corpus row that
+      parses builds (2,470 of 2,470). Two queries share a key only when the
+      translator writes the same VictoriaLogs query and post-processing for
+      them under each of 12 profiles (v1.49/v1.53 × identity, underscores,
+      stream labels, stream fields, no body scan, keep line): 0 unsound groups.
+      Two kinds of shared key are counted and may only fall. phrase_text (5):
+      both texts take the translator's phrase fallback, which holds the
+      query's own text. spelling_divergent (4): stddev/stdvar by (app) with
+      and without extra parentheses or spacing take different translator
+      routes; on the compose stack both spellings answer identically (0 of 915
+      points differ, 2026-11-08), so the key is sound and the route choice is
+      a translator spelling dependency, left for the lowering work.
+    evidence: 'internal/querycorpus/plan_logical_test.go TestLogicalBuildTotal, TestLogicalKeySound, TestLogicalKeyDistinct; conformance/registry/query-plan.json logical and logical_key_sound sections (2026-11-08)'
+    code: [internal/queryplan/nodes.go, internal/queryplan/build.go, internal/queryplan/key.go, .golangci.yml]
+    tests: [TestLogicalBuildTotal, TestLogicalKeySound, TestLogicalKeyDistinct, TestBuildAllocsGate, FuzzBuild]
+    quality: 'No proxy change; the plan is built only in tests until the handlers take a Plan.'
+    performance:
+      tracked: ['BenchmarkBuild ns/p50, ns/p99 (gate with LVP_QUERYPLAN_BENCH_GATE=1)', 'TestBuildAllocsGate: allocations at most 2x logql.Parse per row']
+      bound: 'Build p50 156-184 ns, p99 279-308 ns on the seed (gate p50 <= 2 us); about 7.7 allocations per query vs 12.2 for logql.Parse'

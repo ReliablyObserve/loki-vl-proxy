@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `internal/queryplan` builds a logical plan from the parsed LogQL query, with
+  a binary key that holds only what changes Loki's answer and no
+  VictoriaLogs-side option. It is not wired into the handlers yet. No
+  behaviour change.
+
 - The query, query_range and metric post-aggregation handlers read the
   without fold and label_replace calls the translator leaves in its LogsQL
   through one typed decoder (the exact inverse of an encoder) instead of
