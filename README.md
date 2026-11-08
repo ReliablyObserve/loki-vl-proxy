@@ -220,17 +220,11 @@ Latency against Loki by workload and for the label browser and Drilldown metadat
 
 ### Translation overhead
 
-Measured on 2026-11-08 at commit `16bdd0f40`: LogQL to LogsQL translation took **2.9 to 26.4 µs per query**. For a 100 to 500 ms VictoriaLogs round-trip this is under 0.03% of wall time.
+<!-- translation-overhead:start -->
 
-| Query type | Time | Allocs |
-|---|---:|---:|
-| Selector `{app="nginx"}` | 2.9 µs | 23 |
-| `rate({...}[5m])` | 24.4 µs | 505 |
-| `sum(rate({...}[5m])) by (host)` | 6.0 µs | 66 |
-| `ip("10.0.0.0/8")` filter (native `ipv4_range()`) | 4.6 µs | 41 |
-| Binary metric `sum(rate) / sum(rate)` | 26.4 µs | 547 |
+Not measured yet: the daily performance run measures the translator benchmarks and writes this table (`conformance/scripts/translation_overhead.py`).
 
-Median of 5 runs of `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` with `GOMAXPROCS=4` on an Apple M5 Pro (arm64), Go 1.27.3, on a host that was also running other work, so the times are an upper bound.
+<!-- translation-overhead:end -->
 
 ### Throughput under load (historical)
 
