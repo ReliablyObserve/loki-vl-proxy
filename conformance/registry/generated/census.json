@@ -1473,6 +1473,7 @@
     "internal/querycorpus/plan_corpus_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/plan_corpus_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
+    "internal/translator/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity/detected-level-filter-json-level",
     "internal/translator/detected_level_keyword_test.go | severity-detected-level-derivation",
@@ -1931,7 +1932,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 368,
+      "go": 370,
       "playwright": 1
     },
     "page_kinds": {
