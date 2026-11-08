@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.97.2] - 2026-11-08
+
 ### Changed
 
 - The LogQL parser types `label_replace(...)` and `vector(x)` calls written

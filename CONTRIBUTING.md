@@ -146,7 +146,7 @@ A very large change to the proxy re-measures everything once, so that later pull
 - The `baseline` label forces it (and the full product CI). Add the label, then push or re-run the workflows: the label is read when they run. `ci-full` forces it too, together with the full product CI, unless the forced run is narrowed (below).
 - The visual, A/B and quality comparisons still require `evidence=true`; labels do not enable them for release, CI, documentation or harness-only diffs.
 - A pull request whose base is not `main` (a stacked one) starts none of these workflows and never gets it. Each layer is judged on its own diff once it targets `main` (retargeting fires `edited`, which these workflows do not listen for, so the run starts with the next push or a re-run): a big change split into layers that are each under the thresholds does not trigger, and several big layers trigger once each. Put the `baseline` label on the last layer of a split refactor.
-- Results are artifacts and a "new baseline candidate" section of the A/B and visual comments: `perf-baseline-candidate` (`over-2x-loki.json`, the above-2x Loki list as it would become, which a person can copy over `bench/ab/history/over-2x-loki.json`; `acceptance-day.json`, a report of the run's distribution; a summary) and `visual-baseline-candidate` (the captures). Nothing is committed to `main`. `bench/ab/history/acceptance.json` is rebuilt from the daily history, so it is not replaced by hand: the next daily run after the merge (it runs whenever a measured path changed on `main`) writes the real new distribution, and the run on the pull request is its preview, measured with the smoke's profile (4 runs, 1h) rather than the daily's (7 runs, up to 24h).
+- Results are artifacts and a "new baseline candidate" section of the A/B and visual comments: `perf-baseline-candidate` (`over-2x-loki.json`, the above-2x Loki list as it would become, which a person can copy over `bench/ab/history/over-2x-loki.json`; `acceptance-day.json`, a report of the run's distribution; a summary) and `visual-baseline-candidate` (the captures). Nothing is committed to `main`. `bench/ab/history/acceptance.json` is rebuilt from the daily history, so it is not replaced by hand: the next weekly run after the merge (it runs whenever a measured path changed on `main`) writes the real new distribution, and the run on the pull request is its preview, measured with the smoke's profile (4 runs, 1h) rather than the daily's (7 runs, up to 24h).
 
 CI spends no runs on a pull request that conflicts with `main`. GitHub does not start pull request runs while a conflict exists, and after every push to `main` the `cancel-conflicted-pr-runs` workflow (`scripts/ci/cancel_conflicted_pr_runs.py`) cancels the queued and running pull request runs of every open pull request that now conflicts. Rebase, then push once.
 
@@ -189,7 +189,7 @@ for every shape: for every query shape and time range, the proxy answers at leas
 fast as Loki, with Loki's result, on low and bounded resources. Where it does not yet,
 the reports below list the gap.
 
-1. **At least as fast as Loki.** The daily A/B (`bench/ab/daily.py`, run by
+1. **At least as fast as Loki.** The weekly A/B (`bench/ab/daily.py`, run by
    `perf-daily.yaml`) compares the last release, `main` and Loki on every shape set and
    range up to 24h, and records for each shape and range the first-run (cold) and the
    repeated (warm) p50 (`bench/ab/history/trend.md`). The goal is no slower than Loki on
@@ -218,7 +218,7 @@ the reports below list the gap.
    shape that reached Loki's speed or Loki's result stays there.
 4. **Largest gaps first.** `conformance/reports/performance.md` lists the shapes slower
    than Loki on first load and on repeat views, and by registry item. Errors where Loki
-   answers show as a status in the daily trend's timing columns and as a difference in
+   answers show as a status in the weekly trend's timing columns and as a difference in
    its `result vs Loki` column; `conformance/reports/gaps.md` (Error surface) lists the
    error responses whose messages need a registry entry stating Loki's text. Work in this
    order: errors, results that differ, a slower first answer, a slower repeated answer;

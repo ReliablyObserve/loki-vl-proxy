@@ -296,8 +296,8 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
         },
         {
           value: `${firstRequests?.below ?? 0} of ${firstRequests?.rows ?? 0}`,
-          label: `First requests below Loki v${quality.loki} in the latest daily A/B (${quality.date}, ${quality.profile})`,
-          detail: `Above 2× Loki: ${firstRequests?.above ?? 0}. Same data and hardware for both; generated daily.`,
+          label: `First requests below Loki v${quality.loki} in the latest weekly A/B (${quality.date}, ${quality.profile})`,
+          detail: `Above 2× Loki: ${firstRequests?.above ?? 0}. Same data and hardware for both; generated weekly.`,
         },
         {
           value: '$13,403/month',

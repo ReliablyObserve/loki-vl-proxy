@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Above 2× Loki: the one definition the PR smoke, the daily run and the performance report share.
+"""Above 2× Loki: the one definition the PR smoke, the weekly run and the performance report share.
 
 A shape × range × mode (cold, warm or refresh) is above 2× Loki when the
 proxy's time is more than twice Loki's AND exceeds it by more than MIN_GAP
@@ -28,15 +28,15 @@ the baseline keys on the profile too. A row is judged by the history of its own 
 that profile ran (history.py profile_state): a listed row of a profile that did not run is reported as not
 judged, never carried unjudged for weeks. Rows listed before the profiles existed (proxy_side unaligned) were
 moved to loki-defaults by history.py over-2x-reseed (the daily rule replayed over the history), because that is
-the profile the daily run measures with that proxy side. A profile that starts running again fills its own list
+the profile the weekly run measures with that proxy side. A profile that starts running again fills its own list
 by the same rule.
 
-bench/ab/history/over-2x-loki.json is the baseline: the rows the daily run
-measures above 2× Loki, per profile. history.py alerts (the daily run) keeps it
-symmetrically: it adds a row once two consecutive full daily runs measured it
+bench/ab/history/over-2x-loki.json is the baseline: the rows the weekly run
+measures above 2× Loki, per profile. history.py alerts (the weekly run) keeps it
+symmetrically: it adds a row once two consecutive full weekly runs measured it
 comparable and above 2×, removes one once two consecutive full runs measured it
 comparable and not above 2×, and tightens a row's recorded ratio when a run measures
-it lower. A row above 2× on one run only is a warning in the daily pull request
+it lower. A row above 2× on one run only is a warning in the weekly pull request
 ("pending add"); the same comparability rules apply (both answered 200, Loki's
 results cache did not answer the cold run, beyond the absolute floor). Only the daily
 run edits the list; pull requests never do. pr_smoke.py / comment.py warn (or, with
@@ -53,7 +53,7 @@ most queries). Every registry item a shape covers carries a perf: block (conform
 has the form): max_ratio (the hard bound, at most 2.0), target_ratio (1.0), modes, locked and locked_since,
 and an optional effort_exception. A row (set, shape, range, mode) is locked when any item that covers its
 shape is locked for that mode; its bound is the smallest max_ratio of those items. A locked row above its
-bound is a regression: the daily run fails on it (history.py), perf-smoke lists it in its own section and
+bound is a regression: the weekly run fails on it (history.py), perf-smoke lists it in its own section and
 fails on it only in --over-2x-loki fail mode. A row between 1× and max_ratio (beyond noise) is accepted only
 with an effort_exception on an item that covers it; without one it is listed, flagged, for review. A row that
 was below Loki and is now above it beyond noise is flagged as "lost below-Loki" (never a failure). band() and
@@ -102,7 +102,7 @@ PROFILE_NOTES = {
                "profile ran; its list fills itself by the daily rule once it runs. Rows listed before the profiles "
                "existed had an unaligned proxy side and moved to loki-defaults, the profile that measures that side.",
     "loki-defaults": "Loki with its own defaults (align_queries_with_step off, max_cache_freshness_per_query 10m); "
-                     "proxy builds run with their defaults. The profile the daily run measures today. Its list holds the "
+                     "proxy builds run with their defaults. The profile the weekly run measures today. Its list holds the "
                      "rows listed before the profiles existed that stayed above 2x when they moved, and the rows the "
                      "daily rule added since (above 2x on two consecutive full runs).",
 }
@@ -205,7 +205,7 @@ def make_bounds(blocks, spec):
 
 
 def read_bounds(root=ROOT, spec=None):
-    """The bounds in the working tree (the daily run reads main's)."""
+    """The bounds in the working tree (the weekly run reads main's)."""
     if spec is None:
         with open(SHAPES) as f:
             spec = json.load(f)
@@ -325,7 +325,7 @@ def summary_pairs(summary, row, target):
 
 
 def history_pairs(row):
-    """The same for a history.py line's row (cold and warm; the daily run has no refresh pass). A row of a build
+    """The same for a history.py line's row (cold and warm; the weekly run has no refresh pass). A row of a build
     that was not like-for-like with the line's profile has no proxy side. A cold without Loki counters
     (loki_cold_computed None) is compared as computed, as in summary_pairs; only False is a cache answer."""
     served = row.get("loki_cold_computed") is False
@@ -385,9 +385,9 @@ def baseline_at(ref, root=ROOT):
 def write_baseline(rows, path=BASELINE):
     rows = sorted(rows, key=lambda r: (PROFILES.index(r.get("profile") or LEGACY_PROFILE), r["set"], r["shape"],
                                        r["range"], MODES.index(r["mode"])))
-    data = {"about": "Profile x set x shape x range x mode rows the daily A/B run measured above 2x Loki. "
+    data = {"about": "Profile x set x shape x range x mode rows the weekly A/B run measured above 2x Loki. "
                      "Generated by bench/ab/over2x.py seed and kept by bench/ab/history.py alerts: rows are removed "
-                     "after two consecutive daily runs under 2x and added after two consecutive daily runs above 2x (history.py "
+                     "after two consecutive weekly runs under 2x and added after two consecutive weekly runs above 2x (history.py "
                      "alerts). The profile is the "
                      "Loki the row was measured against: aligned (the stack's Loki: align_queries_with_step on, "
                      "max_cache_freshness_per_query 0s) or loki-defaults (Loki's defaults: off, 10m). See "

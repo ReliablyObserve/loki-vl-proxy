@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The README's translation overhead table, measured by the daily run and rendered from its results.
+"""The README's translation overhead table, measured by the weekly run and rendered from its results.
 
   translation_overhead.py --measure [--count 5]   run the translator benchmarks, write RESULTS
   translation_overhead.py --readme README.md      rewrite the README section between the markers from RESULTS
 
-bench/ab/daily.py measures and renders on every daily run; the conformance gate re-renders the section from the
+bench/ab/daily.py measures and renders on every weekly run; the conformance gate re-renders the section from the
 committed RESULTS and fails when the README differs, so the table always states the last measured run.
 """
 import argparse
@@ -64,7 +64,7 @@ def measure(count):
             "rows": [{"benchmark": n, **rows[n]} for n, _ in ROWS]}
 
 
-NOT_MEASURED = ("Not measured yet: the daily performance run measures the translator benchmarks and writes this "
+NOT_MEASURED = ("Not measured yet: the weekly performance run measures the translator benchmarks and writes this "
                 "table (`conformance/scripts/translation_overhead.py`).")
 
 
@@ -73,7 +73,7 @@ def render(results):
         return NOT_MEASURED
     by = {r["benchmark"]: r for r in results["rows"]}
     times = [by[n]["ns"] / 1000 for n, _ in ROWS if n in by]
-    out = [f"Measured on {results['date']} at commit `{results['commit']}` by the daily run: LogQL to LogsQL "
+    out = [f"Measured on {results['date']} at commit `{results['commit']}` by the weekly run: LogQL to LogsQL "
            f"translation took **{min(times):.1f} to {max(times):.1f} µs per query**. For a 100 to 500 ms "
            f"VictoriaLogs round-trip this is under {max(times) / 1000:.2f}% of wall time.", "",  # µs over 100 ms
            "| Query type | Time | Allocs |", "|---|---:|---:|"]
@@ -82,7 +82,7 @@ def render(results):
             out.append(f"| {label} | {by[name]['ns'] / 1000:.1f} µs | {by[name]['allocs']} |")
     out += ["", f"Median of {results['count']} runs of `go test ./internal/translator/ -bench BenchmarkTranslate "
             f"-benchmem` with `GOMAXPROCS={results['gomaxprocs']}`, {results['go']} on {results['cpu']} "
-            f"({results['goarch']}), the daily run's machine, which runs other work too: the times are an upper bound."]
+            f"({results['goarch']}), the weekly run's machine, which runs other work too: the times are an upper bound."]
     return "\n".join(out)
 
 

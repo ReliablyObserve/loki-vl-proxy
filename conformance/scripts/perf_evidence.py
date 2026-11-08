@@ -43,7 +43,7 @@ define — the performance evidence and the registry cannot drift apart.
 Quality summary: `--quality-summary PATH` rewrites only the text between the
 `<!-- quality-summary:start -->` and `<!-- quality-summary:end -->` markers of PATH (README.md and
 docs/real-window-compatibility-gaps.md) with the "Quality and performance vs Loki" section. Every figure comes from
-files: the newest valid daily run (bench/ab/results/daily-*.json, the summaries of one run and one commit;
+files: the newest valid weekly run (bench/ab/results/daily-*.json, the summaries of one run and one commit;
 the commit and distribution from those summaries), the above-2× list (bench/ab/history/over-2x-loki.json), the registry (summary.json,
 the cases' gap blocks, the behaviour states, the perf: blocks) and the Loki version pinned in
 test/e2e-compat/docker-compose.yml. The gate (scripts/ci/check_conformance.py) fails when the text is stale.
@@ -69,7 +69,7 @@ SHAPES = "bench/ab/shapes.json"
 RESULTS = "bench/ab/results"
 EVIDENCE = f"{ROOT}/generated/perf-evidence.json"
 REPORT = "conformance/reports/performance.md"
-# Rows above 2× Loki, kept by the daily run (bench/ab/over2x.py has the definition).
+# Rows above 2× Loki, kept by the weekly run (bench/ab/over2x.py has the definition).
 OVER_2X = "bench/ab/history/over-2x-loki.json"
 # A shape is slower than Loki when its cold time exceeds Loki's by both.
 NOISE, MIN_DELTA = 0.25, 0.05
@@ -123,15 +123,15 @@ def latest_runs(shape_sets, problems, pattern="*.json", keep=None):
 
 
 def newest_daily_date():
-    """The date of the newest valid daily run (bench/ab/results/daily-*.json), or None when there is none."""
+    """The date of the newest valid weekly run (bench/ab/results/daily-*.json), or None when there is none."""
     dates = [x["date"] for x in (load_json(p) for p in glob.glob(f"{RESULTS}/daily-*.json")) if x.get("valid", True)]
     return max(dates) if dates else None
 
 
 def is_current(stamp, summary, newest):
-    """A row the newest daily run measured. With no daily run at all, every row is current.
+    """A row the newest weekly run measured. With no weekly run at all, every row is current.
 
-    The daily run measures main against Loki on 1h to 24h with Loki's cache counters; a row it does not
+    The weekly run measures main against Loki on 1h to 24h with Loki's cache counters; a row it does not
     re-measure (7d, a set or shape it does not run) keeps the figures of an older run, often a pull
     request's branch build without those counters. Such a row is shown apart and is never ranked."""
     if newest is None:
@@ -170,7 +170,7 @@ def measurement(summary, row):
     refresh_ok = bool(refresh) and refresh_status.get(cand) == "200" and refresh_status.get(ref) == "200"
     cold_stats = (row.get("cache") or {}).get(ref)
     # Only a run of the harness that gives each set its own windows (pr_smoke marks its summaries) has warm
-    # and refresh figures that are comparable; daily runs share windows across sets.
+    # and refresh figures that are comparable; weekly runs share windows across sets.
     isolated = summary.get("isolated_windows") is True
     measured = {
         "label": summary["label"], "date": summary["date"], "valid": summary.get("valid", True),
@@ -484,15 +484,15 @@ def render_acceptance(latest, bounds):
 
 
 def over_2x(over):
-    """The "Above 2× Loki (must fix)" section from the list the daily run keeps; nothing without the file."""
+    """The "Above 2× Loki (must fix)" section from the list the weekly run keeps; nothing without the file."""
     if over is None:
         return []
     rows = over.get("rows", [])
     modes = {m: sum(1 for r in rows if r["mode"] == m) for m in ("cold", "warm", "refresh")}
     profiles = {p: sum(1 for r in rows if (r.get("profile") or LEGACY_PROFILE) == p) for p in PROFILE_RANK}
     out = ["## Above 2× Loki (must fix)", "",
-           f"Rows the daily run measured above 2× Loki ({over.get('rule', '')}), from `{OVER_2X}`. A shape × range",
-           "slower than 2× Loki on any mode is a defect. The daily run keeps the list: it adds a row after two consecutive",
+           f"Rows the weekly run measured above 2× Loki ({over.get('rule', '')}), from `{OVER_2X}`. A shape × range",
+           "slower than 2× Loki on any mode is a defect. The weekly run keeps the list: it adds a row after two consecutive",
            "runs above 2× and removes one after two consecutive runs within 2×; a pull request that adds or worsens one is flagged by `perf-smoke`. A row is",
            "above 2× when it is in either Loki profile: `aligned` is the stack's Loki (align_queries_with_step on, freshness 0s;",
            "rows measured before the profiles existed had an unaligned proxy side), `loki-defaults` is Loki with its own defaults.", "",
@@ -540,8 +540,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         out += render_acceptance(latest, bounds)
     out += over_2x(over)
     out += ["## Slower than Loki on first load", "",
-            "Rows the newest daily run measured; rows it does not re-measure are listed under "
-            "[Not re-measured by the daily run](#not-re-measured-by-the-daily-run) and are not ranked.", ""]
+            "Rows the newest weekly run measured; rows it does not re-measure are listed under " +
+            "[Not re-measured by the weekly run](#not-re-measured-by-the-weekly-run) and are not ranked.", ""]
     if gaps:
         out += ["| shape | range | proxy cold | Loki cold | proxy warm | Loki warm | registry items |",
                 "|---|---|---|---|---|---|---|"]
@@ -575,8 +575,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
         out += ["", f"{len(repeat)} shape×range slower than Loki beyond noise on a repeat view."]
     else:
         out.append("None measured.")
-    out += ["", "## Not re-measured by the daily run", "",
-            "Rows slower than Loki cold, or answered with an error, in an older run that the newest daily run does not",
+    out += ["", "## Not re-measured by the weekly run", "",
+            "Rows slower than Loki cold, or answered with an error, in an older run that the newest weekly run does not",
             "measure (7d, or a set or shape it does not run). They keep that run's figures: often a pull request's branch build, and without",
             "Loki's cache counters the Loki cold time is unverified. Shown for reference; not ranked and not counted",
             "as slower above or in the registry table. Re-measure them before acting on them.", ""]
@@ -620,8 +620,8 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
                    f"{fmt(worst['loki_cold'])}{' †' if worst['loki_cache_served'] else ''} / {fmt(worst['loki_warm_p50'])} | "
                    f"{parity}{f'; {slow} slower than Loki cold' if slow else ''} | {lock(item)} |")
     out += ["", "† Loki's results cache answered that cold run: not a computed time, and in no comparison.",
-            "‡ No row of the item was re-measured by the newest daily run: the worst row is from the dated older run.",
-            "The worst row and the slower count use the rows the newest daily run measured."]
+            "‡ No row of the item was re-measured by the newest weekly run: the worst row is from the dated older run.",
+            "The worst row and the slower count use the rows the newest weekly run measured."]
     if problems:
         out += ["", "## Problems", ""] + [f"- {p}" for p in problems]
     return "\n".join(out) + "\n"
@@ -629,7 +629,7 @@ def render(evidence, latest, problems, shape_sets=None, over=None, bounds=None):
 
 # ---------------------------------------------------------------------------------------------------------------
 # The "Quality and performance vs Loki (current)" section of README.md and docs/real-window-compatibility-gaps.md.
-# It states the position now: figures from the latest valid daily run and the registry as they are, no history.
+# It states the position now: figures from the latest valid weekly run and the registry as they are, no history.
 # ---------------------------------------------------------------------------------------------------------------
 SUMMARY_START, SUMMARY_END = "<!-- quality-summary:start -->", "<!-- quality-summary:end -->"
 COMPOSE = "test/e2e-compat/docker-compose.yml"
@@ -681,7 +681,7 @@ def run_key(summary):
 
 
 def daily_runs(shape_sets, problems):
-    """(latest rows, date, profile): the summaries of the newest valid daily run, one commit and one Loki profile
+    """(latest rows, date, profile): the summaries of the newest valid weekly run, one commit and one Loki profile
     (loki-defaults when that profile ran in that run, otherwise aligned). Summaries of another run, even of the
     same date, are left out: a section states one run's figures."""
     summaries = [load_json(p) for p in sorted(glob.glob(f"{RESULTS}/daily-*.json"))]
@@ -786,7 +786,7 @@ def behaviour_claims(found):
 
 
 def profile_last(days, ran, date):
-    """Loki profile -> the newest date it has a full daily run. A profile the shown run did not run (`ran`: the
+    """Loki profile -> the newest date it has a full weekly run. A profile the shown run did not run (`ran`: the
     profiles it did), though an earlier run of the same date did, is named so: that date alone would read as if it
     ran in the shown run."""
     out = {p: max((d["date"] for d in days if p in d.get("profiles", {})), default="") for p in PROFILE_RANK}
@@ -823,7 +823,7 @@ def quality_inputs():
         "profile_bands": {p: run_bands(rows) for p, rows in runs.items()},
         "over_latest": run_states(latest),
         "targets": acceptance_file.get("targets", {}),
-        # The newest day each Loki profile has a full daily run (a profile that stopped running is behind `date`).
+        # The newest day each Loki profile has a full weekly run (a profile that stopped running is behind `date`).
         "profile_last": profile_last(acceptance_file["days"], runs, date),
         "over": load_json(OVER_2X) if os.path.exists(OVER_2X) else {"rows": []},
         "blocks": over2x.read_bounds(spec=spec).get("blocks", {}),
@@ -875,12 +875,12 @@ def other_profile_sentence(q, notes, others):
     for p in others:
         last = (q.get("profile_last") or {}).get(p, "")
         if not last:
-            out.append(f"The `{p}` profile has no valid daily run yet.")
+            out.append(f"The `{p}` profile has no valid weekly run yet.")
         elif last == q["date"]:
             out.append(f"The `{p}` profile ({notes[p]}) is measured too: the distribution table below shows both "
                        "profiles, the rest of this section the one shown.")
         else:
-            out.append(f"The `{p}` profile ({notes[p]}) did not run on {q['date']} (its newest daily run is {last}), "
+            out.append(f"The `{p}` profile ({notes[p]}) did not run on {q['date']} (its newest weekly run is {last}), "
                        "so it is not shown, and no row is judged in it.")
     return " ".join(out)
 
@@ -943,7 +943,7 @@ def ratio(row):
 
 def maybe_cached(row):
     """A first request over 6h or more the proxy answered in under the noise floor: likely its own cache, warmed
-    by an earlier set that sent the same query (the daily run records Loki's cache counters, not the proxy's)."""
+    by an earlier set that sent the same query (the weekly run records Loki's cache counters, not the proxy's)."""
     head = re.match(r"(\d+[mhd])", row["range"])
     return bool(head) and range_seconds(head.group(1)) >= 6 * 3600 and row["proxy"] < MIN_DELTA
 
@@ -993,7 +993,7 @@ def workload_tables(q):
                 f"{' ‡' if maybe_cached(r) else ''} | {sec(r['loki'])} | {ratio(r)} |" for r in heavy]
         if any(maybe_cached(r) for r in heavy):
             out += ["", f"‡ The proxy answered a first request over 6h or more in under {int(MIN_DELTA * 1000)} ms: "
-                    "probably from its own cache, warmed by an earlier set of the daily run that sent the same query. " +
+                    "probably from its own cache, warmed by an earlier set of the weekly run that sent the same query. " +
                     "The run records Loki's cache counters but not the proxy's, so this row is not a cold proxy."]
         losses = sorted((r for r in rows if r["verdict"] == "slower"), key=lambda r: -(r["proxy"] / r["loki"]))[:5]
         if losses:
@@ -1059,7 +1059,7 @@ def render_quality_summary(q, target_is_docs=False):
     other = [p for p in PROFILE_RANK if p != q["profile"]]
     out = [f"Tested against Loki v{q['loki']}, the release the compatibility stack and CI pin. Timings were measured "
            f"on {q['date']}{f' at commit {commits}' if commits else ''} on the project's A/B stack: the same data, "
-           f"the same hardware, the latest valid daily run of each of {q['sets']} query-shape sets over "
+           f"the same hardware, the latest valid weekly run of each of {q['sets']} query-shape sets over "
            f"{q['ranges'][0]} to {q['ranges'][-1]}. A pair is one query shape over one time range; \"comparable\" "
            f"means both sides answered 200 and Loki's results cache did not answer the first request. Faster and "
            f"slower mean beyond {int(NOISE * 100)}% and {int(MIN_DELTA * 1000)} ms; everything else is on par."
@@ -1124,7 +1124,7 @@ def render_quality_summary(q, target_is_docs=False):
         out.append(f"- **{len(over)} shape, range and mode rows are on the above-2× list for the `{q['profile']}` profile** "
                    f"(more than 2× Loki and more than 50 ms slower): **{over_modes['cold']}** on the first request, **{over_modes['warm']}** on a "
                    f"repeat, **{over_modes['refresh']}** on a refresh. Each is a defect being fixed: a row joins the "
-                   f"list after two consecutive daily runs above 2× and leaves it after two within 2×, so it can hold "
+                   f"list after two consecutive weekly runs above 2× and leaves it after two within 2×, so it can hold "
                    f"more or fewer rows than the day's distribution above; a change that adds or worsens a row is flagged. {locked} of "
                    f"{len(q['blocks'])} covered registry items are locked at the 2× bound.")
     else:

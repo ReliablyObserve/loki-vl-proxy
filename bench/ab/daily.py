@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily full A/B run from main: the last release vs main vs Loki, every set, every range.
+"""Weekly full A/B run from main: the last release vs main vs Loki, every set, every range.
 
 The scheduled workflow (.github/workflows/perf-daily.yaml) runs this on a
 fresh runner and opens a bot pull request with what it writes:
@@ -242,7 +242,7 @@ def main():
     # The website shows the same figures (perf_evidence.py --site-data).
     subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--site-data", SITE_DATA_FILE],
                    cwd=ROOT, check=True)
-    stack.log(f"daily run written in {(time.time() - t0) / 60:.1f} min")
+    stack.log(f"weekly run written in {(time.time() - t0) / 60:.1f} min")
     return 0
 
 

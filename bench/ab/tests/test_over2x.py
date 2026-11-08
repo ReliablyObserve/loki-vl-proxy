@@ -129,7 +129,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(kinds(fixed, listed(ratio=9.0)), [("cleared", "")])
 
     def test_base_also_above_in_the_same_run(self):
-        # Not listed (the daily run never measured it above), but the base build is as slow here.
+        # Not listed (the weekly run never measured it above), but the base build is as slow here.
         self.assertEqual(kinds(summary(row(pr=0.55, base=0.5)), {}), [("known", "as slow on base")])
         # ... and a PR that makes it worse than the base beyond noise is flagged even though it is not listed.
         self.assertEqual(kinds(summary(row(pr=0.9, base=0.5)), {}), [("worsened", "above 2× on base too")])
@@ -455,7 +455,7 @@ class ReplayTest(unittest.TestCase):
         self.assertTrue(all(f["kind"] == "new" and f["mode"] == "warm" for f in bad))
 
     def test_reverting_758_trips_the_committed_locks(self):
-        # The J shapes cover semantics/json-error-filter-metric-split-pushdown, locked from the 2026-10-27 daily run.
+        # The J shapes cover semantics/json-error-filter-metric-split-pushdown, locked from the 2026-10-27 weekly run.
         b = seed_bounds()
         with open(os.path.join(RESULTS, "2026-10-22-json-error-split-1h.json")) as f:
             s = json.load(f)
@@ -480,7 +480,7 @@ class ReplayTest(unittest.TestCase):
 
 
 LOCK = {**over2x.registry_io.PERF_DEFAULTS, "locked": True, "locked_since": "2026-10-27"}
-SEED = "2026-10-27"  # the daily run the locks were seeded from
+SEED = "2026-10-27"  # the weekly run the locks were seeded from
 
 
 def seed_bounds():
@@ -763,9 +763,9 @@ class AcceptanceReplayTest(unittest.TestCase):
         # 29 locked at the seed; two are unlocked since the 2026-11-03 daily report (semantics/json-filter-pushdown-
         # translated-label, explore-logs-volume-json: the aligned A explore volume 1h cold row is above 2×).
         # quality/logfmt-parse-risk-candidates covers the control logfmt volume, whose aligned 24h warm row is above
-        # 2× since the 2026-11-04 daily report; it is locked once a daily run measures it within.
+        # 2× since the 2026-11-04 daily report; it is locked once a weekly run measures it within.
         # quality/unwrap-logfmt-narrowed-unpack covers G1, G7, G8 and G10 of the unwrap-gate set, whose 24h cold
-        # G8 row is above 2× in the 2026-11-04 daily report; it is locked once a daily run measures it within.
+        # G8 row is above 2× in the 2026-11-04 daily report; it is locked once a weekly run measures it within.
         self.assertEqual(len(locked), 27)
         unlocked_since = {"semantics/json-filter-pushdown-translated-label", "explore-logs-volume-json",
                           "quality/logfmt-parse-risk-candidates", "quality/unwrap-logfmt-narrowed-unpack"}
@@ -881,7 +881,7 @@ class ProfileGateTest(unittest.TestCase):
 
     def test_the_committed_list_holds_only_rows_of_a_profile_that_ran(self):
         # Every listed row is judged by the history of its own profile. The rows listed before the profiles
-        # existed (proxy_side unaligned) moved to loki-defaults, the profile the daily run measures with that
+        # existed (proxy_side unaligned) moved to loki-defaults, the profile the weekly run measures with that
         # proxy side; the aligned profile (no build supports its flag) holds none and judges none.
         rows, _ = over2x.read_baseline(over2x.BASELINE)
         self.assertEqual({r.get("proxy_side") for r in rows.values()}, {None})

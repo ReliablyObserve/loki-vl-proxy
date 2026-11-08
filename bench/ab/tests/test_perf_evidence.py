@@ -47,7 +47,7 @@ class MeasurementTest(unittest.TestCase):
         self.assertNotIn("loki_cold_nocache", m)
 
     def test_shared_windows_run_has_no_warm_or_refresh_flag(self):
-        # daily runs' sets share windows: an earlier set may have filled Loki's cache
+        # weekly runs' sets share windows: an earlier set may have filled Loki's cache
         m = pe.measurement(summary(isolated_windows=False),
                            row(refresh={"branch": 0.4, "loki": 0.05}, refresh_status={"branch": "200", "loki": "200"}))
         self.assertNotIn("slower_than_loki_warm", m)
@@ -205,13 +205,13 @@ class GapsTest(unittest.TestCase):
 
 
 class CurrentRowsTest(unittest.TestCase):
-    """Only rows the newest daily run measured are ranked; older rows are shown apart (perf_evidence.is_current)."""
+    """Only rows the newest weekly run measured are ranked; older rows are shown apart (perf_evidence.is_current)."""
 
     def test_only_the_newest_daily_date_is_current(self):
         daily = dict(summary(), date="2026-11-04")
         self.assertTrue(pe.is_current(("2026-11-04", 1, "daily-x.json"), daily, "2026-11-04"))
         self.assertFalse(pe.is_current(("2026-11-03", 1, "daily-x.json"), dict(daily, date="2026-11-03"), "2026-11-04"))
-        # A pull request's run is never current while a daily run exists, even on the same date.
+        # A pull request's run is never current while a weekly run exists, even on the same date.
         self.assertFalse(pe.is_current(("2026-11-04", 0, "2026-11-04-pr.json"), daily, "2026-11-04"))
         self.assertFalse(pe.is_current(("2026-11-04", 1, "daily-x.json"), dict(daily, valid=False), "2026-11-04"))
 
@@ -232,7 +232,7 @@ class CurrentRowsTest(unittest.TestCase):
                       set="x", shape="err", range="7d", stale=True, candidate="branch")
         text = pe.render({"parser-json": [current, old, failed]}, {}, [])
         ranked = text.split("## Slower than Loki on first load")[1].split("## Slower than Loki on repeat views")[0]
-        apart = text.split("## Not re-measured by the daily run")[1].split("## By registry item")[0]
+        apart = text.split("## Not re-measured by the weekly run")[1].split("## By registry item")[0]
         by_item = text.split("## By registry item")[1]
         self.assertIn("| cur | 24h |", ranked)
         self.assertNotIn("| old |", ranked)

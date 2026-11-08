@@ -617,8 +617,8 @@ class DailyProfilesTest(unittest.TestCase):
         self.assertIn("not like-for-like", meta["profiles"]["aligned"]["why_not"])
 
     def run_written(self, full):
-        """(code, files results/ got, history appends) of a daily run of the two test sets; full: that is the whole
-        daily run (the history's definition of one is patched down to these sets, 1h and 3 runs)."""
+        """(code, files results/ got, history appends) of a weekly run of the two test sets; full: that is the whole
+        weekly run (the history's definition of one is patched down to these sets, 1h and 3 runs)."""
         import daily
         patches = [mock.patch.object(daily.history, "FULL_RUNS", 3), mock.patch.object(daily.history, "FULL_MAX_RANGE", "1h"),
                    mock.patch.object(daily.history, "full_ranges",

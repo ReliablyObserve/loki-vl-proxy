@@ -256,7 +256,7 @@ class CheckChangelogPRTests(unittest.TestCase):
         # Neither the bench harness nor the conformance registry is shipped.
         self.assertFalse(
             should_require_changelog(
-                ["bench: the daily run measures one more shape"],
+                ["bench: the weekly run measures one more shape"],
                 ["bench/ab/daily.py", "bench/ab/history/control.jsonl"],
             )
         )

@@ -247,8 +247,8 @@ def locked_section(locked, mode):
     """Locked rows the PR takes above their bound: a regression of the acceptance lock."""
     icon, text = effect(mode)
     return [f"#### {icon} 🔒 Locked rows above their bound: {len(locked)}", "",
-            "These rows are locked in the registry (a `perf:` block with `locked: true` on an item their shape "
-            "covers, as committed on the base): every daily run measured them within their bound, and this PR "
+            "These rows are locked in the registry (a `perf:` block with `locked: true` on an item their shape " +
+            "covers, as committed on the base): every weekly run measured them within their bound, and this PR "
             f"takes them above it beyond noise. {text} How to read and clear one: `bench/ab/README.md`.", "",
             *over_2x_failing_table(locked), "",
             "Locked by: " + "; ".join(sorted({f"`{i}`" for f in locked for i in f.get("locked_by", [])})), ""]
@@ -284,8 +284,8 @@ def first_measurement_section(first):
     shown = first[:KNOWN_CAP]
     out = [f"#### 🟡 First measurement above 2× Loki: {len(first)} (warning, does not fail)", "",
            "These rows are above 2× Loki on this PR in a Loki profile where the base build did not run the profile's "
-           "setting (so it is never compared there), and the other profile has no comparable base build for them. "
-           "The PR cannot be shown to have added them; the daily run measures them once a build runs the profile.", "",
+           "setting (so it is never compared there), and the other profile has no comparable base build for them. " +
+           "The PR cannot be shown to have added them; the weekly run measures them once a build runs the profile.", "",
            *over_2x_table(shown, with_note=True)]
     if len(first) > len(shown):
         out.append(f"… and {len(first) - len(shown)} more (`verdict.json` counts them).")
@@ -423,7 +423,7 @@ def render(summaries, selection, meta, baseline=None, bounds=None):
                 lines.append(f"… and {len(known) - KNOWN_CAP} more (`verdict.json` counts them; the job's "
                              "`summary-<set>.json` files have every row).")
         if cleared:
-            lines += ["", f"{cleared} listed shape×range within 2× Loki in this run (the daily run removes a row from "
+            lines += ["", f"{cleared} listed shape×range within 2× Loki in this run (the weekly run removes a row from "
                       "the list after two runs under 2×)."]
         if loki_failed:
             lines += ["", f"{loki_failed} shape×range×mode where Loki did not answer 200: not compared (not a proxy "
