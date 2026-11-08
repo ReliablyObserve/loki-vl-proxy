@@ -1252,7 +1252,8 @@
       "test/e2e-compat/operators_not_in_loki_test.go"
     ],
     "semantics/proxy-rejects-valid-logql": [
-      "internal/logql/comments_offsets_test.go"
+      "internal/logql/comments_offsets_test.go",
+      "test/e2e-compat/comments_offsets_test.go"
     ],
     "semantics/query-range-step-alignment": [
       "cmd/proxy/main_test.go",
@@ -1648,7 +1649,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 436,
+  "registry_items": 437,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2932,7 +2933,8 @@
     ],
     "test/e2e-compat/comments_offsets_test.go": [
       "loki_api_v1_query_range",
-      "semantics/comments-signed-compound-offsets"
+      "semantics/comments-signed-compound-offsets",
+      "semantics/proxy-rejects-valid-logql"
     ],
     "test/e2e-compat/compat_option_matrix_test.go": [
       "loki-compatible-profile",
@@ -3595,6 +3597,7 @@
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/last-over-time-line-filter-offset-points",
     "semantics/log-entries-differ-same-count",
+    "semantics/logfmt-malformed-lines",
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
