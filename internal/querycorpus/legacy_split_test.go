@@ -90,3 +90,12 @@ func legacySplit(s string) (clean, op string, labels []string, specs []translato
 	clean, specs = legacyParseAllLabelReplaceMarkers(clean)
 	return clean, op, labels, specs
 }
+
+// referenceSplit is the reading SplitPost must give: the old two-step strip of the text after the last quote, where
+// the translator writes its markers, with the text up to that quote kept as it is (a client's string holding marker
+// text is not read as one).
+func referenceSplit(s string) (clean, op string, labels []string, specs []translator.LabelReplaceSpec) {
+	i := strings.LastIndexAny(s, "\"'`") + 1
+	clean, op, labels, specs = legacySplit(s[i:])
+	return s[:i] + clean, op, labels, specs
+}
