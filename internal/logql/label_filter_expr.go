@@ -202,10 +202,17 @@ func (p *lfParser) unexpected(expecting string) *LabelFilterSyntaxError {
 	return &LabelFilterSyntaxError{Offset: p.tok.start, Token: lfTokenName(p.tok), Expecting: expecting}
 }
 
-// next reads the next token. Whitespace separates tokens; a word runs to the
-// next space, parenthesis, comma, quote or operator character.
+// next reads the next token. Whitespace and comments (`#` to the end of the
+// line, as the LogQL scanner skips them) separate tokens; a word runs to the
+// next space, comment, parenthesis, comma, quote or operator character.
 func (p *lfParser) next() {
 	for p.pos < len(p.src) {
+		if p.src[p.pos] == '#' {
+			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
+				p.pos++
+			}
+			continue
+		}
 		r, size := utf8.DecodeRuneInString(p.src[p.pos:])
 		if !unicode.IsSpace(r) {
 			break
@@ -248,7 +255,7 @@ func (p *lfParser) next() {
 			p.pos++
 		}
 	default:
-		for p.pos < len(p.src) && !strings.ContainsRune(" \t\r\n(),\"`=!<>", rune(p.src[p.pos])) {
+		for p.pos < len(p.src) && !strings.ContainsRune(" \t\r\n(),\"`=!<>#", rune(p.src[p.pos])) {
 			p.pos++
 		}
 	}

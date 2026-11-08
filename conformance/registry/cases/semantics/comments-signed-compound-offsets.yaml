@@ -19,7 +19,13 @@ why: |
   Fixed: the scanner skips comments and reads compound durations, the parser
   reads a signed offset, and the request rewrite that writes keywords in lower
   case also removes the comments (logql.StripComments), so the handlers and
-  the string translator read the query without them. Every accepted and
+  the string translator read the query without them. A comment right after a
+  label filter (`| a="1" # c`, `| a=1#`) also ends the filter: the
+  label-filter lexer skips it like the scanner, where it had rejected the
+  string form and read `1#` as the number's text. A `<>` in a line filter's
+  text, a regexp or a comment is accepted, as Loki's parser accepts it (a text
+  check rejected any `<>`; the parser rejects the operator with Loki's error,
+  checked with the Loki oracle). Every accepted and
   rejected spelling above answers with Loki's acceptance, offsets and error
   text, recorded with the test oracle.
 request:
