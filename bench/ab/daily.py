@@ -31,6 +31,7 @@ fresh runner and opens a bot pull request with what it writes:
   performance.md and gaps.md          regenerated from the new results
   README.md, docs/real-window-         the "Quality and performance vs Loki" section
   compatibility-gaps.md               between the quality-summary markers
+  website/src/data/quality-vs-loki.json the same figures for the website
 
   python3 bench/ab/daily.py --out /tmp/ab-daily                 # everything
   python3 bench/ab/daily.py --out /tmp/ab-daily --sets control --max-range 3h --runs 3 --no-write
@@ -65,6 +66,7 @@ RESULTS = os.path.join(HERE, "results")
 PY = sys.executable
 # The files holding the generated "Quality and performance vs Loki" section (conformance/scripts/perf_evidence.py).
 QUALITY_SUMMARY_FILES = ("README.md", "docs/real-window-compatibility-gaps.md")
+SITE_DATA_FILE = "website/src/data/quality-vs-loki.json"
 # Daily data profile: a batch per 30 s at a third of the PR smoke's line rate
 # (about 25 lines/s), so the ~24.4 h seed (24h + the runs' shifts + margin)
 # stays near 2.2 M lines and 120 k streams on a hosted runner. Fixed: every
@@ -233,6 +235,9 @@ def main():
     for target in QUALITY_SUMMARY_FILES:
         subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--quality-summary", target],
                        cwd=ROOT, check=True)
+    # The website shows the same figures (perf_evidence.py --site-data).
+    subprocess.run([PY, os.path.join(ROOT, "conformance/scripts/perf_evidence.py"), "--site-data", SITE_DATA_FILE],
+                   cwd=ROOT, check=True)
     stack.log(f"daily run written in {(time.time() - t0) / 60:.1f} min")
     return 0
 
