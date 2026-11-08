@@ -362,9 +362,11 @@ def render_summary(summary):
 
 
 def fmt(value, status=None):
-    if status and status != "200":
-        return f"**{status}**"
-    return "—" if value is None else f"{value:.2f}s"
+    # A non-200 answer still has a time: the time is shown, with the status code in parentheses.
+    text = "—" if value is None else f"{value:.2f}s"
+    if status and str(status) != "200":
+        return f"{text} (**{status}**)"
+    return text
 
 
 def main():

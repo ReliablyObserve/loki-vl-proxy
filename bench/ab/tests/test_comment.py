@@ -51,7 +51,7 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(verdict["exit"], 0)
         self.assertIn("🟢 Performance A/B: faster", text)
         self.assertIn("🟢 -75%", text)
-        self.assertIn("| ✅ | fixed one | 1h | **502** | 400 ms | ✅ fixed |", text)
+        self.assertIn("| ✅ | fixed one | 1h | — (**502**) | 400 ms | ✅ fixed |", text)
         self.assertIn("0.50×", text)
 
     def test_broken_slower_and_new_difference_fail(self):

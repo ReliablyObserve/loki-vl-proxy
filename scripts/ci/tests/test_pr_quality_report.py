@@ -360,7 +360,8 @@ class ReportTests(unittest.TestCase):
         report = self.render(base, head)
         self.assertIn("+800.0% (regressed)", report)
 
-    def test_error_latency_and_no_sample_fleet_are_not_speed_proof(self):
+    def test_error_latency_is_shown_with_its_status_and_no_sample_fleet_is_not_speed_proof(self):
+        # An error answer still has a time; it is shown with its status code in parentheses.
         report = self.render(evidence={"sources": {
             "perf": {"state": "completed", "conclusion": "failure", "artifacts": {
                 "verdict.json": {"state": "failed", "counts": {"broken": 1}},
@@ -369,8 +370,7 @@ class ReportTests(unittest.TestCase):
             "ci": {"state": "completed", "conclusion": "success", "artifacts": {
                 "fleet-peer-cache-proof-rf1.json": {"replication_factor": 1, "summary": [
                     {"first": {"count": 0, "p50_ms": 0, "p95_ms": 0}}]}}}}})
-        self.assertIn("HTTP 500", report)
-        self.assertNotIn("1 ms", report)
+        self.assertIn("— / 1 ms / — (HTTP 500)", report)
         self.assertIn("no samples", report)
 
     def test_all_sources_failed_checks_and_missing_snapshot_fallback(self):

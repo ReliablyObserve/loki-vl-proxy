@@ -283,9 +283,11 @@ def cell(text):
 
 
 def fmt(v, status, stale=False):
-    if status and status != "200":
-        return f"**{status}**"
-    return "—" if v is None else f"{v:.2f}s" + ("†" if stale else "")
+    # A non-200 answer still has a time: the time is shown, with the status code in parentheses.
+    text = "—" if v is None else f"{v:.2f}s" + ("†" if stale else "")
+    if status and str(status) != "200":
+        return f"{text} (**{status}**)"
+    return text
 
 
 def markdown(s):
