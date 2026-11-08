@@ -1,0 +1,59 @@
+id: semantics/binary-operand-literals-reprint
+title: Binary metric queries keep compound duration and exponent literals in their operands
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  `sum(count_over_time({service_name="api-gateway"} | json | status >= 4e2 [1m]))
+  / sum(count_over_time({service_name="api-gateway"} [1m]))` is a valid Loki
+  query (200) and answered 400 `syntax error: unexpected NUMBER` on the proxy,
+  on query and query_range; `latency > 1h5m` in an operand answered
+  `unexpected DURATION`. The proxy translates each operand of a binary
+  expression from the printed text of its parsed tree. The scanner cuts one
+  literal into several tokens (`1h5m` is `1h` `5m`, `4e2` is `4e` `2`) and the
+  stage printer put a space between any two alphanumeric tokens, so the
+  printed operand read `1h 5m` and `4e 2`; a number literal printed with an
+  exponent (`1000000` as `1e+06`), which the scanner reads as `1e` `+` `06`.
+
+  The printer now joins tokens that touch in the source without a space and
+  prints numbers without an exponent. Every printed operand parses back to the
+  same tree. The other paths that print a parsed query (removing a parser
+  stage, the bare-parser metric base query, the line and pre-parser label
+  filter stages of the ordered JSON plan, the windowing shape) read the same
+  text as the source.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum(count_over_time({service_name="api-gateway"} | json | status >= 4e2 [1m])) / sum(count_over_time({service_name="api-gateway"} [1m]))'
+    start: 'now-1h'
+    end: 'now'
+    step: '60'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, data.result]
+  expect: |
+    200 with Loki's series and values.
+gap:
+  status: fixed
+  visual: graph
+  visual_reason: 'explore-binary-operand-literals renders the ratio; main shows the 400 parse error where Loki draws the series.'
+  fixed_by: 'TBD'
+  impact: explore-visible
+  effort: S
+  area: 'internal/logql/parser.go (appendStageToken, advance), internal/logql/ast.go (formatNumber)'
+  loki: 'Loki parses the query and prints nothing back; the operands keep their literals'
+  proxy: 'the printed stage text keeps a literal the scanner split; numbers print without an exponent'
+  planned_test: 'TestCompat_BinaryOperandLiterals (test/e2e-compat, group semantics); TestPrintReparsePreservesLabelFilterLiterals, TestPrintLabelFilterLiteralText, TestPrintScalarLiteralHasNoExponent, TestPrintReparseLiteralsAreParsed, FuzzPrintReparse (internal/logql, CI fuzz smoke); TestBinaryOperandKeepsLiterals, TestReprintedQueryTranslatesLikeTheOriginal (internal/proxy)'
+  clusters: []
+perf:
+  max_ratio: 2.0
+  target_ratio: 1.0
+  modes: [cold, warm, refresh]
+  locked: false
+  locked_since: null
+  effort_exception: null

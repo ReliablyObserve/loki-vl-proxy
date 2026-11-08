@@ -15,7 +15,7 @@ import (
 // translator makes of a query: every query of the benchmark shapes and the
 // semantics matrix, and the literals the scanner cuts in pieces, translate the
 // same after a parse and a print.
-// conformance: semantics/label-filter-expression-syntax
+// conformance: semantics/label-filter-expression-syntax, semantics/binary-operand-literals-reprint
 func TestReprintedQueryTranslatesLikeTheOriginal(t *testing.T) {
 	var queries []string
 	seen := map[string]bool{}

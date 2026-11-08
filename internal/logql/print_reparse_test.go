@@ -115,7 +115,7 @@ func formatLiteralQuery(format, literal string) string {
 // written, and the printed query parses to the same tree. A literal cut by a
 // space (`1h 5m`) is another query: the translator reads it as a comparison to
 // `1h` and a line phrase.
-// conformance: semantics/label-filter-expression-syntax
+// conformance: semantics/label-filter-expression-syntax, semantics/binary-operand-literals-reprint
 func TestPrintReparsePreservesLabelFilterLiterals(t *testing.T) {
 	for _, literal := range printReparseLiterals {
 		for _, format := range printReparseQueries {
@@ -147,7 +147,7 @@ func TestPrintReparsePreservesLabelFilterLiterals(t *testing.T) {
 
 // The printed text of a label filter is its token form (no space around the
 // operator), the literal as it was written.
-// conformance: semantics/label-filter-expression-syntax
+// conformance: semantics/label-filter-expression-syntax, semantics/binary-operand-literals-reprint
 func TestPrintLabelFilterLiteralText(t *testing.T) {
 	for _, literal := range printReparseLiterals {
 		for _, tc := range []struct{ format, want string }{
@@ -186,7 +186,7 @@ func TestPrintReparseLiteralsAreParsed(t *testing.T) {
 
 // A scalar prints without an exponent: the scanner reads `1e+06` as `1e`, `+`,
 // `06`, so a printed `* 1e+06` did not parse.
-// conformance: semantics/label-filter-expression-syntax
+// conformance: semantics/label-filter-expression-syntax, semantics/binary-operand-literals-reprint
 func TestPrintScalarLiteralHasNoExponent(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{`sum(rate({a="b"}[5m])) * 1000000`, `sum (rate({a="b"}[5m])) * 1000000`},

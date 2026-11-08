@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(logql): binary metric queries whose operand holds a compound duration
+  (`latency > 1h5m`), a number in exponent form (`status >= 4e2`) or a
+  large number in a nested operand (`(… * 1000000) / 2`) answered 400 `syntax error:
+  unexpected DURATION` or `unexpected NUMBER` where Loki answers 200, on
+  `query` and `query_range`. The proxy translates each operand from the
+  printed text of its parsed tree, and the printer wrote `1h 5m`, `4e 2` and
+  `1e+06`. Printed queries now parse back to the same tree.
+
 ### Changed
 
 - The proxy's LogsQL parser reads back what the proxy sends to VictoriaLogs:

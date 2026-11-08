@@ -17,7 +17,7 @@ import (
 // scalar with an exponent (`1e+06`), so the operand did not parse again and the
 // client got a 400 for a query Loki answers. Both the range and the instant
 // handler evaluate the operands this way.
-// conformance: semantics/label-filter-expression-syntax
+// conformance: semantics/label-filter-expression-syntax, semantics/binary-operand-literals-reprint
 func TestBinaryOperandKeepsLiterals(t *testing.T) {
 	type tc struct {
 		name, query string
