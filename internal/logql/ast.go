@@ -297,6 +297,18 @@ func (s *UnwrapStage) stage() {}
 // LineFormatStage is a `| line_format "template"` stage.
 type LineFormatStage struct {
 	Template string
+	// Tmpl is the parsed template; nil when the parser did not type it.
+	Tmpl *LineTemplate
+}
+
+// KeyText is the template text a plan key uses: the canonical form when the
+// template is typed. A template that does not parse never equals a canonical
+// form, since every canonical form parses.
+func (s *LineFormatStage) KeyText() string {
+	if s.Tmpl != nil {
+		return s.Tmpl.Canonical
+	}
+	return s.Template
 }
 
 func (s *LineFormatStage) String() string {
