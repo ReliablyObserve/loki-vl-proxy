@@ -14,7 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `|= "__without__:pod"`) answered an error; the text is now matched as text,
   like Loki, on `query` and `query_range`.
 
+## [2.97.0] - 2026-11-08
+
 ### Changed
+
+- perf: the detected-level derivation a range aggregation without an outer
+  aggregation adds (so its series carry `detected_level`, like Loki's) is
+  built once per field set and reused: translating `rate({...}[5m])` takes
+  5.6 µs and 74 allocations instead of 18.9 µs and 505. The LogsQL sent to
+  VictoriaLogs is byte-identical.
 
 - `internal/queryplan` builds a logical plan from the parsed LogQL query, with
   a binary key that holds only what changes Loki's answer and no
