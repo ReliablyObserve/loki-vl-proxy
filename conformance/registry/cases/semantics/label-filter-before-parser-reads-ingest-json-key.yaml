@@ -1,0 +1,71 @@
+id: semantics/label-filter-before-parser-reads-ingest-json-key
+title: A label filter before any parser keeps the lines whose JSON body carries the key, which Loki reads only after `| json` (open)
+pending: true
+proves:
+  - parser-error-and-label-collision
+  - loki_api_v1_query_range
+consumer: drilldown
+why: |
+  Logs Drilldown's fields page draws a panel per detected field. For a field
+  detected_fields lists without a parser (structured metadata), it sends
+  `sum by (trace_id) (count_over_time({env="production"} | trace_id!="" [$__auto]))`.
+  In Loki a label filter before the first parser reads the stream labels and
+  structured metadata only, so a line whose trace_id is only a key of its
+  JSON body has no trace_id label there and is dropped.
+
+  VictoriaLogs' Loki push API parses a JSON line into fields at ingest
+  (app/vlinsert/loki, on unless -loki.disableMessageParsing or the request's
+  disable_message_parsing; v1.49.0 and v1.53.0), so the body's trace_id is a
+  stored field and the proxy's field filter (`trace_id:!""`) keeps the line.
+
+  On the compose stack (3h of env="production", 2026-11-08) both sides hold
+  the same lines (sum(count_over_time) 1,059,772 proxy, 1,059,184 Loki), and
+  both list trace_id and span_id without a parser (cardinality 35). With
+  `| trace_id!=""` the proxy keeps 459,595 lines (460,445 series, 38 MB at a
+  20s step) where Loki keeps 189,140 (189,490 series, 16 MB): the extra lines
+  are api-gateway (189,245) and auth-service (81,105), whose JSON bodies carry
+  trace_id and which push no trace_id metadata; the five services that do
+  agree (37,849 proxy, 37,828 Loki: Loki's newest lines lag). span_id
+  differs the same way (379,190 series against 189,490).
+
+  The doubled answer is what Grafana's Loki plugin process could not decode:
+  it was OOM-killed (`plugin process exited ... signal: killed`), and every
+  Loki datasource answered "Plugin unavailable" until it restarted, which is
+  why the labels tab's pod panel failed in the same session although its
+  answer equals Loki's (167,523 series proxy, 167,429 Loki). The stack runs
+  Loki and the proxy with a 1,000,000 series cap; at Loki's default
+  max_query_series (500, the proxy's default -max-stats-query-series) both
+  answer the series-limit error instead.
+
+  The proxy cannot tell a field VictoriaLogs parsed out of the line from
+  structured metadata: both are fields. Pushing with JSON message parsing
+  disabled keeps the keys in _msg, where only a parser reads them, as in Loki
+  (docs/operations.md, JSON lines pushed through VictoriaLogs' Loki API); a
+  proxy-side rule that matches only known metadata keys belongs with the
+  metadata-field profiles.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: 'sum by (trace_id) (count_over_time({env="production"} | trace_id!="" [20s]))'
+    start: 'now-3h'
+    end: 'now'
+    step: '20s'
+  headers:
+    X-Scope-OrgID: "0"
+    X-Query-Tags: Source=grafana-lokiexplore-app
+compare:
+  mode: observed
+  fields: [matrix.series]
+  expect: |
+    The series of the lines whose trace_id is a stream label or structured
+    metadata only, as Loki answers (189,490 on the stack, 3h).
+gap:
+  status: open
+  impact: drilldown-visible
+  effort: L
+  area: 'internal/translator label filters before the first parser (field filters on stored fields); ingest: VictoriaLogs Loki push JSON message parsing'
+  loki: 'pkg/logql/log label filters before a parser read stream labels and structured metadata'
+  proxy: 'a field filter that also matches keys VictoriaLogs parsed out of the JSON line at ingest'
+  planned_test: 'e2e vs Loki on a fixture pushed with and without disable_message_parsing (test/e2e-compat, group drilldown)'
+  clusters: []

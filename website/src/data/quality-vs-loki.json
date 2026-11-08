@@ -201,7 +201,7 @@
       "compared_with_loki": 11,
       "endpoints": 11,
       "name": "Logs Drilldown",
-      "open_differences": 13,
+      "open_differences": 14,
       "proven": 9,
       "routed": 11
     },
@@ -229,15 +229,15 @@
   ],
   "date": "2026-11-08",
   "differences": {
-    "open": 84,
+    "open": 85,
     "open_by_impact": {
       "api-only": 10,
-      "drilldown-visible": 13,
+      "drilldown-visible": 14,
       "edge": 14,
       "explore-visible": 46,
       "grafana-datasource": 1
     },
-    "ranked": 107
+    "ranked": 108
   },
   "distribution": [
     {

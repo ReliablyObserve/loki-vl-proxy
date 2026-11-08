@@ -207,6 +207,17 @@ Operational recommendation:
 - use `metadata-field-mode=translated` (default) for strict Loki-style field surfaces
 - use `metadata-field-mode=native` for OTel-native field-only surfaces
 
+### JSON lines pushed through VictoriaLogs' Loki API
+
+VictoriaLogs' Loki push endpoint (`/insert/loki/api/v1/push`) parses a JSON log line into separate fields at ingest by default. The proxy reads every stored field the way Loki reads structured metadata, so a key of the JSON body becomes visible where Loki needs a parser to see it:
+
+- a label filter before any parser (`{env="production"} | trace_id!=""`, the query Logs Drilldown's fields page sends for a field listed without a parser) also keeps the lines whose body carries the key. On the compose stack this kept 459,595 lines where Loki kept 189,140, and the 38 MB answer was too large for Grafana's Loki plugin process;
+- a stream selector matcher, or a grouping, on a label that a body key of the same name shadows reads the body's value (see the open cases in [real-window-compatibility-gaps.md](real-window-compatibility-gaps.md)).
+
+To keep Loki's semantics for these queries, push with JSON message parsing disabled: start VictoriaLogs with `-loki.disableMessageParsing`, or send `disable_message_parsing=1` (or the `VL-Loki-Disable-Message-Parsing: 1` header) on the push requests (VictoriaLogs v1.49.0 and later). The keys then stay in `_msg`, where `| json` reads them as in Loki. The trade-off is query cost: VictoriaLogs unpacks the line at query time for every query that reads a body key, instead of reading a stored field.
+
+Keep `-max-stats-query-series` at Loki's `max_query_series` (500 by default in both): with a raised cap, a metric query grouped by a per-request id answers one series per id, and Grafana renders hundreds of thousands of series for one panel.
+
 ---
 
 ## Capacity Planning
