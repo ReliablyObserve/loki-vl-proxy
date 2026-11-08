@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construct yet, so every query is still translated as before. The unused
   TranslateAST prototype is removed. No change to responses.
 
+## [2.103.0] - 2026-11-08
+
 ### Fixed
 
 - Queries Loki rejects with a 400 parse error are rejected with Loki's error
