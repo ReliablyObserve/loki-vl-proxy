@@ -168,7 +168,7 @@ decisions:
       tracked: ['BenchmarkBuild ns/op, B/op, allocs/op, ns/p50, ns/p99 (p50 gate with LVP_QUERYPLAN_BENCH_GATE=1)', 'TestBuildAllocLocks: allocations of Build per query shape, and of AppendKey (0)', 'TestBuildAllocsGate: allocations at most 2x logql.Parse per row', 'TestBuildResourceBounds: allocations and key bytes linear in the query']
       bound: 'Build on the 340 seed queries (2026-11-08, M5 Pro, interleaved benchstat n=10 against the first version): 238 ns/op (was 417), p50 154 ns (was 261), p99 346 ns (was 530), 504 B/op (was 1103), 2 allocs/op (was 7), against 12 allocs and 492 B for logql.Parse; the plan and its key are two allocations for a query of the usual shape'
   - id: logical-plan-resolver
-    chosen: 'queryplan.Resolve, a pass over the built plan, derives from typed nodes only what the handlers read today from text: per pipeline the parser count, the error policy (NoParser, Propagate, DroppedLabel) and the drop stage; for the plan whether the outermost aggregation is ungrouped and how offsets apply (none, uniform, mixed, distinct); and the Loki 3.7 rule IDs it applied. A predicate_parity gate compares each attribute with the text predicate it replaces (hasOuterAggregationWithoutBy, extractLogQLOffset, hasDropErrorOnlyPostParserStage on its call-site input) on every plan-corpus row that validates, and every difference must be listed with its reason'
+    chosen: 'queryplan.Resolve, a pass over the built plan, derives from typed nodes only what the handlers read today from text: per pipeline the parser count, the error policy (NoParser, Propagate, DroppedLabel: any unconditional drop of __error__ after the last parser) and the drop stage; for the plan whether the outermost vector aggregation is ungrouped (a rank keeps its series) and how offsets apply (none, uniform, mixed, distinct); and the Loki 3.7 rule IDs it applied. A predicate_parity gate compares each attribute with the text predicate it replaces (hasOuterAggregationWithoutBy, extractLogQLOffset, hasDropErrorOnlyPostParserStage, each on the text its handler reads: the client text after keyword lowercasing and the keep-series rewrite) on every plan-corpus row that validates, and every difference must be listed with its reason'
     over: [resolving inside Build, attributes compared by exact counts, copying the text predicates' misreads into the resolver, putting rule IDs into the logical key now]
     why: |
       Step five of architecture B (owner 2026-11-08). A separate pass keeps
@@ -177,10 +177,14 @@ decisions:
       The gate is an explained set rather than a count: a count moves with every
       registry case, while each listed difference states why the text predicate
       and Loki's meaning part. On the 2,447 validated rows offset agrees
-      everywhere; ungrouped differs on 235 (213 postfix groupings
-      `sum(...) by (x)` the regexp does not see, 21 binary expressions read from
-      their left head, 1 upper-case query) and drop_error_only on 3 of 1,895 (a
-      pipeline after the range, two parenthesised log queries); the resolver follows Loki in
+      everywhere; ungrouped differs on 369 (213 postfix groupings
+      `sum(...) by (x)` the regexp does not see, 134 ranks the regexp lists with
+      the aggregations, 22 binary expressions read from their left head) and
+      drop_error_only on 3 of 1,895 (a pipeline after the range, two
+      parenthesised log queries). drop_error_only compares the predicate's narrow
+      route condition (the drop is the only stage after the last parser and names
+      only the error labels), computed from the resolved policy in the gate, so
+      the resolver keeps Loki's wider meaning. The resolver follows Loki in
       each, and the call sites will move to it with route-parity proof. Only the
       predicates that read LogQL are in this step: queryUsesParserStages reads
       the translated LogsQL and leaves out logfmt, a physical fact that belongs

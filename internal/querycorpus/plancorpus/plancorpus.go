@@ -6,15 +6,16 @@ package plancorpus
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// The sources, relative to the repository root.
+// The sources, relative to the repository root. Every read goes through an os.Root opened at the root, so a
+// symlink in the tree cannot lead a read outside it.
 const (
 	ShapesPath        = "bench/ab/shapes.json"
 	SemanticsPath     = "test/e2e-compat/query-semantics-matrix.json"
@@ -35,8 +36,8 @@ type CaptureSample struct {
 	} `json:"rows"`
 }
 
-func readJSON(path string, v any) error {
-	b, err := os.ReadFile(path)
+func readJSON(fsys fs.FS, path string, v any) error {
+	b, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return err
 	}
@@ -49,6 +50,15 @@ func readJSON(path string, v any) error {
 // Curated is the query texts of the shapes, the semantics matrix and the registry cases (`query` and `expr`
 // parameters), without duplicates, sorted. root is the repository root.
 func Curated(root string) ([]string, error) {
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return curated(r.FS())
+}
+
+func curated(fsys fs.FS) ([]string, error) {
 	seen := map[string]bool{}
 	add := func(q string) {
 		if strings.TrimSpace(q) != "" {
@@ -62,7 +72,7 @@ func Curated(root string) ([]string, error) {
 			} `json:"shapes"`
 		} `json:"sets"`
 	}
-	if err := readJSON(filepath.Join(root, ShapesPath), &shapes); err != nil {
+	if err := readJSON(fsys, ShapesPath, &shapes); err != nil {
 		return nil, err
 	}
 	for _, set := range shapes.Sets {
@@ -80,7 +90,7 @@ func Curated(root string) ([]string, error) {
 			Queries []string `json:"queries"`
 		} `json:"performance_cases"`
 	}
-	if err := readJSON(filepath.Join(root, SemanticsPath), &matrix); err != nil {
+	if err := readJSON(fsys, SemanticsPath, &matrix); err != nil {
 		return nil, err
 	}
 	for _, c := range matrix.Cases {
@@ -95,11 +105,11 @@ func Curated(root string) ([]string, error) {
 			add(q)
 		}
 	}
-	err := filepath.WalkDir(filepath.Join(root, RegistryCasesDir), func(path string, d os.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, RegistryCasesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
 			return err
 		}
-		b, err := os.ReadFile(path)
+		b, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return err
 		}
@@ -141,12 +151,18 @@ func Curated(root string) ([]string, error) {
 // Queries is the curated rows and the capture sample, without duplicates: the curated rows first, in sorted order,
 // then the sample's rows in file order.
 func Queries(root string) ([]string, error) {
-	curated, err := Curated(root)
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	fsys := r.FS()
+	curated, err := curated(fsys)
 	if err != nil {
 		return nil, err
 	}
 	var sample CaptureSample
-	if err := readJSON(filepath.Join(root, CaptureSamplePath), &sample); err != nil {
+	if err := readJSON(fsys, CaptureSamplePath, &sample); err != nil {
 		return nil, err
 	}
 	seen := make(map[string]bool, len(curated)+len(sample.Rows))

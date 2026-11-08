@@ -129,7 +129,7 @@
     "validated": 2447,
     "attributes": {
       "drop_error_only": {
-        "predicate": "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(original LogQL).BaseQuery)",
+        "predicate": "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(handler query text).BaseQuery) against an error-only drop as the last stage",
         "compared": 1895,
         "explained": [
           {
@@ -153,20 +153,14 @@
         ]
       },
       "offset": {
-        "predicate": "extractLogQLOffset(original LogQL)",
+        "predicate": "extractLogQLOffset(handler query text)",
         "compared": 2447,
         "explained": []
       },
       "ungrouped": {
-        "predicate": "hasOuterAggregationWithoutBy(original LogQL)",
+        "predicate": "hasOuterAggregationWithoutBy(handler query text)",
         "compared": 2447,
         "explained": [
-          {
-            "query": "TOPK(3, SUM BY (app) (RATE({env=\"production\"}[5m])))",
-            "old": "false",
-            "new": "true",
-            "reason": "Loki reads keywords in any case (`TOPK`, `SUM BY`); the predicate's regexp names the lowercase spellings only."
-          },
           {
             "query": "avg(avg(avg(count_over_time({app=\"uw\"} [5m])) by (pod, zone, svc)) by (pod, zone)) by (zone)",
             "old": "true",
@@ -354,10 +348,64 @@
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
           },
           {
+            "query": "bottomk (1, sum by (app, env) (count_over_time({app=~\".+\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk (100, sum by (app, env) (rate({app=~\".+\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk (2, sum by (app, env) (bytes_over_time({app=~\".+\"}[2m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk (2, sum by (app, env) (count_over_time({app=~\".+\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk (2,sum by (app, env) (count_over_time({a=\"b\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk (5, sum by (app, env) (rate({app=~\".+\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(1, label_replace(sum by (app) (count_over_time({env=\"production\"}[5m])), \"app\", \"all\", \"app\", \".+\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "bottomk(1, rate({app=\"uw\"} | unwrap amount [5m])) without (pod)",
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "bottomk(1, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(1, sum by (app) (rate({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "bottomk(1, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m]))) without (env)",
@@ -378,6 +426,12 @@
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
           },
           {
+            "query": "bottomk(1, sum by (app, env) (count_over_time({app=~\".+\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "bottomk(1, sum by (app, env) (count_over_time({app=~\".+\"}[5m]))) by (env)",
             "old": "true",
             "new": "false",
@@ -394,6 +448,30 @@
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "bottomk(1,sum by(cluster)(count_over_time({service_name=\"parser-matrix-1793533229550679000\"} | json [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(1,sum by(cluster)(rate({app=\"test\"}|json|__error__=\"\"[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(100, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(100, sum by (app, env) (count_over_time({app=~\".+\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "bottomk(100, sum by (app, env) (count_over_time({app=~\".+\"}[1m]))) by (env)",
@@ -414,6 +492,66 @@
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
           },
           {
+            "query": "bottomk(2, absent_over_time({app=\"ab\",env=\"prod\"}[150s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, absent_over_time({app=\"ab\",env=\"prod\"}[30s] offset 1m))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, absent_over_time({app=\"ab\",env=\"prod\"}[5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, first_over_time({app=\"p\"} | json | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, first_over_time({app=\"uw\"} | logfmt | unwrap amount [30s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, first_over_time({app=\"uw\"} | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, first_over_time({app=\"uw\"} | unwrap amount [90s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, last_over_time({app=\"uw\"} | json | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, last_over_time({app=\"uw\"} | logfmt | unwrap amount [150s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, last_over_time({app=\"uw\"} | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "bottomk(2, max_over_time({app=\"uw\"} | logfmt amount | unwrap amount [5m])) without (pod)",
             "old": "true",
             "new": "false",
@@ -430,6 +568,72 @@
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "bottomk(2, topk(5, sum by (app, env) (count_over_time({a=\"b\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, topk(5, sum by (app, env) (count_over_time({app=~\".+\"}[1m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, topk(5, sum by (app, env) (count_over_time({app=~\".+\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(2, topk(5, sum by (app, env) (rate({app=~\".+\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(3, sort_desc(sum by (app, env) (count_over_time({app=~\".+\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(3, sum by (app) (bytes_rate({env=\"production\"}[10m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(3, sum by (app) (rate({env=\"production\"}[10m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(4, label_replace(sum by (app) (rate({env=\"production\"}[1m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(4, sum by (app) (rate({env=\"production\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "bottomk(5, max by (env) (count_over_time({app=\"api\"}[1h])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "bottomk(5, sum by (app, env) (count_over_time({app=~\".+\"}[1m]))) without (env)",
@@ -652,6 +856,18 @@
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "label_replace(topk(2, sum by (service_name) (rate({env=\"production\"}[5m]))), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\")",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "label_replace(topk(3, sum by (app) (count_over_time({env=\"production\"}[5m]))), \"app_short\", \"$1\", \"app\", \"(.*)-.*\")",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "max(avg(count_over_time({app=\"uw\"} [5m])) without (pod)) by ()",
@@ -1006,6 +1222,228 @@
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "sort(avg without (pod) (count_over_time({app=\"x\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(label_replace(sum by (app) (count_over_time({app=\"x\"}[5m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(label_replace(sum by (app) (count_over_time({app=\"x\"}[5m])), \"d\", \"$1\", \"app\", \"(unclosed\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(last_over_time({app=\"p\"} | logfmt | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (max_over_time({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (max_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (max_over_time({app=\"uw\"} | unwrap amount [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (rate({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (rate({app=\"uw\"} | unwrap amount [1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (rate({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max without (pod) (rate({app=\"uw\"} | unwrap amount [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(max(sum without (pod) (rate({app=\"uw\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (min_over_time({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (min_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (min_over_time({app=\"uw\"} | unwrap amount [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (rate({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (rate({app=\"uw\"} | unwrap amount [1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (rate({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(min without (pod) (rate({app=\"uw\"} | unwrap amount [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(rate({app=\"api\"}[5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(sum by (a) (rate({app=\"x\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(sum by (app) (count_over_time({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(sum by (app) (count_over_time({namespace=\"prod\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort(sum(rate({app=\"api\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(first_over_time({app=\"p\"} | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(label_replace(sum by (app) (count_over_time({app=\"x\"}[5m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(label_replace(sum by (app) (count_over_time({env=\"production\"}[5m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(max without (pod) (count_over_time({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(rate({app=\"api\"}[5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(sum by (app) (count_over_time({env=\"production\"}[2m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(sum by (app) (count_over_time({namespace=\"prod\",env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(sum by (app) (rate({app=\"api\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "sort_desc(topk(10, sum by (app) (rate({app=\"api\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "stddev(bytes_over_time({env=\"production\"} | logfmt [30s])) by (route)",
@@ -1476,6 +1914,12 @@
             "reason": "the query is a binary expression whose left operand starts with an aggregation; the predicate reads only the head of the text, the resolver reads the root (a binary operation, which has no grouping of its own)."
           },
           {
+            "query": "sum(rate({app=\"a\"}[5m])) / on (app) sum(rate({app=\"b\"}[5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "the query is a binary expression whose left operand starts with an aggregation; the predicate reads only the head of the text, the resolver reads the root (a binary operation, which has no grouping of its own)."
+          },
+          {
             "query": "sum(rate({app=\"api\"}[1m])) / sum(rate({app=\"zero\"}[1m]))",
             "old": "true",
             "new": "false",
@@ -1542,10 +1986,148 @@
             "reason": "the query is a binary expression whose left operand starts with an aggregation; the predicate reads only the head of the text, the resolver reads the root (a binary operation, which has no grouping of its own)."
           },
           {
+            "query": "topk (2, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk (2, sum by (app, env) (count_over_time({app=~\".+\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(1, count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(1, label_replace(sum by (app) (count_over_time({env=\"production\"}[5m])), \"app\", \"all\", \"app\", \".+\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "topk(1, rate({app=\"uw\"} | unwrap amount [5m])) without (pod)",
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "topk(1, sum by (app, env) (bytes_over_time({app=~\".+\"}[3m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(1, sum without (pod) (bytes_over_time({app=\"uw\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(1,sum by(cluster)(rate({service_name=\"parser-matrix-1793533229550679000\"} | json | __error__=\"\" [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, count without (pod) (max_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, max without (pod) (max_over_time({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, max without (pod) (max_over_time({app=\"uw\"} | unwrap amount [1m])) \u003e 9.75)",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, max without (pod) (rate({app=\"uw\"} | unwrap amount [30s])) \u003e 1.025)",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, max without (pod) (rate({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, min without (pod) (min_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, min without (pod) (rate({app=\"uw\"} | unwrap amount [30s])) \u003e 0.6)",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(10, min without (pod) (rate({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(100, sum by (app, env) (count_over_time({app=~\".+\"}[1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, label_replace(sum by (app) (count_over_time({env=\"production\"}[2m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, label_replace(sum by (app) (rate({env=\"production\"}[5m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, last_over_time({app=\"p\"} | logfmt | unwrap amount [5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, last_over_time({app=\"uw\"} | json | unwrap amount [150s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, last_over_time({app=\"uw\"} | json | unwrap amount [1m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, last_over_time({app=\"uw\"} | unwrap amount [150s]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "topk(2, max_over_time({app=\"uw\"} | logfmt amount, route | unwrap amount [5m])) without (pod)",
@@ -1554,10 +2136,112 @@
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
           },
           {
+            "query": "topk(2, sum by (app) (count_over_time({namespace=\"prod\",env=\"production\",app=~\"api-gateway|worker|payment-service\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(2, sum by (app) (topk(6, sum by (app, env) (bytes_over_time({app=~\".+\"}[1m])))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "topk(2, sum by (app, env) (count_over_time({a=\"b\"}[5m]))) and bottomk(2, sum by (app, env) (count_over_time({a=\"b\"}[5m])))",
             "old": "true",
             "new": "false",
             "reason": "the query is a binary expression whose left operand starts with an aggregation; the predicate reads only the head of the text, the resolver reads the root (a binary operation, which has no grouping of its own)."
+          },
+          {
+            "query": "topk(2, topk(3, sum by (app, env) (rate({app=~\".+\"}[5m]))))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(3, label_replace(sum by (app) (count_over_time({env=\"production\"}[5m])), \"app_short\", \"$1\", \"app\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(3, label_replace(sum by (service_name) (count_over_time({env=\"production\"}[5m])), \"svc_short\", \"$1\", \"service_name\", \"(.*)-.*\"))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(3, sum by (app) (count_over_time({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(3, sum by (app) (rate({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(3, sum by (pod) (count_over_time({service_name=\"api-gateway\"}[60s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (avg_over_time({app=\"uw\"} | unwrap amount [150s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (max_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (max_over_time({app=\"uw\"} | unwrap amount [7m] offset 1m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (min_over_time({app=\"uw\"} | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (sum_over_time({app=\"uw\"} | unwrap amount [1m] offset 2m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (sum_over_time({app=\"uw\"} | unwrap amount [1m] offset 3m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, max by (pod) (sum_over_time({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, rate({app=\"x\"}[5m]))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (app) (rate({env=\"production\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           },
           {
             "query": "topk(5, sum by (app, env) (count_over_time({app=~\".+\"}[1m]))) without (env)",
@@ -1566,10 +2250,130 @@
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
           },
           {
+            "query": "topk(5, sum by (app, env) (rate({app=~\".+\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
             "query": "topk(5, sum by (app, env) (rate({app=~\".+\"}[5m]))) without (env)",
             "old": "true",
             "new": "false",
             "reason": "hasOuterAggregationWithoutBy reads a grouping only when it is written before the parentheses; Loki's grammar also takes it after them (`sum(...) by (x)`, `without (...)`, `by ()`), and the resolver reads the typed clause. The call sites also require an empty LogsQL grouping (spec.GroupBy, spec.ByExplicit), which hides the misread there."
+          },
+          {
+            "query": "topk(5, sum by (pod) (avg_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [1m] offset 3m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (avg_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (avg_over_time({app=\"uw\"} | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (count_over_time({service_name=\"api-gateway\"}[5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [150s] offset 2m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | logfmt | unwrap amount [1m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | logfmt | unwrap amount [7m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | logfmt | unwrap amount [90s] offset 3m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | unwrap amount [1m] offset 1m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | unwrap amount [30s] offset 3m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (max_over_time({app=\"uw\"} | unwrap amount [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (min_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [45s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (min_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [7m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (min_over_time({app=\"uw\"} | logfmt | unwrap amount [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (sum_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [30s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (sum_over_time({app=\"uw\"} | json | unwrap amount | __error__=\"\" [90s])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (pod) (sum_over_time({app=\"uw\"} | logfmt | unwrap amount [90s] offset 3m)))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum by (service_name) (count_over_time({env=\"production\"} | detected_level=\"error\" [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
+          },
+          {
+            "query": "topk(5, sum without (pod) (max_over_time({app=\"payment-service\"} | logfmt amount | unwrap amount [5m])))",
+            "old": "true",
+            "new": "false",
+            "reason": "a rank (topk, bottomk, sort, sort_desc) is not an ungrouped aggregation: Loki keeps each of its series with its labels. The predicate's regexp lists the rank operators with the vector aggregations, so it reads them as ungrouped."
           }
         ]
       }

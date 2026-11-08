@@ -17,7 +17,7 @@ import (
 
 // The predicate parity gate: what the resolver (queryplan.Resolve) derives from the typed plan, against the text
 // predicates the handlers call today, on every plan-corpus row that validates. Each predicate is given the text its
-// call site gives it. A difference is allowed only when the predicate_parity section of query-plan.json lists it with
+// call site reads (handlerQueryText: the client text after the request rewrites that run before the handler). A difference is allowed only when the predicate_parity section of query-plan.json lists it with
 // a reason (the predicate misreads the text, the resolver reads Loki's meaning); LVP_QUERY_PLAN_UPDATE=1 rewrites
 // the section, keeping the reasons, dropping the rows that agree again and adding new differences unexplained, which
 // fail until someone writes their reason.
@@ -41,6 +41,44 @@ type paritySection struct {
 	Rows       int                         `json:"rows"`
 	Validated  int                         `json:"validated"`
 	Attributes map[string]*parityAttribute `json:"attributes"`
+}
+
+// handlerQueryText is the query a query_range handler reads from the request: keywords lowercased (the
+// lowercaseQueryKeywords middleware), validated, then the keep-series rewrite (applyKeepSeriesGrouping on a range
+// request). ok is false when the query does not validate: no handler sees it.
+func handlerQueryText(q string) (string, bool) {
+	q = logqlpkg.LowercaseKeywords(q)
+	if _, msg := logqlpkg.ValidateLogQLExpr(q); msg != "" {
+		return "", false
+	}
+	if rewritten, changed := keepSeriesGrouping(q); changed && !(affectedOrderedJSONVectorQuery(rewritten) && !affectedOrderedJSONVectorQuery(q)) {
+		q = rewritten
+	}
+	return q, true
+}
+
+// dropErrorOnlyAtEnd is what hasDropErrorOnlyPostParserStage asks, in plan terms: the error label is dropped by the
+// only stage after the last parser, and that drop names only __error__ and __error_details__. The resolver's
+// ErrorDroppedLabel is wider (Loki drops the label with any unconditional drop after the last parser); the
+// native-stats route the predicate guards needs the narrow form.
+func dropErrorOnlyAtEnd(s *queryplan.LogSelect) bool {
+	at := s.Sem.ErrorAt
+	if s.Sem.ErrorPolicy != queryplan.ErrorDroppedLabel || at != len(s.Stages)-1 || at == 0 {
+		return false
+	}
+	if _, parser := s.Stages[at-1].(*queryplan.Parse); !parser {
+		return false
+	}
+	d := s.Stages[s.Sem.ErrorAt].(*queryplan.Drop)
+	if len(d.Matchers) != 0 {
+		return false
+	}
+	for _, l := range d.Labels {
+		if l != "__error__" && l != "__error_details__" {
+			return false
+		}
+	}
+	return true
 }
 
 // rangeUnderAggregations is the range aggregation at the top of n under label_replace calls and vector
@@ -83,9 +121,9 @@ func TestPlanPredicateParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := paritySection{Rows: len(rows), Attributes: map[string]*parityAttribute{
-		"ungrouped":       {Predicate: "hasOuterAggregationWithoutBy(original LogQL)", Diffs: []parityDiff{}},
-		"offset":          {Predicate: "extractLogQLOffset(original LogQL)", Diffs: []parityDiff{}},
-		"drop_error_only": {Predicate: "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(original LogQL).BaseQuery)", Diffs: []parityDiff{}},
+		"ungrouped":       {Predicate: "hasOuterAggregationWithoutBy(handler query text)", Diffs: []parityDiff{}},
+		"offset":          {Predicate: "extractLogQLOffset(handler query text)", Diffs: []parityDiff{}},
+		"drop_error_only": {Predicate: "hasDropErrorOnlyPostParserStage(parseOriginalRangeMetricSpec(handler query text).BaseQuery) against an error-only drop as the last stage", Diffs: []parityDiff{}},
 	}}
 	diff := func(attr, q string, old, new any) {
 		a := got.Attributes[attr]
@@ -94,8 +132,11 @@ func TestPlanPredicateParity(t *testing.T) {
 			a.Diffs = append(a.Diffs, parityDiff{Query: q, Old: o, New: n})
 		}
 	}
-	for _, q := range rows {
-		// The handlers run only a query that validates.
+	for _, client := range rows {
+		q, ok := handlerQueryText(client)
+		if !ok {
+			continue
+		}
 		expr, msg := logqlpkg.ValidateLogQLExpr(q)
 		if msg != "" || expr == nil {
 			continue
@@ -122,7 +163,7 @@ func TestPlanPredicateParity(t *testing.T) {
 
 		if spec, ok := parseOriginalRangeMetricSpec(q); ok {
 			if r := rangeUnderAggregations(p.Root); r != nil && r.In != nil {
-				diff("drop_error_only", q, hasDropErrorOnlyPostParserStage(spec.BaseQuery), r.In.Sem.ErrorPolicy == queryplan.ErrorDroppedLabel)
+				diff("drop_error_only", q, hasDropErrorOnlyPostParserStage(spec.BaseQuery), dropErrorOnlyAtEnd(r.In))
 			}
 		}
 	}

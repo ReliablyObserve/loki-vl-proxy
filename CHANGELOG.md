@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The logical query plan has a resolver (`queryplan.Resolve`). From the
   typed plan alone it derives:
   - how many parsers each pipeline runs;
-  - how parser errors surface (no parser, the error label, or
-    `| drop __error__` after the last parser);
-  - whether the outermost aggregation is ungrouped;
+  - how parser errors surface (no parser, or the error label, unless a
+    `| drop __error__` after the last parser removes it);
+  - whether the outermost vector aggregation is ungrouped;
   - how offsets apply (none, uniform, mixed or distinct offsets);
   - the Loki 3.7 rules it applied.
 

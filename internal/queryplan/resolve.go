@@ -1,10 +1,6 @@
 package queryplan
 
-import (
-	"time"
-
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-)
+import "time"
 
 // The resolver is one pass over a built plan. It derives the semantics the
 // handlers read today from the query text (which parsers run, how parser
@@ -45,9 +41,10 @@ type PlanSem struct {
 	// Resolved is true once Resolve has run.
 	Resolved bool
 	// Ungrouped is true when the outermost aggregation, under any
-	// label_replace, is a vector aggregation or a rank without a by or
-	// without clause: Loki answers it as one series per step (topk, sort: one
-	// set) with no labels from the grouping.
+	// label_replace, is a vector aggregation (sum, avg, min, max, count,
+	// stddev, stdvar) without a by or without clause: Loki answers it as one
+	// series without labels. A rank (topk, bottomk, sort, sort_desc) keeps
+	// its series and their labels, so it is not ungrouped.
 	Ungrouped bool
 	// OffsetKind and Offset are how the range aggregations shift their windows.
 	OffsetKind OffsetKind
@@ -57,14 +54,15 @@ type PlanSem struct {
 }
 
 // Resolve fills p.Sem and the PipelineSem of every LogSelect. It reads only
-// typed fields and is idempotent. Build rejects every Compat value but 3.7,
-// so the 3.7 rules are the only ones.
+// typed fields and is idempotent. It writes into the plan, so it must run
+// before the plan is shared (memoised, read by other goroutines): it is not
+// safe for concurrent use. Build rejects every Compat value but 3.7, so the
+// 3.7 rules are the only ones.
 func Resolve(p *Plan) {
 	if p.Sem.Resolved {
 		return
 	}
 	sem := &p.Sem
-	sem.Resolved = true
 	sem.Ungrouped = ungrouped(p.Root)
 	first := true
 	// An explicit stack: a plan nests as deep as Build allows (maxDepth). The
@@ -103,18 +101,18 @@ func Resolve(p *Plan) {
 			stack = append(stack, x.R, x.L)
 		}
 	}
+	// Last: a plan reads as resolved only once every pipeline is.
+	sem.Resolved = true
 }
 
-// ungrouped reports a vector aggregation or a rank without a by or without
-// clause at the top of n, under any label_replace.
+// ungrouped reports a vector aggregation without a by or without clause at
+// the top of n, under any label_replace.
 func ungrouped(n Node) bool {
 	for {
 		switch x := n.(type) {
 		case *LabelReplace:
 			n = x.In
 		case *VectorAgg:
-			return x.By == nil
-		case *Rank:
 			return x.By == nil
 		default:
 			return false
@@ -134,8 +132,13 @@ func resolvePipeline(s *LogSelect, sem *PlanSem) {
 	}
 	if ps.Parsers > 0 {
 		ps.ErrorPolicy = ErrorPropagate
-		if last == len(s.Stages)-2 && dropsOnlyErrorLabel(s.Stages[last+1]) {
-			ps.ErrorPolicy, ps.ErrorAt = ErrorDroppedLabel, last+1
+		for i := last + 1; i < len(s.Stages); i++ {
+			if dropsErrorLabel(s.Stages[i]) {
+				ps.ErrorPolicy, ps.ErrorAt = ErrorDroppedLabel, i
+				break
+			}
+		}
+		if ps.ErrorPolicy == ErrorDroppedLabel {
 			sem.rule(RuleDropErrorKeepsLine)
 		} else {
 			sem.rule(RuleParserErrorLabel)
@@ -144,19 +147,18 @@ func resolvePipeline(s *LogSelect, sem *PlanSem) {
 	s.Sem = ps
 }
 
-// dropsOnlyErrorLabel reports `| drop __error__` or `| drop __error__,
-// __error_details__` (either order), with no condition.
-func dropsOnlyErrorLabel(st Stage) bool {
-	d, ok := st.(*logql.DropStage)
-	if !ok || len(d.Matchers) != 0 {
+// dropsErrorLabel reports a drop stage that names __error__ without a
+// condition (`| drop __error__`, `| drop a, __error__`); `| drop
+// __error__="x"` drops it only from the lines it matches.
+func dropsErrorLabel(st Stage) bool {
+	d, ok := st.(*Drop)
+	if !ok {
 		return false
 	}
-	switch len(d.Labels) {
-	case 1:
-		return d.Labels[0] == "__error__"
-	case 2:
-		return (d.Labels[0] == "__error__" && d.Labels[1] == "__error_details__") ||
-			(d.Labels[0] == "__error_details__" && d.Labels[1] == "__error__")
+	for _, l := range d.Labels {
+		if l == "__error__" {
+			return true
+		}
 	}
 	return false
 }

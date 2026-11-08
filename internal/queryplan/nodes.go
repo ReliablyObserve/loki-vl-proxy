@@ -175,8 +175,9 @@ const (
 	// ErrorPropagate: a line a parser fails on carries __error__ (and __error_details__) to the end of the
 	// pipeline, unless a later stage filters or drops it.
 	ErrorPropagate
-	// ErrorDroppedLabel: the only stage after the last parser is `| drop __error__` (with or without
-	// __error_details__), so a line a parser fails on is kept without the error label.
+	// ErrorDroppedLabel: a stage after the last parser drops __error__ unconditionally (`| drop __error__`,
+	// alone or with other labels), so a line a parser fails on is kept without the error label. ErrorAt is
+	// that stage.
 	ErrorDroppedLabel
 )
 
