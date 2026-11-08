@@ -344,6 +344,7 @@
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
+      "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
@@ -448,6 +449,7 @@
       "test/e2e-compat/line_fields_parity_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
+      "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/metric_range_extent_cache_test.go",
       "test/e2e-compat/metric_range_extent_large_answer_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -1156,7 +1158,8 @@
       "test/e2e-compat/unwrap_over_time_window_test.go"
     ],
     "semantics/marker-text-in-query-strings": [
-      "internal/querycorpus/physical_security_test.go"
+      "internal/querycorpus/physical_security_test.go",
+      "test/e2e-compat/marker_text_test.go"
     ],
     "semantics/metadata-answers-include-last-24h-like-loki": [
       "internal/proxy/compat_cache_freshness_test.go",
@@ -3143,6 +3146,11 @@
       "profiles/dotted-names-accepted-outside-loki-profile",
       "profiles/label-browse-params-ignored"
     ],
+    "test/e2e-compat/marker_text_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/marker-text-in-query-strings"
+    ],
     "test/e2e-compat/metadata_scan_admission_test.go": [
       "backend-admission-and-heavy-query-queueing",
       "limits/concurrent-full-retention-scans-exhaust-backend",
@@ -3476,7 +3484,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 370,
+  "tests_with_markers": 371,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

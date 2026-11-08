@@ -1710,6 +1710,9 @@
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-name-parse-error",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/dotted-names-accepted-outside-loki-profile",
     "test/e2e-compat/loki_profile_parity_test.go | profiles/label-browse-params-ignored",
+    "test/e2e-compat/marker_text_test.go | loki_api_v1_query",
+    "test/e2e-compat/marker_text_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/marker_text_test.go | semantics/marker-text-in-query-strings",
     "test/e2e-compat/metadata_scan_admission_test.go | backend-admission-and-heavy-query-queueing",
     "test/e2e-compat/metadata_scan_admission_test.go | limits/concurrent-full-retention-scans-exhaust-backend",
     "test/e2e-compat/metadata_scan_admission_test.go | limits/metadata-not-queued",
@@ -1935,7 +1938,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 369,
+      "go": 370,
       "playwright": 1
     },
     "page_kinds": {

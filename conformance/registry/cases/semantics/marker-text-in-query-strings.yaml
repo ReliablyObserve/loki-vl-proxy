@@ -45,5 +45,5 @@ gap:
   area: 'internal/translator/physical_codec.go (SplitPost, afterLastQuote), internal/translator/translator.go (parseWithoutMarkerFrom, parseLabelReplaceMarkersFrom)'
   loki: 'Loki matches the string as text'
   proxy: 'markers are read after the last quote of the translated query only'
-  planned_test: 'TestClientTextIsNeverReadAsAMarker, FuzzSplitPostOnTranslatorOutput, TestSplitPostEdgeTable (internal/querycorpus); TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing (internal/proxy, the line filter, label value and label_replace text shapes through query and query_range)'
+  planned_test: 'TestCompat_MarkerTextInStrings (test/e2e-compat, group semantics: log queries and metrics over the strings, query and query_range, equal to Loki); TestClientTextIsNeverReadAsAMarker, FuzzSplitPostOnTranslatorOutput, TestSplitPostEdgeTable (internal/querycorpus); TestMarkerSitesKeepTheirVictoriaLogsQueryAndPostProcessing (internal/proxy, the line filter, label value and label_replace text shapes through query and query_range)'
   clusters: []
