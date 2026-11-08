@@ -35,6 +35,8 @@ const (
 	tagDecolorize
 	tagUnwrap
 	tagInputs
+	tagLabelReplace
+	tagVectorLit
 )
 
 type encoder struct{ b []byte }

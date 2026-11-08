@@ -95,6 +95,58 @@ var vectorOps = map[string]VectorOp{
 // (OpaqueMetricExpr): the ones in Loki's grammar that vectorOps and rangeOps do not cover.
 var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": true, "approx_topk": true}
 
+// typeOpaqueCall reads the parts of a label_replace or vector call from its text
+// with the same parser: label_replace(<expr>, "dst", "replacement", "src",
+// "regex") and vector(<number>), as Loki's grammar writes them (syntax.y
+// labelReplaceExpr, vectorExpr). Any other call, or one that does not read so,
+// keeps only its text; validation reports why.
+func typeOpaqueCall(o *OpaqueMetricExpr) {
+	p := &parser{sc: newScanner(o.Raw)}
+	p.advance()
+	if p.cur.Typ != TokIdent || p.cur.Val != o.Func {
+		return
+	}
+	if p.advance(); p.cur.Typ != TokLParen {
+		return
+	}
+	p.advance()
+	switch o.Func {
+	case "label_replace":
+		inner, err := p.parseExpr()
+		if err != nil {
+			return
+		}
+		args := make([]string, 0, 4)
+		for i := 0; i < 4; i++ {
+			if p.cur.Typ != TokComma {
+				return
+			}
+			p.advance()
+			if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
+				return
+			}
+			args = append(args, p.cur.Val)
+			p.advance()
+		}
+		if p.cur.Typ != TokRParen {
+			return
+		}
+		o.Inner, o.Args, o.Typed = inner, args, true
+	case "vector":
+		if p.cur.Typ != TokNumber {
+			return
+		}
+		v, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return
+		}
+		if p.advance(); p.cur.Typ != TokRParen {
+			return
+		}
+		o.Value, o.Typed = v, true
+	}
+}
+
 // rangeOps maps function names to RangeOp constants.
 var rangeOps = map[string]RangeOp{
 	"rate":               RangeRate,
@@ -250,7 +302,11 @@ func (p *parser) parsePrimary() (Expr, error) {
 				}
 			}
 			raw := strings.TrimSpace(p.sc.src[startPos:endPos])
-			return &OpaqueMetricExpr{Raw: raw}, nil
+			o := &OpaqueMetricExpr{Raw: raw, Func: name}
+			if p.canon == nil {
+				typeOpaqueCall(o)
+			}
+			return o, nil
 		}
 		return nil, fmt.Errorf("logql: unexpected identifier %q", name)
 	}

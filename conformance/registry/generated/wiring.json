@@ -1117,6 +1117,7 @@
       "test/e2e-compat/label_replace_new_label_test.go"
     ],
     "semantics/label-replace-new-label": [
+      "internal/logql/opaque_typed_test.go",
       "internal/proxy/label_replace_routing_test.go",
       "internal/proxy/label_replace_semantics_test.go",
       "internal/proxy/physical_sites_test.go",
@@ -1681,6 +1682,9 @@
     ],
     "internal/logql/loki_unknown_names_test.go": [
       "semantics/proxy-accepts-operators-not-in-loki"
+    ],
+    "internal/logql/opaque_typed_test.go": [
+      "semantics/label-replace-new-label"
     ],
     "internal/logql/parser_captures_test.go": [
       "parsed-label-series-identity"
@@ -3488,7 +3492,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 372,
+  "tests_with_markers": 373,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

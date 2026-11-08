@@ -840,6 +840,7 @@
     "internal/logql/log_range_alternatives_test.go | semantics/line-filter-or-alternatives",
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
+    "internal/logql/opaque_typed_test.go | semantics/label-replace-new-label",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/print_reparse_test.go | semantics/binary-operand-literals-reprint",
     "internal/logql/print_reparse_test.go | semantics/label-filter-expression-syntax",
@@ -1942,7 +1943,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 371,
+      "go": 372,
       "playwright": 1
     },
     "page_kinds": {

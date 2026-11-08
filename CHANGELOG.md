@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The LogQL parser types `label_replace(...)` and `vector(x)` calls written
+  as Loki's grammar has them (the sample expression, the four strings, the
+  number) next to their text, and the logical query plan builds
+  `LabelReplace` and `VectorLit` nodes from them instead of keeping the call
+  as text. Not wired into the handlers yet; no behaviour change.
+
 ## [2.97.2] - 2026-11-08
 
 ### Changed

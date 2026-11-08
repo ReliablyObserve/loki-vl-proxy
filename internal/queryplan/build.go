@@ -144,6 +144,17 @@ func (b *builder) build(expr logql.Expr) (Node, error) {
 		b.seal(&n.p, start)
 		return n, nil
 	case *logql.OpaqueMetricExpr:
+		if x.Typed && x.Func == "label_replace" && len(x.Args) == 4 {
+			return b.labelReplace(x)
+		}
+		if x.Typed && x.Func == "vector" {
+			n := &VectorLit{V: x.Value}
+			start := len(b.e.b)
+			b.e.tag(tagVectorLit)
+			b.e.float(x.Value)
+			b.seal(&n.p, start)
+			return n, nil
+		}
 		n := &Opaque{Raw: x.Raw}
 		start := len(b.e.b)
 		b.e.tag(tagOpaque)
@@ -152,6 +163,24 @@ func (b *builder) build(expr logql.Expr) (Node, error) {
 		return n, nil
 	}
 	return nil, unsupported("queryplan: no node for %T", expr)
+}
+
+// labelReplace builds label_replace from the call's typed parts: the key is its tag, the sample expression and the
+// four strings in Loki's argument order.
+func (b *builder) labelReplace(x *logql.OpaqueMetricExpr) (Node, error) {
+	n := &LabelReplace{Dst: x.Args[0], Replacement: x.Args[1], Src: x.Args[2], Regex: x.Args[3]}
+	start := len(b.e.b)
+	b.e.tag(tagLabelReplace)
+	in, err := b.node(x.Inner)
+	if err != nil {
+		return nil, err
+	}
+	n.In = in
+	for _, a := range x.Args {
+		b.e.str(a)
+	}
+	b.seal(&n.p, start)
+	return n, nil
 }
 
 // seal records the part of the key the subtree wrote since start.
