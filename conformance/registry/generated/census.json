@@ -837,6 +837,8 @@
     "internal/logql/label_filter_expr_syntax_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/logql/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
+    "internal/logql/line_template_test.go | architecture-syntax-package-layering",
+    "internal/logql/line_template_test.go | formatter-line-format",
     "internal/logql/log_range_alternatives_test.go | semantics/line-filter-or-alternatives",
     "internal/logql/log_range_alternatives_test.go | semantics/parenthesized-log-range",
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
@@ -1943,7 +1945,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 372,
+      "go": 373,
       "playwright": 1
     },
     "page_kinds": {
@@ -1963,7 +1965,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 258
+    "wired_items": 259
   },
   "gates": [
     "A/B shape selection",

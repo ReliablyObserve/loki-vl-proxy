@@ -10,7 +10,7 @@ import (
 	"text/template/parse"
 )
 
-// conformance: logical-plan-vl-independent-key
+// conformance: architecture-syntax-package-layering, formatter-line-format
 func TestTypeLineTemplate(t *testing.T) {
 	cases := []struct {
 		text      string
@@ -55,7 +55,7 @@ func TestTypeLineTemplate(t *testing.T) {
 	}
 }
 
-// conformance: logical-plan-vl-independent-key
+// conformance: architecture-syntax-package-layering, formatter-line-format
 func TestLineFormatStageIsTyped(t *testing.T) {
 	e, err := Parse(`{a="x"} | line_format "{{ .a | ToUpper }}"`)
 	if err != nil {
