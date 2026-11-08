@@ -18,7 +18,7 @@ import (
 // after the last quote only: a client's string that holds marker text is text, never a without fold or a
 // label_replace the client did not write. A label_format name outside quotes cannot hold one either: Loki's grammar
 // rejects the colon, and so does the proxy's validation, before anything is translated.
-// conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
+// conformance: semantics/marker-text-in-query-strings, semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestClientTextIsNeverReadAsAMarker(t *testing.T) {
 	if msg := logql.ValidateLogQL(`{app="x"} | label_format __without__:a=b`); msg == "" {
 		t.Errorf("a label_format name holding a marker passes validation")
