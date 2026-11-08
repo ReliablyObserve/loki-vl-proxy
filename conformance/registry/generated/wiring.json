@@ -19,6 +19,7 @@
       "internal/proxy/binary_operand_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
+      "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/lower_test.go",
@@ -2701,6 +2702,9 @@
     "internal/proxy/unwrap_first_window_test.go": [
       "semantics/unwrap-conversion-error"
     ],
+    "internal/proxy/unwrap_gate_spec_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/unwrap_over_time_window_test.go": [
       "metric-series-identity",
       "quality/query-range-extent-cache",
@@ -3570,7 +3574,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 386,
+  "tests_with_markers": 387,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

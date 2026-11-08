@@ -301,3 +301,21 @@ decisions:
     code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/proxy.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/metric_agg.go, internal/proxy/stream_processing.go]
     tests: [TestDecodeStatsReadsLikeTheProxyReaders, TestDecodeStatsShape, TestDecodeStatsTellsAStatsQuery, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
+  - id: unwrap-handlers-read-the-gate
+    chosen: 'translator.DecodeStats also records the unwrap gate that ends the decoded base (Gate, the exact suffix SplitUnwrapGate splits off, and UnwrapField) and the query without it (UngatedText). statsCompatSpec carries the gate; gated() reads whether the current BaseQuery still ends with it and ungated() strips it, and withoutUnwrapGate clears it on the copy it returns. The quantile-counts route, the raw-row evaluators, the unwrap window route and the native-tumbling math check read the spec or the operator instead of splitting the text'
+    over: [precomputing the ungated base at decode time, a typed unwrap gate in the base query, moving queryUsesParserStages]
+    why: |
+      Step eleven of architecture B (owner 2026-11-09). The base query is
+      rewritten after decode (withWindowPhaseFilter inserts the window-phase
+      filter at the first top-level pipe, before the gate; the rate_counter
+      proof does the same on the ungated copy), so a base computed once could
+      go stale; a gate kept as the suffix it is stays right through any
+      rewrite that leaves it last, and reads false like SplitUnwrapGate once
+      a rewrite breaks it. queryUsesParserStages splits the gate off text it
+      rewrote first and stays until the typed query building.
+      lowering_marker_reads 15 → 11; queryWithoutUnwrapGate moved into the
+      codec (translator_string_ops 664 → 665).
+    evidence: 'internal/proxy/unwrap_gate_spec_test.go TestUnwrapGateReadFromTheDecodedSpec (every corpus row''s translation, v1.53.0 and v1.49.0, plain and underscore labels: 679 gated stats queries each; gated/ungated equal SplitUnwrapGate as decoded, after withWindowPhaseFilter and after withoutUnwrapGate); unwrap, rate_counter and quantile suites; route parity digests unchanged; dumps of two base and two PR runs: the 76 runs that differ are `| json`/`| logfmt` probe races with identical status and steps, none an unwrap query (2026-11-09)'
+    code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/range_metric_compat.go, internal/proxy/unwrap_samples.go, internal/proxy/quantile_histogram.go]
+    tests: [TestUnwrapGateReadFromTheDecodedSpec, TestDecodeStatsShape, TestPlanRouteParity]
+    quality: 'Behaviour-neutral: the requests, keys and answers do not change.'

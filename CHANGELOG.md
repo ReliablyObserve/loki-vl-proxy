@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The unwrap paths read the unwrap gate of a stats query from its decoded
+  query-plan operator instead of splitting it off the query text again. The
+  requests sent to VictoriaLogs and the answers do not change.
+
 - The stats handlers read each translated stats query as a typed query-plan
   operator decoded once where the query is produced, instead of re-reading its
   text at every step. The requests sent to VictoriaLogs, the cache keys and the

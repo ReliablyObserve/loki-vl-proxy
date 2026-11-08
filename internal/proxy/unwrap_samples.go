@@ -25,9 +25,8 @@ import (
 // withoutUnwrapGate returns spec with the unwrap gate off its base query: the
 // raw evaluators read the rows whole and convert the value themselves.
 func withoutUnwrapGate(spec statsCompatSpec) statsCompatSpec {
-	if base, _, ok := translator.SplitUnwrapGate(spec.BaseQuery); ok {
-		spec.BaseQuery = base
-	}
+	spec.BaseQuery = spec.ungated()
+	spec.Gate, spec.UnwrapField = "", ""
 	return spec
 }
 
@@ -240,7 +239,7 @@ func unwrapWindowBuckets(spec statsCompatSpec, origSpec originalRangeMetricSpec,
 	if !origSpec.HasUnwrap || step <= 0 || origSpec.Window <= step || !unwrapWindowForm(originalLogql) {
 		return false
 	}
-	if _, _, gated := translator.SplitUnwrapGate(spec.BaseQuery); !gated {
+	if !spec.gated() {
 		return false
 	}
 	if isSumAllLogRange(query) {
@@ -310,17 +309,4 @@ func unwrapWindowForm(query string) bool {
 func isRangeAggregation(expr logqlpkg.Expr) bool {
 	_, ok := expr.(*logqlpkg.RangeAggregation)
 	return ok
-}
-
-// queryWithoutUnwrapGate returns a translated query without the unwrap gate
-// that ends the pipes before its first stats pipe.
-func queryWithoutUnwrapGate(query string) string {
-	idx := strings.Index(query, " | stats ")
-	if idx < 0 {
-		return query
-	}
-	if base, _, ok := translator.SplitUnwrapGate(query[:idx]); ok {
-		return base + query[idx:]
-	}
-	return query
 }

@@ -1439,6 +1439,7 @@
     "internal/proxy/unwrap_extent_cache_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/unwrap_extent_cache_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "internal/proxy/unwrap_first_window_test.go | semantics/unwrap-conversion-error",
+    "internal/proxy/unwrap_gate_spec_test.go | architecture-syntax-package-layering",
     "internal/proxy/unwrap_over_time_window_test.go | metric-series-identity",
     "internal/proxy/unwrap_over_time_window_test.go | quality/query-range-extent-cache",
     "internal/proxy/unwrap_over_time_window_test.go | semantics/lower-bound-exclusive",
@@ -1978,7 +1979,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 385,
+      "go": 386,
       "playwright": 1
     },
     "page_kinds": {
