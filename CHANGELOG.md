@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.103.0] - 2026-11-08
+
 ### Fixed
 
 - Queries Loki rejects with a 400 parse error are rejected with Loki's error
