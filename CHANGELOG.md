@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.97.0] - 2026-11-08
+
 ### Changed
 
 - `internal/queryplan` builds a logical plan from the parsed LogQL query, with
