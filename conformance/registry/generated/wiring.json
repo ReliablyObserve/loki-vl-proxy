@@ -11,6 +11,7 @@
       "internal/proxy/alerting_tenant_label_test.go"
     ],
     "architecture-syntax-package-layering": [
+      "internal/logql/input_size_test.go",
       "internal/logsql/parser_read_test.go",
       "internal/logsql/parser_typed_test.go"
     ],
@@ -1640,6 +1641,9 @@
     ],
     "internal/logql/dotted_names_test.go": [
       "profiles/dotted-name-parse-error"
+    ],
+    "internal/logql/input_size_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/logql/label_filter_expr_golden_test.go": [
       "semantics/label-filter-expression-syntax"
@@ -3430,7 +3434,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 363,
+  "tests_with_markers": 364,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
