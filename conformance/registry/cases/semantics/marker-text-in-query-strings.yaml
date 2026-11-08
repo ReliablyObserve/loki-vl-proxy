@@ -39,7 +39,7 @@ gap:
   status: fixed
   visual: none
   visual_reason: 'no Grafana panel builds a query holding the proxy''s marker text; the answers are pinned by the route-level and corpus tests'
-  fixed_by: 'TBD'
+  fixed_by: '#1189'
   impact: explore-visible
   effort: S
   area: 'internal/translator/physical_codec.go (SplitPost, afterLastQuote), internal/translator/translator.go (parseWithoutMarkerFrom, parseLabelReplaceMarkersFrom)'
