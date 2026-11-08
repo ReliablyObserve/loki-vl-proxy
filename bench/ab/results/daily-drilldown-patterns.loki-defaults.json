@@ -1,0 +1,244 @@
+{
+ "label": "daily-drilldown-patterns-loki-defaults",
+ "date": "2026-11-08",
+ "set": "drilldown-patterns",
+ "description": "Logs Drilldown's Patterns tab: /loki/api/v1/patterns for a service Loki's pattern ingester mines (cache-redis, plain text) and for the environment selector of the Drilldown landing page, as the plugin sends them (no step: Loki derives it). Loki and the proxy mine different patterns, so the answers compare in lines counted, not in pattern text.",
+ "baseline": "release",
+ "candidate": "main",
+ "reference": "loki",
+ "profile": "loki-defaults",
+ "not_like_for_like": [],
+ "runs": 7,
+ "valid": true,
+ "restart_before": "0",
+ "restart_after": "0",
+ "noise": 0.25,
+ "refresh_s": null,
+ "refresh_runs": null,
+ "timing": "warm",
+ "verdicts": {
+  "same": 6
+ },
+ "result_differs_from_reference": 4,
+ "result_differs_preexisting": 4,
+ "stale_answers": {
+  "release": 0,
+  "main": 0,
+  "loki": 0
+ },
+ "rows": [
+  {
+   "shape": "DP1 patterns of a plain-text service",
+   "range": "1h",
+   "p50": {
+    "release": 0.007,
+    "main": 0.007,
+    "loki": 0.017
+   },
+   "p95": {
+    "release": 0.011,
+    "main": 0.008,
+    "loki": 0.023
+   },
+   "cold": {
+    "release": 0.102,
+    "main": 0.21,
+    "loki": 0.016
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 142.49,
+    "main": 142.49,
+    "loki": 142.49
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DP1 patterns of a plain-text service",
+   "range": "6h",
+   "p50": {
+    "main": 0.02,
+    "release": 0.02,
+    "loki": 0.02
+   },
+   "p95": {
+    "main": 0.026,
+    "release": 0.032,
+    "loki": 0.026
+   },
+   "cold": {
+    "main": 0.021,
+    "release": 0.018,
+    "loki": 0.019
+   },
+   "status": {
+    "main": "200",
+    "release": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 142.49,
+    "release": 142.49,
+    "loki": 142.49
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DP1 patterns of a plain-text service",
+   "range": "24h",
+   "p50": {
+    "release": 0.015,
+    "main": 0.015,
+    "loki": 0.011
+   },
+   "p95": {
+    "release": 0.015,
+    "main": 0.017,
+    "loki": 0.012
+   },
+   "cold": {
+    "release": 0.016,
+    "main": 0.016,
+    "loki": 0.013
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 142.49,
+    "main": 142.49,
+    "loki": 142.49
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.0
+  },
+  {
+   "shape": "DP2 patterns of an environment",
+   "range": "1h",
+   "p50": {
+    "main": 0.093,
+    "release": 0.076,
+    "loki": 0.199
+   },
+   "p95": {
+    "main": 0.133,
+    "release": 0.137,
+    "loki": 0.387
+   },
+   "cold": {
+    "main": 0.974,
+    "release": 1.956,
+    "loki": 0.427
+   },
+   "status": {
+    "main": "200",
+    "release": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 293.68,
+    "release": 293.68,
+    "loki": 293.68
+   },
+   "parity_vs_reference": "same",
+   "baseline_parity_vs_reference": "same",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.82
+  },
+  {
+   "shape": "DP2 patterns of an environment",
+   "range": "6h",
+   "p50": {
+    "release": 0.122,
+    "main": 0.11,
+    "loki": 0.162
+   },
+   "p95": {
+    "release": 0.192,
+    "main": 0.154,
+    "loki": 0.315
+   },
+   "cold": {
+    "release": 0.252,
+    "main": 0.182,
+    "loki": 0.234
+   },
+   "status": {
+    "release": "200",
+    "main": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "release": 293.68,
+    "main": 244.85,
+    "loki": 244.85
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 1.11
+  },
+  {
+   "shape": "DP2 patterns of an environment",
+   "range": "24h",
+   "p50": {
+    "main": 0.204,
+    "release": 0.187,
+    "loki": 0.15
+   },
+   "p95": {
+    "main": 0.281,
+    "release": 0.192,
+    "loki": 0.297
+   },
+   "cold": {
+    "main": 0.242,
+    "release": 0.172,
+    "loki": 0.154
+   },
+   "status": {
+    "main": "200",
+    "release": "200",
+    "loki": "200"
+   },
+   "vl_cpu_max": {
+    "main": 113.47,
+    "release": 72.17,
+    "loki": 113.47
+   },
+   "parity_vs_reference": "differs",
+   "baseline_parity_vs_reference": "differs",
+   "parity_vs_baseline": "same",
+   "verdict": "same",
+   "speedup": 0.92
+  }
+ ],
+ "baseline_ref": "v2.94.0",
+ "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+ "measured_at": "2026-11-08T03:22:29Z",
+ "run": "42442427345.1",
+ "proxy_align": {
+  "release": "on",
+  "main": "on"
+ },
+ "loki_restarted": false
+}

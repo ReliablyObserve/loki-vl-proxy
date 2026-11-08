@@ -1,6 +1,6 @@
 {
  "label": "daily-label-matcher-anchoring-aligned",
- "date": "2026-11-07",
+ "date": "2026-11-08",
  "set": "label-matcher-anchoring",
  "description": "Regexp label matchers matched against the whole value, as Loki does (profiles/stream-selector-regexp-anchoring, profiles/label-filter-regexp-anchoring). The proxy sends a whole-value literal as an exact filter, `.*` as VictoriaLogs' match-all, a `.*`-wrapped literal as a substring regexp and anything else anchored (^(?s:re)$ in a selector, Loki's simplified ^(?:re)$ in a label filter), where it sent the pattern unanchored before. A Grafana multi-value variable over two services (logs and count by app), the single-value form (exact filter), an alternation over many streams, and label filters after | json (a literal alternation, anchored; a prefix, which Loki compares by substring). Run with the control set.",
  "baseline": "release",
@@ -33,17 +33,17 @@
    "p50": {
     "release": 0.002,
     "main": 0.002,
-    "loki": 0.008
+    "loki": 0.007
    },
    "p95": {
-    "release": 0.002,
+    "release": 0.003,
     "main": 0.002,
-    "loki": 0.008
+    "loki": 0.009
    },
    "cold": {
-    "release": 0.012,
-    "main": 0.006,
-    "loki": 0.054
+    "release": 0.011,
+    "main": 0.005,
+    "loki": 0.04
    },
    "status": {
     "release": "200",
@@ -93,12 +93,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 167551
+       "bytesReceived": 167540
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1150
+       "bytesReceived": 1152
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -136,19 +136,19 @@
    "shape": "M2 multi-value variable, count by app",
    "range": "6h",
    "p50": {
-    "main": 0.005,
-    "release": 0.005,
-    "loki": 0.018
+    "main": 0.003,
+    "release": 0.002,
+    "loki": 0.022
    },
    "p95": {
     "main": 0.006,
-    "release": 0.005,
-    "loki": 0.019
+    "release": 0.003,
+    "loki": 0.022
    },
    "cold": {
-    "main": 0.027,
-    "release": 0.024,
-    "loki": 0.174
+    "main": 0.02,
+    "release": 0.018,
+    "loki": 0.182
    },
    "status": {
     "main": "200",
@@ -156,9 +156,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 34.51,
-    "release": 34.51,
-    "loki": 34.51
+    "main": 7.12,
+    "release": 7.12,
+    "loki": 7.12
    },
    "cache": {
     "loki": {
@@ -198,12 +198,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 489009
+       "bytesReceived": 488993
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1151
+       "bytesReceived": 1152
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -235,7 +235,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.67
   },
   {
    "shape": "M4 alternation over many streams, count",
@@ -243,17 +243,17 @@
    "p50": {
     "release": 0.002,
     "main": 0.002,
-    "loki": 0.015
+    "loki": 0.017
    },
    "p95": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.016
+    "release": 0.002,
+    "main": 0.002,
+    "loki": 0.017
    },
    "cold": {
-    "release": 0.005,
-    "main": 0.004,
-    "loki": 0.113
+    "release": 0.003,
+    "main": 0.003,
+    "loki": 0.103
    },
    "status": {
     "release": "200",
@@ -261,9 +261,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 34.51,
-    "main": 34.51,
-    "loki": 34.51
+    "release": 7.12,
+    "main": 7.12,
+    "loki": 7.12
    },
    "cache": {
     "loki": {
@@ -303,7 +303,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 85850
+       "bytesReceived": 85848
       },
       "statsResult": {
        "entriesFound": 6,
@@ -346,19 +346,19 @@
    "shape": "M4 alternation over many streams, count",
    "range": "6h",
    "p50": {
-    "main": 0.005,
-    "release": 0.004,
-    "loki": 0.048
+    "main": 0.002,
+    "release": 0.002,
+    "loki": 0.06
    },
    "p95": {
-    "main": 0.006,
-    "release": 0.004,
-    "loki": 0.049
+    "main": 0.002,
+    "release": 0.002,
+    "loki": 0.074
    },
    "cold": {
-    "main": 0.013,
-    "release": 0.012,
-    "loki": 0.54
+    "main": 0.012,
+    "release": 0.009,
+    "loki": 0.583
    },
    "status": {
     "main": "200",
@@ -366,9 +366,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 34.51,
-    "release": 34.51,
-    "loki": 34.51
+    "main": 7.12,
+    "release": 7.12,
+    "loki": 7.12
    },
    "cache": {
     "loki": {
@@ -408,12 +408,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 252205
+       "bytesReceived": 252155
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1742
+       "bytesReceived": 1730
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -445,25 +445,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.8
+   "speedup": 1.0
   },
   {
    "shape": "M5 json label filter, literal alternation",
    "range": "1h",
    "p50": {
-    "release": 0.026,
-    "main": 0.026,
+    "release": 0.02,
+    "main": 0.02,
     "loki": 0.007
    },
    "p95": {
-    "release": 0.026,
-    "main": 0.028,
+    "release": 0.022,
+    "main": 0.021,
     "loki": 0.008
    },
    "cold": {
-    "release": 0.041,
-    "main": 0.04,
-    "loki": 0.044
+    "release": 0.036,
+    "main": 0.029,
+    "loki": 0.037
    },
    "status": {
     "release": "200",
@@ -471,9 +471,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 34.51,
-    "main": 34.51,
-    "loki": 34.51
+    "release": 7.12,
+    "main": 7.12,
+    "loki": 7.12
    },
    "cache": {
     "loki": {
@@ -513,12 +513,12 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 167879
+       "bytesReceived": 167881
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1062
+       "bytesReceived": 1068
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -556,19 +556,19 @@
    "shape": "M5 json label filter, literal alternation",
    "range": "6h",
    "p50": {
-    "main": 0.03,
-    "release": 0.029,
-    "loki": 0.015
+    "main": 0.021,
+    "release": 0.021,
+    "loki": 0.018
    },
    "p95": {
-    "main": 0.032,
-    "release": 0.033,
+    "main": 0.022,
+    "release": 0.022,
     "loki": 0.021
    },
    "cold": {
-    "main": 0.125,
-    "release": 0.12,
-    "loki": 0.158
+    "main": 0.087,
+    "release": 0.085,
+    "loki": 0.201
    },
    "status": {
     "main": "200",
@@ -576,9 +576,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 34.51,
-    "release": 34.51,
-    "loki": 34.51
+    "main": 9.67,
+    "release": 9.67,
+    "loki": 9.67
    },
    "cache": {
     "loki": {
@@ -591,7 +591,7 @@
       "statsResult": {
        "entriesFound": 4,
        "entriesRequested": 8,
-       "bytesReceived": 708
+       "bytesReceived": 712
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -618,12 +618,12 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 490304
+       "bytesReceived": 490335
       },
       "statsResult": {
        "entriesFound": 6,
        "entriesRequested": 6,
-       "bytesReceived": 1062
+       "bytesReceived": 1068
       },
       "volumeResult": {
        "entriesFound": 0,
@@ -655,13 +655,13 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.97
+   "speedup": 1.0
   }
  ],
- "baseline_ref": "v2.83.4",
- "commit": "422a7d8827793d480fad33c2f34f90cf5baaa762",
- "measured_at": "2026-11-07T03:21:07Z",
- "run": "42333584371.1",
+ "baseline_ref": "v2.94.0",
+ "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
+ "measured_at": "2026-11-08T03:22:29Z",
+ "run": "42442427345.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
