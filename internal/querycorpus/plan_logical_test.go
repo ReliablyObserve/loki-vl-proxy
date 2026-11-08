@@ -1,3 +1,5 @@
+//go:build !corpuscapture
+
 package querycorpus_test
 
 import (
