@@ -20,7 +20,8 @@ import (
 // test/oracle/loki (a module of its own; Loki is AGPL-3.0 and only that module imports it) writes what Loki's
 // syntax tree holds, and the resolved plan must say the same: whether the outermost vector aggregation is
 // ungrouped, the offset of each range aggregation, and the parser and drop stages of the pipeline under the
-// aggregations, with whether the error label is dropped after the last parser. LVP_RUN_ORACLES=1 runs it (it
+// aggregations (every stage, in order), with whether the error label is dropped after the last parser and the
+// handlers' narrower condition (an error-only drop right after the last parser, as the last stage). LVP_RUN_ORACLES=1 runs it (it
 // builds the oracle); the PR quality report runs it with the other oracles.
 
 const lokiOracleDir = "../../test/oracle/loki"
@@ -104,6 +105,60 @@ func lokiDropsErrorLabel(stages []lokiStage) (parsers int, dropped, ok bool) {
 		}
 	}
 	return parsers, dropped && parsers > 0, true
+}
+
+// allStages is every stage of a pipeline as a kind, with a run of other stages (filters, formats, keep) held as
+// one: Loki's tree can hold a chain of line filters as one stage. The unwrap, and the filters after it, are not
+// stages in Loki's tree.
+func allStages(stages []lokiStage) []lokiStage {
+	out := []lokiStage{}
+	for _, s := range stages {
+		if s.Names == nil {
+			s.Names = []string{}
+		}
+		if s.Kind == "other" && len(out) > 0 && out[len(out)-1].Kind == "other" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func ourAllStages(s *LogSelect) []lokiStage {
+	var out []lokiStage
+	for _, st := range s.Stages {
+		switch x := st.(type) {
+		case *Parse:
+			out = append(out, lokiStage{Kind: parserKinds[x.Type]})
+		case *Drop:
+			names := append([]string{}, x.Labels...)
+			for _, m := range x.Matchers {
+				names = append(names, m.Name)
+			}
+			out = append(out, lokiStage{Kind: "drop", Names: names, Conditional: len(x.Matchers) > 0})
+		case *Unwrap:
+			// Loki's tree holds the unwrap and the filters after it outside the stages.
+			return allStages(out)
+		default:
+			out = append(out, lokiStage{Kind: "other"})
+		}
+	}
+	return allStages(out)
+}
+
+// dropOnlyErrorAfterParser is the call sites' narrow condition (internal/proxy queryDropsOnlyErrorAfterParser) on
+// a stage list: the last stage is an unconditional drop of error labels only, right after a parser.
+func dropOnlyErrorAfterParser(stages []lokiStage) bool {
+	n := len(stages)
+	if n < 2 || stages[n-1].Kind != "drop" || stages[n-1].Conditional || stages[n-2].Kind == "drop" || stages[n-2].Kind == "other" {
+		return false
+	}
+	for _, name := range stages[n-1].Names {
+		if name != "__error__" && name != "__error_details__" {
+			return false
+		}
+	}
+	return len(stages[n-1].Names) > 0
 }
 
 func ourOffsets(n Node, out *[]int64) {
@@ -229,6 +284,12 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		if !reflect.DeepEqual(mine, loki) {
 			problems = append(problems, fmt.Sprintf("%q: parser and drop stages %+v, Loki's tree %+v", r.q, mine, loki))
 			continue
+		}
+		if mineAll, lokiAll := ourAllStages(sel), allStages(lf.Pipeline); !reflect.DeepEqual(mineAll, lokiAll) {
+			problems = append(problems, fmt.Sprintf("%q: stages %+v, Loki's tree %+v", r.q, mineAll, lokiAll))
+			continue
+		} else if narrow, want := dropOnlyErrorAfterParser(mineAll), dropOnlyErrorAfterParser(lokiAll); narrow != want {
+			problems = append(problems, fmt.Sprintf("%q: error-only drop after the parser %v, Loki's tree %v", r.q, narrow, want))
 		}
 		parsers, dropped, ok := lokiDropsErrorLabel(loki)
 		if !ok {

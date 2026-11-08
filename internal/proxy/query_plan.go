@@ -12,24 +12,71 @@ import (
 // is a function of the query text alone: no tenant, VictoriaLogs or time input
 // enters it, so one memo serves every tenant.
 
-// planMemoLimit bounds the plans kept: past it a plan is built per call and not kept.
+// planMemoLimit is the number of plans one generation of the memo holds. The
+// memo keeps two generations: when the current one is full it becomes the
+// previous one and a new one starts, and a hit in the previous generation moves
+// the plan into the current one. Memory stays bounded at two generations, the
+// queries a dashboard keeps sending stay planned, and texts that were seen once
+// (Grafana writes the time picker into the query) age out.
 const planMemoLimit = 4096
 
+type planGeneration struct {
+	plans sync.Map // query text -> *queryplan.Plan, resolved before it is stored
+	size  atomic.Int64
+}
+
 var (
-	planMemo     sync.Map // query text -> *queryplan.Plan, resolved before it is stored
-	planMemoSize atomic.Int64
+	planMemoMu   sync.Mutex
+	planMemoCur  atomic.Pointer[planGeneration]
+	planMemoPrev atomic.Pointer[planGeneration]
 )
+
+func init() { planMemoCur.Store(&planGeneration{}) }
+
+// planMemoLoad is the memoised plan of query, if a generation holds it.
+func planMemoLoad(query string) (*queryplan.Plan, bool) {
+	if v, ok := planMemoCur.Load().plans.Load(query); ok {
+		return v.(*queryplan.Plan), true
+	}
+	if prev := planMemoPrev.Load(); prev != nil {
+		if v, ok := prev.plans.Load(query); ok {
+			p := v.(*queryplan.Plan)
+			planMemoStore(query, p)
+			return p, true
+		}
+	}
+	return nil, false
+}
+
+// planMemoStore keeps p in the current generation, starting a new one when the
+// current one is full.
+func planMemoStore(query string, p *queryplan.Plan) {
+	cur := planMemoCur.Load()
+	if cur.size.Load() >= planMemoLimit {
+		planMemoMu.Lock()
+		if planMemoCur.Load() == cur {
+			planMemoPrev.Store(cur)
+			planMemoCur.Store(&planGeneration{})
+		}
+		planMemoMu.Unlock()
+		cur = planMemoCur.Load()
+	}
+	if _, loaded := cur.plans.LoadOrStore(query, p); !loaded {
+		cur.size.Add(1)
+	}
+}
 
 // resolvedPlan is the resolved plan of query, or nil when the query does not
 // parse or build. A handler reads only queries that validated, so nil means a
 // text the proxy rewrote into something it cannot parse; callers then answer as
 // for a query without the property they ask about. The plan is shared: callers
-// read it and never change it.
+// read it and never change it. The memo is keyed by the text alone because
+// Resolve reads nothing of Inputs but Compat (TestResolveReadsNoInputButCompat).
 func resolvedPlan(query string) *queryplan.Plan {
 	cacheable := len(query) <= validationCacheMaxQueryBytes
 	if cacheable {
-		if v, ok := planMemo.Load(query); ok {
-			return v.(*queryplan.Plan)
+		if p, ok := planMemoLoad(query); ok {
+			return p
 		}
 	}
 	expr, err := parseLogQLExpr(noFlowCtx, query)
@@ -42,10 +89,8 @@ func resolvedPlan(query string) *queryplan.Plan {
 	}
 	// Resolve before the plan can be shared: it writes into the plan.
 	queryplan.Resolve(p)
-	if cacheable && planMemoSize.Load() < planMemoLimit {
-		if _, loaded := planMemo.LoadOrStore(query, p); !loaded {
-			planMemoSize.Add(1)
-		}
+	if cacheable {
+		planMemoStore(query, p)
 	}
 	return p
 }
