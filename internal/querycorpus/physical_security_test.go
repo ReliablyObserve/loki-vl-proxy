@@ -1,5 +1,3 @@
-//go:build !corpuscapture
-
 package querycorpus_test
 
 import (
@@ -8,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -20,6 +19,7 @@ import (
 // text can no longer become a marker.
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestClientTextThatLooksLikeAMarkerIsReadLikeBefore(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	const injectedReplace = `c2hvcnQAJDEAYXBwACguKikAYQ==` // base64 of "short\x00$1\x00app\x00(.*)\x00a"
 	for _, tc := range []struct {
 		name, logql string
@@ -66,6 +66,7 @@ func TestClientTextThatLooksLikeAMarkerIsReadLikeBefore(t *testing.T) {
 // timed, so the bound is deterministic; the text is up to the 128 KiB a query may be, and larger for the cases that
 // must be linear whatever the limit.
 func TestSplitPostCostOnCraftedText(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	if raceDetectorEnabled || testing.CoverMode() != "" {
 		t.Skip("allocation counts are not stable under the race detector or coverage")
 	}
@@ -130,6 +131,7 @@ func TestSplitPostCostOnCraftedText(t *testing.T) {
 // A marker that the cut of another makes out of the text on both sides of it is found, as it was when the query was
 // cut and searched again from its start. Random concatenations of marker fragments, against the old helper.
 func TestParseAllLabelReplaceMarkersMatchesTheOldCutOnJunctions(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	fragments := []string{
 		"__lvp_", "lr:", "__lvp_lr:", "AAAA", "AAAA__", "__", "_", "x", ":", "YQ==", "YQ==__", "l", "p_lr:", "__lvp_lr:AAAA__",
 		lrMarker("a", "b", "c", "d"), lrMarker("", "", "", ""), "__lvp_lr:__lvp_lr:AAAA__", "AAAA__lvp_lr:AAAA__",

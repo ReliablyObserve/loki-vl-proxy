@@ -1,5 +1,3 @@
-//go:build !corpuscapture
-
 package querycorpus_test
 
 import (
@@ -7,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -58,6 +57,7 @@ func rebuilt(op physical.Op) physical.Op {
 
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestPhysicalCodecEdgeTable(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	const q = `app:=x | stats by (pod, node) count() as c`
 	lr := func(dst string) string {
 		return lrMarker(dst, "$1", "app", "(.*)")
@@ -177,6 +177,7 @@ func TestPhysicalCodecEdgeTable(t *testing.T) {
 // that encode back to it, whatever the options.
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestPhysicalCodecRoundTripsTranslatorOutput(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	queries := []string{
 		`sum without (pod) (rate({app="x"}[5m]))`,
 		`max without (pod, node) (rate({app="x"}[5m]))`,

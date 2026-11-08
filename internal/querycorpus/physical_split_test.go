@@ -1,5 +1,3 @@
-//go:build !corpuscapture
-
 package querycorpus_test
 
 import (
@@ -13,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -135,6 +134,7 @@ func splitEdgeInputs() []string {
 
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestSplitPostEdgeTable(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	for i, s := range splitEdgeInputs() {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			assertSplitPost(t, s)
@@ -145,6 +145,7 @@ func TestSplitPostEdgeTable(t *testing.T) {
 
 // The shapes SplitPost must read to the value, not just to the old helpers' value.
 func TestSplitPostValues(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	const q = `app:=x | stats count() as c`
 	for _, tc := range []struct {
 		name, in, clean string
@@ -183,6 +184,7 @@ func TestSplitPostValues(t *testing.T) {
 // Numbers on their own are scalars, and what only looks like one stays a query.
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestDecodePhysicalScalarText(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	for _, s := range []string{"1", "1e3", "-0", "+0", "+Inf", "-inf", "Infinity", "0x1p3", "0X1.8P-2", ".5", "5.", "1e-9", "1_0", "123456789012345678901234567890"} {
 		op, err := translator.DecodePhysical(s)
 		if err != nil {
@@ -213,6 +215,7 @@ func TestDecodePhysicalScalarText(t *testing.T) {
 // SplitPost must not cost more than the helpers it replaced: nothing on a query without markers, and no more
 // allocations than the old strip for each marker shape.
 func TestSplitPostAllocations(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	if raceDetectorEnabled || testing.CoverMode() != "" {
 		t.Skip("allocation counts are not stable under the race detector or coverage")
 	}
@@ -291,6 +294,7 @@ func addSplitSeeds(f *testing.F) {
 
 // FuzzSplitPostMatchesLegacy: for any text, SplitPost reads what the old two-step strip read.
 func FuzzSplitPostMatchesLegacy(f *testing.F) {
+	f.Cleanup(querycorpus.PauseRecording())
 	addSplitSeeds(f)
 	f.Fuzz(func(t *testing.T, s string) { assertSplitPost(t, s) })
 }
@@ -298,6 +302,7 @@ func FuzzSplitPostMatchesLegacy(f *testing.F) {
 // FuzzPhysicalCodec: for any text, the decoded operators write it back, the operators of a structural decode write it
 // back from their parts too, and SplitPost is the post-processing of the decode.
 func FuzzPhysicalCodec(f *testing.F) {
+	f.Cleanup(querycorpus.PauseRecording())
 	addSplitSeeds(f)
 	f.Fuzz(func(t *testing.T, s string) { checkPhysicalCodec(t, s) })
 }
@@ -305,6 +310,7 @@ func FuzzPhysicalCodec(f *testing.F) {
 // FuzzSplitPostOnTranslatorOutput: for any LogQL text the translator accepts, SplitPost reads its output like the old
 // strip, and the codec writes it back.
 func FuzzSplitPostOnTranslatorOutput(f *testing.F) {
+	f.Cleanup(querycorpus.PauseRecording())
 	b, err := os.ReadFile(captureSamplePath)
 	if err != nil {
 		f.Fatal(err)
@@ -476,6 +482,7 @@ func plain(op physical.Op) physical.Op {
 // from hostile strings (commas, separators, markers, NUL, invalid UTF-8) the text still round-trips and SplitPost
 // still reads it like the old strip.
 func FuzzEncodeDecodeOps(f *testing.F) {
+	f.Cleanup(querycorpus.PauseRecording())
 	for _, seed := range [][]byte{
 		nil, {0}, {1, 1, 0, 0, 1, 2, 1, 3, 4}, {2, 3, 1, 5, 0, 0, 2, 1, 1, 7, 7, 2}, {3, 0, 0, 1, 1, 1, 1, 9, 9, 9, 9},
 		[]byte("\x01\x05\x02\x00\x03\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d"), {255, 255, 255, 255, 255, 255, 255, 255, 255},
@@ -509,6 +516,7 @@ func FuzzEncodeDecodeOps(f *testing.F) {
 
 // The generator reaches every kind of operator, so the fuzz target is not blind to one.
 func TestOpGeneratorCoversTheOperators(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	kinds := map[string]bool{}
 	var walk func(physical.Op)
 	walk = func(op physical.Op) {

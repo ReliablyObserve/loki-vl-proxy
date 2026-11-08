@@ -1,7 +1,5 @@
-//go:build !corpuscapture
-
-// The plan corpus translates thousands of queries the corpus capture would record as test-sent: it is not part of
-// that run, which would make every sample row a duplicate of itself.
+// The plan corpus translates thousands of queries the corpus capture would record as test-sent, so its tests pause
+// recording (querycorpus.PauseRecording): the capture run still runs them and records only what other tests send.
 
 package querycorpus_test
 
@@ -20,6 +18,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -259,6 +258,7 @@ func physicalShapes(op physical.Op) []string {
 // ParseAllLabelReplaceMarkers return.
 // conformance: semantics/label-replace-new-label, semantics/without-over-inner-aggregation-collapses
 func TestPhysicalCodecRoundTrip(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	corpus := planCorpus(t)
 	profiles := planProfiles()
 	if len(profiles) != 12 {
@@ -341,6 +341,7 @@ func TestPhysicalCodecRoundTrip(t *testing.T) {
 // in the order of their hash, up to a cap; the cap is the largest one that keeps the sample within 2,000 rows, so a
 // rare shape is kept whole and a common one is thinned evenly.
 func TestBuildPlanCaptureSample(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
 	corpusPath := os.Getenv("LVP_QUERY_CORPUS")
 	if corpusPath == "" || os.Getenv("LVP_PLAN_CAPTURE_SAMPLE_UPDATE") != "1" {
 		t.Skip("LVP_QUERY_CORPUS and LVP_PLAN_CAPTURE_SAMPLE_UPDATE=1 are not set")

@@ -55,3 +55,26 @@ func TestRecordBackendRecordsVictoriaLogsQueries(t *testing.T) {
 		t.Fatalf("second entry = %+v", got[1])
 	}
 }
+
+// While PauseRecording holds, nothing is recorded, nested pauses included; recording resumes when the last one is
+// resumed.
+func TestPauseRecordingSkipsQueries(t *testing.T) {
+	got := CaptureForTest(t, func() {
+		Record(LogQL, `{app="before"}`)
+		resume := PauseRecording()
+		Record(LogQL, `{app="paused"}`)
+		inner := PauseRecording()
+		Record(LogQL, `{app="nested"}`)
+		inner()
+		Record(LogQL, `{app="still paused"}`)
+		resume()
+		Record(LogQL, `{app="after"}`)
+	})
+	var queries []string
+	for _, e := range got {
+		queries = append(queries, e.Query)
+	}
+	if len(queries) != 2 || queries[0] != `{app="before"}` || queries[1] != `{app="after"}` {
+		t.Fatalf("recorded %q, want only the queries outside the pauses", queries)
+	}
+}

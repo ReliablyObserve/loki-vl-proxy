@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query corpus codec and plan tests run in corpus-capture test runs too,
+  with recording paused while they translate corpus rows
+  (`querycorpus.PauseRecording`), so the pull request quality report counts
+  the same tests on both sides. Test tooling only; no behaviour change.
+
 ## [2.97.0] - 2026-11-08
 
 ### Changed
