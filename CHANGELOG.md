@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.96.1] - 2026-11-08
-
 ### Fixed
 
 - fix: a query whose line filter, label filter value or stream label value
   holds text the proxy writes into its own translated queries (for example
   `|= "__without__:pod"`) answered an error; the text is now matched as text,
   like Loki, on `query` and `query_range`.
+
+## [2.96.1] - 2026-11-08
+
+### Fixed
 
 - fix(logsql): the LogsQL parser the proxy reads its own queries with (for
   example to recognise a stats query) could panic on a `math` pipe holding an
