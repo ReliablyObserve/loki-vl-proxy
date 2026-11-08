@@ -32,10 +32,26 @@ const module = "github.com/ReliablyObserve/Loki-VL-proxy/"
 //	deferred_raw            a logsql.DeferredExpr literal: raw text inside the LogsQL AST
 //	translator_string_ops   every strings and regexp call in internal/translator, the string translator the AST
 //	                        translation replaces
+//	lowering_marker_reads   a place in internal/proxy that reads the translator's in-band markers or the text of
+//	                        a translated query instead of a typed plan: a selector of markerReaders, a call of
+//	                        proxyTextReaders or the literal "__rate_counter__"
 //
 // internal/logql and internal/logsql, which own the parsers and printers, are not counted, and neither is
 // internal/querycorpus. The literal rules (queryLiteral) count a literal only when it carries query syntax.
-var categories = []string{"parse_calls", "string_reads", "text_built", "deferred_raw", "translator_string_ops"}
+var categories = []string{"parse_calls", "string_reads", "text_built", "deferred_raw", "translator_string_ops", "lowering_marker_reads"}
+
+// markerReaders are the translator functions and constants through which the proxy reads a translated query's
+// markers (`__without__:`, `__lvp_lr:`, `__binary__:`, the unwrap gate). The physical-plan codec
+// (translator.DecodePhysical) is not one of them: it is the typed read that replaces them.
+var markerReaders = map[string]bool{
+	"ParseWithoutMarker": true, "ParseAllLabelReplaceMarkers": true, "ParseBinaryMetricExpr": true,
+	"ParseBinaryMetricExprFull": true, "BinaryMetricPrefix": true, "WithoutMarkerSuffix": true, "IsScalar": true,
+	"SplitUnwrapGate": true, "SplitLabelReplace": true, "PeelWithoutWrappers": true, "FoldingWithoutOp": true,
+}
+
+// proxyTextReaders are the proxy's own readers of a translated query's text: each parses it back (stats shape)
+// or scans it for a stats pipe.
+var proxyTextReaders = map[string]bool{"isStatsQuery": true, "parseStatsCompatSpec": true, "parseSingleFieldCountSpec": true}
 
 var parserFuncs = map[string]map[string]bool{
 	module + "internal/logql":  {"Parse": true, "ParseLogQuery": true, "ParseAndValidate": true},
@@ -141,6 +157,10 @@ func countFile(counts siteCounts, rel string, f *ast.File) {
 				counts.add("parse_calls", rel)
 				return true
 			}
+			if id, ok := v.Fun.(*ast.Ident); ok && proxyTextReaders[id.Name] && strings.HasPrefix(rel, "internal/proxy/") {
+				counts.add("lowering_marker_reads", rel)
+				return true
+			}
 			sel, ok := v.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
@@ -165,6 +185,15 @@ func countFile(counts siteCounts, rel string, f *ast.File) {
 						break
 					}
 				}
+			}
+		case *ast.SelectorExpr:
+			// Each selector is counted once, whether it is called or not (`translator.IsScalar(x)`, a constant).
+			if pkg, ok := v.X.(*ast.Ident); ok && imports[pkg.Name] == module+"internal/translator" && markerReaders[v.Sel.Name] && strings.HasPrefix(rel, "internal/proxy/") {
+				counts.add("lowering_marker_reads", rel)
+			}
+		case *ast.BasicLit:
+			if v.Kind == token.STRING && v.Value == `"__rate_counter__"` && strings.HasPrefix(rel, "internal/proxy/") {
+				counts.add("lowering_marker_reads", rel)
 			}
 		case *ast.CompositeLit:
 			if sel, ok := v.Type.(*ast.SelectorExpr); ok {

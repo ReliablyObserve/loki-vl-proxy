@@ -30,7 +30,6 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
@@ -2665,9 +2664,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Extract without() labels and label_replace markers for post-processing.
-	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels, labelReplaceSpecs := splitPostProcessing(logsqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
-	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
@@ -2984,9 +2982,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract without() labels and label_replace markers for post-processing.
-	logsqlQuery, markerOp, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, markerOp, withoutLabels, labelReplaceSpecs := splitPostProcessing(logsqlQuery)
 	withoutOp, foldWithout := withoutFoldOp(markerOp, logqlQuery)
-	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	for _, spec := range labelReplaceSpecs {
 		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
 			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))

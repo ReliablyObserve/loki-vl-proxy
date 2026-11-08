@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query, query_range and metric post-aggregation handlers read the
+  without fold and label_replace calls the translator leaves in its LogsQL
+  through one typed decoder (the exact inverse of an encoder) instead of
+  stripping the marker text with two parsers each. The VictoriaLogs query and
+  every answer are byte-identical to before. No behaviour change.
+
 - The proxy's LogsQL parser reads back what the proxy sends to VictoriaLogs:
   every pipe the translator emits (`extract`, `format`, `rename`, `replace`,
   `pack_*`, `unpack_*` with their arguments, `stats` with `if` and

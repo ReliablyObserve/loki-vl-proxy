@@ -19,6 +19,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 )
 
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
@@ -37,12 +38,7 @@ const (
 )
 
 // LabelReplaceSpec holds the parsed arguments of a label_replace() expression.
-type LabelReplaceSpec struct {
-	DstLabel    string
-	Replacement string
-	SrcLabel    string
-	Regex       string
-}
+type LabelReplaceSpec = physical.LabelReplace
 
 // ParseLabelReplaceMarker extracts a label_replace spec embedded in a translated query.
 // Returns the clean query (marker stripped) and the spec, or nil if absent.
@@ -2018,10 +2014,25 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	if err != nil {
 		return "", false
 	}
-	payload := base64.StdEncoding.EncodeToString([]byte(
-		args[0] + "\x00" + args[1] + "\x00" + args[2] + "\x00" + args[3],
-	))
-	return translated + labelReplacePrefix + payload + "__", true
+	return translated + labelReplaceMarker(LabelReplaceSpec{DstLabel: args[0], Replacement: args[1], SrcLabel: args[2], Regex: args[3]}), true
+}
+
+// labelReplaceMarker is the marker a translated query carries for a label_replace call:
+// ParseAllLabelReplaceMarkers reads it back.
+func labelReplaceMarker(spec LabelReplaceSpec) string {
+	return string(appendLabelReplaceMarker(nil, spec))
+}
+
+// appendLabelReplaceMarker appends labelReplaceMarker(spec) to dst.
+func appendLabelReplaceMarker(dst []byte, spec LabelReplaceSpec) []byte {
+	var buf [96]byte
+	payload := append(buf[:0], spec.DstLabel...)
+	payload = append(append(payload, 0), spec.Replacement...)
+	payload = append(append(payload, 0), spec.SrcLabel...)
+	payload = append(append(payload, 0), spec.Regex...)
+	dst = append(dst, labelReplacePrefix...)
+	dst = base64.StdEncoding.AppendEncode(dst, payload)
+	return append(dst, "__"...)
 }
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
@@ -2804,13 +2815,32 @@ func tryTranslateBinaryMetricExpr(logql string, labelFn LabelTranslateFunc) (str
 // IsScalar returns true if the string is a numeric constant.
 // Handles integers, floats, negatives, and scientific notation (e.g., 1e5, 1.5e-3, -42).
 func IsScalar(s string) bool {
+	_, ok := scalarValue(s)
+	return ok
+}
+
+// scalarValue is the number IsScalar accepts.
+func scalarValue(s string) (float64, bool) {
+	// strconv.ParseFloat copies its input into the error it returns, so a query is turned away on the first byte
+	// that no number, inf or nan has. A byte above ASCII goes on to the full check: TrimSpace trims Unicode spaces.
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= 0x80, c >= '0' && c <= '9', c == '+' || c == '-' || c == '.' || c == '_',
+			c == ' ' || (c >= '\t' && c <= '\r'),
+			c >= 'a' && c <= 'f', c >= 'A' && c <= 'F', // hex digits
+			c == 'i' || c == 'n' || c == 't' || c == 'y' || c == 'x' || c == 'p', // inf, infinity, nan, 0x, p exponent
+			c == 'I' || c == 'N' || c == 'T' || c == 'Y' || c == 'X' || c == 'P':
+		default:
+			return 0, false
+		}
+	}
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return false
+		return 0, false
 	}
 	// Use strconv.ParseFloat which handles all numeric formats
-	_, err := strconv.ParseFloat(s, 64)
-	return err == nil
+	v, err := strconv.ParseFloat(s, 64)
+	return v, err == nil
 }
 
 // VectorMatchInfo holds vector matching modifiers for binary expressions.

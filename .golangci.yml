@@ -29,7 +29,9 @@ linters:
       min-complexity: 30
     # Layering: the LogQL and LogsQL syntax packages sit below the translator
     # and the proxy. logql may use logsql; logsql may use neither. Both may use
-    # the stdlib and internal/querycorpus (a stdlib-only leaf). Test files are
+    # the stdlib and internal/querycorpus (a stdlib-only leaf). The physical-plan
+    # operators sit beside them: the stdlib and logsql only, so the translator
+    # and the logical plan can both build on them. Test files are
     # out of scope: a test in package logql cannot import the translator anyway.
     # The logical plan (queryplan) sits above logql and below the translator and
     # the proxy: it reads the LogQL AST and nothing else.
@@ -60,6 +62,14 @@ linters:
           allow:
             - $gostd
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/logql
+        physical:
+          list-mode: strict
+          files:
+            - "**/internal/queryplan/physical/*.go"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql
   exclusions:
     rules:
       - path: _test\.go
