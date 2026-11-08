@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`offset -1d`, `offset - 1s`, `offset 1h2x`, a second duration after the
   offset) answer with Loki's error text.
 
+## [2.100.0] - 2026-11-08
+
 ### Changed
 
 - The outer-grouping check and the drop-error opt-in of metric queries are
