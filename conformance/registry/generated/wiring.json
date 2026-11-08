@@ -1246,6 +1246,9 @@
       "internal/proxy/plain_stream_labels_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go"
     ],
+    "semantics/proxy-accepts-invalid-logql": [
+      "internal/logql/range_rules_test.go"
+    ],
     "semantics/proxy-accepts-operators-not-in-loki": [
       "internal/logql/loki_unknown_names_test.go",
       "internal/proxy/unknown_logql_names_test.go",
@@ -1718,6 +1721,9 @@
     "internal/logql/print_reparse_test.go": [
       "semantics/binary-operand-literals-reprint",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/range_rules_test.go": [
+      "semantics/proxy-accepts-invalid-logql"
     ],
     "internal/logql/selector_value_test.go": [
       "semantics/selector-values-are-strings"
@@ -3530,7 +3536,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 378,
+  "tests_with_markers": 379,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3599,7 +3605,6 @@
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/pattern-line-filter-invalid-captures",
-    "semantics/proxy-accepts-invalid-logql",
     "semantics/quantile-over-time-out-of-range",
     "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/ruler-empty-list-status",
@@ -3634,5 +3639,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 262
+  "wired_items": 263
 }
