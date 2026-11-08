@@ -34,6 +34,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 PROXY = "internal/proxy"
+# Files that are not Go but are read by internal/querycorpus's tests (the query corpus, the plan and query-text
+# ratchets): a change to one runs that package's tests, which a registry-only change would otherwise skip.
+QUERYCORPUS = "internal/querycorpus"
+QUERYCORPUS_INPUTS = ("conformance/registry/", "bench/ab/shapes.json", "test/e2e-compat/query-semantics-matrix.json")
 CI = ROOT / ".github" / "workflows" / "ci.yaml"
 
 TEST_FUNC = re.compile(r"^func ((?:Test|Fuzz)\w*)\(\s*\w+\s+\*testing\.[TF]\s*\)", re.M)
@@ -161,6 +165,8 @@ def plan(base, dependents=False, root=ROOT, files=None):
         pkg = package_dir(f, root) if not f.startswith(".git/") else None
         if pkg:
             pkgs.add(pkg)
+        if f.startswith(QUERYCORPUS_INPUTS[0]) or f in QUERYCORPUS_INPUTS[1:]:
+            pkgs.add(QUERYCORPUS)
     if dependents and pkgs and result["all"] == "0":
         pkgs = reverse_closure(go_imports(root), pkgs)
     # A deleted package leaves nothing to test.
