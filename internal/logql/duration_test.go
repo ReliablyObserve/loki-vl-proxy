@@ -20,7 +20,6 @@ func TestRangeAggregationDurations(t *testing.T) {
 		{`rate({a="b"}[500ms])`, 500 * time.Millisecond, 0, false, "500ms", ""},
 		{`rate({a="b"}[1y])`, 365 * 24 * time.Hour, 0, false, "1y", ""},
 		{`rate({a="b"}[5m] offset 0s)`, 5 * time.Minute, 0, true, "5m", "0s"},
-		{`rate({a="b"}[5x])`, 0, 0, false, "5x", ""},
 	} {
 		expr, err := Parse(tc.query)
 		if err != nil {

@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1442,6 +1443,10 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	}
 	ra.Range = dur.Val
 	ra.RangeDuration = parseDuration(dur.Val)
+	if !lokiDuration(dur.Val) {
+		// Loki reads a range with Go's time.ParseDuration or Prometheus' y, w and d units, in lower case.
+		return newParseError(0, bracketCol, fmt.Sprintf("unknown unit %q in duration %q", durationUnit(dur.Val), dur.Val))
+	}
 
 	// A PromQL-style [range:step] is not LogQL. Loki's lexer rejects the
 	// duration token itself; the colon arrives here as TokError ":".
@@ -1468,24 +1473,9 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 		ra.OffsetDuration = d
 	}
 
-	// Optional @ modifier: [duration] @ <unix_timestamp | start() | end()>
-	// Loki accepts this; we parse and discard it (VictoriaLogs handles its own timestamp logic).
+	// Loki v3.7 has no @ modifier: its lexer reads `@` as a name where `)` must follow.
 	if p.cur.Typ == TokAt {
-		p.advance() // consume "@"
-		switch {
-		case p.cur.Typ == TokNumber:
-			p.advance() // consume unix timestamp
-		case p.cur.Typ == TokIdent && (p.cur.Val == "start" || p.cur.Val == "end"):
-			p.advance() // consume "start" or "end"
-			if _, err := p.expect(TokLParen); err != nil {
-				return fmt.Errorf("logql: expected '(' after start/end in @ modifier")
-			}
-			if _, err := p.expect(TokRParen); err != nil {
-				return fmt.Errorf("logql: expected ')' after start/end in @ modifier")
-			}
-		default:
-			return fmt.Errorf("logql: expected unix timestamp or start()/end() after @, got %v", p.cur.Val)
-		}
+		return p.errorAt(p.pos(), "IDENTIFIER", ")", false)
 	}
 	return nil
 }
@@ -1521,6 +1511,18 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 
 // durationUnit returns the trailing unit letters of a duration literal
 // ("30m" → "m"), used to mirror Loki's duration lexer error text.
+// lokiDuration reports a duration Loki's lexer reads: Go's time.ParseDuration
+// form (ns, us, µs, ms, s, m, h, fractions, any order) or Prometheus' (y, w, d,
+// h, m, s, ms in that order, integers).
+func lokiDuration(d string) bool {
+	if _, err := time.ParseDuration(d); err == nil {
+		return true
+	}
+	return prometheusDurationRE.MatchString(d) && d != ""
+}
+
+var prometheusDurationRE = regexp.MustCompile(`^(?:\d+y)?(?:\d+w)?(?:\d+d)?(?:\d+h)?(?:\d+m)?(?:\d+s)?(?:\d+ms)?$`)
+
 func durationUnit(d string) string {
 	i := len(d)
 	for i > 0 && (d[i-1] < '0' || d[i-1] > '9') {

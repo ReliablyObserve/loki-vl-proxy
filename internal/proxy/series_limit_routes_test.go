@@ -359,8 +359,8 @@ func TestSeriesLimit_EveryMetricRouteFollowsLoki(t *testing.T) {
 		// parser, pushed down with the stats query.
 		{"ordered json stats pushdown with a pre-parser filter", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"} | detected_level="info" | json | drop __error__, __error_details__ | pipeline="logs/loki" [5m]))`, time.Minute), nil, "stats_query_range"},
 		{"stats buckets range", "/loki/api/v1/query_range", rangeParams(`sum by (pod) (count_over_time({app="top"}[5m]))`, time.Minute), nil, "stats_query_range"},
-		{"manual raw-row evaluator range", "/loki/api/v1/query_range", rangeParams(`rate_counter({app="top"} | unwrap latency [5m]) by (pod)`, time.Minute), nil, "raw"},
-		{"manual raw-row evaluator instant", "/loki/api/v1/query", instantParams(`rate_counter({app="top"} | unwrap latency [5m]) by (pod)`), nil, "raw"},
+		{"manual raw-row evaluator range", "/loki/api/v1/query_range", rangeParams(`rate_counter({app="top"} | unwrap latency [5m])`, time.Minute), nil, "raw"},
+		{"manual raw-row evaluator instant", "/loki/api/v1/query", instantParams(`rate_counter({app="top"} | unwrap latency [5m])`), nil, "raw"},
 		{"quantile value counts range", "/loki/api/v1/query_range", rangeParams(`quantile_over_time(0.5, {app="top"} | unwrap latency [5m]) by (pod)`, time.Minute), nil, "stats_query_range"},
 		{"quantile value counts instant", "/loki/api/v1/query", instantParams(`quantile_over_time(0.5, {app="top"} | unwrap latency [5m]) by (pod)`), nil, "stats_query"},
 		{"bare parser raw evaluator range", "/loki/api/v1/query_range", rangeParams(`avg_over_time({app="top"} | logfmt | unwrap latency [5m])`, time.Minute), nil, "raw"},

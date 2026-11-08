@@ -569,7 +569,7 @@
     "semantics/plain-name-after-parser-reads-stream-label | perf:locked",
     "semantics/plain-name-after-parser-reads-stream-label | query",
     "semantics/proxy-accepts-invalid-logql | compare:observed",
-    "semantics/proxy-accepts-invalid-logql | gap:open",
+    "semantics/proxy-accepts-invalid-logql | gap:fixed",
     "semantics/proxy-accepts-invalid-logql | query",
     "semantics/proxy-accepts-operators-not-in-loki | compare:observed",
     "semantics/proxy-accepts-operators-not-in-loki | gap:fixed",
@@ -859,6 +859,7 @@
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
     "internal/logql/print_reparse_test.go | semantics/binary-operand-literals-reprint",
     "internal/logql/print_reparse_test.go | semantics/label-filter-expression-syntax",
+    "internal/logql/range_rules_test.go | semantics/proxy-accepts-invalid-logql",
     "internal/logql/selector_value_test.go | semantics/selector-values-are-strings",
     "internal/logql/vector_agg_log_expr_test.go | semantics/vector-aggregation-over-log-selector-status",
     "internal/logsql/parser_read_test.go | architecture-syntax-package-layering",
@@ -1771,6 +1772,9 @@
     "test/e2e-compat/parenthesized_range_or_filters_test.go | loki_api_v1_query_range",
     "test/e2e-compat/parenthesized_range_or_filters_test.go | semantics/line-filter-or-alternatives",
     "test/e2e-compat/parenthesized_range_or_filters_test.go | semantics/parenthesized-log-range",
+    "test/e2e-compat/parsed_surface_answers_test.go | loki_api_v1_query",
+    "test/e2e-compat/parsed_surface_answers_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/parsed_surface_answers_test.go | semantics/proxy-rejects-valid-logql",
     "test/e2e-compat/parser_capture_identity_test.go | loki_api_v1_query",
     "test/e2e-compat/parser_capture_identity_test.go | parsed-label-series-identity",
     "test/e2e-compat/parser_error_matrix_test.go | semantics/json-error-filter-metric-split-pushdown",
@@ -1965,7 +1969,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 377,
+      "go": 379,
       "playwright": 1
     },
     "page_kinds": {
@@ -1984,8 +1988,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
-    "wired_items": 262
+    "unwired_items": 100,
+    "wired_items": 263
   },
   "gates": [
     "A/B shape selection",

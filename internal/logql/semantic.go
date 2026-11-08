@@ -2,6 +2,7 @@ package logql
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"regexp/syntax"
 	"strconv"
@@ -25,6 +26,15 @@ func validateSemantics(expr Expr, raw string) string {
 	case *VectorAggregation:
 		return validateSemantics(x.Inner, raw)
 	case *BinOpExpr:
+		// A set operator joins two vectors: Loki refuses a literal on either side, the left one first.
+		if x.Op == "and" || x.Op == "or" || x.Op == "unless" {
+			if l, ok := x.Left.(*LiteralExpr); ok {
+				return fmt.Sprintf("parse error : unexpected literal for left leg of logical/set binary operation (%s): %f", x.Op, l.Value)
+			}
+			if r, ok := x.Right.(*LiteralExpr); ok {
+				return fmt.Sprintf("parse error : unexpected literal for right leg of logical/set binary operation (%s): %f", x.Op, r.Value)
+			}
+		}
 		// Log stream queries cannot participate in binary metric operations.
 		if _, ok := x.Left.(*LogQuery); ok {
 			return "parse error at line 1, col 1: unexpected expression for binary operation"
@@ -48,7 +58,15 @@ func validateSemantics(expr Expr, raw string) string {
 			return err.Error()
 		}
 		if inner != nil {
-			return validateSemantics(inner, raw)
+			if msg := validateSemantics(inner, raw); msg != "" {
+				return msg
+			}
+		}
+		if x.Typed && x.Func == "label_replace" && len(x.Args) == 4 {
+			// Loki compiles the regex anchored, as it matches it.
+			if _, err := regexp.Compile("^(?:" + x.Args[3] + ")$"); err != nil {
+				return "parse error : invalid regex in label_replace: " + err.Error()
+			}
 		}
 	}
 	return ""
@@ -237,18 +255,23 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 		return validateSemantics(ra.Inner, raw)
 	}
 
-	// rate_counter requires | unwrap inside the range vector.
-	if ra.Op == RangeRateCounter {
-		hasUnwrap := false
-		for _, s := range lq.Pipeline {
-			if _, ok := s.(*UnwrapStage); ok {
-				hasUnwrap = true
-				break
-			}
+	// Loki's range aggregation rules, in its order: a by or without clause only on
+	// the unwrap functions that keep labels, then unwrap where it is required or refused.
+	if ra.Grouping != nil && !rangeGroupingAllowed[ra.Op] {
+		return fmt.Sprintf("parse error : grouping not allowed for %s aggregation", ra.Op)
+	}
+	hasUnwrap := false
+	for _, s := range lq.Pipeline {
+		if _, ok := s.(*UnwrapStage); ok {
+			hasUnwrap = true
+			break
 		}
-		if !hasUnwrap {
-			return "parse error : rate_counter requires | unwrap expression"
-		}
+	}
+	switch {
+	case !hasUnwrap && rangeUnwrapRequired[ra.Op]:
+		return fmt.Sprintf("parse error : invalid aggregation %s without unwrap", ra.Op)
+	case hasUnwrap && rangeUnwrapRefused[ra.Op]:
+		return fmt.Sprintf("parse error : invalid aggregation %s with unwrap", ra.Op)
 	}
 
 	// Recurse into the inner log query for its own semantic checks.
@@ -258,3 +281,17 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 	}
 	return ""
 }
+
+// The range aggregation rules of Loki v3.7 (recorded with the test oracle: TestRangeAggregationRulesLikeLoki).
+var (
+	rangeGroupingAllowed = map[RangeOp]bool{
+		RangeAvgOverTime: true, RangeMinOverTime: true, RangeMaxOverTime: true, RangeStddevOverTime: true,
+		RangeStdvarOverTime: true, RangeFirstOverTime: true, RangeLastOverTime: true, RangeQuantileOverTime: true,
+	}
+	rangeUnwrapRequired = map[RangeOp]bool{
+		RangeRateCounter: true, RangeSumOverTime: true, RangeAvgOverTime: true, RangeMinOverTime: true,
+		RangeMaxOverTime: true, RangeStddevOverTime: true, RangeStdvarOverTime: true, RangeFirstOverTime: true,
+		RangeLastOverTime: true, RangeQuantileOverTime: true,
+	}
+	rangeUnwrapRefused = map[RangeOp]bool{RangeCountOverTime: true, RangeBytesOverTime: true, RangeBytesRate: true}
+)

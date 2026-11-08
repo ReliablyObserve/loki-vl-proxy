@@ -96,6 +96,16 @@ func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 		{"query_range_grafana_explore_backend_rejects_pattern", "/loki/api/v1/query_range", url.Values{"query": {badPatternByApp}, "step": {"60"}}, "0", grafanaExplore},
 		{"query_range_grafana_drilldown_backend_rejects_pattern", "/loki/api/v1/query_range", url.Values{"query": {badPatternByApp}, "step": {"60"}}, "0", grafanaDrilldown},
 		{"query_range_grafana_drilldown_backend_rejects_ungrouped_regex", "/loki/api/v1/query_range", url.Values{"query": {badLineRegexRange}, "step": {"60"}}, "0", grafanaDrilldown},
+		// Queries Loki's parser rejects and the proxy's parser used to accept (semantics/proxy-accepts-invalid-logql):
+		// the proxy answers Loki's own parse error text.
+		{"parse_at_modifier", "/loki/api/v1/query_range", url.Values{"query": {`rate({app="api-gateway"}[5m] @ start())`}, "step": {"60"}}, "0", nil},
+		{"parse_unknown_unit", "/loki/api/v1/query_range", url.Values{"query": {`rate({app="api-gateway"}[5minutes])`}, "step": {"60"}}, "0", nil},
+		{"parse_range_grouping", "/loki/api/v1/query_range", url.Values{"query": {`count_over_time({app="api-gateway"}[5m]) by (level)`}, "step": {"60"}}, "0", nil},
+		{"parse_missing_unwrap", "/loki/api/v1/query_range", url.Values{"query": {`sum_over_time({app="api-gateway"}[5m])`}, "step": {"60"}}, "0", nil},
+		{"parse_refused_unwrap", "/loki/api/v1/query_range", url.Values{"query": {`count_over_time({app="api-gateway"} | logfmt | unwrap latency [5m])`}, "step": {"60"}}, "0", nil},
+		{"parse_set_operator_literal", "/loki/api/v1/query", url.Values{"query": {`1 unless vector(2)`}}, "0", nil},
+		{"parse_label_replace_regex", "/loki/api/v1/query_range", url.Values{"query": {`label_replace(rate({app="api-gateway"}[5m]), "d", "$1", "app", "(x")`}, "step": {"60"}}, "0", nil},
+		{"parse_bytes_zero_b", "/loki/api/v1/query_range", url.Values{"query": {`{app="api-gateway"} | bytes < 0B`}}, "0", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,6 +128,9 @@ func TestCompat_RejectedQueryStatusParity(t *testing.T) {
 			text := string(proxyBody)
 			if text == "" || strings.HasPrefix(text, "{") {
 				t.Fatalf("proxy error body %q, want Loki's message as text", proxyBody)
+			}
+			if strings.HasPrefix(tc.name, "parse_") && strings.TrimSpace(text) != strings.TrimSpace(string(lokiBody)) {
+				t.Fatalf("proxy error %q, Loki %q", text, lokiBody)
 			}
 			// A multi-tenant 400 must be the query's rejection, not a tenant or
 			// fanout error: the single-tenant error, with no VictoriaLogs text.

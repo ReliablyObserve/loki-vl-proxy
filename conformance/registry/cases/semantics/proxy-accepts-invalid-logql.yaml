@@ -1,5 +1,5 @@
 id: semantics/proxy-accepts-invalid-logql
-title: Queries Loki rejects with 400 are answered by the proxy (open)
+title: Queries Loki rejects with 400 are rejected by the proxy with Loki's parse error (fixed)
 proves:
   - loki_api_v1_query_range
 consumer: api
@@ -12,6 +12,22 @@ why: |
   Loki 3.7.7 400 `parse error : invalid aggregation count_over_time with
   unwrap`, the proxy 200 with a series per row label set (measured on an
   isolated stack with VL v1.52.0).
+
+  Fixed: the parser and its semantic checks apply Loki v3.7.9's rules, each
+  recorded with the test oracle (TestRangeAggregationRulesLikeLoki): a by or
+  without clause on a range aggregation only for avg, min, max, stddev,
+  stdvar, first, last and quantile_over_time (`grouping not allowed for X
+  aggregation`, checked first); unwrap required by rate_counter and the
+  *_over_time unwrap functions (`invalid aggregation X without unwrap`) and
+  refused by count_over_time, bytes_over_time and bytes_rate (`... with
+  unwrap`); a literal on either side of and, or, unless (`unexpected literal
+  for left leg of logical/set binary operation (unless): 1.000000`); duration
+  units read as Go's time.ParseDuration or Prometheus' lower-case y, w and d
+  (`unknown unit "minutes" in duration "5minutes"`); no @ modifier (`syntax
+  error: unexpected IDENTIFIER, expecting )`); a label_replace regex that does
+  not compile anchored (`invalid regex in label_replace: error parsing regexp:
+  ...`); and `| bytes < 0B` (`decimal literal has no digits`). The proxy
+  answers each with Loki's 400 text.
 request:
   method: GET
   path: /loki/api/v1/query
@@ -26,13 +42,14 @@ compare:
   expect: |
     Loki's 400 parse error.
 gap:
-  status: open
+  status: fixed
+  fixed_by: 'pending'
   impact: api-only
   effort: S
   area: 'internal/logql parser validation'
   loki: 'pkg/logql/syntax/ast.go:1446,1579 grouping not allowed; duration parsing'
-  proxy: '200'
-  planned_test: 'TestCompat_InvalidLogQLRejected (test/e2e-compat, bad_request_status_parity_test.go)'
+  proxy: 'Loki''s 400 parse error'
+  planned_test: 'TestCompat_RejectedQueryStatusParity parse_* cases (test/e2e-compat, bad_request_status_parity_test.go: status and text equal to Loki); TestRangeAggregationRulesLikeLoki (internal/logql, 76 recorded answers)'
   clusters:
     - 16428cd1
     - 354d31ed

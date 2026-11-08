@@ -16,9 +16,9 @@ why: |
 
   Since fixed, each with its own case: comments and negative, compound and
   fractional offsets (semantics/comments-signed-compound-offsets). The parser
-  accepts these on 2026-11-08, their answers not yet compared with Loki: a
-  line filter after the range, ip() label filters, and the topk over
-  sum_over_time instant form. Since fixed too: `| logfmt --strict` /
+  accepts these, and they answer like Loki (TestRangeMetricCompatibilityParsedSurfaceAnswers):
+  a line filter after the range, ip() label filters (CIDR and range, = and
+  !=), and the topk over sum_over_time instant form. Since fixed too: `| logfmt --strict` /
   `--keep-empty`, read in any order and repeated, before a field list, with
   Loki's errors for `| json --strict` and an unknown flag. The stage is
   answered as `| logfmt`, which is Loki's answer for well-formed lines; how
