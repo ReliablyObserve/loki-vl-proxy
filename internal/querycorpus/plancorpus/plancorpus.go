@@ -54,7 +54,7 @@ func Curated(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	return curated(r.FS())
 }
 
@@ -155,7 +155,7 @@ func Queries(root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	fsys := r.FS()
 	curated, err := curated(fsys)
 	if err != nil {

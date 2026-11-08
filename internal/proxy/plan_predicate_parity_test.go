@@ -51,7 +51,7 @@ func handlerQueryText(q string) (string, bool) {
 	if _, msg := logqlpkg.ValidateLogQLExpr(q); msg != "" {
 		return "", false
 	}
-	if rewritten, changed := keepSeriesGrouping(q); changed && !(affectedOrderedJSONVectorQuery(rewritten) && !affectedOrderedJSONVectorQuery(q)) {
+	if rewritten, changed := keepSeriesGrouping(q); changed && (!affectedOrderedJSONVectorQuery(rewritten) || affectedOrderedJSONVectorQuery(q)) {
 		q = rewritten
 	}
 	return q, true
