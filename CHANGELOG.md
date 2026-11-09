@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a label (Drilldown include and exclude clicks on the same field, or a
   hand-written chain) kept lines before and now keep the lines Loki keeps,
   often none.
+
+### Changed
+
+- The query plan lowers log queries with label filters that have no parser in
+  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
+  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
+  string translator now shares; the requests sent to VictoriaLogs are those of
+  the string translator.
+- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
+  instead of about 60 ms on every query: the regexp's edges are written as a
+  class without ASCII letters and the letters apart (a negated class over all
+  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
+  VictoriaLogs does while simplifying a regexp). The same lines match.
+
+## [2.114.0] - 2026-11-09
+
+### Fixed
+
 - `query` and `query_range` answers carry Loki's `data.stats` object instead of
   an empty `{}`, so Grafana's query inspector and the Logs Drilldown footer
   ("Total bytes processed") show statistics as they do for Loki. The proxy
@@ -44,19 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `querier`, `ingester` and `index` sections are left out. The query
   and query_range response-cache keys change, so those entries are rebuilt
   once after an upgrade, and replicas on older versions do not share them.
-
-### Changed
-
-- The query plan lowers log queries with label filters that have no parser in
-  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
-  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
-  string translator now shares; the requests sent to VictoriaLogs are those of
-  the string translator.
-- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
-  instead of about 60 ms on every query: the regexp's edges are written as a
-  class without ASCII letters and the letters apart (a negated class over all
-  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
-  VictoriaLogs does while simplifying a regexp). The same lines match.
 
 ## [2.113.0] - 2026-11-09
 
