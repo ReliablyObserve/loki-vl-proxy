@@ -2,7 +2,6 @@ package lower
 
 import (
 	"errors"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,8 +24,8 @@ func labelFilterProfiles() map[string]func(string) string {
 	}
 }
 
-// labelFilterLowering lowers q under label function fn and compares it with the string translator, read by the
-// LogsQL parser. delegated is true when the lowering answers ErrNotLowered; ok is false when q does not parse.
+// labelFilterLowering lowers q under label function fn and compares it with the string translator, byte for
+// byte (the text a flipped query serves); both must also parse. delegated is true when the lowering answers ErrNotLowered; ok is false when q does not parse.
 func labelFilterLowering(t testing.TB, q string, fn func(string) string) (lowered, legacy string, same, delegated, ok bool) {
 	t.Helper()
 	expr, err := logql.Parse(q)
@@ -50,15 +49,13 @@ func labelFilterLowering(t testing.TB, q string, fn func(string) string) (lowere
 		return "", "", false, false, false
 	}
 	lowered = op.(physical.VLQuery).Text
-	want, err := logsql.Parse(legacy)
-	if err != nil {
+	if _, err := logsql.Parse(legacy); err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
 	}
-	got, err := logsql.Parse(lowered)
-	if err != nil {
+	if _, err := logsql.Parse(lowered); err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, reflect.DeepEqual(want, got), false, true
+	return lowered, legacy, lowered == legacy, false, true
 }
 
 // A label filter without a parser lowers to the query the string translator writes, for every shape its

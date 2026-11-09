@@ -222,9 +222,9 @@ func labelFilter(e *logql.LabelFilterExpr, label func(string) string, caps logsq
 		case i == 0:
 			tree = o
 		case e.Op == logql.LabelFilterOr:
-			tree = logsql.OrExpr{Left: tree, Right: o}
+			tree = logsql.OrExpr{Left: tree, Right: o, Lower: true}
 		default:
-			tree = logsql.AndExpr{Left: tree, Right: o}
+			tree = logsql.AndExpr{Left: tree, Right: o, Lower: true}
 		}
 	}
 	return logsql.Group{Expr: tree}

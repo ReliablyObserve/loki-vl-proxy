@@ -164,8 +164,13 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
-			if !physical.Equal(want, got) {
-				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
+			// The flip serves the lowering's text: byte for byte, which includes the parsed structure.
+			if text := physical.Encode(got); text != legacy || !physical.Equal(want, got) {
+				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))
+				continue
+			}
+			if canon := logql.CanonicalizeLogRanges(q); canon == "" || canon[0] != '{' || logql.MayHaveNonFilterStage(canon) {
+				problems = append(problems, fmt.Sprintf("%s: %q: lowered natively, but the flip's screen turns it away", prof.name, q))
 				continue
 			}
 			native++

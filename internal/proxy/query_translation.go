@@ -460,11 +460,19 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 		caps := p.logsqlCapabilities()
 		caps.NoDetectedLevelBodyScan = !p.detectedLevelBodyScan
 
+		canon := logqlpkg.CanonicalizeLogRanges(normalized)
+		// A query the typed lowering covers is served from it: the same text, so the shadow has nothing to compare.
+		if p.queryPlanLowering {
+			if lowered, ok := p.lowerLogSelect(ctx, canon, loweringProfile(labelFn, streamFieldsMap, caps, keepLine)); ok {
+				return translationResult{query: p.cacheTranslation(cacheKey, lowered)}, nil
+			}
+		}
+
 		translate := translator.TranslateLogQLWithCapabilities
 		if keepLine {
 			translate = translator.TranslateLogQueryKeepingLine
 		}
-		translated, err := translate(logqlpkg.CanonicalizeLogRanges(normalized), labelFn, streamFieldsMap, caps)
+		translated, err := translate(canon, labelFn, streamFieldsMap, caps)
 		// The lowering shadow (-translate-shadow-sample) sees the options the translator saw and its answer, once
 		// the answer is final; it runs in the background and changes nothing here.
 		if err != nil {
@@ -474,13 +482,7 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			return translationResult{err: err}, nil
 		}
 		legacy := translated
-		trimmed := strings.TrimSpace(translated)
-		if strings.HasPrefix(trimmed, "|") {
-			translated = "* " + trimmed
-		}
-		if p.translationCache != nil {
-			p.translationCache.SetWithTTL(cacheKey, []byte(translated), 5*time.Minute)
-		}
+		translated = p.cacheTranslation(cacheKey, translated)
 		if p.loweringShadow != nil {
 			p.shadowLowering(shadowInput{query: normalized, keepLine: keepLine, label: labelFn, streamFields: streamFieldsMap, caps: caps, legacy: legacy})
 		}
@@ -499,6 +501,19 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 	}
 	p.observeInternalOperation(ctx, "translate_query", "translated", time.Since(start))
 	return res.query, nil
+}
+
+// cacheTranslation finishes a translation: a query that starts with a pipe gets the "* " the VictoriaLogs query
+// needs in front of it, and the result is cached for the translation cache's TTL. It returns the query the proxy
+// sends.
+func (p *Proxy) cacheTranslation(cacheKey, translated string) string {
+	if trimmed := strings.TrimSpace(translated); strings.HasPrefix(trimmed, "|") {
+		translated = "* " + trimmed
+	}
+	if p.translationCache != nil {
+		p.translationCache.SetWithTTL(cacheKey, []byte(translated), 5*time.Minute)
+	}
+	return translated
 }
 
 var (

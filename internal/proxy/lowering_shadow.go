@@ -42,6 +42,9 @@ const (
 	shadowSkipped    = "skipped"
 	shadowPanic      = "panic"
 	shadowBudget     = "budget"
+	// shadowFlipped counts a query the lowering answered instead of the string translator (-query-plan-lowering):
+	// nothing is compared for it.
+	shadowFlipped = "flipped"
 
 	// shadowNoConstruct is the construct of an outcome with no plan: a query that does not parse, or a
 	// comparison that never ran.
@@ -143,7 +146,7 @@ type shadowInput struct {
 }
 
 func (in shadowInput) profile() lower.Profile {
-	return lower.Profile{Caps: in.caps, Label: in.label, StreamFields: in.streamFields, KeepLine: in.keepLine}
+	return loweringProfile(in.label, in.streamFields, in.caps, in.keepLine)
 }
 
 // shadowLowering is called on a translation cache miss once the translator's answer is computed and in use. It
@@ -212,13 +215,8 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 
 	var lowered physical.Op
 	var newErr error
-	expr, err := logqlpkg.Parse(logqlpkg.CanonicalizeLogRanges(in.query))
-	var plan *queryplan.Plan
+	plan, err := loweringPlan(noFlowCtx, logqlpkg.CanonicalizeLogRanges(in.query))
 	if err == nil {
-		plan, err = queryplan.Build(expr, queryplan.Inputs{})
-	}
-	if err == nil {
-		queryplan.Resolve(plan)
 		construct = lower.Construct(plan.Root)
 		if out() {
 			result(shadowBudget)

@@ -1443,19 +1443,24 @@ func (m *Metrics) RecordUpstreamCallsPerRequestWithRoute(endpoint, route string,
 	h.observe(float64(calls))
 }
 
-// RecordLoweringShadow counts one outcome of the lowering shadow (-translate-shadow-sample) by result and the
+// RecordLoweringShadow counts one outcome of the lowering shadow (-translate-shadow-sample), or a query translated
+// by the lowering (flipped, -query-plan-lowering), by result and the
 // construct at the top of the plan. The caller passes values from its fixed sets: the label values are never
 // derived from a query.
 func (m *Metrics) RecordLoweringShadow(result, construct string) {
-	key := joinMetricKey(result, construct)
+	// The key is built in a stack buffer and looked up without a copy: a counter that exists costs no allocation,
+	// which keeps the count of flipped queries off the translation path's allocation count.
+	var buf [64]byte
+	key := append(append(append(buf[:0], result...), metricKeySep...), construct...)
 	m.mu.RLock()
-	counter, ok := m.loweringShadowTotal[key]
+	counter, ok := m.loweringShadowTotal[string(key)]
 	m.mu.RUnlock()
 	if !ok {
+		name := string(key)
 		m.mu.Lock()
-		if counter, ok = m.loweringShadowTotal[key]; !ok {
+		if counter, ok = m.loweringShadowTotal[name]; !ok {
 			counter = &atomic.Int64{}
-			m.loweringShadowTotal[key] = counter
+			m.loweringShadowTotal[name] = counter
 		}
 		m.mu.Unlock()
 	}
@@ -2156,7 +2161,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_total{operation=%q,outcome=%q} %d\n", parts[0], parts[1], sInternalOperationTotal[key].Load())
 	}
 
-	sb.WriteString("# HELP loki_vl_proxy_lowering_shadow_total Query-plan lowering shadow comparisons (-translate-shadow-sample) by result and plan construct.\n")
+	sb.WriteString("# HELP loki_vl_proxy_lowering_shadow_total Query-plan lowering outcomes (shadow comparisons with -translate-shadow-sample, and queries translated by the lowering with -query-plan-lowering) by result and plan construct.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_lowering_shadow_total counter\n")
 	shadowKeys := make([]string, 0, len(sLoweringShadow))
 	for k := range sLoweringShadow {

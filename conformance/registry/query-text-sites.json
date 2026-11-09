@@ -6,7 +6,7 @@
     "parse_calls": 64,
     "string_reads": 50,
     "text_built": 209,
-    "translator_string_ops": 674
+    "translator_string_ops": 673
   },
   "files": {
     "deferred_raw": {
@@ -30,7 +30,6 @@
       "internal/proxy/limits_enforcement.go": 1,
       "internal/proxy/log_line.go": 1,
       "internal/proxy/loki_profile.go": 3,
-      "internal/proxy/lowering_shadow.go": 1,
       "internal/proxy/manual_metric_budget.go": 1,
       "internal/proxy/metric_agg.go": 8,
       "internal/proxy/metric_binary.go": 1,
@@ -42,6 +41,7 @@
       "internal/proxy/proxy.go": 5,
       "internal/proxy/quantile_histogram.go": 1,
       "internal/proxy/query_extract.go": 1,
+      "internal/proxy/query_lowering.go": 1,
       "internal/proxy/query_plan.go": 1,
       "internal/proxy/query_range_steps.go": 2,
       "internal/proxy/query_range_windowing.go": 1,
@@ -117,7 +117,7 @@
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
-      "internal/translator/translator.go": 379,
+      "internal/translator/translator.go": 378,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

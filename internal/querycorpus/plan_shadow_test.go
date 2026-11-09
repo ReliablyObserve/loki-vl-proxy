@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
@@ -33,6 +35,9 @@ type shadowSection struct {
 	// DelegatedByConstruct counts, by the construct at the top of the plan, the rows answered by the string
 	// translator because the lowering does not cover them yet (reported, not gated: it grows with the corpus).
 	DelegatedByConstruct map[string]int `json:"delegated_by_construct"`
+	// Flipped are the constructs the proxy serves from the lowering instead of the string translator
+	// (proxy.QueryPlanFlippedConstructs): each is native on the corpus with 0 mismatches, text included.
+	Flipped []string `json:"flipped"`
 }
 
 // shadowSlice is one profile × construct of a shadow run: the slice a failure names.
@@ -127,6 +132,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				fail(fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
 				continue
 			}
+			// The flip serves the lowering's text, so a native row must also be the translator's text, byte for byte.
+			if text := translator.EncodePhysical(got); text != legacy {
+				fail(fmt.Sprintf("%s: %q:\n lowered text %s\n   string text %s", prof.name, q, text, legacy))
+				continue
+			}
 			sec.Native++
 			sl.native++
 		}
@@ -139,6 +149,16 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 func TestPlanShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	got, problems, slices := runShadowSlices(t, nativeLowering, 0)
+	got.Flipped = proxy.QueryPlanFlippedConstructs
+	// A flipped construct is served from the lowering with the corpus as its proof: it must be native under every
+	// profile, and its rows must all equal the string translator's text (a mismatch fails the run above).
+	for _, c := range got.Flipped {
+		for _, prof := range planProfiles() {
+			if sl := slices[[2]string{prof.name, c}]; sl == nil || sl.native == 0 || sl.mismatches != 0 {
+				t.Errorf("%s is served from the lowering, but is not native on the corpus under %q: %+v", c, prof.name, sl)
+			}
+		}
+	}
 	// One subtest per profile and construct: a mismatch names the slice it is in.
 	for _, prof := range planProfiles() {
 		t.Run(prof.name, func(t *testing.T) {
@@ -187,8 +207,48 @@ func TestPlanShadow(t *testing.T) {
 	if got.Native < want.Native {
 		t.Fatalf("native fell from %d to %d: a construct that was lowered no longer is", want.Native, got.Native)
 	}
+	if os.Getenv("LVP_QUERY_PLAN_UPDATE") != "1" && !reflect.DeepEqual(got.Flipped, want.Flipped) {
+		t.Fatalf("the constructs served from the lowering are %v, %s records %v: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestPlanShadow and commit it", got.Flipped, planPath, want.Flipped)
+	}
 	if os.Getenv("LVP_QUERY_PLAN_UPDATE") != "1" && got.Native > want.Native {
 		t.Fatalf("native rose from %d to %d: run LVP_QUERY_PLAN_UPDATE=1 go test ./internal/querycorpus -run TestPlanShadow and commit %s", want.Native, got.Native, planPath)
+	}
+}
+
+// The proxy asks two cheap screens before it plans a query to serve from the lowering (a stream selector first,
+// logql.MayHaveNonFilterStage): neither may turn away a query the lowering writes natively, or the flip would
+// silently leave it to the string translator.
+// conformance: architecture-syntax-package-layering
+func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	admitted, turned := 0, 0
+	for _, q := range append(planCorpus(t), labelFilterGrid()...) {
+		canon := logql.CanonicalizeLogRanges(q)
+		expr, err := logql.Parse(canon)
+		if err != nil {
+			continue
+		}
+		plan, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			continue
+		}
+		queryplan.Resolve(plan)
+		passes := canon != "" && canon[0] == '{' && !logql.MayHaveNonFilterStage(canon)
+		for _, prof := range planProfiles() {
+			if _, err := lower.Plan(plan, prof.lowerProfile()); err != nil {
+				continue
+			}
+			if !passes {
+				t.Errorf("%s: %q is lowered natively, but the flip's screen turns it away", prof.name, q)
+				turned++
+				continue
+			}
+			admitted++
+		}
+	}
+	t.Logf("native rows admitted by the screen: %d, turned away: %d", admitted, turned)
+	if admitted == 0 {
+		t.Fatal("no native row")
 	}
 }
 

@@ -222,6 +222,9 @@
       "Scalar": 18,
       "VectorAgg": 9207,
       "VectorLit": 9
-    }
+    },
+    "flipped": [
+      "LogSelect"
+    ]
   }
 }
