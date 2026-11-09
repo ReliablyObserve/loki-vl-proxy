@@ -7,15 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.109.0] - 2026-11-09
-
 ### Fixed
 
-- A `|=` or `!=` line filter whose text is not UTF-8 (`|= "\xff\xfe"`)
-  answers like Loki instead of 400: `|=` keeps no line and `!=` every line,
-  since no stored line holds such bytes, and an `or` chain keeps its valid
-  alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
-  as U+FFFD, as Loki does.
 - A pattern line filter (`|>` or `!>`) with two captures in a row
   (`|> "<_><_>"`) or a named capture (`|> "<foo>"`, `|> "<_> <foo>"`) is
   rejected with Loki's 400 and Loki's text, for log and metric queries alike.
@@ -29,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and their `or` chains) to VictoriaLogs natively, through the builder the
   string translator now shares. The requests sent to VictoriaLogs do not
   change.
+
+## [2.109.0] - 2026-11-09
+
+### Fixed
+
+- A `|=` or `!=` line filter whose text is not UTF-8 (`|= "\xff\xfe"`)
+  answers like Loki instead of 400: `|=` keeps no line and `!=` every line,
+  since no stored line holds such bytes, and an `or` chain keeps its valid
+  alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
+  as U+FFFD, as Loki does.
 
 ## [2.108.0] - 2026-11-09
 
