@@ -78,7 +78,7 @@ gap:
   loki: 'line filters built as runs (adjacent, and across parsers up to a label filter, line_format or unpack), checked from the last'
   proxy: 'line filters validated as the same runs, in the same order as other stages, quoting the run'
   planned_test: 'TestCompat_LineFilterErrorRunsLikeLoki (test/e2e-compat); TestLineFilterRunValidationMatchesLoki, TestLineFilterRunMetricQueriesMatchLoki, TestPatternLineFilterValidationMatchesLoki, FuzzLineFilterRunMatchesItsFilters (internal/logql)'
-  fixed_by: '#PR'
+  fixed_by: '#1242'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries, query_range and query'
   clusters:

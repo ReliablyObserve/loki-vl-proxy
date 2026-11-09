@@ -54,7 +54,7 @@ gap:
   loki: 'label filter, drop and keep regexes parsed with the query; parse errors before the post-parse rules and the pipeline build'
   proxy: 'the LogQL validation rejects them with Loki''s text, in Loki''s order'
   planned_test: 'TestStageParseErrorsMatchLoki (internal/logql, 148 recorded answers of the Loki oracle check command)'
-  fixed_by: '#PR'
+  fixed_by: '#1242'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only'
   clusters: []

@@ -222,7 +222,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/scalar-sample-time-units` — A scalar instant answer is stamped in integer milliseconds, like Loki (fixed) | #752 | 0 | 0 |
 | `semantics/proxy-rejects-valid-logql` — LogQL Loki accepts that the proxy rejected: comments, signed and compound offsets, logfmt flags (fixed) | pending | 29 | 42 |
 | `semantics/proxy-accepts-invalid-logql` — Queries Loki rejects with 400 are rejected by the proxy with Loki's parse error (fixed) | pending | 13 | 17 |
-| `semantics/line-filter-error-quotes-the-run` — A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed) | #PR | 3 | 7 |
+| `semantics/line-filter-error-quotes-the-run` — A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed) | #1242 | 3 | 7 |
 | `semantics/pattern-line-filter-invalid-captures` — A pattern line filter with consecutive or named captures is Loki's 400 with Loki's text (fixed) | #1239 | 1 | 1 |
 | `drilldown/index_volume/end-millisecond-rounding` — The last index volume sample is stamped at the end rounded up to the millisecond (fixed) | #1048 | 0 | 0 |
 | `quality/index-stats-default-window` — index/stats without start reads Loki's default hour before end (or now), or `since` (fixed) | #988 | 0 | 0 |
@@ -230,6 +230,6 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/comments-signed-compound-offsets` — `#` comments, negative offsets and compound durations parse and answer like Loki | pending | 0 | 0 |
 | `semantics/count-values-unsupported` — count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed) | #860 | 0 | 0 |
 | `semantics/ip-label-filter-invalid-pattern` — An ip() label filter with an invalid pattern is Loki's 400 with Loki's text (fixed) | #1239 | 0 | 0 |
-| `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #PR | 0 | 0 |
+| `semantics/label-filter-regex-parse-error` — A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed) | #1242 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |
