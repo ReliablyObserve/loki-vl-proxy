@@ -227,5 +227,6 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/binary-division-by-zero-nan` — A zero divisor of `/` and `%` is NaN, like Loki (fixed) | #745 | 0 | 0 |
 | `semantics/comments-signed-compound-offsets` — `#` comments, negative offsets and compound durations parse and answer like Loki | pending | 0 | 0 |
 | `semantics/count-values-unsupported` — count_values() is rejected with Loki's own parse error, not a proxy-only message (fixed) | #860 | 0 | 0 |
+| `semantics/ip-label-filter-invalid-pattern` — An ip() label filter with an invalid pattern is Loki's 400 with Loki's text (fixed) | #1239 | 0 | 0 |
 | `semantics/line-filter-invalid-utf8` — A \|= or != line filter whose text is not UTF-8 answers like Loki (fixed) | #1236 | 0 | 0 |
 | `versions/capabilities-floor-vs-matrix` — logsql.Capabilities treated VictoriaLogs below v1.40 as unsupported while the matrix claimed v1.30 (fixed) | #659 | 0 | 0 |

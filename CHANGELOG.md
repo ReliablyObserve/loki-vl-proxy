@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking:** these queries answered 200 before (every line, or none), or a
   400 with VictoriaLogs' text; Loki has always rejected them. The `| pattern`
   parser keeps its named captures.
+- An `ip()` label filter with an invalid pattern (`| addr=ip("zzz")`,
+  `ip("")`, `ip("1.2.3.4/33")`, a reversed range) is rejected with Loki's 400
+  and Loki's text, for log and metric queries alike. **Breaking:** these
+  queries answered 200 before; Loki has always rejected them. A stage that
+  joins several filters (`a="1", addr=ip("zzz")`) is still accepted, as in
+  Loki.
 
 ### Changed
 

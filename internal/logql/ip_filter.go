@@ -9,10 +9,12 @@ import (
 // validIPPattern follows Loki's getMatcher: an address, prefix, or ordered
 // same-family address range. Range zones are stripped, as in netipx.ParseIPRange.
 func validIPPattern(pattern string) bool {
-	if _, err := netip.ParseAddr(pattern); err == nil {
-		return true
+	if strings.ContainsRune(pattern, '/') {
+		// Only a prefix holds a slash; reading it first spares the failed address parse its error.
+		_, err := netip.ParsePrefix(pattern)
+		return err == nil
 	}
-	if _, err := netip.ParsePrefix(pattern); err == nil {
+	if _, err := netip.ParseAddr(pattern); err == nil {
 		return true
 	}
 	from, to, ok := strings.Cut(pattern, "-")

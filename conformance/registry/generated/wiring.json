@@ -354,6 +354,7 @@
       "test/e2e-compat/extracted_suffix_collision_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
+      "test/e2e-compat/ip_label_filter_invalid_pattern_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
@@ -460,6 +461,7 @@
       "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/ip_label_filter_invalid_pattern_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
@@ -1038,6 +1040,10 @@
     ],
     "semantics/ip-label-filter-embedded-address": [
       "internal/translator/ip_label_filter_test.go"
+    ],
+    "semantics/ip-label-filter-invalid-pattern": [
+      "internal/logql/ip_label_filter_validate_loki_test.go",
+      "test/e2e-compat/ip_label_filter_invalid_pattern_test.go"
     ],
     "semantics/ip-label-filter-missing-label": [
       "internal/proxy/ip_label_filter_test.go",
@@ -1697,7 +1703,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 442,
+  "registry_items": 443,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1736,6 +1742,9 @@
     ],
     "internal/logql/input_size_test.go": [
       "architecture-syntax-package-layering"
+    ],
+    "internal/logql/ip_label_filter_validate_loki_test.go": [
+      "semantics/ip-label-filter-invalid-pattern"
     ],
     "internal/logql/label_filter_expr_golden_test.go": [
       "semantics/label-filter-expression-syntax"
@@ -3185,6 +3194,11 @@
       "semantics/instant-result-type-missing",
       "semantics/scalar-sample-time-units"
     ],
+    "test/e2e-compat/ip_label_filter_invalid_pattern_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/ip-label-filter-invalid-pattern"
+    ],
     "test/e2e-compat/ip_label_filter_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -3654,7 +3668,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 398,
+  "tests_with_markers": 400,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3757,5 +3771,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 269
+  "wired_items": 270
 }

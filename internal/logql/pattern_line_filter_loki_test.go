@@ -53,9 +53,9 @@ type patternFilterAnswer struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// recordPatternFilterAnswers runs the Loki oracle (test/oracle/loki pipeline: Loki's exported pipeline build) over
-// the grid and writes its answers, one JSON line per query.
-func recordPatternFilterAnswers(t *testing.T, grid []string) {
+// recordPipelineAnswers runs the Loki oracle (test/oracle/loki pipeline: Loki's exported pipeline build) over the
+// grid and writes its answers to path, one JSON line per query.
+func recordPipelineAnswers(t *testing.T, grid []string, path string) {
 	t.Helper()
 	work := t.TempDir()
 	bin, err := oraclerun.Build(filepath.Join("..", "..", "test", "oracle", "loki"), "", work, "loki")
@@ -98,7 +98,7 @@ func recordPatternFilterAnswers(t *testing.T, grid []string) {
 	if err := os.MkdirAll("testdata", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(patternFilterLokiAnswers, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -118,7 +118,7 @@ const lineFilterRunTextDifferences = 46
 func TestPatternLineFilterValidationMatchesLoki(t *testing.T) {
 	grid := patternFilterGrid()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordPatternFilterAnswers(t, grid)
+		recordPipelineAnswers(t, grid, patternFilterLokiAnswers)
 	}
 	b, err := os.ReadFile(patternFilterLokiAnswers)
 	if err != nil {

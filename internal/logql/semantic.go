@@ -181,6 +181,11 @@ func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {
 				return msg
 			}
 		}
+		if lf, ok := s.(*LabelFilterStage); ok {
+			if msg := ipLabelFilterError(lf); msg != "" {
+				return msg
+			}
+		}
 	}
 	return ""
 }

@@ -400,6 +400,9 @@
     "semantics/ip-label-filter-embedded-address | compare:observed",
     "semantics/ip-label-filter-embedded-address | gap:open",
     "semantics/ip-label-filter-embedded-address | query",
+    "semantics/ip-label-filter-invalid-pattern | compare:observed",
+    "semantics/ip-label-filter-invalid-pattern | gap:fixed",
+    "semantics/ip-label-filter-invalid-pattern | query",
     "semantics/ip-label-filter-missing-label | compare:observed",
     "semantics/ip-label-filter-missing-label | gap:fixed",
     "semantics/ip-label-filter-missing-label | perf",
@@ -858,6 +861,7 @@
     "internal/logql/count_values_test.go | semantics/count-values-unsupported",
     "internal/logql/dotted_names_test.go | profiles/dotted-name-parse-error",
     "internal/logql/input_size_test.go | architecture-syntax-package-layering",
+    "internal/logql/ip_label_filter_validate_loki_test.go | semantics/ip-label-filter-invalid-pattern",
     "internal/logql/label_filter_expr_golden_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_syntax_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -1704,6 +1708,9 @@
     "test/e2e-compat/instant_result_type_test.go | loki_api_v1_query",
     "test/e2e-compat/instant_result_type_test.go | semantics/instant-result-type-missing",
     "test/e2e-compat/instant_result_type_test.go | semantics/scalar-sample-time-units",
+    "test/e2e-compat/ip_label_filter_invalid_pattern_test.go | loki_api_v1_query",
+    "test/e2e-compat/ip_label_filter_invalid_pattern_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/ip_label_filter_invalid_pattern_test.go | semantics/ip-label-filter-invalid-pattern",
     "test/e2e-compat/ip_label_filter_test.go | loki_api_v1_query",
     "test/e2e-compat/ip_label_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/ip_label_filter_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -2004,14 +2011,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 45,
+      "api": 46,
       "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 397,
+      "go": 399,
       "playwright": 1
     },
     "page_kinds": {
@@ -2031,7 +2038,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 99,
-    "wired_items": 269
+    "wired_items": 270
   },
   "gates": [
     "A/B shape selection",
