@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.113.0] - 2026-11-09
-
 ### Fixed
 
 - An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
@@ -28,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a label (Drilldown include and exclude clicks on the same field, or a
   hand-written chain) kept lines before and now keep the lines Loki keeps,
   often none.
+
+### Changed
+
+- The query plan lowers log queries with label filters that have no parser in
+  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
+  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
+  string translator now shares; the requests sent to VictoriaLogs are those of
+  the string translator.
+- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
+  instead of about 60 ms on every query: the regexp's edges are written as a
+  class without ASCII letters and the letters apart (a negated class over all
+  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
+  VictoriaLogs does while simplifying a regexp). The same lines match.
+
+## [2.113.0] - 2026-11-09
+
+### Fixed
+
 - Label filter number, duration and bytes literals are read as Loki reads
   them: numbers follow Go's scanner (`0x1`, `0o7`, `0b1`, `1_000`, `1e3`,
   `0x1p3`), a duration is Go's syntax or whole `y w d h m s ms`, a bytes size
@@ -54,19 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   white space and a trailing control character is a token.
   **Breaking:** these forms answer Loki's 400 instead of being accepted
   (`| a>5 + 3`, `| by="x"`, `| a>5\v`).
-
-### Changed
-
-- The query plan lowers log queries with label filters that have no parser in
-  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
-  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
-  string translator now shares; the requests sent to VictoriaLogs are those of
-  the string translator.
-- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
-  instead of about 60 ms on every query: the regexp's edges are written as a
-  class without ASCII letters and the letters apart (a negated class over all
-  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
-  VictoriaLogs does while simplifying a regexp). The same lines match.
 
 ## [2.112.0] - 2026-11-09
 
