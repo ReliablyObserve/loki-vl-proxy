@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -60,30 +61,67 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 
 // logSelect lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
 // translator writes; keeping the line aside adds nothing without a line_format) and its line filters
-// (translate.LineFilter), in order. Any other stage, and a pattern line filter, is not lowered yet.
+// (translate.LineFilter, and translate.PatternLineFilter for |> and !>), in order. A pattern filter that needs
+// the extract pipe adds pipes; the filters after a pipe go into one filter pipe up to the next pipe, as the
+// string translator writes them. Any other stage is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	filters := make(logsql.AllOf, 0, len(sel.Stages)+1)
+	var filters, after logsql.AllOf
+	var pipes []logsql.Pipe
+	flush := func() {
+		switch len(after) {
+		case 0:
+		case 1:
+			pipes = append(pipes, logsql.PipeFilter{Expr: after[0]})
+		default:
+			pipes = append(pipes, logsql.PipeFilter{Expr: after})
+		}
+		after = nil
+	}
+	add := func(fs ...logsql.FilterExpr) {
+		if len(pipes) == 0 {
+			filters = append(filters, fs...)
+		} else {
+			after = append(after, fs...)
+		}
+	}
+	// seq numbers the pattern alternatives that extract, across the query.
+	seq := 0
 	for _, st := range sel.Stages {
 		lf, ok := st.(*queryplan.LineFilter)
 		if !ok {
 			return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
+		if lf.Op == logql.LineFilterContainsPat || lf.Op == logql.LineFilterExcludePat {
+			values := []string{lf.Value}
+			for _, alt := range lf.Or {
+				values = append(values, alt.Value)
+			}
+			fs, ps := translate.PatternLineFilter(values, lf.Op == logql.LineFilterExcludePat, &seq)
+			add(fs...)
+			if len(ps) > 0 {
+				flush()
+				pipes = append(pipes, ps...)
+			}
+			continue
+		}
 		f, ok := translate.LineFilter(lf)
 		if !ok {
-			return nil, &NotLoweredError{Construct: "LogSelect pattern filter"}
+			return nil, &NotLoweredError{Construct: "LogSelect line filter"}
 		}
 		if f != nil {
-			filters = append(filters, f)
+			add(f)
 		}
 	}
+	flush()
 	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
 	if err != nil {
 		return nil, err
 	}
-	if len(filters) == 0 {
-		return physical.VLQuery{Text: f.String()}, nil
+	q := logsql.Query{Filter: f, Pipes: pipes}
+	if len(filters) > 0 {
+		q.Filter = append(logsql.AllOf{f}, filters...)
 	}
-	return physical.VLQuery{Text: append(logsql.AllOf{f}, filters...).String()}, nil
+	return physical.VLQuery{Text: q.String()}, nil
 }
 
 // Construct is the kind of the node at the top of a plan, the unit the shadow

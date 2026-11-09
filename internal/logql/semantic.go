@@ -176,6 +176,16 @@ func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {
 		if msg := validateStageSemantics(s); msg != "" {
 			return msg
 		}
+		if lf, ok := s.(*LineFilterStage); ok {
+			if msg := patternLineFilterError(lf); msg != "" {
+				return msg
+			}
+		}
+		if lf, ok := s.(*LabelFilterStage); ok {
+			if msg := ipLabelFilterError(lf); msg != "" {
+				return msg
+			}
+		}
 	}
 	return ""
 }

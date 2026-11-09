@@ -1,7 +1,6 @@
 package translator
 
 import (
-	"regexp"
 	"testing"
 )
 
@@ -51,26 +50,6 @@ func TestTranslateEmptyPatternLineFilter(t *testing.T) {
 		}
 		if got != c.want {
 			t.Errorf("%s:\n got %s\nwant %s", c.logql, got, c.want)
-		}
-	}
-}
-
-// The regexp VictoriaLogs evaluates keeps Loki's verdict per line: the empty
-// pattern accepts only the empty line (pattern.Matcher.Test).
-// conformance: semantics/pattern-line-filter
-func TestEmptyPatternRegexpMatchesOnlyEmptyLine(t *testing.T) {
-	re := regexp.MustCompile(planPatternLineFilter("", 0).re)
-	for line, want := range map[string]bool{
-		"":                 true,
-		" ":                false,
-		"a":                false,
-		"GET /x 200":       false,
-		"first\nsecond":    false,
-		"\n":               false,
-		"level=info msg=x": false,
-	} {
-		if got := re.MatchString(line); got != want {
-			t.Errorf("empty pattern vs %q: matched=%v, Loki accepts=%v", line, got, want)
 		}
 	}
 }

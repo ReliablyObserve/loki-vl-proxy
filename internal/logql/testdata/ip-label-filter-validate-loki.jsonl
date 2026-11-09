@@ -1,0 +1,280 @@
+{"accept":false,"error":"parse error : stage '| addr=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| 日本=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| addr=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"\")' : ip: invalid pattern: \"\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"a\\\"b\")' : ip: invalid pattern: \"a\\\"b\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4/33\")' : ip: invalid pattern: \"1.2.3.4/33\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.5-1.2.3.4\")' : ip: invalid pattern: \"1.2.3.5-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"::1-1.2.3.4\")' : ip: invalid pattern: \"::1-1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\" 1.2.3.4\")' : ip: invalid pattern: \" 1.2.3.4\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3.4 \")' : ip: invalid pattern: \"1.2.3.4 \""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"999.1.1.1\")' : ip: invalid pattern: \"999.1.1.1\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"1.2.3\")' : ip: invalid pattern: \"1.2.3\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| 日本!=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| addr!=ip(\"é\")' : ip: invalid pattern: \"é\""}
+{"accept":false,"error":"parse error : stage '| y=ip(\"yyy\")' : ip: invalid pattern: \"yyy\""}
+{"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.a}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| x=ip(\"zzz\")' : ip: invalid pattern: \"zzz\""}

@@ -10,9 +10,10 @@
 //	go run . similar -src "$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)" -ours ../../internal/logql -out similar.json
 //	go run . facts -in queries.jsonl -out facts.jsonl
 //	go run . ipfilter -in lines.jsonl -out verdicts.jsonl
+//	go run . pipeline -in queries.jsonl -out verdicts.jsonl
 //
 // cases writes the queries of Loki's syntax tests (pkg/logql/syntax/*_test.go); check parses every input with
-// Loki and writes whether Loki accepts it, its error text and whether the proxy's printed form means the same
+// Loki, builds its pipelines, and writes whether Loki accepts it, its error text and whether the proxy's printed form means the same
 // to Loki; similar compares the proxy's Go files with every Go file under Loki's pkg/, tests included, by token
 // fingerprints and writes the share of each proxy file that matches; facts writes what Loki's tree says about each
 // query (outer aggregation, offsets, pipeline stages), which the proxy's query plan resolver is compared with.
@@ -84,6 +85,8 @@ func main() {
 		err = facts(*in, *out)
 	case "ipfilter":
 		err = ipfilter(*in, *out)
+	case "pipeline":
+		err = pipeline(*in, *out)
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -217,9 +220,77 @@ func check(in, out string) error {
 	return writeLines(out, verdicts)
 }
 
+// build is parse, then the pipelines of q as Loki builds them before it answers: a stage Loki parses but refuses
+// to build (a pattern line filter with two captures in a row, an ip() label filter with an invalid pattern) is a
+// rejection there, the 400 its HTTP API answers. In a metric query Loki first drops a line_format no later stage
+// reads (observed on the stack: count_over_time({...} | line_format "{{.a" [5m]) answers 200), so those stages are
+// left out of a metric query's pipelines before they are built.
+func build(q string) (canonical string, err error) {
+	canonical, err = parse(q)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("pipeline panic: %v", p)
+		}
+	}()
+	expr, err := syntax.ParseExpr(q)
+	if err != nil {
+		return "", err
+	}
+	if sel, ok := expr.(syntax.LogSelectorExpr); ok {
+		if _, err := sel.Pipeline(); err != nil {
+			return "", err
+		}
+		return canonical, nil
+	}
+	expr.Walk(func(e syntax.Expr) bool {
+		if err != nil {
+			return false
+		}
+		if p, ok := e.(*syntax.PipelineExpr); ok {
+			metric := &syntax.PipelineExpr{MultiStages: withoutUnreadLineFormats(p.MultiStages), Left: p.Left}
+			if _, perr := metric.Pipeline(); perr != nil {
+				err = perr
+				return false
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return "", err
+	}
+	return canonical, nil
+}
+
+// withoutUnreadLineFormats is stages without each line_format no later stage reads the line of (a parser or a line
+// filter).
+func withoutUnreadLineFormats(stages syntax.MultiStageExpr) syntax.MultiStageExpr {
+	out := make(syntax.MultiStageExpr, 0, len(stages))
+	for i, st := range stages {
+		if _, ok := st.(*syntax.LineFmtExpr); ok && !lineReadAfter(stages[i+1:]) {
+			continue
+		}
+		out = append(out, st)
+	}
+	return out
+}
+
+func lineReadAfter(stages syntax.MultiStageExpr) bool {
+	for _, st := range stages {
+		switch st.(type) {
+		case *syntax.LineFilterExpr, *syntax.LineParserExpr, *syntax.LogfmtParserExpr, *syntax.JSONExpressionParserExpr,
+			*syntax.LogfmtExpressionParserExpr:
+			return true
+		}
+	}
+	return false
+}
+
 func verdict(input Input) Verdict {
 	v := Verdict{ID: input.ID, Kind: input.Kind, Ours: input.Ours}
-	canonical, err := parse(input.Query)
+	_, err := build(input.Query)
 	v.Accept = err == nil
 	if err != nil {
 		v.Error = err.Error()
@@ -229,8 +300,10 @@ func verdict(input Input) Verdict {
 		}
 	}
 	if input.Printed != "" {
+		// The printed form means the same when Loki parses both to one expression, whether or not it builds them.
+		parsed, qerr := parse(input.Query)
 		printed, perr := parse(input.Printed)
-		same := err == nil && perr == nil && printed == canonical
+		same := qerr == nil && perr == nil && printed == parsed
 		v.SameMeaning = &same
 	}
 	return v

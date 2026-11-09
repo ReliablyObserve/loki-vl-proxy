@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A pattern line filter (`|>` or `!>`) with two captures in a row
+  (`|> "<_><_>"`) or a named capture (`|> "<foo>"`, `|> "<_> <foo>"`) is
+  rejected with Loki's 400 and Loki's text, for log and metric queries alike.
+  **Breaking:** these queries answered 200 before (every line, or none), or a
+  400 with VictoriaLogs' text; Loki has always rejected them. The `| pattern`
+  parser keeps its named captures.
+- An `ip()` label filter with an invalid pattern (`| addr=ip("zzz")`,
+  `ip("")`, `ip("1.2.3.4/33")`, a reversed range) is rejected with Loki's 400
+  and Loki's text, for log and metric queries alike. **Breaking:** these
+  queries answered 200 before; Loki has always rejected them. A stage that
+  joins several filters (`a="1", addr=ip("zzz")`) is still accepted, as in
+  Loki.
+
+### Changed
+
+- The query plan lowers log queries with pattern line filters (`|>`, `!>`,
+  and their `or` chains) to VictoriaLogs natively, through the builder the
+  string translator now shares. The requests sent to VictoriaLogs do not
+  change.
+
 ## [2.109.0] - 2026-11-09
 
 ### Fixed

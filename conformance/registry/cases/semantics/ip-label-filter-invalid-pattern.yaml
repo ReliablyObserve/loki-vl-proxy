@@ -1,0 +1,53 @@
+id: semantics/ip-label-filter-invalid-pattern
+title: An ip() label filter with an invalid pattern is Loki's 400 with Loki's text (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki builds a label filter stage that is one ip() comparison
+  (`| addr=ip("zzz")`, `| addr!=ip("")`) before it answers, and rejects a
+  pattern that is not an address, a CIDR prefix or an ordered range of one
+  family: `parse error : stage '| addr=ip("zzz")' : ip: invalid pattern:
+  "zzz"`, for log and metric queries alike (stack, Loki 3.7.9, 2026-11-09;
+  Loki oracle pipeline command). The stage is quoted as Loki prints it: ip
+  in lower case, no spaces, the pattern quoted (`| addr = IP ( "zzz" )` is
+  quoted `'| addr=ip("zzz")'`). A stage that joins several filters
+  (`a="1", addr=ip("zzz")`, `and`, `or`) is not rejected. The proxy answered
+  200 for every one of these.
+
+  Found when the Loki oracle's check began building the pipelines of the
+  corpus queries (#1239): 25 log and 13 metric queries of the corpus.
+
+  Fixed: the LogQL validation rejects a one-leaf ip() label filter stage
+  whose pattern is invalid, with Loki's text, in pipeline order with the
+  other stage checks. Held to the Loki oracle on a grid of 280 queries
+  (patterns, = and !=, spellings, joined stages, neighbouring failing
+  stages): every status and text equal.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | addr=ip("zzz")'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 parse error, byte for byte.
+gap:
+  status: fixed
+  impact: api-only
+  effort: S
+  area: 'internal/logql label_filter_ip_validate.go (ipLabelFilterError)'
+  loki: 'ip() label filter patterns are validated when the pipeline is built (recorded with the Loki oracle pipeline command)'
+  proxy: 'the LogQL validation rejects them with Loki''s text before anything is translated'
+  planned_test: 'TestCompat_IPLabelFilterInvalidPatternLikeLoki (test/e2e-compat, group core); TestIPLabelFilterValidationMatchesLoki (internal/logql)'
+  fixed_by: '#1239'
+  visual: none
+  visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries'
+  clusters: []
