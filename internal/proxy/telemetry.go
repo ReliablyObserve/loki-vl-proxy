@@ -43,6 +43,9 @@ type requestTelemetry struct {
 	// the bytes the stats layer wrote after that point.
 	statsPrefixCapture bool
 	statsSuffix        []byte
+	// statsTotals are the Loki-meaning totals derived for this answer
+	// (query_stats_totals.go).
+	statsTotals statsTotals
 	// heavyAdmissionRejected memoizes a heavy-query queue rejection so later
 	// heavy backend calls of the same request fail fast instead of queueing again.
 	heavyAdmissionRejected error

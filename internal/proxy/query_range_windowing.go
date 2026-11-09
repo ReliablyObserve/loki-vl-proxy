@@ -1192,6 +1192,14 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 	if raw == "" {
 		return 0, false
 	}
+	// Grafana sends integer nanoseconds: read them before trying the time
+	// layouts, whose failed parses allocate their errors. An integer is never
+	// an RFC 3339 time, so the order does not change any answer.
+	if isDecimalInteger(raw) {
+		if nInt, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			return normalizeLokiIntTimeToUnixNano(nInt), true
+		}
+	}
 	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
 		return parsed.UnixNano(), true
 	}
@@ -1219,6 +1227,22 @@ func parseLokiTimeToUnixNano(raw string) (int64, bool) {
 		return 0, false
 	}
 	return normalizeLokiNumericTimeToUnixNano(n), true
+}
+
+// isDecimalInteger reports whether s is an optional sign and ASCII digits.
+func isDecimalInteger(s string) bool {
+	if s != "" && (s[0] == '-' || s[0] == '+') {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeLokiIntTimeToUnixNano(v int64) int64 {

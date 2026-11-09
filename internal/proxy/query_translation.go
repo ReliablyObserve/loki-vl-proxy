@@ -815,8 +815,8 @@ func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, 
 // (spec, false) on any parse or validation failure, signalling the caller to
 // fall back to the regex implementation.
 func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpec, bool) {
-	expr, err := parseLogQLExpr(noFlowCtx, query)
-	if err != nil {
+	expr, ok := sharedLogQLExpr(query)
+	if !ok {
 		return bareParserMetricCompatSpec{}, false
 	}
 	// Reject VectorAggregation wrappers (e.g. sum(count_over_time(...))) — the

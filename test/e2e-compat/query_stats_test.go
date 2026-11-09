@@ -181,3 +181,74 @@ func TestDrilldown_QueryStatsEnvelope(t *testing.T) {
 		t.Fatalf("the proxy's summary stats %v differ from Loki's %v (all: proxy %v, Loki %v)", got, want, proxy, loki)
 	}
 }
+
+// TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer: after the panel's
+// volume query (Explore's shape, wrapping the logs query's expression), the
+// logs query of the same window reports the window's lines: the volume
+// answer's steps wholly inside the window. Loki's figure for the same window
+// is logged (it equals the window's lines while its ingesters hold the
+// window, and stops early beyond).
+//
+// conformance: drilldown/logs-footer-query-stats, query-stats-envelope
+func TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer(t *testing.T) {
+	ensureDataIngested(t)
+	end := time.Now().Add(-2 * time.Minute).Truncate(time.Minute)
+	start := end.Add(-15 * time.Minute)
+	nonce := fmt.Sprintf("qstats-w-%d", time.Now().UnixNano())
+	expr := `{app="api-gateway"} != "` + nonce + `"`
+	headers := map[string]string{"X-Scope-OrgID": "0"}
+	volume := url.Values{"query": {`sum by (level, detected_level) (count_over_time(` + expr + ` | drop __error__ [60s]))`},
+		"start": {fmt.Sprint(start.Unix())}, "end": {fmt.Sprint(end.Unix())}, "step": {"60"}}
+	status, raw, _ := doJSONGET(t, proxyURL+"/loki/api/v1/query_range?"+volume.Encode(), headers)
+	if status != http.StatusOK {
+		t.Fatalf("volume query: %d %s", status, raw)
+	}
+	var vol struct {
+		Data struct {
+			Result []struct {
+				Values [][]json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &vol); err != nil {
+		t.Fatal(err)
+	}
+	var want int64
+	for _, s := range vol.Data.Result {
+		for _, v := range s.Values {
+			tsf, _ := strconv.ParseFloat(string(v[0]), 64)
+			ts := int64(tsf)
+			var str string
+			_ = json.Unmarshal(v[1], &str)
+			n, _ := strconv.ParseInt(str, 10, 64)
+			if ts-60 >= start.Unix() && ts <= end.Unix() {
+				want += n
+			}
+		}
+	}
+	if want == 0 {
+		t.Skipf("no lines of %s in [%s, %s]", expr, start, end)
+	}
+	logs := url.Values{"query": {expr}, "limit": {"100"}, "direction": {"backward"},
+		"start": {fmt.Sprint(start.UnixNano())}, "end": {fmt.Sprint(end.UnixNano())}}
+	summary := func(base string) map[string]any {
+		status, raw, _ := doJSONGET(t, base+"/loki/api/v1/query_range?"+logs.Encode(), headers)
+		if status != http.StatusOK {
+			t.Fatalf("%s logs query: %d %s", base, status, raw)
+		}
+		var a struct {
+			Data struct {
+				Stats struct {
+					Summary map[string]any `json:"summary"`
+				} `json:"stats"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal([]byte(raw), &a)
+		return a.Data.Stats.Summary
+	}
+	got := summary(proxyURL)
+	if n, _ := got["totalPostFilterLines"].(float64); int64(n) != want {
+		t.Fatalf("the logs query reports %v post-filter lines; the volume answer's steps inside the window hold %d (summary %v)", got["totalPostFilterLines"], want, got)
+	}
+	t.Logf("window lines from the volume answer %d; Loki reports %v lines processed for the same logs query", want, summary(lokiURL)["totalLinesProcessed"])
+}
