@@ -186,8 +186,8 @@ func seriesLimitReached(ctx context.Context, limit int) error {
 // vector) rather than log lines. Only those responses carry sample timestamps to
 // shift or series to limit; a log query must stream straight through.
 func logQLProducesSamples(logql string) bool {
-	parsed, err := parseLogQLExpr(noFlowCtx, logql)
-	if err != nil {
+	parsed, ok := sharedLogQLExpr(logql)
+	if !ok {
 		return false
 	}
 	switch parsed.(type) {

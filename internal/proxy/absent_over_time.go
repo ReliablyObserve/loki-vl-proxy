@@ -77,7 +77,7 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	}
 	var aggs []*logqlpkg.VectorAggregation
 	var absent *logqlpkg.RangeAggregation
-	if expr, err := parseLogQLExpr(noFlowCtx, query); err == nil {
+	if expr, ok := sharedLogQLExpr(query); ok {
 		node := expr
 		for {
 			agg, ok := node.(*logqlpkg.VectorAggregation)

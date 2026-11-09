@@ -86,6 +86,9 @@ func BenchmarkVolumeHandlers(b *testing.B) {
 		{"instant_service_name_300", false, 300, 1, url.Values{"query": {"{service_name=~`.+`}"}, "targetLabels": {"service_name"}, "limit": {"5000"}}},
 		{"instant_selector_label_300", false, 300, 1, url.Values{"query": {`{app=~".+"}`}, "limit": {"5000"}}},
 		{"range_target_label_300x60", true, 300, 60, url.Values{"query": {`{app=~".+"}`}, "targetLabels": {"app"}, "step": {"60"}, "limit": {"5000"}}},
+		// Grouped by the selector's own labels: the answer is kept as the
+		// selector's bytes companion for query stats (query_stats_totals.go).
+		{"range_selector_labels_300x60", true, 300, 60, url.Values{"query": {`{app=~".+"}`}, "step": {"60"}, "limit": {"5000"}}},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			vl := volumeBenchBackend(b, bc.series, bc.points, start)

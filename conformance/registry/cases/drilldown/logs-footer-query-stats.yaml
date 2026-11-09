@@ -23,13 +23,20 @@ why: |
   data.stats summary and cache sections, in Loki's key order, on every query
   and query_range path, and Grafana shows the "Summary:" frame stats,
   including the footer's "Summary: total bytes processed". Every value is a
-  measurement of the request (the decision query-stats-from-the-request-flow
-  gives each field's source). totalBytesProcessed and totalLinesProcessed
-  are the bytes and rows the proxy read from VictoriaLogs: for this logs
-  query at most its limit (15m window on the test stack: the proxy 1,000
-  rows, Loki 15,750 lines and 5,400,506 bytes, the window's lines plus
-  structured-metadata bytes). Documented: totals with Loki's meaning, taken
-  from the volume answers the panel requests anyway, are a follow-up change.
+  measurement of the request (the decisions query-stats-from-the-request-flow
+  and query-stats-loki-meaning-totals give each field's source). The logs
+  query of this case reports its window's lines and line bytes when the
+  volume answers of the same selector are known to the proxy (a refresh, or
+  the volume answer arriving first): on the test stack 15,750 lines and
+  5,274,506 bytes for a 15m window, where Loki reports 15,750 and 5,400,506
+  (Loki adds structured-metadata bytes). On a first page load the logs
+  answer usually comes first and reports the rows and bytes the proxy read
+  (at most the limit). For windows beyond what Loki's ingesters hold Loki
+  stops early (30,100 lines at 1h and 6h); the proxy reports the window's
+  totals. Documented, not open: the remaining differences are Loki's
+  accounting (structured-metadata bytes, the early stop) and the first-load
+  order, which the proxy cannot change without delaying the answer or
+  querying VictoriaLogs again.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -57,6 +64,6 @@ gap:
   effort: M
   area: 'internal/proxy/stream_processing.go (stats envelope of log query_range answers)'
   loki: 'pkg/util/marshal/query.go:323-324 stats field; pkg/logqlmodel/stats/stats.pb.go:205-211 Summary.totalBytesProcessed'
-  proxy: 'data.stats summary and cache from the request flow (internal/proxy/query_stats.go); lines and bytes processed are what the proxy read from VictoriaLogs'
-  planned_test: 'TestDrilldown_QueryStatsEnvelope (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured (internal/proxy)'
+  proxy: 'data.stats summary and cache from the request flow (internal/proxy/query_stats.go); lines and bytes processed from the answer itself or the panel''s volume answer (internal/proxy/query_stats_totals.go), else what the proxy read'
+  planned_test: 'TestDrilldown_QueryStatsEnvelope (test/e2e-compat, drilldown group); TestQueryStats_LogQueryNumbersAreMeasured, TestQueryStatsTotals_LogQueryBytesFromVolumeRange (internal/proxy)'
   clusters: []
