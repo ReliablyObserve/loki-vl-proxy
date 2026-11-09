@@ -1,0 +1,15 @@
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}

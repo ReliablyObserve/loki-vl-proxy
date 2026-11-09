@@ -15,7 +15,8 @@ why: |
 
   The validation could accept it (the |= and |> chains led by ip() are
   accepted since semantics/line-filter-error-quotes-the-run), but the string
-  translator drops the head of such a chain: `|~ ip("1.2.3.4") or "a"`
+  translator (internal/translator) drops the head of such a chain, where the
+  query plan lowering keeps it: `|~ ip("1.2.3.4") or "a"`
   translates to `~"a"`, which would answer 200 with fewer lines than Loki.
   The proxy keeps the 400 until the translation keeps the head as a regexp
   (`(?:1.2.3.4)|(?:a)`); TestLineFilterRunValidationMatchesLoki lists the
@@ -38,7 +39,7 @@ gap:
   status: open
   impact: api-only
   effort: S
-  area: 'internal/translate linefilter.go LineFilter / the string translator (a positive regexp chain with an ip() head); internal/logql ip_filter.go parseLineFilterStage (rejects the chain while parsing)'
+  area: 'internal/translator (the string translator) for a positive regexp chain with an ip() head; the query plan lowering already keeps the head (TestPlanShadow: lowered ~"(?:127.0.0.1)|(?:foo)", string ~"foo"); internal/logql ip_filter.go parseLineFilterStage rejects the chain while parsing'
   loki: 'a positive chain reads every alternative, an ip() head included, as text'
   proxy: '400 ip: invalid operation'
   planned_test: 'TestLineFilterRunValidationMatchesLoki registered difference (internal/logql); a translator case for the head kept as a regexp'

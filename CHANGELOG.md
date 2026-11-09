@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors of a pipeline stage (these regexes, the regexp and pattern parsers)
   are reported before the selector's empty-compatible rule and a range
   aggregation's grouping and unwrap rules, as Loki reports them. An ip()
-  label filter after an unwrap is no longer rejected, as in Loki.
+  label filter after an unwrap is not checked, as in Loki.
   **Breaking:** the queries with such a regex were accepted before; Loki has
   always rejected them.
 

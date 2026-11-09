@@ -111,3 +111,37 @@ func TestLineFilterRunValidationMatchesLoki(t *testing.T) {
 		`{app="a"} |~ ip("1.2.3.4") or "a"`: true,
 	})
 }
+
+// lineFilterRunMetricGrid is the run grid's metric queries: runs across parsers and in several segments under
+// range aggregations, and a line_format Loki drops because nothing reads it next to one a later filter keeps. The
+// bytes aggregations, which keep every line_format (TestValidateLogQL_LineFormatInRangeAggregation, recorded on the
+// stack), are left out: the oracle drops an unread line_format under every range aggregation.
+func lineFilterRunMetricGrid() []string {
+	return []string{
+		`sum(count_over_time({app="a"} |= "x" | logfmt |~ "(" [5m]))`,
+		`sum(count_over_time({app="a"} != ip("z") |~ "(" [5m]))`,
+		`count_over_time({app="a"} |~ "(" | json |~ "[" [5m])`,
+		`rate({app="a"} |~ "(" | x="1" |~ "[" [1m])`,
+		`count_over_time({app="a"} | json x="a[" |~ "(" [5m])`,
+		`count_over_time({app="a"} |~ "(" | line_format "{{.x}" [5m])`,
+		`count_over_time({app="a"} | line_format "{{.x}" [5m])`,
+		`count_over_time({app="a"} | line_format "{{.x}" |~ "(" [5m])`,
+		`count_over_time({app="a"} | line_format "{{.x}" | json [5m])`,
+		`sum_over_time({app="a"} |~ "(" | logfmt | unwrap y [5m])`,
+		`sum_over_time({app="a"} |= "x" | logfmt |~ "(" | x="1" |> "<a>" | unwrap y [5m])`,
+		`sum by (a) (rate({app="a"} |> "<a>" | json !> "<_><_>" [1m])) / sum(rate({app="b"} |~ "(" [1m]))`,
+		`label_replace(rate({app="a"} |= "x" |~ "(" [1m]), "a", "$1", "b", "(.*)")`,
+		`count_over_time({app="a"} |= ip("z") or "x" [5m])`,
+		`count_over_time({app="a"} |= "a" or ip("z") or "c" |~ "(" [5m])`,
+	}
+}
+
+const lineFilterRunMetricLokiAnswers = "testdata/line-filter-runs-metric-loki.jsonl"
+
+// Metric queries check their line filter runs as log queries do, after Loki drops a line_format nothing reads.
+// Loki's answers are recorded with the Loki oracle check command, which builds the pipelines of metric queries.
+//
+// conformance: semantics/line-filter-error-quotes-the-run
+func TestLineFilterRunMetricQueriesMatchLoki(t *testing.T) {
+	requireLokiAnswers(t, "check", lineFilterRunMetricGrid(), lineFilterRunMetricLokiAnswers, nil)
+}

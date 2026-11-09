@@ -53,8 +53,9 @@ why: |
   operand quoting) to Loki's recorded answers, and the 418-query pattern grid
   now matches every text too: every status and every text equal. Metric
   queries are checked the same way (a line_format nothing reads is still
-  dropped first); the oracle cannot build their pipelines, so the e2e test
-  compares them with Loki over HTTP.
+  dropped first): TestLineFilterRunMetricQueriesMatchLoki holds 15 of them
+  to the Loki oracle check command, which builds metric pipelines, and the
+  e2e test compares them with Loki over HTTP.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -76,7 +77,7 @@ gap:
   area: 'internal/logql line_filter_runs.go (pipelineBuildError, lineFilterRunError), semantic.go validateLogQuerySemantics, ip_filter.go parseLineFilterAlt'
   loki: 'line filters built as runs (adjacent, and across parsers up to a label filter, line_format or unpack), checked from the last'
   proxy: 'line filters validated as the same runs, in the same order as other stages, quoting the run'
-  planned_test: 'TestCompat_LineFilterErrorRunsLikeLoki (test/e2e-compat); TestLineFilterRunValidationMatchesLoki, TestPatternLineFilterValidationMatchesLoki (internal/logql)'
+  planned_test: 'TestCompat_LineFilterErrorRunsLikeLoki (test/e2e-compat); TestLineFilterRunValidationMatchesLoki, TestLineFilterRunMetricQueriesMatchLoki, TestPatternLineFilterValidationMatchesLoki, FuzzLineFilterRunMatchesItsFilters (internal/logql)'
   fixed_by: '#PR'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries, query_range and query'
