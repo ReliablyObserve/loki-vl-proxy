@@ -9,7 +9,9 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// loweredRangeAggQueries are the plan corpus's range aggregations the plan lowers natively.
+// loweredRangeAggQueries are the plan corpus's count_over_time, bytes_over_time and absent_over_time aggregations
+// the plan lowers natively (rate and bytes_rate are measured apart, in rate_bench_test.go: their text carries the
+// detected_level chain).
 func loweredRangeAggQueries(b *testing.B) []string {
 	b.Helper()
 	qs, err := plancorpus.Queries("../../..")
@@ -26,7 +28,7 @@ func loweredRangeAggQueries(b *testing.B) []string {
 		if err != nil {
 			continue
 		}
-		if _, ok := p.Root.(*queryplan.RangeAgg); !ok {
+		if ra, ok := p.Root.(*queryplan.RangeAgg); !ok || ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate {
 			continue
 		}
 		queryplan.Resolve(p)
