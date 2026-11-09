@@ -119,7 +119,11 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				fail(fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
-			if caseID, ok := knownTypedDivergences()[queryID("logql", q)]; ok {
+			caseID, ok := knownTypedDivergences()[queryID("logql", q)]
+			if !ok && translatorMisreadsQuotedText(q) {
+				caseID, ok = "semantics/translator-reads-quoted-text-as-syntax", true
+			}
+			if ok {
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.
 				sec.DelegatedByConstruct["known divergence "+caseID]++
