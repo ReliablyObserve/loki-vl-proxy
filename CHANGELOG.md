@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.111.0] - 2026-11-09
+
 ### Fixed
 
 - An invalid line filter's error quotes the whole run of line filters Loki
