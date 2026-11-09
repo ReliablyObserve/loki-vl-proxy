@@ -151,6 +151,11 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 				continue
 			}
 			rows++
+			// A selector that keeps every row followed by pipes only is written without its `*`: the proxy puts
+			// it in front (translateQueryOpts), as the lowering does.
+			if strings.HasPrefix(legacy, "|") {
+				legacy = "* " + legacy
+			}
 			var nl *lower.NotLoweredError
 			if errors.As(lerr, &nl) {
 				delegated[nl.Construct]++

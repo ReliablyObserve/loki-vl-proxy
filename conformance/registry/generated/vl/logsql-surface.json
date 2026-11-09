@@ -630,6 +630,7 @@
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/unwrap_samples.go",
+        "internal/translate/range.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/stats_codec.go",
         "internal/translator/translator.go",
@@ -840,6 +841,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/volume.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]

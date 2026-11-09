@@ -189,8 +189,8 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 }
 
-// typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector and its line
-// filters), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// typedSelectorPair is, for a client LogQL log query or range aggregation over one that the plan lowers natively
+// (a stream selector, its line filters and label filters), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
 // version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
 // the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
 // rejection of them before it translates anything.
@@ -200,7 +200,14 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	}
 	lq, err := logql.ParseLogQuery(r.Query)
 	if err != nil {
-		return "", "", false
+		// A range aggregation over a log query: the selector of its log query.
+		agg, ok := mustParse(r.Query).(*logql.RangeAggregation)
+		if !ok {
+			return "", "", false
+		}
+		if lq, ok = agg.Inner.(*logql.LogQuery); !ok {
+			return "", "", false
+		}
 	}
 	for _, m := range lq.Selector.Matchers {
 		if m.Op == logql.MatchRe || m.Op == logql.MatchNotRe {
@@ -231,12 +238,22 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if !ok {
 		return "", "", false
 	}
-	// The string translator gets the text the handlers translate: the request rewrite removes comments first.
-	built, err = translator.TranslateLogQLWithCapabilities(logql.StripComments(r.Query), identity, nil, caps)
+	// The string translator gets the text the handlers translate: the request rewrite removes comments and
+	// canonicalizes the ranges first.
+	built, err = translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(logql.StripComments(r.Query)), identity, nil, caps)
 	if err != nil {
 		return "", "", false
 	}
 	return q.Text, built, true
+}
+
+// mustParse is the parsed expression of q, nil when it does not parse.
+func mustParse(q string) logql.Expr {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return nil
+	}
+	return expr
 }
 
 // TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned

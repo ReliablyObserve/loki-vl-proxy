@@ -99,11 +99,14 @@ Loki names the series of a metric query with the stream labels plus every label 
 
 ### Range Vector Functions
 
+The query plan (held to the string translator by the shadow; requests are still the translator's) writes `count_over_time`, `bytes_over_time` and `absent_over_time` over a log query with line, pattern and label filters and no parser as one `stats` pipe with no grouping over the log query (written with the label names alone: the capabilities and stream fields of the request do not change it), so VictoriaLogs counts or sums per step bucket and the proxy never reads rows. The offset and the range stay out of the query, which the proxy aligns by them. With the tenant's stream labels the query restores their stream values before its first pipe. The other functions below are written by the string translator until the plan lowers them.
+
 | LogQL | LogsQL |
 |---|---|
 | `rate({...}[5m])` | `stats count()` + `math` normalization by window seconds, then `stats sum(...)` per grouping |
 | `count_over_time({...}[5m])` | `... \| stats count()` |
 | `bytes_over_time({...}[5m])` | `... \| stats sum_len(_msg)` |
+| `absent_over_time({...}[5m])` | `... \| stats count()`; the proxy routes `absent_over_time` before it translates and asks the count path for the presence of samples |
 | `bytes_rate({...}[5m])` | `stats sum_len(_msg)` + `math` normalization by window seconds, then `stats sum(...)` per grouping |
 | `rate({...} \| unwrap f [5m])` | the sum of `f` per second: `... <gate> \| stats sum(__lvp_v)` + `math` normalization by window seconds (not a line rate) |
 | `sum_over_time({...} \| unwrap f [5m])` | `... <gate> \| stats sum(__lvp_v)` |

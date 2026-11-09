@@ -209,7 +209,7 @@
   "shadow": {
     "rows": 22914,
     "profiles": 12,
-    "native": 1392,
+    "native": 1923,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
@@ -217,7 +217,12 @@
       "LogSelect label filter detected_level": 156,
       "LogSelect pipeline": 1188,
       "Opaque": 72,
-      "RangeAgg": 5328,
+      "RangeAgg LogSelect label filter detected_level": 9,
+      "RangeAgg LogSelect pipeline": 45,
+      "RangeAgg grouping": 9,
+      "RangeAgg parser": 783,
+      "RangeAgg rate detected_level": 738,
+      "RangeAgg unwrap": 3213,
       "Rank": 1665,
       "Scalar": 18,
       "VectorAgg": 9207,

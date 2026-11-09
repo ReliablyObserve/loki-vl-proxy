@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers `count_over_time`, `bytes_over_time` and
+  `absent_over_time` over a log query with line, pattern and label filters and
+  no parser (any offset, any range, with or without the tenant's stream
+  labels) to VictoriaLogs natively, as one stats pipe over the log query the
+  string translator writes; the requests sent to VictoriaLogs are those of the
+  string translator. `rate`, `bytes_rate`, the unwrap functions, parsers and
+  groupings are still answered by the string translator.
 - The query plan lowers log queries with label filters that have no parser in
   front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
   trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
