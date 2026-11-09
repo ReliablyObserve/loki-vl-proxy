@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text at every step. The requests sent to VictoriaLogs, the cache keys and the
   answers do not change.
 
+### Fixed
+
+- A `#` comment right after a label filter (`{app="a"} | status="500" # note`,
+  `| status=500#`) is skipped as Loki skips it. The proxy rejected the query
+  with a parse error after a quoted value, and read a number's value with the
+  comment text attached. A `<>` inside a line filter's text (`|= "<>"`), a
+  regexp or a comment is accepted as in Loki: a text check had rejected any
+  `<>` in the query; the parser still rejects the operator with Loki's error.
+
 ## [2.105.0] - 2026-11-08
 
 ### Changed
