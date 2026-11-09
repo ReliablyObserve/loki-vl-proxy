@@ -1,0 +1,45 @@
+id: semantics/unwrap-in-log-query
+title: A log query with an unwrap stage is accepted where Loki answers a syntax error (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  Loki's grammar takes `| unwrap` only inside a range aggregation: a log
+  query with one is a syntax error at the unwrap token, `{app="a"} | unwrap
+  x` answers `parse error at line 1, col 13: syntax error: unexpected
+  unwrap`, `{app="a"} |~ "(" | unwrap x` `... col 20 ...` (the syntax
+  error comes before the invalid line filter), and `{app=~".*"} | unwrap x`
+  `... col 15 ...` (Loki oracle pipeline and check commands, Loki 3.7,
+  2026-11-09). The proxy's parser keeps unwrap as a stage of any log query
+  (Grafana's metric builder sends incomplete unwrap stubs), so it answers
+  200, the line filter error, or the empty-compatible selector error.
+
+  Related, also the grammar: a second unwrap in a range aggregation is
+  `parse error at line 1, col 47: syntax error: unexpected unwrap,
+  expecting IDENTIFIER or (` for `count_over_time({app="a"} | json | unwrap a
+  | unwrap b [5m])`, where the proxy answers `parse error : syntax error:
+  unexpected unwrap` without the position.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | unwrap x'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 syntax error at the unwrap token.
+gap:
+  status: open
+  impact: api-only
+  effort: M
+  area: 'internal/logql parser.go parseUnwrap / parseLogQuery (unwrap accepted outside a range aggregation)'
+  loki: 'unwrap only in a range aggregation; a syntax error at the unwrap token elsewhere'
+  proxy: 'unwrap kept as a stage of a log query'
+  planned_test: 'a recorded oracle grid of log queries with unwrap (internal/logql), then an e2e vs Loki'
+  clusters: []

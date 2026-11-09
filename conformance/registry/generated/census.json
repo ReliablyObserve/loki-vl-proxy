@@ -743,6 +743,9 @@
     "semantics/unwrap-gate-parsefloat-divergences | gap:open",
     "semantics/unwrap-gate-parsefloat-divergences | perf",
     "semantics/unwrap-gate-parsefloat-divergences | query",
+    "semantics/unwrap-in-log-query | compare:observed",
+    "semantics/unwrap-in-log-query | gap:open",
+    "semantics/unwrap-in-log-query | query",
     "semantics/unwrap-over-time-range-windows | compare:observed",
     "semantics/unwrap-over-time-range-windows | gap:fixed",
     "semantics/unwrap-over-time-range-windows | query",
@@ -2022,7 +2025,7 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 48,
+      "api": 49,
       "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
@@ -2048,7 +2051,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 100,
+    "unwired_items": 101,
     "wired_items": 271
   },
   "gates": [

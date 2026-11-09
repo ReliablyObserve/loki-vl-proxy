@@ -1710,7 +1710,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 445,
+  "registry_items": 446,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3776,6 +3776,7 @@
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
     "semantics/unwrap-first-last-range-longer-than-step",
+    "semantics/unwrap-in-log-query",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-sum-by-group-quantile",
