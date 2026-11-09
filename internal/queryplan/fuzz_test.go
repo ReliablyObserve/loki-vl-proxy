@@ -42,6 +42,7 @@ func seedQueries(f *testing.F) {
 // The key of a query equals the key of its printed form whenever the printed form parses to the same tree.
 func FuzzBuild(f *testing.F) {
 	seedQueries(f)
+	f.Add(`0X0`) // a number literal Go cannot read (logql.BadLiteralExpr) builds as an Opaque node
 	f.Fuzz(func(t *testing.T, q string) {
 		expr, err := parseCanon(q)
 		if err != nil {

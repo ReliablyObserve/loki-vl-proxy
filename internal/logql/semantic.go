@@ -21,11 +21,21 @@ func validateSemantics(expr Expr, raw string) string {
 	switch x := expr.(type) {
 	case *LogQuery:
 		return validateLogQuerySemantics(x, false)
+	case *BadLiteralExpr:
+		return x.Err
 	case *RangeAggregation:
 		return validateRangeAggSemantics(x, raw)
 	case *VectorAggregation:
 		return validateSemantics(x.Inner, raw)
 	case *BinOpExpr:
+		// Log stream queries cannot participate in binary metric operations: Loki names the type of the
+		// operand, the left one first, before it looks at a literal.
+		if msg := binaryLogOperandError(x.Op, "left", x.Left); msg != "" {
+			return msg
+		}
+		if msg := binaryLogOperandError(x.Op, "right", x.Right); msg != "" {
+			return msg
+		}
 		// A set operator joins two vectors: Loki refuses a literal on either side, the left one first.
 		if x.Op == "and" || x.Op == "or" || x.Op == "unless" {
 			if l, ok := x.Left.(*LiteralExpr); ok {
@@ -35,13 +45,6 @@ func validateSemantics(expr Expr, raw string) string {
 				return fmt.Sprintf("parse error : unexpected literal for right leg of logical/set binary operation (%s): %f", x.Op, r.Value)
 			}
 		}
-		// Log stream queries cannot participate in binary metric operations.
-		if _, ok := x.Left.(*LogQuery); ok {
-			return "parse error at line 1, col 1: unexpected expression for binary operation"
-		}
-		if _, ok := x.Right.(*LogQuery); ok {
-			return "parse error at line 1, col 1: unexpected expression for binary operation"
-		}
 		if s := validateSemantics(x.Left, raw); s != "" {
 			return s
 		}
@@ -49,6 +52,12 @@ func validateSemantics(expr Expr, raw string) string {
 	case *OpaqueMetricExpr:
 		// label_replace(inner, ...) and similar wrappers: Loki validates the
 		// wrapped sample expression like any other.
+		if x.Func == "vector" {
+			var lokiErr *ParseError
+			if err := vectorArgumentError(raw, x.Raw); errors.As(err, &lokiErr) {
+				return lokiErr.Msg
+			}
+		}
 		inner, err := opaqueFirstArgument(raw, x.Raw)
 		var lokiErr *ParseError
 		if errors.As(err, &lokiErr) {
@@ -72,6 +81,48 @@ func validateSemantics(expr Expr, raw string) string {
 	return ""
 }
 
+// binaryLogOperandError is the parse error Loki raises for a log query used as an operand of a binary
+// operation; it is empty for any other operand.
+func binaryLogOperandError(op, side string, operand Expr) string {
+	lq, ok := operand.(*LogQuery)
+	if !ok {
+		return ""
+	}
+	typ := "MatchersExpr"
+	if len(lq.Pipeline) > 0 {
+		typ = "PipelineExpr"
+	}
+	return "parse error : unexpected type for " + side + " leg of binary operation (" + op + "): *syntax." + typ
+}
+
+// vectorArgumentError reports the parse error Loki raises for a vector call whose argument is not a number it
+// can read: `vector(x)`, `vector(5x)`, `vector(0x1)`. It is nil for a valid call.
+func vectorArgumentError(query, call string) error {
+	src, pos := query, strings.Index(query, call)
+	if pos < 0 {
+		src, pos = call, 0
+	}
+	p := &parser{sc: &scanner{src: src, pos: pos, quiet: true}}
+	p.advance()
+	if p.cur.Typ != TokIdent {
+		return nil
+	}
+	if p.advance(); p.cur.Typ != TokLParen {
+		return nil
+	}
+	p.advance()
+	if p.cur.Typ != TokNumber {
+		return p.syntaxErrorAt("NUMBER")
+	}
+	if _, err := strconv.ParseFloat(p.cur.Val, 64); err != nil {
+		return newParseError(0, 0, "unable to parse vectorExpr as a float: "+err.Error())
+	}
+	if p.advance(); p.cur.Typ != TokRParen {
+		return p.syntaxErrorAt(")")
+	}
+	return nil
+}
+
 // opaqueFirstArgument parses the leading expression argument of an opaque
 // metric function call such as `label_replace(rate({app="a"}[5m]), ...)`, read
 // from query where call stands so that an error carries the line and column
@@ -83,7 +134,7 @@ func opaqueFirstArgument(query, call string) (Expr, error) {
 	if pos < 0 {
 		src, pos = call, 0
 	}
-	p := &parser{sc: &scanner{src: src, pos: pos}}
+	p := &parser{sc: &scanner{src: src, pos: pos, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent {
 		return nil, nil
@@ -109,7 +160,7 @@ func opaqueFirstArgument(query, call string) (Expr, error) {
 // escapes are invalid (the LogQL lexer unquotes it) included. It is nil for
 // any other call.
 func labelReplaceArgumentsError(call string) error {
-	p := &parser{sc: newScanner(call)}
+	p := &parser{sc: &scanner{src: call, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != "label_replace" {
 		return nil

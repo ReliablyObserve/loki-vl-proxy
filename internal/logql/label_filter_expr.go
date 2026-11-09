@@ -1,6 +1,7 @@
 package logql
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -93,6 +94,9 @@ type LabelFilterSyntaxError struct {
 	// Message replaces the whole "syntax error: unexpected ..." text for an
 	// error of Loki's lexer ("literal not terminated").
 	Message string
+	// ZeroLine is set when Loki prints line 0 for the error: its lexer reports it with a scanner position that
+	// is not valid.
+	ZeroLine bool
 }
 
 func (e *LabelFilterSyntaxError) Error() string {
@@ -151,12 +155,15 @@ const (
 	lfOp     // = == != =~ !~ > >= < <=
 	lfString // "..." or `...`
 	lfWord   // label name, number, duration, bytes, bare value
+	lfSym    // a sign or another single character Loki's lexer returns as a token of its own
 )
 
 type lfToken struct {
 	kind       lfTokKind
 	text       string
 	start, end int
+	// name is Loki's name for a lfWord: IDENTIFIER, NUMBER, DURATION or BYTES.
+	name string
 }
 
 type lfParser struct {
@@ -170,6 +177,13 @@ type lfParser struct {
 	lexErr *LabelFilterSyntaxError
 	// depth is the number of parentheses open at the token being read.
 	depth int
+	// literalEnd is where the last number, duration or bytes literal ended.
+	literalEnd int
+	// afterComment is set when a comment stands right before the token.
+	afterComment bool
+	// prevStart is the start of the token before tok; before the first token it is the offset of the token
+	// before the text (negative when the text is part of a longer query).
+	prevStart int
 }
 
 // maxLabelFilterDepth bounds the nesting of parentheses and the length of a
@@ -185,49 +199,75 @@ const maxLabelFilterDepth = 1000
 // size for = and !=, and ip("...")), a number, a duration or a bytes size for
 // ==, <, <=, > and >=.
 func ParseLabelFilterExpr(text string) (*LabelFilterExpr, *LabelFilterSyntaxError) {
-	p := &lfParser{src: text}
+	return parseLabelFilterText(text, 0)
+}
+
+// parseLabelFilterText is ParseLabelFilterExpr for a text that follows another token of a query: before is the
+// offset of that token relative to the start of the text (zero or negative).
+func parseLabelFilterText(text string, before int) (*LabelFilterExpr, *LabelFilterSyntaxError) {
+	expr, _, err := scanLabelFilter(text, before, false)
+	return expr, err
+}
+
+// scanLabelFilter reads a label filter expression from the start of text. With binary set, the expression ends
+// where a binary operator of the query follows it (`| a>5 + 3`: the operator belongs to the query, whose left
+// operand is the pipeline); end is where the expression ends, len(text) when it takes the whole text.
+func scanLabelFilter(text string, before int, binary bool) (expr *LabelFilterExpr, end int, serr *LabelFilterSyntaxError) {
+	p := &lfParser{src: text, literalEnd: -1, prevStart: before}
 	p.next()
 	expr, err := p.parseOr(true)
+	end = len(text)
 	if err == nil && p.tok.kind != lfEOF {
-		err = p.unexpected("")
+		if binary && p.tok.isBinaryOperator() {
+			end = p.tok.start
+		} else {
+			err = p.unexpected("")
+		}
 	}
 	if p.lexErr != nil {
-		return nil, p.lexErr
+		return nil, 0, p.lexErr
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return expr, nil
+	return expr, end, nil
+}
+
+// isBinaryOperator reports a token that is a binary operator of a query: + - * / % ^ == > >= < <= unless.
+func (t lfToken) isBinaryOperator() bool {
+	switch t.kind {
+	case lfSym:
+		return strings.Contains("+-*/%^", t.text)
+	case lfOp:
+		return t.text == "==" || t.text == ">" || t.text == ">=" || t.text == "<" || t.text == "<="
+	case lfWord:
+		return t.name == "unless"
+	}
+	return false
 }
 
 func (p *lfParser) unexpected(expecting string) *LabelFilterSyntaxError {
 	return &LabelFilterSyntaxError{Offset: p.tok.start, Token: lfTokenName(p.tok), Expecting: expecting}
 }
 
-// next reads the next token. Whitespace and comments (`#` to the end of the
-// line, as the LogQL scanner skips them) separate tokens; a word runs to the
-// next space, comment, parenthesis, comma, quote or operator character.
+// next reads the next token. Whitespace (a space, a tab, a carriage return or a
+// newline, as Loki's lexer reads it) and comments (`#` to the end of the line)
+// separate tokens; a word runs to the next space, comment, parenthesis, comma,
+// quote or operator character, and a number, duration or bytes literal ends where
+// Loki's lexer ends it (scanNumberLiteral).
 func (p *lfParser) next() {
 	p.prevEnd = p.tok.end
-	for p.pos < len(p.src) {
-		if p.src[p.pos] == '#' {
-			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
-				p.pos++
-			}
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(p.src[p.pos:])
-		if !unicode.IsSpace(r) {
-			break
-		}
-		p.pos += size
+	spaced := false
+	p.afterComment = false
+	if p.pos < len(p.src) && (p.src[p.pos] <= ' ' || p.src[p.pos] == '#') {
+		spaced = p.skipSpace()
 	}
 	start := p.pos
 	if start >= len(p.src) {
 		p.tok = lfToken{kind: lfEOF, start: len(p.src), end: len(p.src)}
 		return
 	}
-	kind := lfWord
+	kind, name, lexErr, binaryAfterSpace, zeroLine := lfWord, "", "", false, false
 	switch c := p.src[start]; c {
 	case '(':
 		kind, p.pos = lfLParen, start+1
@@ -237,40 +277,228 @@ func (p *lfParser) next() {
 		kind, p.pos = lfComma, start+1
 	case '"', '`':
 		kind = lfString
-		p.pos = start + 1
-		for p.pos < len(p.src) && p.src[p.pos] != c {
-			if c == '"' && p.src[p.pos] == '\\' {
-				p.pos++
-			}
-			p.pos++
-		}
-		if p.pos >= len(p.src) {
-			if p.lexErr == nil {
-				p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: "literal not terminated"}
-			}
+		if !p.lexString(start, c) {
 			p.tok = lfToken{kind: lfEOF, start: len(p.src), end: len(p.src)}
 			return
 		}
-		p.pos++
 	case '=', '!', '<', '>':
 		kind, p.pos = lfOp, start+1
 		if p.pos < len(p.src) && (p.src[p.pos] == '=' || p.src[p.pos] == '~' && (c == '=' || c == '!')) {
 			p.pos++
 		}
 	default:
-		for p.pos < len(p.src) && !strings.ContainsRune(" \t\r\n(),\"`=!<>#", rune(p.src[p.pos])) {
+		kind, name, lexErr, binaryAfterSpace, zeroLine = p.lexWord(start, spaced)
+	}
+	if p.src[start] == 0 && (spaced || p.afterComment || start == 0) && p.lexErr == nil {
+		// Loki's scanner meets a NUL after white space while it skips the white space, with no valid position:
+		// it reports the token before, on line 0.
+		p.lexErr = &LabelFilterSyntaxError{Offset: p.prevStart, Message: "invalid character NUL", ZeroLine: true}
+	} else if p.pos < len(p.src) && p.src[p.pos] == 0 {
+		// Loki's scanner reads the character after a token before it hands the token over, and rejects NUL.
+		lexErr, zeroLine = "invalid character NUL", false
+	}
+	if binaryAfterSpace {
+		// Loki's scanner reads a 0b or 0B literal after white space as a decimal number without digits, whatever
+		// follows the prefix.
+		lexErr = "decimal literal has no digits"
+	}
+	if lexErr != "" && p.lexErr == nil {
+		p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: lexErr, ZeroLine: zeroLine}
+	}
+	p.prevStart = start
+	p.tok = lfToken{kind: kind, text: p.src[start:p.pos], start: start, end: p.pos, name: name}
+	if kind == lfWord {
+		p.tok.kind = connectorKind(p.tok.text)
+	}
+}
+
+// connectorKind is lfAnd or lfOr for the words and and or in any case, lfWord for any other.
+func connectorKind(word string) lfTokKind {
+	switch {
+	case len(word) == 2 && strings.EqualFold(word, "or"):
+		return lfOr
+	case len(word) == 3 && strings.EqualFold(word, "and"):
+		return lfAnd
+	}
+	return lfWord
+}
+
+// lexString reads the quoted literal that starts at start; it reports false, with the lexer error set, when the
+// literal is not terminated.
+func (p *lfParser) lexString(start int, quote byte) bool {
+	p.pos = start + 1
+	for p.pos < len(p.src) && p.src[p.pos] != quote {
+		if quote == '"' && p.src[p.pos] == '\\' {
 			p.pos++
 		}
+		p.pos++
 	}
-	p.tok = lfToken{kind: kind, text: p.src[start:p.pos], start: start, end: p.pos}
-	if kind == lfWord {
-		switch strings.ToLower(p.tok.text) {
-		case "and":
-			p.tok.kind = lfAnd
-		case "or":
-			p.tok.kind = lfOr
+	if p.pos >= len(p.src) {
+		if p.lexErr == nil {
+			p.lexErr = &LabelFilterSyntaxError{Offset: start, Message: "literal not terminated"}
+		}
+		return false
+	}
+	p.pos++
+	return true
+}
+
+// skipSpace skips the white space and comments before a token. It reports whether the token follows white space
+// that Loki's scanner skips on its own: a comment takes the line break that ends it with it, and what follows is
+// read as if nothing preceded.
+func (p *lfParser) skipSpace() (spaced bool) {
+	for p.pos < len(p.src) {
+		if p.src[p.pos] == '#' {
+			start := p.pos
+			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
+				p.pos++
+			}
+			if p.pos < len(p.src) {
+				p.pos++
+			}
+			// A comment is a token for Loki's lexer.
+			p.prevStart, p.afterComment = start, true
+			spaced = false
+			continue
+		}
+		if strings.IndexByte(" \t\r\n", p.src[p.pos]) < 0 {
+			break
+		}
+		p.pos++
+		spaced = true
+	}
+	return spaced
+}
+
+// lexWord reads the token that starts at start with a character that is not a bracket, comma, quote or
+// operator: a number, duration or bytes literal, a sign or another symbol, or a word. It returns the token kind
+// and name, the lexer error of the token, and whether it is a 0b literal after white space.
+func (p *lfParser) lexWord(start int, spaced bool) (kind lfTokKind, name, lexErr string, binaryAfterSpace, zeroLine bool) {
+	c := p.src[start]
+	kind, name = lfWord, "IDENTIFIER"
+	if c|0x20 >= 'a' && c|0x20 <= 'z' || c == '_' || c >= utf8.RuneSelf {
+		// A name: letters, digits, '_' and '.' (dotted names stay one word); a keyword has its own token name.
+		if p.pos = start + lfNameEnd(p.src[start:], p.literalEnd != start); p.pos > start {
+			return kind, p.keywordName(start), "", false, false
+		}
+		_, size := utf8.DecodeRuneInString(p.src[start:])
+		p.pos = start + size
+		return kind, name, "", false, false
+	}
+	negEnd := 0
+	if c == '-' {
+		negEnd = scanNegativeDuration(p.src, start)
+	}
+	switch {
+	case isDecimalDigit(int(c)) || c == '.' && isDecimalDigit(at(p.src, start+1)):
+		lit := scanNumberLiteral(p.src, start)
+		p.pos, name, p.literalEnd, lexErr = lit.end, lit.name, lit.end, lit.err
+		binaryAfterSpace = spaced && c == '0' && lowerByte(at(p.src, start+1)) == 'b'
+	case negEnd > 0:
+		p.pos = negEnd
+		name, p.literalEnd = "DURATION", negEnd
+	case strings.IndexByte("+-./*%^{}]", c) >= 0:
+		kind, name, p.pos = lfSym, "", start+1
+	case c == '[':
+		name, lexErr = "RANGE", p.lexRange(start)
+		zeroLine = true
+	case c == '\'':
+		lexErr = p.lexChar(start)
+	default:
+		// Any other character is a token of its own: Loki's lexer returns it as an identifier.
+		p.pos = start + 1
+	}
+	return kind, name, lexErr, binaryAfterSpace, zeroLine
+}
+
+// lexRange reads the `[duration]` that starts at start, which Loki's lexer returns as one RANGE token; it
+// returns the lexer error of the token.
+func (p *lfParser) lexRange(start int) string {
+	end := strings.IndexByte(p.src[start:], ']')
+	if end < 0 {
+		p.pos = len(p.src)
+		return "missing closing ']' in duration"
+	}
+	p.pos = start + end + 1
+	switch d := p.src[start+1 : start+end]; {
+	case d == "":
+		return "empty duration string"
+	case !lokiDuration(d):
+		if unit := durationUnit(d); unit != "" && unit != d {
+			return fmt.Sprintf("unknown unit %q in duration %q", unit, d)
+		}
+		return fmt.Sprintf("not a valid duration string: %q", d)
+	}
+	return ""
+}
+
+// lexChar reads the character literal that starts at start with a quote ('x'), which Loki's lexer returns as a
+// name; it returns the lexer error of the token.
+func (p *lfParser) lexChar(start int) string {
+	n := 0
+	for i := start + 1; i < len(p.src); n++ {
+		switch p.src[i] {
+		case '\'':
+			p.pos = i + 1
+			if n != 1 {
+				return "invalid char literal"
+			}
+			return ""
+		case '\n':
+			p.pos = i
+			return "literal not terminated"
+		case '\\':
+			i += 2
+		default:
+			_, size := utf8.DecodeRuneInString(p.src[i:])
+			i += size
 		}
 	}
+	p.pos = len(p.src)
+	return "literal not terminated"
+}
+
+// keywordName is the token name of the word that ends at p.pos: IDENTIFIER, or the keyword Loki's lexer reads.
+func (p *lfParser) keywordName(start int) string {
+	word := p.src[start:p.pos]
+	if len(word) > 20 || len(word) < 2 {
+		return "IDENTIFIER"
+	}
+	var lower [20]byte
+	for i := 0; i < len(word); i++ {
+		c := word[i]
+		if c >= utf8.RuneSelf {
+			return "IDENTIFIER"
+		}
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		lower[i] = c
+	}
+	if name := keywordTokenName(p.src, p.pos, string(lower[:len(word)])); name != "" {
+		return name
+	}
+	return "IDENTIFIER"
+}
+
+// lfNameEnd is the length of the name at the start of s: letters, digits, '_' and, when dots is set, '.'.
+func lfNameEnd(s string, dots bool) int {
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c|0x20 >= 'a' && c|0x20 <= 'z' || c >= '0' && c <= '9' || c == '_' || dots && c == '.' {
+				i++
+				continue
+			}
+			return i
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size <= 1 || !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return i
+		}
+		i += size
+	}
+	return len(s)
 }
 
 // parseOr: OR binds loosest and is left associative.
@@ -310,7 +538,7 @@ func (p *lfParser) parseJoined(first bool) (*LabelFilterExpr, *LabelFilterSyntax
 	switch {
 	case p.tok.kind == lfComma:
 		p.next()
-	case p.tok.kind == lfLParen || p.tok.kind == lfWord && LabelFilterWordName(p.tok.text) == "IDENTIFIER":
+	case p.tok.kind == lfLParen || p.tok.kind == lfWord && p.tok.name == "IDENTIFIER":
 	default:
 		return left, nil
 	}
@@ -347,7 +575,7 @@ func (p *lfParser) parseOperand(first bool) (*LabelFilterExpr, *LabelFilterSynta
 		p.next()
 		return inner, nil
 	case lfWord:
-		if LabelFilterWordName(p.tok.text) == "IDENTIFIER" {
+		if p.tok.name == "IDENTIFIER" {
 			return p.parseFilter()
 		}
 	}
@@ -375,19 +603,19 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 		return nil, err
 	}
 	p.next()
-	value := p.tok.text
+	sign, serr := p.readSign(op)
+	if serr != nil {
+		return nil, serr
+	}
+	value := sign + p.tok.text
 	kind := "" // what the value is: STRING, NUMBER, DURATION, BYTES, IP, IDENTIFIER
 	switch p.tok.kind {
 	case lfString:
 		kind = "STRING"
 	case lfWord:
-		if kind = LabelFilterWordName(p.tok.text); strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeftFunc(p.src[p.tok.end:], unicode.IsSpace), "(") {
+		if kind = p.tok.name; p.isIPCall() {
 			kind = "IP"
 		}
-	}
-	if p.tok.kind == lfWord && (value == "0B" || value == "0b") {
-		// Loki's lexer reads 0B as the prefix of a binary literal with no digits after it.
-		return nil, &LabelFilterSyntaxError{Offset: p.tok.start, Message: "decimal literal has no digits"}
 	}
 	allowed := kind == "NUMBER" || kind == "DURATION" || kind == "BYTES"
 	switch op {
@@ -423,7 +651,7 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 		}
 		p.next()
 	}
-	leaf := &LabelFilterExpr{Leaf: strings.TrimSpace(p.src[start:p.tokenEnd()]), Name: name, Cmp: op, Value: value}
+	leaf := &LabelFilterExpr{Leaf: p.src[start:p.tokenEnd()], Name: name, Cmp: op, Value: value}
 	switch kind {
 	case "STRING", "IP":
 		var ok bool
@@ -441,6 +669,29 @@ func (p *lfParser) parseFilter() (*LabelFilterExpr, *LabelFilterSyntaxError) {
 		leaf.Kind = LabelFilterValueBytes
 	}
 	return leaf, nil
+}
+
+// readSign reads the sign in front of a number, which only a number takes (a duration or a bytes size carries
+// none), and requires the number after it.
+func (p *lfParser) readSign(op string) (string, *LabelFilterSyntaxError) {
+	if p.tok.kind != lfSym || p.tok.text != "+" && p.tok.text != "-" || op == "=~" || op == "!~" {
+		return "", nil
+	}
+	sign := p.tok.text
+	p.next()
+	if p.tok.kind != lfWord || p.tok.name != "NUMBER" {
+		err := p.unexpected("NUMBER")
+		if p.tok.kind == lfWord && p.isIPCall() {
+			err.Token = "ip"
+		}
+		return "", err
+	}
+	return sign, nil
+}
+
+// isIPCall reports whether the word at the current token is `ip` followed by a parenthesis.
+func (p *lfParser) isIPCall() bool {
+	return strings.EqualFold(p.tok.text, "ip") && strings.HasPrefix(strings.TrimLeft(p.src[p.tok.end:], " \t\r\n"), "(")
 }
 
 // unquoteLabelFilterString is the value of a string literal the way the LogQL
@@ -472,7 +723,7 @@ func lfTokenName(t lfToken) string {
 	case lfOr:
 		return "or"
 	case lfWord:
-		return LabelFilterWordName(t.text)
+		return t.name
 	}
 	return t.text
 }

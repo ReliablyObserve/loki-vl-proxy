@@ -1,7 +1,7 @@
 {
   "description": "Ratchets of the query plan (internal/queryplan), one section per gate; a count may only fall, and LVP_QUERY_PLAN_UPDATE=1 rewrites the section of the test that ran. `logical` is the logical plan built from every query of the plan corpus (the curated sources and the capture sample): how many rows parse and build (all of them), and the spots the plan still holds as text, per construct (typing them lowers the count). `logical_key_sound` is, per profile, how the logical keys group the corpus and what the string translator wrote for the queries of a group: no group may differ in structure. `predicate_parity` is, per attribute of the resolver (queryplan.Resolve), the text predicate it replaces and every corpus row where the two differ, each with its reason (internal/proxy TestPlanPredicateParity: an unexplained or stale row fails).",
   "logical": {
-    "rows": 2543,
+    "rows": 2544,
     "parsed": 2475,
     "built": 2475,
     "untyped_by_construct": {
@@ -125,7 +125,7 @@
     }
   },
   "predicate_parity": {
-    "rows": 2543,
+    "rows": 2544,
     "validated": 2435,
     "attributes": {
       "offset": {
