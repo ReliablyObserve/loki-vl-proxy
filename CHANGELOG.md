@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An opt-in shadow of the typed query-plan lowering on live traffic:
+  `-translate-shadow-sample` (a share between 0 and 1, default 0 = off). On
+  that share of the queries the string translator translates (translation
+  cache misses) the proxy also lowers the query through the typed plan in the
+  background, under the options the translator received, and counts whether
+  the two translations match in `loki_vl_proxy_lowering_shadow_total{result,
+  construct}` (`match`, `mismatch`, `not_lowered`, `new_error`, `old_error`,
+  `skipped`, `panic`, `budget`); a mismatch logs one redacted line per second.
+  At most two comparisons run at once, each within 100 ms. It is off by
+  default and never affects an answer, a cache entry or a VictoriaLogs request.
+
 ## [2.111.0] - 2026-11-09
 
 ### Fixed

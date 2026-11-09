@@ -319,6 +319,29 @@ decisions:
     performance:
       tracked: ['BenchmarkLineFilterQueriesTranslator / BenchmarkLineFilterQueriesLowered ns/op, B/op, allocs/op (internal/queryplan/lower)']
       bound: 'The 15 lowered line-filter log queries of the corpus, text to LogsQL (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): string translator 8.53 µs, 5.4 KiB, 98 allocs; Parse + Build + Resolve + Plan 3.08 µs, 5.0 KiB, 95 allocs'
+  - id: lowering-live-shadow
+    chosen: 'An opt-in, observe-only live shadow of the lowering (-translate-shadow-sample, default 0). On a translation cache miss, once the string translator''s answer is final, a sampled query is handed to a goroutine (at most 2 at once, a busy pair skips the query; 100 ms budget checked between stages; panics recovered) that runs logql.Parse, queryplan.Build and Resolve and lower.Plan under the options the translator received (label function with the stream labels, stream fields, capabilities with the detected-level body-scan cap, keepLine) and compares physical.Equal(DecodePhysical(translator output), lowered), the same comparison as the corpus shadow, now in non-test code (physical.Canon / physical.Equal) that both use. The outcome is loki_vl_proxy_lowering_shadow_total{result,construct} with a fixed result set and the plan''s node kind as construct; a mismatch logs one redacted line per second. A query the translator rejects is compared only when the lowering answers it (old_error), as in the corpus shadow, which skips a rejected row'
+    over: [comparing on every translation including cache hits, a goroutine per sampled query without a bound, comparing on the request path, putting the comparison in the translator package (which the lowering cannot import), a per-query construct label, an unredacted mismatch log]
+    why: |
+      Step 12b of architecture B (owner 2026-11-09). The corpus shadow proves
+      the lowering equals the translator on the corpus; flipping a construct
+      to the lowering needs the same proof on live traffic, whose queries and
+      options (stream labels, stream fields, body-scan cap, keepLine) the
+      corpus only samples. The shadow runs after the translator answered and
+      only on a cache miss, so it cannot delay or change the response, the
+      caches or a VictoriaLogs request; the bounded slots, the budget and the
+      sample keep its cost off a loaded replica, and the metric names what
+      the lowering does not cover (not_lowered by construct) and what it gets
+      wrong (mismatch). The comparison moved to physical (stdlib and logsql
+      only) so the proxy and the corpus test share one definition and cannot
+      drift.
+    evidence: 'internal/proxy/lowering_shadow_test.go (off at sample 0; every miss compared at 1, a hit not; the request''s options reach the lowering; results by construct; error results; both slots busy skip without delaying the translation; a panic is recovered; the budget drops a late comparison; label values stay in the fixed sets; one redacted mismatch line per second; responses equal as JSON documents and VictoriaLogs requests identical as text with the shadow on and off over 7 queries and a cached second pass (the order of a stream''s labels inside a body varies from run to run with the shadow off too: 2-8 of 14 bodies differ as bytes between two shadow-off runs, so bodies are compared as documents); no goroutine outlives Shutdown); internal/querycorpus TestPlanShadow unchanged through physical.Equal (2026-11-09)'
+    code: [internal/proxy/lowering_shadow.go, internal/proxy/query_translation.go, internal/queryplan/physical/canon.go, internal/metrics/metrics.go, internal/config/limits.go, cmd/proxy/main.go]
+    tests: [TestLoweringShadow_OffByDefault, TestLoweringShadow_EveryMissIsComparedAtSampleOne, TestLoweringShadow_CacheHitIsNotShadowed, TestLoweringShadow_ComparesUnderTheRequestsOptions, TestLoweringShadow_ResultsByConstruct, TestLoweringShadow_ErrorsAreCounted, TestLoweringShadow_SlotsFullSkips, TestLoweringShadow_PanicIsRecoveredAndCounted, TestLoweringShadow_BudgetIsEnforced, TestLoweringShadow_ConstructLabelIsBounded, TestLoweringShadow_MismatchLogIsRateLimitedAndRedacted, TestLoweringShadow_ResponseAndBackendRequestsAreUnchanged, TestLoweringShadow_ShutdownLeavesNoGoroutines, TestPlanShadow]
+    quality: 'Observe-only: off by default, and on it changes no answer, cache entry or VictoriaLogs request.'
+    performance:
+      tracked: ['BenchmarkTranslateQueryMiss ns/op, B/op, allocs/op (internal/proxy; the request path with the shadow off must not move)', 'BenchmarkLoweringShadowCompare / BenchmarkTranslateQueryMissShadowed ns/op, B/op, allocs/op (internal/proxy)']
+      bound: 'Translate on a cache miss with the shadow off, origin/main vs this change (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): 33.78 µs vs 33.30 µs, 3.418 KiB both, 58 allocs both (interleaved runs on a loaded machine, p=0.93, no change; the off path is one nil check). One shadowed query: 4.3 µs, 3.2 KiB, 103 allocs for the comparison; the miss path at sample 1 costs 34.4 µs (+4 µs, the comparison running beside it)'
   - id: unwrap-handlers-read-the-gate
     chosen: 'translator.DecodeStats also records the unwrap gate that ends the decoded base (Gate, the exact suffix SplitUnwrapGate splits off, and UnwrapField) and the query without it (UngatedText). statsCompatSpec carries the gate; gated() reads whether the current BaseQuery still ends with it and ungated() strips it, and withoutUnwrapGate clears it on the copy it returns. The quantile-counts route, the raw-row evaluators, the unwrap window route and the native-tumbling math check read the spec or the operator instead of splitting the text'
     over: [precomputing the ungated base at decode time, a typed unwrap gate in the base query, moving queryUsesParserStages]

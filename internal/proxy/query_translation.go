@@ -465,15 +465,24 @@ func (p *Proxy) translateQueryOpts(ctx context.Context, logql string, keepLine b
 			translate = translator.TranslateLogQueryKeepingLine
 		}
 		translated, err := translate(logqlpkg.CanonicalizeLogRanges(normalized), labelFn, streamFieldsMap, caps)
+		// The lowering shadow (-translate-shadow-sample) sees the options the translator saw and its answer, once
+		// the answer is final; it runs in the background and changes nothing here.
 		if err != nil {
+			if p.loweringShadow != nil {
+				p.shadowLowering(shadowInput{query: normalized, keepLine: keepLine, label: labelFn, streamFields: streamFieldsMap, caps: caps, legacyErr: err})
+			}
 			return translationResult{err: err}, nil
 		}
+		legacy := translated
 		trimmed := strings.TrimSpace(translated)
 		if strings.HasPrefix(trimmed, "|") {
 			translated = "* " + trimmed
 		}
 		if p.translationCache != nil {
 			p.translationCache.SetWithTTL(cacheKey, []byte(translated), 5*time.Minute)
+		}
+		if p.loweringShadow != nil {
+			p.shadowLowering(shadowInput{query: normalized, keepLine: keepLine, label: labelFn, streamFields: streamFieldsMap, caps: caps, legacy: legacy})
 		}
 		return translationResult{query: translated}, nil
 	})

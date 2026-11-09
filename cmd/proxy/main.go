@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -108,6 +109,7 @@ type proxyRuntimeConfig struct {
 	emitStructuredMetadata              bool
 	backendDefaultMsgValue              string
 	detectedLevelBodyScan               bool
+	translateShadowSample               float64
 	patternsEnabled                     bool
 	deleteAPIEnabled                    bool
 	patternsAutodetectFromQueries       bool
@@ -607,6 +609,7 @@ func run(
 	deleteAPIEnabled := fs.Bool("delete-api-enabled", false, "Register /loki/api/v1/delete and forward its requests to VictoriaLogs (a proxy extension with its own safeguards; current VictoriaLogs releases reject the forwarded request). When false, the path answers 404 like Loki with deletion disabled (the default when compactor retention is off)")
 	exactParserSeriesIdentity := fs.Bool("exact-parser-series-identity", false, "Name the series of a metric over `| json` or `| logfmt` with the labels those parsers extracted, as Loki does, instead of the stream. Every such query is then evaluated from rows (bounded by -manual-metric-row-budget) rather than pushed down to VictoriaLogs stats, so it costs far more on wide ranges; `| regexp` and `| pattern` captures are always part of the identity because the query names them")
 	alignQueriesWithStep := fs.Bool("align-queries-with-step", true, "Move the start and end of a metric query_range request down to a multiple of its step before evaluating it, as Loki's query frontend does with query_range.align_queries_with_step (-querier.align-querier-with-step; false in Loki's flag defaults, true in its example configuration and Helm chart). On by default: answers share that Loki's evaluation grid, and a refresh that moves the window by less than a step maps onto the same request and is served from the caches. Log queries, instant queries, step-less requests, /loki/api/v1/patterns and Grafana Logs Drilldown query-split residual chunks are not changed. Set false to evaluate at the start the client sent")
+	translateShadowSample := fs.Float64("translate-shadow-sample", 0, "Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	patternsExactMaxLines := fs.Int("patterns-exact-max-lines", proxy.DefaultPatternsExactMaxLines, "Read at most this many lines from VictoriaLogs to answer /loki/api/v1/patterns for a stream selector with the patterns Loki mines from them: each stream and level mined apart, oldest line first, with Loki's cluster limits. A range with more lines is answered from VictoriaLogs' counts (-patterns-counts) instead, which mines the lines of a level's streams together. Reading costs about 200 bytes per line of transfer and a sort in VictoriaLogs' memory; 0 turns the exact reading off")
 	patternsStateMaxBytes := fs.Int64("patterns-state-max-bytes", proxy.DefaultPatternsStateMaxBytes, "Memory the /loki/api/v1/patterns state of all tenants may hold: each stream's clusters at each level trained on every line read since the state was built from Loki's pattern retention (3h), as Loki's pattern ingester keeps them, so a refresh reads only the lines after what was read and templates come from every line; past it the least recently used tenant's state is dropped. A selector whose lines over the retention exceed -patterns-exact-max-lines is answered without the state; 0 turns the state off")
@@ -913,6 +916,7 @@ func run(
 			emitStructuredMetadata:              *emitStructuredMetadata,
 			backendDefaultMsgValue:              *backendDefaultMsgValue,
 			detectedLevelBodyScan:               *detectedLevelBodyScan,
+			translateShadowSample:               *translateShadowSample,
 			patternsEnabled:                     *patternsEnabled,
 			deleteAPIEnabled:                    *deleteAPIEnabled,
 			patternsAutodetectFromQueries:       *patternsAutodetectFromQueries,
@@ -2170,6 +2174,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		EmitStructuredMetadata:             cfg.emitStructuredMetadata,
 		BackendDefaultMsgValue:             cfg.backendDefaultMsgValue,
 		DisableDetectedLevelBodyScan:       !cfg.detectedLevelBodyScan,
+		TranslateShadowSample:              cfg.translateShadowSample,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		DeleteAPIEnabled:                   cfg.deleteAPIEnabled,
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
@@ -2398,6 +2403,9 @@ func validateHeavyQueryLimits(cfg proxyRuntimeConfig) error {
 	}
 	if t := cfg.backendMetadataScanLatencyTolerance; t < 0 || (t > 0 && t < 1) {
 		return fmt.Errorf("invalid -backend-metadata-scan-latency-tolerance: %g (must be >= 1; 0 uses the default)", cfg.backendMetadataScanLatencyTolerance)
+	}
+	if s := cfg.translateShadowSample; s < 0 || s > 1 || math.IsNaN(s) {
+		return fmt.Errorf("invalid -translate-shadow-sample: %g (must be between 0 and 1; 0 turns it off)", s)
 	}
 	if (cfg.backendMaxConcurrentHeavyQueries > 0 || cfg.backendMaxConcurrentMetadataScans > 0) && cfg.backendHeavyQueryMinRange <= 0 {
 		return fmt.Errorf("invalid -backend-heavy-query-min-range: %s (must be > 0)", cfg.backendHeavyQueryMinRange)
