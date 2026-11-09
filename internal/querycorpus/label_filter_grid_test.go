@@ -164,8 +164,9 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
-			if !physical.Equal(want, got) {
-				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
+			// The text is the translator's byte for byte (what a flipped query serves), which includes the structure.
+			if text := translator.EncodePhysical(got); text != legacy || !physical.Equal(want, got) {
+				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))
 				continue
 			}
 			native++

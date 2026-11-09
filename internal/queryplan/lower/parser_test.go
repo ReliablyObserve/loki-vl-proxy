@@ -199,34 +199,34 @@ func TestPlanLowersParsers(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesParserShapes(t *testing.T) {
 	for q, construct := range map[string]string{
-		`{app="a"} | json | level="error"`:        "LogSelect label filter after parser",
-		`{app="a"} | logfmt | a="1" | json`:       "LogSelect label filter after parser",
-		`{app="a"} | json a="b" | a="1"`:          "LogSelect label filter after parser",
-		`{app="a"} | json | drop x | status>=500`: "LogSelect label filter after parser",
-		"{app=\"a\"} | regexp `(?P<a>\\d+)`":      "LogSelect regexp parser",
-		"{app=\"a\"} | pattern `<a> <b>`":         "LogSelect pattern parser",
-		`{app="a"} | unpack`:                      "LogSelect unpack parser",
-		`{app="a"} | json | line_format "{{.a}}"`: "LogSelect pipeline",
-		`{app="a"} | label_format a=b`:            "LogSelect pipeline",
-		`{app="a"} | decolorize`:                  "LogSelect pipeline",
-		`{app="a"} | json a="b\"c"`:               "LogSelect json extraction",
-		"{app=\"a\"} | json a=`raw`":              "LogSelect json extraction",
-		`{app="a"} | json a="b,c"`:                "LogSelect json extraction",
-		`{app="a"} | json a=" b"`:                 "LogSelect json extraction",
-		`{app="a"} | json a="[0]"`:                "LogSelect json extraction",
-		`{app="a"} | json a="x", a="y"`:           "LogSelect json extraction",
-		`{app="a"} | json a="b\\c"`:               "LogSelect json extraction",
-		`{app="a"} | json a="b" != "y"`:           "LogSelect line filter after parser arguments",
-		`{app="a"} | logfmt --strict !~ "y"`:      "LogSelect line filter after parser arguments",
-		`{app="a"} | drop a="x" != "y"`:           "LogSelect line filter after parser arguments",
-		`{app="a"} | keep a="x" !~ "y"`:           "LogSelect line filter after parser arguments",
-		`{app="a"} | drop a="x\"y"`:               "LogSelect drop matcher value",
-		`{app="a"} | keep a="x=~y"`:               "LogSelect keep matcher value",
-		`{app="a"} | keep a="x!y"`:                "LogSelect keep matcher value",
-		`{app="a"} | keep a, b="x"`:               "LogSelect keep order",
-		`{app="a"} | keep b="x", a`:               "LogSelect keep order",
-		`{app="a"} | detected_level="e" | json`:   "LogSelect label filter detected_level",
-		`{app="a"} | json | detected_level="e"`:   "LogSelect label filter after parser",
+		`{app="a"} | json a_b="a_b" | a_b="1"`:      "LogSelect label filter json extraction label",
+		`{app="a"} | json a="service_name" | a="1"`: "LogSelect label filter json extraction label",
+		`{app="a"} | json | a_b=5`:                  "LogSelect label filter numeric equality after parser",
+		`{app="a"} | json | extract ="x"`:           "LogSelect label filter extract name",
+		"{app=\"a\"} | regexp `(?P<a>\\d+)`":        "LogSelect regexp parser",
+		"{app=\"a\"} | pattern `<a> <b>`":           "LogSelect pattern parser",
+		`{app="a"} | unpack`:                        "LogSelect unpack parser",
+		`{app="a"} | json | line_format "{{.a}}"`:   "LogSelect pipeline",
+		`{app="a"} | label_format a=b`:              "LogSelect pipeline",
+		`{app="a"} | decolorize`:                    "LogSelect pipeline",
+		`{app="a"} | json a="b\"c"`:                 "LogSelect json extraction",
+		"{app=\"a\"} | json a=`raw`":                "LogSelect json extraction",
+		`{app="a"} | json a="b,c"`:                  "LogSelect json extraction",
+		`{app="a"} | json a=" b"`:                   "LogSelect json extraction",
+		`{app="a"} | json a="[0]"`:                  "LogSelect json extraction",
+		`{app="a"} | json a="x", a="y"`:             "LogSelect json extraction",
+		`{app="a"} | json a="b\\c"`:                 "LogSelect json extraction",
+		`{app="a"} | json a="b" != "y"`:             "LogSelect line filter after parser arguments",
+		`{app="a"} | logfmt --strict !~ "y"`:        "LogSelect line filter after parser arguments",
+		`{app="a"} | drop a="x" != "y"`:             "LogSelect line filter after parser arguments",
+		`{app="a"} | keep a="x" !~ "y"`:             "LogSelect line filter after parser arguments",
+		`{app="a"} | drop a="x\"y"`:                 "LogSelect drop matcher value",
+		`{app="a"} | keep a="x=~y"`:                 "LogSelect keep matcher value",
+		`{app="a"} | keep a="x!y"`:                  "LogSelect keep matcher value",
+		`{app="a"} | keep a, b="x"`:                 "LogSelect keep order",
+		`{app="a"} | keep b="x", a`:                 "LogSelect keep order",
+		`{app="a"} | detected_level="e" | json`:     "LogSelect label filter detected_level",
+		`{app="a"} | json | detected_level="e"`:     "LogSelect label filter detected_level",
 	} {
 		expr, err := logql.Parse(q)
 		if err != nil {
@@ -245,9 +245,9 @@ func TestPlanDelegatesParserShapes(t *testing.T) {
 	}
 }
 
-// A stream-labels profile leaves a query with a parser to the string translator when a stage names one of the
-// stream labels: the translator copies its stored value aside, and the lowering writes none of that. A stage that
-// names none is lowered.
+// A stream-labels profile leaves a query with a parser to the string translator when a stage other than a filter
+// on one label names a stream label (the translator copies its stored value aside, and the lowering writes that
+// for a label filter alone), or when a string holds a template read of one. A stage that names none is lowered.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesStreamLabelsAfterParser(t *testing.T) {
@@ -259,8 +259,11 @@ func TestPlanDelegatesStreamLabelsAfterParser(t *testing.T) {
 		`{app="a"} | drop pod`:                    "",
 		`{app="a"} | json pod="x"`:                "LogSelect stream label after parser",
 		`{app="a"} | logfmt app`:                  "LogSelect stream label after parser",
-		`{app="a"} | pod="x" | json`:              "LogSelect stream label after parser",
-		`{app="a"} | app="x" or b="y" | logfmt`:   "LogSelect stream label after parser",
+		`{app="a"} | pod="x" | json`:              "",
+		`{app="a"} | json | pod="x"`:              "",
+		`{app="a"} | app="x" or b="y" | logfmt`:   "LogSelect stream label in label filter tree",
+		`{app="a"} |= "{{.pod}}" | json`:          "LogSelect stream label after parser",
+		`{app="a"} | json | x="{{ .app }}"`:       "LogSelect stream label after parser",
 		`{app="a"} | drop pod="x" | json`:         "LogSelect stream label after parser",
 		`{app="a"} | keep app="x" | logfmt`:       "LogSelect stream label after parser",
 		`{app="a"} | other="x" | json | keep app`: "",

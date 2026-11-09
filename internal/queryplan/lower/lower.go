@@ -69,13 +69,19 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
 // assembled). Any other stage, and a label filter after a parser, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	staged, err := stagePipes(sel, prof)
+	staged, read, err := stagePipes(sel, prof)
 	if err != nil {
 		return nil, err
 	}
-	built, err := labelFilters(sel, prof)
+	lf, err := labelFilters(sel, prof, read)
 	if err != nil {
 		return nil, err
+	}
+	built := lf.filters
+	if len(lf.bases) > 0 {
+		if staged, err = extractedUnpacks(sel, staged, lf.bases); err != nil {
+			return nil, err
+		}
 	}
 	var filters, after logsql.AllOf
 	var pipes []logsql.Pipe
@@ -101,10 +107,16 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 	// lastPipe is whether the last part the string translator holds starts with a pipe: a pipe, or a label
 	// filter it wrapped in a filter pipe.
 	lastPipe := false
+	// afterParser is whether a json or logfmt parser came before: the string translator then gives every label
+	// filter that is a field filter a filter pipe of its own, wherever it stands.
+	afterParser := false
 	for i, st := range sel.Stages {
 		switch st.(type) {
 		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep:
 			// A json or logfmt parser, a drop and a keep are pipes (stagePipes); a drop of matchers writes none.
+			if _, ok := st.(*queryplan.Parse); ok {
+				afterParser = true
+			}
 			if len(staged) > 0 && len(staged[i]) > 0 {
 				flush()
 				pipes = append(pipes, staged[i]...)
@@ -114,7 +126,12 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		}
 		if _, ok := st.(*queryplan.LabelFilter); ok {
 			f := built[i]
-			if lastPipe && translate.IsFieldFilter(f.String()) {
+			if len(lf.pre) > 0 && len(lf.pre[i]) > 0 {
+				flush()
+				pipes = append(pipes, lf.pre[i]...)
+				lastPipe = true
+			}
+			if (lastPipe || afterParser) && translate.IsFieldFilter(f.String()) {
 				flush()
 				after = logsql.AllOf{f}
 			} else {
@@ -151,6 +168,12 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		}
 	}
 	flush()
+	if len(read) > 0 {
+		pipes = append(pipes, translate.StreamValueDelete())
+	}
+	if len(lf.bases) > 0 {
+		pipes = append(pipes, translate.ExtractedDelete())
+	}
 	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
 	if err != nil {
 		return nil, err
@@ -166,25 +189,60 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 // answers NotLoweredError for a query whose label filters the lowering does not write: a filter on
 // detected_level or service_name (the string translator derives them), a value that is not a valid literal, and a
 // label that translates to several parsed keys or to no field.
-func labelFilters(sel *queryplan.LogSelect, prof Profile) ([]logsql.FilterExpr, error) {
-	var built []logsql.FilterExpr
+func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string) (filterStages, error) {
+	var res filterStages
+	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
 	for i, st := range sel.Stages {
+		if p, ok := st.(*queryplan.Parse); ok {
+			lb.parsed = true
+			lb.keyParsers++
+			lb.addJSONAliases(p)
+			continue
+		}
 		lbl, ok := st.(*queryplan.LabelFilter)
 		if !ok {
 			continue
 		}
 		if lbl.Expr == nil {
-			return nil, &NotLoweredError{Construct: "LogSelect label filter"}
+			return filterStages{}, &NotLoweredError{Construct: "LogSelect label filter"}
 		}
 		if c := checkLabelFilterExpr(lbl.Expr, prof); c != "" {
-			return nil, &NotLoweredError{Construct: c}
+			return filterStages{}, &NotLoweredError{Construct: c}
 		}
-		if built == nil {
-			built = make([]logsql.FilterExpr, len(sel.Stages))
+		if lb.parsed {
+			if c := checkParsedLabelFilterExpr(lbl.Expr, sel); c != "" {
+				return filterStages{}, &NotLoweredError{Construct: c}
+			}
 		}
-		built[i] = labelFilter(lbl.Expr, prof.Label, prof.Caps)
+		if res.filters == nil {
+			res.filters = make([]logsql.FilterExpr, len(sel.Stages))
+		}
+		res.filters[i] = labelFilter(lbl.Expr, &lb)
+		if lb.bad != "" {
+			return filterStages{}, &NotLoweredError{Construct: lb.bad}
+		}
+		if len(lb.stageBases) > 0 {
+			if res.pre == nil {
+				res.pre = make([][]logsql.Pipe, len(sel.Stages))
+			}
+			res.pre[i] = translate.ExtractedCoalesce(lb.stageBases, lb.keyParsers, &lb.streamCopied)
+			lb.stageBases = lb.stageBases[:0]
+		}
 	}
-	return built, nil
+	res.bases = lb.bases
+	return res, nil
+}
+
+// filterStages are the label filters of a log query, by stage index.
+type filterStages struct {
+	// filters are the filter of each label filter stage (nil elsewhere).
+	filters []logsql.FilterExpr
+	// pre are the pipes ahead of a stage that filters on name_extracted labels: the value of each from the first
+	// parser that extracted it.
+	pre [][]logsql.Pipe
+	// bases are the labels whose name_extracted rename the filters read; each json or logfmt parser unpacks their
+	// keys into scratch fields.
+	bases []string
 }
 
 // checkLabelFilterExpr names the construct of the first leaf the lowering does not write, "" when it writes all.
@@ -204,6 +262,10 @@ func checkLabelFilterExpr(e *logql.LabelFilterExpr, prof Profile) string {
 		return "LogSelect label filter name"
 	case "detected_level", "service_name":
 		return "LogSelect label filter " + label
+	case "extract":
+		// The string translator reads `extract ="x"` as its own pass-through extract pipe (for queries it
+		// translated before), not as a filter.
+		return "LogSelect label filter extract name"
 	}
 	if prof.Label != nil {
 		translated := prof.Label(label)
@@ -223,23 +285,43 @@ func checkLabelFilterExpr(e *logql.LabelFilterExpr, prof Profile) string {
 	return ""
 }
 
+// leafBuilder builds the filter of a label filter leaf: the label translation and capabilities of the profile,
+// and whether a json or logfmt parser came before the stage (the leaf then names a sanitized parsed key). bad is
+// the construct of the first leaf it cannot write, "" while it writes all.
+type leafBuilder struct {
+	label  func(string) string
+	caps   logsql.Capabilities
+	parsed bool
+	// aliases are the labels the json stages before the label filter define.
+	aliases []jsonAlias
+	// sv are the stream labels the query reads after a parser, which the filters read from their scratch copies.
+	sv []string
+	// keyParsers are the json and logfmt stages before the stage; bases the labels whose name_extracted rename the
+	// filters read, stageBases those of the stage; streamCopied is whether _stream was copied aside for them.
+	keyParsers   int
+	bases        []string
+	stageBases   []string
+	streamCopied bool
+	bad          string
+}
+
 // labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or
 // tree of leaves in parentheses, each translated like a stand-alone stage (translateLabelFilterExpr).
-func labelFilter(e *logql.LabelFilterExpr, label func(string) string, caps logsql.Capabilities) logsql.FilterExpr {
+func labelFilter(e *logql.LabelFilterExpr, lb *leafBuilder) logsql.FilterExpr {
 	if e.IsLeaf() {
-		return labelFilterLeaf(e, label, caps)
+		return lb.leaf(e)
 	}
 	var operands []logsql.FilterExpr
-	collectLabelFilter(e, e.Op, &operands, label, caps)
+	collectLabelFilter(e, e.Op, &operands, lb)
 	var tree logsql.FilterExpr
 	for i, o := range operands {
 		switch {
 		case i == 0:
 			tree = o
 		case e.Op == logql.LabelFilterOr:
-			tree = logsql.OrExpr{Left: tree, Right: o}
+			tree = logsql.OrExpr{Left: tree, Right: o, Lower: true}
 		default:
-			tree = logsql.AndExpr{Left: tree, Right: o}
+			tree = logsql.AndExpr{Left: tree, Right: o, Lower: true}
 		}
 	}
 	return logsql.Group{Expr: tree}
@@ -247,20 +329,33 @@ func labelFilter(e *logql.LabelFilterExpr, label func(string) string, caps logsq
 
 // collectLabelFilter flattens a chain of one operator, parenthesizing a leaf that holds a top-level space and a
 // nested chain of the other operator (LabelFilterExpr.Render).
-func collectLabelFilter(e *logql.LabelFilterExpr, op logql.LabelFilterOp, out *[]logsql.FilterExpr, label func(string) string, caps logsql.Capabilities) {
+func collectLabelFilter(e *logql.LabelFilterExpr, op logql.LabelFilterOp, out *[]logsql.FilterExpr, lb *leafBuilder) {
 	switch {
 	case e.IsLeaf():
-		f := labelFilterLeaf(e, label, caps)
+		f := lb.leaf(e)
 		if translate.HasTopLevelSpace(f.String()) {
 			f = logsql.Group{Expr: f}
 		}
 		*out = append(*out, f)
 	case e.Op != op:
-		*out = append(*out, labelFilter(e, label, caps))
+		*out = append(*out, labelFilter(e, lb))
 	default:
-		collectLabelFilter(e.Left, op, out, label, caps)
-		collectLabelFilter(e.Right, op, out, label, caps)
+		collectLabelFilter(e.Left, op, out, lb)
+		collectLabelFilter(e.Right, op, out, lb)
 	}
+}
+
+// leaf is the filter of one leaf: the one translateSingleLabelFilter writes, which names the sanitized keys a
+// parser can have produced when a parser came before the stage (parsedLabelFilterLeaf).
+func (lb *leafBuilder) leaf(e *logql.LabelFilterExpr) logsql.FilterExpr {
+	if lb.parsed {
+		f, c := lb.parsedLeaf(e)
+		if c != "" && lb.bad == "" {
+			lb.bad = c
+		}
+		return f
+	}
+	return labelFilterLeaf(e, lb.label, lb.caps)
 }
 
 // labelFilterLeaf is translateSingleLabelFilter's generic path for one leaf: the label named like the selector

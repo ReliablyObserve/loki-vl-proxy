@@ -398,9 +398,15 @@ func operand(f FilterExpr, prec int) string {
 // AndExpr is a logical AND of two filter expressions.
 type AndExpr struct {
 	Left, Right FilterExpr
+	// Lower writes the operator in lowercase (`a and b`), which LogsQL reads like `AND`: the spelling the string
+	// translator uses to join the label filters of a query. The parser never sets it.
+	Lower bool
 }
 
 func (a AndExpr) String() string {
+	if a.Lower {
+		return operand(a.Left, 2) + " and " + operand(a.Right, 2)
+	}
 	return operand(a.Left, 2) + " AND " + operand(a.Right, 2)
 }
 
@@ -409,9 +415,14 @@ func (a AndExpr) filterExpr() {}
 // OrExpr is a logical OR of two filter expressions.
 type OrExpr struct {
 	Left, Right FilterExpr
+	// Lower writes the operator in lowercase (`a or b`), as AndExpr.Lower does.
+	Lower bool
 }
 
 func (o OrExpr) String() string {
+	if o.Lower {
+		return o.Left.String() + " or " + o.Right.String()
+	}
 	return o.Left.String() + " OR " + o.Right.String()
 }
 
