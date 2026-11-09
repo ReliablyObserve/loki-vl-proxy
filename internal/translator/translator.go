@@ -1471,13 +1471,6 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.
 // logqlSingleFilterOp is what a LogQL label filter operator means.
 type logqlSingleFilterOp = translate.LabelFilterOp
 
-// buildFieldFilterStr builds a LogsQL field filter string using logsql.FieldFilter
-// for all value quoting/formatting, but uses the legacy "-" negation prefix
-// (rather than "NOT ").
-func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
-	return translate.BuildFieldFilter(field, op, value, negate).String()
-}
-
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
