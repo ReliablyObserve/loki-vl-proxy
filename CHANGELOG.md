@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `skipped`, `panic`, `budget`); a mismatch logs one redacted line per second.
   At most two comparisons run at once, each within 100 ms. It is off by
   default and never affects an answer, a cache entry or a VictoriaLogs request.
+
+## [2.111.0] - 2026-11-09
+
 ### Fixed
 
 - An invalid line filter's error quotes the whole run of line filters Loki
