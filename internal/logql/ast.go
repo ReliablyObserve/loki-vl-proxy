@@ -100,21 +100,7 @@ type LineFilterStage struct {
 }
 
 func (s *LineFilterStage) String() string {
-	var op string
-	switch s.Op {
-	case LineFilterContains:
-		op = "|="
-	case LineFilterExcludes:
-		op = "!="
-	case LineFilterMatchRe:
-		op = "|~"
-	case LineFilterExcludeRe:
-		op = "!~"
-	case LineFilterContainsPat:
-		op = "|>"
-	case LineFilterExcludePat:
-		op = "!>"
-	}
+	op := lineFilterOpText(s.Op)
 	if len(s.Or) == 0 {
 		if s.IP {
 			return op + " ip(" + strconv.Quote(s.Value) + ")"
@@ -126,6 +112,25 @@ func (s *LineFilterStage) String() string {
 		str += " or " + lineFilterOperand(alt.Value, alt.IP)
 	}
 	return str
+}
+
+// lineFilterOpText is the operator of a line filter as written: |=, !=, |~, !~, |> or !>.
+func lineFilterOpText(op LineFilterOp) string {
+	switch op {
+	case LineFilterContains:
+		return "|="
+	case LineFilterExcludes:
+		return "!="
+	case LineFilterMatchRe:
+		return "|~"
+	case LineFilterExcludeRe:
+		return "!~"
+	case LineFilterContainsPat:
+		return "|>"
+	case LineFilterExcludePat:
+		return "!>"
+	}
+	return ""
 }
 
 func lineFilterOperand(value string, ip bool) string {

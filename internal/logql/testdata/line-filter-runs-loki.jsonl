@@ -1,0 +1,826 @@
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!= \"y\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" != \"y\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"\\\\d\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |\u003e \"\u003c_\u003e a\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= ip(\"1.2.3.4\")' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"a\" or \"b\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" != \"a\" != \"b\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= ip(\"z\") or \"w\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"a\" or \"c\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"[\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|~ \"[\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= \"x\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"y\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" != \"y\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |~ \"\\\\d\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |\u003e \"\u003c_\u003e a\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= ip(\"1.2.3.4\")' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= \"a\" or \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" != \"a\" != \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= ip(\"z\") or \"w\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" |= \"a\" or \"c\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= \"x\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!= \"y\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" != \"y\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |~ \"\\\\d\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |\u003e \"\u003c_\u003e a\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= ip(\"1.2.3.4\")' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= \"a\" or \"b\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" != \"a\" != \"b\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= ip(\"z\") or \"w\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"a)\" |= \"a\" or \"c\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= \"y\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" != \"y\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ \"\\\\d\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |\u003e \"\u003c_\u003e a\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= ip(\"1.2.3.4\")' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"a\" or \"b\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" != \"a\" != \"b\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= ip(\"z\") or \"w\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"a\" or \"c\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= \"x\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!= \"y\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" != \"y\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |~ \"\\\\d\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |\u003e \"\u003c_\u003e a\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= ip(\"1.2.3.4\")' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= \"a\" or \"b\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" != \"a\" != \"b\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= ip(\"z\") or \"w\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\u003c_\u003e\" |= \"a\" or \"c\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= \"x\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= \"y\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") != \"y\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ \"\\\\d\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |\u003e \"\u003c_\u003e a\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= ip(\"1.2.3.4\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= \"a\" or \"b\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") != \"a\" != \"b\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= ip(\"z\") or \"w\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |= \"a\" or \"c\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= \"x\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= \"y\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") != \"y\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |~ \"\\\\d\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |\u003e \"\u003c_\u003e a\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= ip(\"1.2.3.4\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= \"a\" or \"b\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") != \"a\" != \"b\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= ip(\"z\") or \"w\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"y\") |= \"a\" or \"c\"' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= \"x\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"y\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") != \"y\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ \"\\\\d\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |\u003e \"\u003c_\u003e a\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= \"a\" or \"b\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") != \"a\" != \"b\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= ip(\"z\") or \"w\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |= \"a\" or \"c\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= \"x\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"y\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" != \"y\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |~ \"\\\\d\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |\u003e \"\u003c_\u003e a\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= ip(\"1.2.3.4\")' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= \"a\" or \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" != \"a\" != \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= ip(\"z\") or \"w\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ \"[\" |= \"a\" or \"c\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= \"x\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"y\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" != \"y\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |~ \"\\\\d\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |\u003e \"\u003c_\u003e a\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= ip(\"1.2.3.4\")' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= \"a\" or \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" != \"a\" != \"b\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= ip(\"z\") or \"w\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"[\" |= \"a\" or \"c\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= \"x\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"y\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") != \"y\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |~ \"\\\\d\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |\u003e \"\u003c_\u003e a\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= ip(\"1.2.3.4\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= \"a\" or \"b\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") != \"a\" != \"b\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= ip(\"z\") or \"w\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"q\") |= \"a\" or \"c\"' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") !~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |~ \"a\" or \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") != \"x\" != ip(\"q\")' : ip: invalid pattern: \"q\""}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"x\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= \"x\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"y\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") != \"y\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |~ \"\\\\d\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003c_\u003e a\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |\u003e \"\u003c_\u003e a\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"b\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= \"a\" or \"b\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != \"b\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") != \"a\" != \"b\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") or \"w\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= ip(\"z\") or \"w\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" !\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003c_\u003e\" !\u003e ip(\"1.2.3.4\") |= \"a\" or \"c\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |= \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| logfmt x=\"a.b\"' : cannot parse expression [a.b]: unexpected char ."}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format __error__=\"x\"' : __error__ cannot be formatted"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"a\",x=\"b\"' : multiple label name 'x' not allowed in a single format operation"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= \"x\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"k\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" != \"y\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != \"y\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |~ \"[\" |~ \"a)\"' : error parsing regexp: unexpected ): `a)`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"y\" |~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" |= \"b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" |\u003e \"\u003cb\u003e\"' : named captures are not allowed: found '\u003cb\u003e'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" |= \"x\" != \"y\" != \"z\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '| line_format \"{{.x}\"' : invalid line template: template: line:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : invalid regexp parser: at least one named capture must be supplied"}
+{"accept":false,"error":"parse error : invalid pattern parser: found consecutive capture '\u003ca\u003e\u003cb\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '| b=ip(\"b\")' : ip: invalid pattern: \"b\""}
+{"accept":false,"error":"parse error : stage '| label_format x=\"{{.y}\"' : invalid template for label 'x': template: label:1: bad character U+007D '}'"}
+{"accept":false,"error":"parse error : stage '| b=ip(\"b\")' : ip: invalid pattern: \"b\""}
+{"accept":false,"error":"parse error : stage '| c=ip(\"c\")' : ip: invalid pattern: \"c\""}
+{"accept":false,"error":"parse error : stage '| json x=\"a[\"' : cannot parse expression [a[]: syntax error: unexpected $end, expecting STRING or INDEX"}
+{"accept":false,"error":"parse error : stage '| b=ip(\"b\")' : ip: invalid pattern: \"b\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|\u003e ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!\u003e ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ ip(\"1.2.3.4\")' : ip: invalid operation"}
+{"accept":true}
+{"accept":true}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '|~ ip(\"(\") or \"a\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":true}
+{"accept":false,"error":"parse error : stage '|\u003e ip(\"\u003ca\u003e\") or \"x\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '|\u003e \"x\" or ip(\"\u003ca\u003e\")' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\") != \"x\"' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!= ip(\"z\") != ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '!~ \"(\" !~ ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!~ ip(\"z\") !~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!\u003e ip(\"z\") !\u003e \"\u003ca\u003e\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!\u003e \"\u003ca\u003e\" !\u003e ip(\"z\")' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"1.2.3.4\") != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '|= ip(\"y\") != \"x\" != ip(\"z\")' : ip: invalid pattern: \"z\""}
+{"accept":false,"error":"parse error : stage '!= \"x\" != ip(\"z\") |= ip(\"y\")' : ip: invalid pattern: \"y\""}
+{"accept":false,"error":"parse error : stage '|~ ip(\"(\") |= \"x\"' : ip: invalid operation"}
+{"accept":false,"error":"parse error : stage '|~ ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= ip(\"z\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"accept":false,"error":"parse error at line 1, col 20: syntax error: unexpected $end, expecting )"}
+{"accept":false,"error":"parse error at line 1, col 14: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"accept":false,"error":"parse error at line 1, col 21: syntax error: unexpected IDENTIFIER, expecting STRING or ip"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error at line 1, col 17: syntax error: unexpected NUMBER, expecting STRING"}
+{"accept":false,"error":"parse error : stage '|= ip(\"1.2.3.4\") |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" or \"[\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"a\" or \"(\" or \"[\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '!~ \"a\" !~ \"(\" !~ \"[\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|= \"a\" or \"c\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" or \"a\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"[\" or \"(\"' : error parsing regexp: missing closing ]: `[`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" or \"x\"' : named captures are not allowed: found '\u003ca\u003e'"}
+{"accept":false,"error":"parse error : stage '!= \"a\" != ip(\"z\") != \"c\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|\u003e \"\u003ca\u003e\" or \"\u003c_\u003e\u003c_\u003e\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"(\" !\u003e \"\u003ca\u003e\" !\u003e \"\u003c_\u003e\u003c_\u003e\"' : found consecutive capture '\u003c_\u003e\u003c_\u003e': invalid expression"}
+{"accept":false,"error":"parse error : stage '|= \"x\\\\y\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|~ \"\\\\d\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a\\\"b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"\\t\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"éÿ\\x01\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a'b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"a\\\"b\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}
+{"accept":false,"error":"parse error : stage '|= \"x\" or \"y\" |~ \"(\"' : error parsing regexp: missing closing ): `(`"}

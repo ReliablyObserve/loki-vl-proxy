@@ -1,0 +1,60 @@
+id: semantics/label-filter-regex-parse-error
+title: A label filter, drop or keep regex Loki cannot parse is Loki's 400, reported in Loki's order (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki parses the regex of a `=~` or `!~` label filter, drop or keep matcher
+  while it parses the query: `{app="a"} | x=~"("` answers `parse error :
+  error parsing regexp: missing closing ): `(``, in any filter form
+  (`x="1" or y=~"("`, `a, x!~"("`, `| drop x="a", y!~"("`), for log and
+  metric queries alike (Loki oracle check command, which builds metric
+  pipelines too, Loki 3.7, 2026-11-09). The proxy accepted these queries.
+
+  Loki also reports these errors, like those of the regexp and pattern
+  parsers, before what it checks once the query is parsed: the selector's
+  empty-compatible rule (`{app=~".*"} | regexp "x"` names the parser), a
+  range aggregation's grouping and unwrap rules
+  (`count_over_time({app="a"} | regexp "x" | unwrap y [5m])` names the
+  parser, `count_over_time({app="a"} | x=~"(" [5m]) by (z)` the regex), and
+  the stages it builds (`| json x="a[" | x=~"("` names the regex). The proxy
+  reported the selector and range aggregation rules first. And an ip() label
+  filter after an unwrap (`sum_over_time({app="a"} | unwrap y | b=ip("b")
+  [5m])`) is not checked by Loki; the proxy rejected it.
+
+  Fixed: the LogQL validation reports, in pipeline order and before
+  anything else but a selector regex, the regexp and pattern parser errors,
+  the first label filter, drop or keep regex that does not parse (read as
+  written, left to right), and a second unwrap; then the selector's
+  empty-compatible rule (after the range aggregation rules in a metric
+  query); then the stages Loki builds, up to an unwrap. Held to the Loki
+  oracle check command on a grid of 148 queries
+  (TestStageParseErrorsMatchLoki): every status and text equal.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | x=~"("'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    Loki's 400 parse error, byte for byte.
+gap:
+  status: fixed
+  impact: api-only
+  effort: S
+  area: 'internal/logql stage_parse_validate.go (parseTimeStageError), semantic.go logQueryParseErrors'
+  loki: 'label filter, drop and keep regexes parsed with the query; parse errors before the post-parse rules and the pipeline build'
+  proxy: 'the LogQL validation rejects them with Loki''s text, in Loki''s order'
+  planned_test: 'TestStageParseErrorsMatchLoki (internal/logql, 148 recorded answers of the Loki oracle check command)'
+  fixed_by: '#1242'
+  visual: none
+  visual_reason: 'a 400 parse error, which Grafana shows as the error text only'
+  clusters: []
