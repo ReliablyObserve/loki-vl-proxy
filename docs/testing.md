@@ -426,6 +426,13 @@ The GitHub-hosted Docker jobs now also prebuild the proxy image once per job thr
 Compose-backed fleet cache smoke runs on pull requests and post-merge `main` in CI (`e2e-fleet`). The job runs only `TestFleetSmoke_QueryRangeWarmHitIncrementsCacheMetrics` against `test/e2e-fleet/docker-compose.yml`; the other `TestFleet_*`, `TestFleetSmoke_*` and `TestPeerDiscovery_*` tests in `test/e2e-fleet` are run locally.
 Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by seeding e2e data then executing `scripts/smoke-test.sh`.
 
+## Query Plan Shadow
+
+The proxy is moving from a string translator to a typed query plan (`internal/queryplan`: parse once, build a logical plan, lower it to VictoriaLogs operators in `internal/queryplan/lower`). Until the plan answers every query, two shadows hold it to the translator:
+
+- **Corpus shadow (CI).** `TestPlanShadow` (`internal/querycorpus`) lowers every query of the plan corpus under the 12 translator option profiles (VictoriaLogs v1.49 and v1.53, label style, stream fields, stream labels, the detected_level body scan, keepLine) and compares the lowered operators with the translator's, both read by the LogsQL parser. Mismatches must stay 0; the native count may only rise (`conformance/registry/query-plan.json`, re-recorded with `LVP_QUERY_PLAN_UPDATE=1`). Generated grids add shapes the corpus lacks: line, pattern and label filters, with fuzz targets in fuzz-smoke.
+- **Live shadow (opt-in).** `-translate-shadow-sample` (0..1, default 0) compares the two on that share of real translation-cache misses, in the background, with no effect on answers, caches or VictoriaLogs requests; results are counted in `loki_vl_proxy_lowering_shadow_total{result,construct}` (see [observability](observability.md)). A construct moves to the plan only when both shadows show 0 mismatches.
+
 ## Query Semantics Matrix
 
 `TestQuerySemanticsMatrix` reads [`query-semantics-matrix.json`](../test/e2e-compat/query-semantics-matrix.json) and executes each case against:
