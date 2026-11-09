@@ -192,7 +192,7 @@
       "compared_with_loki": 10,
       "endpoints": 10,
       "name": "Grafana Explore",
-      "open_differences": 46,
+      "open_differences": 48,
       "proven": 8,
       "routed": 10
     },
@@ -229,15 +229,15 @@
   ],
   "date": "2026-11-09",
   "differences": {
-    "open": 86,
+    "open": 88,
     "open_by_impact": {
       "api-only": 11,
       "drilldown-visible": 14,
       "edge": 14,
-      "explore-visible": 46,
+      "explore-visible": 48,
       "grafana-datasource": 1
     },
-    "ranked": 109
+    "ranked": 111
   },
   "distribution": [
     {

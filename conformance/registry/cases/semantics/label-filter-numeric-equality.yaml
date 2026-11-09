@@ -1,0 +1,58 @@
+id: semantics/label-filter-numeric-equality
+title: A label filter against a number compares the value as text where Loki compares it as a number (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Loki reads a label filter whose value is a number literal (`| m=5`,
+  `| m==5`, `| m!=5`) as a numeric comparison: the label's value is parsed as
+  a number, so `5.0` and `5` are equal. The proxy writes `=` and `!=` with a
+  number as an exact text match (`m:="5"`, `-m:="5"`), so `5.0` is not equal
+  to `5`. The ordering comparisons (`>`, `>=`, `<`, `<=`) are numeric on both.
+
+  Stack (Loki 3.7.9, VictoriaLogs v1.53.0, 2026-11-09), one stream with
+  m="5.0" (line one) and one with m="5" (line two):
+    | m=5    Loki both lines        proxy line two
+    | m==5   Loki both lines        proxy line two
+    | m!=5   Loki none              proxy line one
+    | m>=5   Loki both lines        proxy both lines
+
+  Recorded with the Loki oracle (Loki's exported pipeline run on a label set
+  and a line, Loki 3.7.9, every operator against 26 values): Loki
+  parses the value as a Go float, so `5`, `5.0`, `05`, `5e0`, `+5`, `5.`
+  and `5_0` are all 5; a missing or empty label is dropped under `=` and
+  `!=`; a value that is not a number is kept with
+  `__error__=LabelFilterErr` (semantics/label-filter-numeric-error-label).
+
+  Why it is open: no exact VictoriaLogs filter exists. The values Go float
+  parsing reads as 5 are not a regular language a regexp could match, and
+  VictoriaLogs' own number parsing (range and the numeric comparisons,
+  v1.53.0 source) rejects leading zeros, `+`, exponents and edge dots. An
+  exact answer needs the value parsed per row, which the metric rules do
+  not allow for raw rows; a design decision is needed (for example a
+  bounded proxy-side filter on log queries only).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | m=5'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Every line whose m is numerically 5 (5, 5.0), as Loki answers.
+gap:
+  status: open
+  impact: explore-visible
+  effort: L
+  area: 'internal/translator translateSingleLabelFilter (= and != with a number written as an exact text match)'
+  loki: 'label filters against a number literal compare numerically'
+  proxy: 'exact text match for = and !=; ordering comparisons numeric'
+  planned_test: 'e2e vs Loki with 5 / 5.0 / non-numeric values (test/e2e-compat, group semantics); Loki oracle answers for non-numeric values'
+  clusters: []
