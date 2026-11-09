@@ -499,7 +499,9 @@ func (p *Proxy) admitBackendRequest(ctx context.Context, path string, params url
 	default:
 		outcome = "canceled"
 	}
-	p.observeInternalOperation(ctx, operation, outcome, time.Since(waitStart))
+	waited := time.Since(waitStart)
+	p.observeInternalOperation(ctx, operation, outcome, waited)
+	recordFlowQueue(ctx, waited)
 	if err != nil {
 		if isHeavyQueryQueueFull(err) {
 			if rt != nil {

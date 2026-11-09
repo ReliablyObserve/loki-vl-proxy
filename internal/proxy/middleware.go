@@ -416,7 +416,13 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
-	key += ":profile:" + p.responseProfileCacheKey(r)
+	// queryStatsCompatFence: query and query_range values carry the
+	// entry-count trailer (query_stats_cache.go).
+	fence := ""
+	if endpoint == "query" || endpoint == "query_range" {
+		fence = ":" + queryStatsCompatFence
+	}
+	key += ":profile:" + p.responseProfileCacheKey(r) + fence
 	if q := r.FormValue("query"); q != "" {
 		key += p.responseNamesCacheKey(r, q)
 	}
@@ -700,16 +706,20 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		cached, remainingTTL, sharedKey, ok := p.compatCacheLookup(endpoint, r, cacheKey, ttl)
 		if ok {
 			setCacheResult(r.Context(), "hit")
-			w.Header().Set("Content-Type", "application/json")
-			body := cached
-			if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
-				if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(r.Context(), cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
-					w.Header().Set("Content-Encoding", encodedAs)
-					w.Header().Set("Vary", "Accept-Encoding")
-					body = encodedBody
+			// A query answer gets this request's stats (query_stats_cache.go).
+			if !p.serveCompatHitWithStats(w, r, cacheKey, cached, remainingTTL) {
+				w.Header().Set("Content-Type", "application/json")
+				cached = compatHitBody(endpoint, cached)
+				body := cached
+				if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
+					if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(r.Context(), cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
+						w.Header().Set("Content-Encoding", encodedAs)
+						w.Header().Set("Vary", "Accept-Encoding")
+						body = encodedBody
+					}
 				}
+				_, _ = w.Write(body)
 			}
-			_, _ = w.Write(body)
 			elapsed := time.Since(start)
 			p.metrics.RecordRequestWithRoute(endpoint, route, http.StatusOK, elapsed)
 			p.metrics.RecordCacheHit()
@@ -726,7 +736,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			capturePatternsNil bool
 			captureBodyLen     int
 		)
-		if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" {
+		if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" && !queryStatsActive(r.Context()) {
 			_ = mw.RegisterEncodedResponseCapture(w, encoding, func(encodedAs string, encoded []byte) {
 				if !captureAllowed || capturePatternsNil || captureBodyLen == 0 {
 					return
@@ -737,6 +747,8 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 				p.compatCache.SetWithTTL(compatCacheVariantKey(cacheKey, encodedAs), encoded, ttl)
 			})
 		}
+		var storedBody []byte // the body this miss stored, for the gzip stats sidecar
+		p.captureGzipStatsSidecar(w, r, cacheKey, func() ([]byte, time.Duration) { return storedBody, ttl })
 		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
 		rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
 		next(capture, rWithFlag)
@@ -757,9 +769,11 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 				ttl = p.metadataNegativeTTL()
 			}
 			if captureAllowed {
-				body = append([]byte(nil), body...)
-				p.compatCache.SetWithTTL(cacheKey, body, ttl)
-				p.storeCompatSharedReply(sharedKey, body, ttl)
+				value := p.compatCacheValue(w, r, cacheKey, body)
+				p.compatCache.SetWithTTL(cacheKey, value, ttl)
+				p.storeCompatSharedReply(sharedKey, value, ttl)
+				recordFlowCacheStore(r.Context(), cacheKey, len(value))
+				storedBody = body
 			}
 		}
 		capture.Release()

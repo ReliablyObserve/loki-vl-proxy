@@ -349,6 +349,12 @@ func doCompatProxyRequest(p *Proxy, target string, headers map[string]string) *h
 	}
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
+	// Compared answers leave out the per-request stats (query_stats.go).
+	if rec.Header().Get("Content-Encoding") == "" {
+		stripped := stripQueryStats(rec.Body.Bytes())
+		rec.Body.Reset()
+		rec.Body.Write(stripped)
+	}
 	return rec
 }
 

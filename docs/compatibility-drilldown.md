@@ -224,6 +224,16 @@ These profiles are matrix-level compatibility profiles (contract and CI guidance
 
 ## Known Issues
 
+### Logs footer "Total bytes processed"
+
+Logs Drilldown 3.1 shows "Total bytes processed" under the logs panel from the
+query's `data.stats.summary.totalBytesProcessed`. The proxy reports the bytes it
+read from VictoriaLogs for the logs panel (at most the panel's line limit),
+where Loki reports the bytes it scanned, so the proxy's figure is lower. See
+[Known Issues](KNOWN_ISSUES.md) and the
+[API reference](api-reference.md#query-statistics-datastats) for each field's
+source.
+
 ### Drilldown 2.0.4 through 3.1.0: Patterns Tab Initialization
 
 Drilldown 2.0.4 through 3.1.0 contain a bug in `ServiceScene.subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:

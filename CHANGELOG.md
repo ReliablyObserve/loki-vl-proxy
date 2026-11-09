@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a label (Drilldown include and exclude clicks on the same field, or a
   hand-written chain) kept lines before and now keep the lines Loki keeps,
   often none.
+- `query` and `query_range` answers carry Loki's `data.stats` object instead of
+  an empty `{}`, so Grafana's query inspector and the Logs Drilldown footer
+  ("Total bytes processed") show statistics as they do for Loki. The proxy
+  fills the `summary` and `cache` sections, in Loki's key order, with
+  measurements of the request and no extra VictoriaLogs request: its own time
+  (`execTime`), its wait for heavy-query admission (`queueTime`), the bytes
+  and log rows it read from VictoriaLogs (`totalBytesProcessed`,
+  `totalLinesProcessed`, the per-second rates), the VictoriaLogs calls it made
+  (`splits`), the entries it returned, and its own response, stats-extent and
+  volume cache reads under Loki's `result`, `instantMetricResult`,
+  `statsResult` and `volumeResult`. An answer served from the proxy's cache
+  reports no bytes processed and the cache entry it found, as Loki's results
+  cache does. The processed totals are what the proxy read, not what Loki
+  would have scanned, so they are lower than Loki's. `subqueries`, `shards`,
+  `totalPostFilterLines` and `totalStructuredMetadataBytesProcessed` are 0,
+  and the `querier`, `ingester` and `index` sections are left out. The query
+  and query_range response-cache keys change, so those entries are rebuilt
+  once after an upgrade, and replicas on older versions do not share them.
 
 ### Changed
 

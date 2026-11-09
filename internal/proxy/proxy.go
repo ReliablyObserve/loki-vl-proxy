@@ -100,8 +100,11 @@ const ipLabelFilterResponseVersion = "@ip-label-filter-v3:"
 // `| logfmt` metric plans compared the label with the text ip(...) and so
 // answered no series, and v3 before an IPv4 pattern read a value with an
 // address inside other text ("1.2.3.4:443").
+//
+// Every query and query_range request builds this key: a query without the
+// text "ip", which every match holds, skips the regexp.
 func ipLabelFilterResponseKeyVersion(query string) string {
-	if ipLabelFilterStageRE.MatchString(query) {
+	if strings.Contains(query, "ip") && ipLabelFilterStageRE.MatchString(query) {
 		return ipLabelFilterResponseVersion
 	}
 	return ""
@@ -1963,16 +1966,17 @@ func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
 func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker }
 
 // routeHandler wraps h with the standard per-route middleware chain:
-// security headers → tenant auth → rate limiter → request logger → compat cache.
+// security headers → tenant auth → rate limiter → request logger → query
+// stats → compat cache.
 func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Handler {
 	return querycorpus.Handler(securityHeaders(
 		p.tenantMiddleware(
 			p.limiter.Middleware(
 				p.requestLogger(endpoint, route,
-					lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
+					p.queryStatsLayer(endpoint, lowercaseQueryKeywords(p.lokiQueryParamValidation(endpoint,
 						p.tenantLimitsMiddleware(endpoint,
 							p.stepAlignMiddleware(endpoint,
-								p.compatCacheMiddleware(endpoint, route, h))))))))))
+								p.compatCacheMiddleware(endpoint, route, h)))))))))))
 }
 
 // RegisterRoutes wires every proxy, admin, debug, and metrics route onto the

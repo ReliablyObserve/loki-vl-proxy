@@ -486,7 +486,7 @@ func alignRouteQueryRange(t testing.TB, mux http.Handler, p *Proxy, query string
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
 	p.statsExtentStores.wait()
-	return rec.Code, rec.Body.Bytes()
+	return rec.Code, stripQueryStats(rec.Body.Bytes())
 }
 
 func alignRouteMux(p *Proxy) *http.ServeMux {

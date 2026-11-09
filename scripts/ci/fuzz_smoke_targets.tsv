@@ -117,3 +117,6 @@ smoke	internal/querycorpus	FuzzSplitPostMatchesLegacy	20s	-	SplitPost reads the 
 smoke	internal/querycorpus	FuzzSplitPostOnTranslatorOutput	20s	-	SplitPost on the translator output of fuzzed LogQL
 smoke	internal/querycorpus	FuzzEncodeDecodeOps	20s	-	physical operators encode and decode back
 smoke	internal/translator	FuzzDetectedLevelChainKey	12s	-	detected-level chain memo key: one key, one chain
+smoke	internal/proxy	FuzzPatchStatsTail	12s	-	query stats envelope end over any data object
+smoke	internal/proxy	FuzzPatchStatsTailAnyBytes	12s	-	query stats writer on any bytes
+smoke	internal/proxy	FuzzEntryCounter	12s	-	query stats entry count over split writes

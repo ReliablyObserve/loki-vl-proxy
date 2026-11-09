@@ -49,6 +49,11 @@ type flowCounters struct {
 	vlCalls                    int
 	vlDur                      time.Duration
 	vlBytes                    int64
+	// vlRows counts the log rows read from VictoriaLogs raw query bodies, queueDur the time spent waiting for
+	// heavy-query admission, lokiCache the lookups and stores by Loki cache section (query_stats.go).
+	vlRows    int64
+	queueDur  time.Duration
+	lokiCache [lokiCacheSlotCount]flowLokiCache
 }
 
 func (f *flowCounters) cacheLookups() int { return f.cacheHits() + f.cacheMisses() + f.cacheStale() }
@@ -178,7 +183,7 @@ func recordFlowVL(ctx context.Context, d time.Duration, bytes int64) {
 // of the full stack). A stale read counts as "stale" when it finds an entry, whatever the entry's remaining TTL:
 // it is only used after the fresh read missed.
 
-func (p *Proxy) observeCacheLookup(ctx context.Context, start time.Time, tier string, found, stale bool, n int) {
+func (p *Proxy) observeCacheLookup(ctx context.Context, start time.Time, tier, key string, found, stale bool, n int) {
 	d := time.Since(start)
 	result := "miss"
 	switch {
@@ -207,6 +212,15 @@ func (p *Proxy) observeCacheLookup(ctx context.Context, start time.Time, tier st
 		rt.flow.cache[i].misses++
 	}
 	rt.flow.cacheDur += d
+	if class := lokiCacheClassOf(key); class >= 0 && lokiCacheSlots[class] >= 0 {
+		lc := &rt.flow.lokiCache[lokiCacheSlots[class]]
+		lc.requested++
+		lc.dur += d
+		if result != "miss" {
+			lc.found++
+			lc.received += int64(n)
+		}
+	}
 	rt.mu.Unlock()
 	if rt.traceOn {
 		traceStep(ctx, slowTraceStep{kind: "cache", route: flowTierNames[i], outcome: result, bytes: int64(n), duration: d})
@@ -217,7 +231,15 @@ func (p *Proxy) observeCacheLookup(ctx context.Context, start time.Time, tier st
 func (p *Proxy) cacheGet(ctx context.Context, c *cache.Cache, key string) ([]byte, bool) {
 	start := time.Now()
 	v, tier, ok := c.GetWithTier(key)
-	p.observeCacheLookup(ctx, start, tier, ok, false, len(v))
+	p.observeCacheLookup(ctx, start, tier, key, ok, false, len(v))
+	return v, ok
+}
+
+// cachePeek reads c's memory tier without an LRU promotion (cache.Cache.Peek).
+func (p *Proxy) cachePeek(ctx context.Context, c *cache.Cache, key string) ([]byte, bool) {
+	start := time.Now()
+	v, ok := c.Peek(key)
+	p.observeCacheLookup(ctx, start, "l1_memory", key, ok, false, len(v))
 	return v, ok
 }
 
@@ -225,7 +247,7 @@ func (p *Proxy) cacheGet(ctx context.Context, c *cache.Cache, key string) ([]byt
 func (p *Proxy) cacheGetWithTTL(ctx context.Context, c *cache.Cache, key string) ([]byte, time.Duration, bool) {
 	start := time.Now()
 	v, ttl, ok := c.GetWithTTL(key)
-	p.observeCacheLookup(ctx, start, "l1_memory", ok, false, len(v))
+	p.observeCacheLookup(ctx, start, "l1_memory", key, ok, false, len(v))
 	return v, ttl, ok
 }
 
@@ -233,7 +255,7 @@ func (p *Proxy) cacheGetWithTTL(ctx context.Context, c *cache.Cache, key string)
 func (p *Proxy) cacheGetWithAge(ctx context.Context, c *cache.Cache, key string) ([]byte, time.Duration, time.Duration, bool) {
 	start := time.Now()
 	v, ttl, age, ok := c.GetWithAge(key)
-	p.observeCacheLookup(ctx, start, "l1_memory", ok, false, len(v))
+	p.observeCacheLookup(ctx, start, "l1_memory", key, ok, false, len(v))
 	return v, ttl, age, ok
 }
 
@@ -241,7 +263,7 @@ func (p *Proxy) cacheGetWithAge(ctx context.Context, c *cache.Cache, key string)
 func (p *Proxy) cacheGetShared(ctx context.Context, c *cache.Cache, key string) ([]byte, time.Duration, string, bool) {
 	start := time.Now()
 	v, ttl, tier, ok := c.GetSharedWithTTL(key)
-	p.observeCacheLookup(ctx, start, tier, ok, false, len(v))
+	p.observeCacheLookup(ctx, start, tier, key, ok, false, len(v))
 	return v, ttl, tier, ok
 }
 
@@ -249,7 +271,7 @@ func (p *Proxy) cacheGetShared(ctx context.Context, c *cache.Cache, key string) 
 func (p *Proxy) cacheGetSharedWithAge(ctx context.Context, c *cache.Cache, key string) ([]byte, time.Duration, time.Duration, string, bool) {
 	start := time.Now()
 	v, ttl, age, tier, ok := c.GetSharedWithAge(key)
-	p.observeCacheLookup(ctx, start, tier, ok, false, len(v))
+	p.observeCacheLookup(ctx, start, tier, key, ok, false, len(v))
 	return v, ttl, age, tier, ok
 }
 
@@ -257,7 +279,7 @@ func (p *Proxy) cacheGetSharedWithAge(ctx context.Context, c *cache.Cache, key s
 func (p *Proxy) cacheGetStale(ctx context.Context, c *cache.Cache, key string) ([]byte, time.Duration, bool) {
 	start := time.Now()
 	v, ttl, ok := c.GetStaleWithTTL(key)
-	p.observeCacheLookup(ctx, start, "l1_memory", ok, true, len(v))
+	p.observeCacheLookup(ctx, start, "l1_memory", key, ok, true, len(v))
 	return v, ttl, ok
 }
 
@@ -266,6 +288,6 @@ func (p *Proxy) cacheGetStale(ctx context.Context, c *cache.Cache, key string) (
 func (p *Proxy) cacheGetRecoverableStale(ctx context.Context, c *cache.Cache, key string, usable func([]byte) bool) ([]byte, time.Duration, string, bool) {
 	start := time.Now()
 	v, ttl, tier, ok := c.GetRecoverableStaleWithTTLMatching(key, usable)
-	p.observeCacheLookup(ctx, start, tier, ok, true, len(v))
+	p.observeCacheLookup(ctx, start, tier, key, ok, true, len(v))
 	return v, ttl, tier, ok
 }

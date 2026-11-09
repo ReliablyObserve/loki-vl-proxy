@@ -81,7 +81,7 @@ func TestOrderedJSONResultCacheIsolationAndExpiry(t *testing.T) {
 			t.Fatalf("identity %+v: got %v want %v", identity, got, want)
 		}
 		body, remaining, ok := p.cache.GetWithTTL(key)
-		if !ok || !bytes.Equal(body, cold.Body.Bytes()) || remaining <= 4*time.Minute || remaining > 5*time.Minute {
+		if !ok || !bytes.Equal(stripQueryStats(body), cold.Body.Bytes()) || remaining <= 4*time.Minute || remaining > 5*time.Minute {
 			t.Fatalf("missing/incorrect response entry: found=%t ttl=%s body=%s", ok, remaining, body)
 		}
 		before := fixture.calls.Load()
