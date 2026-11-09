@@ -189,7 +189,7 @@ func TestOrderedJSONVectorResponseCacheFencesOldCopies(t *testing.T) {
 					// shifting the axis; its earlier lookup must still be fenced.
 					continue
 				}
-				if stored, _, ok := store.GetWithTTL(key); !ok || !bytes.Equal(stored, first.Body.Bytes()) {
+				if stored, _, ok := store.GetWithTTL(key); !ok || !bytes.Equal(stripQueryStats(stored), first.Body.Bytes()) {
 					t.Fatal("correct new reply not retained under new identity")
 				}
 				before = fixture.calls.Load()
