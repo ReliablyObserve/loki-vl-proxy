@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.107.0] - 2026-11-09
+
 ### Changed
 
 - The unwrap paths read the unwrap gate of a stats query from its decoded
