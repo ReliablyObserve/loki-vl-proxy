@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -421,14 +422,35 @@ type OracleRegressions struct {
 	// TypedSelectorsDiffer: bare stream selectors whose typed filter VictoriaLogs does not read as the string
 	// translator's, on the PR whatever the base was: the typed translation must always mean the same.
 	TypedSelectorsDiffer []string `json:"typed_selectors_differ"`
+	// TypedSelectorsKnown: typed filters that differ from the string translator's because the translator is wrong,
+	// each listed in testdata/known-typed-divergences.json with its registry case. Reported, not failed.
+	TypedSelectorsKnown []string `json:"typed_selectors_known"`
+	// TypedDivergencesStale: listed divergences whose typed filter now reads as the string translator's: the entry
+	// is out of date and must go.
+	TypedDivergencesStale []string `json:"typed_divergences_stale"`
 }
 
+// knownTypedDivergencesPath lists, by corpus row id, the typed filters that differ from the string translator's
+// because the translator is wrong, each with the registry case that records it.
+const knownTypedDivergencesPath = "testdata/known-typed-divergences.json"
+
+var knownTypedDivergences = sync.OnceValue(func() map[string]string {
+	known := map[string]string{}
+	if raw, err := os.ReadFile(knownTypedDivergencesPath); err == nil {
+		if err := json.Unmarshal(raw, &known); err != nil {
+			panic(knownTypedDivergencesPath + ": " + err.Error())
+		}
+	}
+	return known
+})
+
 func (r OracleRegressions) any() bool {
-	return len(r.GoldensRejected)+len(r.GoldensMeaningLost)+len(r.CasesLost)+len(r.TypedSelectorsDiffer) > 0
+	return len(r.GoldensRejected)+len(r.GoldensMeaningLost)+len(r.CasesLost)+len(r.TypedSelectorsDiffer)+len(r.TypedDivergencesStale) > 0
 }
 
 func oracleRegressions(v string, base, head map[string]map[string]oracleVerdict) OracleRegressions {
-	reg := OracleRegressions{Version: v, GoldensRejected: []string{}, GoldensMeaningLost: []string{}, CasesLost: []string{}, TypedSelectorsDiffer: []string{}}
+	reg := OracleRegressions{Version: v, GoldensRejected: []string{}, GoldensMeaningLost: []string{}, CasesLost: []string{}, TypedSelectorsDiffer: []string{}, TypedSelectorsKnown: []string{}, TypedDivergencesStale: []string{}}
+	known := knownTypedDivergences()
 	same := func(x oracleVerdict) bool { return x.SameMeaning != nil && *x.SameMeaning }
 	for id, h := range head["golden"] {
 		b, ok := base["golden"][id]
@@ -448,14 +470,22 @@ func oracleRegressions(v string, base, head map[string]map[string]oracleVerdict)
 		}
 	}
 	for id, h := range head["typed-selector"] {
-		if !h.Accept || !same(h) {
+		_, listed := known[id]
+		switch differ := !h.Accept || !same(h); {
+		case differ && listed:
+			reg.TypedSelectorsKnown = append(reg.TypedSelectorsKnown, id)
+		case differ:
 			reg.TypedSelectorsDiffer = append(reg.TypedSelectorsDiffer, id)
+		case listed:
+			reg.TypedDivergencesStale = append(reg.TypedDivergencesStale, id)
 		}
 	}
 	sort.Strings(reg.GoldensRejected)
 	sort.Strings(reg.GoldensMeaningLost)
 	sort.Strings(reg.CasesLost)
 	sort.Strings(reg.TypedSelectorsDiffer)
+	sort.Strings(reg.TypedSelectorsKnown)
+	sort.Strings(reg.TypedDivergencesStale)
 	return reg
 }
 
@@ -619,5 +649,36 @@ func TestOraclePinsMatchTheMatrix(t *testing.T) {
 	loki := lokiMatrixVersion(t)
 	if !strings.Contains(readFile(t, "../../test/oracle/loki/go.mod"), "github.com/grafana/loki/v3 v"+loki+"\n") {
 		t.Errorf("test/oracle/loki/go.mod does not require Loki v%s, the matrix's pinned version", loki)
+	}
+}
+
+// A typed filter listed as a known divergence is reported without failing the gate, and a listed one that now reads
+// as the string translator's fails as stale; every listed row names a registry case that exists.
+func TestKnownTypedDivergences(t *testing.T) {
+	known := knownTypedDivergences()
+	if len(known) == 0 {
+		t.Fatalf("%s lists nothing", knownTypedDivergencesPath)
+	}
+	var listed string
+	for id, caseID := range known {
+		if _, err := os.Stat(filepath.Join("../../conformance/registry/cases", caseID+".yaml")); err != nil {
+			t.Errorf("%s: %s names %s, which is not a registry case: %v", knownTypedDivergencesPath, id, caseID, err)
+		}
+		listed = id
+	}
+	verdict := func(same bool) oracleVerdict { return oracleVerdict{Accept: true, SameMeaning: boolp(same)} }
+	head := map[string]map[string]oracleVerdict{"typed-selector": {listed: verdict(false), "q-new": verdict(false)}}
+	got := oracleRegressions("v1.53.0", nil, head)
+	if strings.Join(got.TypedSelectorsKnown, ",") != listed || strings.Join(got.TypedSelectorsDiffer, ",") != "q-new" {
+		t.Fatalf("known %v, differ %v", got.TypedSelectorsKnown, got.TypedSelectorsDiffer)
+	}
+	head["typed-selector"] = map[string]oracleVerdict{listed: verdict(true)}
+	got = oracleRegressions("v1.53.0", nil, head)
+	if strings.Join(got.TypedDivergencesStale, ",") != listed || !got.any() {
+		t.Fatalf("a listed divergence that now reads alike is not stale: %+v", got)
+	}
+	head["typed-selector"] = map[string]oracleVerdict{listed: verdict(false)}
+	if got = oracleRegressions("v1.53.0", nil, head); got.any() {
+		t.Fatalf("a listed divergence fails the gate: %+v", got)
 	}
 }

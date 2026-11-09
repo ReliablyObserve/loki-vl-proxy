@@ -752,6 +752,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
 		rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
 		next(capture, rWithFlag)
+		p.deriveQueryStatsTotalsFromCapture(r, endpoint, capture)
 		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
 			body := capture.CapturedBody()
 			captureBodyLen = len(body)

@@ -63,3 +63,56 @@ func TestPlanMemoConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A query's parse is shared: the read-only handlers and the plan read one parse, and asking for the plan after the
+// parse keeps it (one entry per text, the plan added to it).
+func TestSharedLogQLExprIsTheMemoisedParse(t *testing.T) {
+	q := `sum by (level) (count_over_time({app="shared-parse"} |= "x" [1m]))`
+	e1, ok := sharedLogQLExpr(q)
+	if !ok {
+		t.Fatal("the query does not parse")
+	}
+	if e2, _ := sharedLogQLExpr(q); e2 != e1 {
+		t.Fatal("a repeated query is parsed again")
+	}
+	before := planMemoCur.Load().size.Load()
+	p := resolvedPlan(q)
+	if p == nil {
+		t.Fatal("no plan")
+	}
+	if e3, _ := sharedLogQLExpr(q); e3 != e1 {
+		t.Fatal("building the plan replaced the shared parse")
+	}
+	if resolvedPlan(q) != p {
+		t.Fatal("the plan is built again")
+	}
+	if after := planMemoCur.Load().size.Load(); after > before+1 {
+		t.Fatalf("one query holds %d entries", after-before)
+	}
+	if _, ok := sharedLogQLExpr(`sum(`); ok {
+		t.Fatal("an invalid query parsed")
+	}
+}
+
+// Concurrent requests read the shared parse and build the plan from it (run under -race).
+func TestSharedLogQLExprConcurrent(t *testing.T) {
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				q := fmt.Sprintf(`sum(count_over_time({app="c-%d"}[5m]))`, i%17)
+				if g%2 == 0 {
+					sharedLogQLExpr(q)
+					withoutAggregationOp(q)
+					logQLProducesSamples(q)
+				} else {
+					resolvedPlan(q)
+					totalsShapeOf(noFlowCtx, q)
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}

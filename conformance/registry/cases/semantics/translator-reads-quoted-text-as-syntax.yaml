@@ -1,0 +1,56 @@
+id: semantics/translator-reads-quoted-text-as-syntax
+title: The string translator reads words inside a quoted value as query syntax (open; the query plan reads them as text)
+pending: true
+proves:
+  - severity-detected-level-derivation
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  The string translator decides some of its output from words it finds in the
+  query text, including inside quoted values: a label filter value that holds
+  the word detected_level sends the query down the derived-level path, which
+  unpacks the line before the filter, and other words (` bool `, `without (…)`,
+  `| unwrap`, an unbalanced parenthesis) are read as syntax in metric queries.
+  Loki reads a quoted value as text only.
+
+  Evidence (main, 2026-11-09; the corpus rows come from TestKeyCraftedValues):
+    {a="x"} | s=`…detected_level…`
+    string translator  =>  a:="x" | unpack_logfmt | filter s:="…detected_level…"
+    query plan         =>  a:="x" s:="…detected_level…"
+  The plan's filter is Loki's: a label filter with no parser in front of it
+  reads the label as stored. The translator's unpack makes a field of the line
+  shadow a stored label of the same name.
+
+  The VictoriaLogs oracle's typed-selector check compares the plan with the
+  string translator; these rows differ because the translator is wrong, and
+  internal/querycorpus/testdata/known-typed-divergences.json lists them with
+  this case, so they are reported without failing the PR quality gate. The fix
+  is in the query plan path (the translator is frozen): the LogSelect flip
+  keeps queries whose text holds these words on the translator until the plan
+  serves them.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | s=`a detected_level b`'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    The lines whose stored label s equals the quoted text, with no parsing of the line.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translator (text heuristics over the whole query, quoted values included); fixed when the query plan serves these queries'
+  loki: 'a quoted value is a string literal; only the parsed pipeline decides parsing and filtering'
+  proxy: 'a value holding detected_level unpacks the line before the filter; bool, without, unwrap and parentheses inside quotes change metric translation'
+  planned_test: 'the VictoriaLogs oracle typed-selector check (internal/querycorpus, known-typed-divergences.json); an e2e row against Loki when the plan serves these queries'
+  visual: none
+  visual_reason: 'crafted values; no Grafana panel sends them'
+  clusters: []

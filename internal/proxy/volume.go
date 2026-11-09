@@ -239,6 +239,7 @@ func (p *Proxy) serveVolume(w http.ResponseWriter, r *http.Request, endpoint str
 		return
 	}
 	p.setEndpointJSONCacheWithTTL(endpoint, cacheKey, CacheTTLs[endpoint], result)
+	p.recordVolumeStatsTotals(r, req, result)
 	p.writeJSON(w, result)
 	p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(start))
 }

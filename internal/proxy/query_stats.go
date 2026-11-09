@@ -507,7 +507,7 @@ func (w *queryStatsWriter) appendStats(dst []byte) []byte {
 	rt := w.rt
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return appendQueryStats(dst, &rt.flow, time.Since(rt.start), w.entries.n)
+	return appendQueryStats(dst, &rt.flow, &rt.statsTotals, time.Since(rt.start), w.entries.n)
 }
 
 // lokiCacheZeroSections are the cache sections of a request that did not use
@@ -520,9 +520,18 @@ var lokiCacheZeroSections = func() (out [lokiCacheClassCount]string) {
 	return out
 }()
 
-func appendQueryStats(b []byte, flow *flowCounters, exec time.Duration, entries int64) []byte {
+func appendQueryStats(b []byte, flow *flowCounters, totals *statsTotals, exec time.Duration, entries int64) []byte {
 	execSec := exec.Seconds()
-	bytesProcessed, lines := flow.vlBytes, flow.vlRows
+	bytesProcessed, lines, postFilter := flow.vlBytes, flow.vlRows, int64(0)
+	if totals.hasBytes {
+		bytesProcessed = totals.bytes
+	}
+	if totals.hasLines {
+		lines = totals.lines
+	}
+	if totals.hasPostFilter {
+		postFilter = totals.postFilter
+	}
 	var bytesPerSec, linesPerSec int64
 	if execSec > 0 {
 		bytesPerSec = int64(float64(bytesProcessed) / execSec)
@@ -544,7 +553,9 @@ func appendQueryStats(b []byte, flow *flowCounters, exec time.Duration, entries 
 	b = strconv.AppendInt(b, entries, 10)
 	b = append(b, `,"splits":`...)
 	b = strconv.AppendInt(b, int64(flow.vlCalls), 10)
-	b = append(b, `,"shards":0,"totalPostFilterLines":0,"totalStructuredMetadataBytesProcessed":0},"cache":{`...)
+	b = append(b, `,"shards":0,"totalPostFilterLines":`...)
+	b = strconv.AppendInt(b, postFilter, 10)
+	b = append(b, `,"totalStructuredMetadataBytesProcessed":0},"cache":{`...)
 	for i, slot := range lokiCacheSlots {
 		if i > 0 {
 			b = append(b, ',')

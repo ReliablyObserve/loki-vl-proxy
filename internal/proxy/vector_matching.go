@@ -41,8 +41,8 @@ func (w *bufferedResponseWriter) WriteHeader(code int) {
 // withoutAggregationOp returns the outer aggregation of a `<op> without (...)`
 // query, which decides how the series that share a label set are combined.
 func withoutAggregationOp(logql string) string {
-	expr, err := parseLogQLExpr(noFlowCtx, strings.TrimSpace(logql))
-	if err != nil {
+	expr, ok := sharedLogQLExpr(strings.TrimSpace(logql))
+	if !ok {
 		return ""
 	}
 	aggregation, ok := expr.(*logqlpkg.VectorAggregation)
