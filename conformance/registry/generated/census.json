@@ -501,7 +501,7 @@
     "semantics/last-over-time-line-filter-offset-points | gap:open",
     "semantics/last-over-time-line-filter-offset-points | query",
     "semantics/line-filter-invalid-utf8 | compare:observed",
-    "semantics/line-filter-invalid-utf8 | gap:open",
+    "semantics/line-filter-invalid-utf8 | gap:fixed",
     "semantics/line-filter-invalid-utf8 | query",
     "semantics/line-filter-or-alternatives | compare:observed",
     "semantics/line-filter-or-alternatives | gap:fixed",
@@ -1009,6 +1009,7 @@
     "internal/proxy/error_layer_gate_test.go | status-500",
     "internal/proxy/error_layer_gate_test.go | status-502",
     "internal/proxy/error_layer_gate_test.go | status-503",
+    "internal/proxy/error_text_utf8_test.go | semantics/line-filter-invalid-utf8",
     "internal/proxy/extracted_probe_head_test.go | quality/extracted-label-probe-cost",
     "internal/proxy/extracted_probe_head_test.go | semantics/json-extracted-metric-pushdown",
     "internal/proxy/extracted_suffix_collision_test.go | loki-compatible-profile",
@@ -1539,6 +1540,7 @@
     "internal/translator/label_matcher_anchoring_test.go | profiles/stream-selector-regexp-anchoring",
     "internal/translator/label_matcher_regexp_test.go | profiles/label-filter-regexp-anchoring",
     "internal/translator/label_matcher_regexp_test.go | profiles/stream-selector-regexp-anchoring",
+    "internal/translator/line_filter_invalid_utf8_test.go | semantics/line-filter-invalid-utf8",
     "internal/translator/line_filter_or_test.go | semantics/line-filter-or-alternatives",
     "internal/translator/nested_vector_chain_test.go | metric-series-identity",
     "internal/translator/nested_vector_chain_test.go | semantics/nested-aggregation-outer-by-native-routes",
@@ -1749,6 +1751,9 @@
     "test/e2e-compat/line_fields_parity_test.go | loki_api_v1_query_range",
     "test/e2e-compat/line_fields_parity_test.go | profiles/detected-fields-structured-metadata-beside-json-line",
     "test/e2e-compat/line_fields_parity_test.go | profiles/parsed-fields-without-parser",
+    "test/e2e-compat/line_filter_invalid_utf8_test.go | loki_api_v1_query",
+    "test/e2e-compat/line_filter_invalid_utf8_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/line_filter_invalid_utf8_test.go | semantics/line-filter-invalid-utf8",
     "test/e2e-compat/line_format_error_test.go | semantics/line-format-template-error-keeps-entry",
     "test/e2e-compat/logfmt_existence_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/logfmt_existence_filter_test.go | parser-logfmt",
@@ -1991,7 +1996,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 388,
+      "go": 391,
       "playwright": 1
     },
     "page_kinds": {
@@ -2010,8 +2015,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
-    "wired_items": 265
+    "unwired_items": 100,
+    "wired_items": 266
   },
   "gates": [
     "A/B shape selection",

@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as `10.0.0.12`, `110.0.0.12`, `10.0.0.1.5` or `::ffff:10.0.0.1` no
   longer match `ip("10.0.0.1")` (and are kept by `!= ip("10.0.0.1")`), as in
   Loki. IPv6 `ip()` line filters are unchanged.
+- A `|=` or `!=` line filter whose text is not UTF-8 (`|= "\xff\xfe"`)
+  answers like Loki instead of 400: `|=` keeps no line and `!=` every line,
+  since no stored line holds such bytes, and an `or` chain keeps its valid
+  alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
+  as U+FFFD, as Loki does.
 
 ## [2.107.0] - 2026-11-09
 

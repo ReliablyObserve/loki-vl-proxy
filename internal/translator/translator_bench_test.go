@@ -24,6 +24,13 @@ func BenchmarkTranslateLogQL_LineFilter(b *testing.B) {
 	}
 }
 
+// A |= and a != whose text is not UTF-8, beside a valid one.
+func BenchmarkTranslateLogQL_LineFilterInvalidUTF8(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} |= "error" |= "\xff\xfe" != "\xff"`)
+	}
+}
+
 func BenchmarkTranslateLogQL_JSONPipeline(b *testing.B) {
 	for b.Loop() {
 		TranslateLogQL(`{app="api"} | json | status >= 500 | method = "POST"`)

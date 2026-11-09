@@ -340,3 +340,20 @@ decisions:
     performance:
       tracked: ['BenchmarkUnwrapGateReadsBefore / BenchmarkUnwrapGateReadsAfter ns/op, B/op, allocs/op (internal/proxy)']
       bound: 'The unwrap-gate reads of one gated range request (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): 8.27 µs, 9.0 KiB, 30 allocs before; 4.36 µs, 5.1 KiB, 15 allocs after'
+  - id: line-filter-text-not-utf8
+    chosen: 'A |= or != line filter whose text is not UTF-8 is answered from the fact that no stored line holds such bytes: translate.TextLineFilter writes `|=` as match-none (`_stream_id:in()`), `!=` as no filter, and an `or` chain as the regexp of its valid alternatives; the translator and the lowering share it, and valid texts keep their exact LogsQL. Loki''s text error body is written as valid UTF-8, one U+FFFD per invalid byte, as Loki writes it'
+    over: ['writing each invalid byte as \x{FFFD} in the VictoriaLogs regexp (a superset that matches lines holding U+FFFD)', 'evaluating the filter on rows in the proxy', 'strings.ToValidUTF8 (one U+FFFD per run, not per byte as Loki)']
+    why: |
+      VictoriaLogs refuses to compile a regexp with bytes that are not UTF-8,
+      so the proxy answered 400 where Loki answers 200. Every ingestion API
+      (Loki push, OTLP, VictoriaLogs JSON lines) carries UTF-8 text, so Loki's
+      byte match of such a text never matches a stored line: the exact answer
+      needs no VictoriaLogs filter at all. Loki's 400 text for `|~ "\xff"`
+      quotes the regexp with U+FFFD per byte (stack, Loki 3.7, 2026-11-09).
+    evidence: 'TestCompat_LineFilterInvalidUTF8LikeLoki against Loki on the compose stack (|= 200 no line, != 200 every line, or chain 200 with 2 lines, |~ 400 with Loki''s bytes, metric instant equal); TestPlanShadow native 624 of 22,842 rows × profiles, 0 mismatches; TestVLOracle on the 28,663-row corpus, v1.49.0 and v1.53.0, with the invalid-UTF-8 skip removed (2026-11-09)'
+    code: [internal/translate/linefilter.go, internal/translator/translator.go, internal/queryplan/lower/lower.go, internal/proxy/http_utils.go]
+    tests: [TestCompat_LineFilterInvalidUTF8LikeLoki, TestTranslateLineFilterInvalidUTF8, TestInvalidUTF8RegexpErrorTextLikeLoki, TestValidUTF8Text, FuzzErrorBodyShapes, TestPlanShadow, TestVLOracle]
+    quality: 'semantics/line-filter-invalid-utf8 fixed: the log query, the metric query and the error text answer like Loki.'
+    performance:
+      tracked: ['BenchmarkTranslateLogQL_LineFilter / BenchmarkTranslateLogQL_LineFilterInvalidUTF8 (internal/translator), BenchmarkWriteLokiErrorBody (internal/proxy) ns/op, B/op, allocs/op']
+      bound: 'M5 Pro, GOMAXPROCS=4, count=6, 2026-11-09: valid line filters unchanged (7.48 µs, 2.6 KiB, 35 allocs; base 7.57 µs, 35 allocs); invalid-UTF-8 filters 6.63 µs, 36 allocs (base 6.73 µs, 39 allocs, then rejected by VictoriaLogs); valid error body unchanged (244 ns, 10 allocs), an invalid-UTF-8 error body 454 ns, 11 allocs (base 242 ns, 10)'

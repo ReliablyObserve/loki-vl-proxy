@@ -6,6 +6,7 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -208,8 +209,8 @@ func OrLineFilter(negate, regex bool, alts []OrAlternative) string {
 }
 
 // LineFilter is the VictoriaLogs filter of a line filter stage, built as nodes: the filter the string translator
-// writes for it. Loki's |= is a substring match (a quoted literal regexp), |~ a regexp, ip() a regexp of the
-// addresses it accepts, and an `or` chain one regexp of its alternatives (OrLineFilterPattern). ok is false for the
+// writes for it, nil when it keeps every line (a != of a text no line holds). Loki's |= is a substring match (a
+// quoted literal regexp), |~ a regexp, ip() a regexp of the addresses it accepts, and an `or` chain one regexp of its alternatives (OrLineFilterPattern). ok is false for the
 // pattern filters (|> and !>), which the translator writes with extract pipes.
 func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 	var negate, regex bool
@@ -227,6 +228,9 @@ func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 	alts := make([]OrAlternative, len(st.Or))
 	for i, a := range st.Or {
 		alts[i] = OrAlternative{Text: a.Value, IP: a.IP}
+	}
+	if !regex && (!textHeld(OrAlternative{Text: st.Value, IP: st.IP}) || !TextsHeld(alts)) {
+		return TextLineFilter(negate, append([]OrAlternative{{Text: st.Value, IP: st.IP}}, alts...)), true
 	}
 	var pattern string
 	switch {
@@ -265,4 +269,46 @@ func IPLineFilter(pattern string, negate bool) logsql.FilterExpr {
 		return logsql.NotExpr{Expr: f}
 	}
 	return f
+}
+
+// matchNoLine is a LogsQL filter no row passes: an empty in() list.
+var matchNoLine = logsql.FieldFilter{Field: "_stream_id", Op: logsql.FieldOpIn}
+
+// textHeld reports whether a stored line can hold an alternative of a substring line filter (|= or !=, alone or in
+// an `or` chain). A text that is not UTF-8 is in no line: every ingestion API carries UTF-8 strings (Loki's push API,
+// OTLP, VictoriaLogs' JSON lines), so Loki's byte match of it never matches, and VictoriaLogs could not compile its
+// regexp. An ip() alternative is held.
+func textHeld(a OrAlternative) bool {
+	return a.IP || utf8.ValidString(a.Text)
+}
+
+// TextsHeld reports whether a stored line can hold every alternative (textHeld).
+func TextsHeld(alts []OrAlternative) bool {
+	for _, a := range alts {
+		if !textHeld(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// TextLineFilter is the filter of a substring line filter (|= when negate is false, != when true) with alternatives
+// a line cannot hold (TextsHeld is false): those never match, so the filter is the regexp of the others, and with
+// none left `|=` keeps no line and `!=` every line (nil: no filter).
+func TextLineFilter(negate bool, alts []OrAlternative) logsql.FilterExpr {
+	kept := alts[:0:0]
+	for _, a := range alts {
+		if textHeld(a) {
+			kept = append(kept, a)
+		}
+	}
+	switch {
+	case len(kept) > 0 && negate:
+		return logsql.NotExpr{Expr: logsql.Regexp{Pattern: OrLineFilterPattern(true, false, kept)}}
+	case len(kept) > 0:
+		return logsql.Regexp{Pattern: OrLineFilterPattern(false, false, kept)}
+	case negate:
+		return nil
+	}
+	return matchNoLine
 }
