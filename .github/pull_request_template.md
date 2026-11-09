@@ -16,6 +16,7 @@
 - base vs PR on the same machine (`benchstat`, ≥ 6 runs; machine and `GOMAXPROCS`): CPU `ns/op`, memory `B/op` and `allocs/op`, latency per request or p50/p95
 - the change and why; for a refactor or code no handler calls yet, its own cost and why the request path does not change
 - the committed benchmarks that measure it
+- no regression against base, including the work asked of VictoriaLogs; a touched component as slow as Loki or slower is brought to Loki's speed or better in this PR, or the numbers show why not
 
 ## Security review (Required)
 
