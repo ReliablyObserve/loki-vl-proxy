@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
+	"strconv"
 )
 
 // Line filters are checked the way Loki answers a pipeline it cannot build, as recorded with the Loki oracle
@@ -81,24 +81,62 @@ func lineFilterRunError(stages []Stage) string {
 			continue
 		}
 		if err := lineFilterError(lf); err != nil {
-			return stageError(lineFilterRunText(stages), err)
+			return lineFilterRunErrorText(stages, err)
 		}
 	}
 	return ""
 }
 
-// lineFilterRunText prints the run of line filters among stages.
-func lineFilterRunText(stages []Stage) string {
-	var b strings.Builder
+// lineFilterRunErrorText is stageError for the run of line filters among stages, written into one buffer.
+func lineFilterRunErrorText(stages []Stage, err error) string {
+	msg := err.Error()
+	buf := make([]byte, 0, len("parse error : stage '' : ")+len(msg)+64)
+	buf = append(buf, "parse error : stage '"...)
+	buf = appendLineFilterRun(buf, stages)
+	buf = append(buf, "' : "...)
+	buf = append(buf, msg...)
+	return string(buf)
+}
+
+// appendLineFilterRun appends the run of line filters among stages, each as flatString prints it.
+func appendLineFilterRun(buf []byte, stages []Stage) []byte {
+	start := len(buf)
 	for _, s := range stages {
 		if lf, ok := s.(*LineFilterStage); ok {
-			if b.Len() > 0 {
-				b.WriteByte(' ')
+			if len(buf) > start {
+				buf = append(buf, ' ')
 			}
-			b.WriteString(lf.flatString())
+			buf = lf.appendFlat(buf)
 		}
 	}
-	return b.String()
+	return buf
+}
+
+// appendFlat appends what flatString returns.
+func (s *LineFilterStage) appendFlat(buf []byte) []byte {
+	op := lineFilterOpText(s.Op)
+	operand := func(buf []byte, value string, ip bool) []byte {
+		if ip {
+			buf = append(buf, "ip("...)
+			buf = strconv.AppendQuote(buf, value)
+			return append(buf, ')')
+		}
+		return strconv.AppendQuote(buf, value)
+	}
+	buf = append(buf, op...)
+	buf = append(buf, ' ')
+	buf = operand(buf, s.Value, s.IP)
+	for _, alt := range s.Or {
+		if s.negated() {
+			buf = append(buf, ' ')
+			buf = append(buf, op...)
+			buf = append(buf, ' ')
+		} else {
+			buf = append(buf, " or "...)
+		}
+		buf = operand(buf, alt.Value, alt.IP)
+	}
+	return buf
 }
 
 // lineFilterError is the error for one line filter stage, or nil.
