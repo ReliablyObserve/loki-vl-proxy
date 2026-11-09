@@ -316,3 +316,6 @@ decisions:
     code: [internal/translate/linefilter.go, internal/queryplan/lower/lower.go, internal/translator/translator.go, test/oracle/loki/facts.go]
     tests: [TestPlanLowersBareSelectors, TestPlanDelegatesEveryConstruct, TestPlanShadow, TestVLOracle, TestPlanMatchesLokiOracle, TestBuildCIDRRegex, TestBuildIPRangeRegex, TestIPLineFilterToRegex]
     quality: 'No handler reads the lowering yet.'
+    performance:
+      tracked: ['BenchmarkLineFilterQueriesTranslator / BenchmarkLineFilterQueriesLowered ns/op, B/op, allocs/op (internal/queryplan/lower)']
+      bound: 'The 15 lowered line-filter log queries of the corpus, text to LogsQL (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): string translator 8.53 µs, 5.4 KiB, 98 allocs; Parse + Build + Resolve + Plan 3.08 µs, 5.0 KiB, 95 allocs'
