@@ -119,6 +119,13 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				fail(fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
+			if caseID, ok := knownTypedDivergences()[queryID("logql", q)]; ok {
+				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
+				// not a mismatch of the lowering, and not native until the plan serves it.
+				sec.DelegatedByConstruct["known divergence "+caseID]++
+				sl.delegated++
+				continue
+			}
 			want, err := translator.DecodePhysical(legacy)
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
