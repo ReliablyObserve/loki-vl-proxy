@@ -70,7 +70,8 @@ var lineFilterOps = map[logql.LineFilterOp]string{
 func ourLineFilters(sel *LogSelect) []string {
 	var out []string
 	one := func(op, value string, ip bool) string {
-		f := op + " " + strconv.Quote(value)
+		// Loki's tree comes back as JSON, which writes each byte that is not UTF-8 as U+FFFD.
+		f := op + " " + strconv.Quote(string([]rune(value)))
 		if ip {
 			f += " ip"
 		}

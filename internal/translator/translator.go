@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -914,7 +915,12 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if err != nil {
 				return "", err
 			}
-			if len(alts) > 0 {
+			if !utf8.ValidString(literal) || !translate.TextsHeld(alts) {
+				// A text that is not UTF-8 is in no line: it never matches (translate.TextLineFilter).
+				if f := translate.TextLineFilter(false, append([]translate.OrAlternative{{Text: literal}}, alts...)); f != nil {
+					parts = append(parts, f.String())
+				}
+			} else if len(alts) > 0 {
 				parts = append(parts, translate.OrLineFilter(false, false, append([]translate.OrAlternative{{Text: literal}}, alts...)))
 			} else {
 				parts = append(parts, "~"+strconv.Quote(regexp.QuoteMeta(literal)))
@@ -934,7 +940,12 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			if err != nil {
 				return "", err
 			}
-			if len(alts) > 0 {
+			if !utf8.ValidString(literal) || !translate.TextsHeld(alts) {
+				// A text that is not UTF-8 is in no line: it never matches (translate.TextLineFilter).
+				if f := translate.TextLineFilter(true, append([]translate.OrAlternative{{Text: literal}}, alts...)); f != nil {
+					parts = append(parts, f.String())
+				}
+			} else if len(alts) > 0 {
 				parts = append(parts, translate.OrLineFilter(true, false, append([]translate.OrAlternative{{Text: literal}}, alts...)))
 			} else {
 				parts = append(parts, "NOT ~"+strconv.Quote(regexp.QuoteMeta(literal)))
