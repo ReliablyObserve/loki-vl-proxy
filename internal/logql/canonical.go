@@ -177,7 +177,7 @@ func StripComments(query string) string {
 		return query
 	}
 	var spans [][2]int
-	s := &scanner{src: query, comments: &spans}
+	s := &scanner{src: query, extra: &scanExtra{comments: &spans}}
 	for {
 		t := s.next()
 		if t.Typ == TokEOF {

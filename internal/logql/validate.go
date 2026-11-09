@@ -48,7 +48,9 @@ func validateLogQL(query string) (Expr, string) {
 	if msg := InputSizeError(query); msg != "" {
 		return nil, msg
 	}
+	original := query
 	query = strings.TrimSpace(query)
+	parsed := original
 
 	// Fast path: Loki's exact error for empty queries.
 	if query == "" {
@@ -67,14 +69,16 @@ func validateLogQL(query string) (Expr, string) {
 		return nil, ""
 	}
 
-	// Structural parse.
-	expr, err := Parse(query)
+	// Structural parse. Loki does not trim the query: white space before the first token and after the last one
+	// counts in the line and column of an error, a trailing character that is not white space to Loki (a
+	// vertical tab) is a token, and a 0b literal after leading white space is read as after any white space.
+	expr, err := Parse(parsed)
 	if err != nil {
-		return nil, formatParseError(err, query)
+		return nil, formatParseError(err, parsed)
 	}
 
 	// Semantic pass over the typed AST.
-	if msg := validateSemantics(expr, query); msg != "" {
+	if msg := validateSemantics(expr, parsed); msg != "" {
 		return nil, msg
 	}
 
@@ -86,6 +90,9 @@ func validateLogQL(query string) (Expr, string) {
 // everything else we prefix with "parse error :" so clients still recognise
 // it as a query error.
 func formatParseError(err error, raw string) string {
+	if lokiErr, ok := err.(*ParseError); ok {
+		return lokiErr.Msg
+	}
 	var lokiErr *ParseError
 	if errors.As(err, &lokiErr) {
 		return lokiErr.Msg

@@ -69,6 +69,10 @@ const (
 	TokAnd        // and
 	TokOr         // or
 	TokUnless     // unless
+
+	// Literals outside a [range], read the way Loki's lexer reads them.
+	TokDurationLit // a duration (offset 5m): Loki's DURATION
+	TokBytes       // a bytes size (5KB): Loki's BYTES
 )
 
 //nolint:gocyclo // one case per token type; the switch is a direct mapping with no branching logic.
@@ -166,6 +170,10 @@ func (t TokType) String() string {
 		return "or"
 	case TokUnless:
 		return "unless"
+	case TokDurationLit:
+		return "DURATION"
+	case TokBytes:
+		return "BYTES"
 	}
 	return "?"
 }
@@ -181,17 +189,74 @@ type scanner struct {
 	pos        int
 	braceDepth int32 // tracks {} nesting for != vs |= disambiguation
 	start      int32 // byte offset where the token last returned by next begins
+	// extra holds what few scanners need: the comment spans (StripComments) and the errors of Loki's lexer.
+	extra *scanExtra
+	// prevStart is where the token before the last one read starts.
+	prevStart int32
+	// inRange is set between a '[' and its ']': a range holds a duration that is not read as a literal.
+	inRange bool
+	// afterComment is set when a comment stands right before the token.
+	afterComment bool
+	// quiet stops the scanner from noting lexer errors: a lookahead copy or a re-read of a text already read.
+	quiet bool
+	// hasNUL is set when the text holds a NUL byte, which Loki's lexer rejects: the position bookkeeping for
+	// it (prevStart, afterComment) is only kept then.
+	hasNUL bool
+}
+
+// scanExtra is the rarely used state of a scanner.
+type scanExtra struct {
 	// comments collects the spans of the comments skipped, when not nil (StripComments).
 	comments *[][2]int
+	// err is the first error of Loki's lexer found so far (a malformed number literal, NUL, an unclosed
+	// range); its message is empty while there is none.
+	err lexError
+}
+
+// lexError is an error of Loki's lexer: it is reported ahead of the parse error it may cause.
+type lexError struct {
+	msg      string
+	off      int32
+	zeroLine bool
+}
+
+func (s *scanner) addLexErr(off int, msg string, zeroLine bool) {
+	if s.quiet {
+		return
+	}
+	if s.extra == nil {
+		s.extra = &scanExtra{}
+	}
+	if s.extra.err.msg == "" {
+		s.extra.err = lexError{msg, int32(off), zeroLine}
+	}
+}
+
+// lexErrCount is 1 once the scanner has noted an error of Loki's lexer, 0 before.
+func (s *scanner) lexErrCount() int {
+	if s.extra == nil || s.extra.err.msg == "" {
+		return 0
+	}
+	return 1
+}
+
+// dropLexErr forgets the error noted after known errors were there already.
+func (s *scanner) dropLexErr(known int) {
+	if known == 0 && s.extra != nil {
+		s.extra.err = lexError{}
+	}
 }
 
 func newScanner(src string) *scanner {
-	return &scanner{src: src}
+	return &scanner{src: src, hasNUL: strings.IndexByte(src, 0) >= 0}
 }
 
 func (s *scanner) peek() (rune, int) {
 	if s.pos >= len(s.src) {
 		return 0, 0
+	}
+	if c := s.src[s.pos]; c < utf8.RuneSelf {
+		return rune(c), 1
 	}
 	r, size := utf8.DecodeRuneInString(s.src[s.pos:])
 	return r, size
@@ -203,11 +268,16 @@ func (s *scanner) read() rune {
 	return r
 }
 
-func (s *scanner) skipWS() {
+// skipWS skips white space and comments. It reports whether white space stands right before the token: Loki's
+// lexer takes the line break that ends a comment with the comment.
+func (s *scanner) skipWS() (spaced bool) {
+	if s.hasNUL {
+		s.afterComment = false
+	}
 	for {
 		r, size := s.peek()
 		if size == 0 {
-			return
+			return spaced
 		}
 		if r == '#' {
 			// A comment runs to the end of its line, as in Loki's lexer. A string never
@@ -216,21 +286,51 @@ func (s *scanner) skipWS() {
 			for s.pos < len(s.src) && s.src[s.pos] != '\n' {
 				s.pos++
 			}
-			if s.comments != nil {
-				*s.comments = append(*s.comments, [2]int{start, s.pos})
+			if s.extra != nil && s.extra.comments != nil {
+				*s.extra.comments = append(*s.extra.comments, [2]int{start, s.pos})
 			}
+			if s.pos < len(s.src) {
+				s.pos++
+			}
+			if s.hasNUL {
+				// A comment is a token for Loki's lexer.
+				s.prevStart, s.afterComment = int32(start), true
+			}
+			spaced = false
 			continue
 		}
 		if !unicode.IsSpace(r) {
-			return
+			return spaced
 		}
 		s.pos += size
+		spaced = true
 	}
 }
 
-//nolint:gocyclo // lexer dispatches on every character class; branching is inherent to a hand-written lexer.
+// next reads the next token and notes the errors Loki's lexer would report on the way.
 func (s *scanner) next() Token {
-	s.skipWS()
+	spaced := s.skipWS()
+	if !s.hasNUL {
+		return s.scanToken(spaced)
+	}
+	start := s.pos
+	if start < len(s.src) && s.src[start] == 0 && (spaced || s.afterComment) {
+		// Loki meets a NUL after white space while it skips the white space, with no valid position: it reports
+		// the token before, on line 0.
+		s.addLexErr(int(s.prevStart), "invalid character NUL", true)
+	}
+	known := s.lexErrCount()
+	tok := s.scanToken(spaced)
+	if s.pos < len(s.src) && s.src[s.pos] == 0 && s.lexErrCount() == known {
+		// The character after a token is read before the token is handed over.
+		s.addLexErr(start, "invalid character NUL", false)
+	}
+	s.prevStart = int32(start)
+	return tok
+}
+
+//nolint:gocyclo // lexer dispatches on every character class; branching is inherent to a hand-written lexer.
+func (s *scanner) scanToken(spaced bool) Token {
 	s.start = int32(s.pos)
 	if s.pos >= len(s.src) {
 		return Token{Typ: TokEOF}
@@ -257,9 +357,14 @@ func (s *scanner) next() Token {
 		return Token{Typ: TokRParen, Val: ")"}
 	case '[':
 		s.read()
+		s.inRange = true
+		if strings.IndexByte(s.src[s.pos:], ']') < 0 {
+			s.addLexErr(int(s.start), "missing closing ']' in duration", true)
+		}
 		return Token{Typ: TokLBracket, Val: "["}
 	case ']':
 		s.read()
+		s.inRange = false
 		return Token{Typ: TokRBracket, Val: "]"}
 	case ',':
 		s.read()
@@ -310,6 +415,14 @@ func (s *scanner) next() Token {
 		s.read()
 		return Token{Typ: TokPlus, Val: "+"}
 	case '-':
+		if !s.inRange {
+			// Loki's lexer reads a minus sign right before a duration Go reads as one DURATION token (-5m).
+			if end := scanNegativeDuration(s.src, s.pos); end > 0 {
+				val := s.src[s.pos:end]
+				s.pos = end
+				return Token{Typ: TokDurationLit, Val: val}
+			}
+		}
 		s.read()
 		return Token{Typ: TokMinus, Val: "-"}
 	case '*':
@@ -365,6 +478,9 @@ func (s *scanner) next() Token {
 		return s.scanIdent()
 	}
 
+	if unicode.IsDigit(r) && !s.inRange || r == '.' && !s.inRange && s.pos+1 < len(s.src) && s.src[s.pos+1] >= '0' && s.src[s.pos+1] <= '9' {
+		return s.scanLiteral(spaced)
+	}
 	if unicode.IsDigit(r) {
 		return s.scanNumberOrDuration()
 	}
@@ -414,30 +530,87 @@ func (s *scanner) scanRawString() Token {
 // (lex.go functionTokens) that a call follows (lex.go isFunction), so a label
 // called Rate or Count stays a label.
 func (s *scanner) readsAsKeyword(lower string) bool {
-	if lokiKeywords[lower] {
-		return true
-	}
+	return lokiKeywords[lower] || callFollows(s.src, s.pos, lower)
+}
+
+// callFollows reports whether the lower-cased function name that ends at src[end] is a keyword token: a call
+// follows it, or a `by (` or `without (` grouping.
+func callFollows(src string, end int, lower string) bool {
 	if !rangeAggNames[lower] && !vectorAggNames[lower] && !unwrapConversions[lower] && lower != "vector" {
 		return false
 	}
-	i := skipSpace(s.src, s.pos)
-	if i < len(s.src) && s.src[i] == '(' {
+	return parenFollows(src, end)
+}
+
+// parenFollows reports whether a '(' follows src[end], or a `by (` or `without (` grouping.
+func parenFollows(src string, end int) bool {
+	i := skipSpace(src, end)
+	if i < len(src) && src[i] == '(' {
 		return true
 	}
 	for _, grouping := range [...]string{"by", "without"} {
-		if len(s.src)-i >= len(grouping) && strings.EqualFold(s.src[i:i+len(grouping)], grouping) {
-			j := skipSpace(s.src, i+len(grouping))
-			return j < len(s.src) && s.src[j] == '('
+		if len(src)-i >= len(grouping) && strings.EqualFold(src[i:i+len(grouping)], grouping) {
+			j := skipSpace(src, i+len(grouping))
+			return j < len(src) && src[j] == '('
 		}
 	}
 	return false
 }
 
+// lokiAlwaysKeywords are the words Loki's lexer returns as keyword tokens wherever they stand; ip and
+// label_replace are keywords only before a parenthesis (the function-like words).
+var lokiAlwaysKeywords = map[string]bool{
+	"by": true, "without": true, "bool": true, "offset": true, "on": true, "ignoring": true,
+	"group_left": true, "group_right": true, "unless": true, "unwrap": true, "json": true,
+	"regexp": true, "logfmt": true, "unpack": true, "pattern": true, "label_format": true,
+	"line_format": true, "decolorize": true, "drop": true, "keep": true, "variants": true, "of": true,
+}
+
+// lokiWord is what Loki's lexer makes of a word: always a keyword (call false), or one only before a
+// parenthesis (call true); name is the token name its parse errors print.
+type lokiWord struct {
+	name string
+	call bool
+}
+
+// lokiWords has every word that is a keyword token to Loki's lexer, by lower case form.
+var lokiWords = func() map[string]lokiWord {
+	m := map[string]lokiWord{"ip": {"ip", true}, "label_replace": {"label_replace", true}, "vector": {"VECTOR", true},
+		"bytes": {"BYTES_CONV", true}, "duration": {"DURATION_CONV", true}, "duration_seconds": {"DURATION_SECONDS_CONV", true}}
+	for k := range lokiAlwaysKeywords {
+		m[k] = lokiWord{k, false}
+	}
+	for k := range rangeAggNames {
+		m[k] = lokiWord{strings.ToUpper(k), true}
+	}
+	for k := range vectorAggNames {
+		m[k] = lokiWord{strings.ToUpper(k), true}
+	}
+	return m
+}()
+
+// keywordTokenName is the name Loki's parse errors print for the word whose lower case form is lower and that
+// ends at src[end], when Loki's lexer reads it as a keyword token, and "" when it is a name.
+func keywordTokenName(src string, end int, lower string) string {
+	w, ok := lokiWords[lower]
+	if !ok || w.call && !parenFollows(src, end) {
+		return ""
+	}
+	return w.name
+}
+
 func (s *scanner) scanIdent() Token {
 	start := s.pos
-	for {
+	for s.pos < len(s.src) {
+		if c := s.src[s.pos]; c < utf8.RuneSelf {
+			if c|0x20 >= 'a' && c|0x20 <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '.' {
+				s.pos++
+				continue
+			}
+			break
+		}
 		r, size := s.peek()
-		if size == 0 || (!unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.') {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			break
 		}
 		s.pos += size
@@ -524,6 +697,33 @@ func (s *scanner) scanNumberOrDuration() Token {
 	val := s.src[start:s.pos]
 	if hasUnit {
 		return Token{Typ: TokDuration, Val: val}
+	}
+	return Token{Typ: TokNumber, Val: val}
+}
+
+// scanLiteral reads the number, duration or bytes literal at the scanner position as Loki's lexer does
+// (scanNumberLiteral), and notes its lexer error.
+func (s *scanner) scanLiteral(spaced bool) Token {
+	start := s.pos
+	lit := scanNumberLiteral(s.src, start)
+	s.pos = lit.end
+	msg := lit.err
+	if s.pos < len(s.src) && s.src[s.pos] == 0 {
+		msg = "invalid character NUL"
+	}
+	if spaced && s.src[start] == '0' && lowerByte(at(s.src, start+1)) == 'b' {
+		// A 0b or 0B literal after white space is a decimal number without digits to Loki's scanner.
+		msg = "decimal literal has no digits"
+	}
+	if msg != "" {
+		s.addLexErr(start, msg, false)
+	}
+	val := s.src[start:s.pos]
+	switch lit.name {
+	case "DURATION":
+		return Token{Typ: TokDurationLit, Val: val}
+	case "BYTES":
+		return Token{Typ: TokBytes, Val: val}
 	}
 	return Token{Typ: TokNumber, Val: val}
 }
