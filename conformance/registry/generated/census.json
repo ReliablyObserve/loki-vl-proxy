@@ -497,6 +497,9 @@
     "semantics/last-over-time-line-filter-offset-points | compare:observed",
     "semantics/last-over-time-line-filter-offset-points | gap:open",
     "semantics/last-over-time-line-filter-offset-points | query",
+    "semantics/line-filter-invalid-utf8 | compare:observed",
+    "semantics/line-filter-invalid-utf8 | gap:open",
+    "semantics/line-filter-invalid-utf8 | query",
     "semantics/line-filter-or-alternatives | compare:observed",
     "semantics/line-filter-or-alternatives | gap:fixed",
     "semantics/line-filter-or-alternatives | perf",
@@ -1972,7 +1975,7 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 42,
+      "api": 43,
       "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
@@ -1998,7 +2001,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
+    "unwired_items": 102,
     "wired_items": 263
   },
   "gates": [

@@ -1,0 +1,51 @@
+id: semantics/line-filter-invalid-utf8
+title: A |= or != line filter whose text is not UTF-8 answers 400 where Loki answers it (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  LogQL string escapes can write bytes that are not UTF-8: `|= "\xff\xfe"`.
+  Loki matches a `|=` or `!=` filter as bytes, so it accepts the query and
+  answers it (200; no line on the compose stack holds those bytes). The
+  proxy writes Loki's substring match as a VictoriaLogs regexp (the quoted
+  literal), which VictoriaLogs refuses to compile ("invalid UTF-8"), so the
+  proxy answers 400 "failed to parse the log query" for the log query and the
+  metric query alike (stack, 2026-11-09: `{app="ipprobe-t"} |= "\xff\xfe"`,
+  `!= "\xff"`, `sum(count_over_time({...} |= "\xff\xfe" [5m]))`).
+
+  `|~ "\xff"` already answers like Loki: both reject it with 400 and Loki's
+  text (`parse error : stage '|~ "\xff"' : error parsing regexp: invalid
+  UTF-8`).
+
+  Options: VictoriaLogs' regexp reads an invalid byte of a line as U+FFFD, so
+  writing each invalid byte of the literal as `\x{FFFD}` keeps every line
+  Loki keeps (and also lines that hold U+FFFD or other invalid bytes there:
+  a superset, which needs proxy-side filtering of the rows to be exact); or
+  answer the query in the proxy (no VictoriaLogs filter can test raw bytes).
+  The case was found by the VictoriaLogs parse oracle on the plan corpus
+  (#1234).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="ipprobe-t"} |= "\xff\xfe"'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with the lines that hold the bytes (none on the stack), as Loki answers.
+gap:
+  status: open
+  impact: edge
+  effort: M
+  area: 'internal/translate linefilter.go LineFilter (the substring literal as a regexp); internal/translator line filters'
+  loki: 'line filters |= and != match bytes'
+  proxy: 'a VictoriaLogs regexp of the literal, which VictoriaLogs rejects for invalid UTF-8'
+  planned_test: 'e2e vs Loki: status and lines for |= and != with invalid UTF-8 (test/e2e-compat, group core)'
+  clusters: []

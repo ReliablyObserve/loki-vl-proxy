@@ -1662,7 +1662,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 438,
+  "registry_items": 439,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3639,6 +3639,7 @@
     "semantics/label-replace-aggregation-over-transform",
     "semantics/label-replace-around-ranking-and-vector",
     "semantics/last-over-time-line-filter-offset-points",
+    "semantics/line-filter-invalid-utf8",
     "semantics/log-entries-differ-same-count",
     "semantics/logfmt-malformed-lines",
     "semantics/logfmt-over-json-line-reads-stored-fields",
