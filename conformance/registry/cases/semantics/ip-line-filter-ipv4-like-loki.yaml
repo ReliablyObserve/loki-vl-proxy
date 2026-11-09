@@ -46,7 +46,7 @@ gap:
   loki: 'ip() line filter (log.NewIPLineFilter), recorded with the Loki oracle'
   proxy: 'exact octet ranges with Loki''s line context, after a literal prefilter'
   planned_test: 'TestCompat_IPLineFilterLikeLoki (test/e2e-compat, group core); TestIPLineFilterMatchesLoki (internal/translate)'
-  fixed_by: '#PENDING'
+  fixed_by: '#1234'
   visual: none
   visual_reason: 'the visual stack''s generated addresses (10.0-5.x.y as plain text) are read alike by the substring and the exact filter, so no panel shows the difference; proven by TestCompat_IPLineFilterLikeLoki against Loki and the 21,560-line oracle grid'
   clusters: []

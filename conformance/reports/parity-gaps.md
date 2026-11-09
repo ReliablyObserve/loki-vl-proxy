@@ -159,7 +159,7 @@ Last run: 2026-11-07T14:07:01Z on `a3ad4c1b`, window [1794055620, 1794059220].
 | `semantics/first-last-over-time-translation` — first_over_time and last_over_time with offset or a line filter, proof against Loki pending (open) | #1059 | 0 | 0 |
 | `semantics/instant-bare-range-detected-level-unknown` — an instant bare range function carries the detected_level=unknown label Loki puts on a stream with no level | #750 | 0 | 0 |
 | `semantics/ip-label-filter-missing-label` — An ip() label filter on a label the line does not have keeps the line; Loki drops it (fixed) | #1105 | 0 | 0 |
-| `semantics/ip-line-filter-ipv4-like-loki` — An IPv4 ip() line filter keeps the lines Loki's keeps, never a substring of a longer number (fixed) | #PENDING | 0 | 0 |
+| `semantics/ip-line-filter-ipv4-like-loki` — An IPv4 ip() line filter keeps the lines Loki's keeps, never a substring of a longer number (fixed) | #1234 | 0 | 0 |
 | `semantics/json-error-filter-metric-split-pushdown` — A `\| json \| __error__=""` metric counts Loki's accepted lines from VictoriaLogs stats, reading only the doubtful lines raw (fixed) | #758 | 0 | 0 |
 | `semantics/json-extracted-metric-pushdown` — A metric filtered or grouped on a name_extracted label after `\| json` is answered from VictoriaLogs stats (fixed) | #690 | 0 | 0 |
 | `semantics/json-metric-detected-level-derivation` — sum by (detected_level) over a JSON pipeline follows the level Loki's ingest gave each line, by level key in document order, by keyword s... | #760 | 0 | 0 |
