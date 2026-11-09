@@ -250,7 +250,7 @@ func TestErrorBody_SuccessKeepsItsHeaders(t *testing.T) {
 
 // FuzzErrorBodyShapes writes any status and message through the three Loki
 // error shapes and asserts the bytes a client reads: the frontend shape is the
-// message alone, http.Error's is the message and a newline, and the ruler's is
+// message alone (valid UTF-8 as Loki's: U+FFFD per invalid byte), http.Error's is the message and a newline, and the ruler's is
 // JSON that round-trips the message in Loki's key order. A message with
 // quotes, newlines, control bytes or invalid UTF-8 must not change the framing.
 //
@@ -266,7 +266,7 @@ func FuzzErrorBodyShapes(f *testing.F) {
 		}
 		frontend := httptest.NewRecorder()
 		writeLokiErrorBody(frontend, status, msg)
-		if frontend.Code != status || frontend.Header().Get("Content-Type") != lokiPlain || frontend.Header().Get("X-Content-Type-Options") != "nosniff" || frontend.Body.String() != msg {
+		if frontend.Code != status || frontend.Header().Get("Content-Type") != lokiPlain || frontend.Header().Get("X-Content-Type-Options") != "nosniff" || frontend.Body.String() != string([]rune(msg)) {
 			t.Fatalf("frontend shape: %d %v %q", frontend.Code, frontend.Header(), frontend.Body.String())
 		}
 		httpErr := httptest.NewRecorder()

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -207,12 +206,6 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 			if _, err := regexp.Compile("^(?:" + m.Value + ")$"); err != nil {
 				return "", "", false
 			}
-		}
-	}
-	// A line filter whose text is not UTF-8 is left out too: VictoriaLogs rejects the regexp of both alike.
-	for _, st := range lq.Pipeline {
-		if lf, isLine := st.(*logql.LineFilterStage); isLine && !utf8.ValidString(lf.Value) {
-			return "", "", false
 		}
 	}
 	identity := func(s string) string { return s }

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
@@ -303,12 +304,28 @@ func (p *Proxy) writeErrShaped(w http.ResponseWriter, ctx context.Context, err e
 // (pkg/util/server/error.go WriteError, v3.7.9): the status, text/plain, nosniff
 // and the message alone, with no JSON envelope, no errorType and no trailing
 // newline. Grafana's Loki datasource reads that text as it is
-// (pkg/tsdb/loki/api.go makeLokiError).
+// (pkg/tsdb/loki/api.go makeLokiError). The text is valid UTF-8 as Loki's is:
+// every byte that is not part of a UTF-8 character (a regexp of a query that
+// holds one quotes it) is written as U+FFFD.
 func writeLokiErrorBody(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	_, _ = io.WriteString(w, msg)
+	_, _ = io.WriteString(w, validUTF8Text(msg))
+}
+
+// validUTF8Text is s with each byte that is not part of a UTF-8 character
+// replaced by U+FFFD, one per byte (strings.ToValidUTF8 would write one per run).
+func validUTF8Text(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // writeBodylessError answers as gorilla/mux does for an unregistered method:

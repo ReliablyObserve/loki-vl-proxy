@@ -72,7 +72,9 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		if !ok {
 			return nil, &NotLoweredError{Construct: "LogSelect pattern filter"}
 		}
-		filters = append(filters, f)
+		if f != nil {
+			filters = append(filters, f)
+		}
 	}
 	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
 	if err != nil {

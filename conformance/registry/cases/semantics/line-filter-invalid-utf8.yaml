@@ -1,0 +1,53 @@
+id: semantics/line-filter-invalid-utf8
+title: A |= or != line filter whose text is not UTF-8 answers like Loki (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  LogQL string escapes can write bytes that are not UTF-8: `|= "\xff\xfe"`.
+  Loki matches a `|=` or `!=` filter as bytes, so it accepts the query and
+  answers it: `|=` keeps the lines that hold those bytes, `!=` the others.
+  The proxy wrote the substring match as a VictoriaLogs regexp of the quoted
+  literal, which VictoriaLogs refuses to compile ("invalid UTF-8"), so the
+  proxy answered 400 "failed to parse the log query" for the log query and
+  the metric query alike (stack, 2026-11-09).
+
+  `|~ "\xff"` is rejected by both with 400, but Loki writes each invalid
+  byte of the quoted regexp as U+FFFD, and the proxy wrote the raw bytes.
+
+  Fixed: a stored line is valid UTF-8 (VictoriaLogs and Loki's push API both
+  keep text), so a text that is not UTF-8 is held by no line. A `|=` filter
+  with such a text matches no line (`_stream_id:in()`), a `!=` filter keeps
+  every line (no filter), and in an `or` chain only the valid alternatives
+  are kept; valid literals keep their exact VictoriaLogs text. Every error
+  text the proxy writes in Loki's text shape is valid UTF-8, one U+FFFD per
+  invalid byte, as Loki's.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="ipprobe-t"} |= "\xff\xfe"'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with no line (no stored line holds the bytes), as Loki answers; `!=`
+    200 with every line; `|~ "\xff"` 400 with Loki's text byte for byte.
+gap:
+  status: fixed
+  impact: edge
+  effort: M
+  area: 'internal/translate linefilter.go (TextAlternatives, NoTextFilter, LineFilter); internal/translator line filters; internal/proxy http_utils.go writeLokiErrorBody'
+  loki: 'line filters |= and != match bytes; error text is valid UTF-8 (U+FFFD per invalid byte)'
+  proxy: 'match-none for |= and no filter for != when the text is not UTF-8; U+FFFD per invalid byte in error text'
+  planned_test: 'TestCompat_LineFilterInvalidUTF8LikeLoki (test/e2e-compat, group core); TestTranslateLineFilterInvalidUTF8; TestInvalidUTF8RegexpErrorTextLikeLoki'
+  fixed_by: '#1236'
+  visual: none
+  visual_reason: 'Grafana cannot show the case: no stored line holds bytes that are not UTF-8, so the panels of Loki and the proxy are the same empty or full set; proven by TestCompat_LineFilterInvalidUTF8LikeLoki against Loki (status, lines, metric values and the 400 text)'
+  clusters: []

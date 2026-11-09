@@ -95,6 +95,10 @@ func TestPlanLowersBareSelectors(t *testing.T) {
 		{"negated or chain", `{app="a"} != "a" or "b"`, Profile{}, `app:="a" NOT ~"a|b"`},
 		{"ip line filter", `{app="a"} != ip("10.0.0.1")`, Profile{}, `app:="a" ` + translate.IPLineFilter("10.0.0.1", true).String()},
 		{"line filters in order", `{app="a"} |= "x" != "y"`, Profile{}, `app:="a" ~"x" NOT ~"y"`},
+		{"text that is not UTF-8 matches no line", `{app="a"} |= "\xff\xfe"`, Profile{}, `app:="a" _stream_id:in()`},
+		{"!= of text that is not UTF-8 keeps every line", `{app="a"} != "\xff"`, Profile{}, `app:="a"`},
+		{"or chain without the text that is not UTF-8", `{app="a"} |= "\xff" or "b"`, Profile{}, `app:="a" ~"b"`},
+		{"!= chain without the text that is not UTF-8", `{app="a"} != "\xff" or "b"`, Profile{}, `app:="a" NOT ~"b"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			op, err := Plan(planOf(t, c.q), c.prof)

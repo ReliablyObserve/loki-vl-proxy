@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `|=` or `!=` line filter whose text is not UTF-8 (`|= "\xff\xfe"`)
+  answers like Loki instead of 400: `|=` keeps no line and `!=` every line,
+  since no stored line holds such bytes, and an `or` chain keeps its valid
+  alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
+  as U+FFFD, as Loki does.
+
 ## [2.108.0] - 2026-11-09
 
 ### Fixed

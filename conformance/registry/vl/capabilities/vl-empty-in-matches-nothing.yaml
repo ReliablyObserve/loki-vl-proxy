@@ -1,0 +1,22 @@
+id: vl-empty-in-matches-nothing
+kind: version_gated_capability
+since: v1.49
+generated:
+  used_in: 0
+
+description: |
+  `_stream_id:in()`, an in() filter with an empty list, matches no row and is
+  not an error: a query that ANDs it with a selector of a stream that holds
+  lines answers HTTP 200 with no line, and `| stats count()` over it answers
+  0. TestVLCapability_EmptyInMatchesNothing requires both on a live stream,
+  and runs in the vl-pinned check and the version matrix.
+proxy_usage: |
+  The proxy writes it (translate matchNoRows, the translator's matchNoRows)
+  where Loki's answer is known to hold no line: a detected_level stream
+  matcher that no stream can satisfy, and a |= line filter whose text is not
+  UTF-8 (no stored line holds such bytes). If it matched rows, those queries
+  would return lines Loki never returns.
+fallback: |
+  None on a supported version; a release that changed it would fail the live
+  test before the version is supported.
+proves: []

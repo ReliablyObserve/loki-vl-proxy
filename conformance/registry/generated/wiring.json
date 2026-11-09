@@ -357,6 +357,7 @@
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
@@ -464,6 +465,7 @@
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/marker_text_test.go",
@@ -1170,6 +1172,12 @@
       "internal/proxy/labels_inclusive_end_test.go",
       "test/e2e-compat/labels_zero_width_test.go"
     ],
+    "semantics/line-filter-invalid-utf8": [
+      "internal/proxy/error_text_utf8_test.go",
+      "internal/translator/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/vl_empty_in_test.go"
+    ],
     "semantics/line-filter-or-alternatives": [
       "internal/logql/log_range_alternatives_test.go",
       "internal/translator/line_filter_or_test.go",
@@ -1631,6 +1639,9 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-empty-in-matches-nothing": [
+      "test/e2e-compat/vl_empty_in_test.go"
+    ],
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
@@ -1672,7 +1683,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 439,
+  "registry_items": 441,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1991,6 +2002,9 @@
       "status-500",
       "status-502",
       "status-503"
+    ],
+    "internal/proxy/error_text_utf8_test.go": [
+      "semantics/line-filter-invalid-utf8"
     ],
     "internal/proxy/extracted_probe_head_test.go": [
       "quality/extracted-label-probe-cost",
@@ -2884,6 +2898,9 @@
       "profiles/label-filter-regexp-anchoring",
       "profiles/stream-selector-regexp-anchoring"
     ],
+    "internal/translator/line_filter_invalid_utf8_test.go": [
+      "semantics/line-filter-invalid-utf8"
+    ],
     "internal/translator/line_filter_or_test.go": [
       "semantics/line-filter-or-alternatives"
     ],
@@ -3232,6 +3249,11 @@
       "profiles/detected-fields-structured-metadata-beside-json-line",
       "profiles/parsed-fields-without-parser"
     ],
+    "test/e2e-compat/line_filter_invalid_utf8_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/line-filter-invalid-utf8"
+    ],
     "test/e2e-compat/line_format_error_test.go": [
       "semantics/line-format-template-error-keeps-entry"
     ],
@@ -3559,6 +3581,10 @@
       "semantics/unwrap-sample-validity",
       "status-400"
     ],
+    "test/e2e-compat/vl_empty_in_test.go": [
+      "semantics/line-filter-invalid-utf8",
+      "vl-empty-in-matches-nothing"
+    ],
     "test/e2e-compat/vl_pattern_lines_test.go": [
       "vl-phrase-filter-quoted-names",
       "vl-sort-ties-by-text"
@@ -3594,7 +3620,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 389,
+  "tests_with_markers": 393,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3698,5 +3724,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 265
+  "wired_items": 267
 }
