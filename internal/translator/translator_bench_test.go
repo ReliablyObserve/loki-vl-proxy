@@ -31,6 +31,13 @@ func BenchmarkTranslateLogQL_LineFilterInvalidUTF8(b *testing.B) {
 	}
 }
 
+// Pattern line filters of every builder shape: the extract pipe, a single literal, a negated chain.
+func BenchmarkTranslateLogQL_PatternFilter(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} |> "<_> GET <_> 200 <_>" !> "<_> healthz <_>" or "<_> ready <_>" |= "x"`)
+	}
+}
+
 func BenchmarkTranslateLogQL_JSONPipeline(b *testing.B) {
 	for b.Loop() {
 		TranslateLogQL(`{app="api"} | json | status >= 500 | method = "POST"`)

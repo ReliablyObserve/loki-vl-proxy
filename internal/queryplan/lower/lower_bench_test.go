@@ -9,8 +9,19 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// loweredLineFilterQueries are the plan corpus's log queries with line filters that the plan lowers natively.
+// loweredLineFilterQueries are the plan corpus's log queries with line filters that the plan lowers natively and
+// that have no pattern line filter (|> or !>): the set these benchmarks had before pattern filters were lowered.
 func loweredLineFilterQueries(b *testing.B) []string {
+	return loweredQueries(b, false)
+}
+
+// loweredPatternFilterQueries are the plan corpus's log queries the plan lowers natively that have a pattern line
+// filter.
+func loweredPatternFilterQueries(b *testing.B) []string {
+	return loweredQueries(b, true)
+}
+
+func loweredQueries(b *testing.B, pattern bool) []string {
 	b.Helper()
 	qs, err := plancorpus.Queries("../../..")
 	if err != nil {
@@ -31,12 +42,12 @@ func loweredLineFilterQueries(b *testing.B) []string {
 			continue
 		}
 		queryplan.Resolve(p)
-		if _, err := Plan(p, Profile{}); err == nil {
+		if _, err := Plan(p, Profile{}); err == nil && hasPatternFilter(sel) == pattern {
 			out = append(out, q)
 		}
 	}
 	if len(out) == 0 {
-		b.Fatal("no lowered line-filter query")
+		b.Fatal("no lowered query")
 	}
 	return out
 }
@@ -56,6 +67,48 @@ func BenchmarkLineFilterQueriesTranslator(b *testing.B) {
 // The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
 func BenchmarkLineFilterQueriesLowered(b *testing.B) {
 	qs := loweredLineFilterQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		expr, err := logql.Parse(qs[i%len(qs)])
+		if err != nil {
+			b.Fatal(err)
+		}
+		p, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		queryplan.Resolve(p)
+		if _, err := Plan(p, Profile{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func hasPatternFilter(sel *queryplan.LogSelect) bool {
+	for _, st := range sel.Stages {
+		if lf, ok := st.(*queryplan.LineFilter); ok && (lf.Op == logql.LineFilterContainsPat || lf.Op == logql.LineFilterExcludePat) {
+			return true
+		}
+	}
+	return false
+}
+
+// The string translator on the lowered pattern line filter queries: text to LogsQL text.
+func BenchmarkPatternFilterQueriesTranslator(b *testing.B) {
+	qs := loweredPatternFilterQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := translator.TranslateLogQLWithLabels(qs[i%len(qs)], nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
+func BenchmarkPatternFilterQueriesLowered(b *testing.B) {
+	qs := loweredPatternFilterQueries(b)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

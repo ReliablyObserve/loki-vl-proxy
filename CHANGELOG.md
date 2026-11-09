@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   since no stored line holds such bytes, and an `or` chain keeps its valid
   alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
   as U+FFFD, as Loki does.
+- A pattern line filter (`|>` or `!>`) with two captures in a row
+  (`|> "<_><_>"`) or a named capture (`|> "<foo>"`, `|> "<_> <foo>"`) is
+  rejected with Loki's 400 and Loki's text, for log and metric queries alike.
+  **Breaking:** these queries answered 200 before (every line, or none), or a
+  400 with VictoriaLogs' text; Loki has always rejected them. The `| pattern`
+  parser keeps its named captures.
+
+### Changed
+
+- The query plan lowers log queries with pattern line filters (`|>`, `!>`,
+  and their `or` chains) to VictoriaLogs natively, through the builder the
+  string translator now shares. The requests sent to VictoriaLogs do not
+  change.
 
 ## [2.108.0] - 2026-11-09
 

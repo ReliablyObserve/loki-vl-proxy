@@ -47,7 +47,7 @@ func PatternLineFilterParts(values []string, negative bool, seq *int) []string {
 		// Every alternative is a filter on the line: no extract is needed.
 		terms := make([]string, len(p.alts))
 		for i, alt := range p.alts {
-			terms[i] = alt.filter().String()
+			terms[i] = alt.filterText()
 		}
 		keep := "(" + terms[0] + ")"
 		if len(terms) > 1 {
@@ -62,11 +62,11 @@ func PatternLineFilterParts(values []string, negative bool, seq *int) []string {
 	var pipes, conds []string
 	for _, alt := range p.alts {
 		if alt.extract == "" {
-			conds = append(conds, alt.filter().String())
+			conds = append(conds, alt.filterText())
 			continue
 		}
-		pipes = append(pipes, logsql.PipeExtract{Pattern: alt.extract, From: "_msg"}.String())
-		conds = append(conds, alt.cond.String())
+		pipes = append(pipes, "| extract "+strconv.Quote(alt.extract)+" from _msg")
+		conds = append(conds, alt.condText())
 	}
 	keep := conds[0]
 	if len(conds) > 1 {
@@ -75,7 +75,7 @@ func PatternLineFilterParts(values []string, negative bool, seq *int) []string {
 	if negative {
 		keep = "NOT (" + keep + ")"
 	}
-	pipes = append(pipes, "| filter "+keep, patternScratchDelete.String())
+	pipes = append(pipes, "| filter "+keep, "| delete "+PatternFilterScratch+"*")
 	pipe := strings.Join(pipes, " ")
 	if negative {
 		return []string{pipe}
@@ -84,13 +84,16 @@ func PatternLineFilterParts(values []string, negative bool, seq *int) []string {
 	switch groups := patternLiteralPrefilter(p.alts); len(groups) {
 	case 0:
 	case 1:
-		for _, f := range groups[0] {
-			out = append(out, f.String())
+		for _, re := range groups[0] {
+			out = append(out, "_msg:~"+strconv.Quote(re))
 		}
 	default:
 		terms := make([]string, len(groups))
 		for i, g := range groups {
-			terms[i] = g.String()
+			for j, re := range g {
+				g[j] = "_msg:~" + strconv.Quote(re)
+			}
+			terms[i] = strings.Join(g, " ")
 		}
 		out = append(out, "(("+strings.Join(terms, ") or (")+"))")
 	}
@@ -132,7 +135,7 @@ func PatternLineFilter(values []string, negative bool, seq *int) (filters []logs
 			continue
 		}
 		pipes = append(pipes, logsql.PipeExtract{Pattern: alt.extract, From: "_msg"})
-		conds = append(conds, alt.cond)
+		conds = append(conds, alt.cond())
 	}
 	keep := anyOfGroups(conds)
 	if negative {
@@ -142,15 +145,20 @@ func PatternLineFilter(values []string, negative bool, seq *int) (filters []logs
 	if negative {
 		return nil, pipes
 	}
-	switch groups := patternLiteralPrefilter(p.alts); len(groups) {
+	groups := patternLiteralPrefilter(p.alts)
+	terms := make([]logsql.FilterExpr, len(groups))
+	for i, g := range groups {
+		all := make(logsql.AllOf, len(g))
+		for j, re := range g {
+			all[j] = msgRegexp(re)
+		}
+		terms[i] = all
+	}
+	switch len(terms) {
 	case 0:
 	case 1:
-		filters = append(filters, groups[0]...)
+		filters = append(filters, terms[0].(logsql.AllOf)...)
 	default:
-		terms := make([]logsql.FilterExpr, len(groups))
-		for i, g := range groups {
-			terms[i] = g
-		}
 		filters = append(filters, logsql.Group{Expr: anyOfGroups(terms)})
 	}
 	return append(filters, logsql.Regexp{Pattern: p.combined}), pipes
@@ -189,7 +197,7 @@ func planPatternLineFilter(values []string, seq *int) patternLineFilterPlan {
 		if p.alts[i].extract != "" {
 			p.exact, p.pipeFree = false, false
 			*seq++
-		} else if p.alts[i].exact != nil {
+		} else if p.alts[i].exactOK {
 			p.exact = false
 		}
 	}
@@ -200,22 +208,22 @@ func planPatternLineFilter(values []string, seq *int) patternLineFilterPlan {
 	return p
 }
 
-// patternLiteralPrefilter returns plain regexp filters for the literals of the
+// patternLiteralPrefilter returns the plain regexps of the literals of the
 // alternatives, to run before the anchored regexp: a line that matches an
 // alternative holds all its literals, so these are necessary conditions, and
 // VictoriaLogs answers a plain regexp as a substring search that skips the
 // blocks without the text, where the anchored regexp runs on every row. It is
-// one group of filters per alternative, which the caller ORs when there are
+// one group of regexps per alternative, which the caller ORs when there are
 // several, and none when an alternative has no literal (<_>), which any line
 // can match.
-func patternLiteralPrefilter(alts []patternLineFilterAlt) []logsql.AllOf {
-	groups := make([]logsql.AllOf, len(alts))
+func patternLiteralPrefilter(alts []patternLineFilterAlt) [][]string {
+	groups := make([][]string, len(alts))
 	for i, alt := range alts {
 		if len(alt.lits) == 0 {
 			return nil
 		}
 		for _, lit := range alt.lits {
-			groups[i] = append(groups[i], msgRegexp(regexp.QuoteMeta(lit)))
+			groups[i] = append(groups[i], regexp.QuoteMeta(lit))
 		}
 	}
 	return groups
@@ -228,27 +236,91 @@ func msgRegexp(re string) logsql.FieldFilter {
 
 // patternLineFilterAlt is one pattern alternative: re is a regexp on the line
 // that accepts every line Loki accepts and is exact when extract is empty;
-// otherwise extract is the extract pipe pattern and cond the filter on its
-// fields that keeps exactly Loki's lines.
+// otherwise extract is the extract pipe pattern, and the filter on its fields
+// that keeps exactly Loki's lines is every capture field non-empty, the
+// trailing field (when the pattern ends on a literal) empty, and, for a
+// literal alone, the regexp (cond, condText).
 type patternLineFilterAlt struct {
 	re, extract string
-	cond        logsql.FilterExpr
+	captures    []string
+	trailing    string
+	reCond      bool
 	// lits are the distinct literals of the pattern: a line that holds none of
 	// them cannot match, which the prefilter in front of extract says with
 	// plain filters.
 	lits []string
-	// exact, when set, is a LogsQL filter (no pipe) that keeps exactly Loki's
-	// lines; re is then only the superset regexp, and extract is empty.
-	exact logsql.FilterExpr
+	// exact, when exactOK, is the one literal of a pattern that a filter with
+	// no pipe keeps exactly (exactSingleLiteralPatternFilter); re is then only
+	// the superset regexp, and extract is empty.
+	exact   singleLiteralPattern
+	exactOK bool
+}
+
+// cond is the filter on the extract fields that keeps exactly Loki's lines.
+func (a patternLineFilterAlt) cond() logsql.FilterExpr {
+	var c logsql.AllOf
+	if a.reCond {
+		c = append(c, msgRegexp(a.re))
+	}
+	for _, f := range a.captures {
+		c = append(c, logsql.FieldFilter{Field: f, Op: logsql.FieldOpAny})
+	}
+	if a.trailing != "" {
+		c = append(c, logsql.FieldFilter{Field: a.trailing, Op: logsql.FieldOpEmpty})
+	}
+	return c
+}
+
+// condText is cond as the string translator writes it.
+func (a patternLineFilterAlt) condText() string {
+	var b strings.Builder
+	size := 0
+	if a.reCond {
+		size += len(a.re) + 9
+	}
+	for _, f := range a.captures {
+		size += len(f) + 3
+	}
+	if a.trailing != "" {
+		size += len(a.trailing) + 4
+	}
+	b.Grow(size)
+	if a.reCond {
+		b.WriteString("_msg:~")
+		b.WriteString(strconv.Quote(a.re))
+	}
+	for _, f := range a.captures {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(f)
+		b.WriteString(":*")
+	}
+	if a.trailing != "" {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(a.trailing)
+		b.WriteString(`:""`)
+	}
+	return b.String()
 }
 
 // filter is the filter of an alternative that needs no extract pipe: exact, or
 // its regexp on the message.
 func (a patternLineFilterAlt) filter() logsql.FilterExpr {
-	if a.exact != nil {
-		return a.exact
+	if a.exactOK {
+		return a.exact.filter()
 	}
 	return msgRegexp(a.re)
+}
+
+// filterText is filter as the string translator writes it.
+func (a patternLineFilterAlt) filterText() string {
+	if a.exactOK {
+		return a.exact.text()
+	}
+	return "_msg:~" + strconv.Quote(a.re)
 }
 
 func planPatternLineFilterAlt(value string, id int) patternLineFilterAlt {
@@ -265,8 +337,7 @@ func planPatternLineFilterAlt(value string, id int) patternLineFilterAlt {
 		}
 	}
 	var re, ext strings.Builder
-	var cond logsql.AllOf
-	captures := 0
+	var captures []string
 	field := func(suffix string) string {
 		return PatternFilterScratch + strconv.Itoa(id) + "_" + suffix
 	}
@@ -282,35 +353,30 @@ func planPatternLineFilterAlt(value string, id int) patternLineFilterAlt {
 			re.WriteString("^")
 		}
 		re.WriteString(".+")
-		captures++
-		f := field(strconv.Itoa(captures))
+		f := field(strconv.Itoa(len(captures) + 1))
+		captures = append(captures, f)
 		ext.WriteString("<plain:" + f + ">")
-		cond = append(cond, logsql.FieldFilter{Field: f, Op: logsql.FieldOpAny})
 	}
+	var trailing string
 	if !nodes[len(nodes)-1].Capture {
 		re.WriteString("$")
-		f := field("r")
-		ext.WriteString("<plain:" + f + ">")
-		cond = append(cond, logsql.FieldFilter{Field: f, Op: logsql.FieldOpEmpty})
+		trailing = field("r")
+		ext.WriteString("<plain:" + trailing + ">")
 	}
 	alt := patternLineFilterAlt{re: re.String(), lits: lits}
-	if captures > 0 {
+	if len(captures) > 0 {
 		alt.re = "(?s)" + alt.re
 	}
 	if (len(nodes) == 1 && nodes[0].Capture) || (len(nodes) == 2 && !nodes[0].Capture && nodes[1].Capture) {
 		return alt
 	}
-	if exact := exactSingleLiteralPatternFilter(nodes); exact != nil {
-		alt.exact = exact
+	if alt.exact, alt.exactOK = exactSingleLiteralPatternFilter(nodes); alt.exactOK {
 		return alt
 	}
-	if captures == 0 {
-		// A literal alone leaves the trailing field empty when the line does
-		// not hold it at all; the regexp says it does.
-		cond = append(logsql.AllOf{msgRegexp(alt.re)}, cond...)
-	}
-	alt.extract = ext.String()
-	alt.cond = cond
+	// A literal alone leaves the trailing field empty when the line does not
+	// hold it at all; the regexp says it does.
+	alt.reCond = len(captures) == 0
+	alt.extract, alt.captures, alt.trailing = ext.String(), captures, trailing
 	return alt
 }
 
@@ -334,7 +400,7 @@ func planPatternLineFilterAlt(value string, id int) patternLineFilterAlt {
 // `.`, which keeps VictoriaLogs from reading the literal ahead (a count over
 // 518,500 rows: 64 ms for the plain filter, 67 ms for these, 134 ms with `.L.`
 // and 130 ms for the extract form).
-func exactSingleLiteralPatternFilter(nodes []logql.LinePatternNode) logsql.FilterExpr {
+func exactSingleLiteralPatternFilter(nodes []logql.LinePatternNode) (singleLiteralPattern, bool) {
 	var lit string
 	var lead, trail bool
 	switch len(nodes) {
@@ -347,23 +413,73 @@ func exactSingleLiteralPatternFilter(nodes []logql.LinePatternNode) logsql.Filte
 		}
 	case 3:
 		if !nodes[0].Capture || nodes[1].Capture || !nodes[2].Capture {
-			return nil
+			return singleLiteralPattern{}, false
 		}
 		lit, lead, trail = nodes[1].Text, true, true
 	default:
-		return nil
+		return singleLiteralPattern{}, false
 	}
 	if lit == "" {
-		return nil
+		return singleLiteralPattern{}, false
 	}
-	q := regexp.QuoteMeta(lit)
-	not := func(re string) logsql.FilterExpr { return logsql.NotExpr{Expr: msgRegexp(re)} }
+	return singleLiteralPattern{q: regexp.QuoteMeta(lit), lead: lead, trail: trail}, true
+}
+
+// singleLiteralPattern is a pattern with one literal, escaped as q, and whether
+// a capture comes before it (lead) and after it (trail).
+type singleLiteralPattern struct {
+	q           string
+	lead, trail bool
+}
+
+// regexps are the n regexp filters of exactSingleLiteralPatternFilter, in
+// order: the first two kept, the rest negated.
+func (p singleLiteralPattern) regexps() (res [4]string, n int) {
+	q := p.q
 	switch {
-	case lead && trail:
-		return logsql.AllOf{msgRegexp(q), msgRegexp("(?s)" + q + "."), not("^" + q)}
-	case lead:
-		return logsql.AllOf{msgRegexp(q), msgRegexp("(?s)" + q + "$"), not("(?s)" + q + "."), not("^" + q + "$")}
+	case p.lead && p.trail:
+		return [4]string{q, "(?s)" + q + ".", "^" + q}, 3
+	case p.lead:
+		return [4]string{q, "(?s)" + q + "$", "(?s)" + q + ".", "^" + q + "$"}, 4
 	default:
-		return logsql.AllOf{msgRegexp(q), msgRegexp("(?s)" + q + "$"), not("(?s)" + q + ".")}
+		return [4]string{q, "(?s)" + q + "$", "(?s)" + q + "."}, 3
 	}
+}
+
+func (p singleLiteralPattern) filter() logsql.FilterExpr {
+	all, n := p.regexps()
+	res := all[:n]
+	out := make(logsql.AllOf, len(res))
+	for i, re := range res {
+		out[i] = msgRegexp(re)
+		if i >= 2 {
+			out[i] = logsql.NotExpr{Expr: out[i]}
+		}
+	}
+	return out
+}
+
+func (p singleLiteralPattern) text() string {
+	all, n := p.regexps()
+	res := all[:n]
+	size := 0
+	for i, re := range res {
+		size += len(re) + 9
+		if i >= 2 {
+			size += 4
+		}
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for i, re := range res {
+		switch {
+		case i >= 2:
+			b.WriteString(" NOT ")
+		case i > 0:
+			b.WriteByte(' ')
+		}
+		b.WriteString("_msg:~")
+		b.WriteString(strconv.Quote(re))
+	}
+	return b.String()
 }

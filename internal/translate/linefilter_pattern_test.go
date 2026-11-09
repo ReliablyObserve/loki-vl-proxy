@@ -10,7 +10,7 @@ func TestPatternLineFilterHelpers(t *testing.T) {
 	if got := planPatternLineFilterAlt(`foo<_>`, 0); got.re != `(?s)foo.+` || got.extract != "" {
 		t.Fatalf("unexpected exact pattern translation %+v", got)
 	}
-	if got := planPatternLineFilterAlt(`literal.*value`, 0); got.re != `literal\.\*value$` || got.extract != "" || got.exact.String() != `_msg:~"literal\\.\\*value" _msg:~"(?s)literal\\.\\*value$" NOT _msg:~"(?s)literal\\.\\*value."` {
+	if got := planPatternLineFilterAlt(`literal.*value`, 0); got.re != `literal\.\*value$` || got.extract != "" || got.exact.text() != `_msg:~"literal\\.\\*value" _msg:~"(?s)literal\\.\\*value$" NOT _msg:~"(?s)literal\\.\\*value."` {
 		t.Fatalf("unexpected literal pattern translation %+v", got)
 	}
 	if got := planPatternLineFilterAlt(``, 0); got.re != `^$` || got.extract != "" {

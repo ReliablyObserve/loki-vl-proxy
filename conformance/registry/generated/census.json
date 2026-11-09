@@ -500,6 +500,9 @@
     "semantics/last-over-time-line-filter-offset-points | compare:observed",
     "semantics/last-over-time-line-filter-offset-points | gap:open",
     "semantics/last-over-time-line-filter-offset-points | query",
+    "semantics/line-filter-error-quotes-the-run | compare:observed",
+    "semantics/line-filter-error-quotes-the-run | gap:open",
+    "semantics/line-filter-error-quotes-the-run | query",
     "semantics/line-filter-invalid-utf8 | compare:observed",
     "semantics/line-filter-invalid-utf8 | gap:fixed",
     "semantics/line-filter-invalid-utf8 | query",
@@ -567,7 +570,7 @@
     "semantics/pattern-line-filter-anchoring | perf",
     "semantics/pattern-line-filter-anchoring | query",
     "semantics/pattern-line-filter-invalid-captures | compare:observed",
-    "semantics/pattern-line-filter-invalid-captures | gap:open",
+    "semantics/pattern-line-filter-invalid-captures | gap:fixed",
     "semantics/pattern-line-filter-invalid-captures | query",
     "semantics/pipeline-error-text-parity | compare:exact",
     "semantics/pipeline-error-text-parity | perf",
@@ -866,6 +869,8 @@
     "internal/logql/loki_unknown_names_test.go | semantics/proxy-accepts-operators-not-in-loki",
     "internal/logql/opaque_typed_test.go | semantics/label-replace-new-label",
     "internal/logql/parser_captures_test.go | parsed-label-series-identity",
+    "internal/logql/pattern_line_filter_loki_test.go | semantics/line-filter-error-quotes-the-run",
+    "internal/logql/pattern_line_filter_loki_test.go | semantics/pattern-line-filter-invalid-captures",
     "internal/logql/print_reparse_test.go | semantics/binary-operand-literals-reprint",
     "internal/logql/print_reparse_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/range_rules_test.go | semantics/proxy-accepts-invalid-logql",
@@ -1514,9 +1519,12 @@
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-line-filter-ipv4-like-loki",
+    "internal/translate/linefilter_pattern_test.go | semantics/pattern-line-filter",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
     "internal/translator/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
@@ -1808,6 +1816,9 @@
     "test/e2e-compat/parser_error_matrix_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "test/e2e-compat/parser_error_matrix_test.go | semantics/non-sum-vector-aggregation-unreduced",
     "test/e2e-compat/parser_error_matrix_test.go | semantics/pipeline-error-text-parity",
+    "test/e2e-compat/pattern_line_filter_captures_test.go | loki_api_v1_query",
+    "test/e2e-compat/pattern_line_filter_captures_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/pattern_line_filter_captures_test.go | semantics/pattern-line-filter-invalid-captures",
     "test/e2e-compat/pattern_line_filter_test.go | loki_api_v1_query",
     "test/e2e-compat/pattern_line_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/pattern_line_filter_test.go | semantics/pattern-line-filter",
@@ -1991,14 +2002,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 44,
+      "api": 45,
       "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 392,
+      "go": 396,
       "playwright": 1
     },
     "page_kinds": {
@@ -2017,8 +2028,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 100,
-    "wired_items": 267
+    "unwired_items": 99,
+    "wired_items": 269
   },
   "gates": [
     "A/B shape selection",

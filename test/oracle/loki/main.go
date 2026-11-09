@@ -10,6 +10,7 @@
 //	go run . similar -src "$(go list -m -f '{{.Dir}}' github.com/grafana/loki/v3)" -ours ../../internal/logql -out similar.json
 //	go run . facts -in queries.jsonl -out facts.jsonl
 //	go run . ipfilter -in lines.jsonl -out verdicts.jsonl
+//	go run . pipeline -in queries.jsonl -out verdicts.jsonl
 //
 // cases writes the queries of Loki's syntax tests (pkg/logql/syntax/*_test.go); check parses every input with
 // Loki and writes whether Loki accepts it, its error text and whether the proxy's printed form means the same
@@ -84,6 +85,8 @@ func main() {
 		err = facts(*in, *out)
 	case "ipfilter":
 		err = ipfilter(*in, *out)
+	case "pipeline":
+		err = pipeline(*in, *out)
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}

@@ -5,8 +5,6 @@ type LinePatternNode struct {
 	// Text is the literal; empty for a capture.
 	Text    string
 	Capture bool
-	// Name is the name of a capture: `_` for <_>.
-	Name string
 }
 
 // LinePatternNodes splits the pattern of a pattern line filter as Loki reads it: <name>, a letter or underscore
@@ -22,7 +20,7 @@ func LinePatternNodes(p string) []LinePatternNode {
 		if lit < i {
 			nodes = append(nodes, LinePatternNode{Text: p[lit:i]})
 		}
-		nodes = append(nodes, LinePatternNode{Capture: true, Name: p[i+1 : i+n-1]})
+		nodes = append(nodes, LinePatternNode{Capture: true})
 		i += n - 1
 		lit = i + 1
 	}

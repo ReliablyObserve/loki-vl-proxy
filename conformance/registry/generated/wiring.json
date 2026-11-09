@@ -23,6 +23,7 @@
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/lower_test.go",
+      "internal/queryplan/lower/pattern_filter_test.go",
       "internal/translate/selector_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
@@ -364,6 +365,7 @@
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parsed_surface_answers_test.go",
       "test/e2e-compat/parser_capture_identity_test.go",
+      "test/e2e-compat/pattern_line_filter_captures_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go",
@@ -477,6 +479,7 @@
       "test/e2e-compat/ordered_json_steps_cache_test.go",
       "test/e2e-compat/parenthesized_range_or_filters_test.go",
       "test/e2e-compat/parsed_surface_answers_test.go",
+      "test/e2e-compat/pattern_line_filter_captures_test.go",
       "test/e2e-compat/pattern_line_filter_test.go",
       "test/e2e-compat/plain_name_after_parser_test.go",
       "test/e2e-compat/query_range_lead_window_test.go",
@@ -1172,6 +1175,9 @@
       "internal/proxy/labels_inclusive_end_test.go",
       "test/e2e-compat/labels_zero_width_test.go"
     ],
+    "semantics/line-filter-error-quotes-the-run": [
+      "internal/logql/pattern_line_filter_loki_test.go"
+    ],
     "semantics/line-filter-invalid-utf8": [
       "internal/proxy/error_text_utf8_test.go",
       "internal/translator/line_filter_invalid_utf8_test.go",
@@ -1251,6 +1257,8 @@
     ],
     "semantics/pattern-line-filter": [
       "internal/proxy/pattern_line_filter_test.go",
+      "internal/queryplan/lower/pattern_filter_test.go",
+      "internal/translate/linefilter_pattern_test.go",
       "internal/translator/pattern_line_filter_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
     ],
@@ -1258,6 +1266,10 @@
       "internal/proxy/pattern_line_filter_test.go",
       "internal/translator/pattern_line_filter_anchoring_test.go",
       "test/e2e-compat/pattern_line_filter_test.go"
+    ],
+    "semantics/pattern-line-filter-invalid-captures": [
+      "internal/logql/pattern_line_filter_loki_test.go",
+      "test/e2e-compat/pattern_line_filter_captures_test.go"
     ],
     "semantics/pipeline-error-text-parity": [
       "internal/proxy/label_replace_routing_test.go",
@@ -1683,7 +1695,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 441,
+  "registry_items": 442,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1749,6 +1761,10 @@
     ],
     "internal/logql/parser_captures_test.go": [
       "parsed-label-series-identity"
+    ],
+    "internal/logql/pattern_line_filter_loki_test.go": [
+      "semantics/line-filter-error-quotes-the-run",
+      "semantics/pattern-line-filter-invalid-captures"
     ],
     "internal/logql/print_reparse_test.go": [
       "semantics/binary-operand-literals-reprint",
@@ -2838,12 +2854,19 @@
     "internal/queryplan/lower/lower_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/pattern_filter_test.go": [
+      "architecture-syntax-package-layering",
+      "semantics/pattern-line-filter"
+    ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
     "internal/translate/ip_line_filter_loki_test.go": [
       "semantics/ip-filter-precision",
       "semantics/ip-line-filter-ipv4-like-loki"
+    ],
+    "internal/translate/linefilter_pattern_test.go": [
+      "semantics/pattern-line-filter"
     ],
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
@@ -3342,6 +3365,11 @@
       "semantics/non-sum-vector-aggregation-unreduced",
       "semantics/pipeline-error-text-parity"
     ],
+    "test/e2e-compat/pattern_line_filter_captures_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/pattern-line-filter-invalid-captures"
+    ],
     "test/e2e-compat/pattern_line_filter_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -3620,7 +3648,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 393,
+  "tests_with_markers": 397,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3689,7 +3717,6 @@
     "semantics/logfmt-over-json-line-reads-stored-fields",
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
-    "semantics/pattern-line-filter-invalid-captures",
     "semantics/quantile-over-time-out-of-range",
     "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/ruler-empty-list-status",
@@ -3724,5 +3751,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 267
+  "wired_items": 269
 }

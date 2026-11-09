@@ -73,6 +73,7 @@
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/translate/linefilter_pattern.go",
         "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
@@ -96,6 +97,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/range_metric_compat.go",
+        "internal/translate/linefilter_pattern.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go"
       ]
@@ -175,6 +177,7 @@
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/volume.go",
+        "internal/translate/linefilter_pattern.go",
         "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/translator.go",
