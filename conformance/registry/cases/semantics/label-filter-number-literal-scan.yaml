@@ -79,7 +79,7 @@ gap:
   loki: 'the lexer of the label filter grammar (Go text/scanner numbers, then duration and bytes), recorded with the Loki oracle'
   proxy: 'one literal scanner and a lexer for the filter and the query that follow the same rules, with Loki''s error messages and columns'
   planned_test: 'TestCompat_LabelFilterNumberLiteralsLikeLoki (test/e2e-compat, group core); TestLabelFilterNumberLiteralsMatchLoki (internal/logql)'
-  fixed_by: '#PR'
+  fixed_by: '#1248'
   visual: none
   visual_reason: 'a rejected query renders no panel; proven by TestCompat_LabelFilterNumberLiteralsLikeLoki against Loki and the 53,000-query oracle grid'
   clusters: []
