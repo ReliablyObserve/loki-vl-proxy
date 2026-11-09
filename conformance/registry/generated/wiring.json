@@ -1175,7 +1175,8 @@
     "semantics/line-filter-invalid-utf8": [
       "internal/proxy/error_text_utf8_test.go",
       "internal/translator/line_filter_invalid_utf8_test.go",
-      "test/e2e-compat/line_filter_invalid_utf8_test.go"
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/vl_empty_in_test.go"
     ],
     "semantics/line-filter-or-alternatives": [
       "internal/logql/log_range_alternatives_test.go",
@@ -1638,6 +1639,9 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-empty-in-matches-nothing": [
+      "test/e2e-compat/vl_empty_in_test.go"
+    ],
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
@@ -1679,7 +1683,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 440,
+  "registry_items": 441,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3577,6 +3581,10 @@
       "semantics/unwrap-sample-validity",
       "status-400"
     ],
+    "test/e2e-compat/vl_empty_in_test.go": [
+      "semantics/line-filter-invalid-utf8",
+      "vl-empty-in-matches-nothing"
+    ],
     "test/e2e-compat/vl_pattern_lines_test.go": [
       "vl-phrase-filter-quoted-names",
       "vl-sort-ties-by-text"
@@ -3612,7 +3620,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 392,
+  "tests_with_markers": 393,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3716,5 +3724,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 266
+  "wired_items": 267
 }

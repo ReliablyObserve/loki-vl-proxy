@@ -166,7 +166,7 @@ func detectedLevelMatcherFilter(m SelectorMatcher, negate, isRe bool) (logsql.Fi
 	if matchesEmpty != negate {
 		return nil, nil
 	}
-	return logsql.FieldFilter{Field: "_stream_id", Op: logsql.FieldOpIn}, nil
+	return matchNoRows, nil
 }
 
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).

@@ -1965,6 +1965,8 @@
     "test/e2e-compat/unwrap_value_forms_test.go | semantics/unwrap-gate-parsefloat-divergences",
     "test/e2e-compat/unwrap_value_forms_test.go | semantics/unwrap-sample-validity",
     "test/e2e-compat/unwrap_value_forms_test.go | status-400",
+    "test/e2e-compat/vl_empty_in_test.go | semantics/line-filter-invalid-utf8",
+    "test/e2e-compat/vl_empty_in_test.go | vl-empty-in-matches-nothing",
     "test/e2e-compat/vl_pattern_lines_test.go | vl-phrase-filter-quoted-names",
     "test/e2e-compat/vl_pattern_lines_test.go | vl-sort-ties-by-text",
     "test/e2e-compat/vl_zstd_response_window_test.go | vl-zstd-response-window",
@@ -1996,7 +1998,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 391,
+      "go": 392,
       "playwright": 1
     },
     "page_kinds": {
@@ -2016,7 +2018,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 100,
-    "wired_items": 266
+    "wired_items": 267
   },
   "gates": [
     "A/B shape selection",

@@ -350,9 +350,9 @@ decisions:
       byte match of such a text never matches a stored line: the exact answer
       needs no VictoriaLogs filter at all. Loki's 400 text for `|~ "\xff"`
       quotes the regexp with U+FFFD per byte (stack, Loki 3.7, 2026-11-09).
-    evidence: 'TestCompat_LineFilterInvalidUTF8LikeLoki against Loki on the compose stack (|= 200 no line, != 200 every line, or chain 200 with 2 lines, |~ 400 with Loki''s bytes, metric instant equal); TestPlanShadow native 624 of 22,842 rows × profiles, 0 mismatches; TestVLOracle on the 28,663-row corpus, v1.49.0 and v1.53.0, with the invalid-UTF-8 skip removed (2026-11-09)'
+    evidence: 'TestCompat_LineFilterInvalidUTF8LikeLoki against Loki on the compose stack (|= 200 no line, != 200 every line, or chain 200 with 2 lines, |~ 400 with Loki''s bytes, metric instant equal); TestPlanShadow native 624 of 22,842 rows × profiles, 0 mismatches; TestVLOracle on the 28,663-row corpus, v1.49.0 and v1.53.0, with the invalid-UTF-8 skip removed; TestVLCapability_EmptyInMatchesNothing (the match-no-rows filter keeps no row, log and stats) on VictoriaLogs v1.49.0 and v1.53.0 (2026-11-09)'
     code: [internal/translate/linefilter.go, internal/translator/translator.go, internal/queryplan/lower/lower.go, internal/proxy/http_utils.go]
-    tests: [TestCompat_LineFilterInvalidUTF8LikeLoki, TestTranslateLineFilterInvalidUTF8, TestInvalidUTF8RegexpErrorTextLikeLoki, TestValidUTF8Text, FuzzErrorBodyShapes, TestPlanShadow, TestVLOracle]
+    tests: [TestCompat_LineFilterInvalidUTF8LikeLoki, TestVLCapability_EmptyInMatchesNothing, TestTranslateLineFilterInvalidUTF8, TestInvalidUTF8RegexpErrorTextLikeLoki, TestValidUTF8Text, FuzzErrorBodyShapes, TestPlanShadow, TestVLOracle]
     quality: 'semantics/line-filter-invalid-utf8 fixed: the log query, the metric query and the error text answer like Loki.'
     performance:
       tracked: ['BenchmarkTranslateLogQL_LineFilter / BenchmarkTranslateLogQL_LineFilterInvalidUTF8 (internal/translator), BenchmarkWriteLokiErrorBody (internal/proxy) ns/op, B/op, allocs/op']
