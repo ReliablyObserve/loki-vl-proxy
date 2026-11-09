@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer match `ip("10.0.0.1")` (and are kept by `!= ip("10.0.0.1")`), as in
   Loki. IPv6 `ip()` line filters are unchanged.
 
+## [2.107.0] - 2026-11-09
+
 ### Changed
 
 - The unwrap paths read the unwrap gate of a stats query from its decoded
