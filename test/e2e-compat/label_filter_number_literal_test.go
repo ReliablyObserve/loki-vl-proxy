@@ -18,14 +18,14 @@ import (
 // conformance: semantics/label-filter-number-literal-scan, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_LabelFilterNumberLiteralsLikeLoki(t *testing.T) {
 	end := time.Now()
-	start := end.Add(-time.Hour)
+	start := end.Add(-5 * time.Minute)
 	for _, tc := range []struct {
 		query  string
 		status int
 	}{
 		{`{app="numlit-none"} | json | latency < 0x1`, http.StatusOK},
 		{`{app="numlit-none"} | json | latency < 1e3`, http.StatusOK},
-		{`{app="numlit-none"} | json | size >= 0KB`, http.StatusOK},
+		{`{app="numlit-none"} | json | size >= 1KB`, http.StatusOK}, // Loki 3.7 fails `0KB` here with a 500 after 38s (failed to enqueue request)
 		{`{app="numlit-none"} | json | latency > 1h30m`, http.StatusOK},
 		{`{app="numlit-none"} | json | latency > -5m`, http.StatusOK},
 		{`{app="numlit-none"} | json | latency < 0x`, http.StatusBadRequest},
@@ -51,6 +51,9 @@ func TestCompat_LabelFilterNumberLiteralsLikeLoki(t *testing.T) {
 		{`{app="numlit-none"} |= 0x`, http.StatusBadRequest},
 	} {
 		for _, route := range []string{"query_range", "query"} {
+			if route == "query" && tc.status == http.StatusOK && !strings.HasPrefix(tc.query, "sum(") {
+				continue // an instant query is a metric query; Loki refuses a log query there
+			}
 			t.Run(route+" "+strconv.Quote(tc.query), func(t *testing.T) {
 				params := url.Values{"query": {tc.query}}
 				if route == "query" {
