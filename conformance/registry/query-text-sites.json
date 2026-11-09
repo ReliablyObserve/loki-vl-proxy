@@ -6,7 +6,7 @@
     "parse_calls": 62,
     "string_reads": 49,
     "text_built": 209,
-    "translator_string_ops": 676
+    "translator_string_ops": 674
   },
   "files": {
     "deferred_raw": {
@@ -97,6 +97,7 @@
     "translator_string_ops": {
       "internal/translate/ip_line_v4.go": 9,
       "internal/translate/linefilter.go": 23,
+      "internal/translate/linefilter_pattern.go": 8,
       "internal/translate/selector.go": 17,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
@@ -109,7 +110,7 @@
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
-      "internal/translator/translator.go": 400,
+      "internal/translator/translator.go": 390,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

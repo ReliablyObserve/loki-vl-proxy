@@ -18,7 +18,6 @@ import (
 func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
 		"LogSelect pipeline":       `{app="a"} | json | level="error"`,
-		"LogSelect pattern filter": `{app="a"} |> "<_> error <_>"`,
 		"RangeAgg":                 `rate({app="a"}[5m])`,
 		"VectorAgg":                `sum by (app) (count_over_time({app="a"}[5m]))`,
 		"Rank":                     `topk(3, sum by (app) (rate({app="a"}[5m])))`,

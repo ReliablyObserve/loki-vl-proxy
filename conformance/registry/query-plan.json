@@ -150,9 +150,8 @@
     "delegated_by_construct": {
       "BinOp": 2850,
       "LabelReplace": 1330,
-      "LogSelect (route rule)": 520,
-      "LogSelect pattern filter": 530,
-      "LogSelect pipeline": 1150,
+      "LogSelect (route rule)": 1040,
+      "LogSelect pipeline": 1160,
       "RangeAgg": 5870,
       "Rank": 1840,
       "Scalar": 20,
@@ -209,13 +208,12 @@
   "shadow": {
     "rows": 22842,
     "profiles": 12,
-    "native": 624,
+    "native": 1248,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
       "LabelReplace": 1233,
-      "LogSelect pattern filter": 636,
-      "LogSelect pipeline": 1404,
+      "LogSelect pipeline": 1416,
       "Opaque": 72,
       "RangeAgg": 5328,
       "Rank": 1665,
