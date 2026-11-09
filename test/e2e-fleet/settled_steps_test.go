@@ -108,7 +108,7 @@ func TestFleet_QueryRangeSettledStepsReachPeers(t *testing.T) {
 		t.Fatalf("replica b evaluated the moved window whole (partial %v -> %v): the settled steps did not reach it", before, after)
 	}
 	fresh := get(proxyAddrs[2], from.Add(30*time.Second), to.Add(30*time.Second), "99")
-	if !reflect.DeepEqual(moved["data"], fresh["data"]) {
+	if !reflect.DeepEqual(answerData(moved), answerData(fresh)) {
 		t.Fatalf("the answer from peer steps differs from VictoriaLogs'\n peer: %v\n VictoriaLogs: %v", moved["data"], fresh["data"])
 	}
 }

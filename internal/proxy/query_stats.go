@@ -209,13 +209,17 @@ func (w *queryStatsWriter) WriteHeader(code int) {
 }
 
 // decide fixes, before the headers go out, whether the answer is filled: a
-// JSON success answer the handler did not encode.
+// JSON success answer (application/json, the type every query answer is
+// written with) the handler did not encode. The type is set again as the
+// constant it is, so the answer is never read as anything but JSON.
 func (w *queryStatsWriter) decide(code int) {
 	w.wroteHeader = true
 	h := w.Header()
 	w.patch = code == http.StatusOK && h.Get("Content-Encoding") == "" &&
-		strings.Contains(h.Get("Content-Type"), "json")
+		h.Get("Content-Type") == "application/json"
 	if w.patch {
+		h.Set("Content-Type", "application/json")
+		h.Set("X-Content-Type-Options", "nosniff")
 		h.Del("Content-Length")
 	}
 }

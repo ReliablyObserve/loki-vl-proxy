@@ -129,7 +129,7 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 		}
 	}
 	want, _ := get(proxyAddrs[2], reference(), from, to)
-	if !reflect.DeepEqual(first["data"], want["data"]) {
+	if !reflect.DeepEqual(answerData(first), answerData(want)) {
 		t.Fatalf("replica a's answer differs from VictoriaLogs'")
 	}
 
@@ -149,7 +149,7 @@ func TestFleet_StatsExtentKeepsAnswersLargerThanOneEntry(t *testing.T) {
 			t.Fatalf("replica %d made %v stats_query_range calls, want at most %v", idx, made, maxCalls)
 		}
 		ref, _ := get(proxyAddrs[2], reference(), from.Add(-back), to.Add(-back))
-		if !reflect.DeepEqual(got["data"], ref["data"]) {
+		if !reflect.DeepEqual(answerData(got), answerData(ref)) {
 			t.Fatalf("replica %d's answer from stored splits differs from VictoriaLogs'", idx)
 		}
 	}
