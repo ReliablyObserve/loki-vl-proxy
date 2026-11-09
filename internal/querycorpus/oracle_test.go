@@ -210,15 +210,15 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
 		return "", "", false
 	}
-	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
-	if translatorMisreadsQuotedText(r.Query) {
-		return "", "", false
-	}
 	return typedQueryPair(r.Query, v)
 }
 
 // typedQueryPair is typedSelectorPair for the LogQL query q.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
+	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
+	if translatorMisreadsQuotedText(q) {
+		return "", "", false
+	}
 	lq, err := logql.ParseLogQuery(q)
 	if err != nil {
 		// A range aggregation over a log query: the selector of its log query.
