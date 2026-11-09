@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.108.0] - 2026-11-09
+
 ### Fixed
 
 - An IPv4 `ip()` line filter (`|= ip("10.0.0.1")`, CIDR and range patterns, and
