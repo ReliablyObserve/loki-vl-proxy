@@ -699,6 +699,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
+    "semantics/translator-reads-quoted-text-as-syntax | gap:open",
+    "semantics/translator-reads-quoted-text-as-syntax | query",
     "semantics/tumbling-window-single-grid | compare:exact",
     "semantics/tumbling-window-single-grid | query",
     "semantics/two-parsers-keep-one | compare:observed",
@@ -2059,7 +2062,7 @@
       "any": 28,
       "api": 50,
       "drilldown": 50,
-      "explore": 156,
+      "explore": 157,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2083,7 +2086,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
+    "unwired_items": 102,
     "wired_items": 275
   },
   "gates": [

@@ -1741,7 +1741,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 450,
+  "registry_items": 451,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3851,6 +3851,7 @@
     "semantics/stream-level-shadowed-by-ingest-json-key",
     "semantics/tail-history-start-limit",
     "semantics/topk-per-step-membership-differs",
+    "semantics/translator-reads-quoted-text-as-syntax",
     "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",
     "semantics/unwrap-bare-range-exposes-parsed-labels",
