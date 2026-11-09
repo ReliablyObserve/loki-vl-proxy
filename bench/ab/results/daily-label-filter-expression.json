@@ -1,6 +1,6 @@
 {
  "label": "daily-label-filter-expression-aligned",
- "date": "2026-11-08",
+ "date": "2026-11-09",
  "set": "label-filter-expression",
  "description": "Label filter expressions as Loki accepts them: a comma joins filters, parentheses group, and/or bind with Loki's precedence (semantics/label-filter-expression-syntax). Before the change every shape here answers 400 on main; the proof is that the branch answers like Loki and within the time bound. LF4 is the same filters as one stage without a group, a control for the grouped forms. Run with the control set.",
  "baseline": "release",
@@ -31,19 +31,19 @@
    "shape": "LF1 count by level, group then comma",
    "range": "1h",
    "p50": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.012
-   },
-   "p95": {
     "release": 0.004,
     "main": 0.003,
-    "loki": 0.013
+    "loki": 0.015
+   },
+   "p95": {
+    "release": 0.008,
+    "main": 0.004,
+    "loki": 0.018
    },
    "cold": {
-    "release": 0.038,
-    "main": 0.036,
-    "loki": 0.143
+    "release": 0.053,
+    "main": 0.045,
+    "loki": 0.144
    },
    "status": {
     "release": "200",
@@ -51,9 +51,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 0,
-    "main": 0,
-    "loki": 128.22
+    "release": 203.21,
+    "main": 203.21,
+    "loki": 203.21
    },
    "cache": {
     "loki": {
@@ -93,7 +93,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 136514
+       "bytesReceived": 142903
       },
       "statsResult": {
        "entriesFound": 6,
@@ -130,25 +130,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 1.33
   },
   {
    "shape": "LF1 count by level, group then comma",
    "range": "3h",
    "p50": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.012
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.015
    },
    "p95": {
     "main": 0.005,
     "release": 0.004,
-    "loki": 0.027
+    "loki": 0.016
    },
    "cold": {
-    "main": 0.061,
-    "release": 0.06,
-    "loki": 0.171
+    "main": 0.086,
+    "release": 0.085,
+    "loki": 0.241
    },
    "status": {
     "main": "200",
@@ -156,9 +156,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 128.22,
-    "release": 128.22,
-    "loki": 128.22
+    "main": 203.21,
+    "release": 203.21,
+    "loki": 203.21
    },
    "cache": {
     "loki": {
@@ -166,7 +166,7 @@
       "result": {
        "entriesFound": 2,
        "entriesRequested": 4,
-       "bytesReceived": 23954
+       "bytesReceived": 25016
       },
       "statsResult": {
        "entriesFound": 3,
@@ -198,7 +198,7 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 404506
+       "bytesReceived": 417341
       },
       "statsResult": {
        "entriesFound": 6,
@@ -244,19 +244,19 @@
    "shape": "LF1 count by level, group then comma",
    "range": "6h",
    "p50": {
-    "release": 0.004,
-    "main": 0.003,
-    "loki": 0.034
+    "release": 0.006,
+    "main": 0.006,
+    "loki": 0.028
    },
    "p95": {
-    "release": 0.004,
-    "main": 0.004,
-    "loki": 0.057
+    "release": 0.006,
+    "main": 0.006,
+    "loki": 0.03
    },
    "cold": {
-    "release": 0.184,
-    "main": 0.186,
-    "loki": 0.555
+    "release": 0.258,
+    "main": 0.256,
+    "loki": 0.693
    },
    "status": {
     "release": "200",
@@ -264,9 +264,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 128.22,
-    "main": 128.22,
-    "loki": 128.22
+    "release": 391.96,
+    "main": 391.96,
+    "loki": 391.96
    },
    "cache": {
     "loki": {
@@ -306,7 +306,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 419398
+       "bytesReceived": 423285
       },
       "statsResult": {
        "entriesFound": 6,
@@ -343,25 +343,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.33
+   "speedup": 1.0
   },
   {
    "shape": "LF1 count by level, group then comma",
    "range": "24h",
    "p50": {
-    "main": 0.004,
-    "release": 0.005,
-    "loki": 0.032
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.028
    },
    "p95": {
-    "main": 0.005,
-    "release": 0.005,
-    "loki": 0.034
+    "main": 0.008,
+    "release": 0.008,
+    "loki": 0.029
    },
    "cold": {
-    "main": 0.713,
-    "release": 0.713,
-    "loki": 2.505
+    "main": 0.998,
+    "release": 1.011,
+    "loki": 2.922
    },
    "status": {
     "main": "200",
@@ -369,9 +369,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 232.09,
-    "release": 232.09,
-    "loki": 232.09
+    "main": 391.96,
+    "release": 391.96,
+    "loki": 391.96
    },
    "cache": {
     "loki": {
@@ -411,7 +411,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 346396
+       "bytesReceived": 347079
       },
       "statsResult": {
        "entriesFound": 6,
@@ -448,7 +448,7 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.25
+   "speedup": 1.0
   },
   {
    "shape": "LF2 ungrouped count, comma-joined",
@@ -456,17 +456,17 @@
    "p50": {
     "release": 0.003,
     "main": 0.003,
-    "loki": 0.011
+    "loki": 0.014
    },
    "p95": {
     "release": 0.004,
     "main": 0.004,
-    "loki": 0.013
+    "loki": 0.015
    },
    "cold": {
-    "release": 0.031,
-    "main": 0.03,
-    "loki": 0.11
+    "release": 0.041,
+    "main": 0.045,
+    "loki": 0.143
    },
    "status": {
     "release": "200",
@@ -474,9 +474,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 131.43,
-    "main": 131.43,
-    "loki": 131.43
+    "release": 41.22,
+    "main": 41.22,
+    "loki": 41.22
    },
    "cache": {
     "loki": {
@@ -516,7 +516,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 86414
+       "bytesReceived": 86413
       },
       "statsResult": {
        "entriesFound": 6,
@@ -559,19 +559,19 @@
    "shape": "LF2 ungrouped count, comma-joined",
    "range": "3h",
    "p50": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.011
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.013
    },
    "p95": {
-    "main": 0.003,
-    "release": 0.003,
-    "loki": 0.012
+    "main": 0.004,
+    "release": 0.004,
+    "loki": 0.015
    },
    "cold": {
-    "main": 0.056,
-    "release": 0.053,
-    "loki": 0.201
+    "main": 0.076,
+    "release": 0.077,
+    "loki": 0.29
    },
    "status": {
     "main": "200",
@@ -579,9 +579,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 131.43,
-    "release": 131.43,
-    "loki": 131.43
+    "main": 74.08,
+    "release": 74.08,
+    "loki": 74.08
    },
    "cache": {
     "loki": {
@@ -621,7 +621,7 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 247733
+       "bytesReceived": 247737
       },
       "statsResult": {
        "entriesFound": 6,
@@ -667,19 +667,19 @@
    "shape": "LF2 ungrouped count, comma-joined",
    "range": "6h",
    "p50": {
-    "release": 0.003,
-    "main": 0.003,
-    "loki": 0.032
+    "release": 0.006,
+    "main": 0.006,
+    "loki": 0.028
    },
    "p95": {
-    "release": 0.004,
-    "main": 0.004,
-    "loki": 0.052
+    "release": 0.006,
+    "main": 0.006,
+    "loki": 0.028
    },
    "cold": {
-    "release": 0.165,
-    "main": 0.169,
-    "loki": 0.547
+    "release": 0.238,
+    "main": 0.237,
+    "loki": 0.654
    },
    "status": {
     "release": "200",
@@ -687,9 +687,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 131.43,
-    "main": 131.43,
-    "loki": 131.43
+    "release": 74.08,
+    "main": 74.08,
+    "loki": 74.08
    },
    "cache": {
     "loki": {
@@ -729,7 +729,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 254199
+       "bytesReceived": 254194
       },
       "statsResult": {
        "entriesFound": 6,
@@ -772,19 +772,19 @@
    "shape": "LF2 ungrouped count, comma-joined",
    "range": "24h",
    "p50": {
-    "main": 0.004,
-    "release": 0.004,
-    "loki": 0.032
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.027
    },
    "p95": {
-    "main": 0.006,
-    "release": 0.004,
-    "loki": 0.058
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.028
    },
    "cold": {
-    "main": 0.669,
-    "release": 0.656,
-    "loki": 2.367
+    "main": 0.939,
+    "release": 0.917,
+    "loki": 2.808
    },
    "status": {
     "main": "200",
@@ -792,9 +792,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 197.57,
-    "release": 197.57,
-    "loki": 197.57
+    "main": 365.95,
+    "release": 365.95,
+    "loki": 365.95
    },
    "cache": {
     "loki": {
@@ -834,7 +834,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 223732
+       "bytesReceived": 223731
       },
       "statsResult": {
        "entriesFound": 6,
@@ -877,19 +877,19 @@
    "shape": "LF3 explore volume, group, drop",
    "range": "1h",
    "p50": {
-    "release": 0.004,
-    "main": 0.004,
-    "loki": 0.012
-   },
-   "p95": {
     "release": 0.005,
-    "main": 0.006,
+    "main": 0.005,
     "loki": 0.013
    },
+   "p95": {
+    "release": 0.006,
+    "main": 0.006,
+    "loki": 0.014
+   },
    "cold": {
-    "release": 0.05,
-    "main": 0.05,
-    "loki": 0.113
+    "release": 0.072,
+    "main": 0.073,
+    "loki": 0.163
    },
    "status": {
     "release": "200",
@@ -897,9 +897,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 4.74,
-    "main": 4.74,
-    "loki": 4.74
+    "release": 142.81,
+    "main": 142.81,
+    "loki": 142.81
    },
    "cache": {
     "loki": {
@@ -939,7 +939,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 137293
+       "bytesReceived": 143683
       },
       "statsResult": {
        "entriesFound": 6,
@@ -982,19 +982,19 @@
    "shape": "LF3 explore volume, group, drop",
    "range": "3h",
    "p50": {
-    "main": 0.005,
-    "release": 0.004,
-    "loki": 0.012
+    "main": 0.006,
+    "release": 0.006,
+    "loki": 0.014
    },
    "p95": {
-    "main": 0.006,
-    "release": 0.005,
-    "loki": 0.012
+    "main": 0.007,
+    "release": 0.007,
+    "loki": 0.016
    },
    "cold": {
-    "main": 0.093,
-    "release": 0.091,
-    "loki": 0.183
+    "main": 0.128,
+    "release": 0.135,
+    "loki": 0.284
    },
    "status": {
     "main": "200",
@@ -1002,9 +1002,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 209.57,
-    "release": 209.57,
-    "loki": 209.57
+    "main": 142.81,
+    "release": 142.81,
+    "loki": 142.81
    },
    "cache": {
     "loki": {
@@ -1012,7 +1012,7 @@
       "result": {
        "entriesFound": 2,
        "entriesRequested": 4,
-       "bytesReceived": 24084
+       "bytesReceived": 25146
       },
       "statsResult": {
        "entriesFound": 3,
@@ -1044,7 +1044,7 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 406061
+       "bytesReceived": 418895
       },
       "statsResult": {
        "entriesFound": 6,
@@ -1084,25 +1084,25 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.8
+   "speedup": 1.0
   },
   {
    "shape": "LF3 explore volume, group, drop",
    "range": "6h",
    "p50": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.032
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.028
    },
    "p95": {
-    "release": 0.005,
-    "main": 0.005,
-    "loki": 0.056
+    "release": 0.008,
+    "main": 0.008,
+    "loki": 0.042
    },
    "cold": {
-    "release": 0.28,
-    "main": 0.277,
-    "loki": 0.559
+    "release": 0.414,
+    "main": 0.394,
+    "loki": 0.692
    },
    "status": {
     "release": "200",
@@ -1110,9 +1110,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 209.57,
-    "main": 209.57,
-    "loki": 209.57
+    "release": 142.81,
+    "main": 142.81,
+    "loki": 142.81
    },
    "cache": {
     "loki": {
@@ -1152,7 +1152,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 422128
+       "bytesReceived": 425974
       },
       "statsResult": {
        "entriesFound": 6,
@@ -1195,19 +1195,19 @@
    "shape": "LF3 explore volume, group, drop",
    "range": "24h",
    "p50": {
-    "main": 0.006,
-    "release": 0.005,
-    "loki": 0.032
+    "main": 0.009,
+    "release": 0.009,
+    "loki": 0.027
    },
    "p95": {
-    "main": 0.006,
-    "release": 0.005,
-    "loki": 0.033
+    "main": 0.01,
+    "release": 0.009,
+    "loki": 0.029
    },
    "cold": {
-    "main": 1.101,
-    "release": 1.096,
-    "loki": 2.606
+    "main": 1.597,
+    "release": 1.561,
+    "loki": 2.977
    },
    "status": {
     "main": "200",
@@ -1215,9 +1215,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 393.95,
-    "release": 393.95,
-    "loki": 393.95
+    "main": 391.84,
+    "release": 391.84,
+    "loki": 391.84
    },
    "cache": {
     "loki": {
@@ -1257,7 +1257,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 356196
+       "bytesReceived": 356850
       },
       "statsResult": {
        "entriesFound": 6,
@@ -1294,24 +1294,24 @@
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.83
+   "speedup": 1.0
   },
   {
    "shape": "LF4 explore volume, two stages (control)",
    "range": "1h",
    "p50": {
-    "release": 0.023,
-    "main": 0.023,
+    "release": 0.029,
+    "main": 0.029,
     "loki": 0.002
    },
    "p95": {
-    "release": 0.026,
-    "main": 0.025,
+    "release": 0.032,
+    "main": 0.032,
     "loki": 0.002
    },
    "cold": {
-    "release": 0.192,
-    "main": 0.194,
+    "release": 0.269,
+    "main": 0.258,
     "loki": 0.002
    },
    "status": {
@@ -1320,9 +1320,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 179.85,
-    "main": 179.85,
-    "loki": 179.85
+    "release": 334.25,
+    "main": 334.25,
+    "loki": 334.25
    },
    "cache": {
     "loki": {
@@ -1330,7 +1330,7 @@
       "result": {
        "entriesFound": 2,
        "entriesRequested": 2,
-       "bytesReceived": 25252
+       "bytesReceived": 27754
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1362,7 +1362,7 @@
       "result": {
        "entriesFound": 12,
        "entriesRequested": 12,
-       "bytesReceived": 151512
+       "bytesReceived": 166524
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1408,19 +1408,19 @@
    "shape": "LF4 explore volume, two stages (control)",
    "range": "3h",
    "p50": {
-    "main": 0.023,
-    "release": 0.024,
+    "main": 0.029,
+    "release": 0.031,
     "loki": 0.002
    },
    "p95": {
-    "main": 0.027,
-    "release": 0.029,
-    "loki": 0.002
+    "main": 0.035,
+    "release": 0.034,
+    "loki": 0.003
    },
    "cold": {
-    "main": 0.341,
-    "release": 0.343,
-    "loki": 0.002
+    "main": 0.492,
+    "release": 0.486,
+    "loki": 0.003
    },
    "status": {
     "main": "200",
@@ -1428,9 +1428,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 367.81,
-    "release": 367.81,
-    "loki": 367.81
+    "main": 394.09,
+    "release": 394.09,
+    "loki": 394.09
    },
    "cache": {
     "loki": {
@@ -1438,7 +1438,7 @@
       "result": {
        "entriesFound": 4,
        "entriesRequested": 4,
-       "bytesReceived": 55957
+       "bytesReceived": 58224
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1470,7 +1470,7 @@
       "result": {
        "entriesFound": 24,
        "entriesRequested": 24,
-       "bytesReceived": 335742
+       "bytesReceived": 349344
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1510,25 +1510,25 @@
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.04
+   "speedup": 1.07
   },
   {
    "shape": "LF4 explore volume, two stages (control)",
    "range": "6h",
    "p50": {
-    "release": 0.023,
-    "main": 0.024,
-    "loki": 0.002
+    "release": 0.031,
+    "main": 0.031,
+    "loki": 0.003
    },
    "p95": {
-    "release": 0.025,
-    "main": 0.027,
+    "release": 0.035,
+    "main": 0.036,
     "loki": 0.003
    },
    "cold": {
-    "release": 0.544,
-    "main": 0.546,
-    "loki": 0.002
+    "release": 0.757,
+    "main": 0.751,
+    "loki": 0.003
    },
    "status": {
     "release": "200",
@@ -1536,9 +1536,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 367.81,
-    "main": 367.81,
-    "loki": 394.85
+    "release": 394.09,
+    "main": 397.96,
+    "loki": 397.96
    },
    "cache": {
     "loki": {
@@ -1546,7 +1546,7 @@
       "result": {
        "entriesFound": 7,
        "entriesRequested": 7,
-       "bytesReceived": 57073
+       "bytesReceived": 58473
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1578,7 +1578,7 @@
       "result": {
        "entriesFound": 42,
        "entriesRequested": 42,
-       "bytesReceived": 342438
+       "bytesReceived": 350838
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1618,24 +1618,24 @@
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.96
+   "speedup": 1.0
   },
   {
    "shape": "LF4 explore volume, two stages (control)",
    "range": "24h",
    "p50": {
-    "main": 0.022,
-    "release": 0.029,
+    "main": 0.036,
+    "release": 0.035,
     "loki": 0.002
    },
    "p95": {
-    "main": 0.026,
-    "release": 0.032,
+    "main": 0.046,
+    "release": 0.037,
     "loki": 0.002
    },
    "cold": {
-    "main": 3.147,
-    "release": 3.157,
+    "main": 4.424,
+    "release": 4.44,
     "loki": 0.003
    },
    "status": {
@@ -1644,9 +1644,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 394.85,
-    "release": 392.7,
-    "loki": 389.62
+    "main": 397.96,
+    "release": 397.75,
+    "loki": 397.75
    },
    "cache": {
     "loki": {
@@ -1654,7 +1654,7 @@
       "result": {
        "entriesFound": 25,
        "entriesRequested": 25,
-       "bytesReceived": 49549
+       "bytesReceived": 50136
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1686,7 +1686,7 @@
       "result": {
        "entriesFound": 150,
        "entriesRequested": 150,
-       "bytesReceived": 297294
+       "bytesReceived": 300816
       },
       "statsResult": {
        "entriesFound": 0,
@@ -1726,13 +1726,13 @@
    "baseline_parity_vs_reference": "n/a",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.32
+   "speedup": 0.97
   }
  ],
- "baseline_ref": "v2.94.0",
- "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
- "measured_at": "2026-11-08T03:22:29Z",
- "run": "42442427345.1",
+ "baseline_ref": "v2.105.0",
+ "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+ "measured_at": "2026-11-09T03:27:00Z",
+ "run": "42556435495.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
