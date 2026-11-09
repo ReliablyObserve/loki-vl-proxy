@@ -52,6 +52,30 @@ type Facts struct {
 	HasPipeline bool `json:"has_pipeline"`
 	// Matchers are that log query's stream selector matchers, in Loki's order.
 	Matchers []Matcher `json:"matchers"`
+	// LineFilters are that log query's line filters, left to right (Loki merges consecutive ones into one stage).
+	LineFilters []LineFilterFact `json:"line_filters"`
+}
+
+// LineFilterFact is one line filter as Loki's tree holds it: the match type (|=, !=, |~, !~, |>, !>), the value,
+// the operation ("ip" for ip(...)), and its `or` alternatives.
+type LineFilterFact struct {
+	Ty    string           `json:"ty"`
+	Match string           `json:"match"`
+	Op    string           `json:"op,omitempty"`
+	Or    []LineFilterFact `json:"or,omitempty"`
+}
+
+// lineFilterFacts flattens a line filter expression: its Left chain first, then itself with its Or chain.
+func lineFilterFacts(e *syntax.LineFilterExpr, out *[]LineFilterFact) {
+	if e == nil {
+		return
+	}
+	lineFilterFacts(e.Left, out)
+	f := LineFilterFact{Ty: e.Ty.String(), Match: e.Match, Op: e.Op}
+	for or := e.Or; or != nil; or = or.Or {
+		f.Or = append(f.Or, LineFilterFact{Ty: or.Ty.String(), Match: or.Match, Op: or.Op})
+	}
+	*out = append(*out, f)
 }
 
 // Matcher is a stream selector matcher as Loki's tree holds it: the label, the operator and the unquoted value.
@@ -131,9 +155,13 @@ func factsOf(x FactsInput) (r Facts) {
 		for _, m := range sel.Matchers() {
 			r.Matchers = append(r.Matchers, Matcher{Name: m.Name, Op: m.Type.String(), Value: m.Value})
 		}
+		r.LineFilters = []LineFilterFact{}
 		if p, ok := sel.(*syntax.PipelineExpr); ok {
 			for _, st := range p.MultiStages {
 				r.Pipeline = append(r.Pipeline, stageOf(st))
+				if lf, ok := st.(*syntax.LineFilterExpr); ok {
+					lineFilterFacts(lf, &r.LineFilters)
+				}
 			}
 		}
 	}
