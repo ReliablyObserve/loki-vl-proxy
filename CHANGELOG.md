@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text at every step. The requests sent to VictoriaLogs, the cache keys and the
   answers do not change.
 
+## [2.105.1] - 2026-11-09
+
 ### Fixed
 
 - A `#` comment right after a label filter (`{app="a"} | status="500" # note`,
