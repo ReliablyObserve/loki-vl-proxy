@@ -45,6 +45,7 @@ Fleet arithmetic: per-replica limits multiply by the replica count, and every by
 | max zero fill buckets | `-max-zero-fill-buckets` | `extraArgs.max-zero-fill-buckets` | `32768` | buckets | buckets the proxy zero-fills in a metric response | none: a wider request is served without zero-fill | none | none | no | the 11,000-point resolution limit bounds a Loki response anyway |
 | stats query range concurrency | `-stats-query-range-concurrency` | `extraArgs.stats-query-range-concurrency` | `0` | concurrent calls | concurrent stats_query_range calls the proxy makes to VictoriaLogs | none: calls wait for a slot | loki_vl_proxy_upstream_requests_total&#123;route="/select/logsql/stats_query_range"&#125; | none | no | proxy-specific |
 | max concurrent | `-max-concurrent` | `extraArgs.max-concurrent` | `100` | requests | requests admitted per replica, and concurrent backend operations | 503 `too many concurrent queries` with `Retry-After: 5` | loki_vl_proxy_requests_total&#123;status="503"&#125; | LokiVLProxyHighErrorRate | no | proxy-specific |
+| translate shadow sample | `-translate-shadow-sample` | `extraArgs.translate-shadow-sample` | `0` | ratio | the share of the queries the string translator translates (translation cache misses) that the typed query-plan lowering also translates, in the background, and compares with the translator's output: at most 2 comparisons run at once per replica (a sampled query that finds both busy is skipped), each is dropped after 100 ms, a panic is recovered, and the share never delays or changes the answer, the caches or a VictoriaLogs request | none; a sampled query that finds both comparison slots busy is counted as `skipped` and a comparison over its budget as `budget`; a difference from the translator is counted as `mismatch` and logged (the queries redacted) at most once per second | loki_vl_proxy_lowering_shadow_total&#123;result="match\|mismatch\|new_error\|old_error\|not_lowered\|skipped\|panic\|budget",construct&#125; | none | no | proxy-specific |
 | max lines | `-max-lines` | `extraArgs.max-lines` | `1000` | rows | the default number of log lines per query when the client sends no limit | none | none | none | yes (`-tenant-limits`) | the Loki data source's Max lines (1000) |
 
 ## Sizing
@@ -196,6 +197,10 @@ Drilldown Fields fires about 30 of these at once; 4 keeps VictoriaLogs CPU stead
 ### `-max-concurrent`
 
 Size it with replica CPU and VictoriaLogs capacity; 0 disables admission entirely, which lets one client drive unbounded fanout.
+
+### `-translate-shadow-sample`
+
+0 (off) is the default: the lowering is a development aid that tells when a construct can move from the string translator to the typed plan, and it answers nothing. A comparison costs the parse, plan and lowering of one query (about 4 microseconds and 3 KB of allocations, measured on a log query with a stream selector and two line filters) and only runs on a cache miss, so 1 is affordable for an investigation or a canary replica; lower it (0.01-0.1) on a replica that translates thousands of distinct queries per second. Watch not_lowered by construct for what the lowering does not cover yet and mismatch for what it gets wrong.
 
 ### `-max-lines`
 

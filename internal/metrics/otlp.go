@@ -311,6 +311,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics, p.backendDurationMetrics(now)...)
 	metrics = append(metrics, p.backendReadMetrics(now)...)
 	metrics = append(metrics, p.internalOperationMetrics(now)...)
+	metrics = append(metrics, p.loweringShadowMetrics(now)...)
 	metrics = append(metrics, p.clientMetrics(now)...)
 	p.metrics.mu.RUnlock()
 
@@ -748,6 +749,22 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 		return nil
 	}
 	return []map[string]interface{}{p.histogramMetric("loki_vl_proxy_backend_duration_seconds", "VL backend response time.", "s", points...)}
+}
+
+func (p *OTLPPusher) loweringShadowMetrics(now int64) []map[string]interface{} {
+	keys := sortedKeys(mapsFromCounters(p.metrics.loweringShadowTotal))
+	points := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		points = append(points, p.counterDP("loki_vl_proxy_lowering_shadow_total", p.metrics.loweringShadowTotal[key].Load(), now, attr("result", parts[0]), attr("construct", parts[1])))
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	return []map[string]interface{}{p.sumMetric("loki_vl_proxy_lowering_shadow_total", "Query-plan lowering shadow comparisons by result and plan construct.", "", points...)}
 }
 
 func (p *OTLPPusher) internalOperationMetrics(now int64) []map[string]interface{} {

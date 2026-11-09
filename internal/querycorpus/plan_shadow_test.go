@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sort"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 
 // The lowering shadow: every plan-corpus row under each of the 12 profiles, the operators the native lowering
 // (lower.Plan) writes against the operators the string translator's output decodes to (translator.DecodePhysical),
-// compared by structure (canonOp: the parsed LogsQL with its default spellings folded, and the operator tree). A
+// compared by structure (physical.Equal: the parsed LogsQL with its default spellings folded, and the operator tree). A
 // construct with no native lowering yet is delegated to the string translator and counted by construct. The
 // shadow section of query-plan.json holds the counts: mismatches stay 0 and native only rises.
 
@@ -124,8 +123,7 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
-			var u1, u2 bool
-			if !reflect.DeepEqual(canonOp(want, &u1), canonOp(got, &u2)) {
+			if !physical.Equal(want, got) {
 				fail(fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
 				continue
 			}

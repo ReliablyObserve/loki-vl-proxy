@@ -381,6 +381,16 @@ var Limits = []Limit{
 		Sizing:     "Size it with replica CPU and VictoriaLogs capacity; 0 disables admission entirely, which lets one client drive unbounded fanout.",
 	},
 	{
+		Flag:       "translate-shadow-sample",
+		Unit:       "ratio",
+		Bounds:     "the share of the queries the string translator translates (translation cache misses) that the typed query-plan lowering also translates, in the background, and compares with the translator's output: at most 2 comparisons run at once per replica (a sampled query that finds both busy is skipped), each is dropped after 100 ms, a panic is recovered, and the share never delays or changes the answer, the caches or a VictoriaLogs request",
+		Error:      "none; a sampled query that finds both comparison slots busy is counted as `skipped` and a comparison over its budget as `budget`; a difference from the translator is counted as `mismatch` and logged (the queries redacted) at most once per second",
+		Metric:     "loki_vl_proxy_lowering_shadow_total{result=\"match|mismatch|new_error|old_error|not_lowered|skipped|panic|budget\",construct}",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "0 (off) is the default: the lowering is a development aid that tells when a construct can move from the string translator to the typed plan, and it answers nothing. A comparison costs the parse, plan and lowering of one query (about 4 microseconds and 3 KB of allocations, measured on a log query with a stream selector and two line filters) and only runs on a cache miss, so 1 is affordable for an investigation or a canary replica; lower it (0.01-0.1) on a replica that translates thousands of distinct queries per second. Watch not_lowered by construct for what the lowering does not cover yet and mismatch for what it gets wrong.",
+	},
+	{
 		Flag:       "max-lines",
 		Unit:       "rows",
 		Bounds:     "the default number of log lines per query when the client sends no limit",
