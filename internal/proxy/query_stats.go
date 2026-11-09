@@ -348,12 +348,14 @@ func statsSplice(head, tail []byte) (statsSplit, bool) {
 	body := bytes.TrimRight(tail, " \t\r\n")
 	s := statsSplit{ws: tail[len(body):]}
 	switch {
-	case bytes.HasPrefix(head, statsHeadStatusFirst) && bytes.HasSuffix(body, statsTailEmpty):
+	case bytes.HasPrefix(head, statsHeadStatusFirst) && bytes.HasSuffix(body, statsTailEmpty) &&
+		keyStartsAt(body, len(body)-len(statsTailEmpty)):
 		s.pre, s.post = body[:len(body)-4], statsCloseData
 	case bytes.HasPrefix(head, statsHeadStatusFirst) && bytes.HasSuffix(body, statsTailResultEnd) &&
 		!bytes.Contains(body, statsKey):
 		s.pre, s.insert, s.post = body[:len(body)-2], statsInsertKey, statsCloseData
-	case bytes.HasPrefix(head, statsHeadDataFirst) && bytes.HasSuffix(body, statsTailSorted):
+	case bytes.HasPrefix(head, statsHeadDataFirst) && bytes.HasSuffix(body, statsTailSorted) &&
+		keyStartsAt(body, len(body)-len(statsTailSorted)):
 		cut := len(body) - len(statsTailSorted) + len(`"stats":`)
 		s.pre, s.post = body[:cut], body[cut+2:]
 	case bytes.HasPrefix(head, statsHeadDataFirst) && bytes.HasSuffix(body, statsTailSortedNone) &&
@@ -364,6 +366,14 @@ func statsSplice(head, tail []byte) (statsSplit, bool) {
 		return statsSplit{}, false
 	}
 	return s, true
+}
+
+// keyStartsAt reports whether the quote at body[i] opens an object key: in
+// compact JSON a key's quote follows `{` or `,`, while the same bytes inside a
+// string (a key or value holding `\"stats":{}`) follow a backslash or other
+// text.
+func keyStartsAt(body []byte, i int) bool {
+	return i > 0 && (body[i-1] == ',' || body[i-1] == '{')
 }
 
 // sortedEnvelopeEndsWithResultType: data's last key is resultType with a

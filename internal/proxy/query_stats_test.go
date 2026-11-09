@@ -747,6 +747,7 @@ func FuzzPatchStatsTail(f *testing.F) {
 		`{"result":[],"resultType":"matrix"}`,
 		`{"a":{"stats":{}}}`,
 		`{"a":{"b":[]}}`,
+		`{"0000000000":"0000000","\\"stats":{}}`, // a key holding `"stats":{}` after an escaped quote
 	} {
 		f.Add([]byte(seed), uint8(7))
 	}
