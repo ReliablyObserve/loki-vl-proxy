@@ -1,6 +1,11 @@
 package translator
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
+)
 
 // conformance: semantics/line-filter-or-alternatives
 func TestTranslateLineFilterOrAlternatives(t *testing.T) {
@@ -18,8 +23,8 @@ func TestTranslateLineFilterOrAlternatives(t *testing.T) {
 		// ip(): plain text under |=, |~ and |> (Loki's or chain ignores the Op), an ip match under !=.
 		{`{app="x"} |= "a" or ip("1.2.3.4")`, `app:="x" ~"a|1\\.2\\.3\\.4"`},
 		{`{app="x"} |= ip("1.2.3.4") or "a"`, `app:="x" ~"1\\.2\\.3\\.4|a"`},
-		{`{app="x"} != "a" or ip("1.2.3.4")`, `app:="x" NOT ~"(?:a)|(?:1\\.2\\.3\\.4)"`},
-		{`{app="x"} != ip("1.2.3.4") or "a"`, `app:="x" NOT ~"(?:1\\.2\\.3\\.4)|(?:a)"`},
+		{`{app="x"} != "a" or ip("1.2.3.4")`, negatedIPChain("(?:a)|", "")},
+		{`{app="x"} != ip("1.2.3.4") or "a"`, negatedIPChain("", "|(?:a)")},
 		// Stages around the chain, and chains in a metric query.
 		{`{app="x"} |= "k" |= "a" or "b" != "z" or "y" |~ "q"`, `app:="x" ~"k" ~"a|b" NOT ~"z|y" ~"q"`},
 		{`{app="x"} | json |= "a" or "b" | x="1"`, `app:="x" | unpack_json | filter ~"a|b" | filter x:="1"`},
@@ -79,12 +84,12 @@ func TestTranslateLineFilterOrAfterIPAlternative(t *testing.T) {
 		{`{app="x"} |= "a" or ip("1.2.3.4") or ip("5.6.7.8")`, `app:="x" ~"a|5\\.6\\.7\\.8"`},
 		{`{app="x"} |= "a" or "b" or ip("1.2.3.4")`, `app:="x" ~"a|b|1\\.2\\.3\\.4"`},
 		{`{app="x"} |= ip("1.2.3.4") or "b" or "c"`, `app:="x" ~"1\\.2\\.3\\.4|b|c"`},
-		{`{app="x"} != "a" or ip("1.2.3.4") or "b"`, `app:="x" NOT ~"(?:a)|(?:1\\.2\\.3\\.4)|(?:b)"`},
+		{`{app="x"} != "a" or ip("1.2.3.4") or "b"`, negatedIPChain("(?:a)|", "|(?:b)")},
 		// Any white space after `or`, a raw string in ip(), and uppercase OR.
 		{"{app=\"x\"} |= \"a\" or\t\"b\"", `app:="x" ~"a|b"`},
 		{"{app=\"x\"} |= \"a\" or\n\"b\"", `app:="x" ~"a|b"`},
-		{"{app=\"x\"} != \"a\" or ip(`1.2.3.4`)", `app:="x" NOT ~"(?:a)|(?:1\\.2\\.3\\.4)"`},
-		{"{app=\"x\"} != ip(`1.2.3.4`) or \"a\"", `app:="x" NOT ~"(?:1\\.2\\.3\\.4)|(?:a)"`},
+		{"{app=\"x\"} != \"a\" or ip(`1.2.3.4`)", negatedIPChain("(?:a)|", "")},
+		{"{app=\"x\"} != ip(`1.2.3.4`) or \"a\"", negatedIPChain("", "|(?:a)")},
 		{`{app="x"} |= "a" OR "b"`, `app:="x" ~"a|b"`},
 	}
 	for _, c := range cases {
@@ -93,4 +98,10 @@ func TestTranslateLineFilterOrAfterIPAlternative(t *testing.T) {
 			t.Errorf("%q: got %s (%v), want %s", c.logql, got, err, c.want)
 		}
 	}
+}
+
+// negatedIPChain is the translation of a negated `or` chain around ip("1.2.3.4"): one regexp in which the address
+// is matched as Loki's ip() filter reads a line (translate.IPLineFilterRegex).
+func negatedIPChain(before, after string) string {
+	return `app:="x" NOT ~` + strconv.Quote(before+"(?:"+translate.IPLineFilterRegex("1.2.3.4")+")"+after)
 }

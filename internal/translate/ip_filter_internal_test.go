@@ -2,6 +2,7 @@ package translate
 
 import (
 	"net"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -85,25 +86,30 @@ func TestBuildIPv6CIDRRegex(t *testing.T) {
 
 func TestIPLineFilterToRegex(t *testing.T) {
 	tests := []struct {
-		name string
-		arg  string
-		// substring expected in the output regex (full-regex is fragile to
-		// IPv6-normalization quirks)
-		contains string
+		name, arg string
+		// lines the regexp matches and lines it does not (Loki's answers, as recorded in ip-line-filter-loki.txt)
+		match, miss []string
 	}{
-		{"plain_ipv4", "10.0.0.1", `10\.0\.0\.1`},
-		{"ipv4_cidr_8", "10.0.0.0/8", `10\.\d{1,3}`},
-		{"ipv4_cidr_invalid_bits", "10.0.0.0/notanumber", `10\.0\.0\.0`},
-		{"ipv4_dash_range", "10.0.0.1-10.0.0.250", `\d{1,3}`},
-		{"plain_ipv6", "::1", `:`},
-		{"ipv6_cidr", "2001:db8::/32", `[0-9a-fA-F:]`},
-		{"unparseable", "not-an-ip-at-all", `not-an-ip-at-all`},
+		{"plain_ipv4", "10.0.0.1", []string{"x 10.0.0.1 y", "a10.0.0.1b", "10.0.0.1:80"}, []string{"10.0.0.12", "110.0.0.1", "10.0.0.1."}},
+		{"ipv4_cidr_8", "10.0.0.0/8", []string{"x 10.200.3.4 y"}, []string{"x 11.0.0.1 y", "x 10.0.0.256 y"}},
+		{"ipv4_cidr_invalid_bits", "10.0.0.0/notanumber", []string{"10.0.0.0/notanumber"}, nil},
+		{"ipv4_dash_range", "10.0.0.1-10.0.0.250", []string{"x 10.0.0.250 y"}, []string{"x 10.0.0.251 y"}},
+		{"plain_ipv6", "::1", []string{"x ::1 y"}, nil},
+		{"ipv6_cidr", "2001:db8::/32", []string{"x 2001:db8::1 y"}, nil},
+		{"unparseable", "not-an-ip-at-all", []string{"not-an-ip-at-all"}, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := IPLineFilterRegex(tc.arg)
-			if !strings.Contains(got, tc.contains) {
-				t.Errorf("IPLineFilterRegex(%q): %q does not contain %q", tc.arg, got, tc.contains)
+			re := regexp.MustCompile(IPLineFilterRegex(tc.arg))
+			for _, l := range tc.match {
+				if !re.MatchString(l) {
+					t.Errorf("IPLineFilterRegex(%q) does not match %q", tc.arg, l)
+				}
+			}
+			for _, l := range tc.miss {
+				if re.MatchString(l) {
+					t.Errorf("IPLineFilterRegex(%q) matches %q", tc.arg, l)
+				}
 			}
 		})
 	}

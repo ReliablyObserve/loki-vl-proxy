@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An IPv4 `ip()` line filter (`|= ip("10.0.0.1")`, CIDR and range patterns, and
+  `!= ip(...)`) keeps the lines Loki keeps: the address read as Loki's filter
+  reads it, no longer as a substring of a longer number. **Breaking:** lines
+  such as `10.0.0.12`, `110.0.0.12`, `10.0.0.1.5` or `::ffff:10.0.0.1` no
+  longer match `ip("10.0.0.1")` (and are kept by `!= ip("10.0.0.1")`), as in
+  Loki. IPv6 `ip()` line filters are unchanged.
+
 ## [2.107.0] - 2026-11-09
 
 ### Changed

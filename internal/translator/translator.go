@@ -882,7 +882,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			remaining = rest
 			if ok {
 				// The request validator rejects invalid IP patterns before translation.
-				parts = append(parts, "~"+strconv.Quote(translate.IPLineFilterRegex(arg)))
+				parts = append(parts, translate.IPLineFilter(arg, false).String())
 			}
 			continue
 		}
@@ -894,7 +894,10 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return "", err
 			}
 			remaining = orRest
-			if ok {
+			switch {
+			case ok && len(alts) == 0:
+				parts = append(parts, translate.IPLineFilter(arg, true).String())
+			case ok:
 				parts = append(parts, translate.OrLineFilter(true, false, append([]translate.OrAlternative{{Text: arg, IP: true}}, alts...)))
 			}
 			continue
