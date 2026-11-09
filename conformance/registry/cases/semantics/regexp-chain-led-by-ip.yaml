@@ -1,0 +1,46 @@
+id: semantics/regexp-chain-led-by-ip
+title: A positive regexp line filter chain led by ip() is rejected where Loki reads it as text (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki builds a positive `or` chain of line filters from the text of each
+  alternative, so an ip() head of a `|~` chain is a regexp like the others:
+  `{namespace="prod"} |~ ip("127.0.0.1") or "foo"` answers 200 (stack, and
+  the Loki oracle pipeline command, Loki 3.7, 2026-11-09), and
+  `|~ ip("(") or "a"` answers the regexp error of `(`. The proxy rejects the
+  query with `parse error : ip: invalid operation`.
+
+  The validation could accept it (the |= and |> chains led by ip() are
+  accepted since semantics/line-filter-error-quotes-the-run), but the string
+  translator drops the head of such a chain: `|~ ip("1.2.3.4") or "a"`
+  translates to `~"a"`, which would answer 200 with fewer lines than Loki.
+  The proxy keeps the 400 until the translation keeps the head as a regexp
+  (`(?:1.2.3.4)|(?:a)`); TestLineFilterRunValidationMatchesLoki lists the
+  query as this registered difference and fails once the proxy accepts it.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{namespace="prod"} |~ ip("127.0.0.1") or "foo"'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200, the lines matching 127.0.0.1 or foo as regexps.
+gap:
+  status: open
+  impact: api-only
+  effort: S
+  area: 'internal/translate linefilter.go LineFilter / the string translator (a positive regexp chain with an ip() head); internal/logql ip_filter.go parseLineFilterStage (rejects the chain while parsing)'
+  loki: 'a positive chain reads every alternative, an ip() head included, as text'
+  proxy: '400 ip: invalid operation'
+  planned_test: 'TestLineFilterRunValidationMatchesLoki registered difference (internal/logql); a translator case for the head kept as a regexp'
+  clusters:
+    - 9be7d291

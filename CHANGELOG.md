@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queries answered 200 before; Loki has always rejected them. A stage that
   joins several filters (`a="1", addr=ip("zzz")`) is still accepted, as in
   Loki.
+- An invalid line filter's error quotes the whole run of line filters Loki
+  builds together (`stage '|= "x" |~ "("'`, also across parsers up to a label
+  filter, line_format or unpack), names the filter Loki names (the last
+  invalid one of the run), and comes in Loki's order next to the errors of
+  other stages; an invalid `ip()` line filter gets the same quoted text
+  instead of the bare `ip: invalid pattern`. **Breaking:** a positive `|=`
+  or `|>` chain led by `ip()` (`|= ip("z") or "x"`), which Loki accepts and
+  reads as text, now answers 200 where it was a 400; every other status is
+  unchanged.
 
 ### Changed
 

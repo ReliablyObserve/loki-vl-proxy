@@ -77,6 +77,7 @@ smoke	internal/logql	FuzzParse	12s	-	parse
 smoke	internal/logql	FuzzPrintReparse	12s	-	print then parse again gives the same query
 smoke	internal/logql	FuzzLineTemplateCanonical	12s	-	line_format template: typed exactly when Loki accepts it, canonical form keeps the tree
 smoke	internal/logql	FuzzStripComments	12s	-	comment stripping keeps strings and the query's meaning
+smoke	internal/logql	FuzzLineFilterRunMatchesItsFilters	12s	-	a chain of line filters is answered from its filters alone, by segment, last invalid filter, quoting the run
 smoke	internal/logsql	FuzzCapabilitiesFor	12s	-	capabilities for
 smoke	internal/logsql	FuzzFieldFilterString	12s	-	field filter string
 smoke	internal/logsql	FuzzParseRoundTrip	12s	-	parse round trip

@@ -84,6 +84,8 @@ func TestTranslateLineFilterOrAfterIPAlternative(t *testing.T) {
 		{`{app="x"} |= "a" or ip("1.2.3.4") or ip("5.6.7.8")`, `app:="x" ~"a|5\\.6\\.7\\.8"`},
 		{`{app="x"} |= "a" or "b" or ip("1.2.3.4")`, `app:="x" ~"a|b|1\\.2\\.3\\.4"`},
 		{`{app="x"} |= ip("1.2.3.4") or "b" or "c"`, `app:="x" ~"1\\.2\\.3\\.4|b|c"`},
+		// The head of a positive chain is text, an ip() pattern Loki would not accept alone included.
+		{`{app="x"} |= ip("z") or "x"`, `app:="x" ~"z|x"`},
 		{`{app="x"} != "a" or ip("1.2.3.4") or "b"`, negatedIPChain("(?:a)|", "|(?:b)")},
 		// Any white space after `or`, a raw string in ip(), and uppercase OR.
 		{"{app=\"x\"} |= \"a\" or\t\"b\"", `app:="x" ~"a|b"`},

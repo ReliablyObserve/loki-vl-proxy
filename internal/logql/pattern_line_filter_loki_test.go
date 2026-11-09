@@ -103,24 +103,27 @@ func recordPipelineAnswers(t *testing.T, grid []string, path string) {
 	}
 }
 
-// lineFilterRunTextDifferences is the number of grid queries the proxy rejects like Loki but with another text:
-// Loki quotes every line filter of the run it builds together (adjacent ones, and those after a parser, up to a
-// label filter) and reports the run from its last filter, where the proxy quotes the stage alone; see
-// semantics/line-filter-error-quotes-the-run. The count may only fall.
-const lineFilterRunTextDifferences = 46
-
 // A pattern line filter is rejected exactly where Loki rejects it, with Loki's text: two captures in a row
 // ("found consecutive capture") and any capture but `<_>` ("named captures are not allowed"), for |> and !>, alone,
 // in `or` chains and next to other stages. Loki's answers are recorded with the Loki oracle (LVP_RUN_ORACLES=1
-// records them again). The `| pattern` parser keeps its named captures.
+// records them again). The `| pattern` parser keeps its named captures. Next to other line filters the error quotes
+// the run Loki builds them in (TestLineFilterRunValidationMatchesLoki).
 //
 // conformance: semantics/pattern-line-filter-invalid-captures, semantics/line-filter-error-quotes-the-run
 func TestPatternLineFilterValidationMatchesLoki(t *testing.T) {
-	grid := patternFilterGrid()
+	requireLokiPipelineAnswers(t, patternFilterGrid(), patternFilterLokiAnswers, nil)
+}
+
+// requireLokiPipelineAnswers holds ParseAndValidate and ValidateLogQL (the HTTP handlers' check) to Loki's recorded
+// answers for every query of grid: the same acceptance and, for a rejection, the same text. A query of known is a
+// registered difference Loki accepts and the proxy still rejects; it fails once the proxy accepts it. LVP_RUN_ORACLES=1
+// records the answers again first.
+func requireLokiPipelineAnswers(t *testing.T, grid []string, path string, known map[string]bool) {
+	t.Helper()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordPipelineAnswers(t, grid, patternFilterLokiAnswers)
+		recordPipelineAnswers(t, grid, path)
 	}
-	b, err := os.ReadFile(patternFilterLokiAnswers)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,47 +131,27 @@ func TestPatternLineFilterValidationMatchesLoki(t *testing.T) {
 	if len(lines) != len(grid) {
 		t.Fatalf("%d recorded answers for %d queries: record them again with LVP_RUN_ORACLES=1", len(lines), len(grid))
 	}
-	runText := 0
 	for i, q := range grid {
 		var loki patternFilterAnswer
 		if err := json.Unmarshal([]byte(lines[i]), &loki); err != nil {
 			t.Fatal(err)
 		}
 		err := ParseAndValidate(q)
+		if known[q] {
+			if !loki.Accept || err == nil {
+				t.Errorf("%s: a registered difference no longer differs (proxy error %v, Loki accepts=%v): remove it", q, err, loki.Accept)
+			}
+			continue
+		}
 		if (err == nil) != loki.Accept {
 			t.Errorf("%s: proxy error %v, Loki accepts=%v %s", q, err, loki.Accept, loki.Error)
 			continue
 		}
-		if err == nil || err.Error() == loki.Error {
-			continue
+		if err != nil && err.Error() != loki.Error {
+			t.Errorf("%s:\n proxy %s\n Loki  %s", q, err, loki.Error)
 		}
-		if lineFilterStages(t, q) > 1 {
-			runText++
-			t.Logf("run text: %s:\n proxy %s\n Loki  %s", q, err, loki.Error)
-			continue
-		}
-		t.Errorf("%s:\n proxy %s\n Loki  %s", q, err, loki.Error)
-	}
-	switch {
-	case runText > lineFilterRunTextDifferences:
-		t.Errorf("queries rejected with another text than Loki's run grew from %d to %d", lineFilterRunTextDifferences, runText)
-	case runText < lineFilterRunTextDifferences:
-		t.Errorf("queries rejected with another text than Loki's run fell from %d to %d: lower lineFilterRunTextDifferences", lineFilterRunTextDifferences, runText)
-	}
-}
-
-// lineFilterStages is the number of line filter stages of a log query.
-func lineFilterStages(t *testing.T, q string) int {
-	t.Helper()
-	lq, err := ParseLogQuery(q)
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := 0
-	for _, st := range lq.Pipeline {
-		if _, ok := st.(*LineFilterStage); ok {
-			n++
+		if msg := ValidateLogQL(q); msg != loki.Error {
+			t.Errorf("%s: ValidateLogQL %q, Loki %q", q, msg, loki.Error)
 		}
 	}
-	return n
 }

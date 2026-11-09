@@ -1,5 +1,5 @@
 id: semantics/line-filter-error-quotes-the-run
-title: A line filter error quotes the line filter alone where Loki quotes the run it builds together (open)
+title: A line filter error quotes the run of line filters Loki builds together and names the filter Loki names (fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -17,10 +17,44 @@ why: |
   2026-11-09). The proxy rejects the same queries with the same status but
   quotes the failing filter alone, the first one: `stage '|~ "("'`.
 
-  The status always agrees; only the quoted stage and, with two invalid
-  filters, which one is named differ. 46 queries of the pattern line filter
-  grid (TestPatternLineFilterValidationMatchesLoki) differ this way, a count
-  that may only fall.
+  The status always agreed; only the quoted stage and, with two invalid
+  filters, which one is named differed: 46 queries of the pattern line filter
+  grid (TestPatternLineFilterValidationMatchesLoki). An invalid ip() line
+  filter was rejected by the proxy's parser with the bare `ip: invalid
+  pattern` / `ip: invalid operation` text and no stage, before any other
+  stage was checked, and `|= ip("z") or "x"`, which Loki accepts (a positive
+  chain reads its ip() head as text), was rejected. (`|~ ip("1.2.3.4") or
+  "foo"` is still rejected: semantics/regexp-chain-led-by-ip.)
+
+  Fixed: line filters are checked as runs, the way Loki answers them (recorded
+  with the Loki oracle pipeline command, Loki 3.7):
+  - a label filter (any kind), line_format and unpack split the pipeline into
+    segments; the line filters of one segment are a run, also across the
+    json, logfmt, regexp and pattern parsers, label_format, drop, keep and
+    decolorize between them (`|~ "(" | json |~ "["` is one run,
+    `|~ "(" | x="1" |~ "["` two);
+  - the regexp and pattern parsers are checked first, as Loki parses the
+    query (`|~ "(" | regexp "x"` names the parser); then the segments left to
+    right: the run first, before the segment's other stages even when they
+    stand before it (`| json x="a[" |~ "("` names the regexp,
+    `| json x="a[" | x="1" |~ "("` the json expression), then those stages in
+    order, then the stage that ends the segment (a line_format template, an ip() label filter);
+  - a run is checked from its last filter; a negated `or` chain is one filter
+    per alternative (`!~ "(" or "["` names `[`), a positive chain one filter
+    whose alternatives are text, checked in order; an ip() operand takes only
+    |= and != (`ip: invalid operation`) and a valid pattern;
+  - the error quotes the whole run, each filter printed as Loki prints it
+    (backticks as double quotes, Go escapes, `ip("...")`, a negated chain as
+    one filter per alternative).
+  A bare `ip` not followed by `(` is now Loki's `unexpected IDENTIFIER,
+  expecting STRING or ip`. TestLineFilterRunValidationMatchesLoki holds 826
+  queries (pairs of invalid filters of every kind, runs across and broken by
+  each stage kind, invalid stages of other kinds before and after a run,
+  operand quoting) to Loki's recorded answers, and the 418-query pattern grid
+  now matches every text too: every status and every text equal. Metric
+  queries are checked the same way (a line_format nothing reads is still
+  dropped first); the oracle cannot build their pipelines, so the e2e test
+  compares them with Loki over HTTP.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -36,11 +70,17 @@ compare:
   expect: |
     400 with Loki's text, which quotes the run `|= "x" |~ "("`.
 gap:
-  status: open
+  status: fixed
   impact: api-only
   effort: M
-  area: 'internal/logql semantic.go validateLogQuerySemantics (each line filter stage is validated alone)'
-  loki: 'line filters built as runs (adjacent, and across parsers up to a label filter), checked from the last'
-  proxy: 'each line filter validated alone, in order, quoting itself'
-  planned_test: 'TestPatternLineFilterValidationMatchesLoki run-text ratchet (internal/logql); e2e vs Loki for |~ runs'
-  clusters: []
+  area: 'internal/logql line_filter_runs.go (pipelineBuildError, lineFilterRunError), semantic.go validateLogQuerySemantics, ip_filter.go parseLineFilterAlt'
+  loki: 'line filters built as runs (adjacent, and across parsers up to a label filter, line_format or unpack), checked from the last'
+  proxy: 'line filters validated as the same runs, in the same order as other stages, quoting the run'
+  planned_test: 'TestCompat_LineFilterErrorRunsLikeLoki (test/e2e-compat); TestLineFilterRunValidationMatchesLoki, TestPatternLineFilterValidationMatchesLoki (internal/logql)'
+  fixed_by: '#PR'
+  visual: none
+  visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries, query_range and query'
+  clusters:
+    - bfa1bb8f
+    - e17816bf
+    - 799eb1d6

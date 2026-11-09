@@ -169,25 +169,15 @@ func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {
 			}
 		}
 	}
-	for i, s := range lq.Pipeline {
-		if _, isLineFormat := s.(*LineFormatStage); isLineFormat && lineIndependent && !lineConsumedLater(lq.Pipeline[i+1:]) {
-			continue
-		}
-		if msg := validateStageSemantics(s); msg != "" {
-			return msg
-		}
-		if lf, ok := s.(*LineFilterStage); ok {
-			if msg := patternLineFilterError(lf); msg != "" {
-				return msg
-			}
-		}
-		if lf, ok := s.(*LabelFilterStage); ok {
-			if msg := ipLabelFilterError(lf); msg != "" {
+	// The regexp and pattern parsers are checked as Loki parses the query, before it builds any stage.
+	for _, s := range lq.Pipeline {
+		if p, ok := s.(*ParserStage); ok && (p.Type == ParserRegexp || p.Type == ParserPattern) {
+			if msg := validateParserStage(p); msg != "" {
 				return msg
 			}
 		}
 	}
-	return ""
+	return pipelineBuildError(lq.Pipeline, lineIndependent)
 }
 
 // lineConsumedLater reports whether a later stage reads the log line — a
