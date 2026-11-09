@@ -174,3 +174,29 @@ func ipv4LineRegex(boxes []ipv4Box) string {
 	}
 	return "(?:" + strings.Join(alts, "|") + `)(?:[^0-9.]|$)`
 }
+
+// ipv4Literal is the text every address of boxes starts with (the octets they all fix, with the dot after a fixed
+// octet that another octet follows), "" when they share none: a substring VictoriaLogs can search, and look up in
+// its bloom filters, before it runs the exact regexp.
+func ipv4Literal(boxes []ipv4Box) string {
+	var lit string
+	for i, b := range boxes {
+		var s strings.Builder
+		for k := 0; k < 4 && b[k][0] == b[k][1]; k++ {
+			s.WriteString(strconv.Itoa(b[k][0]))
+			if k < 3 {
+				s.WriteByte('.')
+			}
+		}
+		if i == 0 {
+			lit = s.String()
+			continue
+		}
+		t, n := s.String(), 0
+		for n < len(lit) && n < len(t) && lit[n] == t[n] {
+			n++
+		}
+		lit = lit[:n]
+	}
+	return lit
+}

@@ -230,14 +230,14 @@ func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 	}
 	var pattern string
 	switch {
+	case st.IP && len(alts) == 0:
+		return IPLineFilter(st.Value, negate), true
 	case st.IP && negate:
-		// != ip(...) reads the head as an address, alone or in a chain.
+		// != ip(...) reads the head as an address in a chain too.
 		pattern = OrLineFilterPattern(true, false, append([]OrAlternative{{Text: st.Value, IP: true}}, alts...))
 	case len(alts) > 0:
 		// Loki builds the chain from the text of each alternative: a positive ip() head matches as text.
 		pattern = OrLineFilterPattern(negate, regex, append([]OrAlternative{{Text: st.Value}}, alts...))
-	case st.IP:
-		pattern = IPLineFilterRegex(st.Value)
 	case regex:
 		pattern = st.Value
 	default:
@@ -248,4 +248,21 @@ func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
 		f = logsql.NotExpr{Expr: f}
 	}
 	return f, true
+}
+
+// IPLineFilter is the VictoriaLogs filter of a line filter `|= ip(pattern)` (negate: `!= ip(pattern)`): the regexp
+// IPLineFilterRegex builds, which matches as Loki's ip() filter reads a line, after a substring every address of an
+// IPv4 pattern holds (its fixed octets), which VictoriaLogs checks first and looks up in its bloom filters, so the
+// regexp runs on the lines that may hold an address only.
+func IPLineFilter(pattern string, negate bool) logsql.FilterExpr {
+	var f logsql.FilterExpr = logsql.Regexp{Pattern: IPLineFilterRegex(pattern)}
+	if boxes, ok := ipv4Boxes(pattern); ok {
+		if lit := ipv4Literal(boxes); lit != "" {
+			f = logsql.AllOf{logsql.Regexp{Pattern: regexp.QuoteMeta(lit)}, f}
+		}
+	}
+	if negate {
+		return logsql.NotExpr{Expr: f}
+	}
+	return f
 }

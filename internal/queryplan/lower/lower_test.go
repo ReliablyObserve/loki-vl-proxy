@@ -2,7 +2,6 @@ package lower
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -94,7 +93,7 @@ func TestPlanLowersBareSelectors(t *testing.T) {
 		{"negated regexp line filter", `{app="a"} !~ "e.+r"`, Profile{}, `app:="a" NOT ~"e.+r"`},
 		{"or chain", `{app="a"} |= "a" or "b"`, Profile{}, `app:="a" ~"a|b"`},
 		{"negated or chain", `{app="a"} != "a" or "b"`, Profile{}, `app:="a" NOT ~"a|b"`},
-		{"ip line filter", `{app="a"} != ip("10.0.0.1")`, Profile{}, `app:="a" NOT ~` + strconv.Quote(translate.IPLineFilterRegex("10.0.0.1"))},
+		{"ip line filter", `{app="a"} != ip("10.0.0.1")`, Profile{}, `app:="a" ` + translate.IPLineFilter("10.0.0.1", true).String()},
 		{"line filters in order", `{app="a"} |= "x" != "y"`, Profile{}, `app:="a" ~"x" NOT ~"y"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {

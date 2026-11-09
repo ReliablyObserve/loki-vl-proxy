@@ -8,6 +8,14 @@ why: |
   ranges. The proxy translates them to VictoriaLogs regular expressions; exact
   matching of all IPv6, non-octet CIDR and range forms is not established and
   label ip() filters need further work (KNOWN_ISSUES).
+
+  IPv4 line filters now answer like Loki on the whole recorded grid
+  (semantics/ip-line-filter-ipv4-like-loki). IPv6 line filters stay
+  approximated: Loki's IPv6 reading depends on the line around the address
+  (`::1  ` matches ::1, `x ::1` and `[::1]` do not, `2001:db8::1` matches at
+  the end of a line) and accepts every spelling of the address (case, zero
+  padding, `::` placement); 2,764 IPv6 lines of the grid still differ, a count
+  TestIPLineFilterMatchesLoki lets only fall.
 request:
   method: GET
   path: /loki/api/v1/query_range

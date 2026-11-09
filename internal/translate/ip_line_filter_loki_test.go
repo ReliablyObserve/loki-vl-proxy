@@ -117,7 +117,7 @@ const ipv6KnownDifferences = 2764
 // Loki's ip() line filter keeps it: every IPv4 line of the grid, and the IPv6 lines up to ipv6KnownDifferences.
 // Loki's answers are recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
-// conformance: semantics/ip-filter-precision
+// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision
 func TestIPLineFilterMatchesLoki(t *testing.T) {
 	cases := ipLineCases()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {

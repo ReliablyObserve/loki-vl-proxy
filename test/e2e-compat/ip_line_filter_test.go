@@ -20,7 +20,7 @@ import (
 // address, a single colon in front belongs to an IPv6 address after a hex digit), never a substring of a longer
 // number. Log queries and count_over_time answer like Loki, and Loki's own answers are pinned so a Loki release that
 // reads ip() differently is noticed.
-// conformance: semantics/ip-filter-precision, loki_api_v1_query_range, loki_api_v1_query
+// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision, loki_api_v1_query_range, loki_api_v1_query
 func TestCompat_IPLineFilterLikeLoki(t *testing.T) {
 	probe := fmt.Sprintf("ip-line-%d", time.Now().UnixNano())
 	stamp := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
