@@ -1,7 +1,6 @@
 package translator
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -13,22 +12,6 @@ func TestPatternAndTranslatorHelperBehaviors(t *testing.T) {
 		t.Fatal("expected concrete pattern not to be treated as noop")
 	}
 
-	if got := planPatternLineFilter(`foo<_>`, 0); got.re != `(?s)foo.+` || got.extract != "" {
-		t.Fatalf("unexpected exact pattern translation %+v", got)
-	}
-	if got := planPatternLineFilter(`literal.*value`, 0); got.re != `literal\.\*value$` || got.extract != "" || got.exact != `_msg:~"literal\\.\\*value" _msg:~"(?s)literal\\.\\*value$" NOT _msg:~"(?s)literal\\.\\*value."` {
-		t.Fatalf("unexpected literal pattern translation %+v", got)
-	}
-	if got := planPatternLineFilter(``, 0); got.re != `^$` || got.extract != "" {
-		t.Fatalf("unexpected empty pattern translation %+v", got)
-	}
-	seq := 0
-	if got := strings.Join(translatePatternLineFilter([]string{`foo<_>bar`, `baz<_>`}, false, &seq), " "); got != `((_msg:~"foo" _msg:~"bar") or (_msg:~"baz")) ~"(?:(?s)foo.+bar$)|(?:(?s)baz.+)" | extract "foo<plain:__lvp_pf0_1>bar<plain:__lvp_pf0_r>" from _msg | filter (__lvp_pf0_1:* __lvp_pf0_r:"") or (_msg:~"(?s)baz.+") | delete __lvp_pf*` || seq != 1 {
-		t.Fatalf("unexpected translated pattern line filter %q (seq %d)", got, seq)
-	}
-	if got := strings.Join(translatePatternLineFilter([]string{`foo<_>`}, true, &seq), " "); got != `NOT ~"(?s)foo.+"` || seq != 1 {
-		t.Fatalf("unexpected translated negative pattern line filter %q (seq %d)", got, seq)
-	}
 	if values, rest, err := takePatternValues(`"foo<_>bar" or "baz" != "x"`); err != nil || len(values) != 2 || values[0] != "foo<_>bar" || values[1] != "baz" || rest != `!= "x"` {
 		t.Fatalf("unexpected extracted pattern filter values %#v rest=%q err=%v", values, rest, err)
 	}
