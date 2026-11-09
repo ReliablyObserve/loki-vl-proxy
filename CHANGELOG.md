@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.113.0] - 2026-11-09
+
 ### Fixed
 
 - An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
