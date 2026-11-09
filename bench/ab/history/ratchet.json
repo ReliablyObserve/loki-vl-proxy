@@ -525,6 +525,27 @@
   "shape": "E8 instant logfmt by level_extracted"
  },
  {
+  "added": "2026-11-09",
+  "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+  "range": "1h",
+  "set": "ip-label-filter",
+  "shape": "BL1 ratio, json status>=4e2 / all"
+ },
+ {
+  "added": "2026-11-09",
+  "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+  "range": "24h",
+  "set": "ip-label-filter",
+  "shape": "BL1 ratio, json status>=4e2 / all"
+ },
+ {
+  "added": "2026-11-09",
+  "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+  "range": "6h",
+  "set": "ip-label-filter",
+  "shape": "BL1 ratio, json status>=4e2 / all"
+ },
+ {
   "added": "2026-11-08",
   "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
   "range": "24h",
@@ -1426,6 +1447,13 @@
   "range": "6h",
   "set": "level-filter",
   "shape": "LF19 detected_level count, regexp with unknown"
+ },
+ {
+  "added": "2026-11-09",
+  "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+  "range": "1h",
+  "set": "level-filter",
+  "shape": "LF2 logs, detected_level regexp"
  },
  {
   "added": "2026-10-27",
