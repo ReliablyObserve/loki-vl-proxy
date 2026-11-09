@@ -177,6 +177,23 @@ Write "no security-relevant surface" with the reason when nothing applies.
 Report a vulnerability privately as described in `SECURITY.md`, never in a
 public pull request or issue.
 
+## Performance stats in every PR
+
+Every pull request records what it costs in its **Performance** section (see
+`.github/pull_request_template.md`): a base-vs-PR table for the code it
+touches, measured on the same machine with `benchstat` (at least 6 runs; name
+the machine and `GOMAXPROCS`):
+
+- CPU: `ns/op`, or the CPU time of a request path;
+- memory: `B/op` and `allocs/op`, and peak RSS when the change can grow it;
+- latency: the per-request time, or p50/p95 when a request path changes;
+- the change against base, faster or slower, and why.
+
+A refactor, or code no handler calls yet, still measures its own new code and
+says why the request path does not change. A change to answers or routes keeps
+its timing tables against Loki and its load test on top of this. Commit the
+benchmark rather than a throwaway one, and name it in the registry decision.
+
 ## Published numbers
 
 Every number the README, `docs/` and the website state is generated and kept current: a generator writes it, a
