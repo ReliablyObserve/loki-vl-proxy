@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers log queries with a `| json` or `| logfmt` parser (with
+  `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
+  with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
+  the translation package; the lowering writes the requests the string
+  translator writes, and the corpus shadow holds it to them. A label filter
+  after a parser, `| regexp`,
+  `| pattern`, `| unpack`, `| line_format` and `| label_format` stay with the
+  string translator.
+
+## [2.116.0] - 2026-11-09
+
 ### Fixed
 
 - The lines and bytes processed in `query` and `query_range` statistics have
@@ -25,14 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The query plan lowers log queries with a `| json` or `| logfmt` parser (with
-  `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
-  with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
-  the translation package; the lowering writes the requests the string
-  translator writes, and the corpus shadow holds it to them. A label filter
-  after a parser, `| regexp`,
-  `| pattern`, `| unpack`, `| line_format` and `| label_format` stay with the
-  string translator.
 - A query and query_range miss parses the query once for the handlers that
   only read it (absent_over_time, bare parser metrics, `without`
   aggregations, the sample-producing check, the query statistics) and the
