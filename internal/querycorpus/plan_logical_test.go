@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
@@ -313,76 +312,8 @@ func translateForKey(prof planProfile, q string) translation {
 		return translation{text: "decode: " + err.Error()}
 	}
 	tr := translation{text: out, phrase: out == `"`+logql.CanonicalizeLogRanges(q)+`"`}
-	tr.canon = canonOp(op, &tr.unparsed)
+	tr.canon = physical.Canon(op, &tr.unparsed)
 	return tr
-}
-
-// The structure of a decoded translation: the operators, with each VictoriaLogs query parsed. Only the operators
-// the translator writes get a form; the text of a binary (Text, Tail) is not part of it, its parts are.
-type (
-	canonFold struct {
-		Levels []physical.FoldLevel
-		In     any
-	}
-	canonLabel struct {
-		Replace []physical.LabelReplace
-		In      any
-	}
-	canonBin struct {
-		Op    string
-		Bool  bool
-		Match *physical.Matching
-		L, R  any
-	}
-	canonScalar struct{ V float64 }
-)
-
-func canonOp(op physical.Op, unparsed *bool) any {
-	switch v := op.(type) {
-	case physical.Verbatim:
-		return canonOp(v.In, unparsed)
-	case physical.Fold:
-		return canonFold{v.Levels, canonOp(v.In, unparsed)}
-	case physical.LabelMap:
-		return canonLabel{v.Replace, canonOp(v.In, unparsed)}
-	case physical.Binary:
-		return canonBin{v.Op, v.Bool, v.Match, canonOp(v.L, unparsed), canonOp(v.R, unparsed)}
-	case physical.ScalarOp:
-		return canonScalar{v.V}
-	case physical.VLQuery:
-		q, err := logsql.Parse(v.Text)
-		if err != nil {
-			*unparsed = true
-			return strings.Join(strings.Fields(v.Text), " ")
-		}
-		foldDefaultFields(reflect.ValueOf(q))
-		return q
-	}
-	return op
-}
-
-// foldDefaultFields sets the fields that default to _msg to their empty spelling, so `from _msg` reads like no from.
-func foldDefaultFields(v reflect.Value) {
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if !v.IsNil() {
-			foldDefaultFields(v.Elem())
-		}
-	case reflect.Slice:
-		for i := 0; i < v.Len(); i++ {
-			foldDefaultFields(v.Index(i))
-		}
-	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			f := v.Field(i)
-			switch name := v.Type().Field(i).Name; {
-			case f.Kind() == reflect.String && f.CanSet() && f.String() == "_msg" && (name == "From" || name == "Field" || name == "ResultField"):
-				f.SetString("")
-			default:
-				foldDefaultFields(f)
-			}
-		}
-	}
 }
 
 // firstDiff is the path of the first field in which a and b differ, "" when they are equal.

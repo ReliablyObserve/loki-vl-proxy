@@ -3,7 +3,7 @@
   "totals": {
     "deferred_raw": 7,
     "lowering_marker_reads": 11,
-    "parse_calls": 62,
+    "parse_calls": 64,
     "string_reads": 49,
     "text_built": 209,
     "translator_string_ops": 675
@@ -29,6 +29,7 @@
       "internal/proxy/limits_enforcement.go": 1,
       "internal/proxy/log_line.go": 1,
       "internal/proxy/loki_profile.go": 3,
+      "internal/proxy/lowering_shadow.go": 1,
       "internal/proxy/manual_metric_budget.go": 1,
       "internal/proxy/metric_agg.go": 8,
       "internal/proxy/metric_binary.go": 1,
@@ -53,6 +54,7 @@
       "internal/proxy/unwrap_samples.go": 2,
       "internal/proxy/vector_agg_fold.go": 1,
       "internal/proxy/vector_matching.go": 1,
+      "internal/queryplan/physical/canon.go": 1,
       "internal/translator/stats_codec.go": 1
     },
     "string_reads": {

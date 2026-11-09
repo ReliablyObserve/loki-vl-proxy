@@ -223,6 +223,9 @@ type Config struct {
 	// fallback, skipping the per-row scan of the line body. Zero value keeps
 	// Loki's full derivation.
 	DisableDetectedLevelBodyScan bool
+	// TranslateShadowSample is the share (0-1) of the string translator's cache misses that the typed lowering
+	// also translates in the background to be compared with it (see lowering_shadow.go). 0 turns it off.
+	TranslateShadowSample float64
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -675,6 +678,7 @@ type Proxy struct {
 	detectedLevelBodyScan                 bool
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
+	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
@@ -1364,6 +1368,7 @@ func New(cfg Config) (*Proxy, error) {
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
+		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
@@ -1853,6 +1858,7 @@ func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	p.loweringShadow.close(ctx)
 	p.statsExtentStores.close()
 	if p.keepWarmStop != nil {
 		select {

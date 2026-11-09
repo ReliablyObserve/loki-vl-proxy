@@ -2,7 +2,7 @@
 
 # Configuration reference
 
-Every command-line flag of the proxy (250), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
+Every command-line flag of the proxy (251), grouped by category, with the Helm value that sets it. Narrative guidance lives in [configuration.md](../configuration.md); the bounds on work are collected in [limits-registry.md](limits-registry.md).
 
 Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them from dedicated values, marked chart-managed.
 
@@ -201,6 +201,7 @@ Helm passes any flag through `extraArgs.<flag>`; the chart sets a few of them fr
 | `-slow-query-log-raw-queries` | bool | `true` | `extraArgs.slow-query-log-raw-queries` | Slow lines carry the LogQL and LogsQL text (capped at 8 KB each); false carries their sha256 and length instead, as debug logs do without -debug-log-raw-queries |
 | `-slow-query-threshold` | duration | `3 * time.Second` | `extraArgs.slow-query-threshold` | A client request taking at least this long is slow: counted in loki_vl_proxy_slow_requests_total&#123;system="loki"&#125; and logged at WARN (slow_request, whatever the request-log sampling) with its LogQL and its steps: every VictoriaLogs call with its LogsQL, window, status, bytes and time, every proxy-side operation and route decision, every rewrite of the LogQL, each with its offset from the request's start. Live tail is exempt. 0 turns it off |
 | `-slow-upstream-threshold` | duration | `2 * time.Second` | `extraArgs.slow-upstream-threshold` | One VictoriaLogs call taking at least this long to the end of its body is slow: counted in loki_vl_proxy_slow_requests_total&#123;system="vl"&#125; and logged at WARN (slow_upstream_request) with its LogsQL, window, bytes and the client route it served. 0 turns it off |
+| `-translate-shadow-sample` | float64 | `0` | `extraArgs.translate-shadow-sample` | Share (0-1) of the queries the string translator translates (cache misses) that the typed query-plan lowering also translates, in the background, to compare the two translations: counted in loki_vl_proxy_lowering_shadow_total by result and construct, a mismatch logged (the query redacted), at most 1 line per second. At most 2 comparisons run at once, each within 100 ms; the answer, the caches and the VictoriaLogs requests are never affected. 0 turns it off |
 
 ## peer cache
 

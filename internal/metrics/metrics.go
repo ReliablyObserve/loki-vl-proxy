@@ -44,6 +44,7 @@ type Metrics struct {
 	// Proxy-side internal operation visibility
 	internalOperationTotal     map[string]*atomic.Int64 // "operation<sep>outcome" → count
 	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
+	loweringShadowTotal        map[string]*atomic.Int64 // "result<sep>construct" → count
 
 	// Per-request work and phase times, and per-lookup cache times (request_flow.go)
 	flow *flowMetrics
@@ -394,6 +395,7 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		upstreamCallsPerRequest:    make(map[string]*histogram),
 		internalOperationTotal:     make(map[string]*atomic.Int64),
 		internalOperationDurations: make(map[string]*histogram),
+		loweringShadowTotal:        make(map[string]*atomic.Int64),
 		flow:                       newFlowMetrics(),
 		tupleModes:                 make(map[string]*atomic.Int64),
 		clientRequests:             make(map[string]*atomic.Int64),
@@ -1441,6 +1443,25 @@ func (m *Metrics) RecordUpstreamCallsPerRequestWithRoute(endpoint, route string,
 	h.observe(float64(calls))
 }
 
+// RecordLoweringShadow counts one outcome of the lowering shadow (-translate-shadow-sample) by result and the
+// construct at the top of the plan. The caller passes values from its fixed sets: the label values are never
+// derived from a query.
+func (m *Metrics) RecordLoweringShadow(result, construct string) {
+	key := joinMetricKey(result, construct)
+	m.mu.RLock()
+	counter, ok := m.loweringShadowTotal[key]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		if counter, ok = m.loweringShadowTotal[key]; !ok {
+			counter = &atomic.Int64{}
+			m.loweringShadowTotal[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
 // RecordInternalOperation records proxy-side work not performed by VL directly.
 func (m *Metrics) RecordInternalOperation(operation, outcome string, d time.Duration) {
 	operation = strings.TrimSpace(operation)
@@ -1631,6 +1652,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sUpstreamCallsPerRequest := snapshotHistogramMap(m.upstreamCallsPerRequest)
 	sInternalOperationTotal := snapshotAtomicMap(m.internalOperationTotal)
 	sInternalOperationDurations := snapshotHistogramMap(m.internalOperationDurations)
+	sLoweringShadow := snapshotAtomicMap(m.loweringShadowTotal)
 	sCacheStatsFn := m.cacheStatsProvider
 	sCbStateFn := m.cbStateFunc
 	sExportSensitive := m.exportSensitiveLabels
@@ -2132,6 +2154,21 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_total{operation=%q,outcome=%q} %d\n", parts[0], parts[1], sInternalOperationTotal[key].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_lowering_shadow_total Query-plan lowering shadow comparisons (-translate-shadow-sample) by result and plan construct.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_lowering_shadow_total counter\n")
+	shadowKeys := make([]string, 0, len(sLoweringShadow))
+	for k := range sLoweringShadow {
+		shadowKeys = append(shadowKeys, k)
+	}
+	sort.Strings(shadowKeys)
+	for _, key := range shadowKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_lowering_shadow_total{result=%q,construct=%q} %d\n", parts[0], parts[1], sLoweringShadow[key].Load())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_internal_operation_duration_seconds Proxy-side internal operation duration.\n")
