@@ -1,9 +1,9 @@
 package logql
 
 import (
-	"fmt"
 	"net/netip"
 	"strings"
+	"unicode"
 )
 
 // validIPPattern follows Loki's getMatcher: an address, prefix, or ordered
@@ -37,19 +37,10 @@ func isLineFilterOperator(op TokType) bool {
 
 func (p *parser) parseLineFilterStage() (Stage, error) {
 	tok := p.advance()
-	isIP := p.cur.Typ == TokIdent && p.cur.Val == "ip"
-	if isIP && tok.Typ != TokPipeEq && tok.Typ != TokBangEq {
-		return nil, fmt.Errorf("ip: invalid operation")
-	}
-	if p.cur.Typ != TokString && p.cur.Typ != TokRawString && !isIP {
-		return nil, p.syntaxErrorAt("STRING or ip")
-	}
-	value, err := p.expectStringOrRaw()
+	// An ip() operand is checked with the run of line filters it belongs to (line_filter_runs.go).
+	head, err := p.parseLineFilterAlt()
 	if err != nil {
 		return nil, err
-	}
-	if isIP {
-		value = strings.TrimSuffix(strings.TrimPrefix(value, "ip("), ")")
 	}
 	op := LineFilterContains
 	switch tok.Typ {
@@ -64,7 +55,7 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	case TokBangGt:
 		op = LineFilterExcludePat
 	}
-	stage := &LineFilterStage{Op: op, Value: value, IP: isIP}
+	stage := &LineFilterStage{Op: op, Value: head.Value, IP: head.IP}
 	for p.cur.Typ == TokOr || p.cur.Typ == TokIdent && strings.EqualFold(p.cur.Val, "or") {
 		p.advance()
 		alt, err := p.parseLineFilterAlt()
@@ -75,6 +66,12 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	}
 	if !stage.negated() {
 		stage.Or = lastOrGroup(stage.Or)
+	}
+	if stage.IP && op == LineFilterMatchRe && len(stage.Or) > 0 && lineFilterError(stage) == nil {
+		// Loki reads the ip() head of a positive |~ chain as a regexp, which the proxy does not translate yet: a chain
+		// Loki accepts is answered as before (semantics/regexp-chain-led-by-ip); one it rejects is left to the
+		// validation, which answers Loki's error.
+		return nil, errIPOperation
 	}
 	return stage, nil
 }
@@ -93,14 +90,18 @@ func lastOrGroup(alts []LineFilterAlt) []LineFilterAlt {
 	return alts[start:]
 }
 
-// parseLineFilterAlt parses what follows `or` in a line filter (syntax.y
-// orFilter): a string or ip("..."). Loki builds an alternative from its text
-// alone, so the ip pattern is not validated here.
+// parseLineFilterAlt parses a line filter operand, what follows the operator
+// or `or` (syntax.y orFilter): a string or ip("..."). The ip pattern is not
+// validated here.
 func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
 	switch {
 	case p.cur.Typ == TokString || p.cur.Typ == TokRawString:
 		return LineFilterAlt{Value: p.advance().Val}, nil
 	case p.cur.Typ == TokIdent && p.cur.Val == "ip":
+		if !strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), "(") {
+			// Loki reads ip as a function only before "(": a bare ip is an identifier it does not expect.
+			return LineFilterAlt{}, p.errorAt(p.pos(), "IDENTIFIER", "STRING or ip", false)
+		}
 		p.advance()
 		if p.cur.Typ != TokLParen {
 			return LineFilterAlt{}, p.syntaxErrorAt("(")

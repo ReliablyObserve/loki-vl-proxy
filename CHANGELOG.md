@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `skipped`, `panic`, `budget`); a mismatch logs one redacted line per second.
   At most two comparisons run at once, each within 100 ms. It is off by
   default and never affects an answer, a cache entry or a VictoriaLogs request.
+### Fixed
+
+- An invalid line filter's error quotes the whole run of line filters Loki
+  builds together (`stage '|= "x" |~ "("'`, also across parsers up to a label
+  filter, line_format or unpack), names the filter Loki names (the last
+  invalid one of the run), and comes in Loki's order next to the errors of
+  other stages; an invalid `ip()` line filter gets the same quoted text
+  instead of the bare `ip: invalid pattern`. **Breaking:** a positive `|=`
+  or `|>` chain led by `ip()` (`|= ip("z") or "x"`), which Loki accepts and
+  reads as text, now answers 200 where it was a 400; every other status is
+  unchanged.
+- A label filter, drop or keep regex Loki cannot parse (`| x=~"("`,
+  `| drop x=~"("`) is rejected with Loki's 400 and Loki's text, and parse
+  errors of a pipeline stage (these regexes, the regexp and pattern parsers)
+  are reported before the selector's empty-compatible rule and a range
+  aggregation's grouping and unwrap rules, as Loki reports them. An ip()
+  label filter after an unwrap is not checked, as in Loki.
+  **Breaking:** the queries with such a regex were accepted before; Loki has
+  always rejected them.
 
 ## [2.110.0] - 2026-11-09
 

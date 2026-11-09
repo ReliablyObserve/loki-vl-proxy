@@ -48,7 +48,7 @@ func oldSelectorReading(raw string) (*logqlpkg.LogQuery, error) {
 			value, _ = strconv.Unquote(m[2])
 		}
 		if m[1] == "ip" {
-			if _, err := logqlpkg.ParseLogQuery(`{a="x"} |= ip(` + strconv.Quote(value) + `)`); err != nil {
+			if err := logqlpkg.ParseAndValidate(`{a="x"} |= ip(` + strconv.Quote(value) + `)`); err != nil {
 				bad = err
 			}
 		}

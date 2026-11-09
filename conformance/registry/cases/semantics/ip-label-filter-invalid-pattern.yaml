@@ -21,8 +21,10 @@ why: |
   corpus queries (#1239): 25 log and 13 metric queries of the corpus.
 
   Fixed: the LogQL validation rejects a one-leaf ip() label filter stage
-  whose pattern is invalid, with Loki's text, in pipeline order with the
-  other stage checks. Held to the Loki oracle on a grid of 280 queries
+  whose pattern is invalid, with Loki's text, where Loki builds it: as the
+  stage that ends a run of line filters, after that run and the stages
+  before it, and not after an unwrap (semantics/line-filter-error-quotes-the-run,
+  semantics/label-filter-regex-parse-error). Held to the Loki oracle on a grid of 280 queries
   (patterns, = and !=, spellings, joined stages, neighbouring failing
   stages): every status and text equal.
 request:

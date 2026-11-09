@@ -361,6 +361,7 @@
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
+      "test/e2e-compat/line_filter_error_runs_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
@@ -471,6 +472,7 @@
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/line_filter_error_runs_test.go",
       "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
@@ -1149,6 +1151,9 @@
       "internal/translator/label_filter_expr_test.go",
       "test/e2e-compat/label_filter_expression_test.go"
     ],
+    "semantics/label-filter-regex-parse-error": [
+      "internal/logql/stage_parse_validate_loki_test.go"
+    ],
     "semantics/label-inventory-exact-and-incremental": [
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
@@ -1184,7 +1189,9 @@
       "test/e2e-compat/labels_zero_width_test.go"
     ],
     "semantics/line-filter-error-quotes-the-run": [
-      "internal/logql/pattern_line_filter_loki_test.go"
+      "internal/logql/line_filter_runs_loki_test.go",
+      "internal/logql/pattern_line_filter_loki_test.go",
+      "test/e2e-compat/line_filter_error_runs_test.go"
     ],
     "semantics/line-filter-invalid-utf8": [
       "internal/proxy/error_text_utf8_test.go",
@@ -1704,7 +1711,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 443,
+  "registry_items": 446,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1757,6 +1764,9 @@
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/label-filter-expression-syntax"
     ],
+    "internal/logql/line_filter_runs_loki_test.go": [
+      "semantics/line-filter-error-quotes-the-run"
+    ],
     "internal/logql/line_template_test.go": [
       "architecture-syntax-package-layering",
       "formatter-line-format"
@@ -1787,6 +1797,9 @@
     ],
     "internal/logql/selector_value_test.go": [
       "semantics/selector-values-are-strings"
+    ],
+    "internal/logql/stage_parse_validate_loki_test.go": [
+      "semantics/label-filter-regex-parse-error"
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
@@ -3296,6 +3309,11 @@
       "profiles/detected-fields-structured-metadata-beside-json-line",
       "profiles/parsed-fields-without-parser"
     ],
+    "test/e2e-compat/line_filter_error_runs_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/line-filter-error-quotes-the-run"
+    ],
     "test/e2e-compat/line_filter_invalid_utf8_test.go": [
       "loki_api_v1_query",
       "loki_api_v1_query_range",
@@ -3672,7 +3690,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 401,
+  "tests_with_markers": 404,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3742,6 +3760,7 @@
     "semantics/nested-aggregation-query-length",
     "semantics/parse-error-labels-on-log-lines",
     "semantics/quantile-over-time-out-of-range",
+    "semantics/regexp-chain-led-by-ip",
     "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/ruler-empty-list-status",
     "semantics/ruler-store-failure-status",
@@ -3761,6 +3780,7 @@
     "semantics/unwrap-conversion-error-undetected-shapes",
     "semantics/unwrap-count-avg-without-after-parser",
     "semantics/unwrap-first-last-range-longer-than-step",
+    "semantics/unwrap-in-log-query",
     "semantics/unwrap-over-time-short-range-windows",
     "semantics/unwrap-per-series-identity-raw-rows",
     "semantics/unwrap-quantile-sum-by-group-quantile",
@@ -3775,5 +3795,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 270
+  "wired_items": 271
 }
