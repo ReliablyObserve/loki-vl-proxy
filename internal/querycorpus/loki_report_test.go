@@ -138,7 +138,8 @@ func lokiRegressions(base, head map[string]lokiVerdict) LokiRegressions {
 			reg.Disagree = append(reg.Disagree, key)
 		case b.sameError() && !h.sameError():
 			reg.ErrorLost = append(reg.ErrorLost, key)
-		case b.sameMeaning() && !h.sameMeaning():
+		case b.sameMeaning() && h.Accept && h.Ours && !h.sameMeaning():
+			// A query both now reject (Loki's rejection, matched) has no printed form to compare.
 			reg.MeaningLost = append(reg.MeaningLost, key)
 		}
 	}
@@ -222,13 +223,15 @@ func TestLokiSummaryRegressionsAndSimilarity(t *testing.T) {
 		"client/b": {Kind: "client", Accept: false, Ours: false, SameError: &yes},
 		"client/c": {Kind: "client", Accept: true, Ours: true, SameMeaning: &yes},
 		"case/d":   {Kind: "case", Accept: false, Ours: false, SameError: &no},
+		"client/f": {Kind: "client", Accept: true, Ours: true, SameMeaning: &yes},
 	}
 	head := map[string]lokiVerdict{
-		"client/a": {Kind: "client", Accept: true, Ours: false},                  // now disagree
-		"client/b": {Kind: "client", Accept: false, Ours: false, SameError: &no}, // error text lost
-		"client/c": {Kind: "client", Accept: true, Ours: true, SameMeaning: &no}, // meaning lost
-		"case/d":   {Kind: "case", Accept: false, Ours: false, SameError: &no},   // held
-		"client/e": {Kind: "client", Accept: false, Ours: true},                  // new: never a regression
+		"client/a": {Kind: "client", Accept: true, Ours: false},                   // now disagree
+		"client/b": {Kind: "client", Accept: false, Ours: false, SameError: &no},  // error text lost
+		"client/c": {Kind: "client", Accept: true, Ours: true, SameMeaning: &no},  // meaning lost
+		"case/d":   {Kind: "case", Accept: false, Ours: false, SameError: &no},    // held
+		"client/e": {Kind: "client", Accept: false, Ours: true},                   // new: never a regression
+		"client/f": {Kind: "client", Accept: false, Ours: false, SameError: &yes}, // both now reject alike
 	}
 	reg := lokiRegressions(base, head)
 	if strings.Join(reg.Disagree, ",") != "client/a" || strings.Join(reg.ErrorLost, ",") != "client/b" ||
@@ -236,7 +239,7 @@ func TestLokiSummaryRegressionsAndSimilarity(t *testing.T) {
 		t.Errorf("regressions = %+v", reg)
 	}
 	s := summarizeLoki("3.7.9", head)
-	if s.Client != (LokiCounts{Queries: 4, BothAccept: 1, BothReject: 1, OursOnly: 1, LokiOnly: 1}) ||
+	if s.Client != (LokiCounts{Queries: 5, BothAccept: 1, BothReject: 2, SameError: 1, OursOnly: 1, LokiOnly: 1}) ||
 		s.Case != (LokiCounts{Queries: 1, BothReject: 1}) {
 		t.Errorf("summary = %+v", s)
 	}
