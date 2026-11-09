@@ -40,6 +40,17 @@ func TestCommentsAndOffsetsLikeLoki(t *testing.T) {
 		{"count_over_time({a=\"x\"}[3s] offset 2m1h)", "", []int64{3720000000000}},
 		{"{a=\"x\"} |= \"x\" #c", "", nil},
 		{"{a=\"x\"}#c", "", nil},
+		{"{a=\"x\"}|a=\"\"#", "", nil},
+		{"{a=\"x\"} | a=\"\" # c", "", nil},
+		{"{a=\"x\"} | a=\"1\"#", "", nil},
+		{"{a=\"x\"} | a=1#", "", nil},
+		{"{a=\"x\"} | a>1# c\n | b=\"2\"", "", nil},
+		{"{a=\"x\"} |= \"<>\"", "", nil},
+		{"{a=\"x\"} |~ `<>`", "", nil},
+		{"{a=\"x\"} # <>", "", nil},
+		{"0#<>", "", nil},
+		{"{a=\"x\"} | b <> 1", "parse error at line 1, col 14: syntax error: unexpected >", nil},
+		{"sum(rate({a=\"x\"}[1m])) <> 1", "parse error at line 1, col 25: syntax error: unexpected >", nil},
 		{"sum(rate({a=\"x\"}[5m])) # by (a)\n by (b)", "", []int64{0}},
 		{"{a=\"x\"} | status >= 4e2", "", nil},
 		{"count_over_time({a=\"x\"}[3s] offset -1d)", "parse error at line 1, col 36: syntax error: unexpected -, expecting DURATION", nil},
@@ -183,5 +194,22 @@ func TestLogfmtFlagsLikeLoki(t *testing.T) {
 		if got := StripParserFlags(in); got != want {
 			t.Errorf("StripParserFlags(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A comment after a label filter ends the filter, as Loki's lexer skips it: the value is the text before it, a
+// string or a number alike.
+func TestLabelFilterEndsAtAComment(t *testing.T) {
+	for q, want := range map[string]string{
+		`{a="x"} | a=1#c`:            `{a="x"} | a=1`,
+		`{a="x"} | a="1"# c`:         `{a="x"} | a="1"`,
+		"{a=\"x\"} | a>1 # c\n| b=2": `{a="x"} | a>1 | b=2`,
+	} {
+		t.Run(q, func(t *testing.T) {
+			e, err := Parse(q)
+			if err != nil || e.String() != want {
+				t.Fatalf("Parse(%q) = %v, %v; want %s", q, e, err, want)
+			}
+		})
 	}
 }

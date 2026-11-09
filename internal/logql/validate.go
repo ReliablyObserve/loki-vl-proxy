@@ -67,11 +67,6 @@ func validateLogQL(query string) (Expr, string) {
 		return nil, ""
 	}
 
-	// Reject the <> operator — not valid LogQL syntax.
-	if idx := strings.Index(query, "<>"); idx >= 0 {
-		return nil, fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected >", idx+2)
-	}
-
 	// Structural parse.
 	expr, err := Parse(query)
 	if err != nil {
