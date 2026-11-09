@@ -25,7 +25,7 @@ ROWS = (
     ("BenchmarkTranslateLogQL_Simple", 'Selector `{app="nginx"}`'),
     ("BenchmarkTranslate_Rate", '`rate({app="nginx",env="production"}[5m])`'),
     ("BenchmarkTranslate_SumRate", '`sum(rate({...}[5m])) by (host)`'),
-    ("BenchmarkTranslate_IPFilter", '`ip("10.0.0.0/8")` line filter (native `ipv4_range()`)'),
+    ("BenchmarkTranslate_IPFilter", '`\\| ip("10.0.0.0/8")` filter'),
     ("BenchmarkTranslate_BinaryRateDiv", 'Binary metric `sum(rate) / sum(rate)`'),
 )
 LINE = re.compile(r"^(Benchmark\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op\s+([\d.]+) B/op\s+(\d+) allocs/op")

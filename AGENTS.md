@@ -195,6 +195,15 @@ its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
 
+## Docs, rules and skill in the same pull request
+
+A pull request updates every README and `docs/` page its change affects, in the same pull request: compatibility
+coverage (Loki differences fixed or newly known), performance (what got faster and where it is measured), the query
+plan's progress, and configuration and observability for new flags and metrics. Generated pages are regenerated;
+hand-written pages are edited; public pages state the current behaviour only. A pull request that sets or changes a
+working convention adds it here (and to the pull request template when it is a checklist item). List the docs a pull
+request touches in its description.
+
 ## No performance regression; bring touched components to Loki's speed
 
 A pull request never makes anything slower than its base: proxy CPU, memory,

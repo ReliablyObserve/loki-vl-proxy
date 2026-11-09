@@ -28,6 +28,7 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 | `!= "debug"` | `NOT ~"debug"` | Negative substring |
 | `\|~ "err.*"` | `~"err.*"` | Regex match |
 | `!~ "debug.*"` | `NOT ~"debug.*"` | Negative regex |
+| `\|= "\xff\xfe"` (text that is not UTF-8) | `_stream_id:in()` | No stored line holds such bytes, so the filter keeps no line, as in Loki; `!=` keeps every line (no filter) and an `or` chain keeps its valid alternatives |
 
 ## Parser Stages
 
@@ -38,7 +39,7 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 | `\| logfmt` | `\| unpack_logfmt` |
 | `\| pattern "<ip> ..."` | `\| extract "<ip> ..."` |
 | `\| regexp "..."` | `\| extract_regexp "..."` |
-| `\|> "pattern"` | Pattern match line filter (Loki 3.7+) |
+| `\|> "pattern"` | Pattern match line filter (Loki 3.7+). Two captures in a row (`<_><_>`) or a named capture (`<foo>`) is Loki's 400 with Loki's text; only `<_>` is a capture here |
 
 ## Label Filters
 
@@ -84,7 +85,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | LogQL | Implementation |
 |---|---|
 | `\| decolorize` | ANSI escape sequence stripping via regex |
-| `\| ip("10.0.0.0/8")` | IP address, CIDR or range filtering. Arguments are validated at parse time; line filters accept only `\|= ip(...)` and `!= ip(...)`. Line filters translate to regular-expression approximations, so non-octet IPv4 prefixes, IPv4 ranges and IPv6 forms are not matched exactly. Label filters (`addr = ip("cidr")`) use VictoriaLogs `ipv4_range()` for IPv4 CIDRs and a regular expression for the other forms |
+| `\| ip("10.0.0.0/8")` | IP address, CIDR or range filtering. Arguments are validated at parse time; line filters accept only `\|= ip(...)` and `!= ip(...)`. IPv4 line filters keep exactly the lines Loki keeps: the address set is written as exact octet ranges with Loki's context around them (a digit or a dot right after the address makes it another address), after a literal of the octets every address fixes, which VictoriaLogs searches first. IPv6 line filters stay a regular-expression approximation. Label filters (`addr = ip("cidr")`) use VictoriaLogs `ipv4_range()` for IPv4 CIDRs and a regular expression for the other forms |
 | `\| line_format` (templates) | Go `text/template` (ToUpper, ToLower, default, etc.) with bounded work: 64 KiB output per line and 16 MiB per response, plus template depth, input and execution limits. Exceeding a limit returns HTTP 400 |
 
 ## Metric Queries

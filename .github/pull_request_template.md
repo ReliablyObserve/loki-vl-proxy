@@ -11,6 +11,11 @@
 
 - list checks/tests you ran locally or in CI
 
+## Docs (Required)
+
+- the README and `docs/` pages this change affects (compatibility coverage, performance, query plan, configuration, observability), updated in this PR, or why none are
+- a new or changed working convention added to `AGENTS.md`
+
 ## Performance (Required)
 
 - base vs PR on the same machine (`benchstat`, ≥ 6 runs; machine and `GOMAXPROCS`): CPU `ns/op`, memory `B/op` and `allocs/op`, latency per request or p50/p95
