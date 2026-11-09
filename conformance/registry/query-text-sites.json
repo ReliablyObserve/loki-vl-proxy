@@ -6,7 +6,7 @@
     "parse_calls": 62,
     "string_reads": 49,
     "text_built": 209,
-    "translator_string_ops": 666
+    "translator_string_ops": 676
   },
   "files": {
     "deferred_raw": {
@@ -95,7 +95,8 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
-      "internal/translate/linefilter.go": 22,
+      "internal/translate/ip_line_v4.go": 9,
+      "internal/translate/linefilter.go": 23,
       "internal/translate/selector.go": 17,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,

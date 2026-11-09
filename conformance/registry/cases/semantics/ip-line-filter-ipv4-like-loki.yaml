@@ -1,0 +1,52 @@
+id: semantics/ip-line-filter-ipv4-like-loki
+title: An IPv4 ip() line filter keeps the lines Loki's keeps, never a substring of a longer number (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's ip() line filter reads the addresses of a line: a run of digits and
+  dots that starts at a digit, whose first octet is the last three digits
+  before the first dot, four octets of at most 255 without leading zeros, so a
+  digit or a dot right after the address makes it another one, and a single
+  colon after a hex digit belongs to an IPv6 address (recorded with the Loki
+  oracle: test/oracle/loki ipfilter, Loki's exported log.NewIPLineFilter, on a
+  grid of 21,560 lines). The proxy matched the address text as a substring:
+  `|= ip("10.0.0.1")` kept `10.0.0.12`, `110.0.0.12`, `10.0.0.1.5` and
+  `v1.10.0.0.1`; CIDR and range patterns leaked the same way; 6,660 of the
+  grid's lines differed.
+
+  Fixed: the shared builder (internal/translate, used by the translator and
+  the lowering) writes the address set as exact octet ranges with Loki's
+  context around them, after a literal of the octets every address fixes,
+  which VictoriaLogs searches first. Every IPv4 line of the grid now answers
+  like Loki; IPv6 stays semantics/ip-filter-precision.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="ip-line"} |= ip("10.0.0.1")'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines: the address alone, or next to a letter, `:`, `,`, `-`, `/`;
+    not `10.0.0.12`, `110.0.0.1`, `10.0.0.1.` or `::ffff:10.0.0.1`.
+gap:
+  status: fixed
+  impact: explore-visible
+  effort: M
+  area: 'internal/translate ip_line_v4.go (ipv4Boxes, ipv4LineRegex, ipv4Literal), linefilter.go IPLineFilter'
+  loki: 'ip() line filter (log.NewIPLineFilter), recorded with the Loki oracle'
+  proxy: 'exact octet ranges with Loki''s line context, after a literal prefilter'
+  planned_test: 'TestCompat_IPLineFilterLikeLoki (test/e2e-compat, group core); TestIPLineFilterMatchesLoki (internal/translate)'
+  fixed_by: '#1234'
+  visual: none
+  visual_reason: 'the visual stack''s generated addresses (10.0-5.x.y as plain text) are read alike by the substring and the exact filter, so no panel shows the difference; proven by TestCompat_IPLineFilterLikeLoki against Loki and the 21,560-line oracle grid'
+  clusters: []

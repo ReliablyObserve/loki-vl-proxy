@@ -404,6 +404,9 @@
     "semantics/ip-label-filter-missing-label | gap:fixed",
     "semantics/ip-label-filter-missing-label | perf",
     "semantics/ip-label-filter-missing-label | query",
+    "semantics/ip-line-filter-ipv4-like-loki | compare:observed",
+    "semantics/ip-line-filter-ipv4-like-loki | gap:fixed",
+    "semantics/ip-line-filter-ipv4-like-loki | query",
     "semantics/json-detected-level-error-split | compare:exact",
     "semantics/json-detected-level-error-split | gap:fixed",
     "semantics/json-detected-level-error-split | perf",
@@ -1511,6 +1514,8 @@
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
+    "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
+    "internal/translate/ip_line_filter_loki_test.go | semantics/ip-line-filter-ipv4-like-loki",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
     "internal/translator/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
@@ -1691,6 +1696,10 @@
     "test/e2e-compat/ip_label_filter_test.go | loki_api_v1_query_range",
     "test/e2e-compat/ip_label_filter_test.go | semantics/ip-filter-json-stats-pushdown",
     "test/e2e-compat/ip_label_filter_test.go | semantics/ip-label-filter-missing-label",
+    "test/e2e-compat/ip_line_filter_test.go | loki_api_v1_query",
+    "test/e2e-compat/ip_line_filter_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/ip_line_filter_test.go | semantics/ip-filter-precision",
+    "test/e2e-compat/ip_line_filter_test.go | semantics/ip-line-filter-ipv4-like-loki",
     "test/e2e-compat/json_detected_level_series_limit_test.go | limits/series-limit-error",
     "test/e2e-compat/json_detected_level_series_limit_test.go | semantics/json-metric-detected-level-derivation",
     "test/e2e-compat/json_detected_level_test.go | semantics/json-metric-detected-level-derivation",
@@ -1975,14 +1984,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 43,
+      "api": 44,
       "drilldown": 50,
       "explore": 154,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 386,
+      "go": 388,
       "playwright": 1
     },
     "page_kinds": {
@@ -2001,8 +2010,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 102,
-    "wired_items": 263
+    "unwired_items": 101,
+    "wired_items": 265
   },
   "gates": [
     "A/B shape selection",

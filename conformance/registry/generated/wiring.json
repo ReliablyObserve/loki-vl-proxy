@@ -353,6 +353,7 @@
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
+      "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
@@ -456,6 +457,7 @@
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
+      "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/label_filter_expression_test.go",
@@ -1024,6 +1026,10 @@
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
     ],
+    "semantics/ip-filter-precision": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "test/e2e-compat/ip_line_filter_test.go"
+    ],
     "semantics/ip-label-filter-embedded-address": [
       "internal/translator/ip_label_filter_test.go"
     ],
@@ -1031,6 +1037,10 @@
       "internal/proxy/ip_label_filter_test.go",
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
+    ],
+    "semantics/ip-line-filter-ipv4-like-loki": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "test/e2e-compat/ip_line_filter_test.go"
     ],
     "semantics/json-detected-level-error-split": [
       "internal/proxy/ordered_json_detected_level_split_test.go",
@@ -1662,7 +1672,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 439,
+  "registry_items": 440,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2817,6 +2827,10 @@
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
+    "internal/translate/ip_line_filter_loki_test.go": [
+      "semantics/ip-filter-precision",
+      "semantics/ip-line-filter-ipv4-like-loki"
+    ],
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3130,6 +3144,12 @@
       "loki_api_v1_query_range",
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/ip-label-filter-missing-label"
+    ],
+    "test/e2e-compat/ip_line_filter_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/ip-filter-precision",
+      "semantics/ip-line-filter-ipv4-like-loki"
     ],
     "test/e2e-compat/json_detected_level_series_limit_test.go": [
       "limits/series-limit-error",
@@ -3574,7 +3594,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 387,
+  "tests_with_markers": 389,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3633,7 +3653,6 @@
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
     "semantics/ip-filter-keeps-parser-error-lines",
-    "semantics/ip-filter-precision",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
     "semantics/label-replace-aggregation-over-transform",
@@ -3680,5 +3699,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 263
+  "wired_items": 265
 }
