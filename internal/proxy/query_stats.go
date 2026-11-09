@@ -204,29 +204,36 @@ func (w *queryStatsWriter) WriteHeader(code int) {
 	if w.wroteHeader {
 		return
 	}
-	w.decide(code)
+	if w.decide(code) {
+		h := w.Header()
+		h.Set("Content-Type", "application/json")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Del("Content-Length")
+	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
 // decide fixes, before the headers go out, whether the answer is filled: a
 // JSON success answer (application/json, the type every query answer is
-// written with) the handler did not encode. The type is set again as the
-// constant it is, so the answer is never read as anything but JSON.
-func (w *queryStatsWriter) decide(code int) {
+// written with) the handler did not encode. Its callers set the type again
+// as the constant it is, with nosniff, so a filled answer is never read as
+// anything but JSON (set where the body is written, which is where code
+// scanning looks for it).
+func (w *queryStatsWriter) decide(code int) bool {
 	w.wroteHeader = true
 	h := w.Header()
 	w.patch = code == http.StatusOK && h.Get("Content-Encoding") == "" &&
 		h.Get("Content-Type") == "application/json"
-	if w.patch {
-		h.Set("Content-Type", "application/json")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Del("Content-Length")
-	}
+	return w.patch
 }
 
 func (w *queryStatsWriter) Write(b []byte) (int, error) {
-	if !w.wroteHeader {
-		w.decide(http.StatusOK) // the implicit 200 stays implicit below
+	// The implicit 200 stays implicit below.
+	if !w.wroteHeader && w.decide(http.StatusOK) {
+		h := w.Header()
+		h.Set("Content-Type", "application/json")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Del("Content-Length")
 	}
 	if !w.patch {
 		return w.ResponseWriter.Write(b)
