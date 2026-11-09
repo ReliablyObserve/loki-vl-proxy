@@ -319,3 +319,6 @@ decisions:
     code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/range_metric_compat.go, internal/proxy/unwrap_samples.go, internal/proxy/quantile_histogram.go]
     tests: [TestUnwrapGateReadFromTheDecodedSpec, TestDecodeStatsShape, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
+    performance:
+      tracked: ['BenchmarkUnwrapGateReadsBefore / BenchmarkUnwrapGateReadsAfter ns/op, B/op, allocs/op (internal/proxy)']
+      bound: 'The unwrap-gate reads of one gated range request (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): 8.27 µs, 9.0 KiB, 30 allocs before; 4.36 µs, 5.1 KiB, 15 allocs after'
