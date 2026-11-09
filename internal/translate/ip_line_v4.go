@@ -149,11 +149,23 @@ func digitsRange(lo, hi string) string {
 	return "(?:" + strings.Join(alts, "|") + ")"
 }
 
+// The edges of the IPv4 regexp. A negated class such as [^0-9.:] holds the letters and the rest of Unicode, and
+// VictoriaLogs prints it while it simplifies a regexp; Go's regexp/syntax then checks its case folding rune by rune,
+// about a millisecond per class on every query. Each edge is therefore written as a class without ASCII letters and
+// the letters in a class of their own, with the anchor between them so the parser does not merge the two back into
+// one class: the same characters match, and the regexp parses in microseconds.
+const (
+	ipv4LeadOther = `(?:[^0-9.:A-Za-z]|^|[A-Za-z])` // ^ or [^0-9.:]
+	ipv4LeadColon = `(?:[^0-9:A-Za-z]|^|[G-Zg-z])`  // ^ or [^0-9A-Fa-f:]
+	ipv4LeadDots  = `(?:[^0-9A-Za-z]|^|[A-Za-z])`   // ^ or [^0-9]
+	ipv4Trail     = `(?:[^0-9.A-Za-z]|$|[A-Za-z])`  // [^0-9.] or $
+)
+
 // ipv4LineRegex is the regexp of a line that holds an address of boxes as Loki's filter finds it.
 func ipv4LineRegex(boxes []ipv4Box) string {
 	// What may come right before the first octet: the start of the line, a character outside [0-9.:], a colon
 	// no hex digit or colon precedes, or dots no digit precedes.
-	const before = `(?:^|[^0-9.:]|(?:^|[^0-9A-Fa-f:]):|(?:^|[^0-9])\.+)`
+	const before = `(?:` + ipv4LeadOther + `|` + ipv4LeadColon + `:|` + ipv4LeadDots + `\.+)`
 	var short, long []string
 	for _, b := range boxes {
 		rest := `\.` + decimalRange(b[1][0], b[1][1]) + `\.` + decimalRange(b[2][0], b[2][1]) + `\.` + decimalRange(b[3][0], b[3][1])
@@ -172,7 +184,7 @@ func ipv4LineRegex(boxes []ipv4Box) string {
 	if len(long) > 0 {
 		alts = append(alts, before+"[0-9]*(?:"+strings.Join(long, "|")+")")
 	}
-	return "(?:" + strings.Join(alts, "|") + `)(?:[^0-9.]|$)`
+	return "(?:" + strings.Join(alts, "|") + ")" + ipv4Trail
 }
 
 // ipv4Literal is the text every address of boxes starts with (the octets they all fix, with the dot after a fixed
