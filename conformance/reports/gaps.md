@@ -144,12 +144,24 @@ newest weekly run did not re-measure (listed apart in performance.md).
 
 | registry item | slower shape×range | worst proxy cold | Loki cold there | proxy warm there | Loki warm there | also slower warm |
 |---|---|---|---|---|---|---|
-| `drilldown/patterns-full-range-counts` | 3 | 0.97s (DP2 patterns of an environment, 1h) | 0.43s | 0.09s | 0.20s | — |
-| `drilldown/patterns-one-series-per-level` | 3 | 0.97s (DP2 patterns of an environment, 1h) | 0.43s | 0.09s | 0.20s | — |
-| `parser-error-and-label-collision` | 2 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
-| `quality/query-range-settled-steps` | 1 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
-| `semantics/unwrap-conversion-error` | 1 | 0.95s (E2 json duration_ms p95 by service, 24h) | 0.69s | 0.01s | 0.02s | — |
-| `quality/json-label-probe-gates` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
-| `semantics/extracted-suffix-collision` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
-| `semantics/json-extracted-metric-pushdown` | 1 | 0.30s (LS8 json count by level_extracted, collision, 6h) | 0.12s | 0.03s | 0.01s | — |
-| `semantics/pattern-line-filter-anchoring` | 1 | 0.16s (A5 drilldown exclude, volume by detected_level, 24h) | 0.10s | 0.01s | 0.01s | — |
+| `parser-error-and-label-collision` | 6 | 4.50s (X1 json filter level_extracted, by level, 24h) | 3.50s | 0.05s | 0.03s | — |
+| `quality/json-label-probe-gates` | 5 | 4.50s (X1 json filter level_extracted, by level, 24h) | 3.50s | 0.05s | 0.03s | — |
+| `semantics/extracted-suffix-collision` | 5 | 4.50s (X1 json filter level_extracted, by level, 24h) | 3.50s | 0.05s | 0.03s | — |
+| `semantics/json-extracted-metric-pushdown` | 4 | 4.50s (X1 json filter level_extracted, by level, 24h) | 3.50s | 0.05s | 0.03s | — |
+| `drilldown/patterns-full-range-counts` | 2 | 1.18s (DP2 patterns of an environment, 1h) | 0.21s | 0.12s | 0.25s | — |
+| `drilldown/patterns-one-series-per-level` | 2 | 1.18s (DP2 patterns of an environment, 1h) | 0.21s | 0.12s | 0.25s | — |
+| `quality/query-range-settled-steps` | 1 | 0.96s (E2 json duration_ms p95 by service, 24h) | 0.76s | 0.01s | 0.01s | — |
+| `semantics/unwrap-conversion-error` | 1 | 0.96s (E2 json duration_ms p95 by service, 24h) | 0.76s | 0.01s | 0.01s | — |
+| `explore-logs-volume-json` | 1 | 0.27s (A explore volume, 2 filters, drop, 1h) | 0.16s | 0.03s | 0.03s | — |
+| `parsed-label-series-identity` | 1 | 0.27s (F field breakdown service_version (explore), 1h) | 0.15s | 0.03s | 0.03s | — |
+| `semantics/json-filter-pushdown-translated-label` | 1 | 0.27s (A explore volume, 2 filters, drop, 1h) | 0.16s | 0.03s | 0.03s | — |
+| `semantics/json-filter-pushdown-underscore-label` | 2 | 0.27s (A explore volume, 2 filters, drop, 1h) | 0.16s | 0.03s | 0.03s | — |
+| `semantics/json-label-spelling-probe` | 1 | 0.27s (F field breakdown service_version (explore), 1h) | 0.15s | 0.03s | 0.03s | — |
+| `drilldown-service-landing` | 1 | 0.13s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.03s | 0.01s | 0.12s | — |
+| `severity-detected-level-derivation` | 1 | 0.13s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.03s | 0.01s | 0.12s | — |
+| `severity/detected-level-filter-json-level` | 1 | 0.13s (LF9 drilldown logs, level pill, logfmt service, 24h) | 0.03s | 0.01s | 0.12s | — |
+| `semantics/ip-filter-json-stats-pushdown` | 1 | 0.28s (IP5 count, json ip=ip(range), 24h) | 0.19s | 0.03s | 0.01s | — |
+| `semantics/ip-label-filter-missing-label` | 1 | 0.28s (IP5 count, json ip=ip(range), 24h) | 0.19s | 0.03s | 0.01s | — |
+| `semantics/pattern-line-filter-anchoring` | 1 | 0.18s (A5 drilldown exclude, volume by detected_level, 24h) | 0.11s | 0.01s | 0.01s | — |
+| `loki-compatible-profile` | 1 | 0.10s (E7 json count by level_extracted, 1h) | 0.04s | 0.04s | 0.01s | — |
+| `profiles/structured-metadata-label-collision` | 1 | 0.10s (E7 json count by level_extracted, 1h) | 0.04s | 0.04s | 0.01s | — |

@@ -1,6 +1,6 @@
 {
  "label": "daily-drilldown-patterns-loki-defaults",
- "date": "2026-11-08",
+ "date": "2026-11-09",
  "set": "drilldown-patterns",
  "description": "Logs Drilldown's Patterns tab: /loki/api/v1/patterns for a service Loki's pattern ingester mines (cache-redis, plain text) and for the environment selector of the Drilldown landing page, as the plugin sends them (no step: Loki derives it). Loki and the proxy mine different patterns, so the answers compare in lines counted, not in pattern text.",
  "baseline": "release",
@@ -17,7 +17,8 @@
  "refresh_runs": null,
  "timing": "warm",
  "verdicts": {
-  "same": 6
+  "same": 5,
+  "slower": 1
  },
  "result_differs_from_reference": 4,
  "result_differs_preexisting": 4,
@@ -31,19 +32,19 @@
    "shape": "DP1 patterns of a plain-text service",
    "range": "1h",
    "p50": {
-    "release": 0.007,
-    "main": 0.007,
-    "loki": 0.017
+    "release": 0.01,
+    "main": 0.011,
+    "loki": 0.019
    },
    "p95": {
     "release": 0.011,
-    "main": 0.008,
-    "loki": 0.023
+    "main": 0.017,
+    "loki": 0.021
    },
    "cold": {
-    "release": 0.102,
-    "main": 0.21,
-    "loki": 0.016
+    "release": 0.116,
+    "main": 0.264,
+    "loki": 0.022
    },
    "status": {
     "release": "200",
@@ -51,33 +52,33 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 142.49,
-    "main": 142.49,
-    "loki": 142.49
+    "release": 173.95,
+    "main": 173.95,
+    "loki": 173.95
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.91
   },
   {
    "shape": "DP1 patterns of a plain-text service",
    "range": "6h",
    "p50": {
-    "main": 0.02,
-    "release": 0.02,
-    "loki": 0.02
+    "main": 0.028,
+    "release": 0.024,
+    "loki": 0.029
    },
    "p95": {
-    "main": 0.026,
+    "main": 0.048,
     "release": 0.032,
-    "loki": 0.026
+    "loki": 0.055
    },
    "cold": {
-    "main": 0.021,
-    "release": 0.018,
-    "loki": 0.019
+    "main": 0.028,
+    "release": 0.034,
+    "loki": 0.075
    },
    "status": {
     "main": "200",
@@ -85,33 +86,33 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 142.49,
-    "release": 142.49,
-    "loki": 142.49
+    "main": 173.95,
+    "release": 173.95,
+    "loki": 173.95
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.0
+   "speedup": 0.86
   },
   {
    "shape": "DP1 patterns of a plain-text service",
    "range": "24h",
    "p50": {
-    "release": 0.015,
-    "main": 0.015,
+    "release": 0.019,
+    "main": 0.019,
     "loki": 0.011
    },
    "p95": {
-    "release": 0.015,
-    "main": 0.017,
-    "loki": 0.012
+    "release": 0.019,
+    "main": 0.019,
+    "loki": 0.011
    },
    "cold": {
-    "release": 0.016,
-    "main": 0.016,
-    "loki": 0.013
+    "release": 0.019,
+    "main": 0.019,
+    "loki": 0.011
    },
    "status": {
     "release": "200",
@@ -119,9 +120,9 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 142.49,
-    "main": 142.49,
-    "loki": 142.49
+    "release": 173.95,
+    "main": 173.95,
+    "loki": 173.95
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
@@ -133,19 +134,19 @@
    "shape": "DP2 patterns of an environment",
    "range": "1h",
    "p50": {
-    "main": 0.093,
-    "release": 0.076,
-    "loki": 0.199
+    "main": 0.121,
+    "release": 0.062,
+    "loki": 0.248
    },
    "p95": {
-    "main": 0.133,
-    "release": 0.137,
-    "loki": 0.387
+    "main": 0.15,
+    "release": 0.136,
+    "loki": 0.415
    },
    "cold": {
-    "main": 0.974,
-    "release": 1.956,
-    "loki": 0.427
+    "main": 1.182,
+    "release": 2.705,
+    "loki": 0.21
    },
    "status": {
     "main": "200",
@@ -153,33 +154,33 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 293.68,
-    "release": 293.68,
-    "loki": 293.68
+    "main": 358.78,
+    "release": 358.78,
+    "loki": 290.99
    },
    "parity_vs_reference": "same",
    "baseline_parity_vs_reference": "same",
    "parity_vs_baseline": "same",
-   "verdict": "same",
-   "speedup": 0.82
+   "verdict": "slower",
+   "speedup": 0.51
   },
   {
    "shape": "DP2 patterns of an environment",
    "range": "6h",
    "p50": {
-    "release": 0.122,
-    "main": 0.11,
-    "loki": 0.162
+    "release": 0.183,
+    "main": 0.133,
+    "loki": 0.196
    },
    "p95": {
-    "release": 0.192,
-    "main": 0.154,
-    "loki": 0.315
+    "release": 0.326,
+    "main": 0.2,
+    "loki": 0.273
    },
    "cold": {
-    "release": 0.252,
-    "main": 0.182,
-    "loki": 0.234
+    "release": 0.356,
+    "main": 0.224,
+    "loki": 0.272
    },
    "status": {
     "release": "200",
@@ -187,33 +188,33 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "release": 293.68,
-    "main": 244.85,
-    "loki": 244.85
+    "release": 246.68,
+    "main": 246.68,
+    "loki": 246.68
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 1.11
+   "speedup": 1.38
   },
   {
    "shape": "DP2 patterns of an environment",
    "range": "24h",
    "p50": {
-    "main": 0.204,
-    "release": 0.187,
-    "loki": 0.15
+    "main": 0.239,
+    "release": 0.211,
+    "loki": 0.157
    },
    "p95": {
-    "main": 0.281,
-    "release": 0.192,
-    "loki": 0.297
+    "main": 0.296,
+    "release": 0.215,
+    "loki": 0.192
    },
    "cold": {
-    "main": 0.242,
-    "release": 0.172,
-    "loki": 0.154
+    "main": 0.211,
+    "release": 0.209,
+    "loki": 0.203
    },
    "status": {
     "main": "200",
@@ -221,21 +222,21 @@
     "loki": "200"
    },
    "vl_cpu_max": {
-    "main": 113.47,
-    "release": 72.17,
-    "loki": 113.47
+    "main": 139.03,
+    "release": 139.03,
+    "loki": 3.25
    },
    "parity_vs_reference": "differs",
    "baseline_parity_vs_reference": "differs",
    "parity_vs_baseline": "same",
    "verdict": "same",
-   "speedup": 0.92
+   "speedup": 0.88
   }
  ],
- "baseline_ref": "v2.94.0",
- "commit": "e4a743f6757445900bb6b12c11b431f3e8edf2ab",
- "measured_at": "2026-11-08T03:22:29Z",
- "run": "42442427345.1",
+ "baseline_ref": "v2.105.0",
+ "commit": "0843224237dabca214c3d136a9d1db1c100e5987",
+ "measured_at": "2026-11-09T03:27:00Z",
+ "run": "42556435495.1",
  "proxy_align": {
   "release": "on",
   "main": "on"
