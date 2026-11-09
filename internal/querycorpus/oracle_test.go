@@ -199,6 +199,10 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
 		return "", "", false
 	}
+	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
+	if translatorMisreadsQuotedText(r.Query) {
+		return "", "", false
+	}
 	lq, err := logql.ParseLogQuery(r.Query)
 	if err != nil {
 		return "", "", false
