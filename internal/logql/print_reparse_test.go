@@ -237,6 +237,7 @@ func FuzzPrintReparse(f *testing.F) {
 		}
 	}
 	for _, seed := range []string{
+		`-00`, // negative zero prints as "- 0": Loki's lexer reads "-0" as a duration
 		`{app="nginx"}`,
 		`{app="nginx"} |= "error" != "debug"`,
 		`{app="nginx"} | json | level="error"`,

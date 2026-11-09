@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -567,6 +568,11 @@ func (l *LiteralExpr) String() string {
 // formatNumber prints a number the parser reads back to the same value: no
 // exponent (`1000000`, not `1e+06`), which the scanner cuts into `1e`, `+`, `06`.
 func formatNumber(v float64) string {
+	if v == 0 && math.Signbit(v) {
+		// Loki's lexer reads `-0` as a duration (Go's ParseDuration accepts "0" without a unit); `- 0` is the
+		// negated number.
+		return "- 0"
+	}
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
