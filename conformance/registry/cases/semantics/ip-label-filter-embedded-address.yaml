@@ -70,5 +70,5 @@ gap:
   area: 'internal/translate ip_label_filter.go IPLabelFilter (IPv6 values with an address inside other text)'
   loki: 'pkg/logql/log/ip.go:183-226 (address scan inside the value)'
   proxy: 'IPv4: Loki''s lines exactly; IPv6: a subset of Loki''s lines, an embedded address is not read'
-  planned_test: 'TestIPLabelFilterMatchesLoki (internal/translator); TestCompat_IPLabelFilterEmbeddedAddressLikeLoki (test/e2e-compat, group core)'
+  planned_test: 'TestIPLabelFilterMatchesLoki (internal/translator); TestCompat_IPLabelFilterEmbeddedAddressLikeLoki (test/e2e-compat, group semantics)'
   clusters: []

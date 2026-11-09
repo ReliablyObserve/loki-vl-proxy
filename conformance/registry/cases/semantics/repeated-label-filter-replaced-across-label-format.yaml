@@ -49,7 +49,7 @@ gap:
   area: 'internal/translator translateLogQueryOpts (every label filter stage is kept where it stands)'
   loki: 'stages run in order and each label filter applies (pipeline, label filter stage)'
   proxy: 'a later filter on the same label no longer replaces the earlier one'
-  planned_test: 'TestCompat_RepeatedLabelFiltersApplyAllLikeLoki (test/e2e-compat, group core); TestRepeatedLabelFiltersApplyAllLikeLoki; TestRepeatedLabelFiltersKeepTheirPlace'
+  planned_test: 'TestCompat_RepeatedLabelFiltersApplyAllLikeLoki (test/e2e-compat, group semantics); TestRepeatedLabelFiltersApplyAllLikeLoki; TestRepeatedLabelFiltersKeepTheirPlace'
   fixed_by: '#PR'
   visual: none
   visual_reason: 'Grafana shows the same lines for the same query on both sides once the filters apply; proven by TestCompat_RepeatedLabelFiltersApplyAllLikeLoki against Loki (lines for every repeated-filter shape)'
