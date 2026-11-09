@@ -281,3 +281,23 @@ decisions:
     code: [internal/proxy/metric_binary.go, internal/proxy/query_translation.go, internal/proxy/metric_agg.go]
     tests: [TestBinaryOperandsReadLikeTheirText, TestBinaryMatchingOfNestedExpressions, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests and answers do not change; the operands are still the string translator''s.'
+  - id: stats-handlers-read-vlstats
+    chosen: 'Each producer of a translated stats query decodes it once (translator.DecodeStats: the stats verdict and the shape of the first stats pipe, as text) and passes physical.VLStats down: the range and instant handlers and the two post-aggregation paths hand it to proxyStatsQueryRange, proxyStatsQuery, handleStatsCompatRange, nativeMathTumblingStatsCompatible, handleStatsCompatInstant and proxyRankedTopKRange, which read its fields instead of re-reading the text. The readers (isStatsQuery, parseStatsCompatSpec) move verbatim into the translator''s codec; three paths that rewrite the query as text before reading it keep thin wrappers over it'
+    over: [swapping the readers in place at each site, a typed GroupKey for the grouping, building the stats queries from a typed Base in the same step]
+    why: |
+      Step ten of architecture B, first part (owner 2026-11-08). The base query
+      is sent to VictoriaLogs and goes into cache keys, which stay byte for byte
+      until the key step, and the LogsQL AST keeps no offsets, so the base stays
+      the original text before the stats pipe and the grouping stays text (a
+      bucket key such as `_time:60000000000ns offset 1ns` is one entry). The
+      typed Base and the typed query building (the design's string_reads −10
+      and text_built −40) are their own step, gated by byte-identical keys.
+      fieldBreakdownQuery, rankedSingleFieldQuery and
+      preserveMetricStreamIdentity read text they rewrote first; they move with
+      the typed query building. lowering_marker_reads 25 → 15; the moved reader
+      counts in translator_string_ops (646 → 664), the translator's every
+      strings call, and goes with the translator.
+    evidence: 'internal/querycorpus/stats_decode_test.go TestDecodeStatsReadsLikeTheProxyReaders (every corpus row''s translation, with and without markers, under the 12 profiles: about 4,900 texts per profile, the same verdict and shape as the proxy readers); route parity digests unchanged; route-parity dumps of two base and two PR runs: the 60 runs whose VictoriaLogs requests differ are all `| json`/`| logfmt` metric queries with identical status and route steps (two base runs already differ on 24 of them) (2026-11-09)'
+    code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/proxy.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/metric_agg.go, internal/proxy/stream_processing.go]
+    tests: [TestDecodeStatsReadsLikeTheProxyReaders, TestDecodeStatsShape, TestDecodeStatsTellsAStatsQuery, TestPlanRouteParity]
+    quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
