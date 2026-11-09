@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bytes"
+	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,11 +88,18 @@ func TestVLStatsErrorBodyDoesNotDecodeSuccessAnswers(t *testing.T) {
 	if raceDetectorEnabled {
 		t.Skip("the race detector's shadow allocations are not the check's")
 	}
-	allocs := testing.AllocsPerRun(5, func() {
-		if _, isErr := vlStatsErrorBody(body); isErr {
-			t.Fatal("a success answer is no error")
-		}
-	})
+	// AllocsPerRun counts every allocation in the process: work another test left
+	// running can land in one measurement. The lowest of several is the check's own;
+	// decoding the body costs tens of thousands.
+	allocs := math.Inf(1)
+	for range 5 {
+		runtime.GC()
+		allocs = math.Min(allocs, testing.AllocsPerRun(5, func() {
+			if _, isErr := vlStatsErrorBody(body); isErr {
+				t.Fatal("a success answer is no error")
+			}
+		}))
+	}
 	if allocs > 2 {
 		t.Fatalf("the check allocated %.0f objects for a success answer: it decoded the body", allocs)
 	}
