@@ -194,6 +194,20 @@ says why the request path does not change. A change to answers or routes keeps
 its timing tables against Loki and its load test on top of this. Commit the
 benchmark rather than a throwaway one, and name it in the registry decision.
 
+
+## No performance regression; bring touched components to Loki's speed
+
+A pull request never makes anything slower than its base: proxy CPU, memory,
+allocations and latency, and the work it asks of VictoriaLogs (more requests,
+or a heavier filter such as a regexp in place of an indexed one). Fixing an
+answer is no exception: find the exact form that is also fast.
+
+When a pull request touches a component that is already as slow as Loki or
+slower, or its change makes something slower, bringing that component to
+Loki's speed or better is part of the same work, not a follow-up. Measure it
+(`benchstat`, the cost on VictoriaLogs, timings against Loki for the affected
+query shapes) and keep improving it. Only when that is not possible within
+the change, show why with numbers and ask the maintainers before it ships.
 ## Published numbers
 
 Every number the README, `docs/` and the website state is generated and kept current: a generator writes it, a
