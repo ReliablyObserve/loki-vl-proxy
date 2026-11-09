@@ -92,19 +92,36 @@ func keepMetadataProjectionResponseKeyVersion(query string) string {
 // label filter (not the `|= ip(...)` line filter).
 var ipLabelFilterStageRE = regexp.MustCompile(`[A-Za-z0-9_]\s*!?=\s*ip\s*\(`)
 
-const ipLabelFilterResponseVersion = "@ip-label-filter-v2:"
+const ipLabelFilterResponseVersion = "@ip-label-filter-v3:"
 
 // ipLabelFilterResponseKeyVersion fences the replies cached before an ip()
 // label filter answered like Loki in local and peer-fed response caches: v1
 // before an absent label matched neither operator, v2 before the `| json` and
 // `| logfmt` metric plans compared the label with the text ip(...) and so
-// answered no series.
+// answered no series, and v3 before an IPv4 pattern read a value with an
+// address inside other text ("1.2.3.4:443").
 //
 // Every query and query_range request builds this key: a query without the
 // text "ip", which every match holds, skips the regexp.
 func ipLabelFilterResponseKeyVersion(query string) string {
 	if strings.Contains(query, "ip") && ipLabelFilterStageRE.MatchString(query) {
 		return ipLabelFilterResponseVersion
+	}
+	return ""
+}
+
+// labelFilterStageRE matches a `| label op value` stage, a superset of the label filter stages: a quoted text that
+// looks like one matches too.
+var labelFilterStageRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.]*\s*(?:=~|!~|!=|==|>=|<=|=|>|<)`)
+
+const repeatedLabelFilterResponseVersion = "@repeated-label-filters-v1:"
+
+// repeatedLabelFilterResponseKeyVersion fences the replies cached before every label filter of a query applied
+// where it stands: a later filter on a label replaced the earlier one, so a query with two label filter stages
+// answered other lines than Loki does. A query with fewer than two stages cannot repeat a filter.
+func repeatedLabelFilterResponseKeyVersion(query string) string {
+	if len(labelFilterStageRE.FindAllStringIndex(query, 2)) == 2 {
+		return repeatedLabelFilterResponseVersion
 	}
 	return ""
 }

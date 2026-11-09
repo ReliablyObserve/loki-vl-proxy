@@ -1533,9 +1533,10 @@ func TestMetadataQueryParams_UnknownVersionForwardsSubstringFilter(t *testing.T)
 	}
 }
 
-// ip() label filters translate to the native ipv4_range() whatever backend
-// version is known, an unknown one included.
-func TestTranslateIPFilter_UnknownVersionEmitsIPv4Range(t *testing.T) {
+// An IPv4 ip() label filter translates to ipv4_range on a block of addresses and to the regexp of the address set,
+// which reads an address inside other text as Loki does, on any other block, whatever backend version is known, an
+// unknown one included.
+func TestTranslateIPFilter_UnknownVersionEmitsAddressRange(t *testing.T) {
 	for _, version := range []string{"", "v1.49.0", "v1.52.0"} {
 		t.Run("backend "+version, func(t *testing.T) {
 			p := newTestProxy(t, "http://unused")
@@ -1546,8 +1547,8 @@ func TestTranslateIPFilter_UnknownVersionEmitsIPv4Range(t *testing.T) {
 			if err != nil {
 				t.Fatalf("translate: %v", err)
 			}
-			if !strings.Contains(got, "ipv4_range(10.0.0.0, 10.255.255.255)") {
-				t.Fatalf("expected ipv4_range(), got %q", got)
+			if !strings.Contains(got, `addr:~"`) || !strings.Contains(got, "addr:value_type(ipv4) addr:ipv4_range(10.0.0.0, 10.255.255.255)") {
+				t.Fatalf("expected the address range and regexp, got %q", got)
 			}
 		})
 	}

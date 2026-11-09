@@ -1,15 +1,16 @@
 {
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
-    "deferred_raw": 7,
+    "deferred_raw": 8,
     "lowering_marker_reads": 11,
     "parse_calls": 64,
-    "string_reads": 49,
+    "string_reads": 50,
     "text_built": 209,
-    "translator_string_ops": 675
+    "translator_string_ops": 674
   },
   "files": {
     "deferred_raw": {
+      "internal/translate/ip_label_filter.go": 1,
       "internal/translator/translator.go": 7
     },
     "lowering_marker_reads": {
@@ -67,6 +68,7 @@
       "internal/proxy/metric_binary.go": 2,
       "internal/proxy/ordered_json_metric.go": 3,
       "internal/proxy/plain_stream_labels.go": 2,
+      "internal/proxy/proxy.go": 1,
       "internal/proxy/query_translation.go": 5,
       "internal/proxy/range_metric_compat.go": 8,
       "internal/proxy/stats_extent_cache.go": 1,
@@ -97,14 +99,17 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
+      "internal/translate/ip_label_filter.go": 9,
       "internal/translate/ip_line_v4.go": 9,
+      "internal/translate/label_filter.go": 5,
+      "internal/translate/label_filter_regexp.go": 4,
       "internal/translate/linefilter.go": 23,
       "internal/translate/linefilter_pattern.go": 9,
       "internal/translate/selector.go": 17,
       "internal/translator/detected_level_logsql.go": 38,
-      "internal/translator/ip_label_filter.go": 5,
+      "internal/translator/ip_label_filter.go": 1,
       "internal/translator/label_filter_expr.go": 6,
-      "internal/translator/label_matcher_regexp.go": 5,
+      "internal/translator/label_matcher_regexp.go": 1,
       "internal/translator/nested_vector_chain.go": 17,
       "internal/translator/normalize.go": 6,
       "internal/translator/parsed_key_variants.go": 71,
@@ -112,7 +117,7 @@
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
-      "internal/translator/translator.go": 390,
+      "internal/translator/translator.go": 379,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

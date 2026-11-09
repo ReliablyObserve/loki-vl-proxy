@@ -1,5 +1,5 @@
 id: semantics/ip-label-filter-embedded-address
-title: An ip() label filter on a value with an address inside other text ("1.2.3.4:443") keeps fewer lines than Loki (open)
+title: An ip() label filter on a value with an IPv6 address inside other text keeps fewer lines than Loki (open; IPv4 fixed)
 pending: true
 proves:
   - loki_api_v1_query_range
@@ -21,10 +21,31 @@ why: |
   is handled the same way under `!=`, since a zone can hold an address
   Loki scans.
 
-  Planned approach: per request, probe VictoriaLogs for the distinct label
-  values that are no whole address but hold text of the pattern's form,
-  evaluate them with Loki's scan in the proxy, and add the matching ones as
-  exact-value alternatives (`=`) or exclusions (`!=`), bounded by a flag.
+  Fixed for IPv4: the label filter is the line filter's regexp
+  (translate.IPLineFilterRegex, which reads a line as Loki's scan does) run on
+  the value, after a substring prefilter (the line filter's, which
+  VictoriaLogs answers from its bloom filters), on every block that holds
+  text; a block of plain addresses, which VictoriaLogs stores as numbers
+  (`value_type(ipv4)`), keeps the `ipv4_range` compare, so a column of
+  addresses costs what it cost. So `addr=ip("10.0.0.0/8")` keeps "10.0.0.5:443" and
+  "client 10.0.0.5", `!=` drops them, and a missing label is dropped under
+  both. The Go evaluation (DropCondition.Matches) is the same regexp, so the
+  rows, the stats pushdown and the log query agree. Loki's answers are recorded
+  with the Loki oracle (process) over 67,584 pattern x value cases (both
+  families, every boundary around the address, leading zeros, the other
+  family) and every IPv4 case matches, for = and !=.
+
+  Still open for IPv6: no regexp reads an IPv6 value as Loki's scan does (the
+  same limit as the line filter, semantics/ip-filter-precision), so an IPv6
+  pattern keeps the whole-address forms: it never keeps a line Loki drops and
+  keeps fewer of Loki's lines for a value with an address inside other text.
+  12,414 of the 135,168 grid answers differ; the count is a ratchet
+  (ipv6LabelKnownDifferences) that may only fall. Of these, every `=` case and
+  the `!=` cases on a value with text around the address differ; a value that
+  is one whole address differs only under `!=` when it carries a zone
+  (`fe80::1%eth0`), which Loki's scan reads without the zone. An exact IPv6
+  regexp costs 7 to 20 times what the whole-address forms cost on VictoriaLogs
+  (semantics/ip-filter-precision), so it stays open.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -46,8 +67,8 @@ gap:
   status: open
   impact: edge
   effort: M
-  area: 'internal/translator/ip_label_filter.go ipLabelFilter (values with an address inside other text)'
+  area: 'internal/translate ip_label_filter.go IPLabelFilter (IPv6 values with an address inside other text)'
   loki: 'pkg/logql/log/ip.go:183-226 (address scan inside the value)'
-  proxy: 'a subset of Loki''s lines: an embedded address is not read'
-  planned_test: 'TestIPLabelFilter_Differential (internal/translator): the kept set is a subset of Loki''s for embedded values; an e2e row once the probe lands'
+  proxy: 'IPv4: Loki''s lines exactly; IPv6: a subset of Loki''s lines, an embedded address is not read'
+  planned_test: 'TestIPLabelFilterMatchesLoki (internal/translator); TestCompat_IPLabelFilterEmbeddedAddressLikeLoki (test/e2e-compat, group semantics)'
   clusters: []

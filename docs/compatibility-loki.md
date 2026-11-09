@@ -159,6 +159,7 @@ The exhaustive parity helper previously sent millisecond integers that Loki inte
 - A pattern line filter with two captures in a row or a named capture returns Loki's 400 and text.
 - An invalid line filter's error quotes the run of line filters Loki builds together and names the filter Loki names; a label filter, drop or keep regexp Loki cannot parse returns Loki's 400.
 - A `|=` or `!=` line filter whose text is not UTF-8 answers like Loki (no line, every line); error texts that quote such bytes write U+FFFD per byte, as Loki does.
+- Every label filter of a query applies where it stands (`| a="1" | a="2"` keeps no line); an IPv4 `ip()` label filter reads an address inside other text as Loki does (IPv6 stays a subset, see [Known issues](KNOWN_ISSUES.md)).
 - `unwrap duration(...)` and `unwrap bytes(...)` on the bare parser metric path convert unit strings such as `15ms` and `1024B`; previously every sample was dropped and no series was returned.
 - Grouped `quantile_over_time` keeps its grouping, binary operators preserve precedence and `bool` semantics, and vector-vector operands are joined on a step-aligned grid.
 - Scalar timestamps are encoded in seconds and sample values use Loki's fixed-point rendering.

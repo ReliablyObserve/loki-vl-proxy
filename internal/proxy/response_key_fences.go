@@ -43,6 +43,7 @@ func responseKeyFences(r *http.Request, query string, site responseKeySite) stri
 	b.WriteString(detectedLevelMutationResponseKeyVersion(query))
 	b.WriteString(keepMetadataProjectionResponseKeyVersion(query))
 	b.WriteString(ipLabelFilterResponseKeyVersion(query))
+	b.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	if site == responseKeyCompatQueryRange {
 		b.WriteString(logfmtPresenceResponseKeyVersion(r, query))
 	}

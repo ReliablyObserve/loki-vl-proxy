@@ -152,8 +152,8 @@ func TestOrderedJSONIPFilterPushdownLikeRowEvaluator(t *testing.T) {
 			if strings.Contains(stats, `ip:="ip(`) || strings.Contains(stats, `ip:=\"ip(`) {
 				t.Errorf("the filter compares the text ip(...): %s", stats)
 			}
-			if strings.Contains(query, `10.2.0.0/16`) && !strings.Contains(stats, "ip:ipv4_range(10.2.0.0, 10.2.255.255)") {
-				t.Errorf("no address range filter in %s", stats)
+			if strings.Contains(query, `10.2.0.0/16`) && (!strings.Contains(stats, `ip:~"`) || !strings.Contains(stats, "ip:ipv4_range(10.2.0.0, 10.2.255.255)")) {
+				t.Errorf("no address range and regexp filter in %s", stats)
 			}
 		})
 	}
@@ -255,8 +255,8 @@ func TestOrderedJSONIPFilterInstantReadsNoRawRows(t *testing.T) {
 					t.Errorf("raw read %q", raw.query)
 				}
 			}
-			if !strings.Contains(fake.stats[0], "ip:ipv4_range(") {
-				t.Errorf("no address range filter in %s", fake.stats[0])
+			if !strings.Contains(fake.stats[0], `ip:~"`) || !strings.Contains(fake.stats[0], "ip:ipv4_range(") {
+				t.Errorf("no address range and regexp filter in %s", fake.stats[0])
 			}
 		})
 	}

@@ -19,10 +19,16 @@ semantics: |
   (semantics/ip-filter-keeps-parser-error-lines), so a metric over it answers
   Loki's pipeline error unless `__error__=""` drops it.
 victorialogs: |
-  `ipv4_range(lo, hi)` / `ipv6_range(lo, hi)` on the field, guarded so only
-  values Loki reads as that same whole address match (digits-and-dots IPv4
-  without leading zeros; IPv6 starting with a group), plus `field:*` for the
-  `!=` presence (internal/translator/ip_label_filter.go ipLabelFilter). Log
+  An IPv4 pattern is `ipv4_range(lo, hi)` on a block of values VictoriaLogs
+  stores as addresses (`value_type(ipv4)`, a compare of numbers), and on any
+  other block the regexp of the `ip()` line filter (translate.IPLineFilterRegex)
+  run on the field after a substring prefilter (the fixed octets, an
+  alternation of a few first octets, or the dot of an address), which reads an
+  address alone or inside other text as Loki's scan does; `field:*` is the
+  `!=` presence. An IPv6 pattern is `ipv6_range(lo, hi)` on the field, guarded so
+  only values Loki reads as that same whole address match (IPv6 starting with
+  a group, five characters or more, no zone), so it keeps a subset of Loki's
+  lines for an address inside other text (translate.IPLabelFilter). Log
   queries and the `| json` / `| logfmt` metric stats pushdown emit the same
   filter; the metric plan's row evaluator matches it with a Go mirror of that
   LogsQL (DropCondition.Matches), so rows, pushdown and logs agree.
@@ -36,7 +42,7 @@ decisions:
     chosen: |
       Label filter stages carry a typed expression (name, operator, value, value
       kind) from the parser; the | json / | logfmt metric plan reads it, renders
-      an ip() leaf with the translator's ipLabelFilter in the stats pushdown and
+      an ip() leaf with the shared translate.IPLabelFilter in the stats pushdown and
       matches it on rows with a Go mirror of that same LogsQL.
     over: [declining ip() filters to the native route (instant queries then read every selected row), moving the test reference of Loki's address scan into the binary (Loki-derived code)]
     why: |

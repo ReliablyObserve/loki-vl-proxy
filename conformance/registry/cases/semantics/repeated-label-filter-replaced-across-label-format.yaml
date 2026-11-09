@@ -1,5 +1,6 @@
 id: semantics/repeated-label-filter-replaced-across-label-format
-title: A second filter on the same label replaces the first even with a label_format between them (open)
+title: Every filter on a label applies where it stands, even with a label_format between them (fixed)
+pending: true
 proves:
   - parser-error-and-label-collision
   - loki_api_v1_query_range
@@ -12,12 +13,20 @@ why: |
   when stages sit between them that change what the label holds. Loki applies
   each filter where it stands.
 
-  Evidence (main and this branch translate alike, 2026-10):
+  Evidence (main and this branch translate alike, 2026-10; the stack agreed,
+  2026-11-09: `| a="1" | a="2"` and `| a="1" | a!="1"` keep no line in Loki
+  and kept the second filter's lines in the proxy):
     {app="x"} | json | user="info" | label_format x=msg | user="m"
     =>  app:="x" | unpack_json | filter user:="m" | format if (msg:*) "<msg>" as x skip_empty_results | delete msg
   The first filter (user="info") is gone and the surviving one runs before the
   label_format; with a different second label (`| y="m"`) both filters are kept
   in order. Loki returns only lines where user is "info" and "m" at once (none).
+
+  Fixed: the translator keeps every label filter stage where it stands (the
+  labelFilterLatest replacement is gone), so the filters apply in order, as
+  Loki's pipeline applies them. The lines the proxy kept for a repeated filter
+  are now the lines Loki keeps. Loki's answers are recorded with the Loki
+  oracle (process) and the translations are held to them row by row.
 request:
   method: GET
   path: /loki/api/v1/query_range
@@ -34,11 +43,14 @@ compare:
   expect: |
     Both filters apply, each where it stands in the pipeline.
 gap:
-  status: open
+  status: fixed
   impact: explore-visible
   effort: S
-  area: 'internal/translator labelFilterLatest (latest filter per field replaces the earlier one in place)'
-  loki: 'pkg/logql/log/pipeline.go (stages run in order); label_filter.go'
-  proxy: 'the earlier filter on the same label is replaced by the later one and moves before the stage between them'
-  planned_test: 'TestCompat_RepeatedLabelFilterAcrossLabelFormat (test/e2e-compat, group core)'
-  note: 'Found while reviewing semantics/plain-name-after-parser-reads-stream-label; the behaviour is the same on main. The replacement should only apply between adjacent filters with no stage in between.'
+  area: 'internal/translator translateLogQueryOpts (every label filter stage is kept where it stands)'
+  loki: 'stages run in order and each label filter applies (pipeline, label filter stage)'
+  proxy: 'a later filter on the same label no longer replaces the earlier one'
+  planned_test: 'TestCompat_RepeatedLabelFiltersApplyAllLikeLoki (test/e2e-compat, group semantics); TestRepeatedLabelFiltersApplyAllLikeLoki; TestRepeatedLabelFiltersKeepTheirPlace'
+  fixed_by: '#1250'
+  visual: none
+  visual_reason: 'Grafana shows the same lines for the same query on both sides once the filters apply; proven by TestCompat_RepeatedLabelFiltersApplyAllLikeLoki against Loki (lines for every repeated-filter shape)'
+  clusters: []

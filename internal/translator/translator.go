@@ -820,9 +820,6 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 	var keyParsers []extractedParser
 	var keyParserParts []int
 	var extractedBases, stageBases []string
-	// Track canonical label-filter stages so repeated drilldown include/exclude
-	// clicks don't accumulate duplicate or contradictory filters.
-	labelFilterLatest := make(map[string]int)
 	// jsonAliases tracks | json alias="field" mappings so subsequent filter stages
 	// referencing the alias name can be rewritten to use the original JSON field name.
 	// VL's unpack_json always uses original field names; aliases are not preserved.
@@ -1220,17 +1217,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 					translated = "| filter " + translated
 				}
 			}
-			if _, baseKey, ok := canonicalLabelFilterStage(stage, pipelineLabelFn); ok {
-				if idx, exists := labelFilterLatest[baseKey]; exists {
-					// Latest action wins for the same field/value filter identity.
-					parts[idx] = translated
-				} else {
-					labelFilterLatest[baseKey] = len(parts)
-					parts = append(parts, translated)
-				}
-			} else {
-				parts = append(parts, translated)
-			}
+			parts = append(parts, translated)
 			if aliasCopies != "" {
 				parts = append(parts, aliasCopies)
 			}
@@ -1481,35 +1468,12 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.
 	return "| " + stage
 }
 
-// logqlSingleFilterOp maps a LogQL operator string to a FieldOp constant and
-// whether the operator implies negation. Operators are listed in order of
-// decreasing specificity so that "!~" is matched before "!" and "=" etc.
-type logqlSingleFilterOp struct {
-	vlOp   logsql.FieldOp
-	negate bool
-	isRe   bool // regex: value is a regexp pattern (QuotePattern semantics)
-	isComp bool // comparison: value is not quoted (>, >=, <, <=)
-}
-
-var logqlSingleFilterOps = []struct {
-	logql string
-	entry logqlSingleFilterOp
-}{
-	{"==", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
-	{"!=", logqlSingleFilterOp{logsql.FieldOpExact, true, false, false}},
-	{"=~", logqlSingleFilterOp{logsql.FieldOpRegexp, false, true, false}},
-	{"!~", logqlSingleFilterOp{logsql.FieldOpRegexp, true, true, false}},
-	{">=", logqlSingleFilterOp{logsql.FieldOpGTE, false, false, true}},
-	{"<=", logqlSingleFilterOp{logsql.FieldOpLTE, false, false, true}},
-	{">", logqlSingleFilterOp{logsql.FieldOpGT, false, false, true}},
-	{"<", logqlSingleFilterOp{logsql.FieldOpLT, false, false, true}},
-	{"=", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
-}
+// logqlSingleFilterOp is what a LogQL label filter operator means.
+type logqlSingleFilterOp = translate.LabelFilterOp
 
 // buildFieldFilterStr builds a LogsQL field filter string using logsql.FieldFilter
 // for all value quoting/formatting, but uses the legacy "-" negation prefix
-// (rather than "NOT ") so downstream string-matching in canonicalLabelFilterStage
-// and translatedFilterFieldOp continues to work without change.
+// (rather than "NOT ").
 func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
 	return translate.BuildFieldFilter(field, op, value, negate).String()
 }
@@ -1517,18 +1481,18 @@ func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate b
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
-	for _, entry := range logqlSingleFilterOps {
-		idx := matcherOperatorIndex(stage, entry.logql)
+	for _, entry := range translate.LabelFilterOps {
+		idx := matcherOperatorIndex(stage, entry.LogQL)
 		if idx > 0 {
 			label := translate.SanitizeFieldIdentifier(stage[:idx])
-			value := strings.TrimSpace(stage[idx+len(entry.logql):])
+			value := strings.TrimSpace(stage[idx+len(entry.LogQL):])
 			if label == "" {
 				return "", false
 			}
-			if label == "service_name" && !entry.entry.isComp && !strings.HasPrefix(value, `ip("`) {
+			if label == "service_name" && !entry.Op.IsComp && !strings.HasPrefix(value, `ip("`) {
 				// A label filter reads the stream's service_name, which the
 				// proxy derives exactly as the selector does.
-				return serviceNameLabelFilter(value, entry.entry.negate, entry.entry.isRe), true
+				return serviceNameLabelFilter(value, entry.Op.Negate, entry.Op.IsRe), true
 			}
 			if label == "detected_level" {
 				label = "level"
@@ -1536,7 +1500,7 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			if labelFn != nil {
 				translated := labelFn(label)
 				if strings.Contains(translated, parsedKeySep) && !strings.Contains(label, parsedKeySep) {
-					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.entry, caps)
+					return translateParsedKeyFilter(stage, strings.Split(translated, parsedKeySep), value, entry.Op, caps)
 				}
 				label = translate.SanitizeFieldIdentifier(translated)
 				if label == "" {
@@ -1555,51 +1519,17 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 			// ip() label filter: label = ip("pattern") or label != ip("pattern")
 			// (ipLabelFilter). Detect calls before decoding a quoted exact value
 			// which may itself contain the literal text ip("...").
-			if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
-				cidr := value[4 : len(value)-2]
-				if filter, ok := ipLabelFilter(label, cidr, entry.entry.negate); ok {
-					return filter, true
-				}
-				filter := logsql.NewBuilder(caps).BestIPv4Range(label, cidr)
-				if ff, ok := filter.(logsql.FieldFilter); ok && entry.entry.negate {
-					ff.Negate = true
-					return ff.String(), true
-				}
-				return filter.String(), true
+			isIP := strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`)
+			if isIP {
+				value = value[4 : len(value)-2]
+			} else {
+				value = streamMatcherValue(value, entry.Op.IsRe || entry.Op.IsComp)
 			}
-
-			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
-
-			if entry.entry.isRe {
-				// Loki simplifies a label filter's regexp before matching
-				// it (lokiLabelFilterPattern); `=~""` keeps every line.
-				return labelFilterRegexpFieldFilter(label, value, entry.entry.negate), true
+			f, ok := translate.LabelFilterLeaf(label, entry.LogQL, value, isIP, caps)
+			if !ok {
+				return "", false
 			}
-
-			if entry.entry.isComp {
-				// Comparison filters (>, >=, <, <=) do not quote the value.
-				return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
-			}
-
-			if value == "" {
-				// detected_level="" means "no level detected": match log entries where
-				// the level field is absent or has an empty value. VL's -field:* does
-				// exactly this (absent OR empty), while field:="" only matches explicit
-				// empty strings and misses absent fields entirely.
-				if label == "level" && !entry.entry.negate {
-					return `-level:*`, true
-				}
-				if entry.entry.negate {
-					// field:!"" means "field exists and is non-empty"; this is not
-					// directly representable by FieldFilter, so we keep the literal form.
-					return fmt.Sprintf(`%s:!""`, label), true
-				}
-				// Empty equality: use FieldFilter with FieldOpExact and empty value
-				// which produces field:="" — equivalent to the previous explicit form.
-				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false), true
-			}
-
-			return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
+			return f.String(), true
 		}
 	}
 
@@ -1873,51 +1803,6 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		quotedField = `"` + candidate + `"`
 	}
 	return fmt.Sprintf(`%s:!""`, quotedField), true
-}
-
-func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
-	if mayBeCompound(stage) {
-		if expr, err := logqlpkg.ParseLabelFilterExpr(stage); err == nil && !expr.IsLeaf() {
-			// Several filters have no single field identity to deduplicate on.
-			return "", "", false
-		}
-	}
-	if translated, ok := translateSingleLabelFilter(stage, labelFn, logsql.Capabilities{}); ok {
-		if fieldKey, op, ok := translatedFilterFieldOp(translated); ok {
-			// Drilldown include/exclude interactions emit equality/regex filters.
-			// Keep only the latest filter per field so repeated clicks on the same
-			// field do not accumulate into impossible AND chains.
-			if op == ":=" || op == ":~" {
-				return translated, fieldKey, true
-			}
-		}
-		return translated, strings.TrimPrefix(translated, "-"), true
-	}
-	if translated, ok := translateMalformedDottedStage(stage, labelFn); ok {
-		return translated, translated, true
-	}
-	return "", "", false
-}
-
-func translatedFilterFieldOp(translated string) (field string, op string, ok bool) {
-	s := strings.TrimSpace(translated)
-	if s == "" {
-		return "", "", false
-	}
-	// A literal alternation is `(field:="a" OR field:="b")`: the same field.
-	s = strings.TrimPrefix(strings.TrimPrefix(s, "-"), "(")
-	for _, candidate := range []string{":>=", ":<=", ":~", ":=", ":>", ":<"} {
-		idx := strings.Index(s, candidate)
-		if idx <= 0 {
-			continue
-		}
-		field = strings.TrimSpace(s[:idx])
-		if field == "" {
-			return "", "", false
-		}
-		return field, candidate, true
-	}
-	return "", "", false
 }
 
 // translateLabelFormat converts label_format expressions.
@@ -4058,15 +3943,7 @@ func isParserStage(translated string) bool {
 		strings.HasPrefix(translated, "| extract ") || strings.HasPrefix(translated, "| extract_regexp ")
 }
 
-func isFieldFilter(s string) bool {
-	// Field filters contain :=, :!, :~, :>, :<, :>=, :<=; a service_name
-	// matcher can also reduce to match-all or match-none.
-	if s == "*" || s == matchNoStreamsFilter {
-		return true
-	}
-	return strings.Contains(s, ":=") || strings.Contains(s, ":~") ||
-		strings.Contains(s, ":!") || strings.Contains(s, ":>") || strings.Contains(s, ":<")
-}
+func isFieldFilter(s string) bool { return translate.IsFieldFilter(s) }
 
 func translateBareFilter(s string) string {
 	s = strings.TrimSpace(s)

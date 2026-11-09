@@ -1,0 +1,2004 @@
+[
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a!=\"1\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=~\"1|2\" | a=~\"2|3\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"1\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" | b=\"2\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003c10",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a\u003e5 | a\u003e10",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | a=\"1\" |= \"y\" | a!=\"2\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "3",
+   "app": "x",
+   "b": "3"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "7",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "z",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "y",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "info"
+  },
+  "line": "z",
+  "keep": true
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "y",
+  "keep": false
+ },
+ {
+  "q": "{app=\"x\"} | level=\"info\" | level!=\"warn\"",
+  "labels": {
+   "app": "x",
+   "level": "warn"
+  },
+  "line": "z",
+  "keep": false
+ }
+]

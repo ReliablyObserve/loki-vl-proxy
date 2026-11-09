@@ -11,12 +11,15 @@
 //	go run . facts -in queries.jsonl -out facts.jsonl
 //	go run . ipfilter -in lines.jsonl -out verdicts.jsonl
 //	go run . pipeline -in queries.jsonl -out verdicts.jsonl
+//	go run . process -in lines.jsonl -out verdicts.jsonl
 //
 // cases writes the queries of Loki's syntax tests (pkg/logql/syntax/*_test.go); check parses every input with
 // Loki, builds its pipelines, and writes whether Loki accepts it, its error text and whether the proxy's printed form means the same
 // to Loki; similar compares the proxy's Go files with every Go file under Loki's pkg/, tests included, by token
 // fingerprints and writes the share of each proxy file that matches; facts writes what Loki's tree says about each
-// query (outer aggregation, offsets, pipeline stages), which the proxy's query plan resolver is compared with.
+// query (outer aggregation, offsets, pipeline stages), which the proxy's query plan resolver is compared with; ipfilter,
+// pipeline and process answer, from Loki's exported log and syntax packages, an ip() line filter, whether a log query's pipeline builds, and what
+// the pipeline makes of one line of one stream (kept or not, the line and the labels after the stages).
 package main
 
 import (
@@ -65,11 +68,11 @@ type Verdict struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fail(fmt.Errorf("usage: loki cases -src DIR -out FILE | loki check -in FILE -out FILE | loki similar -src DIR -ours DIR -out FILE | loki facts -in FILE -out FILE | loki ipfilter -in FILE -out FILE"))
+		fail(fmt.Errorf("usage: loki cases -src DIR -out FILE | loki check -in FILE -out FILE | loki similar -src DIR -ours DIR -out FILE | loki facts -in FILE -out FILE | loki ipfilter -in FILE -out FILE | loki pipeline -in FILE -out FILE | loki process -in FILE -out FILE"))
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
 	src := fs.String("src", "", "the Loki module directory (cases, similar)")
-	in := fs.String("in", "", "inputs, one JSON object per line (check, facts, ipfilter)")
+	in := fs.String("in", "", "inputs, one JSON object per line (check, facts, ipfilter, pipeline, process)")
 	ours := fs.String("ours", "", "comma-separated directories of the proxy's Go files (similar)")
 	out := fs.String("out", "", "output file")
 	_ = fs.Parse(os.Args[2:])
@@ -87,6 +90,8 @@ func main() {
 		err = ipfilter(*in, *out)
 	case "pipeline":
 		err = pipeline(*in, *out)
+	case "process":
+		err = process(*in, *out)
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
