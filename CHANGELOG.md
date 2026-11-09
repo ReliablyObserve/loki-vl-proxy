@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.113.0] - 2026-11-09
-
 ### Fixed
 
 - `query` and `query_range` answers carry Loki's `data.stats` object instead of
@@ -29,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `querier`, `ingester` and `index` sections are left out. The query
   and query_range response-cache keys change, so those entries are rebuilt
   once after an upgrade, and replicas on older versions do not share them.
+
+## [2.113.0] - 2026-11-09
+
+### Fixed
+
 - Label filter number, duration and bytes literals are read as Loki reads
   them: numbers follow Go's scanner (`0x1`, `0o7`, `0b1`, `1_000`, `1e3`,
   `0x1p3`), a duration is Go's syntax or whole `y w d h m s ms`, a bytes size
