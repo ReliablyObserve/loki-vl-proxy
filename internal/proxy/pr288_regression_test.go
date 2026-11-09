@@ -128,7 +128,7 @@ func TestProxyStatsQuery_SendsSecondBoundsToVL(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	// Call proxyStatsQuery directly with a pre-translated VL query
-	p.proxyStatsQuery(rec, req, `app:="api" | stats count()`)
+	p.proxyStatsQuery(rec, req, statsQueryOf(`app:="api" | stats count()`))
 
 	if capturedStart == "" {
 		t.Fatal("expected start to be sent to VL for windowed LogQL query")
@@ -173,7 +173,7 @@ func TestProxyStatsQuery_NoStartEndWhenNoWindow(t *testing.T) {
 	req.URL.RawQuery = q.Encode()
 
 	rec := httptest.NewRecorder()
-	p.proxyStatsQuery(rec, req, `app:="api" | stats count()`)
+	p.proxyStatsQuery(rec, req, statsQueryOf(`app:="api" | stats count()`))
 
 	if capturedStart != "" || capturedEnd != "" {
 		t.Errorf("expected no start/end for non-windowed query, got start=%q end=%q",

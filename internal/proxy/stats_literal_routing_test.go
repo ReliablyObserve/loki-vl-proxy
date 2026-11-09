@@ -15,9 +15,6 @@ func TestStatsRoutingIgnoresEscapedQuotesAndLiteralPipes(t *testing.T) {
 		{`path:="quote\" | stats count()"`, false},
 		{`path:="quote\" | stats count()" | stats count()`, true},
 	} {
-		if got := isStatsQueryHeuristic(tc.query); got != tc.stats {
-			t.Fatalf("query=%s got=%v", tc.query, got)
-		}
 		if got := isStatsQuery(tc.query); got != tc.stats {
 			t.Fatalf("typed query=%s got=%v", tc.query, got)
 		}

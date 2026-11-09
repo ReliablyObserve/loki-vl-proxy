@@ -24,6 +24,7 @@ import (
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -58,58 +59,6 @@ var (
 	outerByAfterRE         = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
 	outerByBeforeRE        = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
-
-func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
-	idx := strings.Index(logsqlQuery, "| stats ")
-	if idx < 0 {
-		return statsCompatSpec{}, false
-	}
-
-	spec := statsCompatSpec{
-		BaseQuery: strings.TrimSpace(logsqlQuery[:idx]),
-	}
-	rest := strings.TrimSpace(logsqlQuery[idx+len("| stats "):])
-	if rest == "" {
-		return statsCompatSpec{}, false
-	}
-
-	if strings.HasPrefix(rest, "by (") {
-		closeIdx := strings.Index(rest, ")")
-		if closeIdx > len("by (") {
-			labels := strings.TrimSpace(rest[len("by ("):closeIdx])
-			if labels != "" {
-				for _, label := range strings.Split(labels, ",") {
-					label = strings.TrimSpace(label)
-					if label != "" {
-						spec.GroupBy = append(spec.GroupBy, label)
-					}
-				}
-			}
-			rest = strings.TrimSpace(rest[closeIdx+1:])
-		} else if closeIdx == len("by (") {
-			// "by ()" — explicit empty grouping: one series, no label dimensions.
-			spec.ByExplicit = true
-			rest = strings.TrimSpace(rest[closeIdx+1:])
-		}
-	}
-
-	openIdx := strings.Index(rest, "(")
-	switch {
-	case openIdx < 0:
-		spec.Func = strings.TrimSpace(rest)
-	case strings.HasSuffix(rest, ")"):
-		spec.Func = strings.TrimSpace(rest[:openIdx])
-		spec.Field = strings.TrimSpace(rest[openIdx+1 : len(rest)-1])
-	default:
-		return statsCompatSpec{}, false
-	}
-
-	if spec.BaseQuery == "" || spec.Func == "" {
-		return statsCompatSpec{}, false
-	}
-
-	return spec, true
-}
 
 // parseSingleFieldCountSpec accepts only a translated query of the exact shape
 // `<base> | stats by (<field>) count()` — the shape the single-field count
@@ -403,7 +352,7 @@ func parseOriginalByLabels(logql string) []string {
 	return out
 }
 
-func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
+func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
 	// Queries containing | math are multi-stage VL rate pipelines built by the translator
 	// (e.g. sum(rate({...} | json [w]))). For tumbling windows (range == step), VL can
 	// execute them natively — no manual decomposition needed. For any other range, fall
@@ -414,10 +363,10 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// excludes parse-failed lines from metric aggregation; VL counts all lines. The manual
 	// path (collectRangeMetricSamples) preserves Loki's error-exclusion semantics.
 	// The unwrap gate's own math pipe does not make a query one of these.
-	if p.nativeMathTumblingStatsCompatible(r, originalLogql, logsqlQuery) {
+	if p.nativeMathTumblingStatsCompatible(r, originalLogql, stats) {
 		return false
 	}
-	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	spec, ok := statsSpecOf(stats)
 	if !ok {
 		return false
 	}
@@ -480,8 +429,8 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	})
 }
 
-func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql, logsqlQuery string) bool {
-	if !strings.Contains(queryWithoutUnwrapGate(logsqlQuery), "| math ") {
+func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql string, stats physical.VLStats) bool {
+	if !strings.Contains(queryWithoutUnwrapGate(stats.Text), "| math ") {
 		return false
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
@@ -489,7 +438,7 @@ func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql
 	if !stepOk || !hasOrigSpec || origSpec.Window <= 0 || !statsRangeIsTumbling(origSpec.Window, step) {
 		return false
 	}
-	spec, specOk := parseStatsCompatSpec(logsqlQuery)
+	spec, specOk := statsSpecOf(stats)
 	// Parser stages without an explicit drop-error opt-in require the manual path
 	// to preserve Loki's error-exclusion semantics; the query's plan reads the opt-in.
 	if !specOk || !queryUsesParserStages(spec.BaseQuery) {
@@ -521,8 +470,8 @@ func (p *Proxy) extractionListNeedsRawLevelRows(baseQuery string, groupBy []stri
 	return exposure != nil && len(exposure.extractions) > 0 && !exposure.names["level"]
 }
 
-func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
-	spec, ok := parseStatsCompatSpec(logsqlQuery)
+func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request, originalLogql string, stats physical.VLStats) bool {
+	spec, ok := statsSpecOf(stats)
 	if !ok {
 		return false
 	}
@@ -3212,4 +3161,26 @@ func foldUngroupedSum(w http.ResponseWriter, r *http.Request, query string, serv
 	}
 	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- the evaluator's own JSON, Content-Type copied above
 	return true
+}
+
+// parseStatsCompatSpec reads the first stats pipe of a translated query (translator.StatsShape), for the paths
+// that still rewrite the query as text before reading it.
+func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
+	stats, _ := translator.StatsShape(logsqlQuery)
+	return statsSpecOf(stats)
+}
+
+// statsSpecOf is the shape of a decoded stats query as the stats handlers read it; ok is false when the query has
+// no stats pipe to read.
+func statsSpecOf(stats physical.VLStats) (statsCompatSpec, bool) {
+	if !stats.Shaped {
+		return statsCompatSpec{}, false
+	}
+	return statsCompatSpec{BaseQuery: stats.Base, GroupBy: stats.By, ByExplicit: stats.ByExplicit, Func: stats.Func, Field: stats.Field}, true
+}
+
+// statsQueryOf is a translated query as the stats handlers take it (translator.DecodeStats).
+func statsQueryOf(logsqlQuery string) physical.VLStats {
+	stats, _ := translator.DecodeStats(logsqlQuery)
+	return stats
 }

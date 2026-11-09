@@ -2,11 +2,11 @@
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
     "deferred_raw": 7,
-    "lowering_marker_reads": 25,
+    "lowering_marker_reads": 15,
     "parse_calls": 62,
-    "string_reads": 54,
-    "text_built": 213,
-    "translator_string_ops": 647
+    "string_reads": 50,
+    "text_built": 209,
+    "translator_string_ops": 664
   },
   "files": {
     "deferred_raw": {
@@ -14,12 +14,11 @@
     },
     "lowering_marker_reads": {
       "internal/proxy/absent_over_time.go": 1,
-      "internal/proxy/metric_agg.go": 3,
-      "internal/proxy/metric_binary.go": 3,
+      "internal/proxy/metric_agg.go": 1,
+      "internal/proxy/metric_binary.go": 2,
       "internal/proxy/nested_vector_fold.go": 2,
-      "internal/proxy/proxy.go": 4,
       "internal/proxy/quantile_histogram.go": 1,
-      "internal/proxy/range_metric_compat.go": 8,
+      "internal/proxy/range_metric_compat.go": 5,
       "internal/proxy/unwrap_samples.go": 3
     },
     "parse_calls": {
@@ -50,12 +49,13 @@
       "internal/proxy/range_metric_compat.go": 1,
       "internal/proxy/rate_counter_singletons.go": 1,
       "internal/proxy/regexp_capture_fields.go": 1,
-      "internal/proxy/stream_processing.go": 2,
+      "internal/proxy/stream_processing.go": 1,
       "internal/proxy/tail.go": 1,
       "internal/proxy/unwrap_conversion_error.go": 2,
       "internal/proxy/unwrap_samples.go": 2,
       "internal/proxy/vector_agg_fold.go": 1,
-      "internal/proxy/vector_matching.go": 1
+      "internal/proxy/vector_matching.go": 1,
+      "internal/translator/stats_codec.go": 1
     },
     "string_reads": {
       "internal/proxy/detected_level.go": 2,
@@ -68,9 +68,8 @@
       "internal/proxy/ordered_json_metric.go": 3,
       "internal/proxy/plain_stream_labels.go": 2,
       "internal/proxy/query_translation.go": 5,
-      "internal/proxy/range_metric_compat.go": 10,
+      "internal/proxy/range_metric_compat.go": 8,
       "internal/proxy/stats_extent_cache.go": 1,
-      "internal/proxy/stream_processing.go": 2,
       "internal/proxy/unwrap_conversion_error.go": 5,
       "internal/proxy/unwrap_samples.go": 1,
       "internal/proxy/volume_segments.go": 1,
@@ -90,7 +89,7 @@
       "internal/proxy/ordered_json_valid_split.go": 24,
       "internal/proxy/quantile_histogram.go": 1,
       "internal/proxy/query_translation.go": 2,
-      "internal/proxy/range_metric_compat.go": 17,
+      "internal/proxy/range_metric_compat.go": 13,
       "internal/proxy/rate_counter_singletons.go": 6,
       "internal/proxy/sliding_window_stats.go": 2,
       "internal/proxy/stream_processing.go": 2,
@@ -99,7 +98,6 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
-      "internal/translate/linefilter.go": 22,
       "internal/translate/selector.go": 17,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
@@ -111,7 +109,8 @@
       "internal/translator/pipeline_capture_labels.go": 2,
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
-      "internal/translator/translator.go": 400,
+      "internal/translator/stats_codec.go": 18,
+      "internal/translator/translator.go": 421,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

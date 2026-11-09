@@ -25,7 +25,8 @@ import (
 
 // --- Stats query proxying ---
 
-func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
+	logsqlQuery := stats.Text
 	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual).
 	// proxyStatsQueryRange is the entry for every drilldown high-cardinality metric
 	// query — pod LABEL and *_id FIELD alike — so this single guard covers them all.
@@ -53,7 +54,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		out = topKBuf
 	}
 
-	if p.handleStatsCompatRange(out, r, originalLogql, logsqlQuery) {
+	if p.handleStatsCompatRange(out, r, originalLogql, stats) {
 		if hasTopK {
 			writeTopKFiltered(w, topKBuf, topK, topKDesc, topKGroup, "matrix")
 		}
@@ -64,7 +65,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// for any stats query — it removes a field per row but never filters logs;
 	// counts are identical without it. A delete of a client's dropped label stays.
 	effectiveQuery := logsqlQuery
-	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
+	if spec, ok := statsSpecOf(stats); ok {
 		noDelete := strings.TrimSpace(stripInternalDeletePipes(spec.BaseQuery))
 		if noDelete != spec.BaseQuery {
 			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
@@ -1675,9 +1676,10 @@ func statsQueryRangePointUnixNano(point []interface{}) int64 {
 	return 0
 }
 
-func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, stats physical.VLStats) {
+	logsqlQuery := stats.Text
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if p.handleStatsCompatInstant(w, r, originalLogql, logsqlQuery) {
+	if p.handleStatsCompatInstant(w, r, originalLogql, stats) {
 		return
 	}
 

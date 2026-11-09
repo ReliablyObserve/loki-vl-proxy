@@ -20,6 +20,7 @@
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/querycorpus/plan_shadow_test.go",
+      "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/translate/selector_test.go"
     ],
@@ -2803,6 +2804,9 @@
     "internal/querycorpus/plan_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/stats_decode_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/lower_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3566,7 +3570,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 385,
+  "tests_with_markers": 386,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

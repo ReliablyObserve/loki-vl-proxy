@@ -14,6 +14,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -647,6 +648,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
+	innerStats, innerIsStats := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
 	_, innerIsBinary := parsedInner.(*logqlpkg.BinOpExpr)
@@ -699,7 +701,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	}
 
 	if !dispatched {
-		if isStatsQuery(translatedInner) {
+		if innerIsStats {
 			statsR := r
 			if foldWithout || postAgg.name == "stddev" || postAgg.name == "stdvar" {
 				// The ranking wraps the folded series: the stats query must not apply
@@ -708,7 +710,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 				// query so instant stats compatibility reads its original window.
 				statsR = cloneMetricQueryRequest(r, postAgg.inner)
 			}
-			p.proxyStatsQuery(sc, statsR, translatedInner)
+			p.proxyStatsQuery(sc, statsR, innerStats)
 		} else {
 			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
 			p.metrics.RecordRequest("query", unwrapRecordedStatus(r.Context(), http.StatusBadRequest), time.Since(start))
@@ -786,6 +788,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 		return
 	}
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
+	innerStats, _ := translator.DecodeStats(translatedInner)
 
 	r = p.withRequestScope(r)
 	if parsedInner, _ := parseLogQLExpr(r.Context(), postAgg.inner); parsedInner != nil {
@@ -820,9 +823,9 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	// Native VL buckets are timestamped at their left edge; ranking those
 	// directly can select the next window's winner and omit the first point.
 	// The manual range adapter still uses VL pre-aggregation when available.
-	handled := p.proxyRankedTopKRange(sc, innerR, translatedInner, postAgg)
+	handled := p.proxyRankedTopKRange(sc, innerR, innerStats, postAgg)
 	if !handled {
-		p.proxyStatsQueryRange(sc, innerR, translatedInner)
+		p.proxyStatsQueryRange(sc, innerR, innerStats)
 	}
 
 	if len(withoutLabels) > 0 {
@@ -889,11 +892,11 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	}
 }
 
-func (p *Proxy) proxyRankedTopKRange(sc *statusCapture, innerR *http.Request, translatedInner string, postAgg instantMetricPostAgg) bool {
+func (p *Proxy) proxyRankedTopKRange(sc *statusCapture, innerR *http.Request, stats physical.VLStats, postAgg instantMetricPostAgg) bool {
 	if postAgg.name != "topk" && postAgg.name != "bottomk" {
 		return false
 	}
-	spec, ok := parseStatsCompatSpec(translatedInner)
+	spec, ok := statsSpecOf(stats)
 	orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
 	if !ok || !hasOrig || orig.Window <= 0 {
 		return false
