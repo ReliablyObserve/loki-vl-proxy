@@ -228,7 +228,7 @@ Measured on 2026-11-09 at commit `0843224237` by the weekly run: LogQL to LogsQL
 | Selector `{app="nginx"}` | 4.8 µs | 23 |
 | `rate({app="nginx",env="production"}[5m])` | 11.2 µs | 74 |
 | `sum(rate({...}[5m])) by (host)` | 10.8 µs | 66 |
-| `ip("10.0.0.0/8")` line filter (native `ipv4_range()`) | 8.9 µs | 41 |
+| `\| ip("10.0.0.0/8")` filter | 8.9 µs | 41 |
 | Binary metric `sum(rate) / sum(rate)` | 23.7 µs | 116 |
 
 Median of 5 runs of `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem` with `GOMAXPROCS=4`, go1.27.3 on AMD EPYC 9V74 80-Core Processor (amd64), the weekly run's machine, which runs other work too: the times are an upper bound.

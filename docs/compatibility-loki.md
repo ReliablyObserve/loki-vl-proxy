@@ -155,7 +155,10 @@ Default `label-style` is now `underscores` and `metadata-field-mode` is now `tra
 The exhaustive parity helper previously sent millisecond integers that Loki interprets as nanoseconds, so earlier pass counts did not compare populated data. The corrected results, fixes and remaining limits are recorded in [Real-window compatibility findings](real-window-compatibility-gaps.md); they do not establish full LogQL parity.
 
 - Implicit many-to-one vector matching (several series matching one series without `group_left`/`group_right`) is rejected with HTTP 500 and Loki's `multiple matches for labels` error, checked independently at each timestamp.
-- Invalid `ip()` line-filter arguments and operators other than `|=`/`!=` return parse errors.
+- Invalid `ip()` line-filter arguments and operators other than `|=`/`!=`, and an invalid pattern in a label filter stage that is one `ip()` comparison, return Loki's parse errors and text. IPv4 `ip()` line filters keep exactly Loki's lines.
+- A pattern line filter with two captures in a row or a named capture returns Loki's 400 and text.
+- An invalid line filter's error quotes the run of line filters Loki builds together and names the filter Loki names; a label filter, drop or keep regexp Loki cannot parse returns Loki's 400.
+- A `|=` or `!=` line filter whose text is not UTF-8 answers like Loki (no line, every line); error texts that quote such bytes write U+FFFD per byte, as Loki does.
 - `unwrap duration(...)` and `unwrap bytes(...)` on the bare parser metric path convert unit strings such as `15ms` and `1024B`; previously every sample was dropped and no series was returned.
 - Grouped `quantile_over_time` keeps its grouping, binary operators preserve precedence and `bool` semantics, and vector-vector operands are joined on a step-aligned grid.
 - Scalar timestamps are encoded in seconds and sample values use Loki's fixed-point rendering.

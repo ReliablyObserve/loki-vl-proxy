@@ -221,7 +221,15 @@ The `ip("value")` line filter extension (parsed in `internal/logql/parser.go`, m
 | Invalid address, prefix or range, e.g. `\|= ip("999.999.999.999")` | `ip: invalid pattern: "999.999.999.999"` |
 | `ip()` with a line filter operator other than `\|=` or `!=`, e.g. `\|~ ip("10.0.0.1")` | `ip: invalid operation` |
 
-Validation does not make matching exact: the translator still approximates IPv6, non-octet CIDR and range forms with regular expressions (see [translation reference](translation-reference.md#proxy-side-stages)).
+A label filter stage that is one `ip()` comparison (`| addr=ip("zzz")`) is validated the same way and answers Loki's `parse error : stage '| addr=ip("zzz")' : ip: invalid pattern: "zzz"`; a stage that joins several filters is not, as in Loki. Matching is exact for IPv4 line filters and approximate for IPv6 (see [translation reference](translation-reference.md#proxy-side-stages)).
+
+### Line filter runs
+
+Loki builds the line filters of a pipeline as runs: a label filter, `line_format`, `unpack` and `unwrap` end a run, while `json`, `logfmt`, `regexp`, `pattern`, `label_format`, `drop`, `keep` and `decolorize` do not, so `|~ "(" | json |~ "["` is one run. An invalid line filter's error quotes the whole run (`stage '|= "x" |~ "("'`), names the run's last invalid filter, and comes in Loki's order next to the errors of other stages, as recorded with the Loki oracle.
+
+### Pattern line filter validation
+
+The pattern of a `|>` or `!>` filter may not hold two captures in a row (`found consecutive capture '<_><_>': invalid expression`) and its only capture is `<_>` (`named captures are not allowed: found '<foo>'`), as Loki builds it. Within one pattern, captures in a row are reported first; a `|>` chain is read in order and a `!>` chain, which Loki builds as one `!>` per alternative, from its last alternative. The `| pattern` parser keeps its named captures.
 
 ## ValidateLogQL API
 
