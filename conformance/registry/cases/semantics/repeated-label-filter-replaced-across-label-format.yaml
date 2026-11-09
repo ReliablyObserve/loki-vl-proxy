@@ -50,7 +50,7 @@ gap:
   loki: 'stages run in order and each label filter applies (pipeline, label filter stage)'
   proxy: 'a later filter on the same label no longer replaces the earlier one'
   planned_test: 'TestCompat_RepeatedLabelFiltersApplyAllLikeLoki (test/e2e-compat, group semantics); TestRepeatedLabelFiltersApplyAllLikeLoki; TestRepeatedLabelFiltersKeepTheirPlace'
-  fixed_by: '#PR'
+  fixed_by: '#1250'
   visual: none
   visual_reason: 'Grafana shows the same lines for the same query on both sides once the filters apply; proven by TestCompat_RepeatedLabelFiltersApplyAllLikeLoki against Loki (lines for every repeated-filter shape)'
   clusters: []
