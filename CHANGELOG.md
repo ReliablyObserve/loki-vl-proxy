@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.106.0] - 2026-11-09
+
 ### Changed
 
 - The stats handlers read each translated stats query as a typed query-plan
