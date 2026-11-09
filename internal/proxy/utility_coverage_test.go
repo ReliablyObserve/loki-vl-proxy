@@ -876,7 +876,7 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 
 	wQuery := httptest.NewRecorder()
 	rQuery := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query=sum(rate({app="api"}[1m]))&time=1712434882`, nil)
-	p.proxyStatsQuery(wQuery, rQuery, `sum(rate({app="api"}[1m]))`)
+	p.proxyStatsQuery(wQuery, rQuery, statsQueryOf(`sum(rate({app="api"}[1m]))`))
 	if wQuery.Code != http.StatusOK {
 		t.Fatalf("expected query stats proxy success, got %d body=%s", wQuery.Code, wQuery.Body.String())
 	}
@@ -889,7 +889,7 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 
 	wRange := httptest.NewRecorder()
 	rRange := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query_range?query=sum(rate({app="api"}[1m]))&start=1712434800&end=1712438400&step=60`, nil)
-	p.proxyStatsQueryRange(wRange, rRange, `sum(rate({app="api"}[1m]))`)
+	p.proxyStatsQueryRange(wRange, rRange, statsQueryOf(`sum(rate({app="api"}[1m]))`))
 	if wRange.Code != http.StatusInternalServerError {
 		t.Fatalf("expected stats query_range backend status passthrough, got %d body=%s", wRange.Code, wRange.Body.String())
 	}
@@ -902,7 +902,7 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 	}
 	wQueryErr := httptest.NewRecorder()
 	rQueryErr := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query=sum(rate({app="api"}[1m]))`, nil)
-	p.proxyStatsQuery(wQueryErr, rQueryErr, `sum(rate({app="api"}[1m]))`)
+	p.proxyStatsQuery(wQueryErr, rQueryErr, statsQueryOf(`sum(rate({app="api"}[1m]))`))
 	// An open breaker is a failed backend call: Loki's 500
 	// (pkg/util/server/error.go:124-128), not a proxy-only 503.
 	if wQueryErr.Code != http.StatusInternalServerError {

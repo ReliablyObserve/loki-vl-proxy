@@ -110,7 +110,7 @@ func TestProxyStatsQueryRange_StripsDeleteAlone(t *testing.T) {
 	req.Header.Set("X-Scope-OrgID", "default")
 
 	w := httptest.NewRecorder()
-	p.proxyStatsQueryRange(w, req, logsqlQuery)
+	p.proxyStatsQueryRange(w, req, statsQueryOf(logsqlQuery))
 
 	t.Logf("VL received: %s", receivedQuery)
 

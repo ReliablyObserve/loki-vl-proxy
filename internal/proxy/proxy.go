@@ -30,6 +30,7 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
@@ -2679,7 +2680,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			logsqlQuery, withoutLabels, foldWithout = pushed, nil, false
 		}
 	}
-	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStatsQuery(logsqlQuery) {
+	stats, isStats := translator.DecodeStats(logsqlQuery)
+	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
@@ -2743,9 +2745,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if p.proxyBinaryAggregation(sc, r, parsedForRouting, "matrix") {
 		withoutLabels = nil // folded by the aggregation itself
-	} else if isStatsQuery(logsqlQuery) {
+	} else if isStats {
 		stepsRun.arm()
-		p.proxyStatsQueryRange(sc, r, logsqlQuery)
+		p.proxyStatsQueryRange(sc, r, stats)
 	} else {
 		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
 			if p.coldRouter != nil {
@@ -2992,7 +2994,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
-	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStatsQuery(logsqlQuery) {
+	stats, isStats := translator.DecodeStats(logsqlQuery)
+	if isBareMetricFunctionQuery(strings.TrimSpace(stripLabelTransforms(logqlQuery))) && !isStats {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
 		return
@@ -3048,8 +3051,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if p.proxyBinaryAggregation(sc, r, parsedForRoutingQ, "vector") {
 		withoutLabels = nil // folded by the aggregation itself
-	} else if isStatsQuery(logsqlQuery) {
-		p.proxyStatsQuery(sc, r, logsqlQuery)
+	} else if isStats {
+		p.proxyStatsQuery(sc, r, stats)
 	} else {
 		p.writeError(sc, http.StatusBadRequest, lokiInstantLogQueryError)
 	}
