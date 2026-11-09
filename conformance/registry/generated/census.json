@@ -1220,6 +1220,8 @@
     "internal/proxy/pattern_cluster_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/pattern_cluster_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_cluster_test.go | patterns-loki-mining",
+    "internal/proxy/pattern_filter_valid_test.go | loki_api_v1_patterns",
+    "internal/proxy/pattern_filter_valid_test.go | semantics/pattern-line-filter-invalid-captures",
     "internal/proxy/pattern_formats_test.go | drilldown/patterns-mined-differently",
     "internal/proxy/pattern_formats_test.go | loki_api_v1_patterns",
     "internal/proxy/pattern_line_filter_test.go | semantics/pattern-line-filter",
@@ -2009,7 +2011,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 396,
+      "go": 397,
       "playwright": 1
     },
     "page_kinds": {

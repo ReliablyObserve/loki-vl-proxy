@@ -29,6 +29,7 @@ smoke	internal/proxy	FuzzExtractLogPatterns	12s	-	extract log patterns
 smoke	internal/proxy	FuzzExtractLogPatternsFromWindowEntries	12s	-	extract log patterns from window entries
 smoke	internal/proxy	FuzzPatternTokenizer	12s	-	patterns line tokenizer
 smoke	internal/proxy	FuzzPatternsMatchTheirLines	12s	-	patterns every mined line reads as one of its level's patterns
+smoke	internal/proxy	FuzzMinedPatternsAreValidLineFilters	12s	-	every mined pattern is a pattern line filter Loki accepts (|> and !>)
 smoke	internal/proxy	FuzzPatternLineTokens	12s	-	patterns lines tokenized by format
 smoke	internal/proxy	FuzzPatternCountsStep	12s	-	patterns counts step
 smoke	internal/proxy	FuzzJSONValidSplitPredicate	12s	-	json error filter split predicate
