@@ -7,9 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html"
-	"net"
 	"regexp"
-	"regexp/syntax"
 	"slices"
 	"strconv"
 	"strings"
@@ -877,14 +875,14 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			} else if len(alts) > 0 {
 				// Loki builds an `or` chain from the text of each alternative, so the
 				// ip() head matches as plain text (LineFilterExpr.newOrFilter).
-				parts = append(parts, orLineFilter(false, false, append([]orAlternative{{text: arg}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(false, false, append([]translate.OrAlternative{{Text: arg}}, alts...)))
 				remaining = orRest
 				continue
 			}
 			remaining = rest
 			if ok {
 				// The request validator rejects invalid IP patterns before translation.
-				parts = append(parts, "~"+strconv.Quote(ipLineFilterToRegex(arg)))
+				parts = append(parts, "~"+strconv.Quote(translate.IPLineFilterRegex(arg)))
 			}
 			continue
 		}
@@ -897,7 +895,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			}
 			remaining = orRest
 			if ok {
-				parts = append(parts, orLineFilter(true, false, append([]orAlternative{{text: arg, ip: true}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(true, false, append([]translate.OrAlternative{{Text: arg, IP: true}}, alts...)))
 			}
 			continue
 		}
@@ -915,7 +913,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return "", err
 			}
 			if len(alts) > 0 {
-				parts = append(parts, orLineFilter(false, false, append([]orAlternative{{text: literal}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(false, false, append([]translate.OrAlternative{{Text: literal}}, alts...)))
 			} else {
 				parts = append(parts, "~"+strconv.Quote(regexp.QuoteMeta(literal)))
 			}
@@ -935,7 +933,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 				return "", err
 			}
 			if len(alts) > 0 {
-				parts = append(parts, orLineFilter(true, false, append([]orAlternative{{text: literal}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(true, false, append([]translate.OrAlternative{{Text: literal}}, alts...)))
 			} else {
 				parts = append(parts, "NOT ~"+strconv.Quote(regexp.QuoteMeta(literal)))
 			}
@@ -952,7 +950,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			}
 			if len(alts) > 0 {
 				head, _ := strconv.Unquote(val)
-				parts = append(parts, orLineFilter(false, true, append([]orAlternative{{text: head}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(false, true, append([]translate.OrAlternative{{Text: head}}, alts...)))
 			} else {
 				parts = append(parts, "~"+val)
 			}
@@ -969,7 +967,7 @@ func translateLogQueryOpts(logql string, labelFn LabelTranslateFunc, caps logsql
 			}
 			if len(alts) > 0 {
 				head, _ := strconv.Unquote(val)
-				parts = append(parts, orLineFilter(true, true, append([]orAlternative{{text: head}}, alts...)))
+				parts = append(parts, translate.OrLineFilter(true, true, append([]translate.OrAlternative{{Text: head}}, alts...)))
 			} else {
 				parts = append(parts, "NOT ~"+val)
 			}
@@ -3754,21 +3752,14 @@ func normalizeQuotedStageExpr(expr string) string {
 	return expr
 }
 
-// orAlternative is one `or` alternative of a line filter: its unquoted text and
-// whether it was written ip("...").
-type orAlternative struct {
-	text string
-	ip   bool
-}
-
 // takeOrAlternatives consumes the `or "b" or ip("c")` alternatives that follow a
 // line filter operand and returns them with the rest of the query.
-func takeOrAlternatives(rest string) ([]orAlternative, string, error) {
-	var alts []orAlternative
+func takeOrAlternatives(rest string) ([]translate.OrAlternative, string, error) {
+	var alts []translate.OrAlternative
 	for len(rest) > 2 && strings.EqualFold(rest[:2], "or") && (unicode.IsSpace(rune(rest[2])) || rest[2] == '"' || rest[2] == '`') {
 		rest = strings.TrimSpace(rest[2:])
 		if arg, after, ok := extractIPFilterArg(rest); ok {
-			alts = append(alts, orAlternative{text: arg, ip: true})
+			alts = append(alts, translate.OrAlternative{Text: arg, IP: true})
 			rest = after
 			continue
 		}
@@ -3777,81 +3768,10 @@ func takeOrAlternatives(rest string) ([]orAlternative, string, error) {
 		if err != nil {
 			return nil, "", fmt.Errorf("invalid line filter: %w", err)
 		}
-		alts = append(alts, orAlternative{text: text})
+		alts = append(alts, translate.OrAlternative{Text: text})
 		rest = after
 	}
 	return alts, rest, nil
-}
-
-// orLineFilter renders a line filter with `or` alternatives as one regexp, which
-// VictoriaLogs evaluates in a single pass over the line. Loki matches a line
-// that holds any alternative for |=, |~ and |> and none of them for !=, !~ and
-// !> (a negated chain is a conjunction), so negate flips the one regexp.
-// A positive chain follows Loki's quirks: every alternative is plain text, even
-// ip(...) (LineFilterExpr.newOrFilter ignores its Op), an ip(...) alternative
-// ends its orFilter so that the next `or` drops everything attached before
-// (newOrLineFilterExpr: left.Or = right), and an alternative that matches every
-// line is dropped (log.newOrFilter: true or x is x). A negated != keeps ip
-// semantics. alts[0] is the filter's own operand.
-func orLineFilter(negate, regex bool, alts []orAlternative) string {
-	if !negate {
-		alts = positiveOrChain(alts)
-	}
-	var frags []string
-	wrap := regex
-	for _, alt := range alts {
-		switch {
-		case !negate && lokiMatchesEverything(alt.text, regex):
-			continue
-		case regex:
-			frags = append(frags, alt.text)
-		case alt.ip && negate:
-			frags, wrap = append(frags, ipLineFilterToRegex(alt.text)), true
-		default:
-			frags = append(frags, regexp.QuoteMeta(alt.text))
-		}
-	}
-	if wrap && len(frags) > 1 {
-		for i, frag := range frags {
-			frags[i] = "(?:" + frag + ")"
-		}
-	}
-	filter := "~" + strconv.Quote(strings.Join(frags, "|"))
-	if negate {
-		return "NOT " + filter
-	}
-	return filter
-}
-
-// positiveOrChain keeps the head and the alternatives Loki keeps: those of the
-// last orFilter, which an ip(...) alternative ends.
-func positiveOrChain(alts []orAlternative) []orAlternative {
-	rest := alts[1:]
-	start := 0
-	for i, alt := range rest {
-		if alt.ip && i+1 < len(rest) {
-			start = i + 1
-		}
-	}
-	return append([]orAlternative{alts[0]}, rest[start:]...)
-}
-
-// lokiMatchesEverything reports whether Loki turns the filter into its
-// match-all filter: an empty string, or a regexp that simplifies to `.*` or the
-// empty match (RegexSimplifier.Simplify).
-func lokiMatchesEverything(text string, regex bool) bool {
-	if !regex {
-		return text == ""
-	}
-	re, err := syntax.Parse(text, syntax.Perl)
-	if err != nil {
-		return false
-	}
-	re = re.Simplify()
-	for re.Op == syntax.OpCapture {
-		re = re.Sub[0]
-	}
-	return re.Op == syntax.OpEmptyMatch || re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyCharNotNL
 }
 
 // patternFilterScratch prefixes the fields the extract pipe of a pattern line
@@ -4188,7 +4108,7 @@ func takePatternValues(s string) (values []string, rest string, err error) {
 	}
 	values = []string{head}
 	for _, alt := range alts {
-		values = append(values, alt.text)
+		values = append(values, alt.Text)
 	}
 	return values, rest, nil
 }
@@ -4542,114 +4462,6 @@ func extractIPFilterArg(s string) (arg, rest string, ok bool) {
 		rest = strings.TrimSpace(rest[1:])
 	}
 	return arg, rest, true
-}
-
-// ipLineFilterToRegex converts an ip() filter argument to a VL-compatible regex.
-// This is a best-effort approximation: VL has no native IP semantics.
-// IPv4: precise prefix-based regex. IPv6: normalized address literal match.
-func ipLineFilterToRegex(arg string) string {
-	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
-		ipStr := arg[:slashIdx]
-		parsedIP := net.ParseIP(ipStr)
-		// IPv6 CIDR: match the network prefix as a hex string approximation
-		if parsedIP != nil && parsedIP.To4() == nil {
-			return buildIPv6CIDRRegex(parsedIP, arg[slashIdx+1:])
-		}
-		// IPv4 CIDR
-		bits, err := strconv.Atoi(arg[slashIdx+1:])
-		if err != nil {
-			return regexp.QuoteMeta(ipStr)
-		}
-		return buildCIDRRegex(ipStr, bits)
-	}
-	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
-		return buildIPRangeRegex(arg[:dashIdx], arg[dashIdx+1:])
-	}
-	// Plain IP — normalize and escape
-	if parsedIP := net.ParseIP(arg); parsedIP != nil {
-		return regexp.QuoteMeta(parsedIP.String())
-	}
-	return regexp.QuoteMeta(arg)
-}
-
-// buildIPv6CIDRRegex generates a regex approximation for an IPv6 CIDR.
-// Uses the normalized IPv6 prefix up to the full groups, then wildcards the rest.
-func buildIPv6CIDRRegex(ip net.IP, prefixBitsStr string) string {
-	prefixBits, err := strconv.Atoi(prefixBitsStr)
-	if err != nil {
-		return regexp.QuoteMeta(ip.String())
-	}
-	ip16 := ip.To16()
-	if ip16 == nil {
-		return regexp.QuoteMeta(ip.String())
-	}
-	// Number of full bytes fixed by the prefix
-	fullBytes := prefixBits / 8
-	if fullBytes > 16 {
-		fullBytes = 16
-	}
-	// Use the normalized string prefix of full groups (2 bytes each)
-	fullGroups := fullBytes / 2
-	normalized := ip.String()
-	// For simplicity, match any hex:colon pattern that starts with the fixed prefix text
-	if fullGroups == 0 {
-		return `[0-9a-fA-F:]+`
-	}
-	// Split the normalized IPv6 into groups and use the first fullGroups as literal prefix
-	groups := strings.Split(normalized, ":")
-	if len(groups) < fullGroups {
-		return regexp.QuoteMeta(normalized)
-	}
-	prefix := strings.Join(groups[:fullGroups], ":")
-	return regexp.QuoteMeta(prefix) + `[0-9a-fA-F:]*`
-}
-
-func buildCIDRRegex(ip string, bits int) string {
-	octets := strings.Split(ip, ".")
-	if len(octets) != 4 {
-		return regexp.QuoteMeta(ip)
-	}
-	fullOctets := bits / 8
-	var sb strings.Builder
-	for i := 0; i < 4; i++ {
-		if i > 0 {
-			sb.WriteString(`\.`)
-		}
-		if i < fullOctets {
-			sb.WriteString(regexp.QuoteMeta(octets[i]))
-		} else {
-			sb.WriteString(`\d{1,3}`)
-		}
-	}
-	return sb.String()
-}
-
-func buildIPRangeRegex(startIP, endIP string) string {
-	startOctets := strings.Split(startIP, ".")
-	endOctets := strings.Split(endIP, ".")
-	if len(startOctets) != 4 || len(endOctets) != 4 {
-		return regexp.QuoteMeta(startIP)
-	}
-	commonOctets := 0
-	for i := 0; i < 4; i++ {
-		if startOctets[i] == endOctets[i] {
-			commonOctets = i + 1
-		} else {
-			break
-		}
-	}
-	var sb strings.Builder
-	for i := 0; i < 4; i++ {
-		if i > 0 {
-			sb.WriteString(`\.`)
-		}
-		if i < commonOctets {
-			sb.WriteString(regexp.QuoteMeta(startOctets[i]))
-		} else {
-			sb.WriteString(`\d{1,3}`)
-		}
-	}
-	return sb.String()
 }
 
 // parseJSONFieldAliases extracts alias→originalField mappings from a json pipeline
