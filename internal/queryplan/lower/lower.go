@@ -58,18 +58,30 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }
 
-// logSelect lowers a log query. A bare selector is its stream filter (translate.StreamSelectorFilter, the filter
-// the string translator writes; keeping the line aside adds nothing without a line_format); a pipeline is not
-// lowered yet.
+// logSelect lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
+// translator writes; keeping the line aside adds nothing without a line_format) and its line filters
+// (translate.LineFilter), in order. Any other stage, and a pattern line filter, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	if len(sel.Stages) > 0 {
-		return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
+	filters := make(logsql.AllOf, 0, len(sel.Stages)+1)
+	for _, st := range sel.Stages {
+		lf, ok := st.(*queryplan.LineFilter)
+		if !ok {
+			return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
+		}
+		f, ok := translate.LineFilter(lf)
+		if !ok {
+			return nil, &NotLoweredError{Construct: "LogSelect pattern filter"}
+		}
+		filters = append(filters, f)
 	}
 	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
 	if err != nil {
 		return nil, err
 	}
-	return physical.VLQuery{Text: f.String()}, nil
+	if len(filters) == 0 {
+		return physical.VLQuery{Text: f.String()}, nil
+	}
+	return physical.VLQuery{Text: append(logsql.AllOf{f}, filters...).String()}, nil
 }
 
 // Construct is the kind of the node at the top of a plan, the unit the shadow

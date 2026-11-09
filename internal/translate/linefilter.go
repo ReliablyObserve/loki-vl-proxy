@@ -6,6 +6,9 @@ import (
 	"regexp/syntax"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // OrAlternative is one `or` alternative of a line filter: its unquoted text and
@@ -26,7 +29,7 @@ type OrAlternative struct {
 // (newOrLineFilterExpr: left.Or = right), and an alternative that matches every
 // line is dropped (log.newOrFilter: true or x is x). A negated != keeps ip
 // semantics. alts[0] is the filter's own operand.
-func OrLineFilter(negate, regex bool, alts []OrAlternative) string {
+func OrLineFilterPattern(negate, regex bool, alts []OrAlternative) string {
 	if !negate {
 		alts = positiveOrChain(alts)
 	}
@@ -49,11 +52,7 @@ func OrLineFilter(negate, regex bool, alts []OrAlternative) string {
 			frags[i] = "(?:" + frag + ")"
 		}
 	}
-	filter := "~" + strconv.Quote(strings.Join(frags, "|"))
-	if negate {
-		return "NOT " + filter
-	}
-	return filter
+	return strings.Join(frags, "|")
 }
 
 // positiveOrChain keeps the head and the alternatives Loki keeps: those of the
@@ -193,4 +192,57 @@ func buildIPRangeRegex(startIP, endIP string) string {
 		}
 	}
 	return sb.String()
+}
+
+// OrLineFilter is the LogsQL text of a line filter with `or` alternatives: the regexp OrLineFilterPattern builds,
+// negated for != and !~.
+func OrLineFilter(negate, regex bool, alts []OrAlternative) string {
+	filter := "~" + strconv.Quote(OrLineFilterPattern(negate, regex, alts))
+	if negate {
+		return "NOT " + filter
+	}
+	return filter
+}
+
+// LineFilter is the VictoriaLogs filter of a line filter stage, built as nodes: the filter the string translator
+// writes for it. Loki's |= is a substring match (a quoted literal regexp), |~ a regexp, ip() a regexp of the
+// addresses it accepts, and an `or` chain one regexp of its alternatives (OrLineFilterPattern). ok is false for the
+// pattern filters (|> and !>), which the translator writes with extract pipes.
+func LineFilter(st *logql.LineFilterStage) (f logsql.FilterExpr, ok bool) {
+	var negate, regex bool
+	switch st.Op {
+	case logql.LineFilterContains:
+	case logql.LineFilterExcludes:
+		negate = true
+	case logql.LineFilterMatchRe:
+		regex = true
+	case logql.LineFilterExcludeRe:
+		negate, regex = true, true
+	default:
+		return nil, false
+	}
+	alts := make([]OrAlternative, len(st.Or))
+	for i, a := range st.Or {
+		alts[i] = OrAlternative{Text: a.Value, IP: a.IP}
+	}
+	var pattern string
+	switch {
+	case st.IP && negate:
+		// != ip(...) reads the head as an address, alone or in a chain.
+		pattern = OrLineFilterPattern(true, false, append([]OrAlternative{{Text: st.Value, IP: true}}, alts...))
+	case len(alts) > 0:
+		// Loki builds the chain from the text of each alternative: a positive ip() head matches as text.
+		pattern = OrLineFilterPattern(negate, regex, append([]OrAlternative{{Text: st.Value}}, alts...))
+	case st.IP:
+		pattern = IPLineFilterRegex(st.Value)
+	case regex:
+		pattern = st.Value
+	default:
+		pattern = regexp.QuoteMeta(st.Value)
+	}
+	f = logsql.Regexp{Pattern: pattern}
+	if negate {
+		f = logsql.NotExpr{Expr: f}
+	}
+	return f, true
 }

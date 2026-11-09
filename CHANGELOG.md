@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The line-filter builders moved out of the string translator into the package
+  the translator and the query-plan lowering share, and the lowering now
+  translates log queries with line filters natively, held to the string
+  translator on every corpus query. No handler reads the lowering yet, so
+  responses do not change.
+
 ### Fixed
 
 - A `#` comment right after a label filter (`{app="a"} | status="500" # note`,

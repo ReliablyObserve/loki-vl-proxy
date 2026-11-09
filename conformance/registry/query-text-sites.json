@@ -6,7 +6,7 @@
     "parse_calls": 62,
     "string_reads": 54,
     "text_built": 213,
-    "translator_string_ops": 646
+    "translator_string_ops": 647
   },
   "files": {
     "deferred_raw": {
@@ -99,6 +99,7 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
+      "internal/translate/linefilter.go": 22,
       "internal/translate/selector.go": 17,
       "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 5,
@@ -110,7 +111,7 @@
       "internal/translator/pipeline_capture_labels.go": 2,
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
-      "internal/translator/translator.go": 421,
+      "internal/translator/translator.go": 400,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

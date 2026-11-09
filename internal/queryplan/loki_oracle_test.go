@@ -49,6 +49,71 @@ type lokiFacts struct {
 		Op    string `json:"op"`
 		Value string `json:"value"`
 	} `json:"matchers"`
+	LineFilters []lokiLineFilter `json:"line_filters"`
+}
+
+type lokiLineFilter struct {
+	Ty    string           `json:"ty"`
+	Match string           `json:"match"`
+	Op    string           `json:"op"`
+	Or    []lokiLineFilter `json:"or"`
+}
+
+var lineFilterOps = map[logql.LineFilterOp]string{
+	logql.LineFilterContains: "|=", logql.LineFilterExcludes: "!=", logql.LineFilterMatchRe: "|~",
+	logql.LineFilterExcludeRe: "!~", logql.LineFilterContainsPat: "|>", logql.LineFilterExcludePat: "!>",
+}
+
+// ourLineFilters and lokiLineFilters write the line filters of a pipeline the same way: the match type, the value,
+// ip for ip(...), and the alternatives of an `or` chain. Loki's tree holds a negated chain (`!= "a" or "b"`) as one
+// negated filter per alternative, the same lines (De Morgan), so a negated chain is written that way here too.
+func ourLineFilters(sel *LogSelect) []string {
+	var out []string
+	one := func(op, value string, ip bool) string {
+		f := op + " " + strconv.Quote(value)
+		if ip {
+			f += " ip"
+		}
+		return f
+	}
+	for _, st := range sel.Stages {
+		lf, ok := st.(*LineFilter)
+		if !ok {
+			continue
+		}
+		op := lineFilterOps[lf.Op]
+		if negated := op[0] == '!'; negated {
+			out = append(out, one(op, lf.Value, lf.IP))
+			for _, alt := range lf.Or {
+				out = append(out, one(op, alt.Value, alt.IP))
+			}
+			continue
+		}
+		f := one(op, lf.Value, lf.IP)
+		for _, alt := range lf.Or {
+			f += " or " + strings.TrimPrefix(one("", alt.Value, alt.IP), " ")
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func lokiLineFilters(fs []lokiLineFilter) []string {
+	var out []string
+	for _, lf := range fs {
+		f := lf.Ty + " " + strconv.Quote(lf.Match)
+		if lf.Op == "ip" {
+			f += " ip"
+		}
+		for _, alt := range lf.Or {
+			f += " or " + strconv.Quote(alt.Match)
+			if alt.Op == "ip" {
+				f += " ip"
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 var parserKinds = map[logql.ParserType]string{
@@ -254,7 +319,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var problems []string
-	compared, lokiRejects, ambiguous, selectors := 0, 0, 0, 0
+	compared, lokiRejects, ambiguous, selectors, lineFilterPipelines := 0, 0, 0, 0, 0
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		var lf lokiFacts
 		if err := json.Unmarshal([]byte(line), &lf); err != nil {
@@ -298,6 +363,14 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			problems = append(problems, fmt.Sprintf("%q: stream matchers %v, Loki's tree %v", r.q, ms, lms))
 			continue
 		}
+		// The line filters the lowering turns into VictoriaLogs filters: Loki's, in Loki's order.
+		if ours, lokis := ourLineFilters(sel), lokiLineFilters(lf.LineFilters); len(ours)+len(lokis) > 0 {
+			lineFilterPipelines++
+			if !reflect.DeepEqual(ours, lokis) {
+				problems = append(problems, fmt.Sprintf("%q: line filters %v, Loki's tree %v", r.q, ours, lokis))
+				continue
+			}
+		}
 		mine, loki := ourStages(sel), significant(lf.Pipeline)
 		if !reflect.DeepEqual(mine, loki) {
 			problems = append(problems, fmt.Sprintf("%q: parser and drop stages %+v, Loki's tree %+v", r.q, mine, loki))
@@ -318,7 +391,7 @@ func TestPlanMatchesLokiOracle(t *testing.T) {
 			problems = append(problems, fmt.Sprintf("%q: %d parsers, error policy %d; Loki's tree: %d parsers, error label dropped %v", r.q, sel.Sem.Parsers, sel.Sem.ErrorPolicy, parsers, dropped))
 		}
 	}
-	t.Logf("%d queries compared with Loki's tree (%d stream selectors), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lokiRejects, ambiguous)
+	t.Logf("%d queries compared with Loki's tree (%d stream selectors, %d with line filters), %d the proxy accepts and Loki rejects (the parse oracle reports them), %d conditional drops of __error__ left out", compared, selectors, lineFilterPipelines, lokiRejects, ambiguous)
 	if compared < 1000 {
 		t.Fatalf("only %d queries compared", compared)
 	}
