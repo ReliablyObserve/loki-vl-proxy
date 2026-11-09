@@ -7,44 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
-  with an address inside other text as Loki does: `addr="10.0.0.5:443"` and
-  `addr="client 10.0.0.5"` match the pattern. The filter is the regexp of the
-  `ip()` line filter run on the label, after a substring prefilter, on
-  every block of values that holds text; a block of plain addresses, which
-  VictoriaLogs stores as numbers, keeps the `ipv4_range` compare.
-  **Breaking:** these queries kept fewer lines under `=` (and dropped such
-  values under `!=`) than Loki; they now keep Loki's lines exactly. An IPv6 pattern is unchanged and keeps a subset of Loki's lines
-  for an address inside other text.
-- Every label filter of a query applies where it stands, as in Loki. The
-  translator used to keep only the latest equality or regexp filter per
-  label, so `| a="1" | a="2"` and `| a="1" | a!="1"` answered the second
-  filter's lines where Loki answers none, and a filter after a
-  `label_format` moved before it. **Breaking:** queries that repeat a filter
-  on a label (Drilldown include and exclude clicks on the same field, or a
-  hand-written chain) kept lines before and now keep the lines Loki keeps,
-  often none.
-- `query` and `query_range` answers carry Loki's `data.stats` object instead of
-  an empty `{}`, so Grafana's query inspector and the Logs Drilldown footer
-  ("Total bytes processed") show statistics as they do for Loki. The proxy
-  fills the `summary` and `cache` sections, in Loki's key order, with
-  measurements of the request and no extra VictoriaLogs request: its own time
-  (`execTime`), its wait for heavy-query admission (`queueTime`), the bytes
-  and log rows it read from VictoriaLogs (`totalBytesProcessed`,
-  `totalLinesProcessed`, the per-second rates), the VictoriaLogs calls it made
-  (`splits`), the entries it returned, and its own response, stats-extent and
-  volume cache reads under Loki's `result`, `instantMetricResult`,
-  `statsResult` and `volumeResult`. An answer served from the proxy's cache
-  reports no bytes processed and the cache entry it found, as Loki's results
-  cache does. The processed totals are what the proxy read, not what Loki
-  would have scanned, so they are lower than Loki's. `subqueries`, `shards`,
-  `totalPostFilterLines` and `totalStructuredMetadataBytesProcessed` are 0,
-  and the `querier`, `ingester` and `index` sections are left out. The query
-  and query_range response-cache keys change, so those entries are rebuilt
-  once after an upgrade, and replicas on older versions do not share them.
-
 ### Changed
 
 - Log queries with a stream selector, line filters (`|=`, `!=`, `|~`, `!~`),
@@ -81,6 +43,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator. The text writer of the legacy encoding moved from
   `internal/translator` to `internal/queryplan/physical` (`physical.Encode`);
   `translator.EncodePhysical` is a wrapper over it.
+
+## [2.115.0] - 2026-11-09
+
+### Fixed
+
+- An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
+  with an address inside other text as Loki does: `addr="10.0.0.5:443"` and
+  `addr="client 10.0.0.5"` match the pattern. The filter is the regexp of the
+  `ip()` line filter run on the label, after a substring prefilter, on
+  every block of values that holds text; a block of plain addresses, which
+  VictoriaLogs stores as numbers, keeps the `ipv4_range` compare.
+  **Breaking:** these queries kept fewer lines under `=` (and dropped such
+  values under `!=`) than Loki; they now keep Loki's lines exactly. An IPv6 pattern is unchanged and keeps a subset of Loki's lines
+  for an address inside other text.
+- Every label filter of a query applies where it stands, as in Loki. The
+  translator used to keep only the latest equality or regexp filter per
+  label, so `| a="1" | a="2"` and `| a="1" | a!="1"` answered the second
+  filter's lines where Loki answers none, and a filter after a
+  `label_format` moved before it. **Breaking:** queries that repeat a filter
+  on a label (Drilldown include and exclude clicks on the same field, or a
+  hand-written chain) kept lines before and now keep the lines Loki keeps,
+  often none.
+
+### Changed
+
 - The query plan lowers log queries with label filters that have no parser in
   front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
   trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
@@ -91,6 +78,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class without ASCII letters and the letters apart (a negated class over all
   of Unicode that holds letters is slow to print in Go's regexp/syntax, which
   VictoriaLogs does while simplifying a regexp). The same lines match.
+
+## [2.114.0] - 2026-11-09
+
+### Fixed
+
+- `query` and `query_range` answers carry Loki's `data.stats` object instead of
+  an empty `{}`, so Grafana's query inspector and the Logs Drilldown footer
+  ("Total bytes processed") show statistics as they do for Loki. The proxy
+  fills the `summary` and `cache` sections, in Loki's key order, with
+  measurements of the request and no extra VictoriaLogs request: its own time
+  (`execTime`), its wait for heavy-query admission (`queueTime`), the bytes
+  and log rows it read from VictoriaLogs (`totalBytesProcessed`,
+  `totalLinesProcessed`, the per-second rates), the VictoriaLogs calls it made
+  (`splits`), the entries it returned, and its own response, stats-extent and
+  volume cache reads under Loki's `result`, `instantMetricResult`,
+  `statsResult` and `volumeResult`. An answer served from the proxy's cache
+  reports no bytes processed and the cache entry it found, as Loki's results
+  cache does. The processed totals are what the proxy read, not what Loki
+  would have scanned, so they are lower than Loki's. `subqueries`, `shards`,
+  `totalPostFilterLines` and `totalStructuredMetadataBytesProcessed` are 0,
+  and the `querier`, `ingester` and `index` sections are left out. The query
+  and query_range response-cache keys change, so those entries are rebuilt
+  once after an upgrade, and replicas on older versions do not share them.
 
 ## [2.113.0] - 2026-11-09
 
