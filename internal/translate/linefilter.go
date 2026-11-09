@@ -90,6 +90,9 @@ func LokiMatchesEverything(text string, regex bool) bool {
 // This is a best-effort approximation: VL has no native IP semantics.
 // IPv4: precise prefix-based regex. IPv6: normalized address literal match.
 func IPLineFilterRegex(arg string) string {
+	if boxes, ok := ipv4Boxes(arg); ok {
+		return ipv4LineRegex(boxes)
+	}
 	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
 		ipStr := arg[:slashIdx]
 		parsedIP := net.ParseIP(ipStr)
