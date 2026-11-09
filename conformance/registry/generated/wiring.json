@@ -1602,9 +1602,10 @@
       "internal/proxy/detected_level_test.go",
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
-      "internal/translator/detected_level_chain_memo_test.go",
+      "internal/translate/detected_level_chain_memo_test.go",
+      "internal/translate/detected_level_keyword_test.go",
+      "internal/translate/detected_level_normalize_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
-      "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
@@ -2960,6 +2961,15 @@
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
     ],
+    "internal/translate/detected_level_chain_memo_test.go": [
+      "severity-detected-level-derivation"
+    ],
+    "internal/translate/detected_level_keyword_test.go": [
+      "severity-detected-level-derivation"
+    ],
+    "internal/translate/detected_level_normalize_test.go": [
+      "severity-detected-level-derivation"
+    ],
     "internal/translate/ip_label_prefilter_test.go": [
       "semantics/ip-label-filter-embedded-address"
     ],
@@ -2973,15 +2983,9 @@
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
     ],
-    "internal/translator/detected_level_chain_memo_test.go": [
-      "severity-detected-level-derivation"
-    ],
     "internal/translator/detected_level_filter_stage_test.go": [
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level"
-    ],
-    "internal/translator/detected_level_keyword_test.go": [
-      "severity-detected-level-derivation"
     ],
     "internal/translator/detected_level_logsql_test.go": [
       "semantics/detected-level-missing-from-stats-answers",
@@ -3788,7 +3792,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 422,
+  "tests_with_markers": 423,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

@@ -1,4 +1,4 @@
-package translator
+package translate
 
 import (
 	"reflect"
