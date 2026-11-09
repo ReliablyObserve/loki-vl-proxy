@@ -1,6 +1,7 @@
 package logql
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -27,8 +28,20 @@ func newParseError(line, col int, msg string) *ParseError {
 	if line == 0 && col == 0 {
 		return &ParseError{Msg: "parse error : " + msg}
 	}
-	return &ParseError{Msg: fmt.Sprintf("parse error at line %d, col %d: %s", line, col, msg)}
+	var b strings.Builder
+	b.Grow(len("parse error at line , col : ") + 4 + len(msg))
+	b.WriteString("parse error at line ")
+	var digits [20]byte
+	b.Write(strconv.AppendInt(digits[:0], int64(line), 10))
+	b.WriteString(", col ")
+	b.Write(strconv.AppendInt(digits[:0], int64(col), 10))
+	b.WriteString(": ")
+	b.WriteString(msg)
+	return &ParseError{Msg: b.String()}
 }
+
+// errLexerFirst stops a parse once the scanner has noted an error of Loki's lexer, which Parse reports.
+var errLexerFirst = errors.New("logql: lexer error")
 
 // Parse parses a LogQL expression string and returns the typed AST.
 // It accepts log queries, range aggregations, and vector aggregations.
@@ -42,11 +55,16 @@ func Parse(input string) (Expr, error) {
 	p := &parser{sc: newScanner(input)}
 	p.advance()
 	expr, err := p.parseExpr()
+	if err == nil && p.cur.Typ != TokEOF {
+		err = p.syntaxErrorAt("")
+	}
+	if p.sc.lexErrCount() > 0 {
+		// Loki's lexer reports its own error ahead of the parse error it may cause, and for a query that parses.
+		e := p.sc.extra.err
+		return nil, p.errorMsgAt(int(e.off), e.msg, e.zeroLine)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if p.cur.Typ != TokEOF {
-		return nil, p.syntaxErrorAt("")
 	}
 	return expr, nil
 }
@@ -103,7 +121,7 @@ var opaqueMetricFunctions = map[string]bool{"label_replace": true, "vector": tru
 // labelReplaceExpr, vectorExpr). Any other call, or one that does not read so,
 // keeps only its text; validation reports why.
 func typeOpaqueCall(o *OpaqueMetricExpr) {
-	p := &parser{sc: newScanner(o.Raw)}
+	p := &parser{sc: &scanner{src: o.Raw, quiet: true}}
 	p.advance()
 	if p.cur.Typ != TokIdent || p.cur.Val != o.Func {
 		return
@@ -173,6 +191,8 @@ type parser struct {
 	cur Token
 	// prevEnd is the byte offset where the token before cur ends.
 	prevEnd int
+	// pipePos is the offset of the last `|` read, where the token before a label filter's text stands.
+	pipePos int
 	// canon is set by CanonicalizeLogRanges only.
 	canon *canonState
 	// flagSpans collects the spans of the logfmt flags read, when not nil (StripParserFlags).
@@ -230,6 +250,10 @@ func (p *parser) parseExpr() (Expr, error) {
 
 // parsePrimary parses a single expression without any infix operators.
 func (p *parser) parsePrimary() (Expr, error) {
+	if p.sc.lexErrCount() > 0 {
+		// Loki's lexer error is reported ahead of whatever the rest of the query holds: stop here.
+		return nil, errLexerFirst
+	}
 	if p.cur.Typ == TokEOF {
 		return nil, fmt.Errorf("logql: empty expression")
 	}
@@ -238,7 +262,8 @@ func (p *parser) parsePrimary() (Expr, error) {
 	if p.cur.Typ == TokNumber {
 		val, err := strconv.ParseFloat(p.cur.Val, 64)
 		if err != nil {
-			return nil, fmt.Errorf("logql: invalid number %q", p.cur.Val)
+			p.advance()
+			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
 		}
 		p.advance()
 		return &LiteralExpr{Value: val}, nil
@@ -252,7 +277,8 @@ func (p *parser) parsePrimary() (Expr, error) {
 		}
 		val, err := strconv.ParseFloat(p.cur.Val, 64)
 		if err != nil {
-			return nil, fmt.Errorf("logql: invalid number %q", p.cur.Val)
+			p.advance()
+			return &BadLiteralExpr{Err: "parse error : unable to parse literal as a float: " + err.Error()}, nil
 		}
 		p.advance()
 		return &LiteralExpr{Value: -val}, nil
@@ -531,7 +557,7 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 // a duration as DURATION with no line.
 func (p *parser) selectorValueError() error {
 	name := lokiTokenName(p.cur)
-	zeroLine := p.cur.Typ == TokDuration || p.cur.Typ == TokLBracket || isLineFilterOperator(p.cur.Typ)
+	zeroLine := p.cur.Typ == TokDuration || p.cur.Typ == TokDurationLit || p.cur.Typ == TokBytes || p.cur.Typ == TokLBracket || isLineFilterOperator(p.cur.Typ)
 	switch {
 	case p.cur.Typ == TokDuration:
 		name = "DURATION"
@@ -580,6 +606,7 @@ func (p *parser) parsePipelineStage() (Stage, error) {
 	}
 	switch p.cur.Typ {
 	case TokPipe:
+		p.pipePos = p.pos()
 		p.advance()
 		return p.parsePipeBody()
 	}
@@ -594,9 +621,12 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		return p.parseLabelFilterStage(p.pos(), "", TokLParen)
 	}
 	if p.cur.Typ != TokIdent {
-		if p.cur.Typ == TokDuration {
+		if p.cur.Typ == TokDuration || p.cur.Typ == TokDurationLit || p.cur.Typ == TokBytes {
 			// A literal, not a range: Loki names it by what it holds.
-			name := LabelFilterWordName(p.cur.Val)
+			name := lokiTokenName(p.cur)
+			if p.cur.Typ == TokDuration {
+				name = LabelFilterWordName(p.cur.Val)
+			}
 			return nil, p.errorAt(p.pos(), name, "", zeroLineToken(name))
 		}
 		return nil, p.syntaxErrorAt("")
@@ -978,7 +1008,7 @@ func (p *parser) offsetDuration() (string, time.Duration, error) {
 	if p.cur.Typ == TokMinus {
 		minus := p.pos()
 		p.advance()
-		if p.cur.Typ == TokDuration && p.pos() == minus+1 {
+		if p.cur.Typ == TokDurationLit && p.pos() == minus+1 {
 			if d, err := time.ParseDuration("-" + p.cur.Val); err == nil {
 				text := "-" + p.cur.Val
 				p.advance()
@@ -987,10 +1017,19 @@ func (p *parser) offsetDuration() (string, time.Duration, error) {
 		}
 		return "", 0, p.errorAt(minus, "-", "DURATION", false)
 	}
-	if p.cur.Typ != TokDuration {
+	if p.cur.Typ != TokDurationLit {
 		return "", 0, p.syntaxErrorAt("DURATION")
 	}
 	val := p.cur.Val
+	if val[0] == '-' {
+		// One token with its minus sign: a negative duration shifts the window forward.
+		d, _ := time.ParseDuration(val)
+		p.advance()
+		if p.cur.Typ == TokDurationLit {
+			return "", 0, p.errorAt(p.pos(), "DURATION", ")", true)
+		}
+		return val, d, nil
+	}
 	d, err := time.ParseDuration(val)
 	if err != nil || d < 0 {
 		var ok bool
@@ -1001,7 +1040,7 @@ func (p *parser) offsetDuration() (string, time.Duration, error) {
 	p.advance()
 	// A second duration right after (`offset 1h 2m`, `offset 1h-2m`): Loki's lexer
 	// reads it as one more DURATION token.
-	if p.cur.Typ == TokDuration || (p.cur.Typ == TokMinus && signedDurationAt(p.sc.src, p.pos())) {
+	if p.cur.Typ == TokDurationLit || (p.cur.Typ == TokMinus && signedDurationAt(p.sc.src, p.pos())) {
 		return "", 0, p.errorAt(p.pos(), "DURATION", ")", true)
 	}
 	return val, d, nil
@@ -1040,7 +1079,7 @@ func (p *parser) syntaxErrorAt(expecting string) error {
 	if p.cur.Typ == TokEOF {
 		pos = len(p.sc.src)
 	}
-	zeroLine := p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket)
+	zeroLine := p.cur.Typ != TokEOF && (isLineFilterOperator(p.cur.Typ) || p.cur.Typ == TokLBracket || p.cur.Typ == TokDurationLit || p.cur.Typ == TokBytes)
 	return p.errorAt(pos, lokiTokenName(p.cur), expecting, zeroLine)
 }
 
@@ -1085,6 +1124,10 @@ func lokiTokenName(tok Token) string {
 		return "STRING"
 	case TokDuration, TokLBracket:
 		return "RANGE"
+	case TokDurationLit:
+		return "DURATION"
+	case TokBytes:
+		return "BYTES"
 	case TokIdent:
 		if tok.Val == "label_replace" {
 			return tok.Val
@@ -1156,7 +1199,7 @@ func (p *parser) consumeRestOfStage(prev TokType) string {
 			// line filter stage; stop. After a label name it IS the label filter
 			// operator (e.g. `status!=200`, `a="1", status!=200`); continue.
 			switch prev {
-			case TokString, TokRawString, TokNumber, TokDuration, TokRParen:
+			case TokString, TokRawString, TokNumber, TokDuration, TokDurationLit, TokBytes, TokRParen:
 				return b.String()
 			}
 		}
@@ -1181,16 +1224,37 @@ func isLabelFilterOperator(t TokType) bool {
 // the stage up to the next pipeline operator, range bracket or unmatched ) and
 // checks its syntax the way Loki's parser does.
 func (p *parser) parseLabelFilterStage(start int, kw string, prev TokType) (Stage, error) {
+	known := p.sc.lexErrCount()
+	saved := *p.sc
 	raw := kw + p.consumeRestOfStage(prev)
+	// The filter lexer reads the text of the stage: the errors of the scanner inside it are not Loki's.
+	if curStart := int(p.sc.start); known == 0 && p.sc.lexErrCount() > 0 && int(p.sc.extra.err.off) < curStart {
+		// The error is inside the text the filter lexer reads; the token after the stage may have one of its own.
+		p.sc.dropLexErr(0)
+		p.sc.pos = curStart
+		p.cur = p.sc.next()
+	}
 	text := p.sc.src[start:p.pos()]
-	expr, serr := ParseLabelFilterExpr(text)
+	expr, end, serr := scanLabelFilter(text, p.pipePos-start, true)
+	if serr == nil && end < len(text) {
+		// A binary operator of the query follows the filter: the query goes on from there.
+		*p.sc = saved
+		p.sc.dropLexErr(known)
+		p.sc.pos = start + end
+		p.sc.inRange = false
+		raw = text[:end] // the query is rejected for the operand anyway
+		p.prevEnd = start + end
+		p.cur = p.sc.next()
+	}
 	if serr != nil {
 		if serr.Offset >= len(text) {
 			// The stage ended too early: the token that ends it is the unexpected one.
 			return nil, p.syntaxErrorAt(serr.Expecting)
 		}
+		// Loki stops at the offending token, before it reads the one after the stage.
+		p.sc.dropLexErr(known)
 		if serr.Message != "" {
-			return nil, p.errorMsgAt(start+serr.Offset, serr.Message, false)
+			return nil, p.errorMsgAt(start+serr.Offset, serr.Message, serr.ZeroLine)
 		}
 		return nil, p.errorAt(start+serr.Offset, serr.Token, serr.Expecting, zeroLineToken(serr.Token))
 	}
@@ -1272,13 +1336,16 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 	case TokNumber:
 		phi, err := strconv.ParseFloat(p.cur.Val, 64)
 		if err != nil {
-			return fmt.Errorf("logql: invalid phi: %w", err)
+			return newParseError(0, 0, "invalid parameter for operation quantile_over_time: "+err.Error())
 		}
 		p.advance()
 		ra.Param = phi
 		ra.HasParam = true
-		_, err = p.expect(TokComma)
-		return err
+		if p.cur.Typ != TokComma {
+			return p.syntaxErrorAt(",")
+		}
+		p.advance()
+		return nil
 	case TokMinus:
 		p.advance()
 		if p.cur.Typ != TokNumber {
@@ -1433,7 +1500,8 @@ func (p *parser) atStageStart() bool {
 func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 	// Expect [duration]. bracketCol is the 1-based column of '[' (the scanner
 	// position just past it), which Loki reports for a malformed duration.
-	bracketCol := p.sc.pos
+	before := p.sc.src[:p.sc.pos]
+	bracketCol := utf8.RuneCountInString(before[strings.LastIndexByte(before, '\n')+1:])
 	if _, err := p.expect(TokLBracket); err != nil {
 		return fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
 	}
@@ -1487,6 +1555,7 @@ func (p *parser) parseRangeSuffix(ra *RangeAggregation) error {
 // NUMBER or { or (". The probe runs on a scanner copy and consumes nothing.
 func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 	sc := *p.sc
+	sc.quiet = true
 	probe := parser{sc: &sc, cur: p.cur}
 	expecting := "{ or ("
 	if numberAllowed {
@@ -1505,6 +1574,8 @@ func (p *parser) checkRangeAggregationArgument(numberAllowed bool) error {
 		return newParseError(1, len(p.sc.src)+1, msg)
 	case TokIdent, TokNumber:
 		return newParseError(1, sc.pos-len(probe.cur.Val)+1, msg)
+	case TokDurationLit, TokBytes:
+		return newParseError(0, sc.pos-len(probe.cur.Val)+1, msg)
 	}
 	return newParseError(0, 0, msg)
 }
@@ -1552,9 +1623,18 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 
 	// topk/bottomk carry a numeric parameter before the inner expression.
 	if op == VectorTopK || op == VectorBottomK {
-		kTok, err := p.expect(TokNumber)
-		if err != nil {
-			return nil, fmt.Errorf("logql: %s requires a numeric k parameter", op)
+		if p.cur.Typ != TokNumber {
+			if p.cur.Typ == TokLBrace || p.cur.Typ == TokIdent && isLexerFunctionName(p.cur.Val) {
+				return nil, newParseError(0, 0, "parameter required for operation "+string(op))
+			}
+			return nil, p.syntaxErrorAt("")
+		}
+		kTok := p.advance()
+		if p.cur.Typ == TokRParen {
+			return nil, newParseError(0, 0, "parameter required for operation "+string(op))
+		}
+		if p.cur.Typ != TokComma {
+			return nil, p.syntaxErrorAt("")
 		}
 		// Loki (syntax.mustNewVectorAggregationExpr) requires an integer k > 0.
 		k, err := strconv.Atoi(kTok.Val)
@@ -1566,9 +1646,7 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		}
 		va.Param = float64(k)
 		va.HasParam = true
-		if _, err := p.expect(TokComma); err != nil {
-			return nil, fmt.Errorf("logql: expected ',' after k in %s", op)
-		}
+		p.advance()
 	}
 
 	inner, err := p.parseExpr()

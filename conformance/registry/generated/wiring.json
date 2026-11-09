@@ -359,6 +359,7 @@
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
+      "test/e2e-compat/label_filter_number_literal_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_filter_error_runs_test.go",
@@ -469,6 +470,7 @@
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/label_filter_expression_test.go",
+      "test/e2e-compat/label_filter_number_literal_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
@@ -1151,6 +1153,10 @@
       "internal/translator/label_filter_expr_test.go",
       "test/e2e-compat/label_filter_expression_test.go"
     ],
+    "semantics/label-filter-number-literal-scan": [
+      "internal/logql/label_filter_number_literal_loki_test.go",
+      "test/e2e-compat/label_filter_number_literal_test.go"
+    ],
     "semantics/label-filter-regex-parse-error": [
       "internal/logql/stage_parse_validate_loki_test.go"
     ],
@@ -1711,7 +1717,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 448,
+  "registry_items": 449,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1763,6 +1769,9 @@
     "internal/logql/label_filter_expr_test.go": [
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/label-filter-expression-syntax"
+    ],
+    "internal/logql/label_filter_number_literal_loki_test.go": [
+      "semantics/label-filter-number-literal-scan"
     ],
     "internal/logql/line_filter_runs_loki_test.go": [
       "semantics/line-filter-error-quotes-the-run"
@@ -3272,6 +3281,11 @@
       "loki_api_v1_query_range",
       "semantics/label-filter-expression-syntax"
     ],
+    "test/e2e-compat/label_filter_number_literal_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/label-filter-number-literal-scan"
+    ],
     "test/e2e-compat/label_freshness_e2e_test.go": [
       "quality/metadata-bounded-staleness",
       "semantics/metadata-answers-include-last-24h-like-loki"
@@ -3690,7 +3704,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 404,
+  "tests_with_markers": 406,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3797,5 +3811,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 271
+  "wired_items": 272
 }

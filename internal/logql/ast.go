@@ -551,6 +551,15 @@ type LiteralExpr struct {
 	Value float64
 }
 
+// BadLiteralExpr is a number literal Go cannot read as a float (0x1, 1e999): the lexer takes it as a number, and
+// Loki reports the conversion error when it has read the whole query, so validateSemantics raises Err.
+type BadLiteralExpr struct {
+	Err string
+}
+
+func (b *BadLiteralExpr) String() string { return b.Err }
+func (b *BadLiteralExpr) expr()          {}
+
 func (l *LiteralExpr) String() string {
 	return formatNumber(l.Value)
 }

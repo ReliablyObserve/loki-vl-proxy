@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Label filter number, duration and bytes literals are read as Loki reads
+  them: numbers follow Go's scanner (`0x1`, `0o7`, `0b1`, `1_000`, `1e3`,
+  `0x1p3`), a duration is Go's syntax or whole `y w d h m s ms`, a bytes size
+  is `B k K KB KiB M G T` after the number, and a `0b` literal after white
+  space, a duration or bytes size with a sign, and the text after a literal are
+  read as Loki's lexer reads them, with its error text and column.
+  **Breaking:** the forms Loki rejects (`0x`, `1e`, `1b`, `0kb`, `5x`,
+  `1h30`, `1__0`, a control character after or inside a literal) now answer
+  Loki's 400 instead of being accepted.
+- The rest of Loki's lexer is followed in a label filter and around number
+  literals: a `+ - * / % ^ == > >= < <= unless` after a filter is a binary
+  operation on the pipeline (`unexpected type for left leg of binary
+  operation (+): *syntax.PipelineExpr`, the right operand's errors first),
+  `by`, `of`, `on` and the other keywords are keyword tokens (`unexpected
+  by`), a name ends at `+ - /` and the like, a control character or any other
+  single character is a token of its own, and NUL, `'x'` and an unclosed `[`
+  give Loki's lexer error and line 0 or 1. A number in a metric comparison,
+  `vector()`, `topk`, `quantile_over_time`, `offset` or a line filter is
+  scanned the same way, so `sum(rate(...)) > 1e3`, `> .5` and `> 1_0` are
+  accepted, and `> 0x`, `> 0b1` (after white space) and `|= 0x` answer
+  `hexadecimal literal has no digits` and `decimal literal has no digits`
+  where they answered `unexpected RANGE`. A query keeps the white space
+  around it when it is validated, so an end-of-input column counts trailing
+  white space and a trailing control character is a token.
+  **Breaking:** these forms answer Loki's 400 instead of being accepted
+  (`| a>5 + 3`, `| by="x"`, `| a>5\v`).
+
 ## [2.112.0] - 2026-11-09
 
 ### Added

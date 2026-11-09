@@ -471,6 +471,9 @@
     "semantics/label-filter-expression-syntax | gap:fixed",
     "semantics/label-filter-expression-syntax | perf",
     "semantics/label-filter-expression-syntax | query",
+    "semantics/label-filter-number-literal-scan | compare:observed",
+    "semantics/label-filter-number-literal-scan | gap:fixed",
+    "semantics/label-filter-number-literal-scan | query",
     "semantics/label-filter-numeric-equality | compare:observed",
     "semantics/label-filter-numeric-equality | gap:open",
     "semantics/label-filter-numeric-equality | query",
@@ -881,6 +884,7 @@
     "internal/logql/label_filter_expr_syntax_test.go | semantics/label-filter-expression-syntax",
     "internal/logql/label_filter_expr_test.go | semantics/ip-filter-json-stats-pushdown",
     "internal/logql/label_filter_expr_test.go | semantics/label-filter-expression-syntax",
+    "internal/logql/label_filter_number_literal_loki_test.go | semantics/label-filter-number-literal-scan",
     "internal/logql/line_filter_runs_loki_test.go | semantics/line-filter-error-quotes-the-run",
     "internal/logql/line_template_test.go | architecture-syntax-package-layering",
     "internal/logql/line_template_test.go | formatter-line-format",
@@ -1761,6 +1765,9 @@
     "test/e2e-compat/keep_structured_metadata_test.go | profiles/keep-structured-metadata-key",
     "test/e2e-compat/label_filter_expression_test.go | loki_api_v1_query_range",
     "test/e2e-compat/label_filter_expression_test.go | semantics/label-filter-expression-syntax",
+    "test/e2e-compat/label_filter_number_literal_test.go | loki_api_v1_query",
+    "test/e2e-compat/label_filter_number_literal_test.go | loki_api_v1_query_range",
+    "test/e2e-compat/label_filter_number_literal_test.go | semantics/label-filter-number-literal-scan",
     "test/e2e-compat/label_freshness_e2e_test.go | quality/metadata-bounded-staleness",
     "test/e2e-compat/label_freshness_e2e_test.go | semantics/metadata-answers-include-last-24h-like-loki",
     "test/e2e-compat/label_matcher_regexp_anchoring_test.go | loki_api_v1_detected_labels",
@@ -2032,14 +2039,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 49,
+      "api": 50,
       "drilldown": 50,
       "explore": 156,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 403,
+      "go": 405,
       "playwright": 1
     },
     "page_kinds": {
@@ -2059,7 +2066,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 103,
-    "wired_items": 271
+    "wired_items": 272
   },
   "gates": [
     "A/B shape selection",
