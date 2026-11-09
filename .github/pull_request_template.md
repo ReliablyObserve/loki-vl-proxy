@@ -11,6 +11,12 @@
 
 - list checks/tests you ran locally or in CI
 
+## Performance (Required)
+
+- base vs PR on the same machine (`benchstat`, ≥ 6 runs; machine and `GOMAXPROCS`): CPU `ns/op`, memory `B/op` and `allocs/op`, latency per request or p50/p95
+- the change and why; for a refactor or code no handler calls yet, its own cost and why the request path does not change
+- the committed benchmarks that measure it
+
 ## Security review (Required)
 
 - surface touched: query text, parameters, headers, tenant scope, cache keys, peer or admin routes, dependencies
