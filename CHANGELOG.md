@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.112.0] - 2026-11-09
+
 ### Added
 
 - An opt-in shadow of the typed query-plan lowering on live traffic:
