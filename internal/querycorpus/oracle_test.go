@@ -189,16 +189,16 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 }
 
-// typedSelectorPair is, for a client LogQL row that is a bare stream selector, the query the plan lowers to
-// (lower.Plan, the stream filter translate.StreamSelectorFilter builds) and the one the string translator writes
-// for it, both for version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile is left out: every route
-// answers Loki's rejection of it before it translates anything.
+// typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector and its line
+// filters), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile is left out:
+// every route answers Loki's rejection of it before it translates anything.
 func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(r.Query)
-	if err != nil || len(lq.Pipeline) > 0 {
+	if err != nil {
 		return "", "", false
 	}
 	for _, m := range lq.Selector.Matchers {

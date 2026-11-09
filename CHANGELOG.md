@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query-plan operator instead of splitting it off the query text again. The
   requests sent to VictoriaLogs and the answers do not change.
 
+## [2.106.0] - 2026-11-09
+
+### Changed
+
+- The line-filter builders moved out of the string translator into the package
+  the translator and the query-plan lowering share, and the lowering now
+  translates log queries with line filters natively, held to the string
+  translator on every corpus query. No handler reads the lowering yet, so
+  responses do not change.
+
 - The stats handlers read each translated stats query as a typed query-plan
   operator decoded once where the query is produced, instead of re-reading its
   text at every step. The requests sent to VictoriaLogs, the cache keys and the

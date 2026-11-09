@@ -208,12 +208,13 @@
   "shadow": {
     "rows": 22818,
     "profiles": 12,
-    "native": 420,
+    "native": 600,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
       "LabelReplace": 1233,
-      "LogSelect pipeline": 2220,
+      "LogSelect pattern filter": 636,
+      "LogSelect pipeline": 1404,
       "Opaque": 72,
       "RangeAgg": 5328,
       "Rank": 1665,

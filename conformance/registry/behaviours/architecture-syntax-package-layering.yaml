@@ -301,6 +301,24 @@ decisions:
     code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/proxy.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/metric_agg.go, internal/proxy/stream_processing.go]
     tests: [TestDecodeStatsReadsLikeTheProxyReaders, TestDecodeStatsShape, TestDecodeStatsTellsAStatsQuery, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
+  - id: lowering-line-filters
+    chosen: 'The line-filter regexp builders (the `or` chain pattern, the ip() address regexp and its CIDR and range builders) move out of the string translator into internal/translate, where translate.LineFilter builds a line filter stage as nodes (a logsql.Regexp, negated for != and !~); lower.Plan lowers a log query whose stages are all line filters to its stream filter and its line filters in order. Pattern filters (|> and !>), which the translator writes with extract pipes, stay delegated (LogSelect pattern filter)'
+    over: [keeping the builders in the translator behind an injected function, lowering the pattern filters in the same step, making the ip() line filter exact in the same step]
+    why: |
+      Step 12a of architecture B (owner 2026-11-09). One builder for the
+      translator and the lowering, as for the selectors in step 8; the moved
+      strings calls count with translator_string_ops. The pattern filters
+      need the lowering to add pipes, not only filters, and come in their own
+      step. The ip() line filter stays the documented regexp approximation
+      (semantics/ip-filter-precision): the shadow requires the lowering to
+      equal the translator, and an exact ip() needs proxy-side evaluation.
+    evidence: 'internal/querycorpus/plan_shadow_test.go TestPlanShadow (native 420 → 600 of 22,818 rows × profiles, 0 mismatches); TestVLOracle typed rows (VictoriaLogs'' parser accepts and reads the lowered and translated log queries alike: 328 rows on v1.49.0 and v1.53.0, from 176); TestPlanMatchesLokiOracle (the line filters of the 111 corpus pipelines that have them equal Loki''s tree: match type, value, ip(), or chains; Loki holds a negated chain as one negated filter per alternative) (2026-11-09)'
+    code: [internal/translate/linefilter.go, internal/queryplan/lower/lower.go, internal/translator/translator.go, test/oracle/loki/facts.go]
+    tests: [TestPlanLowersBareSelectors, TestPlanDelegatesEveryConstruct, TestPlanShadow, TestVLOracle, TestPlanMatchesLokiOracle, TestBuildCIDRRegex, TestBuildIPRangeRegex, TestIPLineFilterToRegex]
+    quality: 'No handler reads the lowering yet.'
+    performance:
+      tracked: ['BenchmarkLineFilterQueriesTranslator / BenchmarkLineFilterQueriesLowered ns/op, B/op, allocs/op (internal/queryplan/lower)']
+      bound: 'The 15 lowered line-filter log queries of the corpus, text to LogsQL (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): string translator 8.53 µs, 5.4 KiB, 98 allocs; Parse + Build + Resolve + Plan 3.08 µs, 5.0 KiB, 95 allocs'
   - id: unwrap-handlers-read-the-gate
     chosen: 'translator.DecodeStats also records the unwrap gate that ends the decoded base (Gate, the exact suffix SplitUnwrapGate splits off, and UnwrapField) and the query without it (UngatedText). statsCompatSpec carries the gate; gated() reads whether the current BaseQuery still ends with it and ungated() strips it, and withoutUnwrapGate clears it on the copy it returns. The quantile-counts route, the raw-row evaluators, the unwrap window route and the native-tumbling math check read the spec or the operator instead of splitting the text'
     over: [precomputing the ungated base at decode time, a typed unwrap gate in the base query, moving queryUsesParserStages]
