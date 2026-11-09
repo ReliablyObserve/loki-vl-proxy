@@ -156,28 +156,28 @@ func labelReplaceArgumentsError(call string) error {
 // pipeline is built, unless a parser or line filter follows it, so only a
 // line_format that survives that rule can report an invalid template.
 func validateLogQuerySemantics(lq *LogQuery, lineIndependent bool) string {
-	if msg := validateSelectorSemantics(lq.Selector); msg != "" {
-		return msg
+	parseMsg, emptyMsg := logQueryParseErrors(lq)
+	if parseMsg != "" {
+		return parseMsg
 	}
-
-	unwrapCount := 0
-	for _, s := range lq.Pipeline {
-		if _, ok := s.(*UnwrapStage); ok {
-			unwrapCount++
-			if unwrapCount > 1 {
-				return "parse error : syntax error: unexpected unwrap"
-			}
-		}
-	}
-	// The regexp and pattern parsers are checked as Loki parses the query, before it builds any stage.
-	for _, s := range lq.Pipeline {
-		if p, ok := s.(*ParserStage); ok && (p.Type == ParserRegexp || p.Type == ParserPattern) {
-			if msg := validateParserStage(p); msg != "" {
-				return msg
-			}
-		}
+	if emptyMsg != "" {
+		return emptyMsg
 	}
 	return pipelineBuildError(lq.Pipeline, lineIndependent)
+}
+
+// logQueryParseErrors returns the error Loki raises while it parses a log query (a selector regex, then a stage's;
+// see parseTimeStageError) and, apart, the selector's empty-compatible error, which Loki checks once the whole query
+// is parsed.
+func logQueryParseErrors(lq *LogQuery) (parseMsg, emptyMsg string) {
+	msg := validateSelectorSemantics(lq.Selector)
+	if msg != "" && msg != errEmptyCompatibleMatchers {
+		return msg, ""
+	}
+	if stage := parseTimeStageError(lq.Pipeline); stage != "" {
+		return stage, ""
+	}
+	return "", msg
 }
 
 // lineConsumedLater reports whether a later stage reads the log line — a
@@ -255,6 +255,10 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 		return validateSemantics(ra.Inner, raw)
 	}
 
+	parseMsg, emptyMsg := logQueryParseErrors(lq)
+	if parseMsg != "" {
+		return parseMsg
+	}
 	// Loki's range aggregation rules, in its order: a by or without clause only on
 	// the unwrap functions that keep labels, then unwrap where it is required or refused.
 	if ra.Grouping != nil && !rangeGroupingAllowed[ra.Op] {
@@ -274,12 +278,12 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 		return fmt.Sprintf("parse error : invalid aggregation %s with unwrap", ra.Op)
 	}
 
-	// Recurse into the inner log query for its own semantic checks.
-	lineIndependent := ra.Op != RangeBytesRate && ra.Op != RangeBytesOverTime
-	if err := validateLogQuerySemantics(lq, lineIndependent); err != "" {
-		return err
+	if emptyMsg != "" {
+		return emptyMsg
 	}
-	return ""
+	// Build the inner pipeline as Loki does.
+	lineIndependent := ra.Op != RangeBytesRate && ra.Op != RangeBytesOverTime
+	return pipelineBuildError(lq.Pipeline, lineIndependent)
 }
 
 // The range aggregation rules of Loki v3.7 (recorded with the test oracle: TestRangeAggregationRulesLikeLoki).

@@ -1150,6 +1150,9 @@
       "internal/translator/label_filter_expr_test.go",
       "test/e2e-compat/label_filter_expression_test.go"
     ],
+    "semantics/label-filter-regex-parse-error": [
+      "internal/logql/stage_parse_validate_loki_test.go"
+    ],
     "semantics/label-inventory-exact-and-incremental": [
       "internal/proxy/label_surface_test.go",
       "internal/proxy/label_values_cap_inventory_test.go",
@@ -1707,7 +1710,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 444,
+  "registry_items": 445,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1793,6 +1796,9 @@
     ],
     "internal/logql/selector_value_test.go": [
       "semantics/selector-values-are-strings"
+    ],
+    "internal/logql/stage_parse_validate_loki_test.go": [
+      "semantics/label-filter-regex-parse-error"
     ],
     "internal/logql/vector_agg_log_expr_test.go": [
       "semantics/vector-aggregation-over-log-selector-status"
@@ -3680,7 +3686,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 402,
+  "tests_with_markers": 403,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3784,5 +3790,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 270
+  "wired_items": 271
 }

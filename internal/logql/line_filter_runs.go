@@ -42,6 +42,9 @@ func pipelineBuildError(stages []Stage, lineIndependent bool) string {
 		if end == len(stages) {
 			break
 		}
+		if _, ok := stages[end].(*UnwrapStage); ok {
+			break // the label filters after an unwrap are not built as pipeline stages (an ip() one is not checked)
+		}
 		switch s := stages[end].(type) {
 		case *LabelFilterStage:
 			if msg := ipLabelFilterError(s); msg != "" {

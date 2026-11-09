@@ -57,6 +57,13 @@ type patternFilterAnswer struct {
 // grid and writes its answers to path, one JSON line per query.
 func recordPipelineAnswers(t *testing.T, grid []string, path string) {
 	t.Helper()
+	recordOracleAnswers(t, "pipeline", grid, path)
+}
+
+// recordOracleAnswers runs a command of the Loki oracle (pipeline for log queries; check, which also builds the
+// pipelines of metric queries) over the grid and writes its answers to path, one JSON line per query.
+func recordOracleAnswers(t *testing.T, command string, grid []string, path string) {
+	t.Helper()
 	work := t.TempDir()
 	bin, err := oraclerun.Build(filepath.Join("..", "..", "test", "oracle", "loki"), "", work, "loki")
 	if err != nil {
@@ -76,7 +83,7 @@ func recordPipelineAnswers(t *testing.T, grid []string, path string) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := oraclerun.Run(bin, "pipeline", "-in", in, "-out", out); err != nil {
+	if err := oraclerun.Run(bin, command, "-in", in, "-out", out); err != nil {
 		t.Fatal(err)
 	}
 	r, err := os.Open(out)
@@ -120,8 +127,14 @@ func TestPatternLineFilterValidationMatchesLoki(t *testing.T) {
 // records the answers again first.
 func requireLokiPipelineAnswers(t *testing.T, grid []string, path string, known map[string]bool) {
 	t.Helper()
+	requireLokiAnswers(t, "pipeline", grid, path, known)
+}
+
+// requireLokiAnswers is requireLokiPipelineAnswers with the answers of the oracle command given.
+func requireLokiAnswers(t *testing.T, command string, grid []string, path string, known map[string]bool) {
+	t.Helper()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {
-		recordPipelineAnswers(t, grid, path)
+		recordOracleAnswers(t, command, grid, path)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {

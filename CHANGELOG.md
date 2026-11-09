@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `|>` chain led by `ip()` (`|= ip("z") or "x"`), which Loki accepts and
   reads as text, now answers 200 where it was a 400; every other status is
   unchanged.
+- A label filter, drop or keep regex Loki cannot parse (`| x=~"("`,
+  `| drop x=~"("`) is rejected with Loki's 400 and Loki's text, and parse
+  errors of a pipeline stage (these regexes, the regexp and pattern parsers)
+  are reported before the selector's empty-compatible rule and a range
+  aggregation's grouping and unwrap rules, as Loki reports them. An ip()
+  label filter after an unwrap is no longer rejected, as in Loki.
+  **Breaking:** the queries with such a regex were accepted before; Loki has
+  always rejected them.
 
 ### Changed
 
