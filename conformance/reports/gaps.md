@@ -46,7 +46,7 @@ Loki's query-frontend shape: the status and the text, `text/plain`, no errorType
 
 | Status | call sites | literal message | through the error layer | formatted at run time | of those, an error's own text | no body |
 |---|---:|---:|---:|---:|---:|---:|
-| 400 | 86 | 28 | 0 | 58 | 42 | 0 |
+| 400 | 87 | 28 | 0 | 59 | 43 | 0 |
 | 401 | 4 | 4 | 0 | 0 | 0 | 0 |
 | 403 | 2 | 2 | 0 | 0 | 0 | 0 |
 | 404 | 1 | 1 | 0 | 0 | 0 | 0 |
@@ -67,7 +67,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 10 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 11 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 8 | proven |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 4 | 1 | unknown |

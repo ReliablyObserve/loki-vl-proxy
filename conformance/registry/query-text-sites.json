@@ -2,7 +2,7 @@
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
     "deferred_raw": 7,
-    "lowering_marker_reads": 34,
+    "lowering_marker_reads": 25,
     "parse_calls": 62,
     "string_reads": 54,
     "text_built": 213,
@@ -15,7 +15,7 @@
     "lowering_marker_reads": {
       "internal/proxy/absent_over_time.go": 1,
       "internal/proxy/metric_agg.go": 3,
-      "internal/proxy/metric_binary.go": 12,
+      "internal/proxy/metric_binary.go": 3,
       "internal/proxy/nested_vector_fold.go": 2,
       "internal/proxy/proxy.go": 4,
       "internal/proxy/quantile_histogram.go": 1,
