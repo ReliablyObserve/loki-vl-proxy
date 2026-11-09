@@ -168,6 +168,16 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 			}
 		}
 	}
+	// The generated parser grid (json and logfmt with flags and field lists, drop and keep) adds the shapes the
+	// corpus lacks, under the same pairing.
+	for _, q := range parserGrid() {
+		if typed, built, ok := typedQueryPair(q, v); ok {
+			in := oracleInput{ID: "grid-" + caseID(q), Kind: "typed-selector", Query: built, Ours: true, Printed: typed}
+			if err := enc.Encode(in); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for _, c := range cases {
 		id := caseID(c.Query)
@@ -189,8 +199,8 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 }
 
-// typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector and its line
-// filters), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector with its line
+// filters, label filters, json and logfmt parsers, drop and keep), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
 // version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
 // the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
 // rejection of them before it translates anything.
@@ -198,7 +208,12 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
 		return "", "", false
 	}
-	lq, err := logql.ParseLogQuery(r.Query)
+	return typedQueryPair(r.Query, v)
+}
+
+// typedQueryPair is typedSelectorPair for the LogQL query q.
+func typedQueryPair(q, v string) (typed, built string, ok bool) {
+	lq, err := logql.ParseLogQuery(q)
 	if err != nil {
 		return "", "", false
 	}
@@ -209,11 +224,11 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 			}
 		}
 	}
-	if logql.ParseAndValidate(r.Query) != nil {
+	if logql.ParseAndValidate(q) != nil {
 		return "", "", false
 	}
 	identity := func(s string) string { return s }
-	expr, err := logql.Parse(r.Query)
+	expr, err := logql.Parse(q)
 	if err != nil {
 		return "", "", false
 	}
@@ -227,16 +242,16 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	q, ok := op.(physical.VLQuery)
-	if !ok {
+	vq, isQuery := op.(physical.VLQuery)
+	if !isQuery {
 		return "", "", false
 	}
 	// The string translator gets the text the handlers translate: the request rewrite removes comments first.
-	built, err = translator.TranslateLogQLWithCapabilities(logql.StripComments(r.Query), identity, nil, caps)
+	built, err = translator.TranslateLogQLWithCapabilities(logql.StripComments(q), identity, nil, caps)
 	if err != nil {
 		return "", "", false
 	}
-	return q.Text, built, true
+	return vq.Text, built, true
 }
 
 // TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned

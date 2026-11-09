@@ -1538,6 +1538,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/physical_security_test.go | semantics/label-replace-new-label",
@@ -1551,6 +1552,7 @@
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
@@ -2062,7 +2064,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 415,
+      "go": 417,
       "playwright": 1
     },
     "page_kinds": {
