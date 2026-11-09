@@ -70,6 +70,7 @@
     ],
     "drilldown/logs-footer-query-stats": [
       "internal/proxy/query_stats_test.go",
+      "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "drilldown/patterns-full-range-counts": [
@@ -895,6 +896,7 @@
     ],
     "query-stats-envelope": [
       "internal/proxy/query_stats_test.go",
+      "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "range_function-count-over-time": [
@@ -2532,6 +2534,10 @@
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
     ],
+    "internal/proxy/query_stats_totals_test.go": [
+      "drilldown/logs-footer-query-stats",
+      "query-stats-envelope"
+    ],
     "internal/proxy/range_lower_bound_test.go": [
       "semantics/lower-bound-exclusive",
       "window-bounds-and-step-alignment"
@@ -3770,7 +3776,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 418,
+  "tests_with_markers": 419,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

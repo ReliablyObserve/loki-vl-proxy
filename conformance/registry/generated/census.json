@@ -1311,6 +1311,8 @@
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_totals_test.go | drilldown/logs-footer-query-stats",
+    "internal/proxy/query_stats_totals_test.go | query-stats-envelope",
     "internal/proxy/range_lower_bound_test.go | semantics/lower-bound-exclusive",
     "internal/proxy/range_lower_bound_test.go | window-bounds-and-step-alignment",
     "internal/proxy/range_metric_row_limit_error_test.go | heavy-metric-fetch-bounds",
@@ -2067,7 +2069,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 417,
+      "go": 418,
       "playwright": 1
     },
     "page_kinds": {

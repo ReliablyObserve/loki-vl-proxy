@@ -65,10 +65,15 @@ proxy: |
   stored deflate block with the last bytes and its stats, and the trailer:
   one gzip member. An answer under the client compression threshold is sent
   uncompressed with its stats, as before them.
+  Lines and bytes processed have Loki's meaning where an answer the proxy
+  computes anyway counts them (query_stats_totals.go), and are what the
+  proxy read from VictoriaLogs otherwise; see the decisions.
 
 implementation:
   - internal/proxy/query_stats.go
   - internal/proxy/query_stats_cache.go
+  - internal/proxy/query_stats_totals.go
+  - internal/proxy/volume.go
   - internal/middleware/compress.go
   - internal/proxy/query_flow.go
   - internal/proxy/backend_read_observation.go
@@ -85,21 +90,24 @@ decisions:
       Owner 2026-11-09: Loki's shape, real values only, no extra
       VictoriaLogs load, no performance regression against base on any
       path; compute in the proxy first, derive from answers the proxy
-      computes anyway second (a follow-up change), query VictoriaLogs last
-      and off by default (not built). Per field: execTime = the request's
-      time in the proxy; totalBytesProcessed = decoded bytes the proxy read
-      from VictoriaLogs for this answer; totalLinesProcessed = log rows the
-      proxy read from VictoriaLogs raw query bodies (one per NDJSON line);
+      computes anyway second (decision query-stats-loki-meaning-totals),
+      query VictoriaLogs last and off by default (not built). Per field:
+      execTime = the request's time in the proxy; totalBytesProcessed =
+      decoded bytes the proxy read from VictoriaLogs for this answer, and
+      totalLinesProcessed = log rows the proxy read from VictoriaLogs raw
+      query bodies (one per NDJSON line), unless the totals decision gives
+      them with Loki's meaning;
       bytes/linesProcessedPerSecond = those over execTime;
       queueTime = its wait for heavy-query admission; totalEntriesReturned =
       entries of a streams answer, series of a matrix or vector answer;
-      splits = VictoriaLogs calls; subqueries, shards, totalPostFilterLines
-      and totalStructuredMetadataBytesProcessed = 0 (VictoriaLogs has no
-      shards or subqueries, filters before the proxy sees rows and keeps no
-      structured-metadata byte count). The processed totals are what the
-      proxy read, lower than Loki's scan: a log query reads at most its limit
-      (15m window on the test stack: Loki 15,750 lines / 5,400,506 bytes,
-      the proxy 1,000 rows), a metric query reads aggregated rows. cache.<section> = the
+      splits = VictoriaLogs calls; subqueries, shards and
+      totalStructuredMetadataBytesProcessed = 0, totalPostFilterLines = 0
+      unless the totals decision gives it (VictoriaLogs has no shards or
+      subqueries, filters before the proxy sees rows and keeps no
+      structured-metadata byte count). What the proxy read is lower than
+      Loki's scan: a log query reads at most its limit (15m window on the
+      test stack: Loki 15,750 lines / 5,400,506 bytes, the proxy 1,000
+      rows), a metric query reads aggregated rows. cache.<section> = the
       request's reads and stores by the Loki cache that plays the same
       part: result = the compat response cache, the inner query_range
       cache, the log window cache and the settled steps cache;
@@ -168,3 +176,77 @@ decisions:
         trailer and the captured gzip sidecar (the layer scanning every hit,
         gzip hits compressed per request) the log hit was 5.3 -> 58 us
         identity and 6.2 -> 132 us gzip.
+  - id: query-stats-loki-meaning-totals
+    chosen: 'Lines and bytes processed from answers the proxy computes anyway: a tumbling count_over_time/bytes_over_time sums its own answer; a log query takes its window from the volume answer of the same expression (count) or selector (volume_range bytes), kept in the shared cache tiers'
+    over: ['the rows and bytes the proxy read (lower than Loki''s by the limit or the aggregation)', 'a VictoriaLogs count()/sum_len or query_stats request per query (opt-in fallback, not built: 1.5x to 6x the log query''s own VictoriaLogs time)', 'estimating the uncovered edge of a refreshed window', 'reproducing Loki''s early stop on long windows']
+    why: |
+      Owner 2026-11-09: Loki's meaning, at no VictoriaLogs cost, from what
+      the proxy already computes for the same selector and window; never
+      fake Loki's scan. On the test stack Loki's log query reports exactly
+      its window's lines and line plus structured-metadata bytes for 5m and
+      15m windows at every limit, so the window's totals are the honest
+      figure; beyond that Loki stops early (30,100 lines for 1h and 6h),
+      and the proxy reports the window's totals, higher than Loki's.
+      Sources: (1) `[sum [by|without]] (count_over_time(E [| drop __error__] [R]))`
+      with E a selector and line/label filters (no parser), on tumbling
+      windows (step = R) or instant: its answer's sum is the lines of E over
+      (start - R, end], Loki's window: totalLinesProcessed and
+      totalPostFilterLines without a filter, totalPostFilterLines with one
+      (totalLinesProcessed then comes from a selector-only count when
+      known); `bytes_over_time({selector}[R])` likewise gives line bytes.
+      (2) Such range answers (not instant ones: one step is too coarse to
+      stand for another window), and volume_range answers grouped only by
+      labels every stream has (the selector's own when every matcher
+      requires a value, service_name, detected_level) and not cut by limit,
+      are kept 5 minutes (`qs-totals:v1:` + hash of tenant org, routing and
+      auth scope, kind and expression) in memory and pushed asynchronously to
+      the key's peer replicas, so the logs query of the same panel (Explore
+      wraps the logs query's whole expression in its volume query; Logs
+      Drilldown requests volume_range for the selector) takes its window's
+      lines (post-filter lines with filters) and line bytes from them. The
+      log query reads them from memory only (a peer read would wait on the
+      network before its stats are written) and uses one when its whole
+      steps inside the window span at least 90% of the window, summing those
+      steps; the uncovered edge is left out, never estimated. Only answers
+      computed from VictoriaLogs (a miss) carry these totals; sliding windows
+      (step != R) and parsers are left out (a line is counted in several
+      steps; dropped parse errors are not Loki's post-filter count).
+    evidence: |
+      Stack 2026-11-09, local build against the stack's VictoriaLogs,
+      windows ending 2 minutes ago, Loki | proxy: 15m count_over_time
+      lines 16,800 | 16,800, post-filter with |= "GET" 3,354 | 3,354;
+      15m log query after its volume query lines 15,750 | 15,750, bytes
+      5,400,506 | 5,274,506 (Loki adds 126,000 structured-metadata bytes);
+      15m bytes_over_time 5,759,962 | 5,625,562 (structured metadata);
+      1h and 3h log queries 30,381 and 30,418 | 62,965 and 189,105 (the
+      window's lines; Loki stops early). Replay (one proxy, VictoriaLogs
+      stub, 40 page loads each, TestQueryStatsTotals_CompanionCoverage):
+      Explore first load 0/40 (the logs answer finishes before its volume
+      answer), refreshes 40/40 and 40/40; Logs Drilldown first load lines
+      0/40 and bytes 3-18/40, refresh 40/40 and 40/40. Behind a load
+      balancer the two queries of a panel can reach different replicas;
+      companions reach only the key's replicas (and the writer), so one
+      proxy is the upper bound.
+    code: [internal/proxy/query_stats_totals.go, internal/proxy/middleware.go, internal/proxy/volume.go]
+    tests: [TestQueryStatsTotals_MetricAnswerSumsToLokisWindow, TestQueryStatsTotals_LogQueryFromItsVolumeAnswer, TestQueryStatsTotals_LogQueryBytesFromVolumeRange, TestQueryStatsTotals_CompanionCoverage, TestQueryStatsTotals_CompanionsStayInTheirTenant, TestStatsTotalsStepsWithin, TestDrilldown_QueryStatsWindowTotalsFromTheVolumeAnswer]
+    quality: |
+      The derived totals are the answer's own sums (a differential over
+      random windows and steps against the answer the client got) and a
+      companion is used only for the same tenant scope (tested with two
+      mapped tenants) and expression and a window its whole steps cover to
+      90% (a coarse companion never answers a short window with 0); the
+      uncovered edge is left out, never estimated. Owed: the fleet proof of
+      the companion entries (written on one replica, read on its peer
+      replica), which needs the e2e-fleet stack.
+    performance:
+      tracked: ['BenchmarkQueryAnswerPaths metric/miss and instant/miss (the query and answer parse and the companion write on a miss)', 'BenchmarkVolumeHandlers range_selector_labels_300x60 (the companion kept from a volume_range miss)']
+      bound: 'a miss of a qualifying metric query parses the query and its own answer once and writes one companion entry (16 bytes per step, at most 11000 steps, one asynchronous push per replica); a log query miss parses the query and reads at most three companion entries from memory; hits do none of this'
+      measured: |
+        Apple M5 Pro, GOMAXPROCS=4, interleaved benchstat, base origin/main
+        (949e5dea2), shared machine. Misses with the totals (n=8, no sec/op
+        row significant, +-30 to 60% noise): allocs/op log +47 (+0.6%),
+        metric +48 (+7.9%), instant +36 (+7.2%): one query parse, one answer
+        parse (pooled fastjson parser), the companion key and write. Hits
+        unchanged (equal allocs). volume_range miss with a kept companion
+        (300 series x 60 steps, n=8): 12.26 -> 12.79 ms (p=0.23), allocs
+        +0.02%, B/op equal; the other volume rows unchanged.
