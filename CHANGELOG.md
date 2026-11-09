@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
+  with an address inside other text as Loki does: `addr="10.0.0.5:443"` and
+  `addr="client 10.0.0.5"` match the pattern. The filter is the regexp of the
+  `ip()` line filter run on the label, after a substring prefilter, on
+  every block of values that holds text; a block of plain addresses, which
+  VictoriaLogs stores as numbers, keeps the `ipv4_range` compare.
+  **Breaking:** these queries kept fewer lines under `=` (and dropped such
+  values under `!=`) than Loki; they now keep Loki's lines exactly. An IPv6 pattern is unchanged and keeps a subset of Loki's lines
+  for an address inside other text.
+- Every label filter of a query applies where it stands, as in Loki. The
+  translator used to keep only the latest equality or regexp filter per
+  label, so `| a="1" | a="2"` and `| a="1" | a!="1"` answered the second
+  filter's lines where Loki answers none, and a filter after a
+  `label_format` moved before it. **Breaking:** queries that repeat a filter
+  on a label (Drilldown include and exclude clicks on the same field, or a
+  hand-written chain) kept lines before and now keep the lines Loki keeps,
+  often none.
+
+### Changed
+
+- The query plan lowers log queries with label filters that have no parser in
+  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
+  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
+  string translator now shares; the requests sent to VictoriaLogs are those of
+  the string translator.
+
 ## [2.112.0] - 2026-11-09
 
 ### Added

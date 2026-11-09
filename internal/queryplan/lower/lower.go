@@ -60,11 +60,18 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 }
 
 // logSelect lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
-// translator writes; keeping the line aside adds nothing without a line_format) and its line filters
-// (translate.LineFilter, and translate.PatternLineFilter for |> and !>), in order. A pattern filter that needs
-// the extract pipe adds pipes; the filters after a pipe go into one filter pipe up to the next pipe, as the
-// string translator writes them. Any other stage is not lowered yet.
+// translator writes; keeping the line aside adds nothing without a line_format), its line filters
+// (translate.LineFilter, and translate.PatternLineFilter for |> and !>) and its label filters without a parser
+// (labelFilter), in order. A pattern filter that needs the extract pipe adds pipes; the filters after a pipe go
+// into one filter pipe up to the next pipe, as the string translator writes them, except that a label filter
+// that is a field filter and directly follows a pipe or a label filter in a filter pipe opens a filter pipe of
+// its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
+// assembled). Any other stage is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
+	built, err := labelFilters(sel, prof)
+	if err != nil {
+		return nil, err
+	}
 	var filters, after logsql.AllOf
 	var pipes []logsql.Pipe
 	flush := func() {
@@ -86,7 +93,21 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 	}
 	// seq numbers the pattern alternatives that extract, across the query.
 	seq := 0
-	for _, st := range sel.Stages {
+	// lastPipe is whether the last part the string translator holds starts with a pipe: a pipe, or a label
+	// filter it wrapped in a filter pipe.
+	lastPipe := false
+	for i, st := range sel.Stages {
+		if _, ok := st.(*queryplan.LabelFilter); ok {
+			f := built[i]
+			if lastPipe && translate.IsFieldFilter(f.String()) {
+				flush()
+				after = logsql.AllOf{f}
+			} else {
+				add(f)
+				lastPipe = false
+			}
+			continue
+		}
 		lf, ok := st.(*queryplan.LineFilter)
 		if !ok {
 			return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
@@ -102,6 +123,7 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 				flush()
 				pipes = append(pipes, ps...)
 			}
+			lastPipe = len(ps) > 0
 			continue
 		}
 		f, ok := translate.LineFilter(lf)
@@ -110,6 +132,7 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		}
 		if f != nil {
 			add(f)
+			lastPipe = false
 		}
 	}
 	flush()
@@ -122,6 +145,121 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		q.Filter = append(logsql.AllOf{f}, filters...)
 	}
 	return physical.VLQuery{Text: q.String()}, nil
+}
+
+// labelFilters builds the filter of each label filter stage of the query, by stage index (nil elsewhere), or
+// answers NotLoweredError for a query whose label filters the lowering does not write: a filter on
+// detected_level or service_name (the string translator derives them), a value that is not a valid literal, and a
+// label that translates to several parsed keys or to no field.
+func labelFilters(sel *queryplan.LogSelect, prof Profile) ([]logsql.FilterExpr, error) {
+	var built []logsql.FilterExpr
+	for i, st := range sel.Stages {
+		lbl, ok := st.(*queryplan.LabelFilter)
+		if !ok {
+			continue
+		}
+		if lbl.Expr == nil {
+			return nil, &NotLoweredError{Construct: "LogSelect label filter"}
+		}
+		if c := checkLabelFilterExpr(lbl.Expr, prof); c != "" {
+			return nil, &NotLoweredError{Construct: c}
+		}
+		if built == nil {
+			built = make([]logsql.FilterExpr, len(sel.Stages))
+		}
+		built[i] = labelFilter(lbl.Expr, prof.Label, prof.Caps)
+	}
+	return built, nil
+}
+
+// checkLabelFilterExpr names the construct of the first leaf the lowering does not write, "" when it writes all.
+func checkLabelFilterExpr(e *logql.LabelFilterExpr, prof Profile) string {
+	if !e.IsLeaf() {
+		if c := checkLabelFilterExpr(e.Left, prof); c != "" {
+			return c
+		}
+		return checkLabelFilterExpr(e.Right, prof)
+	}
+	if e.Kind == logql.LabelFilterValueNone {
+		return "LogSelect label filter value"
+	}
+	label := translate.SanitizeFieldIdentifier(e.Name)
+	switch label {
+	case "":
+		return "LogSelect label filter name"
+	case "detected_level", "service_name":
+		return "LogSelect label filter " + label
+	}
+	if prof.Label != nil {
+		translated := prof.Label(label)
+		if strings.Contains(translated, translate.ParsedKeySep) {
+			return "LogSelect label filter parsed keys"
+		}
+		if translate.SanitizeFieldIdentifier(translated) == "" {
+			return "LogSelect label filter name"
+		}
+	}
+	if e.Kind == logql.LabelFilterValueIP && !strings.HasSuffix(e.Leaf, `ip("`+e.Value+`")`) {
+		return "LogSelect label filter ip form"
+	}
+	if !translate.KnownLabelFilterCmp(e.Cmp) {
+		return "LogSelect label filter operator"
+	}
+	return ""
+}
+
+// labelFilter is the filter of a label filter stage that checkLabelFilters accepted: the leaf, or the and/or
+// tree of leaves in parentheses, each translated like a stand-alone stage (translateLabelFilterExpr).
+func labelFilter(e *logql.LabelFilterExpr, label func(string) string, caps logsql.Capabilities) logsql.FilterExpr {
+	if e.IsLeaf() {
+		return labelFilterLeaf(e, label, caps)
+	}
+	var operands []logsql.FilterExpr
+	collectLabelFilter(e, e.Op, &operands, label, caps)
+	var tree logsql.FilterExpr
+	for i, o := range operands {
+		switch {
+		case i == 0:
+			tree = o
+		case e.Op == logql.LabelFilterOr:
+			tree = logsql.OrExpr{Left: tree, Right: o}
+		default:
+			tree = logsql.AndExpr{Left: tree, Right: o}
+		}
+	}
+	return logsql.Group{Expr: tree}
+}
+
+// collectLabelFilter flattens a chain of one operator, parenthesizing a leaf that holds a top-level space and a
+// nested chain of the other operator (LabelFilterExpr.Render).
+func collectLabelFilter(e *logql.LabelFilterExpr, op logql.LabelFilterOp, out *[]logsql.FilterExpr, label func(string) string, caps logsql.Capabilities) {
+	switch {
+	case e.IsLeaf():
+		f := labelFilterLeaf(e, label, caps)
+		if translate.HasTopLevelSpace(f.String()) {
+			f = logsql.Group{Expr: f}
+		}
+		*out = append(*out, f)
+	case e.Op != op:
+		*out = append(*out, labelFilter(e, label, caps))
+	default:
+		collectLabelFilter(e.Left, op, out, label, caps)
+		collectLabelFilter(e.Right, op, out, label, caps)
+	}
+}
+
+// labelFilterLeaf is translateSingleLabelFilter's generic path for one leaf: the label named like the selector
+// names it, quoted where LogsQL needs it, and the filter translate.LabelFilterLeaf builds for its value.
+func labelFilterLeaf(e *logql.LabelFilterExpr, labelFn func(string) string, caps logsql.Capabilities) logsql.FilterExpr {
+	label := translate.SanitizeFieldIdentifier(e.Name)
+	if labelFn != nil {
+		label = translate.SanitizeFieldIdentifier(labelFn(label))
+	}
+	if strings.ContainsAny(label, ".-") {
+		label = `"` + label + `"`
+	}
+	f, _ := translate.LabelFilterLeaf(label, e.Cmp, e.Value, e.Kind == logql.LabelFilterValueIP, caps) // the operator is known
+	return f
 }
 
 // Construct is the kind of the node at the top of a plan, the unit the shadow

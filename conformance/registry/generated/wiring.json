@@ -21,8 +21,10 @@
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
+      "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/stats_decode_test.go",
+      "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/translate/selector_test.go"
@@ -463,6 +465,7 @@
       "test/e2e-compat/first_last_range_timestamps_test.go",
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
+      "test/e2e-compat/ip_label_filter_embedded_test.go",
       "test/e2e-compat/ip_label_filter_invalid_pattern_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
       "test/e2e-compat/ip_line_filter_test.go",
@@ -494,6 +497,7 @@
       "test/e2e-compat/query_range_window_moved_reuse_test.go",
       "test/e2e-compat/query_semantics_matrix_test.go",
       "test/e2e-compat/range_metric_offset_series_limit_test.go",
+      "test/e2e-compat/repeated_label_filters_test.go",
       "test/e2e-compat/selector_value_test.go",
       "test/e2e-compat/series_level_aggregation_fine_step_test.go",
       "test/e2e-compat/sliding_sum_without_test.go",
@@ -1039,10 +1043,15 @@
     ],
     "semantics/ip-filter-precision": [
       "internal/translate/ip_line_filter_loki_test.go",
+      "internal/translator/ip_scan_reference_test.go",
       "test/e2e-compat/ip_line_filter_test.go"
     ],
     "semantics/ip-label-filter-embedded-address": [
-      "internal/translator/ip_label_filter_test.go"
+      "internal/translate/ip_label_prefilter_test.go",
+      "internal/translator/ip_label_filter_loki_test.go",
+      "internal/translator/ip_label_filter_test.go",
+      "internal/translator/ip_scan_reference_test.go",
+      "test/e2e-compat/ip_label_filter_embedded_test.go"
     ],
     "semantics/ip-label-filter-invalid-pattern": [
       "internal/logql/ip_label_filter_validate_loki_test.go",
@@ -1050,6 +1059,7 @@
     ],
     "semantics/ip-label-filter-missing-label": [
       "internal/proxy/ip_label_filter_test.go",
+      "internal/translator/ip_label_filter_loki_test.go",
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
     ],
@@ -1330,6 +1340,10 @@
     "semantics/query-range-window-lead-window": [
       "internal/proxy/query_range_window_lead_test.go",
       "test/e2e-compat/query_range_lead_window_test.go"
+    ],
+    "semantics/repeated-label-filter-replaced-across-label-format": [
+      "internal/translator/repeated_label_filter_test.go",
+      "test/e2e-compat/repeated_label_filters_test.go"
     ],
     "semantics/scalar-sample-time-units": [
       "internal/proxy/binary_matching_test.go",
@@ -2860,6 +2874,9 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/label_filter_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/physical_codec_test.go": [
       "semantics/label-replace-new-label",
       "semantics/without-over-inner-aggregation-collapses"
@@ -2883,6 +2900,9 @@
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/label_filter_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/lower_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2892,6 +2912,9 @@
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
+    ],
+    "internal/translate/ip_label_prefilter_test.go": [
+      "semantics/ip-label-filter-embedded-address"
     ],
     "internal/translate/ip_line_filter_loki_test.go": [
       "semantics/ip-filter-precision",
@@ -2928,10 +2951,18 @@
     "internal/translator/first_last_over_time_test.go": [
       "semantics/unwrap-first-last-under-aggregation"
     ],
+    "internal/translator/ip_label_filter_loki_test.go": [
+      "semantics/ip-label-filter-embedded-address",
+      "semantics/ip-label-filter-missing-label"
+    ],
     "internal/translator/ip_label_filter_test.go": [
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/ip-label-filter-embedded-address",
       "semantics/ip-label-filter-missing-label"
+    ],
+    "internal/translator/ip_scan_reference_test.go": [
+      "semantics/ip-filter-precision",
+      "semantics/ip-label-filter-embedded-address"
     ],
     "internal/translator/json_bracket_path_test.go": [
       "drilldown/fields-pill-json-path-extracted-empty"
@@ -2975,6 +3006,9 @@
     ],
     "internal/translator/regexp_escaping_test.go": [
       "loki_api_v1_query_range"
+    ],
+    "internal/translator/repeated_label_filter_test.go": [
+      "semantics/repeated-label-filter-replaced-across-label-format"
     ],
     "internal/translator/series_aggregation_test.go": [
       "metric-series-identity"
@@ -3210,6 +3244,10 @@
       "loki_api_v1_query",
       "semantics/instant-result-type-missing",
       "semantics/scalar-sample-time-units"
+    ],
+    "test/e2e-compat/ip_label_filter_embedded_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/ip-label-filter-embedded-address"
     ],
     "test/e2e-compat/ip_label_filter_invalid_pattern_test.go": [
       "loki_api_v1_query",
@@ -3474,6 +3512,10 @@
       "series-limits-and-partial-results",
       "window-bounds-and-step-alignment"
     ],
+    "test/e2e-compat/repeated_label_filters_test.go": [
+      "loki_api_v1_query_range",
+      "semantics/repeated-label-filter-replaced-across-label-format"
+    ],
     "test/e2e-compat/row_limit_like_loki_limit_test.go": [
       "heavy-metric-fetch-bounds",
       "limits/row-limit-error-names-flag",
@@ -3690,7 +3732,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 404,
+  "tests_with_markers": 412,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3763,7 +3805,6 @@
     "semantics/parse-error-labels-on-log-lines",
     "semantics/quantile-over-time-out-of-range",
     "semantics/regexp-chain-led-by-ip",
-    "semantics/repeated-label-filter-replaced-across-label-format",
     "semantics/ruler-empty-list-status",
     "semantics/ruler-store-failure-status",
     "semantics/stddev-stdvar-nested-or-binary",
@@ -3797,5 +3838,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 271
+  "wired_items": 272
 }

@@ -527,21 +527,6 @@ func TestLabelFilterExpression_EmittedLogsQLEvaluatesLikeLokiTree(t *testing.T) 
 }
 
 // conformance: semantics/label-filter-expression-syntax
-func TestLabelFilterExpression_CompoundStageHasNoSingleIdentity(t *testing.T) {
-	// A latest-wins dedupe keys a stage by its field; a stage with several
-	// filters has none, so `| a="2", b="3"` cannot replace an earlier `| a="1"`.
-	if _, _, ok := canonicalLabelFilterStage(`a="2", b="3"`, nil); ok {
-		t.Error("a comma-joined stage must not have a canonical identity")
-	}
-	if _, _, ok := canonicalLabelFilterStage(`(a="1" or b="2")`, nil); ok {
-		t.Error("a group must not have a canonical identity")
-	}
-	if _, key, ok := canonicalLabelFilterStage(`a="2"`, nil); !ok || key != "a" {
-		t.Errorf("a single filter keeps its identity, got %q %v", key, ok)
-	}
-}
-
-// conformance: semantics/label-filter-expression-syntax
 func TestLabelFilterExpression_JSONAliasRewrittenPerFilter(t *testing.T) {
 	got := rewriteJSONAliasedFilter(`(http>=500 or x>1), http<600`, map[string]string{"http": "status"})
 	want := `((status>=500 or x>1) and status<600)`

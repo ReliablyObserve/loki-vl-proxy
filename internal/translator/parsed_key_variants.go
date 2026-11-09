@@ -19,7 +19,7 @@ import (
 // The variants are carried to translateSingleLabelFilter through the label
 // translation function: a name with several candidates is returned joined by
 // parsedKeySep.
-const parsedKeySep = "\x00"
+const parsedKeySep = translate.ParsedKeySep
 
 // maxParsedKeyUnderscores bounds the 2^n candidate keys of a name with n
 // underscores; a longer name is matched by its uniform spellings only.
@@ -141,7 +141,7 @@ func translateParsedKeyFilter(stage string, keys []string, value string, op logq
 	// single-field fast paths recognise that exact `filter field:!""` shape, and
 	// the labels Drilldown checks come from detected_fields, which resolves them
 	// to stored fields.
-	if op.negate && !op.isRe && !op.isComp && streamMatcherValue(value, false) == "" {
+	if op.Negate && !op.IsRe && !op.IsComp && streamMatcherValue(value, false) == "" {
 		keys = keys[:1]
 	}
 	filters := make([]string, 0, len(keys))
@@ -164,7 +164,7 @@ func translateParsedKeyFilter(stage string, keys []string, value string, op logq
 // parsedKeyMatchesEmpty reports whether the label filter accepts an absent
 // (empty) label.
 func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
-	if op.isComp {
+	if op.IsComp {
 		return false
 	}
 	if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
@@ -172,15 +172,15 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 		// operators (pkg/logql/log/ip.go:128-131).
 		return false
 	}
-	v := streamMatcherValue(value, op.isRe)
-	if !op.isRe {
-		return (v == "") != op.negate
+	v := streamMatcherValue(value, op.IsRe)
+	if !op.IsRe {
+		return (v == "") != op.Negate
 	}
 	re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(v)))
 	if err != nil {
-		return op.negate
+		return op.Negate
 	}
-	return re.MatchString("") != op.negate
+	return re.MatchString("") != op.Negate
 }
 
 // withParsedKeyVariants wraps a label translation so a label filter written

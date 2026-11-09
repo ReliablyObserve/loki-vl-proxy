@@ -23,7 +23,8 @@ func oldCompatQueryFences(r *http.Request, query string) string {
 		bareJSONMetricResponseKeyVersion(r, query) +
 		detectedLevelMutationResponseKeyVersion(query) +
 		keepMetadataProjectionResponseKeyVersion(query) +
-		ipLabelFilterResponseKeyVersion(query)
+		ipLabelFilterResponseKeyVersion(query) +
+		repeatedLabelFilterResponseKeyVersion(query)
 }
 
 func oldCompatQueryRangeFences(r *http.Request, query string) string {
@@ -38,6 +39,7 @@ func oldInnerQueryRangeFences(r *http.Request, query string) string {
 	key.WriteString(detectedLevelMutationResponseKeyVersion(query))
 	key.WriteString(keepMetadataProjectionResponseKeyVersion(query))
 	key.WriteString(ipLabelFilterResponseKeyVersion(query))
+	key.WriteString(repeatedLabelFilterResponseKeyVersion(query))
 	return key.String()
 }
 
@@ -193,7 +195,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 			}
 			for _, f := range []string{
 				orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
-				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion,
+				detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion,
 			} {
 				if strings.Contains(oldInner, f) {
 					fired[f] = true
@@ -224,7 +226,7 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 	}
 	for _, f := range []string{
 		orderedJSONVectorResponseVersion, bareJSONMetricResponseVersion, logfmtPresenceResponseVersion,
-		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion,
+		detectedLevelMutationResponseVersion, keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, repeatedLabelFilterResponseVersion,
 	} {
 		if !fired[f] {
 			t.Errorf("no corpus query fires %s: the differential does not cover it", f)
@@ -241,11 +243,11 @@ func TestResponseKeyFencesByteIdentical(t *testing.T) {
 func TestResponseKeyFencesSiteOrder(t *testing.T) {
 	query := `sum(count_over_time({app="a"} | logfmt | msg != "" | keep msg | status = ip("1.2.3.4") | drop detected_level [5m]))`
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query="+url.QueryEscape(query)+"&start=1&end=2&step=1", nil)
-	keep, ip, dl, lf := keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, detectedLevelMutationResponseVersion, logfmtPresenceResponseVersion
+	keep, ip, dl, lf, rl := keepMetadataProjectionResponseVersion, ipLabelFilterResponseVersion, detectedLevelMutationResponseVersion, logfmtPresenceResponseVersion, repeatedLabelFilterResponseVersion
 	for site, want := range map[responseKeySite]string{
-		responseKeyCompatQuery:      dl + keep + ip,
-		responseKeyCompatQueryRange: dl + keep + ip + lf,
-		responseKeyInnerQueryRange:  lf + dl + keep + ip,
+		responseKeyCompatQuery:      dl + keep + ip + rl,
+		responseKeyCompatQueryRange: dl + keep + ip + rl + lf,
+		responseKeyInnerQueryRange:  lf + dl + keep + ip + rl,
 		responseKeyLogWindowShape:   keep,
 	} {
 		if got := responseKeyFences(r, query, site); got != want {

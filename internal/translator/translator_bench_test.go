@@ -38,6 +38,25 @@ func BenchmarkTranslateLogQL_PatternFilter(b *testing.B) {
 	}
 }
 
+// Label filters without a parser: one filter, a compound of three, and a regexp alternation.
+func BenchmarkTranslateLogQL_LabelFilter(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} | status >= 500`)
+	}
+}
+
+func BenchmarkTranslateLogQL_LabelFilterCompound(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} | level="error" and (status>=500 or path!~"/health.*")`)
+	}
+}
+
+func BenchmarkTranslateLogQL_LabelFilterAlternation(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} | level=~"error|warn|fatal" | method!="GET"`)
+	}
+}
+
 func BenchmarkTranslateLogQL_JSONPipeline(b *testing.B) {
 	for b.Loop() {
 		TranslateLogQL(`{app="api"} | json | status >= 500 | method = "POST"`)
@@ -121,6 +140,19 @@ func BenchmarkTranslate_IPFilter(b *testing.B) {
 	caps := logsql.CapabilitiesFor("1.45.0")
 	for b.Loop() {
 		TranslateLogQLWithCapabilities(`{app="nginx"} | ip("10.0.0.0/8")`, nil, nil, caps)
+	}
+}
+
+// An ip() label filter on a label, IPv4 and IPv6.
+func BenchmarkTranslate_IPLabelFilter(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} | addr=ip("10.0.0.0/8")`)
+	}
+}
+
+func BenchmarkTranslate_IPLabelFilterIPv6(b *testing.B) {
+	for b.Loop() {
+		TranslateLogQL(`{app="nginx"} | addr!=ip("2001:db8::/32")`)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // translateLabelFilterExpr renders the expression as a LogsQL filter,
@@ -21,32 +22,9 @@ func translateLabelFilterExpr(e *logql.LabelFilterExpr, labelFn LabelTranslateFu
 	return out, ok
 }
 
-// parenthesizeCompound wraps a translated filter that holds a top-level space
-// (an `a OR b` alternation) so an enclosing and/or cannot split it.
-func parenthesizeCompound(s string) string {
-	var quote byte
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case quote != 0:
-			if c == '\\' && quote == '"' {
-				i++
-			} else if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '`':
-			quote = c
-		case c == '(':
-			depth++
-		case c == ')':
-			depth--
-		case c == ' ' && depth == 0:
-			return "(" + s + ")"
-		}
-	}
-	return s
-}
+// parenthesizeCompound wraps a translated filter that holds a top-level space (an `a OR b` alternation) so an
+// enclosing and/or cannot split it.
+func parenthesizeCompound(s string) string { return translate.ParenthesizeCompound(s) }
 
 // mayBeCompound reports whether a label filter stage can hold more than one
 // filter: it has a parenthesis, a comma, an and/or keyword or a second

@@ -224,7 +224,7 @@ Exact counts move often. Treat the categories below as the stable map of what is
 
 Recent PRs added targeted guards in areas that were previously flaky in live Grafana workflows:
 
-- `internal/translator/labels_translate_test.go` now verifies repeated same-field include/exclude interactions keep the latest equality/regex action while preserving valid range pairs on the same field.
+- `internal/translator/labels_translate_test.go` verifies that repeated same-field include/exclude filters are all kept in order, as Loki applies them; `TestRepeatedLabelFiltersApplyAllLikeLoki` holds the translation to Loki's recorded answers row by row (the `process` command of the Loki oracle), and `TestIPLabelFilterMatchesLoki` does the same for `ip()` label filters over 67,584 pattern and value cases.
 - `internal/proxy/request_logger_semconv_test.go` verifies request logs use end-user semantic fields (`enduser.*`) without falling back to legacy `user.*`.
 - `internal/observability/logger_test.go` verifies resource identity fields are not duplicated into per-line JSON payloads (prevents downstream `message.service.*` / `message.telemetry.sdk.*` field explosion).
 - `internal/metrics/procenv_test.go` + related `otlp_test.go` / `system_test.go` locking guards keep `-race` CI deterministic when tests manipulate proc-path globals alongside OTLP pusher goroutines.

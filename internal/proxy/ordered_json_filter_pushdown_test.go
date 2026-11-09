@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"regexp"
@@ -193,6 +194,8 @@ type fakeLogsQLFilter struct {
 	// set, sees every regexp it does evaluate.
 	skipped int
 	trace   func(pattern, value string)
+	// untyped puts every value in a block that holds text, which VictoriaLogs never types as ipv4.
+	untyped bool
 }
 
 // fakeRegexpTraces maps a test to the hook fakeLogsQLMatch passes as trace;
@@ -418,6 +421,12 @@ func (f *fakeLogsQLFilter) fieldFilter() bool {
 	case strings.HasPrefix(f.src[f.pos:], "!"):
 		f.pos++
 		return value != f.quoted()
+	case strings.HasPrefix(f.src[f.pos:], "value_type(ipv4)"):
+		// A block of addresses only is stored as numbers and reads back as the canonical address, so the value is
+		// typed exactly when it is one.
+		f.pos += len("value_type(ipv4)")
+		a, err := netip.ParseAddr(value)
+		return !f.untyped && err == nil && a.Is4() && a.String() == value
 	case strings.HasPrefix(f.src[f.pos:], "ipv4_range("), strings.HasPrefix(f.src[f.pos:], "ipv6_range("):
 		// One whole address in [lo, hi] (fakeVLIPInRange).
 		v6 := strings.HasPrefix(f.src[f.pos:], "ipv6")
@@ -558,6 +567,13 @@ func fakeLogsQLMatch(t testing.TB, expr string, values map[string]string) bool {
 	f.skipSpace()
 	if f.pos != len(f.src) {
 		t.Errorf("fake VL: trailing text at %d in %q", f.pos, expr)
+	}
+	if strings.Contains(expr, "value_type(ipv4)") {
+		// A canonical address can sit in a block of addresses or in one that holds text: the row answers alike.
+		g := &fakeLogsQLFilter{t: t, src: expr, vals: values, untyped: true}
+		if other := g.expr(); other != result {
+			t.Errorf("fake VL: %q answers %v in a block of addresses and %v in a block with text on %v", expr, result, other, values)
+		}
 	}
 	return result
 }

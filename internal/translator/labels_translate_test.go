@@ -145,34 +145,34 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `app:="api" ~"custom\.pipeline\."`,
 		},
 		{
-			name:  "repeated include filter clicks are deduplicated after parser",
+			name:  "repeated include filters all apply, as Loki applies each where it stands",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes = "89" | source_message_bytes = ` + "`89`",
-			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
+			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89") | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89") | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
 		},
 		{
-			name:  "repeated exclude filter clicks are deduplicated after parser",
+			name:  "repeated exclude filters all apply",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes != "89"`,
-			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
+			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89") | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
 		},
 		{
-			name:  "include then exclude same value keeps latest filter stage",
+			name:  "include then exclude same value applies both, none left",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes!="89"`,
-			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
+			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89") | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89")`,
 		},
 		{
-			name:  "exclude then include same value keeps latest filter stage",
+			name:  "exclude then include same value applies both, none left",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes="89"`,
-			want:  `app:="api" | unpack_json | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
+			want:  `app:="api" | unpack_json | filter (-source_message_bytes:="89" -"source.message_bytes":="89" -"source_message.bytes":="89" -"source.message.bytes":="89" -"source-message-bytes":="89") | filter (source_message_bytes:="89" OR "source.message_bytes":="89" OR "source_message.bytes":="89" OR "source.message.bytes":="89" OR "source-message-bytes":="89")`,
 		},
 		{
-			name:  "repeated include on same field with different values keeps latest value",
+			name:  "repeated include on same field with different values applies both",
 			logql: `{app="api"} | json | traceID="a1" | traceID="b2"`,
-			want:  `app:="api" | unpack_json | filter traceID:="b2"`,
+			want:  `app:="api" | unpack_json | filter traceID:="a1" | filter traceID:="b2"`,
 		},
 		{
-			name:  "repeated exclude on same field with different values keeps latest value",
+			name:  "repeated exclude on same field with different values applies both",
 			logql: `{app="api"} | json | traceID!="a1" | traceID!="b2"`,
-			want:  `app:="api" | unpack_json | filter -traceID:="b2"`,
+			want:  `app:="api" | unpack_json | filter -traceID:="a1" | filter -traceID:="b2"`,
 		},
 		{
 			name:  "range filters on same field are preserved",
@@ -180,9 +180,9 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `app:="api" | unpack_json | filter (duration_ms:>100 OR "duration.ms":>100 OR "duration-ms":>100) | filter (duration_ms:<500 OR "duration.ms":<500 OR "duration-ms":<500)`,
 		},
 		{
-			name:  "mixed include exclude on same field keeps latest action",
+			name:  "mixed include exclude on same field applies both",
 			logql: `{app="api"} | json | traceID="a1" | traceID!="a1"`,
-			want:  `app:="api" | unpack_json | filter -traceID:="a1"`,
+			want:  `app:="api" | unpack_json | filter traceID:="a1" | filter -traceID:="a1"`,
 		},
 	}
 

@@ -19,13 +19,6 @@ func TestPatternAndTranslatorHelperBehaviors(t *testing.T) {
 		t.Fatalf("unexpected normalized raw stage expression %q", got)
 	}
 
-	if field, op, ok := translatedFilterFieldOp(`-"service.name":~"api.*"`); !ok || field != `"service.name"` || op != ":~" {
-		t.Fatalf("unexpected translated filter field/op: %q %q %v", field, op, ok)
-	}
-	if _, _, ok := translatedFilterFieldOp(`bogus`); ok {
-		t.Fatal("expected malformed translated filter to fail parsing")
-	}
-
 	if query, duration := extractQueryAndDuration(`{app="api"} | unwrap latency [5m]`); query != `{app="api"} | unwrap latency` || duration != "5m" {
 		t.Fatalf("unexpected query/duration split query=%q duration=%q", query, duration)
 	}

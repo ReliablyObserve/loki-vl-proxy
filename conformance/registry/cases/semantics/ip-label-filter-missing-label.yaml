@@ -26,8 +26,9 @@ why: |
   non-digit, IPv4 text under an IPv6 pattern, a value shorter than five
   characters or a zone). `!=` keeps a present label holding no address of
   the pattern. An absent label matches neither operator. A value with an
-  address inside other text is open apart
-  (semantics/ip-label-filter-embedded-address). Loki also keeps a line its
+  address inside other text is another case
+  (semantics/ip-label-filter-embedded-address): since it, an IPv4 pattern is
+  the regexp of the ip() line filter instead of ipv4_range. Loki also keeps a line its
   parser failed on under both operators (ip.go:124-127); the proxy drops it,
   as it has no label value (semantics/parse-error-labels-on-log-lines).
 request:

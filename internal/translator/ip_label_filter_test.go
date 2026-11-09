@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // lokiIPLabelFilter is the reference: Loki's ip() label filter on a label
@@ -94,16 +96,33 @@ type vlFilter struct {
 	src string
 	pos int
 	val string
+	// untyped: the value sits in a block that holds text, which is never typed ipv4.
+	untyped bool
 }
 
+// evalVLFilter is the filter on one value as VictoriaLogs answers it. A canonical IPv4 address can be stored in a
+// block of addresses (typed) or in a block that holds text (untyped), where the filter reads it through other
+// branches: both answers are computed and must agree.
 func evalVLFilter(t testing.TB, expr, value string) bool {
 	t.Helper()
-	f := &vlFilter{src: expr, val: value}
-	got := f.or(t)
-	if f.skip(); f.pos != len(f.src) {
-		t.Fatalf("filter %q: unread %q", expr, f.src[f.pos:])
+	eval := func(untyped bool) bool {
+		f := &vlFilter{src: expr, val: value, untyped: untyped}
+		got := f.or(t)
+		if f.skip(); f.pos != len(f.src) {
+			t.Fatalf("filter %q: unread %q", expr, f.src[f.pos:])
+		}
+		return got
+	}
+	got := eval(false)
+	if strings.Contains(expr, "value_type(ipv4)") && canonicalIPv4(value) && eval(true) != got {
+		t.Fatalf("filter %q on the canonical address %q: %v in a block of addresses, %v in a block with text", expr, value, got, !got)
 	}
 	return got
+}
+
+func canonicalIPv4(v string) bool {
+	a, err := netip.ParseAddr(v)
+	return err == nil && a.Is4() && a.String() == v
 }
 
 func (f *vlFilter) skip() {
@@ -162,6 +181,11 @@ func (f *vlFilter) unary(t testing.TB) bool {
 	case strings.HasPrefix(rest, "*"):
 		f.pos++
 		return f.val != ""
+	case strings.HasPrefix(rest, "value_type(ipv4)"):
+		// A block of addresses only is stored as numbers and reads back as the canonical address, so the value
+		// is typed exactly when it is one.
+		f.pos += len("value_type(ipv4)")
+		return !f.untyped && canonicalIPv4(f.val)
 	case strings.HasPrefix(rest, "~"):
 		f.pos++
 		q, err := strconv.QuotedPrefix(f.src[f.pos:])
@@ -260,8 +284,8 @@ func exactFor(pattern, value string) bool {
 			return true // a zone can hold an address Loki scans ("::%0::00")
 		}
 	}
-	p, ok := parseLokiIPPattern(pattern)
-	return !ok || p.empty || !regexp.MustCompile(p.textOf()).MatchString(value)
+	p, ok := translate.ParseLokiIPPattern(pattern)
+	return !ok || p.Empty || !regexp.MustCompile(p.TextOf()).MatchString(value)
 }
 
 // absent marks the value of a line without the label in ipEdgeTable.
@@ -361,8 +385,9 @@ func TestIPLabelFilter_EdgeTable(t *testing.T) {
 // CIDRs from /0 to the full length, ranges) and random values (absent,
 // inside and outside the pattern, the other family, leading zeros, plain
 // text, an address inside other text). The translated filter never keeps a
-// line Loki drops, and equals Loki on every value that is one whole address
-// or holds no text of the pattern's form (exactFor).
+// line Loki drops, equals Loki on every value for an IPv4 pattern, and for
+// an IPv6 one on every value that is one whole address or holds no text of
+// the pattern's form (exactFor).
 // conformance: semantics/ip-label-filter-missing-label, semantics/ip-label-filter-embedded-address
 func TestIPLabelFilter_Differential(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
@@ -388,6 +413,9 @@ func TestIPLabelFilter_Differential(t *testing.T) {
 			}
 			if exactFor(pattern, value) && got != want {
 				t.Errorf("ip(%q) negate=%v on %q: %v, Loki %v\n%s", pattern, negate, value, got, want, filter)
+			}
+			if !strings.Contains(pattern, ":") && got != want {
+				t.Errorf("ip(%q) negate=%v on %q: %v, Loki %v (an IPv4 pattern equals Loki on every value)\n%s", pattern, negate, value, got, want, filter)
 			}
 			if !exactFor(pattern, value) {
 				embedded++
