@@ -59,7 +59,7 @@ gap:
   loki: 'pattern line filter patterns: no captures in a row, only <_> (recorded with the Loki oracle pipeline command)'
   proxy: 'the LogQL validation rejects them with Loki''s text before anything is translated'
   planned_test: 'TestCompat_PatternLineFilterInvalidCaptures (test/e2e-compat, group core); TestPatternLineFilterValidationMatchesLoki (internal/logql)'
-  fixed_by: '#PR'
+  fixed_by: '#1239'
   visual: none
   visual_reason: 'a 400 parse error, which Grafana shows as the error text only; the e2e test compares the status and the body bytes with Loki for log and metric queries'
   clusters:
