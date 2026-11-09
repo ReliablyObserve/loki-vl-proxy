@@ -471,6 +471,12 @@
     "semantics/label-filter-expression-syntax | gap:fixed",
     "semantics/label-filter-expression-syntax | perf",
     "semantics/label-filter-expression-syntax | query",
+    "semantics/label-filter-numeric-equality | compare:observed",
+    "semantics/label-filter-numeric-equality | gap:open",
+    "semantics/label-filter-numeric-equality | query",
+    "semantics/label-filter-numeric-error-label | compare:observed",
+    "semantics/label-filter-numeric-error-label | gap:open",
+    "semantics/label-filter-numeric-error-label | query",
     "semantics/label-filter-regex-parse-error | compare:observed",
     "semantics/label-filter-regex-parse-error | gap:fixed",
     "semantics/label-filter-regex-parse-error | query",
@@ -2028,7 +2034,7 @@
       "any": 28,
       "api": 49,
       "drilldown": 50,
-      "explore": 154,
+      "explore": 156,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2052,7 +2058,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
+    "unwired_items": 103,
     "wired_items": 271
   },
   "gates": [

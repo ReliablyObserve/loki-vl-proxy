@@ -1,0 +1,41 @@
+id: semantics/label-filter-numeric-error-label
+title: A numeric label filter drops lines whose value is not a number where Loki keeps them with __error__ (open)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: explore
+why: |
+  Under any numeric label filter (`| m=5`, `| m!=5`, `| m>5`, `| m>=5`,
+  `| m<5`, `| m<=5`, durations `| d>5s`, bytes `| b>1KB`) Loki keeps a line
+  whose value is not a number of that kind (`abc`, `5abc`, ` 5`, `0x5`
+  under a float filter) and marks it with `__error__=LabelFilterErr`, so
+  `| __error__=""` after the filter drops it and a query without that drops
+  nothing. The proxy drops those lines at the filter. Recorded with the Loki
+  oracle (Loki's exported pipeline run on a label set and a line, Loki 3.7.9);
+  found while recording numeric equality
+  (semantics/label-filter-numeric-equality).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="x"} | m>5'
+    start: 'now-15m'
+    end: 'now'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values, streams.stream]
+  expect: |
+    The lines whose m is greater than 5, plus the lines whose m is not a
+    number, each with __error__=LabelFilterErr, as Loki answers.
+gap:
+  status: open
+  impact: explore-visible
+  effort: M
+  area: 'internal/translator translateSingleLabelFilter / translate.LabelFilterLeaf (numeric filters drop non-numeric values)'
+  loki: 'a numeric label filter keeps a non-numeric value with __error__=LabelFilterErr'
+  proxy: 'the VictoriaLogs numeric filter drops it'
+  planned_test: 'e2e vs Loki with numeric and non-numeric values, with and without | __error__="" (test/e2e-compat, group semantics); unit table from the Loki process oracle'
+  clusters: []
