@@ -1,0 +1,85 @@
+id: semantics/label-filter-number-literal-scan
+title: A label filter reads its number, duration and bytes literals as Loki's lexer does (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's lexer scans a label filter value with the rules of Go's text/scanner
+  (prefixes 0x 0o 0b and a leading 0, '_' between digits, decimal and
+  hexadecimal floats, with that scanner's messages), then reads the characters
+  after the number as a duration (Go's syntax, or whole y w d h m s ms) or a
+  bytes size (B i k K M G T P after the number, in Humanize's unit table) when
+  the whole text is one; anything else after the number is the next token. The
+  proxy cut a value at the next space, comma or operator and classified the
+  word, so it accepted what Loki rejects and answered other texts. Recorded
+  with the Loki oracle (test/oracle/loki check, Loki's exported parser) on a
+  grid of 53,000 queries (13,060 of its first 16,828 differed).
+
+  Proxy accepted, Loki rejects: `0x` and `0X` (`hexadecimal literal has no
+  digits`), `1e` (`exponent has no digits`), `1b`, `0kb`, `5x`, `1h30` (`syntax
+  error: unexpected $end`, the rest is a name), `1__0`, `1_`, `0o8` (`'_' must
+  separate successive digits`, `invalid digit '8' in octal literal`), a
+  vertical tab or form feed after a literal (a name to Loki, white space to
+  the proxy), and `0B\v` (`binary literal has no digits`; the proxy printed
+  `decimal literal has no digits`, and kept the control character inside the
+  number so that the filter rendered without it and no longer parsed, which
+  the label filter fuzz target found). Loki also reads a 0b or 0B literal that
+  follows white space (`latency < 0b1`) as `decimal literal has no digits`,
+  and a duration or a bytes size takes no sign (`+5m`, `-5B`: `unexpected
+  DURATION, expecting NUMBER`).
+
+  The same lexer reads the rest of the stage and the query. A `+ - * / % ^ ==
+  > >= < <= unless` after a complete filter is a binary operation (`unexpected
+  type for left leg of binary operation (+): *syntax.PipelineExpr`, or
+  `MatchersExpr` for a bare selector; a syntax error of the right operand
+  first, and a log query on the right is `right leg`); `by`, `of`, `on` and
+  the other keywords are keyword tokens (`unexpected by`) wherever a name
+  could stand; a name ends at `+ - /` and any other character is a token of
+  its own (`unexpected IDENTIFIER`, `unexpected -`); NUL, `'x'` and `[` have
+  the lexer errors and line 0 or 1 Loki prints; and a number in a metric
+  comparison, `vector()`, `topk`, `quantile_over_time`, `offset` or a line
+  filter is scanned the same way (`sum(rate(...)) > 1e3` and `> .5` are
+  Loki's, the proxy answered `unexpected RANGE`; `> 0x` and `|= 0b1` are
+  lexer errors, and `0x1` as an operand is `unable to parse literal as a
+  float`).
+
+  Fixed: internal/logql reads the literal in label_filter_literal.go, the
+  filter lexer cuts the tokens where Loki's does, and the query scanner notes
+  Loki's lexer errors and reports the first ahead of any parse error. The
+  grid (53,000 queries: literals, operators, keywords, characters, NUL and
+  the metric and line filter positions) now answers like Loki, status and
+  text. Breaking: the forms Loki rejects answer its 400 instead of being
+  accepted. Not changed: the content of a `[range]`, a stage that starts with
+  a bare name (it passes through to the backend), an unclosed selector after
+  a binary operator, and dotted names (the proxy's own, `DottedNameError` for
+  the Loki profile); see docs/logql-parser.md.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="a"} | json | latency < 0x'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status, error_text]
+  expect: |
+    400 with Loki's text: `parse error at line 1, col N: hexadecimal literal has
+    no digits`.
+gap:
+  status: fixed
+  impact: api-only
+  effort: S
+  area: 'internal/logql label_filter_literal.go (scanNumberLiteral), label_filter_expr.go (lfParser.next, lexWord, parseFilter), scanner.go (scanLiteral, lexErrs), parser.go (parseLabelFilterStage), semantic.go'
+  loki: 'the lexer of the label filter grammar (Go text/scanner numbers, then duration and bytes), recorded with the Loki oracle'
+  proxy: 'one literal scanner and a lexer for the filter and the query that follow the same rules, with Loki''s error messages and columns'
+  planned_test: 'TestCompat_LabelFilterNumberLiteralsLikeLoki (test/e2e-compat, group core); TestLabelFilterNumberLiteralsMatchLoki (internal/logql)'
+  fixed_by: '#1248'
+  visual: none
+  visual_reason: 'a rejected query renders no panel; proven by TestCompat_LabelFilterNumberLiteralsLikeLoki against Loki and the 53,000-query oracle grid'
+  clusters: []

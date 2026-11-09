@@ -145,8 +145,10 @@ The scanner (`scanner.go`) is a hand-written lexer with no external dependencies
 
 - **Single-pass, no backtracking.** Each call to `scan()` advances exactly one token.
 - **Disambiguates `!=` vs `!~` vs `!>` vs `!=` (label vs line filter).** Context is resolved by the parser, not the scanner — the scanner emits separate `TokBangEq`, `TokBangTilde`, `TokBangGt` tokens.
-- **Range durations** (`5m`, `1h`, `$__auto`) are emitted as `TokRange` with the unit string preserved.
+- **Range durations** (`5m`, `1h`, `$__auto`) are emitted as `TokDuration` inside a `[range]`, with the unit string preserved.
+- **Number, duration and bytes literals** outside a range are read as Loki's lexer reads them (see [Lexical rules](#lexical-rules-of-lokis-lexer)): `TokNumber`, `TokDurationLit` (`offset 5m`, `-5m`) and `TokBytes` (`5KB`).
 - **Quoted strings** are unescaped; raw backtick strings are returned verbatim.
+- **Lexer errors** (a malformed number, NUL, an unclosed `[`) are noted by the scanner as it reads the token, and `Parse` reports the first one ahead of any parse error, as Loki does.
 
 ## Parser
 
@@ -195,6 +197,27 @@ flowchart LR
     K -- yes --> R
     K -- no --> O --> AO
 ```
+
+## Lexical rules of Loki's lexer
+
+Loki lexes a query with Go's `text/scanner`, a duration and bytes attempt after every number, and a few lexer rules of its own. The proxy follows them, with Loki's error text and column, and every rule is held to the Loki parser by recorded answers (`internal/logql` `TestLabelFilterNumberLiteralsMatchLoki`, 53,000 queries; conformance case `semantics/label-filter-number-literal-scan`). The scan lives in `internal/logql/label_filter_literal.go`; the label filter lexer is `lfParser` in `label_filter_expr.go`, the query lexer is `scanner.go`.
+
+| Rule | Behaviour |
+|---|---|
+| Number | Go's scanner: prefixes `0x` `0o` `0b` and a leading `0` (octal), `_` only between digits, decimal floats, hexadecimal floats that need a `p` exponent. Errors keep the scanner's text: `hexadecimal literal has no digits`, `exponent has no digits`, `invalid digit '8' in octal literal`, `'_' must separate successive digits`, `'p' exponent requires hexadecimal mantissa`, and so on, at the start of the literal. |
+| Duration | After a number, the run of digits, `.` and `n u µ s m h d w y` is a DURATION when the whole text is Go's duration syntax or whole `y w d h m s ms` units, each once, largest first (`1d12h`; not `1h1d`, `1.5d`). Otherwise the number stands alone and the rest is the next token (`1h30` is `1` then the name `h30`). |
+| Bytes | After a number, the run of digits, `.` and `B i k K M G T P` is a BYTES size when Humanize's size parser reads it in any case (`5kB`, `5Ki`, `5k`; `5kb` is `5k` then the name `b`; `5gb` is a number then a name), and the size fits 64 bits. |
+| Sign | `-5m` (a minus right before a duration Go reads) is one DURATION token. A sign otherwise belongs to a NUMBER: `+5m` and `-5B` are `unexpected DURATION/BYTES, expecting NUMBER`. |
+| `0b` after white space | A `0b` or `0B` literal that follows white space is `decimal literal has no digits`, whatever follows the prefix. Right after an operator (`a<0b1`) it is scanned normally. A comment takes the line break that ends it, so what follows is not after white space. |
+| White space | Only space, tab, CR and LF. `\v`, `\f`, a non-breaking space and the like are tokens of their own (names). The query is parsed with the white space around it: a trailing control character is a token and the end-of-input column counts the trailing white space. |
+| Names and other characters | A name is letters, digits and `_` (dots stay inside a name: the proxy's dotted names, `DottedNameError` for the Loki profile). Any other character is a token of its own: `+ - * / % ^ . { } ]` are named by themselves in errors, the rest are identifiers, `'x'` is a one-character literal (`invalid char literal`, `literal not terminated`), and `[` starts a range that needs its `]` (`missing closing ']' in duration`, line 0). |
+| Keywords | `by without bool offset on ignoring group_left group_right unless unwrap json regexp logfmt unpack pattern label_format line_format decolorize drop keep variants of` (any case) are keyword tokens wherever they stand, so a label filter cannot name a label `by`. `ip`, `label_replace`, `vector`, the range and vector aggregation names and the unwrap conversions (`bytes`, `duration`, `duration_seconds`) are keywords only before a `(` or a `by (`/`without (`, and print in upper case in errors (`unexpected RATE`, `BYTES_CONV`). |
+| NUL | `invalid character NUL`, at the start of the token before it: its line when the NUL follows the token, line 0 when white space or a comment lies between. |
+| Order of errors | A lexer error is reported ahead of the parse error it may cause, and for a query that parses, but only for tokens Loki has read when it stops: a parse error at a token hides the lexer error of a later one. |
+| Binary operator after a label filter | `+ - * / % ^ == > >= < <= unless` after a complete filter belong to the query, whose left operand is the pipeline: the query goes on from there and a log query operand is `unexpected type for left leg of binary operation (+): *syntax.PipelineExpr` (`MatchersExpr` for a bare selector, `right leg` for the right operand; the left operand first). Inside parentheses the operator is a syntax error. |
+| Float conversions | A number Go's `ParseFloat` cannot read (`0x1`, `0b1`, `1e999`) is `unable to parse literal as a float: strconv.ParseFloat: parsing ...` for an operand, `unable to parse vectorExpr as a float` in `vector()`, `invalid parameter for operation quantile_over_time: ...` and `invalid parameter topk(0x1,` for a parameter; Loki raises it after the left leg type check. |
+
+Not covered: the content of a `[range]` keeps the scanner's older reading (`[0x1]` names the unit `x` of `0x`), a stage that starts with a bare name (`| x+y=1`) passes through to the backend as an unknown stage, and the content of a stream selector that is not closed (`{app="a"} + {`) keeps the generic error.
 
 ## Semantic Validation
 

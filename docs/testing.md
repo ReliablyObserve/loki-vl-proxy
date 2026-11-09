@@ -255,6 +255,8 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
 | `test/e2e-compat/explore_contract_test.go` | HTTP-level Explore contracts for line filters, parsers, direction, metric shape, `label_format`, invalid-query handling |
+| `internal/logql/label_filter_number_literal_loki_test.go` | Loki's lexer on a 53,000-query grid (number, duration and bytes literals, keywords, single characters, NUL, a binary operator after a label filter, literals in metric and line filter positions): status and error text equal Loki's recorded answers (`LVP_RUN_ORACLES=1` records them again) |
+| `test/e2e-compat/label_filter_number_literal_test.go` | The same literals against live Loki: status and bytes of the 400 |
 | `test/e2e-compat/query_semantics_matrix_test.go` | Manifest-driven Loki query semantics parity against the real Loki Compose oracle |
 | `test/e2e-compat/query-semantics-matrix.json` | Single source of truth for valid/invalid query combinations and edge-case expectations |
 | `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |

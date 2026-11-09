@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -551,6 +552,15 @@ type LiteralExpr struct {
 	Value float64
 }
 
+// BadLiteralExpr is a number literal Go cannot read as a float (0x1, 1e999): the lexer takes it as a number, and
+// Loki reports the conversion error when it has read the whole query, so validateSemantics raises Err.
+type BadLiteralExpr struct {
+	Err string
+}
+
+func (b *BadLiteralExpr) String() string { return b.Err }
+func (b *BadLiteralExpr) expr()          {}
+
 func (l *LiteralExpr) String() string {
 	return formatNumber(l.Value)
 }
@@ -558,6 +568,11 @@ func (l *LiteralExpr) String() string {
 // formatNumber prints a number the parser reads back to the same value: no
 // exponent (`1000000`, not `1e+06`), which the scanner cuts into `1e`, `+`, `06`.
 func formatNumber(v float64) string {
+	if v == 0 && math.Signbit(v) {
+		// Loki's lexer reads `-0` as a duration (Go's ParseDuration accepts "0" without a unit); `- 0` is the
+		// negated number.
+		return "- 0"
+	}
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 

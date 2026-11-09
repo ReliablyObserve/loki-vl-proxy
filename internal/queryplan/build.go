@@ -161,6 +161,15 @@ func (b *builder) build(expr logql.Expr) (Node, error) {
 		b.e.str(x.Raw)
 		b.seal(&n.p, start)
 		return n, nil
+	case *logql.BadLiteralExpr:
+		// A number literal Go cannot read: the query is rejected by validation (Loki reports it after reading the
+		// whole query), so the plan only has to be total over it; it is never lowered.
+		n := &Opaque{Raw: x.String()}
+		start := len(b.e.b)
+		b.e.tag(tagOpaque)
+		b.e.str(n.Raw)
+		b.seal(&n.p, start)
+		return n, nil
 	}
 	return nil, unsupported("queryplan: no node for %T", expr)
 }
