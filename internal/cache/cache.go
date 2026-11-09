@@ -283,6 +283,25 @@ func (c *Cache) Close() {
 	}
 }
 
+// Peek returns a fresh value from the memory tier without promoting it in
+// the LRU order (no promoter wake-up): for small companion entries read next
+// to an entry that was just promoted, which may be evicted first and are
+// then rebuilt by their reader.
+func (c *Cache) Peek(key string) (value []byte, found bool) {
+	if c == nil || c.disabled {
+		return nil, false
+	}
+	defer func() { c.layerL1[c.layer(key)].lookup(value, found, false) }()
+	c.mu.RLock()
+	e, ok := c.entries[key]
+	c.mu.RUnlock()
+	if !ok || !e.expiresAt.After(clockNow()) {
+		return nil, false
+	}
+	c.Hits.Add(1)
+	return e.value, true
+}
+
 // GetWithTTL returns the value and remaining TTL for a key.
 // Returns (nil, 0, false) on miss.
 // Uses RLock for the hot read path; LRU promotion is deferred to the promoter goroutine.

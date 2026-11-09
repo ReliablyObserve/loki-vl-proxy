@@ -1348,11 +1348,39 @@ func TestFeature_GzipAndIdentityBodiesMatch(t *testing.T) {
 		}
 		return body
 	}
-	compressed := read("gzip", "gzip")
-	identity := read("zstd", "")
+	compressed := withoutQueryStats(t, read("gzip", "gzip"))
+	identity := withoutQueryStats(t, read("zstd", ""))
 	if !bytes.Equal(compressed, identity) {
 		t.Fatal("gzip and unsupported-zstd identity fallback returned different payloads")
 	}
+}
+
+// withoutQueryStats drops data.stats, which describes each request (its own
+// timings and cache hits), and returns the rest of the answer re-encoded.
+func withoutQueryStats(t *testing.T, body []byte) []byte {
+	t.Helper()
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal(body, &answer); err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(answer["data"], &data); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := data["stats"]; !ok {
+		t.Fatalf("answer has no data.stats: %s", body)
+	}
+	delete(data, "stats")
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer["data"] = raw
+	out, err := json.Marshal(answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func compressionFixtureURL(t *testing.T) string {

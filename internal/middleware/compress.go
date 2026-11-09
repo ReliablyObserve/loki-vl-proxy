@@ -34,6 +34,10 @@ type encodedResponseCapture struct {
 	encoding string
 	buf      bytes.Buffer
 	callback func(string, []byte)
+	// prefixCallback, when set, gets the length of the encoding at the
+	// point MarkEncodedResponsePrefix flushed it (-1 when no mark was made).
+	prefixCallback func(string, []byte, int)
+	mark           int
 }
 
 // compressedResponseWriter delays compression until the handler proves the
@@ -268,12 +272,48 @@ func (w *compressedResponseWriter) registerEncodedResponseCapture(encoding strin
 }
 
 func (w *compressedResponseWriter) finalizeEncodedCapture() {
-	if w.capture == nil || w.capture.callback == nil || w.capture.buf.Len() == 0 {
+	if w.capture == nil || (w.capture.callback == nil && w.capture.prefixCallback == nil) || w.capture.buf.Len() == 0 {
 		return
 	}
 	encoded := append([]byte(nil), w.capture.buf.Bytes()...)
-	w.capture.callback(w.capture.encoding, encoded)
+	if w.capture.prefixCallback != nil {
+		w.capture.prefixCallback(w.capture.encoding, encoded, w.capture.mark)
+	} else {
+		w.capture.callback(w.capture.encoding, encoded)
+	}
 	w.capture = nil
+}
+
+func (w *compressedResponseWriter) registerEncodedPrefixCapture(encoding string, callback func(string, []byte, int)) bool {
+	if !w.registerEncodedResponseCapture(encoding, func(string, []byte) {}) {
+		return false
+	}
+	w.capture.callback, w.capture.prefixCallback, w.capture.mark = nil, callback, -1
+	return true
+}
+
+// markEncodedPrefix flushes the compressor (a sync flush: the encoding so far
+// ends on a byte boundary) and records how long the captured encoding is.
+func (w *compressedResponseWriter) markEncodedPrefix() bool {
+	if !w.started || w.bypass || w.writer == nil || w.capture == nil || w.capture.prefixCallback == nil {
+		return false
+	}
+	if err := w.writer.Flush(); err != nil {
+		return false
+	}
+	w.capture.mark = w.capture.buf.Len()
+	return true
+}
+
+// skipCompressionUnder keeps a response that has not started compressing
+// uncompressed when its body without later additions, n bytes, is under the
+// threshold.
+func (w *compressedResponseWriter) skipCompressionUnder(n int) bool {
+	if w.started || n >= w.minBytes {
+		return false
+	}
+	w.encoding = ""
+	return true
 }
 
 // gzipWriterChan is a GC-resistant pool of gzip.Writers. sync.Pool entries are
@@ -345,6 +385,63 @@ type encodedResponseCaptureRegistrar interface {
 
 type responseWriterUnwrapper interface {
 	Unwrap() http.ResponseWriter
+}
+
+type encodedPrefixCapturer interface {
+	registerEncodedPrefixCapture(string, func(string, []byte, int)) bool
+	markEncodedPrefix() bool
+	skipCompressionUnder(int) bool
+}
+
+// findEncodedPrefixCapturer unwraps w to the compression middleware's writer.
+func findEncodedPrefixCapturer(w http.ResponseWriter) encodedPrefixCapturer {
+	for w != nil {
+		if c, ok := w.(encodedPrefixCapturer); ok {
+			return c
+		}
+		unwrapper, ok := w.(responseWriterUnwrapper)
+		if !ok {
+			return nil
+		}
+		next := unwrapper.Unwrap()
+		if next == w {
+			return nil
+		}
+		w = next
+	}
+	return nil
+}
+
+// RegisterEncodedResponsePrefixCapture is RegisterEncodedResponseCapture for a
+// handler that finishes its body after a mark: callback also gets the length
+// of the encoding at MarkEncodedResponsePrefix (-1 when none was made). The
+// encoding up to the mark is a gzip member's header and a sync-flushed deflate
+// stream of the body before the mark (what EncodeGzipPrefix makes).
+func RegisterEncodedResponsePrefixCapture(w http.ResponseWriter, encoding string, callback func(string, []byte, int)) bool {
+	if c := findEncodedPrefixCapturer(w); c != nil && callback != nil {
+		return c.registerEncodedPrefixCapture(encoding, callback)
+	}
+	return false
+}
+
+// MarkEncodedResponsePrefix flushes the response's compressor and marks the
+// captured encoding's length for RegisterEncodedResponsePrefixCapture.
+func MarkEncodedResponsePrefix(w http.ResponseWriter) bool {
+	if c := findEncodedPrefixCapturer(w); c != nil {
+		return c.markEncodedPrefix()
+	}
+	return false
+}
+
+// SkipCompressionUnder keeps a response uncompressed when it has not started
+// compressing and its body without what the handler adds last (n bytes) is
+// under the compression threshold: the addition alone does not make a
+// response compressed that would not have been.
+func SkipCompressionUnder(w http.ResponseWriter, n int) bool {
+	if c := findEncodedPrefixCapturer(w); c != nil {
+		return c.skipCompressionUnder(n)
+	}
+	return false
 }
 
 // RegisterEncodedResponseCapture asks the compression middleware to tee the
@@ -516,6 +613,42 @@ func EncodeResponseBody(encoding string, body []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported encoding %q", encoding)
 	}
+}
+
+// EncodeGzipPrefix gzips prefix as the unfinished start of one gzip member:
+// the header and a deflate stream that is sync-flushed (it ends on a byte
+// boundary after an empty stored block) with no final block and no trailer.
+// A response cache keeps it and finishes the member per request with
+// AppendGzipStoredBlock and AppendGzipTrailer, so a body whose last bytes
+// differ per request is still served from a stored encoding.
+func EncodeGzipPrefix(prefix []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	if est := len(prefix) / 10; est > 0 {
+		buf.Grow(est)
+	}
+	compressor, release := acquireResponseCompressor("gzip", &buf)
+	defer release()
+	if _, err := compressor.Write(prefix); err != nil {
+		return nil, err
+	}
+	if err := compressor.Flush(); err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), buf.Bytes()...), nil
+}
+
+// AppendGzipStoredBlock appends the header of a final stored deflate block
+// of n bytes (at most 65535), which continues a stream EncodeGzipPrefix left
+// on a byte boundary; the n raw bytes follow it.
+func AppendGzipStoredBlock(dst []byte, n int) []byte {
+	return append(dst, 0x01, byte(n), byte(n>>8), ^byte(n), ^byte(n>>8))
+}
+
+// AppendGzipTrailer appends the gzip member trailer: the CRC-32 of all the
+// uncompressed bytes and their total length modulo 2^32, little-endian.
+func AppendGzipTrailer(dst []byte, crc uint32, size uint32) []byte {
+	return append(dst, byte(crc), byte(crc>>8), byte(crc>>16), byte(crc>>24),
+		byte(size), byte(size>>8), byte(size>>16), byte(size>>24))
 }
 
 func acceptsEncoding(header, encoding string) bool {

@@ -95,6 +95,34 @@ For Grafana Logs Drilldown and Explore compatibility:
 - Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.
 - With `-metadata-field-mode=translated` (the default), field-oriented APIs expose Loki-style aliases only. With `-metadata-field-mode=hybrid`, they expose both native VictoriaLogs dotted names and translated Loki aliases when they differ, for example `service.name` and `service_name`.
 - Synthetic compatibility labels such as `service_name` and `detected_level` stay available on the stream and label APIs.
+### Query statistics (`data.stats`)
+
+Every `query` and `query_range` answer carries Loki's `data.stats` object with
+the `summary` and `cache` sections, in Loki's key order (Grafana builds the
+query inspector's "Query details" and the Logs Drilldown footer's "Total bytes
+processed" from `summary`). The `querier`, `ingester` and `index` sections are
+left out: the proxy has no such components, and zeros would read as
+measurements. No VictoriaLogs request is added for the statistics. Every value
+is a measurement of the request:
+
+| Field | Source |
+|---|---|
+| `summary.execTime` | The request's time in the proxy, in seconds. |
+| `summary.queueTime` | Time the request waited for heavy-query admission (`-backend-heavy-query-*`), in seconds. |
+| `summary.totalLinesProcessed` | Log rows the proxy read from VictoriaLogs for the answer (at most the limit for a log query; a metric query reads aggregated rows). |
+| `summary.totalBytesProcessed` | Bytes the proxy read from VictoriaLogs for the answer. |
+| `summary.bytesProcessedPerSecond`, `linesProcessedPerSecond` | The two totals over `execTime`. |
+| `summary.totalEntriesReturned` | Entries of a streams answer, series of a matrix or vector answer. |
+| `summary.splits` | VictoriaLogs calls the request made. |
+| `summary.subqueries`, `shards`, `totalPostFilterLines`, `totalStructuredMetadataBytesProcessed` | 0: VictoriaLogs has no shards or subqueries, filters before the proxy sees rows and keeps no structured-metadata byte count. |
+| `cache.result` | The request's reads and stores in the response caches (final answers, log windows, settled steps): `entriesRequested`, `entriesFound`, `entriesStored`, `bytesReceived`, `bytesSent`, `requests`, `downloadTime` (ns). |
+| `cache.instantMetricResult` | The same for the response cache of instant queries. |
+| `cache.statsResult`, `cache.volumeResult` | Reads of the stats extent cache and of volume segments. |
+| `cache.chunk`, `index`, `seriesResult`, `labelResult`; `queryLengthServed` | 0: no such read in a query request. |
+
+An answer served from the proxy's caches reports no lines or bytes processed
+and the cache entry it found, as Loki's results cache does.
+
 ## Delete Endpoint (Exception)
 
 | Endpoint | Method | VL Backend |

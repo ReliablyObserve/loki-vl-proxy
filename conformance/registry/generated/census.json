@@ -26,7 +26,7 @@
     "drilldown/index_volume/single-sample-returns-vector | compare:structural",
     "drilldown/index_volume/single-sample-returns-vector | query",
     "drilldown/logs-footer-query-stats | compare:observed",
-    "drilldown/logs-footer-query-stats | gap:open",
+    "drilldown/logs-footer-query-stats | gap:documented",
     "drilldown/logs-footer-query-stats | query",
     "drilldown/patterns-full-range-counts | compare:observed",
     "drilldown/patterns-full-range-counts | gap:fixed",
@@ -1306,6 +1306,8 @@
     "internal/proxy/query_range_steps_test.go | tenant-numeric-routing",
     "internal/proxy/query_range_window_lead_test.go | semantics/query-range-window-lead-window",
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
+    "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
+    "internal/proxy/query_stats_test.go | query-stats-envelope",
     "internal/proxy/range_lower_bound_test.go | semantics/lower-bound-exclusive",
     "internal/proxy/range_lower_bound_test.go | window-bounds-and-step-alignment",
     "internal/proxy/range_metric_row_limit_error_test.go | heavy-metric-fetch-bounds",
@@ -1891,6 +1893,8 @@
     "test/e2e-compat/query_semantics_matrix_test.go | parser-regexp",
     "test/e2e-compat/query_semantics_matrix_test.go | range_function-count-over-time",
     "test/e2e-compat/query_semantics_matrix_test.go | range_function-rate",
+    "test/e2e-compat/query_stats_test.go | drilldown/logs-footer-query-stats",
+    "test/e2e-compat/query_stats_test.go | query-stats-envelope",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | limits/drilldown-partial-with-warning",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | limits/series-limit-error",
     "test/e2e-compat/range_metric_offset_series_limit_test.go | loki_api_v1_query",
@@ -2046,7 +2050,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 405,
+      "go": 407,
       "playwright": 1
     },
     "page_kinds": {
@@ -2065,8 +2069,8 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 103,
-    "wired_items": 272
+    "unwired_items": 102,
+    "wired_items": 274
   },
   "gates": [
     "A/B shape selection",

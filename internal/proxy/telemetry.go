@@ -35,6 +35,14 @@ type requestTelemetry struct {
 	internalDurationByType map[string]time.Duration
 	// flow is what the request caused (query_flow.go).
 	flow flowCounters
+	// statsWriter fills the stats of a query or query_range answer while the
+	// handler runs (query_stats.go).
+	statsWriter *queryStatsWriter
+	// statsPrefixCapture: the response cache captures the gzip encoding of
+	// this answer up to its stats (query_stats_cache.go); statsSuffix holds
+	// the bytes the stats layer wrote after that point.
+	statsPrefixCapture bool
+	statsSuffix        []byte
 	// heavyAdmissionRejected memoizes a heavy-query queue rejection so later
 	// heavy backend calls of the same request fail fast instead of queueing again.
 	heavyAdmissionRejected error

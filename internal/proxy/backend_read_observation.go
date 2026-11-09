@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -14,7 +15,8 @@ func (p *Proxy) observeBackendBody(ctx context.Context, body io.ReadCloser, path
 	if body == nil {
 		return nil
 	}
-	g := &backendReadObservation{ReadCloser: body, p: p, ctx: ctx, path: path, params: params, status: status, start: start}
+	g := &backendReadObservation{ReadCloser: body, p: p, ctx: ctx, path: path, params: params, status: status, start: start,
+		countRows: path == "/select/logsql/query"}
 	from, okFrom := parseLokiTimeToUnixNano(params.Get("start"))
 	to, okTo := parseLokiTimeToUnixNano(params.Get("end"))
 	if okFrom && okTo && to >= from {
@@ -23,6 +25,8 @@ func (p *Proxy) observeBackendBody(ctx context.Context, body io.ReadCloser, path
 	}
 	return g
 }
+
+var ndjsonRowEnd = []byte{'\n'}
 
 // Count decoded bytes actually consumed, once per upstream body (before any
 // coalesced replay or strip). Neither Content-Length nor EOF proves API parity.
@@ -37,6 +41,8 @@ type backendReadObservation struct {
 	spanSeconds float64
 	hasSpan     bool
 	read        atomic.Int64
+	rows        atomic.Int64 // newline-terminated rows of a raw query body (one log row per NDJSON line)
+	countRows   bool
 	eof, failed atomic.Bool
 	once        sync.Once
 	closeErr    error
@@ -52,6 +58,9 @@ func (g *backendReadObservation) BodyLimit() int64 {
 func (g *backendReadObservation) Read(b []byte) (int, error) {
 	n, err := g.ReadCloser.Read(b)
 	g.read.Add(int64(n))
+	if g.countRows && n > 0 {
+		g.rows.Add(int64(bytes.Count(b[:n], ndjsonRowEnd)))
+	}
 	if err == io.EOF {
 		g.eof.Store(true)
 	} else if err != nil {
@@ -85,6 +94,7 @@ func (g *backendReadObservation) Close() error {
 			kind = "metadata"
 		}
 		g.p.metrics.RecordBackendReadBytes(kind, g.read.Load())
+		recordFlowVLRows(g.ctx, g.rows.Load())
 		g.p.observeInternalOperation(g.ctx, "backend_body_read", outcome, elapsed)
 		g.p.observeUpstreamDone(g.ctx, g.path, g.params, g.status, outcome, g.read.Load(), elapsed)
 		if g.p.log.Enabled(g.ctx, level) {
