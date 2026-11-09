@@ -14,7 +14,26 @@ import (
 func DecodeStats(s string) (stats physical.VLStats, isStats bool) {
 	stats, _ = StatsShape(s)
 	stats.Text = s
+	stats.UngatedText = queryWithoutUnwrapGate(s)
+	if stats.Shaped {
+		if base, field, ok := SplitUnwrapGate(stats.Base); ok {
+			stats.Gate, stats.UnwrapField = stats.Base[len(base):], field
+		}
+	}
 	return stats, isStatsText(s)
+}
+
+// queryWithoutUnwrapGate returns a translated query without the unwrap gate
+// that ends the pipes before its first stats pipe.
+func queryWithoutUnwrapGate(query string) string {
+	idx := strings.Index(query, " | stats ")
+	if idx < 0 {
+		return query
+	}
+	if base, _, ok := SplitUnwrapGate(query[:idx]); ok {
+		return base + query[idx:]
+	}
+	return query
 }
 
 // StatsShape reads the first `| stats` pipe of a translated query: the query before it (Base), its grouping

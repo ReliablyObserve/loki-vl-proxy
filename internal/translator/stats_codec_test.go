@@ -41,9 +41,16 @@ func TestDecodeStatsShape(t *testing.T) {
 		{`app:="a" | stats by (_time:60000000000ns offset 1ns, pod) count()`, physical.VLStats{Shaped: true, Base: `app:="a"`, By: []string{"_time:60000000000ns offset 1ns", "pod"}, Func: "count"}},
 		{`app:="a" | stats count() as c | math c/60 as v`, physical.VLStats{}},
 		{`app:="a"`, physical.VLStats{}},
+		{`app:="a"` + UnwrapGateFor("latency", "") + ` | stats by (pod) sum(` + UnwrapValueAlias + `)`, physical.VLStats{Shaped: true,
+			Base: `app:="a"` + UnwrapGateFor("latency", ""), By: []string{"pod"}, Func: "sum", Field: UnwrapValueAlias,
+			Gate: UnwrapGateFor("latency", ""), UnwrapField: "latency",
+			UngatedText: `app:="a" | stats by (pod) sum(` + UnwrapValueAlias + `)`}},
 	} {
 		got, _ := DecodeStats(tc.query)
 		tc.want.Text = tc.query
+		if tc.want.UngatedText == "" {
+			tc.want.UngatedText = tc.query
+		}
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("DecodeStats(%s) = %+v, want %+v", tc.query, got, tc.want)
 		}

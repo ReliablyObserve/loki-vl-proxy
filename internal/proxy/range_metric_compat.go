@@ -35,6 +35,24 @@ type statsCompatSpec struct {
 	ByExplicit  bool     // true when "by ()" was present — aggregate all into one series
 	Func        string
 	Field       string
+	// Gate is the unwrap gate the decoded base query ended with (translator.DecodeStats), and UnwrapField the
+	// field it converts; gated reads whether BaseQuery still ends with it.
+	Gate        string
+	UnwrapField string
+}
+
+// gated reports whether the base query ends with the unwrap gate: true after a rewrite that leaves the gate last
+// (withWindowPhaseFilter), false once it is off (withoutUnwrapGate).
+func (s statsCompatSpec) gated() bool {
+	return s.Gate != "" && strings.HasSuffix(s.BaseQuery, s.Gate)
+}
+
+// ungated is the base query without the unwrap gate.
+func (s statsCompatSpec) ungated() string {
+	if s.gated() {
+		return strings.TrimSuffix(s.BaseQuery, s.Gate)
+	}
+	return s.BaseQuery
 }
 
 type originalRangeMetricSpec struct {
@@ -430,7 +448,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 }
 
 func (p *Proxy) nativeMathTumblingStatsCompatible(r *http.Request, originalLogql string, stats physical.VLStats) bool {
-	if !strings.Contains(queryWithoutUnwrapGate(stats.Text), "| math ") {
+	if !strings.Contains(stats.UngatedText, "| math ") {
 		return false
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
@@ -3176,7 +3194,8 @@ func statsSpecOf(stats physical.VLStats) (statsCompatSpec, bool) {
 	if !stats.Shaped {
 		return statsCompatSpec{}, false
 	}
-	return statsCompatSpec{BaseQuery: stats.Base, GroupBy: stats.By, ByExplicit: stats.ByExplicit, Func: stats.Func, Field: stats.Field}, true
+	return statsCompatSpec{BaseQuery: stats.Base, GroupBy: stats.By, ByExplicit: stats.ByExplicit, Func: stats.Func, Field: stats.Field,
+		Gate: stats.Gate, UnwrapField: stats.UnwrapField}, true
 }
 
 // statsQueryOf is a translated query as the stats handlers take it (translator.DecodeStats).

@@ -491,14 +491,7 @@ func (w *quantileSlider) quantile(phi float64, windowStart, windowEnd int64) (fl
 // series count every value of every stream, which VictoriaLogs holds in
 // memory; they stay on the raw evaluator, bounded by the row and byte limits.
 func readsQuantileCounts(manualFunc string, spec statsCompatSpec) bool {
-	return manualFunc == "quantile" && hasUnwrapGate(spec.BaseQuery) && quantileGroupsByFields(spec)
-}
-
-// hasUnwrapGate reports whether a translated base query holds the unwrap gate,
-// which converts the value into translator.UnwrapValueAlias.
-func hasUnwrapGate(base string) bool {
-	_, _, ok := translator.SplitUnwrapGate(base)
-	return ok
+	return manualFunc == "quantile" && spec.gated() && quantileGroupsByFields(spec)
 }
 
 // Series and groups (Loki v3.7.7). A range aggregation's own grouping,

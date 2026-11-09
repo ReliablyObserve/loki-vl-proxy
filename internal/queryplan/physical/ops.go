@@ -24,6 +24,11 @@ type VLStats struct {
 	ByExplicit bool
 	Func       string
 	Field      string
+	// Gate is the unwrap gate that ends Base (the pipes that select and convert the unwrapped value), and
+	// UnwrapField the field it converts; both empty without one. UngatedText is Text without the gate.
+	Gate        string
+	UnwrapField string
+	UngatedText string
 }
 
 // RankStep ranks the series of each step (topk, bottomk, sort). Declared only: its fields arrive with the

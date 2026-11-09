@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The unwrap paths read the unwrap gate of a stats query from its decoded
+  query-plan operator instead of splitting it off the query text again. The
+  requests sent to VictoriaLogs and the answers do not change.
+
 ## [2.106.0] - 2026-11-09
 
 ### Changed
