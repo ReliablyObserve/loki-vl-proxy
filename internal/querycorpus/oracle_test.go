@@ -191,8 +191,9 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 
 // typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector and its line
 // filters), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
-// version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile is left out:
-// every route answers Loki's rejection of it before it translates anything.
+// version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
+// the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
+// rejection of them before it translates anything.
 func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 	if r.Lang != "logql" || !r.Valid || r.Path != "" {
 		return "", "", false
@@ -207,6 +208,9 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 				return "", "", false
 			}
 		}
+	}
+	if logql.ParseAndValidate(r.Query) != nil {
+		return "", "", false
 	}
 	identity := func(s string) string { return s }
 	expr, err := logql.Parse(r.Query)
