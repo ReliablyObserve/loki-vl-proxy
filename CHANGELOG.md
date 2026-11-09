@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The lines and bytes processed in `query` and `query_range` statistics have
+  Loki's meaning where an answer the proxy computes anyway counts them, at no
+  VictoriaLogs cost: a tumbling `count_over_time` or `bytes_over_time` of a log
+  expression without a parser sums its own answer over Loki's window
+  (`totalLinesProcessed`, `totalPostFilterLines` with a filter,
+  `totalBytesProcessed` as line bytes), and a log query takes its window's
+  lines and line bytes from the volume answer of the same expression or
+  selector that Explore and Logs Drilldown request with it, when the proxy
+  holds one computed in the last 5 minutes whose whole steps cover at least
+  90% of the window (a refresh, or the volume answer arriving first).
+  Otherwise they stay the rows and bytes the proxy read. Volume answers kept
+  for this are small `qs-totals:` cache entries pushed to their peer
+  replicas.
+
+### Changed
+
+- A query and query_range miss parses the query once for the handlers that
+  only read it (absent_over_time, bare parser metrics, `without`
+  aggregations, the sample-producing check, the query statistics) and the
+  query plan, through the plan memo, instead of once per handler; and a time
+  given as integer nanoseconds (what Grafana sends) is read before the time
+  layouts are tried, without the allocations of their failed parses. A metric
+  query_range miss allocates 12% less and an instant query miss 5% less.
+
 ## [2.115.0] - 2026-11-09
 
 ### Fixed
@@ -28,19 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a label (Drilldown include and exclude clicks on the same field, or a
   hand-written chain) kept lines before and now keep the lines Loki keeps,
   often none.
-- The lines and bytes processed in `query` and `query_range` statistics have
-  Loki's meaning where an answer the proxy computes anyway counts them, at no
-  VictoriaLogs cost: a tumbling `count_over_time` or `bytes_over_time` of a log
-  expression without a parser sums its own answer over Loki's window
-  (`totalLinesProcessed`, `totalPostFilterLines` with a filter,
-  `totalBytesProcessed` as line bytes), and a log query takes its window's
-  lines and line bytes from the volume answer of the same expression or
-  selector that Explore and Logs Drilldown request with it, when the proxy
-  holds one computed in the last 5 minutes whose whole steps cover at least
-  90% of the window (a refresh, or the volume answer arriving first).
-  Otherwise they stay the rows and bytes the proxy read. Volume answers kept
-  for this are small `qs-totals:` cache entries pushed to their peer
-  replicas.
 
 ### Changed
 
@@ -54,13 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class without ASCII letters and the letters apart (a negated class over all
   of Unicode that holds letters is slow to print in Go's regexp/syntax, which
   VictoriaLogs does while simplifying a regexp). The same lines match.
-- A query and query_range miss parses the query once for the handlers that
-  only read it (absent_over_time, bare parser metrics, `without`
-  aggregations, the sample-producing check, the query statistics) and the
-  query plan, through the plan memo, instead of once per handler; and a time
-  given as integer nanoseconds (what Grafana sends) is read before the time
-  layouts are tried, without the allocations of their failed parses. A metric
-  query_range miss allocates 12% less and an instant query miss 5% less.
 
 ## [2.114.0] - 2026-11-09
 
