@@ -163,6 +163,8 @@ type lfParser struct {
 	src string
 	pos int
 	tok lfToken
+	// prevEnd is the end of the token before tok: a filter's text ends there, not at a comment after it.
+	prevEnd int
 	// lexErr is the first error of the lexer, reported ahead of the parse error
 	// it causes, like Loki's.
 	lexErr *LabelFilterSyntaxError
@@ -206,6 +208,7 @@ func (p *lfParser) unexpected(expecting string) *LabelFilterSyntaxError {
 // line, as the LogQL scanner skips them) separate tokens; a word runs to the
 // next space, comment, parenthesis, comma, quote or operator character.
 func (p *lfParser) next() {
+	p.prevEnd = p.tok.end
 	for p.pos < len(p.src) {
 		if p.src[p.pos] == '#' {
 			for p.pos < len(p.src) && p.src[p.pos] != '\n' {
@@ -451,10 +454,10 @@ func unquoteLabelFilterString(literal string) (string, bool) {
 	return value, err == nil && utf8.ValidString(literal)
 }
 
-// tokenEnd is the end of the previous token: the text read before the current
-// lookahead token, without the whitespace that precedes it.
+// tokenEnd is the end of the previous token, before any whitespace or comment
+// that separates it from the current lookahead token.
 func (p *lfParser) tokenEnd() int {
-	return len(strings.TrimRightFunc(p.src[:p.tok.start], unicode.IsSpace))
+	return p.prevEnd
 }
 
 // lfTokenName is the name Loki's parser prints for a token.

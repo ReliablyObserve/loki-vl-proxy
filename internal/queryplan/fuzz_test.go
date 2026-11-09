@@ -139,7 +139,8 @@ var semanticMutations = []struct {
 	}},
 	{"a range", func(q string) string { return mutRange.ReplaceAllString(q, "[7${1}m]") }},
 	{"the order of two matchers", func(q string) string { return mutMatchers.ReplaceAllString(q, "{$2, $1") }},
-	{"a stage added", func(q string) string { return q + " | decolorize" }},
+	// On a new line: a query may end in a comment, which runs to the end of its line.
+	{"a stage added", func(q string) string { return q + "\n| decolorize" }},
 }
 
 // nonSemanticMutations change the text only: the tree, and so the key, stay.
@@ -148,7 +149,7 @@ var nonSemanticMutations = []struct {
 	do   func(q string) string
 }{
 	{"surrounding whitespace", func(q string) string { return " \t" + q + "\n " }},
-	{"parentheses", func(q string) string { return "(" + q + ")" }},
+	{"parentheses", func(q string) string { return "(" + q + "\n)" }},
 	{"a range in seconds", func(q string) string {
 		return mutRange.ReplaceAllStringFunc(q, func(m string) string {
 			n, _ := strconv.Atoi(m[1 : len(m)-2])
