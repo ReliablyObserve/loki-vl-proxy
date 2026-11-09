@@ -78,19 +78,27 @@ func rangeFuncConstruct(op logql.RangeOp) string {
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not
 // write, or "" when it writes all: an unwrap or a parser (the metric rows group by what they extract) first, any
-// other stage the log query lowering leaves out is named by that lowering.
+// drop or keep (written unlike a log query's) and any other stage the log query lowering leaves out is named by
+// that lowering.
 func rangeInnerConstruct(sel *queryplan.LogSelect) string {
-	parser := false
+	parser, dropKeep := false, false
 	for _, st := range sel.Stages {
 		switch st.(type) {
 		case *queryplan.Unwrap:
 			return "RangeAgg unwrap"
 		case *queryplan.Parse:
 			parser = true
+		case *queryplan.Drop, *queryplan.Keep:
+			dropKeep = true
 		}
 	}
 	if parser {
 		return "RangeAgg parser"
+	}
+	if dropKeep {
+		// The string translator writes a metric row's drop and keep unlike a log query's: a drop deletes the
+		// level fields detected_level is derived from, and a keep of detected_level deletes level after its fields.
+		return "RangeAgg drop or keep"
 	}
 	return ""
 }

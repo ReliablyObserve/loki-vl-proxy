@@ -208,7 +208,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 	p := newShadowProxy(t, 1, "http://unused")
 	for _, q := range []string{
 		`{app="a"}`,                          // match
-		`{app="a"} | json`,                   // LogSelect pipeline: not lowered
+		`{app="a"} | line_format "{{.a}}"`,   // LogSelect pipeline: not lowered
 		`rate({app="a"}[5m])`,                // RangeAgg: not lowered
 		`sum by (app) (rate({app="a"}[5m]))`, // VectorAgg
 		`topk(3, rate({app="a"}[5m]))`,       // Rank

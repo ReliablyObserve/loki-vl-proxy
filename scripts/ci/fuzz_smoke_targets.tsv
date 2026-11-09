@@ -121,4 +121,5 @@ smoke	internal/translator	FuzzDetectedLevelChainKey	12s	-	detected-level chain m
 smoke	internal/proxy	FuzzPatchStatsTail	12s	-	query stats envelope end over any data object
 smoke	internal/proxy	FuzzPatchStatsTailAnyBytes	12s	-	query stats writer on any bytes
 smoke	internal/proxy	FuzzEntryCounter	12s	-	query stats entry count over split writes
+smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
 smoke	internal/proxy	FuzzParseLokiTimeIntegerFastPath	12s	-	Loki time parse: integer fast path equals the layouts-first parse

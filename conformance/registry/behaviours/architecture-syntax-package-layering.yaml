@@ -416,3 +416,27 @@ decisions:
     performance:
       tracked: ['BenchmarkRangeAggQueriesTranslator / BenchmarkRangeAggQueriesLowered / BenchmarkRangeAggQueriesPlanOnly / BenchmarkRangeAggQueriesStreamLabelsTranslator / BenchmarkRangeAggQueriesStreamLabelsLowered (internal/queryplan/lower) ns/op, B/op, allocs/op']
       bound: 'M5 Pro, GOMAXPROCS=4, count=6, 2026-11-09, corpus range aggregations: string translator 5.9 µs, 3.2 KiB, 56 allocs, lowered (Parse + Build + Resolve + Plan) 2.9 µs, 2.9 KiB, 51 allocs, Plan alone 1.9 µs, 2.1 KiB, 42 allocs; under the tenant''s six stream labels (the production profile) string translator 14.4 µs, 13.0 KiB, 86 allocs, lowered 3.4 µs, 4.3 KiB, 54 allocs; the log query lowerings unchanged (allocs and B/op identical to main)'
+  - id: lowering-json-logfmt-drop-keep
+    chosen: 'lower.Plan lowers a log query whose pipeline holds `| json`, `| logfmt` (flags and field lists), `| drop` and `| keep`, with the line, pattern and label filters it already lowers (a label filter only before the first parser). The pipes are built in internal/translate (JSONUnpack, LogfmtUnpack, JSONAliasCopies, DropDelete, KeepFields) from the typed stages and reproduce the string translator''s text, which is frozen: every json stage is `| unpack_json` and every logfmt stage `| unpack_logfmt` whatever their flags and list, a json expression defines a label with `| copy "x.y" as a`, a log query''s drop deletes its bare names but the stored level fields and writes nothing for matchers, a keep projects `_time, _msg, _stream` and its names with the `_extracted`, level and label-translated spellings. A query whose text the translator reads differently from the typed stage (a json expression with an escape, a raw string, a comma, a surrounding space or a bracket path, a repeated name, a negative line filter right after a parser with arguments or a drop or keep of matchers, a keep that mixes names and matchers, a matcher value holding a quote or operator character) stays delegated, as does a stream-labels profile when a stage names a stream label (the translator copies its value aside)'
+    over: ['fixing the translator''s text readings (the translator is frozen; the shadow requires equality, so each reading the AST would do differently is a recorded delegation, not a divergence)', 'lowering a label filter after a parser in the same step (it needs the parsed-key variants, the alias rewrite and the __error__ policy: step 12c-2)', 'carrying the written order of a keep list on the AST']
+    why: |
+      Step 12c-1 of architecture B (owner 2026-11-09). The translator writes
+      one pipe for json and one for logfmt whatever their flags, so the flags
+      and field lists lower without a new LogsQL form; the gaps against Loki
+      this leaves (the field list extracts every key, --strict does not fail
+      a line, --keep-empty is not honoured, a logfmt expression defines no
+      label, an alias is copied only for a double-quoted expression, the
+      numeric and __error__ label semantics after a parser) are the
+      translator's today and become AST rules with the label filter step, once
+      the plan may differ from the frozen reference by a recorded divergence.
+      The text readings the lowering gives up are listed in `chosen` and each
+      has a delegation test; the shadow found them (a field list followed by
+      `!=` is read by the translator as part of the stage and loses the line
+      filter).
+    evidence: 'TestPlanShadow native 1392 -> 1764 of 22,914 rows x 12 profiles, 0 mismatches (delegated: label filter after parser 576, regexp parser 48, pattern parser 36, keep order 12, pipeline 156); TestParserGridShadow 14,101 generated queries x 12 profiles = 168,372 rows, 108,027 lowered, 0 mismatches; FuzzParserLowering 60 s, 227,000 execs, no divergence, 9 profiles incl. stream labels; VictoriaLogs oracle: 9,113 pairs (the corpus rows the plan lowers plus the grid, which TestVLOracle now emits as typed rows), the lowered and the translated text all accepted and read with the same meaning on v1.49.0 and v1.53.0, run through a local harness with a fresh module cache because TestVLOracle needs the CI corpus artifact; TestPlanRouteParity digests unchanged (2026-11-09)'
+    code: [internal/translate/parser.go, internal/queryplan/lower/parser.go, internal/queryplan/lower/lower.go]
+    tests: [TestPlanLowersParsers, TestPlanDelegatesParserShapes, TestPlanDelegatesStreamLabelsAfterParser, TestParserBuildersMatchTranslator, TestParserBuilders, FuzzParserLowering, TestParserGridShadow, TestPlanShadow, TestVLOracle, TestPlanRouteParity]
+    quality: 'No handler reads the lowering yet; the requests sent to VictoriaLogs do not change.'
+    performance:
+      tracked: ['BenchmarkParserQueriesTranslator / BenchmarkParserQueriesLowered, and the line, pattern and label filter pairs, ns/op, B/op, allocs/op (internal/queryplan/lower)']
+      bound: 'M5 Pro, GOMAXPROCS=4, count=8 interleaved with the base build, 2026-11-09 (the machine was loaded: +-20% between runs): the corpus parser queries string translator 17.3 µs, 9.65 KiB, 181 allocs, lowered (Parse + Build + Resolve + Plan) 9.6 µs, 10.4 KiB, 181 allocs; the line, pattern and label filter sets unchanged against origin/main (all p > 0.3, allocs/op and B/op equal)'

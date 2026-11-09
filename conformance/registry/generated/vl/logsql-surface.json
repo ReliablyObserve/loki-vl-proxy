@@ -46,6 +46,7 @@
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_counts.go",
+        "internal/translate/parser.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
@@ -74,6 +75,7 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/translate/linefilter_pattern.go",
+        "internal/translate/parser.go",
         "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
@@ -159,6 +161,7 @@
         "internal/proxy/metric_binary.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_exact.go",
+        "internal/translate/parser.go",
         "internal/translator/translator.go"
       ]
     },
@@ -538,6 +541,7 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/volume.go",
+        "internal/translate/parser.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/translator.go"
       ]
@@ -553,6 +557,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/volume.go",
+        "internal/translate/parser.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/translator.go"
       ]

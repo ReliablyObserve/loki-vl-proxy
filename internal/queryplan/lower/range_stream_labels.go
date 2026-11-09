@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // A label function that names the tenant's stream labels (translator.WithStreamLabels) makes a metric query read
@@ -17,10 +18,6 @@ import (
 // stores the line's value under the label's name, while _stream keeps the label. In Loki the stream label wins.
 // Before its first pipe the metric query therefore writes each name's value from _stream back into the field of
 // that name, on the entries whose stream has the tag, and the others keep their field.
-
-// streamLabelsProbe is the label name the proxy's label function answers with the names of the tenant's stream
-// labels (translator.WithStreamLabels).
-const streamLabelsProbe = "\x03"
 
 // restoreMemo holds the restore pipes, printed, of each distinct set of stream label names, which a tenant's
 // requests all share. The memo is bounded: past maxRestoreMemo sets they are built each time.
@@ -39,10 +36,7 @@ type restoreEntry struct {
 // streamTagRestore is the restore pipes, printed, for the stream labels the label function carries ("" when it
 // carries none), and false when a name is not a plain label name.
 func streamTagRestore(label func(string) string) (text string, ok bool) {
-	if label == nil {
-		return "", true
-	}
-	names, found := strings.CutPrefix(label(streamLabelsProbe), streamLabelsProbe+"=")
+	names, found := translate.StreamLabelList(label)
 	if !found {
 		return "", true
 	}

@@ -64,12 +64,13 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 
 // logSelect lowers a log query: its stream filter (translate.StreamSelectorFilter, the filter the string
 // translator writes; keeping the line aside adds nothing without a line_format), its line filters
-// (translate.LineFilter, and translate.PatternLineFilter for |> and !>) and its label filters without a parser
-// (labelFilter), in order. A pattern filter that needs the extract pipe adds pipes; the filters after a pipe go
-// into one filter pipe up to the next pipe, as the string translator writes them, except that a label filter
+// (translate.LineFilter, and translate.PatternLineFilter for |> and !>), its label filters without a parser
+// (labelFilter) and its json and logfmt parsers, drops and keeps (stagePipes), in order. A pattern filter that
+// needs the extract pipe adds pipes, and so does a parser, a drop of names and a keep; the filters after a pipe
+// go into one filter pipe up to the next pipe, as the string translator writes them, except that a label filter
 // that is a field filter and directly follows a pipe or a label filter in a filter pipe opens a filter pipe of
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
-// assembled). Any other stage is not lowered yet.
+// assembled). Any other stage, and a label filter after a parser, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 	q, err := logSelectQuery(sel, prof)
 	if err != nil {
@@ -80,6 +81,10 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 
 // logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it.
 func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error) {
+	staged, err := stagePipes(sel, prof)
+	if err != nil {
+		return logsql.Query{}, err
+	}
 	built, err := labelFilters(sel, prof)
 	if err != nil {
 		return logsql.Query{}, err
@@ -109,6 +114,16 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	// filter it wrapped in a filter pipe.
 	lastPipe := false
 	for i, st := range sel.Stages {
+		switch st.(type) {
+		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep:
+			// A json or logfmt parser, a drop and a keep are pipes (stagePipes); a drop of matchers writes none.
+			if len(staged) > 0 && len(staged[i]) > 0 {
+				flush()
+				pipes = append(pipes, staged[i]...)
+				lastPipe = true
+			}
+			continue
+		}
 		if _, ok := st.(*queryplan.LabelFilter); ok {
 			f := built[i]
 			if lastPipe && translate.IsFieldFilter(f.String()) {
