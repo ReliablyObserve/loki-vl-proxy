@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The lines and bytes processed in `query` and `query_range` statistics have
+  Loki's meaning where an answer the proxy computes anyway counts them, at no
+  VictoriaLogs cost: a tumbling `count_over_time` or `bytes_over_time` of a log
+  expression without a parser sums its own answer over Loki's window
+  (`totalLinesProcessed`, `totalPostFilterLines` with a filter,
+  `totalBytesProcessed` as line bytes), and a log query takes its window's
+  lines and line bytes from the volume answer of the same expression or
+  selector that Explore and Logs Drilldown request with it, when the proxy
+  holds one computed in the last 5 minutes whose whole steps cover at least
+  90% of the window (a refresh, or the volume answer arriving first).
+  Otherwise they stay the rows and bytes the proxy read. Volume answers kept
+  for this are small `qs-totals:` cache entries pushed to their peer
+  replicas.
+
+### Changed
+
+- The query plan lowers `count_over_time`, `bytes_over_time` and
+  `absent_over_time` over a log query with line, pattern and label filters and
+  no parser (any offset, any range, with or without the tenant's stream
+  labels) to VictoriaLogs natively, as one stats pipe over the log query the
+  string translator writes; the requests sent to VictoriaLogs are those of the
+  string translator. `rate`, `bytes_rate`, the unwrap functions, parsers and
+  groupings are still answered by the string translator.
+- A query and query_range miss parses the query once for the handlers that
+  only read it (absent_over_time, bare parser metrics, `without`
+  aggregations, the sample-producing check, the query statistics) and the
+  query plan, through the plan memo, instead of once per handler; and a time
+  given as integer nanoseconds (what Grafana sends) is read before the time
+  layouts are tried, without the allocations of their failed parses. A metric
+  query_range miss allocates 12% less and an instant query miss 5% less.
+
+## [2.115.0] - 2026-11-09
+
+### Fixed
+
 - An IPv4 `ip()` label filter (`| addr=ip("10.0.0.0/8")`, `!=`) reads a value
   with an address inside other text as Loki does: `addr="10.0.0.5:443"` and
   `addr="client 10.0.0.5"` match the pattern. The filter is the regexp of the
@@ -26,6 +61,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a label (Drilldown include and exclude clicks on the same field, or a
   hand-written chain) kept lines before and now keep the lines Loki keeps,
   often none.
+
+### Changed
+
+- The query plan lowers log queries with label filters that have no parser in
+  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
+  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
+  string translator now shares; the requests sent to VictoriaLogs are those of
+  the string translator.
+- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
+  instead of about 60 ms on every query: the regexp's edges are written as a
+  class without ASCII letters and the letters apart (a negated class over all
+  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
+  VictoriaLogs does while simplifying a regexp). The same lines match.
+
+## [2.114.0] - 2026-11-09
+
+### Fixed
+
 - `query` and `query_range` answers carry Loki's `data.stats` object instead of
   an empty `{}`, so Grafana's query inspector and the Logs Drilldown footer
   ("Total bytes processed") show statistics as they do for Loki. The proxy
@@ -44,26 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `querier`, `ingester` and `index` sections are left out. The query
   and query_range response-cache keys change, so those entries are rebuilt
   once after an upgrade, and replicas on older versions do not share them.
-
-### Changed
-
-- The query plan lowers `count_over_time`, `bytes_over_time` and
-  `absent_over_time` over a log query with line, pattern and label filters and
-  no parser (any offset, any range, with or without the tenant's stream
-  labels) to VictoriaLogs natively, as one stats pipe over the log query the
-  string translator writes; the requests sent to VictoriaLogs are those of the
-  string translator. `rate`, `bytes_rate`, the unwrap functions, parsers and
-  groupings are still answered by the string translator.
-- The query plan lowers log queries with label filters that have no parser in
-  front of them (`| level="error"`, `| status >= 500`, `| a=~"x|y"`, and/or
-  trees, `ip()`) to VictoriaLogs natively, through the label filter builder the
-  string translator now shares; the requests sent to VictoriaLogs are those of
-  the string translator.
-- An IPv4 `ip()` line or label filter costs VictoriaLogs about 1 ms to parse
-  instead of about 60 ms on every query: the regexp's edges are written as a
-  class without ASCII letters and the letters apart (a negated class over all
-  of Unicode that holds letters is slow to print in Go's regexp/syntax, which
-  VictoriaLogs does while simplifying a regexp). The same lines match.
 
 ## [2.113.0] - 2026-11-09
 

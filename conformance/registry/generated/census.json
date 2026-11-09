@@ -699,6 +699,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
+    "semantics/translator-reads-quoted-text-as-syntax | gap:open",
+    "semantics/translator-reads-quoted-text-as-syntax | query",
     "semantics/tumbling-window-single-grid | compare:exact",
     "semantics/tumbling-window-single-grid | query",
     "semantics/two-parsers-keep-one | compare:observed",
@@ -1308,6 +1311,8 @@
     "internal/proxy/query_semantics_compat_handlers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/query_stats_test.go | drilldown/logs-footer-query-stats",
     "internal/proxy/query_stats_test.go | query-stats-envelope",
+    "internal/proxy/query_stats_totals_test.go | drilldown/logs-footer-query-stats",
+    "internal/proxy/query_stats_totals_test.go | query-stats-envelope",
     "internal/proxy/range_lower_bound_test.go | semantics/lower-bound-exclusive",
     "internal/proxy/range_lower_bound_test.go | window-bounds-and-step-alignment",
     "internal/proxy/range_metric_row_limit_error_test.go | heavy-metric-fetch-bounds",
@@ -2060,12 +2065,12 @@
       "any": 28,
       "api": 50,
       "drilldown": 50,
-      "explore": 156,
+      "explore": 157,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 418,
+      "go": 419,
       "playwright": 1
     },
     "page_kinds": {
@@ -2084,7 +2089,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 101,
+    "unwired_items": 102,
     "wired_items": 275
   },
   "gates": [

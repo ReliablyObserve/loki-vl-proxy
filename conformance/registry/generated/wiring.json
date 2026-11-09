@@ -71,6 +71,7 @@
     ],
     "drilldown/logs-footer-query-stats": [
       "internal/proxy/query_stats_test.go",
+      "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "drilldown/patterns-full-range-counts": [
@@ -896,6 +897,7 @@
     ],
     "query-stats-envelope": [
       "internal/proxy/query_stats_test.go",
+      "internal/proxy/query_stats_totals_test.go",
       "test/e2e-compat/query_stats_test.go"
     ],
     "range_function-count-over-time": [
@@ -1742,7 +1744,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 450,
+  "registry_items": 451,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2530,6 +2532,10 @@
       "semantics/absent-over-time-semantics"
     ],
     "internal/proxy/query_stats_test.go": [
+      "drilldown/logs-footer-query-stats",
+      "query-stats-envelope"
+    ],
+    "internal/proxy/query_stats_totals_test.go": [
       "drilldown/logs-footer-query-stats",
       "query-stats-envelope"
     ],
@@ -3774,7 +3780,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 419,
+  "tests_with_markers": 420,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3857,6 +3863,7 @@
     "semantics/stream-level-shadowed-by-ingest-json-key",
     "semantics/tail-history-start-limit",
     "semantics/topk-per-step-membership-differs",
+    "semantics/translator-reads-quoted-text-as-syntax",
     "semantics/two-parsers-keep-one",
     "semantics/unpack-non-string-values",
     "semantics/unwrap-bare-range-exposes-parsed-labels",

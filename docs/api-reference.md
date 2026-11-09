@@ -109,19 +109,32 @@ is a measurement of the request:
 |---|---|
 | `summary.execTime` | The request's time in the proxy, in seconds. |
 | `summary.queueTime` | Time the request waited for heavy-query admission (`-backend-heavy-query-*`), in seconds. |
-| `summary.totalLinesProcessed` | Log rows the proxy read from VictoriaLogs for the answer (at most the limit for a log query; a metric query reads aggregated rows). |
-| `summary.totalBytesProcessed` | Bytes the proxy read from VictoriaLogs for the answer. |
+| `summary.totalLinesProcessed` | For a `count_over_time` of a log expression without a parser (optionally under `sum`) on tumbling windows (range equal to step) or as an instant query, with no line or label filter: the lines its own answer counts over `(start - range, end]`, Loki's window. For a log query: the lines its window holds according to the volume answer of the same expression or selector that Explore and Logs Drilldown send with it (see below). Otherwise the log rows the proxy read from VictoriaLogs. |
+| `summary.totalPostFilterLines` | The same answers' counts when the expression filters lines; 0 when nothing counts them. |
+| `summary.totalBytesProcessed` | For a `bytes_over_time` of a bare selector (same window rules): its own answer's line bytes. For a log query: the line bytes of its window from the `volume_range` answer of its selector. Otherwise the bytes the proxy read from VictoriaLogs. |
 | `summary.bytesProcessedPerSecond`, `linesProcessedPerSecond` | The two totals over `execTime`. |
 | `summary.totalEntriesReturned` | Entries of a streams answer, series of a matrix or vector answer. |
 | `summary.splits` | VictoriaLogs calls the request made. |
-| `summary.subqueries`, `shards`, `totalPostFilterLines`, `totalStructuredMetadataBytesProcessed` | 0: VictoriaLogs has no shards or subqueries, filters before the proxy sees rows and keeps no structured-metadata byte count. |
+| `summary.subqueries`, `shards`, `totalStructuredMetadataBytesProcessed` | 0: VictoriaLogs has no shards or subqueries and keeps no structured-metadata byte count. |
 | `cache.result` | The request's reads and stores in the response caches (final answers, log windows, settled steps): `entriesRequested`, `entriesFound`, `entriesStored`, `bytesReceived`, `bytesSent`, `requests`, `downloadTime` (ns). |
 | `cache.instantMetricResult` | The same for the response cache of instant queries. |
 | `cache.statsResult`, `cache.volumeResult` | Reads of the stats extent cache and of volume segments. |
 | `cache.chunk`, `index`, `seriesResult`, `labelResult`; `queryLengthServed` | 0: no such read in a query request. |
 
 An answer served from the proxy's caches reports no lines or bytes processed
-and the cache entry it found, as Loki's results cache does.
+and the cache entry it found, as Loki's results cache does. A volume answer
+computed from VictoriaLogs is kept for this (`qs-totals:` entries, 5 minutes,
+in memory and pushed to the key's peer replicas; keyed by tenant org, routing
+and auth scope and the expression) when it holds every line of the
+expression: a `count_over_time`/`bytes_over_time` range answer as above, or a
+`volume_range` answer grouped only by labels every stream has (the selector's
+own when every matcher requires a value, `service_name`, `detected_level`) and
+not cut by `limit`. A log query reads it from memory only (never waiting on a
+peer) and uses it when the answer's whole steps inside the log query's window
+span at least 90% of it, summing those steps; the uncovered edge is left out,
+not estimated. Its newest steps are the counts as of when the volume answer
+was computed. The logs query of a first page load usually finishes before its
+volume query, and then reports what the proxy read.
 
 ## Delete Endpoint (Exception)
 

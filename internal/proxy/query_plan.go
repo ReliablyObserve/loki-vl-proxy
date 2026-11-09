@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 )
 
@@ -21,8 +22,16 @@ import (
 const planMemoLimit = 4096
 
 type planGeneration struct {
-	plans sync.Map // query text -> *queryplan.Plan, resolved before it is stored
+	plans sync.Map // query text -> *planMemoEntry
 	size  atomic.Int64
+}
+
+// planMemoEntry is a query's parse and, once a handler asked for it, its plan.
+// Both are shared by every request that sends the query: nothing may modify
+// them (a caller that rewrites the AST parses its own copy).
+type planMemoEntry struct {
+	expr logqlpkg.Expr
+	plan *queryplan.Plan // resolved before it is stored; nil until built
 }
 
 var (
@@ -33,24 +42,24 @@ var (
 
 func init() { planMemoCur.Store(&planGeneration{}) }
 
-// planMemoLoad is the memoised plan of query, if a generation holds it.
-func planMemoLoad(query string) (*queryplan.Plan, bool) {
+// planMemoLoad is the memoised entry of query, if a generation holds it.
+func planMemoLoad(query string) (*planMemoEntry, bool) {
 	if v, ok := planMemoCur.Load().plans.Load(query); ok {
-		return v.(*queryplan.Plan), true
+		return v.(*planMemoEntry), true
 	}
 	if prev := planMemoPrev.Load(); prev != nil {
 		if v, ok := prev.plans.Load(query); ok {
-			p := v.(*queryplan.Plan)
-			planMemoStore(query, p)
-			return p, true
+			e := v.(*planMemoEntry)
+			planMemoStore(query, e)
+			return e, true
 		}
 	}
 	return nil, false
 }
 
-// planMemoStore keeps p in the current generation, starting a new one when the
-// current one is full.
-func planMemoStore(query string, p *queryplan.Plan) {
+// planMemoStore keeps e in the current generation, starting a new one when the
+// current one is full. An entry with a plan replaces one without.
+func planMemoStore(query string, e *planMemoEntry) {
 	cur := planMemoCur.Load()
 	if cur.size.Load() >= planMemoLimit {
 		planMemoMu.Lock()
@@ -61,27 +70,55 @@ func planMemoStore(query string, p *queryplan.Plan) {
 		planMemoMu.Unlock()
 		cur = planMemoCur.Load()
 	}
-	if _, loaded := cur.plans.LoadOrStore(query, p); !loaded {
+	if e.plan == nil {
+		if _, loaded := cur.plans.LoadOrStore(query, e); !loaded {
+			cur.size.Add(1)
+		}
+		return
+	}
+	if _, loaded := cur.plans.Swap(query, e); !loaded {
 		cur.size.Add(1)
 	}
 }
 
-// resolvedPlan is the resolved plan of query, or nil when the query does not
-// parse or build. A handler reads only queries that validated, so nil means a
-// text the proxy rewrote into something it cannot parse; callers then answer as
-// for a query without the property they ask about. The plan is shared: callers
-// read it and never change it. The memo is keyed by the text alone because
-// Resolve reads nothing of Inputs but Compat (TestResolveReadsNoInputButCompat).
-func resolvedPlan(query string) *queryplan.Plan {
+// sharedLogQLExpr is query's parse from the memo, parsing it once on a miss.
+// The expression is shared with every other request sending the query, so the
+// caller reads it only: a caller that modifies the AST uses parseLogQLExpr.
+func sharedLogQLExpr(query string) (logqlpkg.Expr, bool) {
 	cacheable := len(query) <= validationCacheMaxQueryBytes
 	if cacheable {
-		if p, ok := planMemoLoad(query); ok {
-			return p
+		if e, ok := planMemoLoad(query); ok {
+			return e.expr, true
 		}
 	}
 	expr, err := parseLogQLExpr(noFlowCtx, query)
 	if err != nil {
-		return nil
+		return nil, false
+	}
+	if cacheable {
+		planMemoStore(query, &planMemoEntry{expr: expr})
+	}
+	return expr, true
+}
+
+// resolvedPlan is the resolved plan of query, memoised by the query text; nil
+// when the query does not parse or build.
+func resolvedPlan(query string) *queryplan.Plan {
+	cacheable := len(query) <= validationCacheMaxQueryBytes
+	var expr logqlpkg.Expr
+	if cacheable {
+		if e, ok := planMemoLoad(query); ok {
+			if e.plan != nil {
+				return e.plan
+			}
+			expr = e.expr
+		}
+	}
+	if expr == nil {
+		var err error
+		if expr, err = parseLogQLExpr(noFlowCtx, query); err != nil {
+			return nil
+		}
 	}
 	p, err := queryplan.Build(expr, queryplan.Inputs{})
 	if err != nil {
@@ -90,7 +127,7 @@ func resolvedPlan(query string) *queryplan.Plan {
 	// Resolve before the plan can be shared: it writes into the plan.
 	queryplan.Resolve(p)
 	if cacheable {
-		planMemoStore(query, p)
+		planMemoStore(query, &planMemoEntry{expr: expr, plan: p})
 	}
 	return p
 }
