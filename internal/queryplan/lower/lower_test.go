@@ -20,7 +20,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"LogSelect pipeline":                  `{app="a"} | line_format "{{.a}}"`,
 		"LogSelect label filter after parser": `{app="a"} | json | level="error"`,
 		"LogSelect regexp parser":             "{app=\"a\"} | regexp `(?P<a>\\d+)`",
-		"RangeAgg rate detected_level":        `rate({app="a"}[5m])`,
+		"RangeAgg unwrap":                     `sum_over_time({app="a"} | unwrap n [5m])`,
 		"VectorAgg":                           `sum by (app) (count_over_time({app="a"}[5m]))`,
 		"Rank":                                `topk(3, sum by (app) (rate({app="a"}[5m])))`,
 		"BinOp":                               `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,

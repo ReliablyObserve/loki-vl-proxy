@@ -30,8 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no parser (any offset, any range, with or without the tenant's stream
   labels) to VictoriaLogs natively, as one stats pipe over the log query the
   string translator writes; the requests sent to VictoriaLogs are those of the
-  string translator. `rate`, `bytes_rate`, the unwrap functions, parsers and
-  groupings are still answered by the string translator.
+  string translator. The unwrap functions, parsers and groupings are still
+  answered by the string translator.
+- The query plan lowers `rate` and `bytes_rate` over the same log queries
+  (line, pattern and label filters, no parser) to VictoriaLogs natively, for
+  every range and offset and every translation profile: the log query's
+  filters, the detected_level derivation, the count (or line bytes) per
+  stream, level and detected_level, its division by the range's seconds, and
+  the sum per series, with VictoriaLogs still doing the aggregation. The
+  builders of the detected_level derivation moved out of the string
+  translator into the translation package, which forwards to them with the
+  same output. The requests sent to VictoriaLogs are those of the string
+  translator, and the lowering takes about half the time of the translation
+  and allocates less.
 - The query plan lowers log queries with a `| json` or `| logfmt` parser (with
   `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
   with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in

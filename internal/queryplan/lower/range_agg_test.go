@@ -100,7 +100,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 // A range aggregation over a log query with no parser lowers to the query the string translator writes, for every
 // function it lowers, every selector and filter shape, every range and offset spelling and every profile: the
 // log query of the metric rows is written with the label names alone (no capabilities, no stream fields), then one
-// stats pipe with no grouping.
+// stats pipe with no grouping, or for rate and bytes_rate the detected_level chain and the stats per series.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanLowersRangeAggregations(t *testing.T) {
@@ -115,7 +115,7 @@ func TestPlanLowersRangeAggregations(t *testing.T) {
 	ranges := []string{
 		`[5m]`, `[1ms]`, `[1d]`, `[1h30m]`, `[300s]`, `[2w]`, `[5m] offset 1h`, `[5m] offset 0s`, `[1h] offset 24h`, `[30s] offset 1ms`,
 	}
-	funcs := []string{"count_over_time", "bytes_over_time", "absent_over_time"}
+	funcs := []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate"}
 	for _, prof := range rangeProfiles() {
 		for _, f := range funcs {
 			for _, s := range selectors {
@@ -168,6 +168,51 @@ func TestPlanRangeAggregationText(t *testing.T) {
 		if got := op.(physical.VLQuery).Text; got != want {
 			t.Errorf("%s:\n got %s\nwant %s", q, got, want)
 		}
+	}
+}
+
+// What the lowering writes for rate and bytes_rate: the log query's filters, the detected_level chain once, the
+// restore of the stream labels and the query's other pipes, then the count (or the bytes) per series, its division
+// by the range's seconds, and the sum per series.
+//
+// conformance: architecture-syntax-package-layering
+func TestPlanRateText(t *testing.T) {
+	chain := translator.BuildDetectedLevelChain(translator.DetectedLevelFieldNames, translator.DetectedLevelChainGrouping, nil)
+	stream := ` | stats by (_stream, level, detected_level) `
+	tail := func(fn, seconds string) string {
+		return stream + fn + ` as __lvp_inner | math __lvp_inner/` + seconds + ` as __lvp_rate` + stream + `sum(__lvp_rate)`
+	}
+	restore, _ := streamTagRestore(benchStreamLabels)
+	for _, c := range []struct {
+		q, head, pipes, tail string
+		label                func(string) string
+	}{
+		{`rate({app="a"}[5m])`, `app:="a"`, ``, tail(`count()`, `300`), nil},
+		{`rate({app="a"} |= "x" [1h] offset 1h)`, `app:="a" ~"x"`, ``, tail(`count()`, `3600`), nil},
+		{`bytes_rate({app="a"} | level="e" [90s])`, `app:="a" level:="e"`, ``, tail(`sum_len(_msg)`, `90`), nil},
+		{`bytes_rate({app="a"}[1ms])`, `app:="a"`, ``, tail(`sum_len(_msg)`, `0.001`), nil},
+		{`rate({detected_level!="info"}[1d])`, `*`, ``, tail(`count()`, `86400`), nil},
+		{`rate({app="a"}[5m])`, `app:="a"`, ` ` + restore, tail(`count()`, `300`), benchStreamLabels},
+	} {
+		p := rangeAggPlan(c.q)
+		op, err := Plan(p, Profile{Label: c.label})
+		if err != nil {
+			t.Errorf("%s: %v", c.q, err)
+			continue
+		}
+		want := c.head + ` ` + chain + c.pipes + c.tail
+		if got := op.(physical.VLQuery).Text; got != want {
+			t.Errorf("%s:\n got %.300s\nwant %.300s", c.q, got, want)
+		}
+	}
+	// A pattern filter that extracts goes after the chain, with the pipes of the query.
+	op, err := Plan(rangeAggPlan(`rate({app="a"} |> "<_> x <_> y" |= "k"[5m])`), Profile{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := op.(physical.VLQuery).Text
+	if i, j := strings.Index(text, chain), strings.Index(text, "extract_regexp"); i < 0 || j >= 0 && j < i || strings.Count(text, chain) != 1 {
+		t.Errorf("the chain is not once before the first pipe: %.400s", text)
 	}
 }
 
@@ -228,8 +273,15 @@ func TestPlanRangeAggregationIgnoresCapsAndStreamFields(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesRangeAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`rate({app="a"}[5m])`:                                    "RangeAgg rate detected_level",
-		`bytes_rate({app="a"} |= "x" [5m] offset 1h)`:            "RangeAgg rate detected_level",
+		`rate({app="a"}[0s])`:                                    "RangeAgg range",
+		`bytes_rate({app="a"} |= "x" [0s] offset 1h)`:            "RangeAgg range",
+		`rate({app="a"} | json [5m])`:                            "RangeAgg parser",
+		`bytes_rate({app="a"} | unwrap n [5m])`:                  "RangeAgg unwrap",
+		`rate({app="a"} | drop x [5m])`:                          "RangeAgg drop or keep",
+		`bytes_rate({app="a"} | keep x [5m])`:                    "RangeAgg drop or keep",
+		`rate({app="a"} | detected_level="e" [5m])`:              "RangeAgg LogSelect label filter detected_level",
+		`bytes_rate({app="a"} | line_format "{{.a}}" [5m])`:      "RangeAgg LogSelect pipeline",
+		`rate({app="a"}[5m]) by (x)`:                             "RangeAgg grouping",
 		`sum_over_time({app="a"} | unwrap n [5m])`:               "RangeAgg unwrap",
 		`quantile_over_time(0.9, {app="a"} | unwrap n [5m])`:     "RangeAgg unwrap",
 		`first_over_time({app="a"} | unwrap n [5m])`:             "RangeAgg unwrap",

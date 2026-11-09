@@ -36,7 +36,10 @@ func rangeAggGrid() []string {
 		` |> "<_> x <_> y" |= "k"`, ` |= "k" |> "<_> x <_>" != "j"`, ` |= ""`, ` |~ ""`, ` != ""`, ` |= "é\n"`, " |= `raw\\d`",
 		` |= "a b"`, ` |~ "(?i)error"`, ` |~ "a|b|c"`, ` |= "[x]"`, ` |= "x[1m]"`,
 	}
-	ranges := []string{`[5m]`, `[1m]`, `[1h] offset 1h`, `[30s] offset 0s`, `[1d]`, `[1ms]`, `[1h30m]`, `[300s]`, `[2w]`}
+	ranges := []string{`[5m]`, `[1m]`, `[1h] offset 1h`, `[30s] offset 0s`, `[1d]`, `[1ms]`, `[1h30m]`, `[300s]`, `[2w]`,
+		// the spellings the division of a rate by the range's seconds reads: units apart and together, fractions, days
+		// and weeks and years that Go's parser does not know, a range of no length, the shortest and a long one.
+		`[1m30s]`, `[90s]`, `[1w1d]`, `[1y]`, `[3d12h]`, `[0s]`, `[1ms]`, `[999ms]`, `[1500ms]`, `[1.5h]`, `[1.1d]`, `[0.5d]`, `[1h1m1s1ms]`, `[10000h]`, `[1ns]`, `[1us]`, `[1µs]`, `[2.5s]`}
 	// every selector against every line filter, one function and range each way.
 	for _, s := range selectors {
 		for _, l := range lines {

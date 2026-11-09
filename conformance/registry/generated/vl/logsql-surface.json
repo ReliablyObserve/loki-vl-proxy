@@ -297,6 +297,7 @@
       "used_in": [
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/unwrap_gate.go"
       ]
@@ -829,6 +830,7 @@
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/unwrap_samples.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]
