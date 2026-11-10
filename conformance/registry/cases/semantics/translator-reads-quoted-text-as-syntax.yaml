@@ -40,6 +40,14 @@ why: |
   reads the label as stored. The translator's unpack makes a field of the line
   shadow a stored label of the same name.
 
+  The same holds for an exact stream-field matcher whose value holds `!~`, `=~`
+  or `!=` (`{app="a!~0", env="x"}` with app and env stream fields): the
+  translator looks for those operators in the whole matcher text and writes the
+  matcher as a field filter (`{env="x"} app:="a!~0"`); the query plan reads the
+  operator from the matcher and keeps the stream filter
+  (`{app="a!~0", env="x"}`). Both keep the same rows. fuzz-smoke found it
+  (FuzzEscapedSpellingLowering, 2026-11-10), which now recognises it by content.
+
   The VictoriaLogs oracle's typed-selector check compares the plan with the
   string translator; these rows differ because the translator is wrong, and
   internal/querycorpus/testdata/known-typed-divergences.json lists them with

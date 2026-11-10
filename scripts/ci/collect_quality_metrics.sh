@@ -10,6 +10,9 @@ OUTPUT_JSON="$1"
 ROOT_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
+# The go test package timeout of the test collection and the budget of the whole collection, which stays above it.
+QUALITY_TEST_PACKAGE_TIMEOUT="${QUALITY_TEST_PACKAGE_TIMEOUT:-18m}"
+QUALITY_TESTS_BUDGET_SECONDS="${QUALITY_TESTS_BUDGET_SECONDS:-1200}"
 cleanup() {
   if [ -d "$ROOT_DIR/test/e2e-compat" ]; then
     (cd "$ROOT_DIR/test/e2e-compat" && docker compose down -v >/dev/null 2>&1) || true
@@ -116,7 +119,10 @@ collect_tests_and_coverage() {
     mkdir -p "$LVP_QUERY_CORPUS_DIR"
     tags=(-tags corpuscapture)
   fi
-  if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"; then
+  # The package timeout stays under the collection's own budget (capture_async tests_and_coverage) so a hang
+  # still fails with its goroutine dump. Go's 10m default was too tight: internal/proxy runs about 10 minutes
+  # here with coverage and the corpus capture on a busy runner.
+  if go test "${tags[@]}" ./... -coverprofile="$cover_file" -count=1 -timeout="$QUALITY_TEST_PACKAGE_TIMEOUT" -json >"$events_file"; then
     if [ -n "${QUALITY_QUERY_CORPUS_OUT:-}" ]; then
       # A corpus that fails to build must not cost the report its test count.
       # The checks on the corpus run after this timed collection (check_query_corpus).
@@ -344,7 +350,7 @@ if [ "${QUALITY_PERF_ONLY:-0}" = "1" ]; then
 else
   tests_pid=""
   compat_pid=""
-  capture_async tests_and_coverage "$TESTS_DEFAULT" 900 "$tests_file" tests_pid collect_tests_and_coverage
+  capture_async tests_and_coverage "$TESTS_DEFAULT" "$QUALITY_TESTS_BUDGET_SECONDS" "$tests_file" tests_pid collect_tests_and_coverage
   capture_async compat "$COMPAT_DEFAULT" 1800 "$compat_file" compat_pid collect_compat
 
   for pid in "$tests_pid" "$compat_pid"; do
