@@ -18,6 +18,9 @@ const (
 	LabelReplacePrefix = "__lvp_lr:"
 	// BinaryPrefix opens a binary expression: `__binary__:<op>:<left>|||<right>` and the modifier text.
 	BinaryPrefix = "__binary__:"
+	// MatchingPrefix opens each vector matching modifier of a binary expression's modifier text, after the right
+	// operand: `@@@on:app, pod@@@group_left:x`, the keyword and its labels as the query spells them.
+	MatchingPrefix = "@@@"
 )
 
 // AppendWithoutMarker appends the `without` marker of labels (and the folding op, "" when the query's own

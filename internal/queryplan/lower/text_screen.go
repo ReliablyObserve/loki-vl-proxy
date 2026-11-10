@@ -16,10 +16,15 @@ import (
 // selector, around the range, are read alike by both). A metric query wrapped whole in parentheses is turned away
 // too (RangeAgg or VectorAgg parenthesized). Callers that hold the query text call it before Plan (or call
 // PlanQuery); a nil error means Plan may answer. Only the construct at the top of the plan matters: a range
-// aggregation alone reads blanks alike.
+// aggregation alone reads blanks alike. A binary operation and a label_replace call have screens of their own
+// (screenBinOp, screenLabelReplace), which screen their operands with this one.
 func ScreenText(query string, p *queryplan.Plan) error {
 	var parenthesized, padded *NotLoweredError
-	switch p.Root.(type) {
+	switch n := p.Root.(type) {
+	case *queryplan.BinOp:
+		return screenBinOp(query, n)
+	case *queryplan.LabelReplace:
+		return screenLabelReplace(query, n)
 	case *queryplan.VectorAgg:
 		parenthesized, padded = errVectorParenthesized, errBlankPadding
 	case *queryplan.RangeAgg:

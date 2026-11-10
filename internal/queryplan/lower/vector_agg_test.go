@@ -110,7 +110,7 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`stddev(rate({app="a"}[5m]))`:                                    "VectorAgg stddev",
 		`stdvar by (app) (count_over_time({app="a"}[5m]))`:               "VectorAgg stdvar",
 		`sum(sum by (app) (rate({app="a"}[5m])))`:                        "VectorAgg operand",
-		`sum(rate({app="a"}[5m])) / 2`:                                   "BinOp",
+		`sum without (a) (rate({app="a"}[5m])) / 2`:                      "BinOp operand without",
 		`sum(sum_over_time({app="a"} | unwrap n [5m]))`:                  "VectorAgg unwrap",
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`: "VectorAgg grouping",
 		`sum(rate({app="a"} | json [5m]))`:                               "VectorAgg parser",
@@ -212,9 +212,12 @@ func TestPlanVectorAggregationBlankPadding(t *testing.T) {
 			t.Errorf("%q: PlanQuery = %v, want not lowered: %s", q, err, construct)
 		}
 	}
+	// A binary of two parenthesized operands is not wrapped whole; the binary's screen reads its operands (each a
+	// phrase to the translator).
 	for _, q := range []string{`(sum(rate({app="a"}[5m]))) / (sum(rate({app="b"}[5m])))`} {
-		if err := ScreenText(q, rangeAggPlan(q)); err != nil {
-			t.Errorf("%q: turned away: %v", q, err)
+		var nl *NotLoweredError
+		if err := ScreenText(q, rangeAggPlan(q)); wrappedWhole(q) || !errors.As(err, &nl) || nl.Construct != "BinOp operand spelling" {
+			t.Errorf("%q: ScreenText = %v, want not lowered: BinOp operand spelling", q, err)
 		}
 	}
 	// A range aggregation alone reads the same text alike.
