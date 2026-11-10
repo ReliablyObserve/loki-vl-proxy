@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator. The text writer of the legacy encoding moved from
   `internal/translator` to `internal/queryplan/physical` (`physical.Encode`);
   `translator.EncodePhysical` is a wrapper over it.
+
+## [2.117.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers log queries with a `| json` or `| logfmt` parser (with
   `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
   with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
