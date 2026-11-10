@@ -53,9 +53,17 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			ps = streamValuePipes(ps, read, !parsed, prof.metric)
 			parsed = true
 		case *queryplan.Drop:
-			ps, err = dropPipes(st)
+			if prof.metric {
+				ps, err = metricDropPipes(st)
+			} else {
+				ps, err = dropPipes(st)
+			}
 		case *queryplan.Keep:
-			ps, err = keepPipes(st, names.label(prof.Label), prof)
+			if prof.metric {
+				ps, err = metricKeepPipes(st, names.label(prof.Label), prof)
+			} else {
+				ps, err = keepPipes(st, names.label(prof.Label), prof)
+			}
 		case *queryplan.Decolorize:
 			ps = []logsql.Pipe{translate.Decolorize()}
 		case *queryplan.LineFormat:
@@ -268,8 +276,11 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 type stageDefs []struct{ captured, defined []string }
 
 // definitions reads the labels the regexp, pattern and label_format stages of the query define; nil when there is
-// no such stage.
+// no such stage, and when no label filter and no keep follows to read them (a regexp is parsed to find its groups).
 func definitions(sel *queryplan.LogSelect) stageDefs {
+	if !readsDefinitions(sel) {
+		return nil
+	}
 	var defs stageDefs
 	for i, st := range sel.Stages {
 		switch st := st.(type) {
@@ -295,6 +306,18 @@ func definitions(sel *queryplan.LogSelect) stageDefs {
 		}
 	}
 	return defs
+}
+
+// readsDefinitions reports whether a stage reads the labels the regexp, pattern and label_format stages define: a
+// label filter (it names its label as defined, not as a parser key) and a keep (it translates its names with them).
+func readsDefinitions(sel *queryplan.LogSelect) bool {
+	for _, st := range sel.Stages {
+		switch st.(type) {
+		case *queryplan.LabelFilter, *queryplan.Keep:
+			return true
+		}
+	}
+	return false
 }
 
 // definedNames are the labels the stages before a stage define by name: the named groups of a regexp and the

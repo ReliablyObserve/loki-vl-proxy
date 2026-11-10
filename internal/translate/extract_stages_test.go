@@ -2,6 +2,8 @@ package translate
 
 import (
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -44,5 +46,30 @@ func TestExtractStageNames(t *testing.T) {
 	}
 	if got := PatternCaptureNames(`<a> <_> <b1_c> <_x> <1a> <a.b> <A>`); !reflect.DeepEqual(got, []string{"a", "b1_c", "A"}) {
 		t.Errorf("PatternCaptureNames = %v", got)
+	}
+}
+
+// RegexpCaptureNames parses the regexp with regexp/syntax where the translator compiles it: the names and the
+// verdict are the same for every regexp, valid or not.
+//
+// conformance: architecture-syntax-package-layering
+func TestRegexpCaptureNamesMatchCompile(t *testing.T) {
+	for _, pattern := range []string{
+		``, `a`, `(a)`, `(?P<a>x)`, `(?P<a>x)(?P<b>y)`, `(?P<a>x)|(?P<b>y)`, `(?P<a>(?P<b>x))`, `(?:(?P<a>x))`, `(?P<a>x)(?P<a>y)`,
+		`(?P<a_b>\d+)(\w+)`, `(?<a>x)`, `(?P<a>`, `(?P<a>x`, `(?P<1a>x)`, `(?P<a-b>x)`, `(?P<>x)`, `[`, `a{1001}`, `a{2,1}`, `(a{1000}){1000}`,
+		`(?i)(?P<é>x)`, `(?s:.)(?P<z>.)`, `\p{Foo}`, `(?P<a>x)\1`, `(?=x)`, `x**`, `(((((((((((((((((((((((((((((((((((((((((((((((((((a)))))))))))))))))))))))))))))))))))))))))))))))))))`,
+		"(?P<a>x)\n(?P<b>y)", `(?U)(?P<l>.*)`, `^(?P<ip>\S+) \S+ (?P<user>\S+) \[(?P<ts>[^\]]+)\]`, strings.Repeat(`(?P<a>x)`, 3), `(?P<` + strings.Repeat("n", 300) + `>x)`,
+	} {
+		var want []string
+		if re, err := regexp.Compile(pattern); err == nil {
+			for _, n := range re.SubexpNames() {
+				if n != "" {
+					want = append(want, n)
+				}
+			}
+		}
+		if got := RegexpCaptureNames(pattern); !reflect.DeepEqual(got, want) {
+			t.Errorf("RegexpCaptureNames(%q) = %v, regexp.Compile gives %v", pattern, got, want)
+		}
 	}
 }

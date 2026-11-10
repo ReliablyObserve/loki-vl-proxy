@@ -2,6 +2,7 @@ package translate
 
 import (
 	"regexp"
+	"regexp/syntax"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -41,14 +42,16 @@ func NoopPattern(pattern string) bool {
 }
 
 // RegexpCaptureNames are the names of the named groups of a regexp, the labels a `| regexp` stage defines. The
-// string translator reads them with regexp.Compile, so a regexp Go does not compile defines none.
+// string translator reads them with regexp.Compile, so a regexp Go does not compile defines none. Compile parses
+// the regexp with syntax.Perl and cannot fail after that, so parsing alone gives the same names and the same
+// verdict, without building the program (about half of the allocations).
 func RegexpCaptureNames(pattern string) []string {
-	re, err := regexp.Compile(pattern)
+	re, err := syntax.Parse(pattern, syntax.Perl)
 	if err != nil {
 		return nil
 	}
 	var names []string
-	for _, n := range re.SubexpNames() {
+	for _, n := range re.CapNames() {
 		if n != "" {
 			names = append(names, n)
 		}

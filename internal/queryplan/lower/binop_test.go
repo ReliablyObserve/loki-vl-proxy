@@ -109,7 +109,7 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`{app="a"} > 1`:                        "BinOp operand LogSelect",
 		`label_replace(` + rate + `, "a", "b", "c", "d") / 2`:                     "BinOp operand LabelReplace",
 		`stddev(` + rate + `) / 2`:                                                "BinOp operand VectorAgg",
-		`count_over_time({app="a"} | drop x [5m]) / 2`:                            "BinOp operand RangeAgg",
+		`rate({app="a"} | keep x [5m]) / 2`:                                       "BinOp operand RangeAgg",
 		`rate({app="a"} |~ "(?i)x" [5m]) / 2`:                                     "BinOp quoted text",
 		`rate({app="a"} |= "a  b" [5m]) / 2`:                                      "BinOp quoted text",
 		`rate({app="a"} |= "@@@" [5m]) / 2`:                                       "BinOp quoted text",
