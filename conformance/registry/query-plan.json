@@ -213,7 +213,7 @@
   "shadow": {
     "rows": 22926,
     "profiles": 12,
-    "native": 2340,
+    "native": 2472,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
@@ -221,7 +221,8 @@
       "LogSelect keep order": 12,
       "LogSelect label filter detected_level": 156,
       "LogSelect label filter numeric equality after parser": 48,
-      "LogSelect pipeline": 180,
+      "LogSelect line format function": 36,
+      "LogSelect pipeline": 12,
       "Opaque": 72,
       "RangeAgg": 5328,
       "Rank": 1665,

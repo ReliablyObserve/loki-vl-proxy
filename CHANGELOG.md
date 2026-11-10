@@ -71,6 +71,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spelling: the same query to VictoriaLogs, not the same bytes. No handler
   serves these queries from the lowering yet; the requests sent to
   VictoriaLogs do not change.
+- The query plan lowers `| line_format` and `| label_format` of log queries to
+  the VictoriaLogs query the string translator writes, byte for byte under
+  every translator profile (a keepLine profile copies the stored line aside
+  ahead of the first line_format), for templates of text and plain
+  `{{.name}}` fields and for renames; the labels a label_format sets are read
+  as they are by the filters after it. Of the 22,926 corpus rows x 12 profiles
+  the plan lowers 2,472 (was 2,340), 0 mismatches. The lowered text gives the
+  same line and labels as Loki's pipeline on 440 recorded Loki answers. It
+  leaves to the string translator the templates that are more than text and
+  plain fields (a function, a pipe, a condition, a dotted field, a trim marker,
+  an angle bracket in the text, a carriage return), a rename onto itself, a
+  name Loki reads as a keyword and a stream label named by the formatting,
+  which the translator copies into the query as it is or reads from text. No
+  handler serves these queries from the lowering yet; the requests sent to
+  VictoriaLogs do not change.
 
 ## [2.117.0] - 2026-11-10
 

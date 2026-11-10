@@ -6,7 +6,7 @@
     "parse_calls": 61,
     "string_reads": 50,
     "text_built": 209,
-    "translator_string_ops": 674
+    "translator_string_ops": 683
   },
   "files": {
     "deferred_raw": {
@@ -103,6 +103,7 @@
       "internal/translate/label_filter.go": 5,
       "internal/translate/label_filter_parsed.go": 6,
       "internal/translate/label_filter_regexp.go": 4,
+      "internal/translate/line_format.go": 10,
       "internal/translate/linefilter.go": 23,
       "internal/translate/linefilter_pattern.go": 9,
       "internal/translate/selector.go": 17,
@@ -117,7 +118,7 @@
       "internal/translator/plain_stream_labels.go": 21,
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
-      "internal/translator/translator.go": 377,
+      "internal/translator/translator.go": 376,
       "internal/translator/unwrap_gate.go": 5,
       "internal/translator/without_pushdown.go": 16
     }

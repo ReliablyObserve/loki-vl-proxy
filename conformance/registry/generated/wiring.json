@@ -23,18 +23,22 @@
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/extract_grid_test.go",
+      "internal/querycorpus/format_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/extract_test.go",
+      "internal/queryplan/lower/format_loki_test.go",
+      "internal/queryplan/lower/format_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/translate/extract_stages_test.go",
+      "internal/translate/line_format_test.go",
       "internal/translate/selector_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
@@ -2917,6 +2921,9 @@
     "internal/querycorpus/extract_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/format_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/label_filter_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2952,6 +2959,12 @@
     "internal/queryplan/lower/extract_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/format_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/format_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2980,6 +2993,9 @@
     "internal/translate/ip_line_filter_loki_test.go": [
       "semantics/ip-filter-precision",
       "semantics/ip-line-filter-ipv4-like-loki"
+    ],
+    "internal/translate/line_format_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/translate/linefilter_pattern_test.go": [
       "semantics/pattern-line-filter"
@@ -3802,7 +3818,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 425,
+  "tests_with_markers": 429,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
