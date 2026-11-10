@@ -83,6 +83,16 @@ func rangeAggGrid() []string {
 			add(fmt.Sprintf(`%s({app="a"}%s[5m])`, f, line))
 		}
 	}
+	// values the string translator sends in the client's spelling (a regexp line filter with an escape), and
+	// spellings it quotes as the lowering does.
+	for _, in := range []string{
+		`{app="a"} |~ "\x41b"`, `{app="a"} !~ "\x41b"`, `{app="a"} |~ "\101b"`, `{app="a"} |~ "\u00e9"`, `{app="a"} |~ "\x41" or "b"`,
+		`{app="\x41"}`, "{app=`a`}", `{app="a"} |= "\x41b"`, `{app="a"} | b="\x41"`, `{app="a\tb"}`,
+	} {
+		for _, f := range funcs {
+			add(fmt.Sprintf(`%s(%s [5m])`, f, in))
+		}
+	}
 	// functions that read an unwrapped value, and groupings.
 	for _, q := range []string{
 		`sum_over_time({app="a"} | unwrap x [5m])`, `avg_over_time({app="a"} | unwrap x [5m]) by (pod)`, `quantile_over_time(0.9, {app="a"} | unwrap x [5m])`,

@@ -60,6 +60,11 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if !ok {
 		return nil, &NotLoweredError{Construct: "RangeAgg stream label name"}
 	}
+	// The metric row's log query keeps the client's spelling of a regexp line filter as the log query does
+	// (keepsSpelling; it has no stream fields).
+	if keepsSpelling(ra.In, Profile{Label: prof.Label}) {
+		return nil, &NotLoweredError{Construct: "RangeAgg " + escapedSpellingConstruct}
+	}
 	q, err := logSelectQuery(ra.In, Profile{Label: prof.Label})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {

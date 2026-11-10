@@ -1547,6 +1547,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
@@ -1571,6 +1572,7 @@
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
@@ -2081,7 +2083,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 426,
+      "go": 428,
       "playwright": 1
     },
     "page_kinds": {

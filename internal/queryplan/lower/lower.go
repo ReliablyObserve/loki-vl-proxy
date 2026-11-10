@@ -55,6 +55,9 @@ func (e *NotLoweredError) Is(target error) bool { return target == ErrNotLowered
 func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	switch n := p.Root.(type) {
 	case *queryplan.LogSelect:
+		if keepsSpelling(n, prof) {
+			return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
+		}
 		return logSelect(n, prof)
 	case *queryplan.RangeAgg:
 		return rangeAgg(n, prof)
