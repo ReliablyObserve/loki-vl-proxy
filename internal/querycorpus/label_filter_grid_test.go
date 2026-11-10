@@ -148,6 +148,14 @@ func filterOnly(plan *queryplan.Plan) bool {
 // counts: rows both write, rows lowered natively, rows delegated by construct.
 func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated map[string]int, problems []string) {
 	t.Helper()
+	return gridShadow(t, grid, true)
+}
+
+// gridShadow is labelFilterShadow; with byteExact false a lowered text that is not the translator's byte for byte
+// still passes when VictoriaLogs' parser reads the two the same (physical.Equal): the spelling class of a quoted
+// argument written with escapes strconv.Quote spells otherwise, which the typed stage no longer holds.
+func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, delegated map[string]int, problems []string) {
+	t.Helper()
 	delegated = map[string]int{}
 	for _, q := range grid {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
@@ -183,7 +191,7 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
 			// The flip serves the lowering's text: byte for byte, which includes the parsed structure.
-			if text := physical.Encode(got); text != legacy || !physical.Equal(want, got) {
+			if text := physical.Encode(got); (byteExact && text != legacy) || !physical.Equal(want, got) {
 				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))
 				continue
 			}

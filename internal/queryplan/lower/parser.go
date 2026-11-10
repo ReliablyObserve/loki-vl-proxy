@@ -82,7 +82,7 @@ func hasParser(sel *queryplan.LogSelect) bool {
 }
 
 // lineFilterAfter answers NotLoweredError for a negative line filter (!=, !~, !>) right after a stage whose
-// text the string translator reads as holding the operator: a parser with flags or an extraction list, a drop or
+// text the string translator reads as holding the operator: a parser with flags, an extraction list or a quoted argument (regexp, pattern), a drop or
 // a keep of matchers. The translator takes the operator for part of the stage's arguments and writes no filter.
 func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 	lf := sel.Stages[i].(*queryplan.LineFilter)
@@ -92,7 +92,8 @@ func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 	arguments := false
 	switch prev := sel.Stages[i-1].(type) {
 	case *queryplan.Parse:
-		arguments = len(prev.Fields) > 0 || prev.Strict || prev.KeepEmpty
+		// A regexp or pattern has its quoted argument, which the translator also reads the operator into.
+		arguments = len(prev.Fields) > 0 || prev.Strict || prev.KeepEmpty || prev.Type == logql.ParserRegexp || prev.Type == logql.ParserPattern
 	case *queryplan.Drop:
 		arguments = len(prev.Matchers) > 0
 	case *queryplan.Keep:
