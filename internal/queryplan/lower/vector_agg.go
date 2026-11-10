@@ -1,7 +1,6 @@
 package lower
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -45,6 +44,7 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
 	}
+	src := ra.In
 	if unwrapStage(ra.In) != nil {
 		if ra.Op != logql.RangeAbsentOverTime {
 			return unwrapVector(va, ra, prof)
@@ -56,12 +56,13 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 		}
 		ra = stripped
 	}
-	return vectorAggOver(va, ra, prof)
+	return vectorAggOver(va, ra, src, prof)
 }
 
-// vectorAggOver is vectorAgg over the range aggregation ra, the operand of va.
-func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
-	b, err := buildVectorAgg(va, ra, prof)
+// vectorAggOver is vectorAgg over the range aggregation ra, the operand of va. src is the log query as the client
+// wrote it, which holds the unwrap stage that ra does not (the translator reads the series from the whole text).
+func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile) (physical.Op, error) {
+	b, err := buildVectorAgg(va, ra, src, prof)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,9 @@ func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile
 // builtVector is a vector aggregation over a range aggregation, lowered up to its stats: the log query of the
 // metric row, the stats pipes, and the clause of a without (which the proxy folds).
 type builtVector struct {
-	log     metricLog
+	log metricLog
+	// keys are the pipes that resolve the labels of the first stats pipe, each after a blank.
+	keys    string
 	stats   []logsql.Pipe
 	without bool
 	raw     []string
@@ -79,7 +82,7 @@ type builtVector struct {
 
 // buildVectorAgg is the lowering of va over ra: everything vectorAggOver writes except the final text, which a
 // nest of aggregations (nestedVectorAgg) extends with the stats of its outer levels first.
-func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (builtVector, error) {
+func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, src *queryplan.LogSelect, prof Profile) (builtVector, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
@@ -100,34 +103,34 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profil
 			return builtVector{}, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
-	var labels, raw []string
-	without := false
-	if g := va.By; g != nil {
-		if len(g.Labels) > 0 {
-			labels = translate.NormalizeByLabels(g.Labels, prof.Label)
-			if len(labels) == 0 {
-				return builtVector{}, &NotLoweredError{Construct: "VectorAgg grouping label"}
-			}
-		}
-		// A label named bool, with a blank on each side in the text, is a modifier to the translator's regexp.
-		if !g.Without && slices.Contains(g.Labels, "bool") {
-			return builtVector{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
-		}
-		if g.Without {
-			if len(g.Labels) == 0 {
-				return builtVector{}, &NotLoweredError{Construct: "VectorAgg without empty"}
-			}
-			without, raw, labels = true, g.Labels, nil
-		}
+	labels, raw, without, err := vectorClause(va, prof)
+	if err != nil {
+		return builtVector{}, err
 	}
 	log, err := metricLogQuery(ra.In, prof, "VectorAgg")
 	if err != nil {
 		return builtVector{}, err
 	}
+	// A fold over a parser, with a label filter or a drop after it, costs more allocations to write than the
+	// translator spends on the same text (the stage's own lowering does).
+	if without && log.parser && log.afterParser {
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg" + costConstruct}
+	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
-	if err := parserTextError(ra.In, log, rate || va.Op != logql.VectorSum, rate, labels, without); err != nil {
-		return builtVector{}, err
+	if readsUnwrapOrParser(ra.In, log, rate, !log.parser) {
+		return builtVector{}, errVectorQuotedClause
+	}
+	identity := seriesIdentity(log.parser)
+	seriesLevel := rate || va.Op != logql.VectorSum
+	if seriesLevel {
+		ident, err := seriesIdent(src, log.parser, without, "VectorAgg", prof)
+		if err != nil {
+			return builtVector{}, err
+		}
+		if ident != nil {
+			identity = ident
+		}
 	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if without || len(labels) > 0 {
@@ -139,8 +142,26 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profil
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
 		return builtVector{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
-	stats := rateVectorPipes(vectorStats(va.Op, fn, rate, seconds, labels, without, seriesIdentity(log.parser)), va.Op, labels, log, false)
-	return builtVector{log: log, stats: stats, without: without, raw: raw}, nil
+	stats := vectorStats(va.Op, fn, rate, seconds, labels, without, identity)
+	keys, err := vectorKeyPipes(stats, fn, log, rate && va.Op == logql.VectorSum && len(labels) > 0, seriesLevel || len(labels) > 0)
+	if err != nil {
+		return builtVector{}, err
+	}
+	// A rate summed by labels is built through the path that resolves them again, which finds the copy pipes of
+	// the log query and of the pipes that resolved them.
+	stats = rateVectorPipes(stats, va.Op, labels, log, log.holdsCopy() || keys.copies)
+	return builtVector{log: log, keys: keys.text, stats: stats, without: without, raw: raw}, nil
+}
+
+// vectorKeyPipes are the pipes that resolve the labels of the first of the stats pipes: the translator does that
+// where it builds the pipe with the grouping in hand (a rate, count, min, max and avg), or inserts the clause into
+// a sum (addByClause); site says it does. again says the rate's final stats resolves them once more.
+func vectorKeyPipes(stats []logsql.Pipe, fn logsql.StatsFunc, log metricLog, again, site bool) (keyed, error) {
+	if !site {
+		return keyed{}, nil
+	}
+	var byBuf [8]string
+	return log.keyPipes(firstBy(byBuf[:0], stats), fn, statArg(fn), "VectorAgg", again)
 }
 
 // op is the physical operator of the stats of b: the query, and for a without clause the fold of the series rows
@@ -160,7 +181,7 @@ func (b builtVector) op(foldOp string, prof Profile) physical.Op {
 	if needService {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
-	op := physical.Op(physical.VLQuery{Text: b.log.text(chain, service, b.stats...)})
+	op := physical.Op(physical.VLQuery{Text: b.log.text(chain, service, b.keys, b.stats...)})
 	if b.without {
 		op = physical.Fold{Levels: []physical.FoldLevel{{Op: foldOp, Labels: b.raw, Without: true}}, In: op}
 	}
@@ -285,58 +306,4 @@ func seriesIdentity(parser bool) []string {
 		return []string{"_stream"}
 	}
 	return []string{"_stream", "level"}
-}
-
-// parserVectorConstruct names the construct of a vector aggregation over a log query with a parser that the
-// lowering leaves to the translator, "" when it writes it. The translator folds a without clause over a parser by
-// the labels the parsers extract, which it reads from the text of the query, and, behind a json or logfmt unpack
-// (unpacked), resolves a grouping by a label that a parser may have stored under another spelling (a name with an
-// underscore).
-func parserVectorConstruct(labels []string, without, unpacked bool) string {
-	if without {
-		return "VectorAgg parser without"
-	}
-	if !unpacked {
-		return "" // only a json or logfmt unpack in the text makes the translator resolve the labels
-	}
-	for _, l := range labels {
-		if resolvableLabel(l) {
-			return "VectorAgg parser label"
-		}
-	}
-	return ""
-}
-
-// resolvableLabel reports whether the translator looks for a label under the other spellings of a parser key: a
-// name with an underscore that is not the first character, which is not a derived label.
-func resolvableLabel(label string) bool {
-	if label == "service_name" || label == translate.DetectedLevelLabel {
-		return false
-	}
-	if i := strings.IndexByte(label, '_'); i <= 0 {
-		return false
-	}
-	for i := 0; i < len(label); i++ {
-		c := label[i]
-		if name := c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 0; !name {
-			return false
-		}
-	}
-	return true
-}
-
-// parserTextError names the construct of a vector aggregation whose series identity the translator reads from the
-// parsers in the text of the query (quoted text that spells one, or a parser whose labels it resolves or folds) or
-// from a trailing keep (keepIdentityError, checked last). seriesLevel says the aggregation reads the series of the
-// rows (a rate, or count, min, max and avg).
-func parserTextError(in *queryplan.LogSelect, log metricLog, seriesLevel, rate bool, labels []string, without bool) error {
-	if readsUnwrapOrParser(in, log, rate, !log.parser) {
-		return errVectorQuotedClause
-	}
-	if log.parser {
-		if c := parserVectorConstruct(labels, without, log.unpacked()); c != "" {
-			return &NotLoweredError{Construct: c}
-		}
-	}
-	return keepIdentityError(in, "VectorAgg", seriesLevel)
 }

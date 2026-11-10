@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers the metric queries whose labels come from a parser,
+  for every translation profile: a grouping or unwrapped label with an
+  underscore behind `json` or `logfmt` (the `http_method` a line may hold as
+  `http.method` or `http-method`, and the `<name>_extracted` rename of a label
+  that collides with a stream label), a `without` clause over a parser, and
+  a `rate`, or `count`, `min`, `max` and `avg`, behind a trailing `keep`. The
+  text is the string translator's, byte for byte. The requests sent to
+  VictoriaLogs do not change. A label filter or a drop after the parser under
+  such a label, a `without` fold or a `keep`, a collision rename that reuses
+  the scratch fields of a label filter, a `keep` that leaves no label and a
+  nest over an unwrapped label are still written by the string translator.
 - The query plan lowers a vector aggregation over other ones (two or more
   levels of `sum`, `count`, `min`, `max` and `avg`, each with a `by` or
   `without` clause or none) over the range aggregations it already writes,

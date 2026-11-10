@@ -31,6 +31,7 @@
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/metric_stages_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
+      "internal/querycorpus/parser_labels_grid_test.go",
       "internal/querycorpus/parser_metric_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
@@ -51,6 +52,7 @@
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/metric_stages_test.go",
+      "internal/queryplan/lower/parser_labels_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/queryplan/lower/range_agg_test.go",
@@ -2979,6 +2981,9 @@
     "internal/querycorpus/parser_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/parser_labels_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/parser_metric_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3054,6 +3059,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/metric_stages_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/parser_labels_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/parser_test.go": [
@@ -3926,7 +3934,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 454,
+  "tests_with_markers": 456,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
