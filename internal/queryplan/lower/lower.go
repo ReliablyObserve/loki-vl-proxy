@@ -29,6 +29,8 @@ type Profile struct {
 	Label        func(string) string
 	StreamFields map[string]bool
 	KeepLine     bool
+	// metric says the log query is the one of a metric row (metricLogQuery).
+	metric bool
 }
 
 // ErrNotLowered is the error of a plan whose construct has no native lowering
@@ -90,7 +92,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	if err != nil {
 		return logsql.Query{}, err
 	}
-	lf, err := labelFilters(sel, prof, read)
+	// The label filters of a metric row read the field the stored value was put back into, not the copy.
+	filterRead := read
+	if prof.metric {
+		filterRead = nil
+	}
+	lf, err := labelFilters(sel, prof, filterRead)
 	if err != nil {
 		return logsql.Query{}, err
 	}

@@ -46,7 +46,12 @@ func RateStatsPipes(op logql.RangeOp, seconds float64) (pipes [3]logsql.Pipe, ok
 // RateStatsPipesOf is RateStatsPipes over the stats function fn of the rows: the count or the bytes of the lines,
 // or the sum of an unwrapped label's values (rate over an unwrapped label).
 func RateStatsPipesOf(fn logsql.StatsFunc, seconds float64) (pipes [3]logsql.Pipe) {
-	by := []logsql.GroupKey{{Field: "_stream"}, {Field: "level"}, {Field: DetectedLevelLabel}}
+	return RateStatsPipesBy(fn, seconds, []logsql.GroupKey{{Field: "_stream"}, {Field: "level"}, {Field: DetectedLevelLabel}})
+}
+
+// RateStatsPipesBy is RateStatsPipesOf per series of the grouping by: the stream alone for a log query with a
+// parser, which the translator takes to carry its own labels.
+func RateStatsPipesBy(fn logsql.StatsFunc, seconds float64, by []logsql.GroupKey) (pipes [3]logsql.Pipe) {
 	pipes[0] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: "__lvp_inner"}}}
 	pipes[1] = RateDivision(seconds)
 	pipes[2] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_rate"}}}}

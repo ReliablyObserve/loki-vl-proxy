@@ -44,6 +44,22 @@ func StreamValueFills(names []string) []logsql.Pipe {
 	return pipes
 }
 
+// StreamValueRestores are the pipes behind a parser of a metric query that put the stored value of each name back
+// into the field the parser overwrote (metric results carry no entry labels), where the entry has one: one
+// `format if` per name.
+func StreamValueRestores(names []string) []logsql.Pipe {
+	pipes := make([]logsql.Pipe, len(names))
+	for i, n := range names {
+		sv := StreamValueScratch + n
+		pipes[i] = logsql.PipeFormat{
+			Template:    "<" + sv + ">",
+			ResultField: n,
+			If:          logsql.FieldFilter{Field: sv, Op: logsql.FieldOpAny},
+		}
+	}
+	return pipes
+}
+
 // StreamValueDelete is the `| delete __lxsv_*` pipe that ends the query.
 func StreamValueDelete() logsql.Pipe {
 	return logsql.PipeDelete{Labels: []string{StreamValueScratch + "*"}}

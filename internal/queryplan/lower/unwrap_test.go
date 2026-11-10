@@ -109,8 +109,8 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`rate({app="a"} | unwrap n [0s])`:                                       "RangeAgg range",
 		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`:                "RangeAgg grouping",
 		`avg_over_time({app="a"} | unwrap n [5m]) by (bool)`:                    "RangeAgg grouping label",
-		`sum_over_time({app="a"} | json | unwrap n [5m])`:                       "RangeAgg parser",
-		`sum_over_time({app="a"} | logfmt | unwrap n [5m])`:                     "RangeAgg parser",
+		`sum_over_time({app="a"} | json | unwrap a_b [5m])`:                     "RangeAgg parser label",
+		`avg_over_time({app="a"} | logfmt | unwrap n [5m]) by (a_b)`:            "RangeAgg parser label",
 		`sum_over_time({app="a"} | unwrap n | drop x [5m])`:                     "RangeAgg drop or keep",
 		`sum_over_time({app="a"} | unwrap n | unwrap m [5m])`:                   "RangeAgg unwrap stages",
 		`sum_over_time({app="a"} | drop x | unwrap n [5m])`:                     "RangeAgg drop or keep",
@@ -127,7 +127,8 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		`sum without (x) (sum_over_time({x!="  "} | unwrap n [5m]))`:            "VectorAgg quoted clause",
 		`avg(sum_over_time({app="a"} |= "| json" | unwrap n [5m]))`:             "VectorAgg quoted clause",
 		`sum(sum_over_time({app="a"} |unwrap n [5m]))`:                          "VectorAgg unwrap spelling",
-		`sum(sum_over_time({app="a"} | json | unwrap n [5m]))`:                  "VectorAgg parser",
+		`sum(sum_over_time({app="a"} | json | unwrap a_b [5m]))`:                "VectorAgg parser label",
+		`sum without (x) (sum_over_time({app="a"} | json | unwrap n [5m]))`:     "VectorAgg parser without",
 		`sum(bytes_rate({app="a"} | unwrap n [5m]))`:                            "VectorAgg unwrap bytes_rate",
 		// the quoted text a translator regexp reads out of a rate or a count, min, max and avg (a parser in the text
 		// takes the level from their series identity, an unwrap makes a rate a sum).
@@ -193,8 +194,9 @@ func TestUnwrapFromText(t *testing.T) {
 			t.Errorf("%s: got %q %q %v, want %v", q, field, conv, ok, want)
 		}
 	}
-	if !textHasUnwrapOrParser("a | json", false) || !textHasUnwrapOrParser("a |\tlogfmt", false) || textHasUnwrapOrParser("a | jsonx", false) ||
-		textHasUnwrapOrParser("a | json_x", false) || textHasUnwrapOrParser("a | unwrap n", false) || !textHasUnwrapOrParser("a | unwrap n", true) {
+	if !textHasUnwrapOrParser("a | json", false, true) || !textHasUnwrapOrParser("a |\tlogfmt", false, true) || textHasUnwrapOrParser("a | jsonx", false, true) ||
+		textHasUnwrapOrParser("a | json_x", false, true) || textHasUnwrapOrParser("a | unwrap n", false, true) || !textHasUnwrapOrParser("a | unwrap n", true, true) ||
+		textHasUnwrapOrParser("a | json", false, false) || !textHasUnwrapOrParser("a | unwrap n", true, false) {
 		t.Error("textHasUnwrapOrParser reads the words wrong")
 	}
 }
@@ -229,6 +231,7 @@ func unwrapLowering(t testing.TB, q string, prof rangeProfile) (lowered, legacy 
 // conformance: architecture-syntax-package-layering
 func FuzzUnwrapLowering(f *testing.F) {
 	f.Add("a", "x", "level", "error", uint8(0), uint8(0), uint8(0), uint8(0), uint8(0))
+	f.Add("a", "x", "ab", "error", uint8(9), uint8(36), uint8(8), uint8(9), uint8(4))
 	f.Add("service_name", "é\n", "status", ".*", uint8(7), uint8(3), uint8(5), uint8(9), uint8(4))
 	f.Add("k8s.pod", "[5m]", "a-b", "10.0.0.0/8", uint8(200), uint8(9), uint8(11), uint8(31), uint8(77))
 	f.Fuzz(func(t *testing.T, sel, line, name, val string, fn, shape, rng, group, wrap uint8) {
@@ -262,7 +265,9 @@ func FuzzUnwrapLowering(f *testing.F) {
 			"stdvar_over_time", "quantile_over_time", "rate", "rate_counter", "absent_over_time"}
 		function := functions[int(fn)%len(functions)]
 		span := []string{`[5m]`, `[1ms]`, `[1d]`, `[1h30m]`, `[5m] offset 1h`, `[1m] offset 0s`}[rng%6]
-		body := selector + stage + ` ` + unwrap + ` ` + span
+		// a json or logfmt parser in front of the stage, behind which the series are the stream and the line.
+		parser := []string{``, ` | json`, ` | logfmt`, ` | json a, b`, ` | logfmt --strict`, ` | json | logfmt`}[rng>>3%6]
+		body := selector + parser + stage + ` ` + unwrap + ` ` + span
 		if function == "quantile_over_time" {
 			body = []string{"0.5", "0.95", "0", "1", "0.50"}[group%5] + ", " + body
 		}

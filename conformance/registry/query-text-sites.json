@@ -5,7 +5,7 @@
     "lowering_marker_reads": 11,
     "parse_calls": 61,
     "string_reads": 52,
-    "text_built": 211,
+    "text_built": 217,
     "translator_string_ops": 673
   },
   "files": {
@@ -97,7 +97,8 @@
       "internal/proxy/tail.go": 2,
       "internal/proxy/unwrap_conversion_error.go": 18,
       "internal/proxy/volume.go": 6,
-      "internal/queryplan/lower/unwrap.go": 2
+      "internal/queryplan/lower/range_agg.go": 3,
+      "internal/queryplan/lower/unwrap.go": 5
     },
     "translator_string_ops": {
       "internal/translate/detected_level.go": 38,

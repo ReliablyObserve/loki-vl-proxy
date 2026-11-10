@@ -21,7 +21,11 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, 
 	// once the stages themselves are known to lower, so a query reports its first cause.
 	var streamErr error
 	if names := translate.StreamLabelNames(prof.Label); len(names) > 0 && hasParser(sel) {
-		if readsStreamLabel(sel, names) {
+		if prof.metric {
+			// A metric query puts the stored value of every stream label back behind each parser (and so reads
+			// the label from its own field): the labels the pipeline reads make no difference.
+			read = names
+		} else if readsStreamLabel(sel, names) {
 			streamErr = &NotLoweredError{Construct: "LogSelect stream label after parser"}
 		} else if r, c := streamValues(sel, names); c != "" {
 			streamErr = &NotLoweredError{Construct: c}
@@ -37,7 +41,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, 
 		case *queryplan.LabelFilter:
 		case *queryplan.Parse:
 			ps, err = parserPipes(st)
-			ps = streamValuePipes(ps, read, !parsed)
+			ps = streamValuePipes(ps, read, !parsed, prof.metric)
 			parsed = true
 		case *queryplan.Drop:
 			ps, err = dropPipes(st)

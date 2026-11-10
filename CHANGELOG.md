@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers range and vector aggregations over a log query with
+  a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
+  filters behind the parser) to VictoriaLogs natively for every translation
+  profile: `count_over_time`, `bytes_over_time`, `absent_over_time`, `rate`
+  and `bytes_rate`, and the functions over an unwrapped label, alone and under
+  `sum`, `count`, `min`, `max` and `avg` with a `by` clause. The series are
+  the stream (and each line, for an unwrapped label), as the string
+  translator writes them; with the tenant's stream labels every stream value
+  is copied aside before the first parser and put back behind each. The
+  requests sent to VictoriaLogs are those of the string translator, byte for
+  byte, and the lowering takes about a third of the time of the translation
+  and allocates less memory. A grouping or unwrapped label with an underscore,
+  a `without` clause over a parser, `| regexp`, `| pattern` and `| unpack` are
+  still written by the string translator, and so is a query with quoted
+  text that spells an unpack pipe.
 - The query plan lowers the range functions over an unwrapped label
   (`sum_over_time`, `avg_over_time`, `min_over_time`, `max_over_time`,
   `first_over_time`, `last_over_time`, `stddev_over_time`, `stdvar_over_time`,

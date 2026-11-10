@@ -210,6 +210,17 @@ func unwrapGrid() []string {
 			}
 		}
 	}
+	// quoted unpack pipes: the translator resolves the labels of a stats, and looks for a copy pipe, when its text of
+	// the query holds one, a parser or not.
+	for _, v := range []string{`| unpack_json`, `| unpack_logfmt`, `| unpack_json | copy x`} {
+		for _, f := range []string{"count_over_time", "rate", "absent_over_time", "bytes_rate"} {
+			for _, g := range []string{``, `by (a)`, `by (a_b)`, `without (a)`} {
+				for _, op := range []string{"sum", "count", "avg"} {
+					wrap(op, g, call(f, fmt.Sprintf(`{app="a"} |= %q `, v), `[5m]`, ``))
+				}
+			}
+		}
+	}
 	// values the string translator sends in the client's spelling (a regexp line filter with an escape).
 	for _, in := range []string{
 		`{app="a"} |~ "\x41b"`, `{app="a"} !~ "\x41b"`, `{app="a"} |~ "\101b"`, `{app="\x41"}`, "{app=`a`}", `{app="a"} |= "\x41b"`, `{app="a"} | b="\x41"`, `{app="a\tb"}`,
