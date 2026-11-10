@@ -181,6 +181,12 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 	// The regexp and pattern parsers and decolorize add the captured names and the pipes among the filters.
 	grid = append(grid, validQueries(extractGrid())...)
+	// line_format and label_format add the templates, the renames and the keepLine copy; a stride of the grid.
+	for i, q := range validQueries(formatGrid()) {
+		if i%formatGridOracleStride == 0 {
+			grid = append(grid, q)
+		}
+	}
 	sentGrid := map[string]bool{}
 	for _, q := range grid {
 		if sentGrid[q] {
@@ -218,6 +224,10 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 // parsedGridOracleStride is the stride at which the label filter grid after a parser is sampled into the
 // VictoriaLogs oracle's inputs.
 const parsedGridOracleStride = 17
+
+// formatGridOracleStride is the stride at which the line_format and label_format grid is sampled into the
+// VictoriaLogs oracle's inputs.
+const formatGridOracleStride = 5
 
 // typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector with its line
 // filters, label filters, json and logfmt parsers, drop and keep), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for

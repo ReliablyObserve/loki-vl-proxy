@@ -17,7 +17,7 @@ import (
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
-		"LogSelect pipeline": `{app="a"} | line_format "{{.a}}"`,
+		"LogSelect pipeline": `{app="a"} | json | unwrap x`,
 		"LogSelect label filter numeric equality after parser": `{app="a"} | json | status=5`,
 		"LogSelect unpack parser":                              `{app="a"} | unpack`,
 		"RangeAgg":                                             `rate({app="a"}[5m])`,

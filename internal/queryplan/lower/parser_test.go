@@ -206,8 +206,6 @@ func TestPlanDelegatesParserShapes(t *testing.T) {
 		"{app=\"a\"} | regexp `(?P<a>\\d+)` != \"y\"": "LogSelect line filter after parser arguments",
 		"{app=\"a\"} | pattern `<a> <b>` !~ \"y\"":    "LogSelect line filter after parser arguments",
 		`{app="a"} | unpack`:                          "LogSelect unpack parser",
-		`{app="a"} | json | line_format "{{.a}}"`:     "LogSelect pipeline",
-		`{app="a"} | label_format a=b`:                "LogSelect pipeline",
 		`{app="a"} | json a="b\"c"`:                   "LogSelect json extraction",
 		"{app=\"a\"} | json a=`raw`":                  "LogSelect json extraction",
 		`{app="a"} | json a="b,c"`:                    "LogSelect json extraction",

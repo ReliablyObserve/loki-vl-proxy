@@ -45,7 +45,7 @@ func TestPlanLowersExtractStages(t *testing.T) {
 			}
 			if delegated {
 				// A stream-labels profile leaves the queries that name a stream label to the string translator.
-				if strings.HasPrefix(construct, "LogSelect stream label") || construct == "LogSelect pattern parser no-op with stream label" {
+				if strings.HasPrefix(construct, "LogSelect stream label") || construct == "LogSelect no-op pattern with stream label" {
 					continue
 				}
 				t.Errorf("%s: %s: not lowered (%s)", prof.name, q, construct)
@@ -74,7 +74,7 @@ func TestPlanDelegatesExtractShapes(t *testing.T) {
 		{"{app=\"a\"} | regexp `(?P<a>x)` !~ \"y\"", "LogSelect line filter after parser arguments", nil},
 		{"{app=\"a\"} | pattern `<a>` != \"y\"", "LogSelect line filter after parser arguments", nil},
 		{"{app=\"a\"} | pattern `<a>` !> \"<_> y\"", "LogSelect line filter after parser arguments", nil},
-		{"{app=\"a\"} | pattern `(.*)` | app=\"x\"", "LogSelect pattern parser no-op with stream label", label},
+		{"{app=\"a\"} | pattern `(.*)` | app=\"x\"", "LogSelect no-op pattern with stream label", label},
 	} {
 		p := planOf(t, c.q)
 		_, err := Plan(p, Profile{Label: c.label})

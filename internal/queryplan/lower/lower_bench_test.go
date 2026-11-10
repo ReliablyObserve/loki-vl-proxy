@@ -11,7 +11,7 @@ import (
 
 // The kinds of log query the benchmarks measure: line filters only, a pattern line filter (|> or !>) among them,
 // a label filter without a parser among them, a json or logfmt parser, a drop or a keep among them, and a label
-// filter after a parser, and a regexp or pattern parser or decolorize.
+// filter after a parser, a regexp or pattern parser or decolorize, and a line_format or label_format.
 const (
 	lineFilterQueries = iota
 	patternFilterQueries
@@ -19,6 +19,7 @@ const (
 	parserQueries
 	parsedLabelFilterQueries
 	extractQueries
+	formatQueries
 )
 
 // loweredLineFilterQueries are the plan corpus's log queries with line filters that the plan lowers natively and
@@ -56,6 +57,12 @@ func loweredParsedLabelFilterQueries(b *testing.B) []string {
 // parser or decolorize.
 func loweredExtractQueries(b *testing.B) []string {
 	return loweredQueries(b, extractQueries)
+}
+
+// loweredFormatQueries are the plan corpus's log queries the plan lowers natively that have a line_format or a
+// label_format.
+func loweredFormatQueries(b *testing.B) []string {
+	return loweredQueries(b, formatQueries)
 }
 
 func loweredQueries(b *testing.B, kind int) []string {
@@ -96,6 +103,8 @@ func filterKind(sel *queryplan.LogSelect) int {
 		switch st := st.(type) {
 		case *queryplan.Decolorize:
 			return extractQueries
+		case *queryplan.LineFormat, *queryplan.LabelFormat:
+			return formatQueries
 		case *queryplan.Parse:
 			if st.Type == logql.ParserRegexp || st.Type == logql.ParserPattern {
 				return extractQueries
@@ -303,6 +312,39 @@ func BenchmarkExtractQueriesTranslator(b *testing.B) {
 // The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
 func BenchmarkExtractQueriesLowered(b *testing.B) {
 	qs := loweredExtractQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		expr, err := logql.Parse(qs[i%len(qs)])
+		if err != nil {
+			b.Fatal(err)
+		}
+		p, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		queryplan.Resolve(p)
+		if _, err := Plan(p, Profile{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The string translator on the lowered queries with a line_format or a label_format: text to LogsQL text.
+func BenchmarkFormatQueriesTranslator(b *testing.B) {
+	qs := loweredFormatQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := translator.TranslateLogQLWithLabels(qs[i%len(qs)], nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
+func BenchmarkFormatQueriesLowered(b *testing.B) {
+	qs := loweredFormatQueries(b)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
