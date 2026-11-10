@@ -1553,6 +1553,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
     "internal/querycorpus/binop_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/binop_loki_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/binop_more_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
@@ -1584,6 +1585,7 @@
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
@@ -2117,7 +2119,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 457,
+      "go": 459,
       "playwright": 1
     },
     "page_kinds": {
