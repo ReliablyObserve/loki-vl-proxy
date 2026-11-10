@@ -311,3 +311,26 @@ func TestRangeCallBlankSpellingMatchesLoki(t *testing.T) {
 	}
 	t.Logf("%d spellings: Loki accepts %d and reads the same function as the plan", len(rows), accepted)
 }
+
+// The VictoriaLogs oracle's typed-selector pairs hold the plan to the translator on the rows the plan lowers: a range
+// aggregation spelled with a blank before the function's parenthesis is a phrase to the translator and is left to it
+// by the text screen, so it makes no pair (the oracle would read the plan's query and the translator's phrase as two
+// different queries).
+// conformance: semantics/translator-reads-blank-before-range-call-as-text
+func TestTypedPairLeavesBlankBeforeRangeCall(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	for q, want := range map[string]bool{
+		`rate({app="a"}[5m])`:                          true,
+		`count_over_time( {app="a"} |= "x" [5m])`:      true,
+		`rate ({app="a"}[5m])`:                         false,
+		"rate\t({app=\"a\"}[5m])":                      false,
+		"count_over_time\n({app=\"a\"} |= \"x\" [5m])": false,
+		`bytes_rate  ({app="a"}[5m] offset 1h)`:        false,
+	} {
+		for _, v := range []string{"v1.49.0", "v1.53.0"} {
+			if _, _, ok := typedQueryPair(q, v); ok != want {
+				t.Errorf("%s: %q: pair made %v, want %v", v, q, ok, want)
+			}
+		}
+	}
+}

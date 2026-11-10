@@ -231,7 +231,7 @@ const formatGridOracleStride = 5
 
 // typedSelectorPair is, for a client LogQL log query or range aggregation over one that the plan lowers natively
 // (a stream selector with its line filters, label filters, json and logfmt parsers, drop and keep), the query the
-// plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// plan lowers to (lower.PlanQuery) and the one the string translator writes for it, both for
 // version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
 // the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
 // rejection of them before it translates anything.
@@ -280,7 +280,8 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	queryplan.Resolve(plan)
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
-	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
+	// A spelling the translator reads as a phrase (ScreenText) is left to it: nothing to hold the plan to.
+	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {
 		return "", "", false
 	}
