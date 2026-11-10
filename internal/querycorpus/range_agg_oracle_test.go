@@ -27,12 +27,13 @@ func TestRangeAggVLOracle(t *testing.T) {
 	checkLoweredGridWithVL(t, "range", rangeAggGrid())
 }
 
-// TestVectorAggVLOracle is TestRangeAggVLOracle for the vector aggregations of vectorAggGrid: VictoriaLogs' parser
+// TestVectorAggVLOracle is TestRangeAggVLOracle for the vector aggregations of vectorAggGrid and the nests of
+// vectorAggNestedGrid: VictoriaLogs' parser
 // reads the query the lowering writes (the clean query, without the fold the proxy applies) as it reads the string
 // translator's.
 // conformance: architecture-syntax-package-layering
 func TestVectorAggVLOracle(t *testing.T) {
-	checkLoweredGridWithVL(t, "vector", vectorAggGrid())
+	checkLoweredGridWithVL(t, "vector", append(vectorAggGrid(), vectorAggNestedGrid()...))
 }
 
 // checkLoweredGridWithVL has VictoriaLogs' parser read, on every version of the matrix, the query the lowering
@@ -85,6 +86,10 @@ func checkLoweredGridWithVL(t *testing.T, name string, grid []string) {
 					continue
 				}
 				queryplan.Resolve(plan)
+				// A spelling the translator reads unlike the plan (a phrase search) is left to it.
+				if lower.ScreenText(q, plan) != nil {
+					continue
+				}
 				op, err := lower.Plan(plan, prof.lowerProfile())
 				if err != nil {
 					continue

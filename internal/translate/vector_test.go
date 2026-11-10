@@ -49,3 +49,26 @@ func TestNormalizeAndJoinByLabels(t *testing.T) {
 		t.Errorf("JoinByLabels = %q", got)
 	}
 }
+
+// A vector aggregation over another one keeps its own grouping labels that the series below have: a by list is cut
+// to them in its own order, a without list is subtracted, and no clause keeps none.
+// conformance: architecture-syntax-package-layering
+func TestLevelKeeps(t *testing.T) {
+	for _, c := range []struct {
+		kept, labels []string
+		without      bool
+		want         []string
+	}{
+		{[]string{"a", "b"}, []string{"b", "a", "c"}, false, []string{"b", "a"}},
+		{[]string{"a", "b"}, []string{"a", "a"}, false, []string{"a"}},
+		{[]string{"a", "b"}, nil, false, nil},
+		{nil, []string{"a"}, false, nil},
+		{[]string{"a", "b", "c"}, []string{"b", "x"}, true, []string{"a", "c"}},
+		{[]string{"a", "b"}, nil, true, []string{"a", "b"}},
+		{nil, []string{"a"}, true, nil},
+	} {
+		if got := LevelKeeps(c.kept, c.labels, c.without); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("LevelKeeps(%v, %v, %v) = %v, want %v", c.kept, c.labels, c.without, got, c.want)
+		}
+	}
+}

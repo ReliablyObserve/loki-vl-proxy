@@ -2,8 +2,9 @@ package translator
 
 import (
 	"regexp"
-	"slices"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // vectorLevel is one vector aggregation of a nested query, e.g. the
@@ -172,14 +173,7 @@ func tryTranslateVectorChain(logql string, labelFn LabelTranslateFunc) (query st
 	kept := levels[innermost].labels
 	for i := innermost - 1; i >= 0; i-- {
 		lv := levels[i]
-		switch {
-		case lv.without:
-			kept = subtractLabels(kept, lv.labels)
-		case lv.labels == nil:
-			kept = nil
-		default:
-			kept = intersectLabels(lv.labels, kept)
-		}
+		kept = translate.LevelKeeps(kept, lv.labels, lv.without)
 		aliased, _ := applyOuterAggregation(query+" as __lvp_inner", lv.op, "__lvp_inner")
 		query = addByClauseLast(aliased, strings.Join(kept, ", "), labelFn)
 	}
@@ -187,26 +181,10 @@ func tryTranslateVectorChain(logql string, labelFn LabelTranslateFunc) (query st
 }
 
 // intersectLabels returns the labels of want that are in have, in want's order.
-func intersectLabels(want, have []string) []string {
-	var out []string
-	for _, label := range want {
-		if slices.Contains(have, label) && !slices.Contains(out, label) {
-			out = append(out, label)
-		}
-	}
-	return out
-}
+func intersectLabels(want, have []string) []string { return translate.IntersectLabels(want, have) }
 
 // subtractLabels returns the labels of have that are not in drop.
-func subtractLabels(have, drop []string) []string {
-	var out []string
-	for _, label := range have {
-		if !slices.Contains(drop, label) {
-			out = append(out, label)
-		}
-	}
-	return out
-}
+func subtractLabels(have, drop []string) []string { return translate.SubtractLabels(have, drop) }
 
 // VectorChainRange returns, as the text it was written in, the expression under
 // the sum, avg, max, min and count levels of logql (in either spelling of a

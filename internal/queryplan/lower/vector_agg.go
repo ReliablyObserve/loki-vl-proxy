@@ -37,6 +37,9 @@ import (
 //   - a without clause with no label, a grouping label the label function turns into nothing, and a query whose
 //     text the translator would read as a clause or a stats pipe (a quoted `without`, `| stats`).
 func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
+	if _, nested := va.In.(*queryplan.VectorAgg); nested {
+		return nestedVectorAgg(va, prof)
+	}
 	ra, ok := va.In.(*queryplan.RangeAgg)
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
@@ -57,24 +60,43 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 
 // vectorAggOver is vectorAgg over the range aggregation ra, the operand of va.
 func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
+	b, err := buildVectorAgg(va, ra, prof)
+	if err != nil {
+		return nil, err
+	}
+	return b.op(string(va.Op), prof), nil
+}
+
+// builtVector is a vector aggregation over a range aggregation, lowered up to its stats: the log query of the
+// metric row, the stats pipes, and the clause of a without (which the proxy folds).
+type builtVector struct {
+	log     metricLog
+	stats   []logsql.Pipe
+	without bool
+	raw     []string
+}
+
+// buildVectorAgg is the lowering of va over ra: everything vectorAggOver writes except the final text, which a
+// nest of aggregations (nestedVectorAgg) extends with the stats of its outer levels first.
+func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (builtVector, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
-		return nil, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg " + string(va.Op)}
 	}
 	if ra.By != nil {
-		return nil, &NotLoweredError{Construct: "VectorAgg grouping"}
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg grouping"}
 	}
 	fn, ok := translate.RangeRowFunc(ra.Op)
 	if !ok {
-		return nil, &NotLoweredError{Construct: "VectorAgg unwrap"}
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg unwrap"}
 	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
 	seconds := 0.0
 	if rate {
 		// The translator reads the range's seconds from its text and writes none for a range of no length.
 		if seconds = ra.Range.Seconds(); seconds <= 0 {
-			return nil, &NotLoweredError{Construct: "VectorAgg range"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg range"}
 		}
 	}
 	var labels, raw []string
@@ -83,43 +105,49 @@ func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile
 		if len(g.Labels) > 0 {
 			labels = translate.NormalizeByLabels(g.Labels, prof.Label)
 			if len(labels) == 0 {
-				return nil, &NotLoweredError{Construct: "VectorAgg grouping label"}
+				return builtVector{}, &NotLoweredError{Construct: "VectorAgg grouping label"}
 			}
 		}
 		// A label named bool, with a blank on each side in the text, is a modifier to the translator's regexp.
 		if !g.Without && slices.Contains(g.Labels, "bool") {
-			return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 		}
 		if g.Without {
 			if len(g.Labels) == 0 {
-				return nil, &NotLoweredError{Construct: "VectorAgg without empty"}
+				return builtVector{}, &NotLoweredError{Construct: "VectorAgg without empty"}
 			}
 			without, raw, labels = true, g.Labels, nil
 		}
 	}
 	log, err := metricLogQuery(ra.In, prof, "VectorAgg")
 	if err != nil {
-		return nil, err
+		return builtVector{}, err
 	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
 	if err := parserTextError(ra.In, log, rate, labels, without); err != nil {
-		return nil, err
+		return builtVector{}, err
 	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if without || len(labels) > 0 {
 		if textReadAsClause(log) {
-			return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
+			return builtVector{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 		}
 	}
 	// Stripping a without clause, the translator also folds every run of blanks in the query into one.
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
-		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
+		return builtVector{}, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
 	stats := rateVectorPipes(vectorStats(va.Op, fn, rate, seconds, labels, without, seriesIdentity(log.parser)), va.Op, labels, log, false)
+	return builtVector{log: log, stats: stats, without: without, raw: raw}, nil
+}
+
+// op is the physical operator of the stats of b: the query, and for a without clause the fold of the series rows
+// by the operator foldOp (the aggregation at the top of the query), which the proxy runs itself.
+func (b builtVector) op(foldOp string, prof Profile) physical.Op {
 	chain, service := "", ""
 	var needChain, needService bool
-	for _, p := range stats {
+	for _, p := range b.stats {
 		if st, ok := p.(logsql.PipeStats); ok {
 			needChain = needChain || groupsBy(st, translate.DetectedLevelLabel)
 			needService = needService || groupsBy(st, "service_name")
@@ -131,11 +159,11 @@ func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile
 	if needService {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
-	op := physical.Op(physical.VLQuery{Text: log.text(chain, service, stats...)})
-	if without {
-		op = physical.Fold{Levels: []physical.FoldLevel{{Op: string(va.Op), Labels: raw, Without: true}}, In: op}
+	op := physical.Op(physical.VLQuery{Text: b.log.text(chain, service, b.stats...)})
+	if b.without {
+		op = physical.Fold{Levels: []physical.FoldLevel{{Op: foldOp, Labels: b.raw, Without: true}}, In: op}
 	}
-	return op, nil
+	return op
 }
 
 // vectorStats are the stats pipes of the aggregation over the rows of a range function fn (a rate divides by
@@ -143,21 +171,7 @@ func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile
 // (which groups by none: the proxy folds the series). identity is what tells a series apart (seriesIdentity).
 func vectorStats(op logql.VectorOp, fn logsql.StatsFunc, rate bool, seconds float64, labels []string, without bool, identity []string) []logsql.Pipe {
 	const inner, rated = "__lvp_inner", "__lvp_rate"
-	byKeys := func(fields []string) []logsql.GroupKey {
-		keys := make([]logsql.GroupKey, len(fields))
-		for i, f := range fields {
-			keys[i] = logsql.GroupKey{Field: f}
-		}
-		return keys
-	}
-	// stats is a stats pipe over by; the stream and its level also group by detected_level.
-	stats := func(by []string, f logsql.StatsFunc, alias string) logsql.PipeStats {
-		keys := byKeys(by)
-		if hasField(by, "_stream") && hasField(by, "level") && !hasField(by, translate.DetectedLevelLabel) {
-			keys = append(keys, logsql.GroupKey{Field: translate.DetectedLevelLabel})
-		}
-		return logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: f, Alias: alias}}}
-	}
+	stats := statsPipe
 	outerBy := func(fallback []string) []string {
 		switch {
 		case len(labels) > 0:
@@ -209,6 +223,19 @@ func vectorStats(op logql.VectorOp, fn logsql.StatsFunc, rate bool, seconds floa
 		}
 	}
 	return append(pipes, stats(outerBy(by), f, ""))
+}
+
+// statsPipe is a stats pipe of f over by; the stream and its level also group by detected_level, as the translator
+// rewrites every stats pipe that names both.
+func statsPipe(by []string, f logsql.StatsFunc, alias string) logsql.PipeStats {
+	keys := make([]logsql.GroupKey, len(by), len(by)+1)
+	for i, field := range by {
+		keys[i] = logsql.GroupKey{Field: field}
+	}
+	if hasField(by, "_stream") && hasField(by, "level") && !hasField(by, translate.DetectedLevelLabel) {
+		keys = append(keys, logsql.GroupKey{Field: translate.DetectedLevelLabel})
+	}
+	return logsql.PipeStats{By: keys, Funcs: []logsql.StatsFuncAlias{{Func: f, Alias: alias}}}
 }
 
 // groupsBy reports whether a stats pipe groups by the field.

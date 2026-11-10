@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers a vector aggregation over other ones (two or more
+  levels of `sum`, `count`, `min`, `max` and `avg`, each with a `by` or
+  `without` clause or none) over the range aggregations it already writes,
+  for every translation profile. The text is the string translator's, byte
+  for byte: the innermost level's query, then one `stats` pipe per level that
+  keeps the labels the level below kept, or the series rows and the fold the
+  proxy applies when the innermost level is a `without`. The requests sent to
+  VictoriaLogs do not change, and the lowering takes about half the time of
+  the translation and allocates less. `stddev` and `stdvar`, a ranked
+  aggregation, a binary or `label_replace` under the nest, a nest over an
+  unwrapped label and a `without` with no label are still written by the
+  string translator.
 - The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
   the comparisons) between range aggregations, vector aggregations without a
   `without` clause and numbers, with `on`, `ignoring`, `group_left` and
