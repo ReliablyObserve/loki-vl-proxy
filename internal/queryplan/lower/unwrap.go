@@ -52,41 +52,54 @@ func unwrapStage(sel *queryplan.LogSelect) *queryplan.Unwrap {
 // label (a stub the translator rejects) are left to it; the stages that stand after the unwrap stay where they
 // stand, as the translator keeps them.
 func stripUnwrap(sel *queryplan.LogSelect, owner string) (*queryplan.LogSelect, *queryplan.Unwrap, error) {
+	var rest queryplan.LogSelect
+	u, err := stripUnwrapInto(sel, &rest, owner)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &rest, u, nil
+}
+
+// stripUnwrapInto is stripUnwrap writing the query into rest, whose Stages may start with room (a caller that keeps
+// the query to itself gives it a stack array).
+func stripUnwrapInto(sel *queryplan.LogSelect, rest *queryplan.LogSelect, owner string) (*queryplan.Unwrap, error) {
 	var u *queryplan.Unwrap
 	idx := -1
 	for i, st := range sel.Stages {
 		if x, ok := st.(*queryplan.Unwrap); ok {
 			if u != nil {
-				return nil, nil, &NotLoweredError{Construct: owner + " unwrap stages"}
+				return nil, &NotLoweredError{Construct: owner + " unwrap stages"}
 			}
 			u, idx = x, i
 		}
 	}
 	if u == nil {
-		return nil, nil, &NotLoweredError{Construct: owner + " unwrap"}
+		return nil, &NotLoweredError{Construct: owner + " unwrap"}
 	}
 	if u.Label == "" {
-		return nil, nil, &NotLoweredError{Construct: owner + " unwrap label"}
+		return nil, &NotLoweredError{Construct: owner + " unwrap label"}
 	}
-	rest := *sel
-	rest.Stages = make([]queryplan.Stage, 0, len(sel.Stages)-1)
-	rest.Stages = append(append(rest.Stages, sel.Stages[:idx]...), sel.Stages[idx+1:]...)
-	return &rest, u, nil
+	stages := rest.Stages[:0]
+	*rest = *sel
+	rest.Stages = append(append(stages, sel.Stages[:idx]...), sel.Stages[idx+1:]...)
+	return u, nil
 }
 
 // unwrapLog lowers the log query of an unwrap aggregation: the query without its unwrap stage, as the metric row
 // writes it (metricLogQuery).
 func unwrapLog(sel *queryplan.LogSelect, prof Profile, owner string) (metricLog, *queryplan.Unwrap, error) {
-	rest, u, err := stripUnwrap(sel, owner)
+	var stages [8]queryplan.Stage
+	rest := queryplan.LogSelect{Stages: stages[:0]}
+	u, err := stripUnwrapInto(sel, &rest, owner)
 	if err != nil {
 		return metricLog{}, nil, err
 	}
-	log, err := metricLogQuery(rest, prof, owner)
+	log, err := metricLogQuery(&rest, prof, owner)
 	if err != nil {
 		return metricLog{}, nil, err
 	}
 	// The translator reads the unwrap and the parsers out of the text of the query, quoted strings included.
-	if textReadAsClause(log) || !log.parser && textHas(log, "| unpack_") || readsUnwrapOrParser(rest, log, true, !log.parser) {
+	if textReadAsClause(log) || !log.parser && textHas(log, "| unpack_") || readsUnwrapOrParser(&rest, log, true, !log.parser) {
 		return metricLog{}, nil, quotedClauseError(owner)
 	}
 	return log, u, nil
@@ -214,7 +227,11 @@ func (q *unwrapQuery) noteFirst(by []string, empty bool) {
 // it: a grouping by the stream and its level also groups by detected_level.
 func (q *unwrapQuery) stats(by []string, empty bool, fn logsql.StatsFunc, alias string) {
 	q.noteFirst(by, empty)
-	keys := make([]logsql.GroupKey, len(by), len(by)+1)
+	var keyBuf [4]logsql.GroupKey
+	keys := keyBuf[:len(by):len(keyBuf)]
+	if len(by) >= len(keyBuf) {
+		keys = make([]logsql.GroupKey, len(by), len(by)+1)
+	}
 	for i, f := range by {
 		keys[i] = logsql.GroupKey{Field: f}
 		q.chain = q.chain || f == translate.DetectedLevelLabel
@@ -312,7 +329,9 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 			return nil, &NotLoweredError{Construct: c}
 		}
 	}
-	q := unwrapQuery{parser: log.parser}
+	// The pipes start in room a query rarely outgrows.
+	var pipeBuf [4]string
+	q := unwrapQuery{parser: log.parser, pipes: pipeBuf[:0]}
 	switch {
 	case rate:
 		q.rate(op.fn, seconds)
@@ -420,8 +439,10 @@ func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) stri
 	if q.service {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
-	gate := translate.UnwrapGateFor(field, conv)
-	n := 0
+	// The gate is translate.UnwrapGateFor(field, conv) written in pieces.
+	match, convert := translate.UnwrapGateParts(field, conv)
+	inRange := translate.UnwrapInRange(conv)
+	n := len(match) + len(convert) + len(translate.UnwrapFilterPipe) + len(inRange)
 	for _, p := range q.pipes {
 		n += len(p) + 1
 	}
@@ -433,14 +454,17 @@ func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) stri
 		}
 	}
 	var b strings.Builder
-	log.write(&b, chain, service, len(gate)+n+40)
+	log.write(&b, chain, service, n+40)
 	// The translator drops the lines that have no value when a copy defines the label (a stored stream value, a json
 	// expression): it reads the unwrapped label among the fields the query defines.
 	if q.parser && log.has("| copy ") && log.has(" as "+field) {
 		b.WriteByte(' ')
 		b.WriteString(logsql.PipeFilter{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpAny}}.String())
 	}
-	b.WriteString(gate)
+	b.WriteString(match)
+	b.WriteString(convert)
+	b.WriteString(translate.UnwrapFilterPipe)
+	b.WriteString(inRange)
 	for _, p := range q.pipes {
 		b.WriteByte(' ')
 		b.WriteString(p)
@@ -522,7 +546,9 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 			return nil, &NotLoweredError{Construct: "VectorAgg parser label"}
 		}
 	}
-	q := unwrapQuery{parser: log.parser}
+	// The pipes start in room a query rarely outgrows.
+	var pipeBuf [4]string
+	q := unwrapQuery{parser: log.parser, pipes: pipeBuf[:0]}
 	if rate {
 		q.vectorRate(va.Op, op.fn, seconds, labels, without, log)
 	} else {
@@ -777,11 +803,15 @@ func plainIdent(s string) bool {
 // of the first stats pipe, when each is a plain name that does not start with an underscore. ok is false when the
 // unpack stays bare: a grouping that is none, or that holds the stream or the line.
 func narrowedFields(field string, by []string, empty bool) (names []string, ok bool) {
-	labels := append([]string{field}, by...)
 	if !empty && len(by) == 0 {
 		return nil, false
 	}
-	for _, l := range labels {
+	names = make([]string, 0, 1+len(by))
+	for i := -1; i < len(by); i++ {
+		l := field
+		if i >= 0 {
+			l = by[i]
+		}
 		if !plainIdent(l) || l[0] == '_' {
 			return nil, false
 		}

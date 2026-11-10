@@ -128,11 +128,14 @@ func UnwrapPlainConvert(field, infinityIf string) string {
 		" | math __lvp_n as " + UnwrapValueAlias
 }
 
+// UnwrapFilterPipe is what the range filter of the gate (UnwrapInRange) follows.
+const UnwrapFilterPipe = " | filter "
+
 // UnwrapGateFor is UnwrapGate for the unwrap conversion conv: "" (a plain
 // number), "duration" or "bytes".
 func UnwrapGateFor(field, conv string) string {
 	match, convert := UnwrapGateParts(field, conv)
-	return match + convert + " | filter " + UnwrapInRange(conv)
+	return match + convert + UnwrapFilterPipe + UnwrapInRange(conv)
 }
 
 // UnwrapGateParts returns the pipes of the gate of UnwrapGateFor in two pieces:
