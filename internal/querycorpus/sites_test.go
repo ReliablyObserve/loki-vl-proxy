@@ -104,7 +104,8 @@ func (c siteCounts) total(cat string) int {
 	return n
 }
 
-// countSites walks the production Go files under root/cmd and root/internal.
+// countSites walks the production Go files under root/cmd and root/internal
+// (internal/testutil, the test-only packages, is not production code).
 func countSites(t *testing.T, root string) siteCounts {
 	t.Helper()
 	counts := siteCounts{}
@@ -119,7 +120,7 @@ func countSites(t *testing.T, root string) siteCounts {
 			}
 			rel, _ := filepath.Rel(root, path)
 			rel = filepath.ToSlash(rel)
-			for _, own := range []string{"internal/logql/", "internal/logsql/", "internal/querycorpus/"} {
+			for _, own := range []string{"internal/logql/", "internal/logsql/", "internal/querycorpus/", "internal/testutil/"} {
 				if strings.HasPrefix(rel, own) {
 					return nil
 				}

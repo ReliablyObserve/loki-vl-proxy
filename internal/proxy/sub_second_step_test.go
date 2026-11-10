@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Sub-second steps. Grafana sends a step of 200 ms for a short panel, and Loki
@@ -42,7 +43,7 @@ import (
 //     FormatFloat(ms/1000, 'f', -1, 64)).
 
 // lokiMs is Loki's time of an evaluation at ns: whole milliseconds, truncated.
-func lokiMs(ns int64) int64 { return floorDiv(ns, int64(time.Millisecond)) }
+func lokiMs(ns int64) int64 { return vlemu.FloorDiv(ns, int64(time.Millisecond)) }
 
 // lokiTimeText is the text Loki writes for a time in milliseconds.
 func lokiTimeText(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', -1, 64) }
@@ -192,7 +193,7 @@ var statsByTimeRE = regexp.MustCompile(`\| stats by \(_time:(\d+)ns offset (-?\d
 type strictVL struct {
 	t     testing.TB
 	next  http.Handler
-	emu   *vlEmulator
+	emu   *vlemu.Emulator
 	mu    sync.Mutex
 	steps []int64 // the ns steps of the stats_query_range calls
 	// lastEvalNs is the last evaluation time of the request; a stats read must
@@ -212,10 +213,10 @@ func (s *strictVL) serveStatsByTime(w http.ResponseWriter, r *http.Request, m []
 	}
 	counts := map[bucket]int{}
 	var order []bucket
-	for _, row := range s.emu.selectRows(r) {
-		b := bucket{edge: floorDiv(row.ts+offset, size)*size - offset}
+	for _, row := range s.emu.SelectRows(r) {
+		b := bucket{edge: vlemu.FloorDiv(row.TS+offset, size)*size - offset}
 		if m[3] != "" {
-			b.pod = strings.TrimSuffix(row.stream[strings.Index(row.stream, `pod="`)+5:], `"}`)
+			b.pod = strings.TrimSuffix(row.Stream[strings.Index(row.Stream, `pod="`)+5:], `"}`)
 		}
 		if _, ok := counts[b]; !ok {
 			order = append(order, b)
@@ -237,7 +238,7 @@ func (s *strictVL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	if r.URL.Path == "/select/logsql/query" {
 		if m := statsByTimeRE.FindStringSubmatch(r.FormValue("query")); m != nil {
-			s.emu.record(r.URL.Path, r.FormValue("query"))
+			s.emu.Record(r.URL.Path, r.FormValue("query"))
 			s.serveStatsByTime(w, r, m)
 			return
 		}
@@ -297,7 +298,7 @@ type ssKind struct {
 	query func(window string) string
 	// value is the shape's sample for one series at one time, from the rows of
 	// that series that fall in the window (t-window, t]; false is no sample.
-	value func(rows []emuRow, windowSeconds float64) (float64, bool)
+	value func(rows []vlemu.Row, windowSeconds float64) (float64, bool)
 	// groupBy: the answer is one series per pod ("by (pod)" or per stream);
 	// otherwise one series that folds every pod (an ungrouped sum).
 	groupBy bool
@@ -307,10 +308,10 @@ var ssKinds = []ssKind{
 	{
 		name:  "sum-rate-unwrap",
 		query: func(w string) string { return fmt.Sprintf(`sum(rate({app="uw"} | unwrap amount [%s]))`, w) },
-		value: func(rows []emuRow, ws float64) (float64, bool) {
+		value: func(rows []vlemu.Row, ws float64) (float64, bool) {
 			var sum float64
 			for _, r := range rows {
-				sum += r.value
+				sum += r.Value
 			}
 			return sum / ws, len(rows) > 0
 		},
@@ -318,12 +319,12 @@ var ssKinds = []ssKind{
 	{
 		name:  "sum-count-over-time",
 		query: func(w string) string { return fmt.Sprintf(`sum(count_over_time({app="uw"}[%s]))`, w) },
-		value: func(rows []emuRow, _ float64) (float64, bool) { return float64(len(rows)), len(rows) > 0 },
+		value: func(rows []vlemu.Row, _ float64) (float64, bool) { return float64(len(rows)), len(rows) > 0 },
 	},
 	{
 		name:    "sum-by-pod-count-over-time",
 		query:   func(w string) string { return fmt.Sprintf(`sum by (pod) (count_over_time({app="uw"}[%s]))`, w) },
-		value:   func(rows []emuRow, _ float64) (float64, bool) { return float64(len(rows)), len(rows) > 0 },
+		value:   func(rows []vlemu.Row, _ float64) (float64, bool) { return float64(len(rows)), len(rows) > 0 },
 		groupBy: true,
 	},
 	{
@@ -331,10 +332,10 @@ var ssKinds = []ssKind{
 		query: func(w string) string {
 			return fmt.Sprintf(`avg_over_time({app="uw"} | unwrap amount [%s]) by (pod)`, w)
 		},
-		value: func(rows []emuRow, _ float64) (float64, bool) {
+		value: func(rows []vlemu.Row, _ float64) (float64, bool) {
 			var sum float64
 			for _, r := range rows {
-				sum += r.value
+				sum += r.Value
 			}
 			return sum / float64(len(rows)), len(rows) > 0
 		},
@@ -343,7 +344,7 @@ var ssKinds = []ssKind{
 	{
 		name:    "rate-per-stream",
 		query:   func(w string) string { return fmt.Sprintf(`rate({app="uw"}[%s])`, w) },
-		value:   func(rows []emuRow, ws float64) (float64, bool) { return float64(len(rows)) / ws, len(rows) > 0 },
+		value:   func(rows []vlemu.Row, ws float64) (float64, bool) { return float64(len(rows)) / ws, len(rows) > 0 },
 		groupBy: true,
 	},
 }
@@ -357,7 +358,7 @@ type ssScenario struct {
 	window                   time.Duration
 	instant                  bool // the time is endText
 	align                    bool // -align-queries-with-step: the bounds move down to the step grid
-	rows                     []emuRow
+	rows                     []vlemu.Row
 }
 
 func (s ssScenario) startNs() int64 { n, _ := lokiTimestamp(s.startText); return n }
@@ -429,13 +430,13 @@ func (s ssScenario) expected() map[string]map[string]float64 {
 	out := map[string]map[string]float64{}
 	ws := s.window.Seconds()
 	for _, t := range s.times() {
-		var inWindow []emuRow
+		var inWindow []vlemu.Row
 		for _, r := range s.rows {
-			if r.ts > t-int64(s.window) && r.ts <= t {
+			if r.TS > t-int64(s.window) && r.TS <= t {
 				inWindow = append(inWindow, r)
 			}
 		}
-		add := func(key string, rows []emuRow) {
+		add := func(key string, rows []vlemu.Row) {
 			v, ok := s.kind.value(rows, ws)
 			if !ok {
 				return
@@ -450,9 +451,9 @@ func (s ssScenario) expected() map[string]map[string]float64 {
 			continue
 		}
 		for _, pod := range []string{"a", "b"} {
-			var rows []emuRow
+			var rows []vlemu.Row
 			for _, r := range inWindow {
-				if r.stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
+				if r.Stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
 					rows = append(rows, r)
 				}
 			}
@@ -483,8 +484,8 @@ type ssResult struct {
 // VictoriaLogs.
 func (s ssScenario) run(t *testing.T, version string) ssResult {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version, floatPhase: true}
-	strict := &strictVL{t: t, next: emu.handler(), emu: emu}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version, FloatPhase: true}
+	strict := &strictVL{t: t, next: emu.Handler(), emu: emu}
 	if times := s.times(); len(times) > 0 {
 		strict.lastEvalNs = times[len(times)-1]
 	}
@@ -588,7 +589,7 @@ func (s ssScenario) check(t *testing.T, version string) ssResult {
 			}
 		}
 	}
-	if raw := res.strict.emu.endpointCalls("/select/logsql/query"); len(raw) > 0 && !s.beyondBucketBudget() {
+	if raw := res.strict.emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 && !s.beyondBucketBudget() {
 		t.Fatalf("%s: the metric read raw rows within the bucket budget: %s", s.label(), raw[0])
 	}
 	return res
@@ -596,10 +597,10 @@ func (s ssScenario) check(t *testing.T, version string) ssResult {
 
 // ssRows are rows over [lo, hi): random times, and some on a window edge or one
 // nanosecond either side of it.
-func ssRows(rnd *rand.Rand, s ssScenario, stepNs, lo, hi int64) []emuRow {
+func ssRows(rnd *rand.Rand, s ssScenario, stepNs, lo, hi int64) []vlemu.Row {
 	streams := []string{`{app="uw",pod="a"}`, `{app="uw",pod="b"}`}
 	values := []float64{0, 0.5, 1, 2.25, 3, 100.125, 7}
-	var rows []emuRow
+	var rows []vlemu.Row
 	n := 8 + rnd.Intn(60)
 	for i := 0; i < n; i++ {
 		ts := lo + rnd.Int63n(hi-lo)
@@ -613,9 +614,9 @@ func ssRows(rnd *rand.Rand, s ssScenario, stepNs, lo, hi int64) []emuRow {
 			// from one on it (windowPhaseFilter).
 			ts = edge + int64(rnd.Intn(3)-1)*int64(time.Millisecond)
 		}
-		rows = append(rows, emuRow{ts: ts, stream: streams[rnd.Intn(2)], value: values[rnd.Intn(len(values))]})
+		rows = append(rows, vlemu.Row{TS: ts, Stream: streams[rnd.Intn(2)], Value: values[rnd.Intn(len(values))]})
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ts < rows[j].ts })
+	sort.Slice(rows, func(i, j int) bool { return rows[i].TS < rows[j].TS })
 	return rows
 }
 
@@ -718,21 +719,21 @@ func TestSubSecondStepDifferential(t *testing.T) {
 
 // ssEdgeRows are dense rows, one every 37 ms on alternating pods, over
 // [from, to], plus rows on the edges of the first and the last window.
-func ssEdgeRows(s ssScenario, from, to int64) []emuRow {
+func ssEdgeRows(s ssScenario, from, to int64) []vlemu.Row {
 	values := []float64{0, 0.5, 1, 2.25, 3, 100.125, 7}
-	var rows []emuRow
+	var rows []vlemu.Row
 	from -= from % int64(time.Millisecond) // lines on the millisecond, as Loki's clients write them
 	for ts, i := from, 0; ts <= to; ts, i = ts+37*int64(time.Millisecond), i+1 {
-		rows = append(rows, emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), value: values[i%len(values)]})
+		rows = append(rows, vlemu.Row{TS: ts, Stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), Value: values[i%len(values)]})
 	}
 	for _, t := range []int64{s.startNs(), s.endNs()} {
 		for _, edge := range []int64{t, t - int64(s.window)} {
 			for d := int64(-1); d <= 1; d++ {
-				rows = append(rows, emuRow{ts: edge + d*int64(time.Millisecond), stream: `{app="uw",pod="a"}`, value: 3})
+				rows = append(rows, vlemu.Row{TS: edge + d*int64(time.Millisecond), Stream: `{app="uw",pod="a"}`, Value: 3})
 			}
 		}
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ts < rows[j].ts })
+	sort.Slice(rows, func(i, j int) bool { return rows[i].TS < rows[j].TS })
 	return rows
 }
 
@@ -812,16 +813,16 @@ func TestSubSecondStepGrafanaShapes(t *testing.T) {
 			start := int64(1_793_653_187_704) * int64(time.Millisecond)
 			s := ssScenario{kind: ssKinds[3], step: tc.step, window: 5 * time.Minute}
 			s.startText, s.endText = strconv.FormatInt(start, 10), strconv.FormatInt(start+int64(tc.span), 10)
-			var rows []emuRow
+			var rows []vlemu.Row
 			for ts, i := start-int64(s.window)-int64(time.Second), 0; ts <= start+int64(tc.span); ts, i = ts+127*int64(time.Millisecond), i+1 {
-				rows = append(rows, emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), value: float64(i % 11)})
+				rows = append(rows, vlemu.Row{TS: ts, Stream: fmt.Sprintf(`{app="uw",pod=%q}`, []string{"a", "b"}[i%2]), Value: float64(i % 11)})
 			}
 			s.rows = rows
 			if s.beyondBucketBudget() != tc.raw {
 				t.Fatalf("beyondBucketBudget = %v, want %v", s.beyondBucketBudget(), tc.raw)
 			}
 			res := s.check(t, "v1.53.0")
-			t.Logf("%s: %d series, raw-row reads: %d", tc.name, len(res.series), len(res.strict.emu.endpointCalls("/select/logsql/query")))
+			t.Logf("%s: %d series, raw-row reads: %d", tc.name, len(res.series), len(res.strict.emu.EndpointCalls("/select/logsql/query")))
 		})
 	}
 }
@@ -833,8 +834,8 @@ func TestSubSecondStepGrafanaShapes(t *testing.T) {
 //
 // conformance: semantics/sub-second-step-grid
 func TestSubMillisecondStepIsLokisInternalError(t *testing.T) {
-	emu := &vlEmulator{t: t, field: "amount"}
-	backend := httptest.NewServer(&strictVL{t: t, next: emu.handler(), emu: emu})
+	emu := &vlemu.Emulator{T: t, Field: "amount"}
+	backend := httptest.NewServer(&strictVL{t: t, next: emu.Handler(), emu: emu})
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(time.Minute, 100), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
@@ -1096,26 +1097,6 @@ func TestRestampInstantVectorBodies(t *testing.T) {
 	}
 }
 
-// windowPhaseKeeps evaluates the filter windowPhaseFilter writes for a line at
-// ts. With float false it is the ideal arithmetic the filter stands for: the
-// phase past the window start, exact in integers, kept when 0 < phase <= window
-// (the anchor's multiple-of-256 remainder and the 128 ns of tolerance are taken
-// out again). With float true it is what VictoriaLogs runs: math in float64,
-// which reads a time near 1.8e18 ns as the nearest multiple of 256 and takes
-// the remainder with math.Mod.
-func windowPhaseKeeps(ts, anchor, step, lower, upper int64, float bool) bool {
-	if float {
-		phase := math.Mod(float64(ts)-float64(anchor), float64(step))
-		return phase > float64(lower) && phase <= float64(upper)
-	}
-	rest, window := lower-128, upper-lower
-	phase := (ts - anchor - rest) % step
-	if phase < 0 {
-		phase += step
-	}
-	return phase > 0 && phase <= window
-}
-
 // A line exactly on an evaluation time is in that window ((t-window, t]), and
 // one exactly window earlier is not, however the time falls in float64. The CI
 // case of TestCompat_SubSecondStep: step 0.999 and a 600 ms window, aligned
@@ -1147,10 +1128,10 @@ func TestSubSecondStepLineOnTheWindowEdge(t *testing.T) {
 						case -windowMs:
 							pod, value = "b", 10
 						}
-						s.rows = append(s.rows, emuRow{ts: at + off*int64(time.Millisecond), stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: value})
+						s.rows = append(s.rows, vlemu.Row{TS: at + off*int64(time.Millisecond), Stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), Value: value})
 					}
 				}
-				sort.Slice(s.rows, func(i, j int) bool { return s.rows[i].ts < s.rows[j].ts })
+				sort.Slice(s.rows, func(i, j int) bool { return s.rows[i].TS < s.rows[j].TS })
 				s.check(t, version)
 			}
 		}

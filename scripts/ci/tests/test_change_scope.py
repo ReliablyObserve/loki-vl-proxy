@@ -1042,6 +1042,7 @@ class ShipsTests(unittest.TestCase):
             "internal/translator/testdata/fuzz/FuzzParseDropConditions/ba3bf070c9affc13",
             "internal/testdata/a.json",
             "pkg/a/b/testdata/c/d.txt",
+            "internal/testutil/vlemu/vlemu.go",
         ):
             with self.subTest(path):
                 self.assertFalse(ships(path))
@@ -1054,6 +1055,7 @@ class ShipsTests(unittest.TestCase):
             "internal/proxy/testdata.go",
             "internal/proxy/mytestdata/a.go",
             "internal/proxy/proxy_test.go.bak",
+            "internal/testutilx/a.go",
         ):
             with self.subTest(path):
                 self.assertTrue(ships(path))

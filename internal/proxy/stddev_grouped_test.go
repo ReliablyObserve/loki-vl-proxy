@@ -13,6 +13,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // The grouping and the operand of stddev and stdvar are read from the query as
@@ -367,12 +368,12 @@ func TestStdvarWithoutInstantAlwaysAnswersAVector(t *testing.T) {
 	const query = `stdvar without (app) (count_over_time(({namespace="prod"} |~".+bar")[1m]))`
 	for _, lines := range []int{0, 5} {
 		t.Run(fmt.Sprintf("lines=%d", lines), func(t *testing.T) {
-			var rows []emuRow
+			var rows []vlemu.Row
 			for i := 0; i < lines; i++ {
-				rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 - int64(i)*1e9, stream: stdStreamText(stdStreams[i%len(stdStreams)]), value: 1, msg: "bar"})
+				rows = append(rows, vlemu.Row{TS: 1_800_000_000_000_000_000 - int64(i)*1e9, Stream: stdStreamText(stdStreams[i%len(stdStreams)]), Value: 1, Msg: "bar"})
 			}
-			emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 			if err != nil {
@@ -420,10 +421,10 @@ func foldedStdRequest(t *testing.T, p *Proxy, query string, ranged bool) (int, [
 	return res.Code, res.Body.Bytes()
 }
 
-func foldedStdProxy(t *testing.T, rows []emuRow) *Proxy {
+func foldedStdProxy(t *testing.T, rows []vlemu.Row) *Proxy {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	t.Cleanup(backend.Close)
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
@@ -437,10 +438,10 @@ func foldedStdProxy(t *testing.T, rows []emuRow) *Proxy {
 // whole grouped expression as the operand, then folded one series to zero.
 // conformance: semantics/stddev-stdvar-grouped-values
 func TestStddevStdvarParenthesizedOuterQuery(t *testing.T) {
-	var rows []emuRow
+	var rows []vlemu.Row
 	for pod, n := range map[string]int{"p0": 2, "p1": 6} {
 		for i := 0; i < n; i++ {
-			rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(10+i)*1e9, stream: fmt.Sprintf(`{app="a",pod=%q}`, pod), value: 1, msg: "line"})
+			rows = append(rows, vlemu.Row{TS: 1_800_000_000_000_000_000 + int64(10+i)*1e9, Stream: fmt.Sprintf(`{app="a",pod=%q}`, pod), Value: 1, Msg: "line"})
 		}
 	}
 	p := foldedStdProxy(t, rows)
@@ -491,9 +492,9 @@ func TestStddevStdvarParenthesizedOuterQuery(t *testing.T) {
 //
 // conformance: semantics/stddev-stdvar-grouped-values
 func TestStddevStdvarCountsSeriesLimitOnTheGroups(t *testing.T) {
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 600; i++ {
-		rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(i%5)*1e9 + int64(i), stream: fmt.Sprintf(`{app=%q,pod="p%d"}`, []string{"a", "b", "c"}[i%3], i), value: 1, msg: "line"})
+		rows = append(rows, vlemu.Row{TS: 1_800_000_000_000_000_000 + int64(i%5)*1e9 + int64(i), Stream: fmt.Sprintf(`{app=%q,pod="p%d"}`, []string{"a", "b", "c"}[i%3], i), Value: 1, Msg: "line"})
 	}
 	p := foldedStdProxy(t, rows)
 	for _, ranged := range []bool{false, true} {
@@ -524,10 +525,10 @@ func TestStddevStdvarCountsSeriesLimitOnTheGroups(t *testing.T) {
 // conformance: semantics/stddev-stdvar-grouped-values
 func TestPostAggregationMergesWithoutByTheOperandsOperator(t *testing.T) {
 	// pods p0..p2 of app a hold 1, 2 and 6 lines, p4 and p5 of app c 3 and 5.
-	var rows []emuRow
+	var rows []vlemu.Row
 	for pod, n := range map[int]int{0: 1, 1: 2, 2: 6, 4: 3, 5: 5} {
 		for i := 0; i < n; i++ {
-			rows = append(rows, emuRow{ts: 1_800_000_000_000_000_000 + int64(10+pod*10+i)*1e9, stream: stdStreamText(stdStreams[pod]), value: 1, msg: "line"})
+			rows = append(rows, vlemu.Row{TS: 1_800_000_000_000_000_000 + int64(10+pod*10+i)*1e9, Stream: stdStreamText(stdStreams[pod]), Value: 1, Msg: "line"})
 		}
 	}
 	p := foldedStdProxy(t, rows)

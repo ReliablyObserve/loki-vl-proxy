@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Hardening of the settled steps (query_range_steps.go): the answers of
@@ -73,11 +75,11 @@ func qsGenerate(rnd *rand.Rand, fn, parser string, shape owShape) owCase {
 	}
 	for _, pod := range []string{"a", "b", "c"} {
 		for ts := lo + rnd.Int63n(gap); ts < hi; ts += gap/2 + rnd.Int63n(gap) {
-			row := emuRow{ts: ts, stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: values[rnd.Intn(len(values))]}
+			row := vlemu.Row{TS: ts, Stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), Value: values[rnd.Intn(len(values))]}
 			if rnd.Intn(5) == 0 { // on a window edge of a step, or 1ns beside it
-				row.ts = c.start - int64(c.offset) + int64(rnd.Intn(nSteps+8)-4)*int64(c.step) - int64(rnd.Intn(2))*int64(c.window) + int64(rnd.Intn(3)-1)
+				row.TS = c.start - int64(c.offset) + int64(rnd.Intn(nSteps+8)-4)*int64(c.step) - int64(rnd.Intn(2))*int64(c.window) + int64(rnd.Intn(3)-1)
 			}
-			if row.ts >= gapFrom && row.ts < gapTo {
+			if row.TS >= gapFrom && row.TS < gapTo {
 				continue
 			}
 			c.rows = append(c.rows, row)
@@ -117,10 +119,10 @@ func TestQueryRangeStepsLokiDifferential(t *testing.T) {
 						rnd := rand.New(rand.NewSource(int64(len(name))*7919 + int64(name[len(name)-3]) + int64(len(parser))))
 						for range 2 {
 							c := qsGenerate(rnd, fn, parser, shape)
-							emuOn := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
-							emuOff := &vlEmulator{t: t, rows: c.rows, field: "amount", version: version}
-							onSrv, _ := newExtentShim(t, emuOn.handler())
-							offSrv, _ := newExtentShim(t, emuOff.handler())
+							emuOn := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: version}
+							emuOff := &vlemu.Emulator{T: t, Rows: c.rows, Field: "amount", Version: version}
+							onSrv, _ := newExtentShim(t, emuOn.Handler())
+							offSrv, _ := newExtentShim(t, emuOff.Handler())
 							on := newExtentTestProxy(t, onSrv.URL, true, 64<<20)
 							off := newExtentTestProxy(t, offSrv.URL, false, 64<<20)
 							for _, p := range []*Proxy{on, off} {
@@ -184,19 +186,19 @@ func TestQueryRangeStepsRejectedValueReachedByMovedWindow(t *testing.T) {
 	for _, version := range []string{"v1.49.0", "v1.53.0"} {
 		for _, parser := range []string{"logfmt", "json"} {
 			t.Run(version+"/"+parser, func(t *testing.T) {
-				var rows []emuRow
+				var rows []vlemu.Row
 				for i := 0; i < 40*60/5; i++ {
 					for _, pod := range []string{"a", "b"} {
-						rows = append(rows, emuRow{ts: at(time.Duration(i) * 5 * time.Second), stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: float64(i%7) + 0.5})
+						rows = append(rows, vlemu.Row{TS: at(time.Duration(i) * 5 * time.Second), Stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), Value: float64(i%7) + 0.5})
 					}
 				}
 				// Two rejected values, one on the step 12m00s itself.
-				rows = append(rows, emuRow{ts: at(10*time.Minute + 3*time.Second), stream: `{app="uw",pod="a"}`, raw: "x7"},
-					emuRow{ts: at(12 * time.Minute), stream: `{app="uw",pod="b"}`, raw: "x7"})
-				emuOn := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
-				emuOff := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
-				onSrv, _ := newExtentShim(t, emuOn.handler())
-				offSrv, _ := newExtentShim(t, emuOff.handler())
+				rows = append(rows, vlemu.Row{TS: at(10*time.Minute + 3*time.Second), Stream: `{app="uw",pod="a"}`, Raw: "x7"},
+					vlemu.Row{TS: at(12 * time.Minute), Stream: `{app="uw",pod="b"}`, Raw: "x7"})
+				emuOn := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
+				emuOff := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
+				onSrv, _ := newExtentShim(t, emuOn.Handler())
+				offSrv, _ := newExtentShim(t, emuOff.Handler())
 				on := newExtentTestProxy(t, onSrv.URL, true, 64<<20)
 				off := newExtentTestProxy(t, offSrv.URL, false, 64<<20)
 				for _, p := range []*Proxy{on, off} {

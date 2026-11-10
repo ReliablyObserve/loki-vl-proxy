@@ -16,24 +16,25 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // extractionListFixture is the rows the shapes below read: four streams (two
 // namespaces, two pods each), three routes, a unique id in every line and an
 // amount. Over a window of 5m a stream holds several lines of several routes.
-func extractionListFixture() (rows []emuRow, end int64) {
+func extractionListFixture() (rows []vlemu.Row, end int64) {
 	end = int64(1_800_000_000) * 1e9
 	streams := []string{`{app="uw",ns="x",pod="a"}`, `{app="uw",ns="x",pod="b"}`, `{app="uw",ns="y",pod="a"}`, `{app="uw",ns="y",pod="c"}`}
 	routes := []string{"/x", "/y", "/z"}
 	for i := 0; i < 90; i++ {
 		route := routes[(i/4)%3]
 		amount := float64((i*37)%100 + 1)
-		rows = append(rows, emuRow{
-			ts:     end - int64(i)*9e9 - 3e8,
-			stream: streams[i%4],
-			labels: map[string]string{"id": strconv.Itoa(i), "route": route},
-			value:  amount,
-			msg:    fmt.Sprintf("amount=%v id=%d route=%s", amount, i, route),
+		rows = append(rows, vlemu.Row{
+			TS:     end - int64(i)*9e9 - 3e8,
+			Stream: streams[i%4],
+			Labels: map[string]string{"id": strconv.Itoa(i), "route": route},
+			Value:  amount,
+			Msg:    fmt.Sprintf("amount=%v id=%d route=%s", amount, i, route),
 		})
 	}
 	return rows, end
@@ -64,14 +65,14 @@ func runExtractionListShape(t *testing.T, query string, mode extractionListMode)
 
 // runExtractionListShapeRows is runExtractionListShape over the fixture rows
 // changed by edit (nil: unchanged).
-func runExtractionListShapeRows(t *testing.T, query string, mode extractionListMode, edit func([]emuRow) []emuRow) (sent []string, answer string) {
+func runExtractionListShapeRows(t *testing.T, query string, mode extractionListMode, edit func([]vlemu.Row) []vlemu.Row) (sent []string, answer string) {
 	t.Helper()
 	rows, end := extractionListFixture()
 	if edit != nil {
 		rows = edit(rows)
 	}
-	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
@@ -124,7 +125,7 @@ func runExtractionListShapeRows(t *testing.T, query string, mode extractionListM
 	}
 	sort.Strings(series)
 	for _, path := range []string{"/select/logsql/stats_query", "/select/logsql/stats_query_range", "/select/logsql/query"} {
-		sent = append(sent, emu.endpointCalls(path)...)
+		sent = append(sent, emu.EndpointCalls(path)...)
 	}
 	return sent, fmt.Sprintf("%d series: %s", len(series), strings.Join(series, "; "))
 }
@@ -312,20 +313,20 @@ var extractionListGoldens = map[string]extractionListGolden{
 func lokiExtractionListInstant(t *testing.T, query string) map[string]float64 {
 	t.Helper()
 	rows, end := extractionListFixture()
-	named := func(row emuRow, keys ...string) string {
-		key := row.stream
+	named := func(row vlemu.Row, keys ...string) string {
+		key := row.Stream
 		for _, k := range keys {
-			key += "|" + k + "=" + row.labels[k]
+			key += "|" + k + "=" + row.Labels[k]
 		}
 		return key
 	}
-	ns := func(stream string) string { return emuStreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2] }
+	ns := func(stream string) string { return vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1)[1][2] }
 	// perSeries: series key -> its values in the window.
 	perSeries := func(keys ...string) map[string][]float64 {
 		out := map[string][]float64{}
 		for _, row := range rows {
-			if row.ts > end-300e9 && row.ts <= end {
-				out[named(row, keys...)] = append(out[named(row, keys...)], row.value)
+			if row.TS > end-300e9 && row.TS <= end {
+				out[named(row, keys...)] = append(out[named(row, keys...)], row.Value)
 			}
 		}
 		return out

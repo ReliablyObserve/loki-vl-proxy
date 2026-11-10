@@ -16,20 +16,21 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // binaryAggregationAnswer sends query through the real handler against the
 // emulated VictoriaLogs and returns label set -> timestamp (s) -> value.
-func binaryAggregationAnswer(t *testing.T, emu *vlEmulator, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
+func binaryAggregationAnswer(t *testing.T, emu *vlemu.Emulator, query string, start, end int64, step time.Duration) (map[string]map[int64]float64, string) {
 	t.Helper()
 	return binaryAggregationAnswerFor(t, emu, "0", query, start, end, step)
 }
 
 // binaryAggregationAnswerFor is binaryAggregationAnswer for the tenants orgID names.
-func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query string, start, end int64, step time.Duration, configure ...func(*Config)) (map[string]map[int64]float64, string) {
+func binaryAggregationAnswerFor(t *testing.T, emu *vlemu.Emulator, orgID, query string, start, end int64, step time.Duration, configure ...func(*Config)) (map[string]map[int64]float64, string) {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	cfg := Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second}
 	for _, apply := range configure {
@@ -40,7 +41,7 @@ func binaryAggregationAnswerFor(t *testing.T, emu *vlEmulator, orgID, query stri
 		t.Fatal(err)
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -109,12 +110,12 @@ func binaryAggregationAnswerVia(t *testing.T, p *Proxy, orgID, query string, sta
 // sum_over_time of amount is p1=6, p2=4, p3=12.
 const binaryAggregationAt = int64(1_800_000_060) * 1e9
 
-func binaryAggregationRows() []emuRow {
-	row := func(offset int64, stream string, value float64) emuRow {
-		return emuRow{ts: binaryAggregationAt - offset*1e9, stream: stream, value: value}
+func binaryAggregationRows() []vlemu.Row {
+	row := func(offset int64, stream string, value float64) vlemu.Row {
+		return vlemu.Row{TS: binaryAggregationAt - offset*1e9, Stream: stream, Value: value}
 	}
 	p1, p2, p3 := `{app="uw",job="a",pod="p1"}`, `{app="uw",job="a",pod="p2"}`, `{app="uw",job="b",pod="p3"}`
-	return []emuRow{
+	return []vlemu.Row{
 		row(50, p1, 1), row(30, p1, 2), row(10, p1, 3),
 		row(40, p2, 4),
 		row(45, p3, 5), row(5, p3, 7),
@@ -135,14 +136,14 @@ func TestAggregationOverBinaryWithoutNamedExtractionKeepsStreamIdentity(t *testi
 		{"logfmt amount, route", 6, true},
 	} {
 		t.Run(tc.parser, func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
 			query := `sum without (pod) (rate({app="uw"} | ` + tc.parser + ` | unwrap amount [5m]) > 0)`
 			got, _ := binaryAggregationAnswerFor(t, emu, "0", query, end-900e9, end, time.Minute, func(cfg *Config) {
 				cfg.LabelStyle = LabelStyleUnderscores
 				cfg.MetadataFieldMode = MetadataFieldModeTranslated
 			})
 			if len(got) != tc.groups {
-				t.Fatalf("got %d series, want %d; stats=%v raw=%v", len(got), tc.groups, emu.endpointCalls("/select/logsql/stats_query_range"), emu.endpointCalls("/select/logsql/query"))
+				t.Fatalf("got %d series, want %d; stats=%v raw=%v", len(got), tc.groups, emu.EndpointCalls("/select/logsql/stats_query_range"), emu.EndpointCalls("/select/logsql/query"))
 			}
 			for labels := range got {
 				if strings.Contains(labels, `"id"`) || (strings.Contains(labels, `"route"`) != tc.route) {
@@ -160,15 +161,15 @@ func TestAggregationOverBinaryWideRangeRetriesWithinResponseBudget(t *testing.T)
 	const step = 20 * time.Second
 	end := binaryAggregationAt
 	start := end - int64(2*time.Hour)
-	rows := make([]emuRow, 0, 5*361)
+	rows := make([]vlemu.Row, 0, 5*361)
 	for pod := 0; pod < 5; pod++ {
 		stream := fmt.Sprintf(`{app="uw",job="a",pod="p%d"}`, pod)
 		for at := start; at <= end; at += int64(step) {
-			rows = append(rows, emuRow{ts: at, stream: stream, value: 1000})
+			rows = append(rows, vlemu.Row{TS: at, Stream: stream, Value: 1000})
 		}
 	}
 	query := `sum without (pod) (rate({app="uw"} | logfmt amount | unwrap amount [20s]) > 40)`
-	want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}, query, start, end, step)
+	want, _ := binaryAggregationAnswer(t, &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}, query, start, end, step)
 	if len(want) != 1 {
 		t.Fatalf("fixture should return one folded series, got %v", want)
 	}
@@ -177,7 +178,7 @@ func TestAggregationOverBinaryWideRangeRetriesWithinResponseBudget(t *testing.T)
 			t.Fatalf("fixture should exercise the full evaluation grid, got %d points", len(points))
 		}
 	}
-	got, _ := binaryAggregationAnswerFor(t, &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}, "0", query, start, end, step, func(cfg *Config) {
+	got, _ := binaryAggregationAnswerFor(t, &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}, "0", query, start, end, step, func(cfg *Config) {
 		cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = 64 << 10
 	})
 	if !reflect.DeepEqual(got, want) {
@@ -186,13 +187,13 @@ func TestAggregationOverBinaryWideRangeRetriesWithinResponseBudget(t *testing.T)
 }
 
 func TestAggregationOverBinaryBareLogMetricsUseStatsBuckets(t *testing.T) {
-	emu := &vlEmulator{t: t, rows: binaryAggregationRows(), version: "v1.52.0"}
+	emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Version: "v1.52.0"}
 	query := `sum by (job) (rate({app="uw"}[1m]) / count_over_time({app="uw"}[1m]))`
 	got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, time.Minute)
 	if len(got) == 0 {
 		t.Fatal("expected nonempty ratio")
 	}
-	for _, raw := range emu.endpointCalls("/select/logsql/query") {
+	for _, raw := range emu.EndpointCalls("/select/logsql/query") {
 		if !strings.Contains(raw, "| stats ") {
 			t.Fatalf("bare log metrics read raw rows instead of stats buckets: %s", raw)
 		}
@@ -204,13 +205,13 @@ func TestAggregationOverBinarySumRateScalarUsesGroupedStats(t *testing.T) {
 	query := `sum by (job) (rate({app="uw"}[1m]) / 2)`
 	base := `sum by (job) (rate({app="uw"}[1m])) / 2`
 	for _, step := range []time.Duration{0, time.Minute} {
-		emu := &vlEmulator{t: t, rows: rows, version: "v1.52.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}
 		got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, step)
-		want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		want, _ := binaryAggregationAnswer(t, &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("step %v: got %v, want %v", step, got, want)
 		}
-		for _, stats := range emu.endpointCalls("/select/logsql/stats_query_range") {
+		for _, stats := range emu.EndpointCalls("/select/logsql/stats_query_range") {
 			if strings.Contains(stats, "_stream") {
 				t.Fatalf("step %v: retained expensive per-stream grouping: %s", step, stats)
 			}
@@ -223,14 +224,14 @@ func TestAggregationOverBinaryRateCountRatioUsesActiveStreamCount(t *testing.T) 
 	query := `sum by (job) (rate({app="uw"}[1m]) / count_over_time({app="uw"}[1m]))`
 	base := `count by (job) (count_over_time({app="uw"}[1m])) / 60`
 	for _, step := range []time.Duration{0, time.Minute} {
-		emu := &vlEmulator{t: t, rows: rows, version: "v1.52.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}
 		got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-60e9, binaryAggregationAt, step)
-		want, _ := binaryAggregationAnswer(t, &vlEmulator{t: t, rows: rows, version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
+		want, _ := binaryAggregationAnswer(t, &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}, base, binaryAggregationAt-60e9, binaryAggregationAt, step)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("step %v: got %v, want %v", step, got, want)
 		}
-		if step > 0 && len(emu.endpointCalls("/select/logsql/stats_query_range")) != 1 {
-			t.Fatalf("step %v: expected one grouped stats read, got %v", step, emu.endpointCalls("/select/logsql/stats_query_range"))
+		if step > 0 && len(emu.EndpointCalls("/select/logsql/stats_query_range")) != 1 {
+			t.Fatalf("step %v: expected one grouped stats read, got %v", step, emu.EndpointCalls("/select/logsql/stats_query_range"))
 		}
 	}
 }
@@ -298,7 +299,7 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, version := range []string{"v1.52.0", "v1.49.0"} {
-				emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: version}
+				emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: version}
 				got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt, 0)
 				if resultType != "vector" {
 					t.Fatalf("%s %s: resultType %q, want vector", version, tc.query, resultType)
@@ -316,7 +317,7 @@ func TestAggregationOverBinaryEdgeCases(t *testing.T) {
 					t.Fatalf("%s %s:\n got %v\nwant %v", version, tc.query, flat, tc.want)
 				}
 				// Each operand is a VictoriaLogs stats query: no raw rows are read.
-				if raw := emu.endpointCalls("/select/logsql/query"); len(raw) > 0 {
+				if raw := emu.EndpointCalls("/select/logsql/query"); len(raw) > 0 {
 					t.Fatalf("%s %s: read raw rows: %v", version, tc.query, raw)
 				}
 			}
@@ -332,8 +333,8 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 	rows := binaryAggregationRows()
 	// A second minute: p1 once (amount 10), p3 once (amount 1); p2 is silent.
 	rows = append(rows,
-		emuRow{ts: binaryAggregationAt + 20e9, stream: `{app="uw",job="a",pod="p1"}`, value: 10},
-		emuRow{ts: binaryAggregationAt + 30e9, stream: `{app="uw",job="b",pod="p3"}`, value: 1},
+		vlemu.Row{TS: binaryAggregationAt + 20e9, Stream: `{app="uw",job="a",pod="p1"}`, Value: 10},
+		vlemu.Row{TS: binaryAggregationAt + 30e9, Stream: `{app="uw",job="b",pod="p3"}`, Value: 1},
 	)
 	// Rates: the ratio of the two is amount per line, as above. A sum_over_time
 	// range query is registered apart (semantics/unwrap-over-time-range-windows).
@@ -352,7 +353,7 @@ func TestAggregationOverBinaryRange(t *testing.T) {
 		{`avg without (pod) (` + count + ` * 180)`, map[string]map[int64]float64{`{"job":"a"}`: {t0: 6, t1: 3}, `{"job":"b"}`: {t0: 6, t1: 3}}},
 	} {
 		for _, version := range []string{"v1.52.0", "v1.49.0"} {
-			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
 			got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt+60e9, time.Minute)
 			if resultType != "matrix" {
 				t.Fatalf("%s %s: resultType %q, want matrix", version, tc.query, resultType)
@@ -384,7 +385,7 @@ func TestAggregationOverBinaryMultiTenant(t *testing.T) {
 		{`sum by (job) (` + amount + ` / ` + count + `)`, map[string]float64{`{"job":"a"}`: 6, `{"job":"b"}`: 6}},
 	} {
 		for _, step := range []time.Duration{0, time.Minute} {
-			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.49.0"}
+			emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.49.0"}
 			got, resultType := binaryAggregationAnswerFor(t, emu, "0|1", tc.query, binaryAggregationAt, binaryAggregationAt, step)
 			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
 				t.Fatalf("step=%v %s: resultType %q, want %q", step, tc.query, resultType, want)
@@ -418,21 +419,21 @@ func TestAggregationOverBinaryKeepsEachOperandsParser(t *testing.T) {
 	const inner = `sum by (job) ( sum_over_time( {app="uw"} |= "level=error" | json | avg=5 and bar<25ms | unwrap duration(latency) | __error__!~".*" [5m] ) / count_over_time({app="uw"} | logfmt | label_format foo=bar[5m]) )`
 	for _, step := range []time.Duration{0, time.Minute} {
 		for _, query := range []string{inner, `label_replace( ` + inner + `, "foo", "$1", "service", "(.*):.*" )`} {
-			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.52.0"}
 			_, resultType := binaryAggregationAnswer(t, emu, query, binaryAggregationAt-300e9, binaryAggregationAt, step)
 			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
 				t.Fatalf("step=%v: resultType %q, want %q", step, resultType, want)
 			}
 			var jsonOperand, logfmtOperand bool
-			for _, call := range emu.calls {
-				if call.path == "/select/logsql/query" && strings.Contains(call.query, " / ") {
+			for _, call := range emu.Calls {
+				if call.Path == "/select/logsql/query" && strings.Contains(call.Query, " / ") {
 					continue // the parser probe of the whole query string
 				}
-				jsonOperand = jsonOperand || (strings.Contains(call.query, "unpack_json") && strings.Contains(call.query, "level=error"))
-				logfmtOperand = logfmtOperand || (strings.Contains(call.query, "unpack_logfmt") && !strings.Contains(call.query, "level=error"))
+				jsonOperand = jsonOperand || (strings.Contains(call.Query, "unpack_json") && strings.Contains(call.Query, "level=error"))
+				logfmtOperand = logfmtOperand || (strings.Contains(call.Query, "unpack_logfmt") && !strings.Contains(call.Query, "level=error"))
 			}
 			if !jsonOperand || !logfmtOperand {
-				t.Fatalf("step=%v: an operand lost its parser (json %v, logfmt %v): %v", step, jsonOperand, logfmtOperand, emu.calls)
+				t.Fatalf("step=%v: an operand lost its parser (json %v, logfmt %v): %v", step, jsonOperand, logfmtOperand, emu.Calls)
 			}
 		}
 	}
@@ -471,9 +472,9 @@ func TestAggregationOverBinaryMixedParsersAfterTheParserProbe(t *testing.T) {
 		for _, step := range []time.Duration{0, time.Minute} {
 			rows := binaryAggregationRows()
 			for i := range rows {
-				rows[i].msg = fmt.Sprintf(`{"amount":%g}`, rows[i].value)
+				rows[i].Msg = fmt.Sprintf(`{"amount":%g}`, rows[i].Value)
 			}
-			emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.49.0"}
+			emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.49.0"}
 			got, resultType := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt-300e9, binaryAggregationAt, step)
 			if want := map[bool]string{true: "vector", false: "matrix"}[step == 0]; resultType != want {
 				t.Fatalf("step=%v %s: resultType %q, want %q", step, tc.query, resultType, want)
@@ -533,12 +534,12 @@ func TestParserProbeLeavesBinariesToTheirOperands(t *testing.T) {
 // conformance: semantics/aggregation-over-binary-dropped, loki_api_v1_query
 func TestAggregationOverBinaryMixedOffset(t *testing.T) {
 	rows := append(binaryAggregationRows(),
-		emuRow{ts: binaryAggregationAt + 20e9, stream: `{app="uw",job="a",pod="p1"}`, value: 10},
-		emuRow{ts: binaryAggregationAt + 30e9, stream: `{app="uw",job="b",pod="p3"}`, value: 1},
+		vlemu.Row{TS: binaryAggregationAt + 20e9, Stream: `{app="uw",job="a",pod="p1"}`, Value: 10},
+		vlemu.Row{TS: binaryAggregationAt + 30e9, Stream: `{app="uw",job="b",pod="p3"}`, Value: 1},
 	)
 	// A minute earlier: p1=3, p2=1, p3=2; now: p1=1, p3=1.
 	query := `sum(sum by (job, pod) (count_over_time({app="uw"}[1m] offset 1m)) / sum by (job, pod) (count_over_time({app="uw"}[1m])))`
-	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
 	got, _ := binaryAggregationAnswer(t, emu, query, 0, binaryAggregationAt+60e9, 0)
 	if want := map[string]map[int64]float64{`{}`: {binaryAggregationAt/1e9 + 60: 5}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -564,7 +565,7 @@ func TestBinaryWithLabelReplaceOperandStaysBinary(t *testing.T) {
 			`{"dst":"a"}`: 2, `{"dst":"b"}`: 1},
 	} {
 		for _, step := range []time.Duration{0, time.Minute} {
-			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.52.0"}
 			got, _ := binaryAggregationAnswer(t, emu, query, binaryAggregationAt, binaryAggregationAt, step)
 			flat := map[string]float64{}
 			for key, points := range got {
@@ -590,12 +591,12 @@ func TestAggregationOverBinaryUniformOffset(t *testing.T) {
 		rate   = `sum by (job, pod) (rate({app="uw"} | unwrap amount [1m] offset 1h))`
 	)
 	at := binaryAggregationAt + 3600e9
-	emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+	emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.52.0"}
 	got, _ := binaryAggregationAnswer(t, emu, `sum by (job) (`+amount+` / `+count+`)`, 0, at, 0)
 	if want := map[string]map[int64]float64{`{"job":"a"}`: {at / 1e9: 6}, `{"job":"b"}`: {at / 1e9: 6}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("instant: got %v, want %v", got, want)
 	}
-	emu = &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+	emu = &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.52.0"}
 	got, _ = binaryAggregationAnswer(t, emu, `max(`+rate+` / `+count+`)`, at-60e9, at, time.Minute)
 	if want := map[string]map[int64]float64{`{}`: {at / 1e9: 6.0 / 60}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("range: got %v, want %v", got, want)
@@ -622,7 +623,7 @@ func TestAggregationOverBinaryUnderLabelTransforms(t *testing.T) {
 		{`label_replace(label_replace(` + inner + `, "dst", "$1", "job", "(.*)"), "job", "x", "", "")`, map[string]float64{`{"dst":"a","job":"x"}`: 6, `{"dst":"b","job":"x"}`: 6}},
 	} {
 		for _, step := range []time.Duration{0, time.Minute} {
-			emu := &vlEmulator{t: t, rows: binaryAggregationRows(), field: "amount", version: "v1.52.0"}
+			emu := &vlemu.Emulator{T: t, Rows: binaryAggregationRows(), Field: "amount", Version: "v1.52.0"}
 			got, _ := binaryAggregationAnswer(t, emu, tc.query, binaryAggregationAt, binaryAggregationAt, step)
 			want := map[string]map[int64]float64{}
 			for key, v := range tc.want {

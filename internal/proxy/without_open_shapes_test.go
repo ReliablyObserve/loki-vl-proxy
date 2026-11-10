@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file reproduces the shapes around `without` that the proxy still answers
@@ -60,8 +61,8 @@ func openShapeFormat(values []float64) string {
 // VictoriaLogs and returns the series by their ns/pod labels.
 func openShapeRun(t *testing.T, query string, instant bool) openShapeAnswer {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: withoutScopeRows(), field: "amount", version: "v1.52.0"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: withoutScopeRows(), Field: "amount", Version: "v1.52.0"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	return openShapeRunAgainst(t, backend.URL, query, instant)
 }
@@ -130,11 +131,11 @@ func openShapeStreams(fn string, window time.Duration, instant bool) map[string]
 	byStream := map[string][]sample{}
 	for _, row := range withoutScopeRows() {
 		var labels = map[string]string{}
-		for _, m := range emuStreamLabelRE.FindAllStringSubmatch(row.stream, -1) {
+		for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
 			labels[m[1]] = m[2]
 		}
 		key := openShapeSeriesKey(labels)
-		byStream[key] = append(byStream[key], sample{row.ts, row.value})
+		byStream[key] = append(byStream[key], sample{row.TS, row.Value})
 	}
 	out := map[string][]float64{}
 	for key, samples := range byStream {
@@ -496,8 +497,8 @@ func TestLabelReplaceOnAVectorAddsTheLabelAtAnInstant(t *testing.T) {
 	const query = `label_replace(sum by (ns) (max_over_time({app="uw"} | unwrap amount [5m])), "dst", "$1", "ns", "(.*)")`
 	for _, instant := range []bool{false, true} {
 		t.Run(fmt.Sprintf("instant=%v", instant), func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: withoutScopeRows(), field: "amount", version: "v1.52.0"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: t, Rows: withoutScopeRows(), Field: "amount", Version: "v1.52.0"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			got := openShapeRunAgainst(t, backend.URL, query, instant)
 			if got.code != http.StatusOK {
@@ -522,20 +523,20 @@ func TestLabelReplaceOfABinaryExpressionRoutesByTheBinary(t *testing.T) {
 	const query = `label_replace(sum by (ns) (rate({app="uw"}[5m])) / sum by (ns) (rate({app="uw"}[5m])), "dst", "$1", "ns", "(.*)")`
 	for _, instant := range []bool{false, true} {
 		t.Run(fmt.Sprintf("instant=%v", instant), func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: withoutScopeRows(), field: "amount", version: "v1.52.0"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: t, Rows: withoutScopeRows(), Field: "amount", Version: "v1.52.0"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			got := openShapeRunAgainst(t, backend.URL, query, instant)
 			if got.code != http.StatusOK {
 				t.Fatalf("%d %s", got.code, got.raw)
 			}
-			emu.mu.Lock()
-			for _, c := range emu.calls {
-				if strings.Contains(c.query, "__binary__:") {
-					t.Errorf("the binary marker reached VictoriaLogs: %s %s", c.path, c.query)
+			emu.Mu.Lock()
+			for _, c := range emu.Calls {
+				if strings.Contains(c.Query, "__binary__:") {
+					t.Errorf("the binary marker reached VictoriaLogs: %s %s", c.Path, c.Query)
 				}
 			}
-			emu.mu.Unlock()
+			emu.Mu.Unlock()
 			if len(got.series) != 2 || got.series["ns=x"] == "" || got.series["ns=y"] == "" {
 				t.Fatalf("want the series ns=x and ns=y, as Loki answers: %v\n%s", got.series, got.raw)
 			}
