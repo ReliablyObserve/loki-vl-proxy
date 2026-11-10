@@ -50,75 +50,105 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if ra.By != nil {
 		return nil, &NotLoweredError{Construct: "RangeAgg grouping"}
 	}
-	if c := rangeInnerConstruct(ra.In); c != "" {
-		return nil, &NotLoweredError{Construct: c}
+	log, err := metricLogQuery(ra.In, prof, "RangeAgg")
+	if err != nil {
+		return nil, err
+	}
+	if rate {
+		// One allocation for the text: the chain is most of it.
+		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:]...)}, nil
+	}
+	var b strings.Builder
+	log.write(&b, "", "", 80)
+	b.WriteByte(' ')
+	b.WriteString(stats.String())
+	return physical.VLQuery{Text: b.String()}, nil
+}
+
+// metricLog is the log query of a metric row, split where a range or vector aggregation inserts its derivations:
+// the filters (head), the restore of the stream labels, and the log query's pipes.
+type metricLog struct {
+	head    string
+	restore string
+	// pipes is the log query's pipes printed, each after a space.
+	pipes string
+}
+
+// metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
+// (translateMetricInnerQuery: no capabilities, no stream fields, no kept line, only the label names). A part it
+// does not write is named under owner, the construct the aggregation delegates as.
+func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metricLog, error) {
+	if c := rangeInnerConstruct(in); c != "" {
+		return metricLog{}, &NotLoweredError{Construct: owner + strings.TrimPrefix(c, "RangeAgg")}
 	}
 	if prof.KeepLine {
-		return nil, &NotLoweredError{Construct: "RangeAgg keepLine"}
+		return metricLog{}, &NotLoweredError{Construct: owner + " keepLine"}
 	}
 	restore, ok := streamTagRestore(prof.Label)
 	if !ok {
-		return nil, &NotLoweredError{Construct: "RangeAgg stream label name"}
+		return metricLog{}, &NotLoweredError{Construct: owner + " stream label name"}
 	}
 	// The metric row's log query keeps the client's spelling of a regexp line filter as the log query does
 	// (keepsSpelling; it has no stream fields).
-	if keepsSpelling(ra.In, Profile{Label: prof.Label}) {
-		return nil, &NotLoweredError{Construct: "RangeAgg " + escapedSpellingConstruct}
+	if keepsSpelling(in, Profile{Label: prof.Label}) {
+		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
 	}
-	q, err := logSelectQuery(ra.In, Profile{Label: prof.Label})
+	q, err := logSelectQuery(in, Profile{Label: prof.Label})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
-			return nil, &NotLoweredError{Construct: "RangeAgg " + nl.Construct}
+			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
 		}
-		return nil, err
+		return metricLog{}, err
 	}
 	// The string translator strips what its regexp reads as a without clause out of the query text, and removes a
 	// " bool " modifier, quoted strings included: the lowering leaves such a query to it. The printed query may not
 	// hold the client's value (a value that is not UTF-8 is written as a filter that matches nothing), so the
 	// selector and the line filters are read as well as the printed filter and pipes.
-	if selectionHas(ra.In, "without") || selectionHas(ra.In, "bool") || selectionHas(ra.In, "|||") {
-		return nil, errQuotedClause
+	quoted := quotedClauseError(owner)
+	if selectionHas(in, "without") || selectionHas(in, "bool") || selectionHas(in, "|||") {
+		return metricLog{}, quoted
 	}
-	// The derivation of detected_level goes after the filters of the query, then the restore of the stream labels,
-	// the rest of the query's pipes and the stats: the query as logsql.Query prints it, with the printed chain and
-	// restore inserted.
-	var b strings.Builder
 	head := logsql.Query{Filter: q.Filter}.String()
 	if readsAsClause(head) {
-		return nil, errQuotedClause
+		return metricLog{}, quoted
 	}
-	if rate {
-		// One allocation for the text: the chain is most of it.
-		chain := translate.RateDetectedLevelChain()
-		b.Grow(len(head) + len(chain) + len(restore) + 512)
-		b.WriteString(head)
-		b.WriteByte(' ')
-		b.WriteString(chain)
-	} else {
-		b.WriteString(head)
-	}
-	if restore != "" {
-		b.WriteByte(' ')
-		b.WriteString(restore)
-	}
+	var pipes strings.Builder
 	for _, p := range q.Pipes {
-		b.WriteByte(' ')
-		start := b.Len()
-		b.WriteString(p.String())
-		if readsAsClause(b.String()[start:]) {
-			return nil, errQuotedClause
+		pipes.WriteByte(' ')
+		start := pipes.Len()
+		pipes.WriteString(p.String())
+		if readsAsClause(pipes.String()[start:]) {
+			return metricLog{}, quoted
 		}
 	}
-	if rate {
-		for _, p := range ratePipes {
+	return metricLog{head: head, restore: restore, pipes: pipes.String()}, nil
+}
+
+// write puts the metric row's query, before its stats, into b, with room for extra more bytes: the filters, then the
+// derivation of detected_level (chain) and of service_name (service), each when it is not empty, the restore of the
+// stream labels and the log query's pipes. The string translator inserts the derivations before the first pipe of
+// the log query, the chain after the service name's, in front of it.
+func (m metricLog) write(b *strings.Builder, chain, service string, extra int) {
+	b.Grow(len(m.head) + len(chain) + len(service) + len(m.restore) + len(m.pipes) + extra)
+	b.WriteString(m.head)
+	for _, part := range [3]string{chain, service, m.restore} {
+		if part != "" {
 			b.WriteByte(' ')
-			b.WriteString(p.String())
+			b.WriteString(part)
 		}
-	} else {
-		b.WriteByte(' ')
-		b.WriteString(stats.String())
 	}
-	return physical.VLQuery{Text: b.String()}, nil
+	b.WriteString(m.pipes)
+}
+
+// text is the metric row's query with the stats pipes after it (write).
+func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
+	var b strings.Builder
+	m.write(&b, chain, service, 80*len(stats))
+	for _, p := range stats {
+		b.WriteByte(' ')
+		b.WriteString(p.String())
+	}
+	return b.String()
 }
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not
@@ -154,36 +184,24 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 	return ""
 }
 
-// errQuotedClause names a log query holding what a regexp of the string translator reads out of the whole LogQL
-// text, quoted strings included: a `without (...)` clause (stripped from the query, and a fold marker appended) and
-// a ` bool ` modifier (removed) and the `|||` that separates the operands of a binary expression (the translator
-// splits its output there to insert the derived-label pipes).
-var errQuotedClause = &NotLoweredError{Construct: "RangeAgg quoted clause"}
+// errQuotedClause and errVectorQuotedClause name a log query holding what a regexp of the string translator reads
+// out of the whole LogQL text, quoted strings included: a `without (...)` clause (stripped from the query, and a
+// fold marker appended), a ` bool ` modifier (removed) and the `|||` that separates the operands of a binary
+// expression (the translator splits its output there to insert the derived-label pipes).
+var (
+	errQuotedClause       = &NotLoweredError{Construct: "RangeAgg quoted clause"}
+	errVectorQuotedClause = &NotLoweredError{Construct: "VectorAgg quoted clause"}
+)
+
+func quotedClauseError(owner string) *NotLoweredError {
+	if owner == "VectorAgg" {
+		return errVectorQuotedClause
+	}
+	return errQuotedClause
+}
 
 // readsAsClause reports whether printed LogsQL holds a word the string translator reads as a without clause or a
 // bool modifier.
 func readsAsClause(s string) bool {
 	return strings.Contains(s, "without") || strings.Contains(s, "bool") || strings.Contains(s, "|||")
-}
-
-// selectionHas reports whether a value the client wrote in the selector or a line filter contains s.
-func selectionHas(sel *queryplan.LogSelect, s string) bool {
-	for _, m := range sel.Matchers {
-		if strings.Contains(m.Value, s) {
-			return true
-		}
-	}
-	for _, st := range sel.Stages {
-		if lf, ok := st.(*queryplan.LineFilter); ok {
-			if strings.Contains(lf.Value, s) {
-				return true
-			}
-			for _, alt := range lf.Or {
-				if strings.Contains(alt.Value, s) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

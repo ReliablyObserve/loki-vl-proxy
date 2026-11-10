@@ -222,7 +222,10 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 			result(shadowBudget)
 			return
 		}
-		lowered, err = s.lower(plan, in.profile())
+		// The plan holds no text: a spelling the translator reads unlike the plan is left to it.
+		if err = lower.ScreenText(in.query, plan); err == nil {
+			lowered, err = s.lower(plan, in.profile())
+		}
 		if err != nil {
 			var nl *lower.NotLoweredError
 			switch {

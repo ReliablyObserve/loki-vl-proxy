@@ -2439,22 +2439,8 @@ func joinByLabels(byLabels, identity string) string {
 	if byLabels == emptyByGrouping {
 		return byLabels
 	}
-	seen := make(map[string]struct{}, 4)
-	out := make([]string, 0, 4)
-	for _, list := range []string{byLabels, identity} {
-		for _, part := range strings.Split(list, ",") {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			if _, ok := seen[part]; ok {
-				continue
-			}
-			seen[part] = struct{}{}
-			out = append(out, part)
-		}
-	}
-	return strings.Join(out, ", ")
+	var buf [8]string
+	return strings.Join(translate.AppendJoinedLabels(buf[:0], strings.Split(byLabels, ","), strings.Split(identity, ",")), ", ")
 }
 
 // addByClauseLast inserts by(labels) into the LAST stats pipe of query. It
@@ -3101,29 +3087,8 @@ func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
 }
 
 func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
-	parts := strings.Split(labels, ",")
-	out := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		// service_name and detected_level are derived per row
-		// (applyDerivedGroupings), never translated source fields.
-		if labelFn != nil && part != "service_name" && part != detectedLevelLabelName {
-			part = strings.TrimSpace(labelFn(part))
-		}
-		if part == "" {
-			continue
-		}
-		if _, ok := seen[part]; ok {
-			continue
-		}
-		seen[part] = struct{}{}
-		out = append(out, part)
-	}
-	return strings.Join(out, ", ")
+	var buf [8]string
+	return strings.Join(translate.AppendNormalizedLabels(buf[:0], strings.Split(labels, ","), labelFn), ", ")
 }
 
 // applyServiceNameGrouping makes `by (service_name)` group by the service name
@@ -3420,22 +3385,7 @@ func ServiceNameDerivationPipes(caps logsql.Capabilities) string {
 }
 
 func serviceNameGroupingPipes(caps logsql.Capabilities) string {
-	names := make([]string, len(translate.SyntheticServiceNameFields))
-	for i, field := range translate.SyntheticServiceNameFields {
-		names[i] = field
-		if strings.Contains(field, ".") {
-			names[i] = `"` + field + `"`
-		}
-	}
-	if caps.PipeCoalesce {
-		return "| coalesce(" + strings.Join(names, ", ") + ") default " + logsql.QuoteValue(unknownServiceNameValue) + " as service_name"
-	}
-	var b strings.Builder
-	for _, field := range translate.SyntheticServiceNameFields[1:] {
-		b.WriteString(`| format "<` + field + `>" as service_name keep_original_fields `)
-	}
-	b.WriteString(`| format ` + logsql.QuoteValue(unknownServiceNameValue) + ` as service_name keep_original_fields`)
-	return b.String()
+	return translate.ServiceNameGroupingPipes(caps)
 }
 
 func findMatchingBrace(s string) int {

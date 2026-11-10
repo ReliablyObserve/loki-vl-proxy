@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers `sum`, `count`, `min`, `max` and `avg`, with or
+  without a `by` or `without` clause, over `count_over_time`,
+  `bytes_over_time`, `absent_over_time`, `rate` and `bytes_rate` of a log query
+  with line, pattern and label filters and no parser to VictoriaLogs natively,
+  for every translation profile. A `sum` groups the stats by the clause's
+  labels; `count`, `min`, `max` and `avg` read one value per Loki series (the
+  stream, its stored level and the `detected_level` Loki attaches); a
+  `without` clause leaves the folding of the series to the proxy as before.
+  `service_name` and `detected_level` groupings derive the label per row with
+  the same pipes as before. The requests sent to VictoriaLogs are those of the
+  string translator, byte for byte, and the lowering takes well under half
+  the time of the translation and allocates less. `stddev`, `stdvar`, nested and ranked
+  aggregations and binary operations are still written by the string
+  translator, and so are queries whose quoted text the translator reads as
+  syntax (a `without (...)`, ` bool ` or `| stats ` in a line filter) or
+  with a blank between an aggregation's parenthesis and its range function,
+  a parenthesized operand, or wrapped whole in parentheses.
+
 ### Fixed
 
 - A `line_format` template whose trim marker joins text ending in `{` to an

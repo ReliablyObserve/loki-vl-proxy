@@ -172,7 +172,7 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 		}
 		queryplan.Resolve(plan)
 		for _, prof := range planProfiles() {
-			got, lerr := lower.Plan(plan, prof.lowerProfile())
+			got, lerr := lower.PlanQuery(q, plan, prof.lowerProfile())
 			legacy, ok := prof.translate(q)
 			if !ok {
 				if lerr == nil {

@@ -217,7 +217,9 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 		`{app="a"} | line_format "{{.a|upper}}"`,   // LogSelect line format function: not lowered
 		`sum_over_time({app="a"} | unwrap n [5m])`, // RangeAgg: not lowered (unwrap)
 		`rate({app="a"}[5m])`,                      // RangeAgg: lowered, a match
-		`sum by (app) (rate({app="a"}[5m]))`,       // VectorAgg
+		`sum by (app) (rate({app="a"}[5m]))`,       // VectorAgg: lowered, a match
+		`sum( rate({app="a"}[5m]))`,                // VectorAgg: not lowered (blank padding, which the translator reads as a phrase)
+		`stddev by (app) (rate({app="a"}[5m]))`,    // VectorAgg: not lowered (stddev)
 		`topk(3, rate({app="a"}[5m]))`,             // Rank
 		`rate({app="a"}[5m]) / 2`,                  // BinOp
 		`vector(1)`,                                // VectorLit
@@ -237,7 +239,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 			t.Errorf("a query both reject is counted: %q in %v", key, got)
 		}
 	}
-	for _, want := range []string{"match LogSelect", "not_lowered LogSelect line format function", "match RangeAgg", "not_lowered RangeAgg unwrap", "not_lowered VectorAgg", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
+	for _, want := range []string{"match LogSelect", "not_lowered LogSelect line format function", "match RangeAgg", "not_lowered RangeAgg unwrap", "match VectorAgg", "not_lowered VectorAgg stddev", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
 		if got[want] == 0 {
 			t.Errorf("no %q in %v", want, got)
 		}

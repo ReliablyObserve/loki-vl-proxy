@@ -1,0 +1,9 @@
+go test fuzz v1
+string("0")
+string("without(0)\xa2")
+string("0")
+string("0")
+byte('\x7f')
+byte('\x12')
+byte('\v')
+byte('_')

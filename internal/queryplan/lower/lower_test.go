@@ -21,7 +21,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"LogSelect label filter numeric equality after parser": `{app="a"} | json | status=5`,
 		"LogSelect unpack parser":                              `{app="a"} | unpack`,
 		"RangeAgg unwrap":                                      `sum_over_time({app="a"} | unwrap n [5m])`,
-		"VectorAgg":                                            `sum by (app) (count_over_time({app="a"}[5m]))`,
+		"VectorAgg operand":                                    `sum by (app) (sum by (env) (count_over_time({app="a"}[5m])))`,
 		"Rank":                                                 `topk(3, sum by (app) (rate({app="a"}[5m])))`,
 		"BinOp":                                                `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,
 		"LabelReplace":                                         `label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")`,

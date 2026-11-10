@@ -217,7 +217,7 @@
   "shadow": {
     "rows": 22935,
     "profiles": 12,
-    "native": 3543,
+    "native": 5406,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp": 2646,
@@ -232,13 +232,22 @@
       "RangeAgg LogSelect pipeline": 9,
       "RangeAgg drop or keep": 54,
       "RangeAgg grouping": 9,
+      "RangeAgg parenthesized": 9,
       "RangeAgg parser": 945,
       "RangeAgg unwrap": 3231,
       "Rank": 1665,
       "Scalar": 18,
-      "VectorAgg": 9207,
+      "VectorAgg LogSelect label filter detected_level": 72,
+      "VectorAgg drop or keep": 81,
+      "VectorAgg grouping": 9,
+      "VectorAgg operand": 2601,
+      "VectorAgg operand spelling": 90,
+      "VectorAgg parenthesized": 27,
+      "VectorAgg parser": 1125,
+      "VectorAgg stddev": 711,
+      "VectorAgg stdvar": 711,
+      "VectorAgg unwrap": 1917,
       "VectorLit": 9,
-      "known divergence semantics/translator-reads-parenthesized-metric-as-text": 9,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12
     },
     "flipped": [

@@ -75,7 +75,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if strings.HasPrefix(legacy, "|") {
 		legacy = "* " + legacy
 	}
-	op, lerr := Plan(p, prof.lowerProfile())
+	op, lerr := PlanQuery(q, p, prof.lowerProfile())
 	if errors.Is(lerr, ErrNotLowered) {
 		return "", legacy, false, true, terr == nil
 	}
@@ -85,7 +85,10 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 		}
 		return "", "", false, false, false
 	}
-	lowered = op.(physical.VLQuery).Text
+	// A without clause is a fold around the query: the clean query is compared, and the fold with the marker.
+	core, post := physical.Split(op)
+	lowered = core.(physical.VLQuery).Text
+	legacy, wantPost := translator.SplitPost(legacy)
 	want, err := logsql.Parse(legacy)
 	if err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
@@ -94,7 +97,7 @@ func rangeAggLowering(t testing.TB, q string, prof rangeProfile) (lowered, legac
 	if err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, reflect.DeepEqual(want, got), false, true
+	return lowered, legacy, reflect.DeepEqual(want, got) && reflect.DeepEqual(post, wantPost), false, true
 }
 
 // A range aggregation over a log query with no parser lowers to the query the string translator writes, for every
@@ -353,7 +356,7 @@ func TestPlanRangeAggregationRestoresStreamLabels(t *testing.T) {
 
 // Text the string translator reads as syntax, though a quoted value holds it (a ")" that unbalances its parentheses,
 // a "| unwrap x", the brackets of a range): the lowering keeps the value whole. A " bool " or "without (x)" the
-// translator rewrites is left to it (TestPlanDelegatesRangeAggregations).
+// translator rewrites is left to it (TestPlanDelegatesVectorAggregations).
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanRangeAggregationKeepsQuotedValues(t *testing.T) {

@@ -13,6 +13,25 @@ why: |
   `| unwrap`, an unbalanced parenthesis) are read as syntax in metric queries.
   Loki reads a quoted value as text only.
 
+  The metric lowering (range and vector aggregations) leaves those queries to
+  the translator (a delegation named "quoted clause") instead of writing what
+  Loki reads: a line filter holding `without (x)` (the translator strips it and
+  appends a fold marker), ` bool ` (it removes it) or `| stats ` (it inserts a
+  grouping there), and, under a `without` clause, a run of two blanks in any
+  value (it folds runs of blanks), and a grouping label named bool padded with
+  blanks (`by ( bool )`).
+
+  A different difference, found by the same grid and not about quoted text:
+  blanks inside the parentheses of a vector aggregation (`sum( rate( {a="x"}
+  [5m] ) )`) make the translator return the query as a phrase, and the proxy's
+  request rewrite leaves the blanks (checked 2026-11-10), so the proxy answers a
+  phrase search where Loki answers the metric. The plan lowers it as Loki reads
+  it, but the lowering turns the query away (VectorAgg operand spelling, a text
+  screen: lower.ScreenText) so it never differs from the translator while
+  metric queries are served by the translator; this stays the open difference
+  to close when they flip (TestPlanVectorAggregationBlankPadding,
+  TestVectorAggBlankPaddingShadow: 5,277 padded spellings x profiles).
+
   Evidence (main, 2026-11-09; the corpus rows come from TestKeyCraftedValues):
     {a="x"} | s=`…detected_level…`
     string translator  =>  a:="x" | unpack_logfmt | filter s:="…detected_level…"
