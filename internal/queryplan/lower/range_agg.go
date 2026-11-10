@@ -68,15 +68,20 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 		return nil, err
 	}
 	// The string translator strips what its regexp reads as a without clause out of the query text, and removes a
-	// " bool " modifier, quoted strings included: the lowering leaves such a query to it.
-	if translatorReadsQuotedText(ra.In, q) {
-		return nil, &NotLoweredError{Construct: "RangeAgg quoted clause"}
+	// " bool " modifier, quoted strings included: the lowering leaves such a query to it. The printed query may not
+	// hold the client's value (a value that is not UTF-8 is written as a filter that matches nothing), so the
+	// selector and the line filters are read as well as the printed filter and pipes.
+	if selectionHas(ra.In, "without") || selectionHas(ra.In, "bool") {
+		return nil, errQuotedClause
 	}
 	// The derivation of detected_level goes after the filters of the query, then the restore of the stream labels,
 	// the rest of the query's pipes and the stats: the query as logsql.Query prints it, with the printed chain and
 	// restore inserted.
 	var b strings.Builder
 	head := logsql.Query{Filter: q.Filter}.String()
+	if readsAsClause(head) {
+		return nil, errQuotedClause
+	}
 	if rate {
 		// One allocation for the text: the chain is most of it.
 		chain := translate.RateDetectedLevelChain()
@@ -93,7 +98,11 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	}
 	for _, p := range q.Pipes {
 		b.WriteByte(' ')
+		start := b.Len()
 		b.WriteString(p.String())
+		if readsAsClause(b.String()[start:]) {
+			return nil, errQuotedClause
+		}
 	}
 	if rate {
 		for _, p := range ratePipes {
@@ -134,23 +143,15 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 	return ""
 }
 
-// translatorReadsQuotedText reports whether the log query holds what a regexp of the string translator reads out of
-// the whole LogQL text, quoted strings included: a `without (...)` clause (stripped from the query, and a fold
-// marker appended) and a ` bool ` modifier (removed). The printed query may not hold the client's value (a value
-// that is not UTF-8 is written as a filter that matches nothing), so the selector and the line filters are read
-// too.
-func translatorReadsQuotedText(sel *queryplan.LogSelect, q logsql.Query) bool {
-	for _, word := range [2]string{"without", "bool"} {
-		if selectionHas(sel, word) || strings.Contains(logsql.Query{Filter: q.Filter}.String(), word) {
-			return true
-		}
-		for _, p := range q.Pipes {
-			if strings.Contains(p.String(), word) {
-				return true
-			}
-		}
-	}
-	return false
+// errQuotedClause names a log query holding what a regexp of the string translator reads out of the whole LogQL
+// text, quoted strings included: a `without (...)` clause (stripped from the query, and a fold marker appended) and
+// a ` bool ` modifier (removed).
+var errQuotedClause = &NotLoweredError{Construct: "RangeAgg quoted clause"}
+
+// readsAsClause reports whether printed LogsQL holds a word the string translator reads as a without clause or a
+// bool modifier.
+func readsAsClause(s string) bool {
+	return strings.Contains(s, "without") || strings.Contains(s, "bool")
 }
 
 // selectionHas reports whether a value the client wrote in the selector or a line filter contains s.
