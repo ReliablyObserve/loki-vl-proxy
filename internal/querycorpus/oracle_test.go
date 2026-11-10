@@ -286,9 +286,7 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	}
 	queryplan.Resolve(plan)
 	caps := logsql.CapabilitiesFor(strings.TrimPrefix(v, "v"))
-	// The pairing lowers what the shadow does (PlanQuery: the text screen turns away the spellings the string
-	// translator reads unlike the plan), so a row that is left to the translator is not held to it.
-	op, err := lower.PlanQuery(q, plan, lower.Profile{Caps: caps, Label: identity})
+	op, err := lower.Plan(plan, lower.Profile{Caps: caps, Label: identity})
 	if err != nil {
 		return "", "", false
 	}
