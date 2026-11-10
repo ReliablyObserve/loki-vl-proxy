@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are still written by the string translator. The lowering of `rate` and of
   `count`, `min`, `max` and `avg` also leaves a log query that holds a quoted
   `| json` or `| unwrap` to the translator, which reads those words as syntax.
+
+## [2.123.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers `sum`, `count`, `min`, `max` and `avg`, with or
   without a `by` or `without` clause, over `count_over_time`,
   `bytes_over_time`, `absent_over_time`, `rate` and `bytes_rate` of a log query
