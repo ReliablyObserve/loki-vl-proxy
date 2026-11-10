@@ -75,7 +75,7 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 		`topk(3, sum_over_time({app="a"} | unwrap amount [5m]))`:              "Rank operand unwrap",
 		`sort(avg_over_time({app="a"} | drop x | unwrap amount [5m]))`:        "Rank operand unwrap",
 		`bottomk(2, quantile_over_time(0.5, {app="a"} | unwrap amount [5m]))`: "Rank operand unwrap",
-		`topk(3, count_over_time({app="a"} | drop x [5m]))`:                   "Rank operand RangeAgg",
+		`topk(3, rate({app="a"} | keep x [5m]))`:                              "Rank operand RangeAgg",
 		`topk(3, rate({app="a"} | detected_level="error" [5m]))`:              "Rank operand RangeAgg",
 		`sort( ` + rate + `)`:                                                 "Rank spelling",
 		`topk(3, rate ({app="a"}[5m]))`:                                       "Rank spelling",

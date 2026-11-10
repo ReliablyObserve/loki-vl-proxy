@@ -58,8 +58,8 @@ func rank(n *queryplan.Rank, prof Profile) (physical.Op, error) {
 }
 
 // parserCostsMore reports whether the lowering of the operand allocates more than the translator does for its text
-// (measured over the rank grid under the profile with and without stream labels): a label filter after a parser,
-// except behind an unwrapped value other than a rate's, and rate and bytes_rate over a parser with none.
+// (measured over the rank grid under the profile with and without stream labels): a label filter, drop or keep after
+// a parser, except behind an unwrapped value other than a rate's, and rate and bytes_rate over a parser with none.
 func parserCostsMore(ra *queryplan.RangeAgg) bool {
 	if !hasParser(ra.In) {
 		return false
@@ -77,7 +77,7 @@ func parserCostsMore(ra *queryplan.RangeAgg) bool {
 		switch st.(type) {
 		case *queryplan.Parse:
 			parsed = true
-		case *queryplan.LabelFilter:
+		case *queryplan.LabelFilter, *queryplan.Drop, *queryplan.Keep:
 			if parsed {
 				return true
 			}
