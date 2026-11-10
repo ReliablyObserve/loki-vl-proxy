@@ -13,8 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
   with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in
   the translation package; the lowering writes the requests the string
-  translator writes, and the corpus shadow holds it to them. A label filter
-  after a parser, `| regexp`,
+  translator writes, and the corpus shadow holds it to them. `| regexp`,
   `| pattern`, `| unpack`, `| line_format` and `| label_format` stay with the
   string translator.
 - The query plan lowers the label filters after a `| json` or `| logfmt`
