@@ -2445,7 +2445,8 @@ func joinByLabels(byLabels, identity string) string {
 	if byLabels == emptyByGrouping {
 		return byLabels
 	}
-	return strings.Join(translate.JoinByLabels(strings.Split(byLabels, ","), strings.Split(identity, ",")), ", ")
+	var buf [8]string
+	return strings.Join(translate.AppendJoinedLabels(buf[:0], strings.Split(byLabels, ","), strings.Split(identity, ",")), ", ")
 }
 
 // addByClauseLast inserts by(labels) into the LAST stats pipe of query. It
@@ -3093,7 +3094,8 @@ func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
 }
 
 func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
-	return strings.Join(translate.NormalizeByLabels(strings.Split(labels, ","), labelFn), ", ")
+	var buf [8]string
+	return strings.Join(translate.AppendNormalizedLabels(buf[:0], strings.Split(labels, ","), labelFn), ", ")
 }
 
 // applyServiceNameGrouping makes `by (service_name)` group by the service name

@@ -1,6 +1,7 @@
 package translate
 
 import (
+	"slices"
 	"strings"
 	"sync"
 
@@ -42,8 +43,13 @@ var serviceNameFormats = sync.OnceValue(func() string {
 // translated by the label function (nil keeps the names), except service_name and detected_level, which are
 // derived per row and never a translated source field; empty names and repeats are dropped, in order.
 func NormalizeByLabels(labels []string, label LabelTranslateFunc) []string {
-	out := make([]string, 0, len(labels))
-	seen := make(map[string]struct{}, len(labels))
+	return AppendNormalizedLabels(make([]string, 0, len(labels)), labels, label)
+}
+
+// AppendNormalizedLabels appends NormalizeByLabels(labels, label) to dst and returns it; a name already among the
+// ones it appended is not appended again. A caller with a small array for dst allocates nothing for the list.
+func AppendNormalizedLabels(dst, labels []string, label LabelTranslateFunc) []string {
+	start := len(dst)
 	for _, part := range labels {
 		part = strings.TrimSpace(part)
 		if part == "" {
@@ -52,36 +58,32 @@ func NormalizeByLabels(labels []string, label LabelTranslateFunc) []string {
 		if label != nil && part != "service_name" && part != DetectedLevelLabel {
 			part = strings.TrimSpace(label(part))
 		}
-		if part == "" {
+		if part == "" || slices.Contains(dst[start:], part) {
 			continue
 		}
-		if _, ok := seen[part]; ok {
-			continue
-		}
-		seen[part] = struct{}{}
-		out = append(out, part)
+		dst = append(dst, part)
 	}
-	return out
+	return dst
 }
 
 // JoinByLabels concatenates two grouping lists, dropping repeats and empty names.
 func JoinByLabels(first, second []string) []string {
-	out := make([]string, 0, len(first)+len(second))
-	seen := make(map[string]struct{}, len(first)+len(second))
+	return AppendJoinedLabels(make([]string, 0, len(first)+len(second)), first, second)
+}
+
+// AppendJoinedLabels appends JoinByLabels(first, second) to dst and returns it.
+func AppendJoinedLabels(dst, first, second []string) []string {
+	start := len(dst)
 	for _, list := range [2][]string{first, second} {
 		for _, part := range list {
 			part = strings.TrimSpace(part)
-			if part == "" {
+			if part == "" || slices.Contains(dst[start:], part) {
 				continue
 			}
-			if _, ok := seen[part]; ok {
-				continue
-			}
-			seen[part] = struct{}{}
-			out = append(out, part)
+			dst = append(dst, part)
 		}
 	}
-	return out
+	return dst
 }
 
 func hasDot(s string) bool {
