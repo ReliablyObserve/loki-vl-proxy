@@ -1573,6 +1573,8 @@
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/rank_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/rank_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
@@ -1591,6 +1593,7 @@
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/rank_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
@@ -2110,7 +2113,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 450,
+      "go": 453,
       "playwright": 1
     },
     "page_kinds": {

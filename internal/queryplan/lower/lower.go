@@ -69,6 +69,8 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 		return binOp(n, prof)
 	case *queryplan.LabelReplace:
 		return labelReplace(n, prof)
+	case *queryplan.Rank:
+		return rank(n, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }
