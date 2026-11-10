@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // conformance: semantics/unwrap-quantile-response-limit
@@ -31,21 +33,21 @@ func TestUnwrapQuantileResponseLimit(t *testing.T) {
 	base := time.Unix(1700000400, 0).UTC() // minute-aligned
 	const minutes, perMinute = 5, 40
 	want := map[int64]float64{}
-	emu := &vlEmulator{t: t, field: "duration_ms"}
+	emu := &vlemu.Emulator{T: t, Field: "duration_ms"}
 	padding := strings.Repeat("x", 200)
 	for m := 0; m < minutes; m++ {
 		for i := 0; i < perMinute; i++ {
 			value := (i*37)%perMinute + 1 + m
-			emu.rows = append(emu.rows, emuRow{
-				ts: base.Add(time.Duration(m)*time.Minute + time.Duration(i+1)*time.Second).UnixNano(),
+			emu.Rows = append(emu.Rows, vlemu.Row{
+				TS: base.Add(time.Duration(m)*time.Minute + time.Duration(i+1)*time.Second).UnixNano(),
 				// The log generator's pods rotate every batch: one stream per two lines.
-				stream: fmt.Sprintf(`{service_name="api-gateway",pod="api-gateway-%d-%d",level="info"}`, m, i/2),
-				value:  float64(value),
-				msg:    fmt.Sprintf(`{"duration_ms":%d,"pad":%q}`, value, padding),
+				Stream: fmt.Sprintf(`{service_name="api-gateway",pod="api-gateway-%d-%d",level="info"}`, m, i/2),
+				Value:  float64(value),
+				Msg:    fmt.Sprintf(`{"duration_ms":%d,"pad":%q}`, value, padding),
 			})
 		}
 	}
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 
 	// Window (t-1m, t] at t = base+(m+1)m holds the values 1+m .. 40+m once
@@ -93,7 +95,7 @@ func TestUnwrapQuantileResponseLimit(t *testing.T) {
 			t.Errorf("t=%d: want %v, got %v", ts, want[ts], value)
 		}
 	}
-	if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+	if q := emu.EndpointCalls("/select/logsql/query"); len(q) != 0 {
 		t.Fatalf("quantile read raw rows: %q", q)
 	}
 }

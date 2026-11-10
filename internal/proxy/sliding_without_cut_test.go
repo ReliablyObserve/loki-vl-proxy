@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // A `sum without (...)` over count_over_time or bytes_over_time on a sliding
@@ -37,15 +38,15 @@ func swReference(s nvScenario, streams []wpStream) map[string]map[int64]float64 
 		perStream := map[string]float64{}
 		present := map[string]bool{}
 		for _, row := range s.rows {
-			if row.ts > t-int64(s.window) && row.ts <= t {
-				present[row.stream] = true
+			if row.TS > t-int64(s.window) && row.TS <= t {
+				present[row.Stream] = true
 				switch s.fn {
 				case "bytes_over_time":
-					perStream[row.stream] += float64(len(row.msg))
+					perStream[row.Stream] += float64(len(row.Msg))
 				case "rate":
-					perStream[row.stream] += 1 / s.window.Seconds()
+					perStream[row.Stream] += 1 / s.window.Seconds()
 				default:
-					perStream[row.stream]++
+					perStream[row.Stream]++
 				}
 			}
 		}
@@ -76,14 +77,14 @@ func swReference(s nvScenario, streams []wpStream) map[string]map[int64]float64 
 // server and a proxy per scenario. The proxies cache nothing, so each answer
 // is read from the scenario's rows.
 type swRunner struct {
-	emu     *vlEmulator
+	emu     *vlemu.Emulator
 	proxies [2]*Proxy // [0] cuts, [1] folds
 }
 
 func newSWRunner(t testing.TB) *swRunner {
 	t.Helper()
-	emu := &vlEmulator{t: t, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	t.Cleanup(backend.Close)
 	r := &swRunner{emu: emu}
 	for i := range r.proxies {
@@ -103,9 +104,9 @@ func newSWRunner(t testing.TB) *swRunner {
 // queries VictoriaLogs received for it.
 func (r *swRunner) run(t testing.TB, s nvScenario, cutOff bool) (string, []string) {
 	t.Helper()
-	r.emu.mu.Lock()
-	r.emu.rows, r.emu.calls = s.rows, nil
-	r.emu.mu.Unlock()
+	r.emu.Mu.Lock()
+	r.emu.Rows, r.emu.Calls = s.rows, nil
+	r.emu.Mu.Unlock()
 	withoutPushdownOff.Store(cutOff)
 	p := r.proxies[0]
 	if cutOff {
@@ -116,7 +117,7 @@ func (r *swRunner) run(t testing.TB, s nvScenario, cutOff bool) (string, []strin
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", s, res.Code, res.Body)
 	}
-	return res.Body.String(), r.emu.endpointCalls("/select/logsql/stats_query_range")
+	return res.Body.String(), r.emu.EndpointCalls("/select/logsql/stats_query_range")
 }
 
 // swParseMatrix reads a matrix body as labels key -> time -> value, without
@@ -176,7 +177,7 @@ func swGenerateScenario(rnd *rand.Rand, fn string) (nvScenario, []wpStream) {
 		if rnd.Intn(2) == 0 {
 			stream = streams[rnd.Intn(min(2, len(streams)))]
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: stream.text, msg: msgs[rnd.Intn(len(msgs))]})
+		s.rows = append(s.rows, vlemu.Row{TS: ts, Stream: stream.text, Msg: msgs[rnd.Intn(len(msgs))]})
 	}
 	excluded := []string{"abc", "pod", "node", "zone", "svc", "rack", "baz", "app", "pod_name", "container", "note"}
 	rnd.Shuffle(len(excluded), func(i, j int) { excluded[i], excluded[j] = excluded[j], excluded[i] })
@@ -284,7 +285,7 @@ func TestSlidingSumWithoutCutDirectedStreams(t *testing.T) {
 					for _, t := range s.times() {
 						for _, off := range []int64{-int64(s.window), -int64(s.window) + 1, -1, 0, 1} {
 							if (int64(i)+off+t/1e9)%3 != 0 {
-								s.rows = append(s.rows, emuRow{ts: t + off, stream: st.text, msg: strings.Repeat("x", i+1)})
+								s.rows = append(s.rows, vlemu.Row{TS: t + off, Stream: st.text, Msg: strings.Repeat("x", i+1)})
 							}
 						}
 					}
@@ -316,7 +317,7 @@ func TestSlidingSumWithoutCutDirectedStreams(t *testing.T) {
 func TestSlidingSumWithoutCutScope(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
 	start := base - base%int64(time.Minute)
-	rows := []emuRow{{ts: start - 1e9, stream: `{app="uw",pod="a"}`, msg: "x=1"}, {ts: start - 2e9, stream: `{app="uw",pod="b"}`, msg: "x=1"}}
+	rows := []vlemu.Row{{TS: start - 1e9, Stream: `{app="uw",pod="a"}`, Msg: "x=1"}, {TS: start - 2e9, Stream: `{app="uw",pod="b"}`, Msg: "x=1"}}
 	for _, tc := range []struct {
 		query string
 		step  string
@@ -338,8 +339,8 @@ func TestSlidingSumWithoutCutScope(t *testing.T) {
 		{`topk(2, sum without (pod) (count_over_time({app="uw"}[1m])))`, "20", true}, // the ranking takes the folded series (TestSlidingSumWithoutCutUnderTopk)
 		{`sum without (pod) (count_over_time({app="uw"}[1m])) / 2`, "20", true},      // the operand is evaluated alone
 	} {
-		emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-		backend := httptest.NewServer(emu.handler())
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+		backend := httptest.NewServer(emu.Handler())
 		responseCache := cache.New(60*time.Second, 1000)
 		p, err := New(Config{BackendURL: backend.URL, Cache: responseCache, LogLevel: "error"})
 		if err != nil {
@@ -352,7 +353,7 @@ func TestSlidingSumWithoutCutScope(t *testing.T) {
 		}
 		var all []string
 		for _, path := range []string{"/select/logsql/stats_query_range", "/select/logsql/stats_query", "/select/logsql/query"} {
-			all = append(all, emu.endpointCalls(path)...)
+			all = append(all, emu.EndpointCalls(path)...)
 		}
 		cut := strings.Contains(strings.Join(all, "\n"), "replace_regexp")
 		if cut != tc.cut {
@@ -363,8 +364,8 @@ func TestSlidingSumWithoutCutScope(t *testing.T) {
 		backend.Close()
 	}
 	params := url.Values{"query": {`sum without (pod) (count_over_time({app="uw"}[1m]))`}, "time": {strconv.FormatInt(start/1e9, 10)}}
-	emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	responseCache := cache.New(60*time.Second, 1000)
 	defer responseCache.Close()
@@ -377,7 +378,7 @@ func TestSlidingSumWithoutCutScope(t *testing.T) {
 		t.Fatalf("%d %s", res.Code, res.Body)
 	}
 	for _, path := range []string{"/select/logsql/stats_query", "/select/logsql/stats_query_range"} {
-		for _, query := range emu.endpointCalls(path) {
+		for _, query := range emu.EndpointCalls(path) {
 			if strings.Contains(query, "replace_regexp") {
 				t.Errorf("an instant query was folded by VictoriaLogs: %s", query)
 			}
@@ -392,15 +393,15 @@ func TestSlidingSumWithoutCutScope(t *testing.T) {
 // conformance: semantics/without-sliding-sum-folded-buckets
 func TestSlidingSumWithoutCutExtentCache(t *testing.T) {
 	s0 := time.Now().Add(-3 * time.Hour).Truncate(time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 600; i++ {
 		stream := fmt.Sprintf(`{app="uw",pod="p%d",zone="%s"}`, i%37, []string{"x", "y"}[i%2])
-		rows = append(rows, emuRow{ts: s0.UnixNano() + int64(i)*int64(11*time.Second) + int64(i%7)*1e6, stream: stream, msg: "x=1"})
+		rows = append(rows, vlemu.Row{TS: s0.UnixNano() + int64(i)*int64(11*time.Second) + int64(i%7)*1e6, Stream: stream, Msg: "x=1"})
 	}
 	query := `sum without (pod) (count_over_time({app="uw"}[1m]))`
 	run := func(cutOff bool) ([2]string, int64, []string) {
-		emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-		backend, shim := newExtentShim(t, emu.handler())
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+		backend, shim := newExtentShim(t, emu.Handler())
 		p := newExtentTestProxy(t, backend.URL, true, 64<<20)
 		p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
 		withoutPushdownOff.Store(cutOff)
@@ -420,7 +421,7 @@ func TestSlidingSumWithoutCutExtentCache(t *testing.T) {
 			}
 		}
 		_, buckets := shim.bucketsRead()
-		return bodies, buckets, emu.endpointCalls("/select/logsql/stats_query_range")
+		return bodies, buckets, emu.EndpointCalls("/select/logsql/stats_query_range")
 	}
 	cut, cutRefresh, cutQueries := run(false)
 	fold, foldRefresh, _ := run(true)
@@ -460,11 +461,11 @@ func TestSlidingSumWithoutCutExtentCache(t *testing.T) {
 func TestSlidingSumWithoutCutUnderTopk(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
 	runner := newSWRunner(t)
-	var rows []emuRow
+	var rows []vlemu.Row
 	start := base - base%int64(time.Minute)
 	for i := 0; i < 400; i++ {
 		stream := fmt.Sprintf(`{app="uw",pod="p%d",zone="%s"}`, i%13, []string{"x", "y", "z"}[i%3])
-		rows = append(rows, emuRow{ts: start - 120e9 + int64(i)*350e6, stream: stream, msg: "x=1"})
+		rows = append(rows, vlemu.Row{TS: start - 120e9 + int64(i)*350e6, Stream: stream, Msg: "x=1"})
 	}
 	for _, query := range []string{
 		`topk(2, sum without (pod) (count_over_time({app="uw"}[1m])))`,
@@ -474,9 +475,9 @@ func TestSlidingSumWithoutCutUnderTopk(t *testing.T) {
 		var bodies [2]string
 		var cut bool
 		for i, cutOff := range []bool{false, true} {
-			runner.emu.mu.Lock()
-			runner.emu.rows, runner.emu.calls = rows, nil
-			runner.emu.mu.Unlock()
+			runner.emu.Mu.Lock()
+			runner.emu.Rows, runner.emu.Calls = rows, nil
+			runner.emu.Mu.Unlock()
 			withoutPushdownOff.Store(cutOff)
 			params := url.Values{"query": {query}, "start": {strconv.FormatInt(start/1e9-60, 10)}, "end": {strconv.FormatInt(start/1e9+60, 10)}, "step": {"20"}}
 			res := doCompatProxyRequest(runner.proxies[i], "/loki/api/v1/query_range?"+params.Encode(), map[string]string{"X-Scope-OrgID": "0"})
@@ -485,7 +486,7 @@ func TestSlidingSumWithoutCutUnderTopk(t *testing.T) {
 			}
 			bodies[i] = res.Body.String()
 			if !cutOff {
-				cut = strings.Contains(strings.Join(runner.emu.endpointCalls("/select/logsql/stats_query_range"), "\n"), "replace_regexp")
+				cut = strings.Contains(strings.Join(runner.emu.EndpointCalls("/select/logsql/stats_query_range"), "\n"), "replace_regexp")
 			}
 		}
 		if !cut || !strings.Contains(bodies[0], `"values":[[`) {

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins the evaluation timestamps of first_over_time and
@@ -33,7 +35,7 @@ import (
 
 // firstLastRangeRef is Loki's query_range answer for agg (by the stream label
 // by, "" for none) over fn with the given window: group -> timestamp -> value.
-func firstLastRangeRef(rows []emuRow, fn, agg, by string, window, step time.Duration, start, end int64, align bool) map[string]map[int64]float64 {
+func firstLastRangeRef(rows []vlemu.Row, fn, agg, by string, window, step time.Duration, start, end int64, align bool) map[string]map[int64]float64 {
 	if align {
 		start -= start % int64(step)
 		end -= end % int64(step)
@@ -136,7 +138,7 @@ func TestFirstLastOverTimeRangeTimestampsLikeLoki(t *testing.T) {
 									var s uwScenario
 									s.parser = parser
 									for i, off := range c.at {
-										s.rows = append(s.rows, emuRow{ts: base + off, stream: streams[i%len(streams)], value: float64(i+1) * 1.5})
+										s.rows = append(s.rows, vlemu.Row{TS: base + off, Stream: streams[i%len(streams)], Value: float64(i+1) * 1.5})
 									}
 									s.rows = firstLastRows(s)
 									start, end := base+c.startOff, base+c.startOff+120*sec
@@ -145,7 +147,7 @@ func TestFirstLastOverTimeRangeTimestampsLikeLoki(t *testing.T) {
 									if by != "" {
 										query = fmt.Sprintf(`%s by (%s) (%s)`, agg, by, inner)
 									}
-									emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+									emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 									run := runFirstLastConfig(t, emu, query, false, start, end, c.step, alignedConfig(align))
 									noFirstLastStatsFunction(t, query, emu)
 									want := firstLastRangeRef(s.rows, fn, agg, by, c.window, c.step, start, end, align)
@@ -175,16 +177,16 @@ func TestFirstLastOverTimeRangeTimestampsLikeLoki(t *testing.T) {
 func TestFirstLastOverTimeRangeTimestampsBinaryAndTopk(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
 	sec := int64(time.Second)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i, off := range []int64{sec + 5e8, 5 * sec, 7*sec + 2e8, 12 * sec, 14*sec + 7e8, 31 * sec} {
-		rows = append(rows, emuRow{ts: base + off, stream: []string{`{app="uw",pod="a"}`, `{app="uw",pod="b"}`}[i%2], value: float64(i + 2)})
+		rows = append(rows, vlemu.Row{TS: base + off, Stream: []string{`{app="uw",pod="a"}`, `{app="uw",pod="b"}`}[i%2], Value: float64(i + 2)})
 	}
 	start, end, step := base, base+60*sec, 5*time.Second
 	for _, align := range []bool{true, false} {
 		for _, fn := range []string{"first_over_time", "last_over_time"} {
 			t.Run(fmt.Sprintf("align=%v/%s/binary", align, fn), func(t *testing.T) {
 				query := fmt.Sprintf(`sum(%s({app="uw"} | unwrap amount [5s])) * 2`, fn)
-				emu := &vlEmulator{t: t, rows: rows, field: "amount"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
 				run := runFirstLastConfig(t, emu, query, false, start, end, step, alignedConfig(align))
 				want := firstLastRangeRef(rows, fn, "sum", "", step, step, start, end, align)
 				for _, points := range want {
@@ -199,7 +201,7 @@ func TestFirstLastOverTimeRangeTimestampsBinaryAndTopk(t *testing.T) {
 			t.Run(fmt.Sprintf("align=%v/%s/bare", align, fn), func(t *testing.T) {
 				// One series per stream: its value is the pod's sum over one series.
 				query := fmt.Sprintf(`%s({app="uw"} | unwrap amount [5s])`, fn)
-				emu := &vlEmulator{t: t, rows: rows, field: "amount"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
 				run := runFirstLastConfig(t, emu, query, false, start, end, step, alignedConfig(align))
 				want := firstLastRangeRef(rows, fn, "sum", "pod", step, step, start, end, align)
 				if d := diffRangePoints(firstLastRangePoints(run, "pod"), want); d != "" {
@@ -208,7 +210,7 @@ func TestFirstLastOverTimeRangeTimestampsBinaryAndTopk(t *testing.T) {
 			})
 			t.Run(fmt.Sprintf("align=%v/%s/topk", align, fn), func(t *testing.T) {
 				query := fmt.Sprintf(`topk(2, sum by (pod) (%s({app="uw"} | unwrap amount [5s])))`, fn)
-				emu := &vlEmulator{t: t, rows: rows, field: "amount"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
 				run := runFirstLastConfig(t, emu, query, false, start, end, step, alignedConfig(align))
 				want := firstLastRangeRef(rows, fn, "sum", "pod", step, step, start, end, align)
 				if d := diffRangePoints(firstLastRangePoints(run, "pod"), want); d != "" {
@@ -246,7 +248,7 @@ func firstLastRangeScenario(rnd *rand.Rand, parser string) (s uwScenario) {
 			edge := s.start - s.start%int64(s.step) + int64(rnd.Intn(30))*int64(s.step)
 			ts = edge + int64(rnd.Intn(3)-1)
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: streams[rnd.Intn(len(streams))], value: values[rnd.Intn(len(values))]})
+		s.rows = append(s.rows, vlemu.Row{TS: ts, Stream: streams[rnd.Intn(len(streams))], Value: values[rnd.Intn(len(values))]})
 	}
 	s.rows = firstLastRows(s)
 	return s
@@ -272,7 +274,7 @@ func TestFirstLastOverTimeRangeTimestampsDifferential(t *testing.T) {
 		if by != "" {
 			query = fmt.Sprintf(`%s by (%s) (%s)`, agg, by, inner)
 		}
-		emu := &vlEmulator{t: t, rows: s.rows, field: "amount"}
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 		run := runFirstLastConfig(t, emu, query, false, s.start, s.end, s.step, alignedConfig(align))
 		want := firstLastRangeRef(s.rows, fn, agg, by, s.window, s.step, s.start, s.end, align)
 		if d := diffRangePoints(firstLastRangePoints(run, by), want); d != "" {
@@ -309,7 +311,7 @@ func FuzzFirstLastOverTimeRangeTimestampsLikeLoki(f *testing.F) {
 		if by != "" {
 			query = fmt.Sprintf(`%s by (%s) (%s)`, agg, by, inner)
 		}
-		emu := &vlEmulator{t: t, rows: s.rows, field: "amount"}
+		emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount"}
 		run := runFirstLastConfig(t, emu, query, false, s.start, s.end, s.step, alignedConfig(align))
 		want := firstLastRangeRef(s.rows, fn, agg, by, s.window, s.step, s.start, s.end, align)
 		if d := diffRangePoints(firstLastRangePoints(run, by), want); d != "" {
@@ -324,9 +326,9 @@ func FuzzFirstLastOverTimeRangeTimestampsLikeLoki(f *testing.F) {
 // relabelling adds no VictoriaLogs call.
 func BenchmarkFirstLastRangeTimestamps(b *testing.B) {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 2000; i++ {
-		rows = append(rows, emuRow{ts: base + int64(i)*450*int64(time.Millisecond), stream: []string{`{app="uw",service_name="payment-service",pod="a"}`, `{app="uw",service_name="payment-service",pod="b"}`}[i%2], value: float64(i % 97)})
+		rows = append(rows, vlemu.Row{TS: base + int64(i)*450*int64(time.Millisecond), Stream: []string{`{app="uw",service_name="payment-service",pod="a"}`, `{app="uw",service_name="payment-service",pod="b"}`}[i%2], Value: float64(i % 97)})
 	}
 	shapes := map[string]string{
 		"last_over_time_under_sum":  `sum by (service_name) (last_over_time({app="uw"} | logfmt | unwrap amount [5s]))`,
@@ -342,8 +344,8 @@ func BenchmarkFirstLastRangeTimestamps(b *testing.B) {
 	for _, name := range names {
 		query := shapes[name]
 		b.Run(name, func(b *testing.B) {
-			emu := &vlEmulator{t: b, rows: rows, field: "amount"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: b, Rows: rows, Field: "amount"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			p, err := New(Config{BackendURL: backend.URL, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second, AlignQueriesWithStep: true})
 			if err != nil {
@@ -359,7 +361,7 @@ func BenchmarkFirstLastRangeTimestamps(b *testing.B) {
 				}
 			}
 			b.StopTimer()
-			b.ReportMetric(float64(len(emu.calls))/float64(b.N), "vl-calls/op")
+			b.ReportMetric(float64(len(emu.Calls))/float64(b.N), "vl-calls/op")
 		})
 	}
 }

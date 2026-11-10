@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // The settled steps cache keeps the answers of the window evaluator per
@@ -27,8 +29,8 @@ import (
 // queryStepsRows: two apps and two levels on a new pod every 20 seconds (a
 // stream per batch, as Kubernetes pods rotate), four lines each, over span;
 // raw, when set, gives the unwrapped text of a line in place of its number.
-func queryStepsRows(s0 time.Time, span time.Duration, raw func(at time.Duration, app string) string) []emuRow {
-	var rows []emuRow
+func queryStepsRows(s0 time.Time, span time.Duration, raw func(at time.Duration, app string) string) []vlemu.Row {
+	var rows []vlemu.Row
 	n := 0
 	for at := time.Duration(0); at < span; at += 20 * time.Second {
 		for _, app := range []string{"pay", "auth"} {
@@ -36,9 +38,9 @@ func queryStepsRows(s0 time.Time, span time.Duration, raw func(at time.Duration,
 				n++
 				stream := fmt.Sprintf(`{app=%q,env="production",level=%q,pod="%s-%04d"}`, app, level, app, n)
 				for i := 0; i < 4; i++ {
-					row := emuRow{ts: s0.Add(at + time.Duration(i)*3*time.Second + 500*time.Millisecond).UnixNano(), stream: stream, value: float64((n*7+i*3)%41) + 0.25}
+					row := vlemu.Row{TS: s0.Add(at + time.Duration(i)*3*time.Second + 500*time.Millisecond).UnixNano(), Stream: stream, Value: float64((n*7+i*3)%41) + 0.25}
 					if raw != nil && i == 0 {
-						row.raw = raw(at, app)
+						row.Raw = raw(at, app)
 					}
 					rows = append(rows, row)
 				}
@@ -97,10 +99,10 @@ var queryStepsQueries = []string{
 // with the caches and one without, each over its own emulated VictoriaLogs,
 // and requires the same status and bytes. It returns the outcomes of the
 // settled steps cache and the answers with data and with Loki's 400.
-func runQueryStepsDifferential(t *testing.T, rows []emuRow, queries []string, windows []extentWindow) (outcomes map[string]int, withData, nans, rejected int) {
+func runQueryStepsDifferential(t *testing.T, rows []vlemu.Row, queries []string, windows []extentWindow) (outcomes map[string]int, withData, nans, rejected int) {
 	t.Helper()
-	onSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
-	offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+	onSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
+	offSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 	on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 	off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 	for _, query := range queries {
@@ -250,7 +252,7 @@ func TestQueryRangeStepsMatchUncached(t *testing.T) {
 func TestQueryRangeStepsLokiWindows(t *testing.T) {
 	s0 := time.Unix(1_700_001_000, 0).UTC()
 	rows := queryStepsRows(s0, 4*time.Hour, nil)
-	srv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+	srv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 	p := newExtentTestProxy(t, srv.URL, true, 256<<20)
 	podRE := regexp.MustCompile(`,pod="[^"]*"`)
 	group := func(stream string) string { return podRE.ReplaceAllString(stream, "") }
@@ -344,8 +346,8 @@ func TestQueryRangeStepsOnlyPerStepAnswers(t *testing.T) {
 		{"both parsers", `sum by (app) (sum_over_time({env="production"} | json | logfmt | unwrap amount [2m]))`, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			onSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
-			offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+			onSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
+			offSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 			on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 			off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 			start := s0.Add(90 * time.Minute)
@@ -378,10 +380,10 @@ func TestQueryRangeStepsOnlyPerStepAnswers(t *testing.T) {
 func TestQueryRangeStepsScopeAndAccounting(t *testing.T) {
 	s0 := time.Unix(1_700_001_000, 0).UTC()
 	rows := queryStepsRows(s0, 4*time.Hour, nil)
-	emuOn := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}
-	emuOff := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}
-	onSrv, _ := newExtentShim(t, emuOn.handler())
-	offSrv, _ := newExtentShim(t, emuOff.handler())
+	emuOn := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}
+	emuOff := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}
+	onSrv, _ := newExtentShim(t, emuOn.Handler())
+	offSrv, _ := newExtentShim(t, emuOff.Handler())
 	on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 	off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 	query := `sum without (pod) (max_over_time({env="production"} | logfmt amount | unwrap amount [5m]))`
@@ -412,9 +414,9 @@ func TestQueryRangeStepsScopeAndAccounting(t *testing.T) {
 		t.Fatalf("the refreshes inside a step were not answered from steps: %v", o)
 	}
 	// A line written after the horizon shows on the next request.
-	late := emuRow{ts: start.Add(55 * time.Minute).UnixNano(), stream: `{app="pay",env="production",level="info",pod="late"}`, value: 1e6}
-	emuOn.rows = append(append([]emuRow(nil), rows...), late)
-	emuOff.rows = emuOn.rows
+	late := vlemu.Row{TS: start.Add(55 * time.Minute).UnixNano(), Stream: `{app="pay",env="production",level="info",pod="late"}`, Value: 1e6}
+	emuOn.Rows = append(append([]vlemu.Row(nil), rows...), late)
+	emuOff.Rows = emuOn.Rows
 	check("after a line past the horizon", start.Add(10*time.Second), start.Add(time.Hour+10*time.Second), tenant("a"))
 	check("again", start.Add(20*time.Second), start.Add(time.Hour+20*time.Second), tenant("a"))
 	if got := queryRangeRequests(t, on, http.StatusOK); got != 8 {
@@ -431,17 +433,17 @@ func TestQueryRangeStepsScopeAndAccounting(t *testing.T) {
 // conformance: quality/query-range-settled-steps, loki_api_v1_query_range
 func TestQueryRangeStepsSeriesLimit(t *testing.T) {
 	s0 := time.Unix(1_700_001_000, 0).UTC()
-	var rows []emuRow
+	var rows []vlemu.Row
 	for at := time.Duration(0); at < 3*time.Hour; at += 30 * time.Second {
 		if at < 120*time.Minute {
-			rows = append(rows, emuRow{ts: s0.Add(at).UnixNano(), stream: `{app="pay",env="production",level="info",pod="a"}`, value: 1})
+			rows = append(rows, vlemu.Row{TS: s0.Add(at).UnixNano(), Stream: `{app="pay",env="production",level="info",pod="a"}`, Value: 1})
 		}
 		if at >= 150*time.Minute {
-			rows = append(rows, emuRow{ts: s0.Add(at).UnixNano(), stream: `{app="auth",env="production",level="info",pod="b"}`, value: 2})
+			rows = append(rows, vlemu.Row{TS: s0.Add(at).UnixNano(), Stream: `{app="auth",env="production",level="info",pod="b"}`, Value: 2})
 		}
 	}
-	onSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
-	offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+	onSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
+	offSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 	on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 	off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 	on.maxStatsQuerySeries, off.maxStatsQuerySeries = 1, 1
@@ -577,10 +579,10 @@ func TestQueryRangeStepsGapsReadTogether(t *testing.T) {
 					}
 				}
 				time.Sleep(60 * time.Millisecond)
-				(&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler().ServeHTTP(w, r)
+				(&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler().ServeHTTP(w, r)
 			})
 			onSrv, _ := newExtentShim(t, slow)
-			offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+			offSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 			on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 			off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 			on.backendHeavyQueryMinRange = tc.heavy

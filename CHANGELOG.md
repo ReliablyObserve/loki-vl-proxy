@@ -43,6 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a clause and a lone ranking wrapped in parentheses stay with the
   string translator.
 
+## [2.128.1] - 2026-11-10
+
+### Changed
+
+- The lowered binary operations of the query plan allocate less: the text of
+  the vector matching modifiers (`on`, `ignoring`, `group_left`,
+  `group_right`) is built on a stack buffer and compared without a copy, and
+  stripping the modifiers from a query uses one buffer. The 72 binary
+  operations the plan lowers go from 70 to 68 allocations per translation.
+  The plan is only compared with the string
+  translator today, so the requests sent to VictoriaLogs and the answers do
+  not change.
+
 ## [2.128.0] - 2026-11-10
 
 ### Changed

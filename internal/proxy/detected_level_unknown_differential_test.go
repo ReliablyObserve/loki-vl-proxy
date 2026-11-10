@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins the detected_level label of metric answers to Loki's, on
@@ -34,7 +35,7 @@ import (
 // Loki's series identity, the stream plus the level plus detected_level.
 //
 // The proxy under test is the real handler. VictoriaLogs is simulated by
-// vlEmulator, which applies Loki's detected_level rule (dlDerive) where the
+// vlemu.Emulator, which applies Loki's detected_level rule (dlDerive) where the
 // translator's detected_level pipe chain is, and the stats pipes with
 // VictoriaLogs' bucket semantics. A series the model knows is the stream, a
 // stored level field and detected_level; the chain is pinned apart in the
@@ -114,15 +115,15 @@ func (s dlScenario) times() []int64 {
 	return out
 }
 
-func (s dlScenario) emuRows() []emuRow {
-	out := make([]emuRow, len(s.rows))
+func (s dlScenario) emuRows() []vlemu.Row {
+	out := make([]vlemu.Row, len(s.rows))
 	for i, r := range s.rows {
-		out[i] = emuRow{ts: r.ts, stream: r.stream, msg: r.msg, value: 1}
+		out[i] = vlemu.Row{TS: r.ts, Stream: r.stream, Msg: r.msg, Value: 1}
 		if r.msg == "" {
-			out[i].msg = fmt.Sprintf("line %d", i)
+			out[i].Msg = fmt.Sprintf("line %d", i)
 		}
 		if r.level != "" {
-			out[i].labels = map[string]string{"level": r.level}
+			out[i].Labels = map[string]string{"level": r.level}
 		}
 	}
 	return out
@@ -141,7 +142,7 @@ func dlKey(labels map[string]string) string {
 
 func dlStreamLabels(stream string) map[string]string {
 	out := map[string]string{}
-	for _, m := range emuStreamLabelRE.FindAllStringSubmatch(stream, -1) {
+	for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1) {
 		out[m[1]] = m[2]
 	}
 	return out
@@ -283,8 +284,8 @@ func generateDLScenario(rnd *rand.Rand, kind, route string) dlScenario {
 
 func runDLScenario(t *testing.T, s dlScenario, version string) map[string]*dlSeries {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.emuRows(), field: "amount", version: version, deriveLevel: dlDerive}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: s.emuRows(), Field: "amount", Version: version, DeriveLevel: dlDerive}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
@@ -309,7 +310,7 @@ func runDLScenario(t *testing.T, s dlScenario, version string) map[string]*dlSer
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s: %d %s", s.query, res.Code, res.Body)
 	}
-	for _, query := range emu.endpointCalls("/select/logsql/query") {
+	for _, query := range emu.EndpointCalls("/select/logsql/query") {
 		if !strings.Contains(query, "| stats ") {
 			t.Fatalf("%s: the metric read raw rows: %s", s.query, query)
 		}

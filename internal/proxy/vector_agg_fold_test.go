@@ -13,6 +13,7 @@ import (
 	"time"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Which queries the proxy folds itself: a count, min, max or avg anywhere in a
@@ -261,11 +262,11 @@ func TestVectorAggregationOverRateCounterFolds(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
 	// A counter per stream, increasing by 2, 5, 3 and 2 over the window.
 	first, last := []float64{1, 1, 1, 1}, []float64{3, 6, 4, 3}
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i, stream := range vaStreams {
 		rows = append(rows,
-			emuRow{ts: base + int64(i+1)*10e9, stream: stream, value: first[i], msg: fmt.Sprintf("amount=%v", first[i])},
-			emuRow{ts: base + int64(i+1)*10e9 + 5e9, stream: stream, value: last[i], msg: fmt.Sprintf("amount=%v", last[i])})
+			vlemu.Row{TS: base + int64(i+1)*10e9, Stream: stream, Value: first[i], Msg: fmt.Sprintf("amount=%v", first[i])},
+			vlemu.Row{TS: base + int64(i+1)*10e9 + 5e9, Stream: stream, Value: last[i], Msg: fmt.Sprintf("amount=%v", last[i])})
 	}
 	perSecond := func(m map[string]float64) map[string]float64 {
 		for k, v := range m {
@@ -286,7 +287,7 @@ func TestVectorAggregationOverRateCounterFolds(t *testing.T) {
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", tc.query, instant), func(t *testing.T) {
-				emu := &vlEmulator{t: t, rows: rows, field: "amount"}
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
 				p, closeBackend := newVectorAggProxy(t, emu)
 				defer closeBackend()
 				params := url.Values{"query": {tc.query}}

@@ -1012,6 +1012,57 @@ decisions:
     performance:
       tracked: ['BenchmarkNestedVectorAggQueriesTranslator / BenchmarkNestedVectorAggQueriesLowered / BenchmarkNestedVectorAggQueriesPlanOnly (internal/queryplan/lower), BenchmarkVectorAggQueries* (internal/queryplan/lower), the translator''s own benchmarks (internal/translator) ns/op, B/op, allocs/op']
       bound: 'M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10, the 238 lowered corpus nests: string translator 8.1 µs, 12.7 KiB, 68 allocs, lowered (Parse + Build + Resolve + Plan) 3.8 µs, 8.0 KiB, 57 allocs (-54 percent time, -37 percent bytes, -16 percent allocs); the plan alone 2.3 µs, 6.7 KiB, 39 allocs. The single-level vector benchmarks, base against branch on the same queries (10 interleaved runs): lowered 7.112 to 7.061 KiB and 54 to 53 allocs, plan alone 6.085 to 6.033 KiB and 40 allocs, translator unchanged; ns/op within the noise of a shared machine. The string translator''s own benchmarks base against branch: B/op and allocs/op identical on all 29.'
+  - id: lowering-binary-helper-allocations
+    pending: true
+    chosen: 'Step 21 ships the allocation fixes of the helpers the binary lowering and its screen share, and nothing else: binMatching builds the modifier text on a stack buffer (the Matching and its text are the two allocations left), the screen compares the text it reads with the lowering''s text through matchingTail without a copy, and stripMatching strips the vector matching modifiers into one buffer for the text and one for the modifiers (none when the query has none). The text and the operators the lowering writes are byte-identical to before; the 72 binary operations step 16 lowers go from 70 to 68 allocations (lowered path), the translator''s 79 unchanged. A bool modifier and a without clause on an operand stay delegated exactly as step 16 leaves them (BinOp bool, BinOp operand without). TestBinOpMoreGridShadow holds a grid of 3,105 queries x 12 profiles of those spellings (with the words in labels and quoted values, nesting, set operators, label_replace around each, parser and formatting operands) to 0 mismatches and fails the day a row with a bool or a without operand is lowered.'
+    over: ['lowering bool with Bool false and a without operand as a Fold around the whole Binary, which is the translator''s reading (an implementation was built, proven byte for byte on the shadow, and removed before merge): it pins a non-Loki reading in the plan (bool is dropped from the text; the fold applies to the binary where Loki folds the operand) that the flip would have to undo, for rows the proxy never answers from the text', 'lowering and, or, unless, nested binary operations, vector() or two numbers, a label_replace operand or a ranking operand with the translator''s text (it writes the left operand alone, drops the inner operator, writes a phrase search or drops the operation: there is no right text to match)', 'a second fuzz target for the two spellings (FuzzBinOpLowering already draws bool and without operands, and all of them are delegated, so it would test nothing)']
+    why: |
+      Step 21 of architecture B (owner decision 2026-11-10: ship only the
+      shared-helper allocation fixes). The step was to lower the binary
+      constructs step 16 left to the translator. Phase 1 (below, as
+      evidence) found that the text the translator writes for most of them
+      is wrong: and/or/unless write the left operand alone, nested
+      operations drop the inner operator or become a phrase search,
+      vector() and two numbers become phrase searches, a label_replace
+      operand drops the operation, a ranking operand becomes a phrase
+      search. Two are plain functions of the text and could be lowered byte
+      for byte: bool (dropped) and a without operand (the clauses are taken
+      out and one marker is written after the whole binary). Both were
+      built and proven on the shadow (3,105 grid queries, 0 mismatches,
+      Loki oracle on 3,432 rows for the operator, bool, matching and
+      operands), then removed by the owner's decision: both copy a reading
+      that is not Loki's, and the proxy never answers a binary operation
+      from this text (binaryExprForRequest routes it from the LogQL; the
+      text is only the fallback and the shadow's reference). Binary
+      operations will be treated like rankings: the proxy's per-operand
+      requests and its evaluation step become the shadow oracle (the
+      framework of step 23), and bool and without are lowered then the way
+      Loki reads them (Bool true on the typed Binary, the fold on the
+      operand).
+
+      Phase 1 findings kept as evidence. The translator reads the whole
+      text before splitting it: it removes every without clause (keeping
+      the labels of the first), drops ` bool `, strips the vector matching
+      modifiers into `@@@` text, then splits at the first operator at
+      parenthesis depth 0 and translates each side alone. Set operators are
+      not operator tokens, so `a and b` is the left operand alone. A side
+      that does not translate is retried at the next operator, and a side
+      with trailing text (`b * 2`) is read as `b`. Delegated rows on the
+      base: operand without 963, operand BinOp 153, bool 72, set operator
+      72, VectorLit 45, scalar operands 18 (22,935 rows x 12 profiles).
+      The allocation work found that many shapes step 16 lowers allocate
+      more than the translator because the operand lowering does (group_left
+      and group_right matching 2 to 7 more, ignoring over an unwrapped value
+      2 more, a negative or regexp line filter in both operands 2 to 3
+      more, an operand with a parser and a label filter up to 8 more): a
+      follow-up of the operand lowerings, not changed here.
+    evidence: 'TestPlanShadow native unchanged against main, 0 mismatches (the lowering writes the same operators and text); TestBinOpGridShadow 13,410 rows, 0 mismatches; TestBinOpMoreGridShadow 3,105 queries x 12 profiles = 26,784 rows, all delegated, 0 mismatches, none with a bool or a without operand lowered; TestBinOpLoweringAllocatesNoMoreThanTheTranslator 490 shape checks (245 queries, two label modes) never above the translator, TestBinOpMatchingHelpersAllocate (matching text 0 allocations to compare, binMatching 2, stripMatching 2 or 0); benchstat 10 runs x 3000 iterations, the 72 lowered binary operations, same queries before and after: lowered 70 -> 68 allocs, 9.55 -> 9.49 KiB, 6.3 -> 4.6 µs (under the tenant''s six stream labels 91 -> 89 allocs), translator 79 allocs both; no file of internal/translator, internal/translate or internal/logql changed (2026-11-10)'
+    code: [internal/queryplan/lower/binop.go]
+    tests: [TestBinOpLoweringAllocatesNoMoreThanTheTranslator, TestBinOpMatchingHelpersAllocate, TestBinOpMoreGridShadow, TestBinOpGridShadow, TestPlanShadow, TestPlanLowersBinaryOperations, TestPlanDelegatesBinaryOperations, FuzzBinOpLowering]
+    quality: 'No handler reads the lowering for metric queries; the requests sent to VictoriaLogs and the proxy''s evaluation do not change. Translator readings that differ from Loki, left to it: and, or, unless written as the left operand alone; a without operand folded over the whole binary; bool dropped from the text; nested binaries, vector() and two numbers written as a phrase or the left operand; a label_replace operand written without the operation. Follow-ups: a typed set operator and a nested Binary in physical; bool and without lowered the way Loki reads them under the proxy-evaluated oracle (step 23); the operand lowerings'' allocations listed in why; the proxy''s parser accepts a trailing comma in a label list (`without (pod,)`) that Loki rejects.'
+    performance:
+      tracked: ['BenchmarkBinOpQueriesTranslator / BenchmarkBinOpQueriesLowered / BenchmarkBinOpQueriesStreamLabelsTranslator / BenchmarkBinOpQueriesStreamLabelsLowered / BenchmarkBinOpQueriesPlanOnly (internal/queryplan/lower) ns/op, B/op, allocs/op']
+      bound: 'M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10, the 72 binary operations step 16 lowers, the same queries on the step 19 base and on this branch: lowered 6.3 µs -> 4.6 µs, 9.55 KiB -> 9.49 KiB, 70 -> 68 allocs; under the tenant''s six stream labels 10.3 µs -> 8.6 µs, 13.52 -> 13.45 KiB, 91 -> 89 allocs; the string translator unchanged (79 and 137 allocs)'
   - id: lowering-proxy-evaluated-rankings
     pending: true
     chosen: 'lower.Plan lowers topk, bottomk, sort and sort_desc to physical.RankStep{Op, K, By, In} per ranking, with a physical.SeriesAgg for each sum, avg, min, max or count layer between rankings (innermost first), over the operand lowered as a query of its own (a range aggregation with or without an unwrapped value, a vector aggregation or a nest of them, label_replace around either, or the next ranking); RankStep and SeriesAgg encode as the operand''s request, and the shadow reference for these roots is the proxy''s own route (proxy.PostAggregationPhysical: the operand''s translation decoded under one level per layer, and the operand text before preserveMetricStreamIdentity), compared with physical.Equal and byte for byte on the operand''s request, and counted apart as native_proxy_evaluated; lower.ScreenText slices the operand the way the proxy''s route does (rankOperandSpan, over the text scanners now shared in internal/logql) and screens that text; a label_replace around a ranking lowers to LabelMap{RankStep} and is a known divergence in the shadow until the plan serves these roots'

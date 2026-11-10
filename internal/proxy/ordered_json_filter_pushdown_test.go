@@ -21,6 +21,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -810,15 +811,15 @@ func (f *pushdownFakeVL) applyPipes(t testing.TB, query string, row pushdownRow)
 			re, _ := strconv.Unquote(m[1])
 			repl, _ := strconv.Unquote(m[2])
 			values[m[3]] = regexp.MustCompile(re).ReplaceAllString(values[m[3]], repl)
-		case emuPhaseMathRE.MatchString(pipe):
+		case vlemu.PhaseMathRE.MatchString(pipe):
 			// The window phase of windowPhaseFilter, in float64 as VictoriaLogs'
 			// math pipe computes it (windowPhaseKeeps).
-			m := emuPhaseMathRE.FindStringSubmatch(pipe)
+			m := vlemu.PhaseMathRE.FindStringSubmatch(pipe)
 			anchor, _ := strconv.ParseInt(m[1], 10, 64)
 			step, _ := strconv.ParseInt(m[2], 10, 64)
 			values["__lvp_window_phase"] = strconv.FormatFloat(math.Mod(float64(row.ts.UnixNano())-float64(anchor), float64(step)), 'f', -1, 64)
-		case emuPhaseFilterRE.MatchString(pipe):
-			m := emuPhaseFilterRE.FindStringSubmatch(pipe)
+		case vlemu.PhaseFilterRE.MatchString(pipe):
+			m := vlemu.PhaseFilterRE.FindStringSubmatch(pipe)
 			lower, _ := strconv.ParseFloat(m[1], 64)
 			upper, _ := strconv.ParseFloat(m[2], 64)
 			phase, err := strconv.ParseFloat(values["__lvp_window_phase"], 64)
@@ -895,7 +896,7 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			fake.mu.Unlock()
 			// Reuse the existing instant stats emulator after applying this
 			// fake's base selector and pre-stats pipes to the original rows.
-			emulator := &vlEmulator{t: t}
+			emulator := &vlemu.Emulator{T: t}
 			beforeStats, _, found := strings.Cut(query, " | stats ")
 			if !found {
 				t.Errorf("fake VL: missing instant stats pipe: %s", query)
@@ -903,10 +904,10 @@ func newPushdownFakeVL(t testing.TB, rows []pushdownRow, stored func(string) str
 			}
 			for _, row := range fake.rows {
 				if values, kept := fake.applyPipes(t, beforeStats, row); kept {
-					emulator.rows = append(emulator.rows, emuRow{ts: row.ts.UnixNano(), labels: values, msg: row.msg})
+					emulator.Rows = append(emulator.Rows, vlemu.Row{TS: row.ts.UnixNano(), Labels: values, Msg: row.msg})
 				}
 			}
-			emulator.serveStats(w, r)
+			emulator.ServeStats(w, r)
 		case "/select/logsql/stats_query_range":
 			fake.mu.Lock()
 			fake.stats = append(fake.stats, query)
