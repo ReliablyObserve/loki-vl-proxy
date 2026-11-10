@@ -1546,6 +1546,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/physical_codec_test.go | semantics/without-over-inner-aggregation-collapses",
@@ -1558,6 +1559,7 @@
     "internal/querycorpus/plan_corpus_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
@@ -2073,7 +2075,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 421,
+      "go": 423,
       "playwright": 1
     },
     "page_kinds": {

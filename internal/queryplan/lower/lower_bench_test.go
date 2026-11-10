@@ -10,12 +10,14 @@ import (
 )
 
 // The kinds of log query the benchmarks measure: line filters only, a pattern line filter (|> or !>) among them,
-// a label filter without a parser among them, and a json or logfmt parser, a drop or a keep among them.
+// a label filter without a parser among them, a json or logfmt parser, a drop or a keep among them, and a label
+// filter after a parser.
 const (
 	lineFilterQueries = iota
 	patternFilterQueries
 	labelFilterQueries
 	parserQueries
+	parsedLabelFilterQueries
 )
 
 // loweredLineFilterQueries are the plan corpus's log queries with line filters that the plan lowers natively and
@@ -41,6 +43,12 @@ func loweredLabelFilterQueries(b *testing.B) []string {
 // parser, a drop or a keep.
 func loweredParserQueries(b *testing.B) []string {
 	return loweredQueries(b, parserQueries)
+}
+
+// loweredParsedLabelFilterQueries are the plan corpus's log queries the plan lowers natively that have a label
+// filter after a json or logfmt parser.
+func loweredParsedLabelFilterQueries(b *testing.B) []string {
+	return loweredQueries(b, parsedLabelFilterQueries)
 }
 
 func loweredQueries(b *testing.B, kind int) []string {
@@ -76,6 +84,18 @@ func loweredQueries(b *testing.B, kind int) []string {
 
 func filterKind(sel *queryplan.LogSelect) int {
 	kind := lineFilterQueries
+	parsed, after := false, false
+	for _, st := range sel.Stages {
+		switch st.(type) {
+		case *queryplan.Parse:
+			parsed = true
+		case *queryplan.LabelFilter:
+			after = after || parsed
+		}
+	}
+	if after {
+		return parsedLabelFilterQueries
+	}
 	for _, st := range sel.Stages {
 		switch st := st.(type) {
 		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep:
@@ -205,6 +225,39 @@ func BenchmarkParserQueriesTranslator(b *testing.B) {
 // The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
 func BenchmarkParserQueriesLowered(b *testing.B) {
 	qs := loweredParserQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		expr, err := logql.Parse(qs[i%len(qs)])
+		if err != nil {
+			b.Fatal(err)
+		}
+		p, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		queryplan.Resolve(p)
+		if _, err := Plan(p, Profile{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The string translator on the lowered queries with a label filter after a parser: text to LogsQL text.
+func BenchmarkParsedLabelFilterQueriesTranslator(b *testing.B) {
+	qs := loweredParsedLabelFilterQueries(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := translator.TranslateLogQLWithLabels(qs[i%len(qs)], nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// The plan on the same queries: text to LogsQL text through Parse, Build, Resolve and Plan.
+func BenchmarkParsedLabelFilterQueriesLowered(b *testing.B) {
+	qs := loweredParsedLabelFilterQueries(b)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

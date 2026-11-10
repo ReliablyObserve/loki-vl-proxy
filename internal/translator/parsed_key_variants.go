@@ -21,57 +21,9 @@ import (
 // parsedKeySep.
 const parsedKeySep = translate.ParsedKeySep
 
-// maxParsedKeyUnderscores bounds the 2^n candidate keys of a name with n
-// underscores; a longer name is matched by its uniform spellings only.
-const maxParsedKeyUnderscores = 6
-
 // parsedKeyVariants returns the original keys a parser can extract for the
-// sanitized label name: every underscore kept, or replaced by a dot (nested
-// JSON objects and OTel attributes), plus the all-hyphen spelling (HTTP header
-// style). The label itself comes first.
-func parsedKeyVariants(label string) []string {
-	n := strings.Count(label, "_")
-	if n == 0 {
-		return []string{label}
-	}
-	out := []string{label}
-	seen := map[string]struct{}{label: {}}
-	add := func(v string) {
-		// A key with adjacent, leading or trailing dots is not one the field
-		// identifier normalisation keeps, so it cannot be matched by name.
-		if strings.Contains(v, "..") || v[0] == '.' || v[len(v)-1] == '.' {
-			return
-		}
-		if _, ok := seen[v]; !ok {
-			seen[v] = struct{}{}
-			out = append(out, v)
-		}
-	}
-	pos := make([]int, 0, n)
-	for i := 0; i < len(label); i++ {
-		if label[i] == '_' {
-			pos = append(pos, i)
-		}
-	}
-	if n > maxParsedKeyUnderscores {
-		add(strings.ReplaceAll(label, "_", "."))
-		add(strings.ReplaceAll(label, "_", "-"))
-		return out
-	}
-	b := []byte(label)
-	for mask := 1; mask < 1<<n; mask++ {
-		for i, p := range pos {
-			if mask&(1<<i) != 0 {
-				b[p] = '.'
-			} else {
-				b[p] = '_'
-			}
-		}
-		add(string(b))
-	}
-	add(strings.ReplaceAll(label, "_", "-"))
-	return out
-}
+// sanitized label name (translate.ParsedKeyVariants).
+func parsedKeyVariants(label string) []string { return translate.ParsedKeyVariants(label) }
 
 var patternCaptureRE = regexp.MustCompile(`<([A-Za-z][A-Za-z0-9_]*)>`)
 
@@ -172,15 +124,7 @@ func parsedKeyMatchesEmpty(value string, op logqlSingleFilterOp) bool {
 		// operators (pkg/logql/log/ip.go:128-131).
 		return false
 	}
-	v := streamMatcherValue(value, op.IsRe)
-	if !op.IsRe {
-		return (v == "") != op.Negate
-	}
-	re, err := regexp.Compile(translate.AnchorLabelFilterPattern(lokiLabelFilterPattern(v)))
-	if err != nil {
-		return op.Negate
-	}
-	return re.MatchString("") != op.Negate
+	return translate.ParsedKeyMatchesEmpty(streamMatcherValue(value, op.IsRe), op, false)
 }
 
 // withParsedKeyVariants wraps a label translation so a label filter written
