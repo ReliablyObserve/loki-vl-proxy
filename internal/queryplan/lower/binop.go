@@ -1,7 +1,6 @@
 package lower
 
 import (
-	"math"
 	"strconv"
 	"strings"
 
@@ -23,7 +22,7 @@ import (
 //   - and, or and unless (the translator writes the left operand alone), and a bool modifier (it drops it);
 //   - two numbers, an operand that is a binary operation, vector(), label_replace, a ranking or a log query, a
 //     vector aggregation with a without clause (the translator folds the whole binary by it), an operand the
-//     range or vector aggregation lowering leaves to the translator, and a number that is not finite;
+//     range or vector aggregation lowering leaves to the translator;
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
@@ -46,7 +45,6 @@ var (
 	errBinSetOperator     = &NotLoweredError{Construct: "BinOp set operator"}
 	errBinBool            = &NotLoweredError{Construct: "BinOp bool"}
 	errBinScalarOperands  = &NotLoweredError{Construct: "BinOp scalar operands"}
-	errBinNumber          = &NotLoweredError{Construct: "BinOp number"}
 	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without"}
 	errBinOperandRange    = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
 	errBinOperandVector   = &NotLoweredError{Construct: "BinOp operand VectorAgg"}
@@ -74,11 +72,7 @@ func binOpShape(n *queryplan.BinOp) error {
 	}
 	for _, x := range [2]queryplan.Node{n.L, n.R} {
 		switch v := x.(type) {
-		case *queryplan.Scalar:
-			if math.IsNaN(v.V) || math.IsInf(v.V, 0) {
-				return errBinNumber
-			}
-		case *queryplan.RangeAgg:
+		case *queryplan.Scalar, *queryplan.RangeAgg:
 		case *queryplan.VectorAgg:
 			if v.By != nil && v.By.Without {
 				return errBinOperandWithout

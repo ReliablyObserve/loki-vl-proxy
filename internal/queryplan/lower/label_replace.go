@@ -21,7 +21,9 @@ import (
 //
 // Left to the string translator under a construct name: an expression that is a ranking, vector(), a number or a
 // call the parser keeps as text, one the lowering of its construct leaves to the translator, the service_name
-// grouping, and a spelling the translator reads unlike the plan (screenLabelReplace, before the lowering).
+// grouping, a NUL byte in the destination, replacement or source label (the marker's separator, which the proxy
+// would read back as one), and a spelling the translator reads unlike the plan (screenLabelReplace, before the
+// lowering).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
 	var specs []physical.LabelReplace
 	x := queryplan.Node(n)
@@ -29,6 +31,10 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 		lr, ok := x.(*queryplan.LabelReplace)
 		if !ok {
 			break
+		}
+		// The marker separates the arguments with a NUL byte: the proxy reads one in the first three as a separator.
+		if strings.ContainsRune(lr.Dst, 0) || strings.ContainsRune(lr.Replacement, 0) || strings.ContainsRune(lr.Src, 0) {
+			return nil, errLabelReplaceNUL
 		}
 		specs = append(specs, physical.LabelReplace{DstLabel: lr.Dst, Replacement: lr.Replacement, SrcLabel: lr.Src, Regex: lr.Regex})
 		x = lr.In
@@ -60,6 +66,7 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 
 var (
 	errLabelReplaceServiceName     = &NotLoweredError{Construct: "LabelReplace service_name grouping"}
+	errLabelReplaceNUL             = &NotLoweredError{Construct: "LabelReplace argument with NUL"}
 	errLabelReplaceSpelling        = &NotLoweredError{Construct: "LabelReplace spelling"}
 	errLabelReplaceOperandSpelling = &NotLoweredError{Construct: "LabelReplace operand spelling"}
 )
