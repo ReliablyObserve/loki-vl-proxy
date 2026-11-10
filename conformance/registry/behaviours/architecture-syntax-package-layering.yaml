@@ -563,12 +563,12 @@ decisions:
       tracked:
         - 'BenchmarkUnwrapQueriesTranslator / BenchmarkUnwrapQueriesLowered / BenchmarkUnwrapQueriesPlanOnly / BenchmarkUnwrapQueriesStreamLabelsTranslator / BenchmarkUnwrapQueriesStreamLabelsLowered (internal/queryplan/lower), BenchmarkTranslate_UnwrapSumByJSON / BenchmarkTranslate_UnwrapMaxPlain / BenchmarkTranslate_SumRate / BenchmarkTranslate_StdVar (internal/translator) ns/op, B/op, allocs/op'
       bound: >-
-        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10, 216 corpus unwrap aggregations: string
-        translator 9.9 us, 8.5 KiB, 47 allocs, lowered (Parse + Build + Resolve + Plan) 3.3 us, 5.4 KiB, 38
-        allocs; under the tenant's six stream labels string translator 18.0 us, 22.0 KiB, 75 allocs, lowered 4.9
-        us, 6.9 KiB, 40 allocs. The string translator's own benchmarks base (ast/lower-vector-agg) vs this branch,
-        10 interleaved runs of 10,000 iterations: ns/op within noise on all seven (the unwrap gate moved to
-        internal/translate and the translator forwards to it).
+        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, benchstat, 2026-11-10, corpus unwrap aggregations that the
+        plan lowers, with or without a parser: string translator 10.5 us, 10.1 KiB, 58 allocs, lowered (Parse + Build
+        + Resolve + Plan) 3.5 us, 5.3 KiB, 51 allocs; under the tenant's six stream labels string translator 19.2
+        us, 25.4 KiB, 95 allocs, lowered 6.4 us, 8.5 KiB, 71 allocs. The string translator's own benchmarks base
+        (ast/lower-vector-agg) vs this branch, 10 interleaved runs of 10,000 iterations: ns/op within noise on
+        all seven (the unwrap gate moved to internal/translate and the translator forwards to it).
   - id: lowering-parser-aggregations
     pending: true
     chosen: >-
@@ -647,12 +647,14 @@ decisions:
       tracked:
         - 'BenchmarkParserMetricQueriesTranslator / BenchmarkParserMetricQueriesLowered / BenchmarkParserMetricQueriesPlanOnly / BenchmarkParserMetricQueriesStreamLabelsTranslator / BenchmarkParserMetricQueriesStreamLabelsLowered (internal/queryplan/lower) ns/op, B/op, allocs/op'
       bound: >-
-        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10, 377 corpus parser aggregations: string translator
-        10.8 us, 9.5 KiB, 62 allocs, lowered (Parse + Build + Resolve + Plan) 3.6 us, 5.4 KiB, 67 allocs (+5: the
-        typed pipes of the parser and its filters); under the tenant's six stream labels string translator 19.5
-        us, 25.9 KiB, 108 allocs, lowered 7.9 us, 13.2 KiB, 108 allocs (the stream value copies and restores are
-        built once per set of names). The shapes were on the translator before this step, so no served request
-        changes.
+        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, benchstat, 2026-11-10, 377 corpus parser aggregations: string
+        translator 11.1 us, 9.4 KiB, 62 allocs, lowered (Parse + Build + Resolve + Plan) 3.6 us, 4.9 KiB, 61 allocs;
+        under the tenant's six stream labels string translator 19.8 us, 25.9 KiB, 108 allocs, lowered 6.9 us, 9.6
+        KiB, 99 allocs. The first measure of this row had the lowered path 5 allocations over the translator (67 against
+        62); printing each pipe once into a presized builder, sharing the pipes of a plain json or logfmt stage,
+        presizing the pipe list and keeping the unwrap strip off the heap removed them (-9% allocs, -8% B/op on
+        the same shapes), with the written text unchanged. The shapes were on the translator before this step, so
+        no served request changes.
   - id: flip-log-select-to-lowering
     pending: true
     chosen: 'A log query whose pipeline is line filters, pattern filters and label filters (no parser or formatting stage; the plan construct LogSelect) is translated by lower.Plan and written by physical.Encode instead of the string translator, when -query-plan-lowering is on (default). The decision is made on the text before any plan exists: a query that does not start with a stream selector (every metric query) is turned away by its first byte, and logql.MayHaveNonFilterStage (one allocation-free pass over the text that skips quoted strings) turns away a query with a parser or formatting stage or a detected_level / service_name label filter; only then is the query parsed (parseLogQLExpr, so the request flow counts the parse), planned and lowered. Any error, a construct outside proxy.QueryPlanFlippedConstructs, or a panic (recovered, counted as panic) falls back to the string translator, which also stays the authority on rejecting a query. The text is the translator''s byte for byte: the logsql nodes the lowering builds print the translator''s spelling (AnyOfLower, and AndExpr / OrExpr with Lower, for the lowercase `or` and `and` the translator writes), TestPlanShadow and the generated label-filter grid assert physical.Encode(lower.Plan(...)) equals the translator text for every native row under the 12 profiles, and TestQueryPlanLowering_RouteParity sends the same queries through a fake VictoriaLogs with the flag on and off under seven profiles and compares the client answers and every upstream request. The legacy text writer moved to physical.Encode (translator.EncodePhysical wraps it) so the proxy writes the text without the translator. One options-to-lower.Profile mapping (loweringProfile) serves the flip and the live shadow, and one planning function (loweringPlan) holds the parse of both. The live shadow counts a flipped query as result=flipped and keeps comparing what stays on the translator. To keep the flip from costing allocations, logsql renders a query into one pooled buffer (appendTo on the hot nodes; String is unchanged) and the shared field-name normaliser skips its regexp for a name with no dot.'
