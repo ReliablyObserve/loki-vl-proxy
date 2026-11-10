@@ -2,6 +2,7 @@ package logql
 
 import (
 	"sort"
+	"strings"
 	"text/template"
 	"text/template/parse"
 )
@@ -11,7 +12,9 @@ import (
 type LineTemplate struct {
 	// Canonical is the parse tree printed back: spacing inside actions,
 	// comments and trim markers do not change it, and parsing it again gives
-	// the same tree. A template with define or block keeps its text.
+	// the same tree. A template with define or block keeps its text, and so
+	// does one whose printed tree would read differently: text ending in "{"
+	// that a trim marker joined to an action prints as "{{{".
 	Canonical string
 	// Fields are the distinct names read as {{.name}} (or $.name), in first
 	// use order. Inside range and with the dot is another value, so the list
@@ -36,7 +39,9 @@ func typeLineTemplate(text string) *LineTemplate {
 	}
 	lt := &LineTemplate{Canonical: text, Simple: true}
 	if len(t.Templates()) == 1 {
-		lt.Canonical = t.Root.String()
+		if c := t.Root.String(); !strings.Contains(c, "{{{") {
+			lt.Canonical = c
+		}
 	} else {
 		lt.Simple = false
 	}

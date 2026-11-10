@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `line_format` template whose trim marker joins text ending in `{` to an
+  action (`{ {{- .a}}`) got a canonical form that does not parse (`{{{.a}}`),
+  so its plan key could equal the text of a template Loki rejects. Such a
+  template now keeps its own text as its canonical form, as one with `define`
+  or `block` does. Found by fuzz-smoke (`FuzzLineTemplateCanonical`).
+
 ## [2.122.1] - 2026-11-10
 
 ### Fixed
