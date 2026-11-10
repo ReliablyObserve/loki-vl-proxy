@@ -286,7 +286,7 @@ func TestPlanDelegatesRangeAggregations(t *testing.T) {
 		`bytes_rate({app="a"} | line_format "{{.a}}" [5m])`:      "RangeAgg LogSelect pipeline",
 		`rate({app="a"}[5m]) by (x)`:                             "RangeAgg grouping",
 		`count_over_time({app="a"} | unwrap n [5m])`:             "RangeAgg unwrap count_over_time",
-		`bytes_over_time({app="a"} | regexp "(?P<a>x)" [5m])`:    "RangeAgg LogSelect regexp parser",
+		`bytes_over_time({app="a"} | regexp "(?P<a>x)" [5m])`:    "RangeAgg parser",
 		`count_over_time({app="a"} | line_format "{{.a}}" [5m])`: "RangeAgg LogSelect pipeline",
 		`count_over_time({app="a"} | drop level [5m])`:           "RangeAgg drop or keep",
 		`count_over_time({app="a"} | keep detected_level [5m])`:  "RangeAgg drop or keep",

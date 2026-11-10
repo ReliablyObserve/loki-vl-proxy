@@ -255,3 +255,26 @@ func TestResponseKeyFencesSiteOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestIPFilterResponseKeyVersionFencesLineAndLabelFilters pins which queries carry the ip() fence: a label filter
+// and, since v4, a line filter, both operators, any blank before the parenthesis; no other query.
+//
+// conformance: cache-response-key-versions
+func TestIPFilterResponseKeyVersionFencesLineAndLabelFilters(t *testing.T) {
+	for query, fenced := range map[string]bool{
+		`{app="a"} | addr = ip("10.0.0.1")`:             true,
+		`{app="a"} | logfmt | addr != ip("10.0.0.0/8")`: true,
+		`{app="a"} |= ip("10.0.0.1")`:                   true,
+		`{app="a"} != ip("10.0.0.1")`:                   true,
+		`{app="a"} |=ip ("10.0.0.1-10.0.0.5")`:          true,
+		`rate({app="a"} |= ip("0.0.0.0/0") [5m])`:       true,
+		`{app="a"} |= "ip(10.0.0.1)"`:                   false,
+		`{app="a"} | json | ip_addr="10.0.0.1"`:         false,
+		`sum by (ip) (count_over_time({app="a"}[5m]))`:  false,
+		`{app="a"} |~ "zip"`:                            false,
+	} {
+		if got := ipLabelFilterResponseKeyVersion(query) == ipLabelFilterResponseVersion; got != fenced {
+			t.Errorf("%s: fenced %v, want %v", query, got, fenced)
+		}
+	}
+}

@@ -115,6 +115,16 @@ func templateReads(sel *queryplan.LogSelect, names []string) bool {
 			if holds(st.Param) {
 				return true
 			}
+		case *queryplan.LineFormat:
+			if holds(st.Template) {
+				return true
+			}
+		case *queryplan.LabelFormat:
+			for _, f := range st.Formats {
+				if holds(f.Value) {
+					return true
+				}
+			}
 		case *queryplan.Drop:
 			for _, m := range st.Matchers {
 				if holds(m.Value) {
@@ -198,6 +208,9 @@ func extractedUnpacks(sel *queryplan.LogSelect, staged [][]logsql.Pipe, bases []
 		p, ok := st.(*queryplan.Parse)
 		if !ok {
 			continue
+		}
+		if p.Type != logql.ParserJSON && p.Type != logql.ParserLogfmt {
+			continue // a regexp or pattern has no keys to unpack
 		}
 		if p.Strict || p.KeepEmpty || len(p.Fields) > 0 {
 			return nil, &NotLoweredError{Construct: "LogSelect label filter _extracted with parser arguments"}

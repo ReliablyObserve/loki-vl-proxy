@@ -47,6 +47,7 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/patterns_counts.go",
         "internal/translate/extracted_label.go",
+        "internal/translate/line_format.go",
         "internal/translate/parser.go",
         "internal/translate/stream_value_scratch.go",
         "internal/translate/unwrap_gate.go",
@@ -62,6 +63,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/translate/extract_stages.go",
         "internal/translator/translator.go"
       ]
     },
@@ -113,6 +115,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/range_metric_compat.go",
+        "internal/translate/extract_stages.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go"
       ]
@@ -209,6 +212,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/translate/extracted_label.go",
+        "internal/translate/line_format.go",
         "internal/translate/stream_value_scratch.go",
         "internal/translate/unwrap_gate.go",
         "internal/translate/vector.go",

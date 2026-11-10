@@ -37,8 +37,8 @@ func vectorAggGrid() []string {
 	selectors := []string{`{app="a"}`, `{app=~".*"}`, `{service_name="s"}`, `{detected_level="error"}`, `{app!="a", env=~"p.*"}`, `{k8s.pod.name="p"}`}
 	inner := func(f, sel, line, rng string) string { return fmt.Sprintf(`%s(%s%s%s)`, f, sel, line, rng) }
 	wrap := func(op, g, in string) {
-		switch {
-		case g == "":
+		switch g {
+		case "":
 			add(fmt.Sprintf(`%s(%s)`, op, in))
 		default:
 			add(fmt.Sprintf(`%s %s (%s)`, op, g, in))

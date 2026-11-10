@@ -1,0 +1,6906 @@
+[
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1 x 2",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1 x 2",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": " x 2",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": " x 2",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": " x ",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": " x ",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": " x 2",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": " x 2",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": " x ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": " x ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x y x é",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x y x é",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1 x 2",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1 x 2",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}} x {{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1 x ",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "-",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x y-x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x y-x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{ .a }}-{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1-1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "plain",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: ",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.app}}: {{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x: 1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[é]",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[é]",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[2]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | line_format \"[{{.b}}]\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "[]",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "é",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "é",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "x y",
+   "d": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "x y",
+   "d": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1",
+   "d": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, d=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "é",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "é",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "é",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "é",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "-2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "x y-é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "x y-é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1-2",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1-2",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}-{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1-"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "plain",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "plain",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"plain\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "plain"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "é",
+   "app": "x",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "é",
+   "app": "x",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a, a=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "é",
+   "d": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "é",
+   "d": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=a | label_format d=c",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "d": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "app": "x",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "/",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x y/x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x y/x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "x y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.a}}\" | line_format \"{{.c}}/{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1/1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "c": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "c": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "x y",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "c": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "2",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "2",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | line_format \"{{.a}}\" | label_format c=b",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "1",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "1",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "1",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "1",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "1",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x y",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x y",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "1",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "1",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "1",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format app=a",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "1",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x y",
+   "b": "é",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "b": "é",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "b": "2",
+   "c": "x",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "b": "2",
+   "c": "x",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=app",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "app": "x",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "app": "x",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "2",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": "",
+   "c": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "xx y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é",
+   "c": "xx y"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "x1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "x1",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format c=\"{{.app}}{{.a}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "x1"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "app": "x"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": "2"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "2",
+   "app": "x",
+   "b": "2"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "",
+   "app": "x",
+   "b": ""
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "x yé",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "x y",
+   "app": "x",
+   "b": "é"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "x yé",
+   "app": "x",
+   "b": "é"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "12",
+   "app": "x",
+   "b": "2",
+   "c": "old",
+   "d": "older"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "line one",
+  "keep": true,
+  "out": "line one",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ },
+ {
+  "q": "{app=\"x\"} | label_format a=\"{{.a}}{{.b}}\"",
+  "labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  },
+  "line": "",
+  "keep": true,
+  "out": "",
+  "out_labels": {
+   "a": "1",
+   "app": "x",
+   "c": "old"
+  }
+ }
+]

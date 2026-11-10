@@ -31,7 +31,7 @@ func ipLineCases() []ipLineCase {
 	before := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "-", "[", "=", "1.", "::"}
 	after := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "]", "/24", ",", "%eth0", ":80"}
 	var out []ipLineCase
-	grid := func(patterns, addrs []string) {
+	grid := func(patterns, addrs, before []string) {
 		for _, p := range patterns {
 			for _, a := range addrs {
 				for _, b := range before {
@@ -42,8 +42,13 @@ func ipLineCases() []ipLineCase {
 			}
 		}
 	}
-	grid(v4Patterns, v4)
-	grid(v6Patterns, v6)
+	grid(v4Patterns, v4, before)
+	grid(v6Patterns, v6, before)
+	// A run of dots in front of an IPv4 address: Loki reads the digits and dots in front as one run with the
+	// address, so a digit or a dot before the run hides the address.
+	grid(v4Patterns, v4, []string{"..", "...", "0..", "1..", "a..", "f..", ":..", "1.2..", "1. ."})
+	// A colon in front of an IPv4 address after a hex digit, a letter or another colon.
+	grid(v4Patterns, v4, []string{"0:", "1:", "a:", "f:", "g:", "z:", "0::", "a::", "1:2:"})
 	return out
 }
 
@@ -117,7 +122,7 @@ const ipv6KnownDifferences = 2764
 // Loki's ip() line filter keeps it: every IPv4 line of the grid, and the IPv6 lines up to ipv6KnownDifferences.
 // Loki's answers are recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
-// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision
+// conformance: semantics/ip-line-filter-ipv4-like-loki, semantics/ip-filter-precision, semantics/ip-filter-ipv4-after-dot-run
 func TestIPLineFilterMatchesLoki(t *testing.T) {
 	cases := ipLineCases()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {

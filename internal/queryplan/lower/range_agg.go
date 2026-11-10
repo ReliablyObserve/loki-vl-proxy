@@ -205,23 +205,38 @@ func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
 }
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not
-// write, or "" when it writes all: an unwrap first, any drop or keep (written unlike a log query's) and any other
-// stage the log query lowering leaves out (a parser it does not write, a formatting stage) is named by that
-// lowering.
+// write, or "" when it writes all: an unwrap first, then a regexp or pattern parser, any drop or keep (written unlike
+// a log query's) and a formatting stage; any other stage the log query lowering leaves out (a parser it does not
+// write) is named by that lowering.
 func rangeInnerConstruct(sel *queryplan.LogSelect) string {
-	dropKeep := false
+	extract, dropKeep, format := false, false, false
 	for _, st := range sel.Stages {
-		switch st.(type) {
+		switch st := st.(type) {
 		case *queryplan.Unwrap:
 			return "RangeAgg unwrap"
+		case *queryplan.Parse:
+			// The metric rows of json and logfmt are proven; regexp and pattern are written by the log query
+			// lowering but not yet proven under a range aggregation.
+			if st.Type == logql.ParserRegexp || st.Type == logql.ParserPattern {
+				extract = true
+			}
 		case *queryplan.Drop, *queryplan.Keep:
 			dropKeep = true
+		case *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
+			format = true
 		}
+	}
+	if extract {
+		return "RangeAgg parser"
 	}
 	if dropKeep {
 		// The string translator writes a metric row's drop and keep unlike a log query's: a drop deletes the
 		// level fields detected_level is derived from, and a keep of detected_level deletes level after its fields.
 		return "RangeAgg drop or keep"
+	}
+	if format {
+		// The log query lowering writes these stages; under a range aggregation they are not proven yet.
+		return "RangeAgg LogSelect pipeline"
 	}
 	return ""
 }
