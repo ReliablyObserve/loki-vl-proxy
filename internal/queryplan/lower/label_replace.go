@@ -21,7 +21,7 @@ import (
 //
 // Left to the string translator under a construct name: an expression that is a ranking, vector(), a number or a
 // call the parser keeps as text, one the lowering of its construct leaves to the translator, the service_name
-// grouping, a NUL byte in the destination, replacement or source label (the marker's separator, which the proxy
+// grouping, more than maxLabelReplaceNesting calls, a NUL byte in the destination, replacement or source label (the marker's separator, which the proxy
 // would read back as one), and a spelling the translator reads unlike the plan (screenLabelReplace, before the
 // lowering).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
@@ -38,6 +38,9 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 		}
 		specs = append(specs, physical.LabelReplace{DstLabel: lr.Dst, Replacement: lr.Replacement, SrcLabel: lr.Src, Regex: lr.Regex})
 		x = lr.In
+	}
+	if len(specs) > maxLabelReplaceNesting {
+		return nil, errLabelReplaceNesting
 	}
 	// The calls are read outermost first; the markers are written innermost first.
 	slices.Reverse(specs)
@@ -64,9 +67,15 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 	return physical.LabelMap{Replace: specs, In: op}, nil
 }
 
+// maxLabelReplaceNesting bounds the label_replace calls one expression is wrapped in that the lowering writes: the
+// screen reads the text of each call's first argument, so its work grows with the length of the query times the
+// depth. Queries nest a few; deeper ones are left to the translator.
+const maxLabelReplaceNesting = 16
+
 var (
 	errLabelReplaceServiceName     = &NotLoweredError{Construct: "LabelReplace service_name grouping"}
 	errLabelReplaceNUL             = &NotLoweredError{Construct: "LabelReplace argument with NUL"}
+	errLabelReplaceNesting         = &NotLoweredError{Construct: "LabelReplace nesting"}
 	errLabelReplaceSpelling        = &NotLoweredError{Construct: "LabelReplace spelling"}
 	errLabelReplaceOperandSpelling = &NotLoweredError{Construct: "LabelReplace operand spelling"}
 )
@@ -98,15 +107,15 @@ func derivesServiceName(op physical.Op) bool {
 // reads a call only when the query starts with `label_replace(` (no blank before the parenthesis), and then the
 // first argument, as written, as a query of its own, which the screen of its construct reads (ScreenText).
 func screenLabelReplace(query string, n *queryplan.LabelReplace) error {
-	x := n.In
+	x, depth := n.In, 1
 	for {
 		lr, ok := x.(*queryplan.LabelReplace)
 		if !ok {
 			break
 		}
-		x = lr.In
+		x, depth = lr.In, depth+1
 	}
-	if labelReplaceShape(x) != nil {
+	if depth > maxLabelReplaceNesting || labelReplaceShape(x) != nil {
 		return nil
 	}
 	rest, ok := strings.CutPrefix(strings.TrimSpace(logql.CanonicalizeLogRanges(query)), "label_replace(")

@@ -129,8 +129,9 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:        "LabelReplace operand BinOp",
 		`label_replace(sum by (service_name) (` + rate + `), "a", "b", "c", "d")`: "LabelReplace service_name grouping",
 		`label_replace(` + rate + `, "a", "\x00", "c", "d")`:                      "LabelReplace argument with NUL",
-		`label_replace (` + rate + `, "a", "b", "c", "d")`:                        "LabelReplace spelling",
-		`label_replace((` + rate + `), "a", "b", "c", "d")`:                       "LabelReplace operand spelling",
+		strings.Repeat(`label_replace(`, 17) + rate + strings.Repeat(`, "a", "b", "c", "d")`, 17): "LabelReplace nesting",
+		`label_replace (` + rate + `, "a", "b", "c", "d")`:                                        "LabelReplace spelling",
+		`label_replace((` + rate + `), "a", "b", "c", "d")`:                                       "LabelReplace operand spelling",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
