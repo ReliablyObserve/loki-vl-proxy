@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.118.0] - 2026-11-10
-
 ### Changed
 
 - The query plan lowers `sum`, `count`, `min`, `max` and `avg`, with or
@@ -45,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same output. The requests sent to VictoriaLogs are those of the string
   translator, and the lowering takes about half the time of the translation
   and allocates less.
+
+## [2.118.0] - 2026-11-10
+
+### Changed
+
 - Log queries with a stream selector, line filters (`|=`, `!=`, `|~`, `!~`),
   pattern filters (`|>`, `!>`) and label filters (`| status >= 500`,
   `| addr = ip("10.0.0.0/8")`, repeated filters) and no parser stage are now
