@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The query plan lowers range and vector aggregations over a log query with
-  `| drop`, `| keep`, `| decolorize`, `| line_format`, `| label_format`,
-  `| regexp` and `| pattern` stages to VictoriaLogs natively for every
+- The query plan lowers range and vector aggregations over `| drop`,
+  `| keep`, `| decolorize`, `| line_format`, `| label_format`, `| regexp`
+  and `| pattern` stages of a log query to VictoriaLogs natively for every
   translation profile, alone and under `sum`, `count`, `min`, `max` and `avg`
   with a `by` clause (a `without` clause stays with the string translator
   behind a parser), for the functions that read rows and the functions over an
