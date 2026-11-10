@@ -216,7 +216,7 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 // typedQueryPair is typedSelectorPair for the LogQL query q.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
-	if translatorMisreadsQuotedText(q) {
+	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(q)
