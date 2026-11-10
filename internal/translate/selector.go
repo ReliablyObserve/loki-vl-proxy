@@ -189,8 +189,26 @@ func NormalizeFieldIdentifier(label string) string {
 	}
 	label = strings.ReplaceAll(label, "`", "")
 	label = strings.ReplaceAll(label, `"`, "")
-	label = fieldDotSpacingRE.ReplaceAllString(label, ".")
+	// The regexp drops the white space around a dot; a name without a dot, or with no white space, has none to drop,
+	// and the replacement would only copy it.
+	if hasDotAndSpace(label) {
+		label = fieldDotSpacingRE.ReplaceAllString(label, ".")
+	}
 	return strings.TrimSpace(label)
+}
+
+// hasDotAndSpace reports whether s has both a dot and a character the regexp's \s matches (an ASCII space).
+func hasDotAndSpace(s string) bool {
+	dot, space := false, false
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '.':
+			dot = true
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			space = true
+		}
+	}
+	return dot && space
 }
 
 func SanitizeFieldIdentifier(label string) string {

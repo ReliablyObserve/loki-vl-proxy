@@ -29,7 +29,7 @@ const emptyByGrouping = "__lvp_by_empty__"
 // Marker suffixes embedded in translated queries for proxy post-processing.
 // The proxy strips them before forwarding to VL and applies the corresponding transform.
 const (
-	labelReplacePrefix = "__lvp_lr:"
+	labelReplacePrefix = physical.LabelReplacePrefix
 )
 
 // LabelReplaceSpec holds the parsed arguments of a label_replace() expression.
@@ -532,16 +532,10 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 // "...actual_query...__without__:<op>:pod,node" says the query is a
 // `<op> without (...)` the proxy folds itself, and with <op> (sum, min, max, avg
 // or count): see foldingWithoutOp.
-const WithoutMarkerSuffix = "__without__:"
+const WithoutMarkerSuffix = physical.WithoutMarkerSuffix
 
 func appendWithoutMarker(query, op string, labels []string) string {
-	if len(labels) == 0 {
-		return query
-	}
-	if op != "" {
-		op += ":"
-	}
-	return query + WithoutMarkerSuffix + op + strings.Join(labels, ",")
+	return physical.AppendWithoutMarker(query, op, labels)
 }
 
 // ParseWithoutMarker extracts the aggregation and the without labels from a
@@ -1961,14 +1955,7 @@ func labelReplaceMarker(spec LabelReplaceSpec) string {
 
 // appendLabelReplaceMarker appends labelReplaceMarker(spec) to dst.
 func appendLabelReplaceMarker(dst []byte, spec LabelReplaceSpec) []byte {
-	var buf [96]byte
-	payload := append(buf[:0], spec.DstLabel...)
-	payload = append(append(payload, 0), spec.Replacement...)
-	payload = append(append(payload, 0), spec.SrcLabel...)
-	payload = append(append(payload, 0), spec.Regex...)
-	dst = append(dst, labelReplacePrefix...)
-	dst = base64.StdEncoding.AppendEncode(dst, payload)
-	return append(dst, "__"...)
+	return physical.AppendLabelReplaceMarker(dst, spec)
 }
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
@@ -2670,7 +2657,7 @@ func durationSeconds(duration string) float64 {
 
 // BinaryMetricOp represents a binary arithmetic expression between two metric queries.
 // The proxy evaluates both sides against VL and combines the results.
-const BinaryMetricPrefix = "__binary__:"
+const BinaryMetricPrefix = physical.BinaryPrefix
 
 // tryTranslateBinaryMetricExpr handles expressions like:
 //

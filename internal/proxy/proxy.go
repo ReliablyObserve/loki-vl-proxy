@@ -246,6 +246,10 @@ type Config struct {
 	// TranslateShadowSample is the share (0-1) of the string translator's cache misses that the typed lowering
 	// also translates in the background to be compared with it (see lowering_shadow.go). 0 turns it off.
 	TranslateShadowSample float64
+	// DisableQueryPlanLowering turns off serving the queries the typed lowering covers natively (log queries with a
+	// stream selector, line, pattern and label filters, no parser) from it: they are then translated by the string
+	// translator, as before. Zero value serves them from the lowering (see query_lowering.go).
+	DisableQueryPlanLowering bool
 	// PatternsEnabled controls /loki/api/v1/patterns availability.
 	// Nil defaults to true for backward compatibility.
 	PatternsEnabled *bool
@@ -699,6 +703,7 @@ type Proxy struct {
 	patternsEnabled                       bool
 	deleteAPIEnabled                      bool
 	loweringShadow                        *loweringShadow // nil unless -translate-shadow-sample is set
+	queryPlanLowering                     bool            // serve the constructs the typed lowering covers from it
 	patternsAutodetectFromQueries         bool
 	patternsCounts                        bool
 	patternsExactMaxLines                 int
@@ -1389,6 +1394,7 @@ func New(cfg Config) (*Proxy, error) {
 		backendDefaultMsgValue:                cfg.BackendDefaultMsgValue,
 		detectedLevelBodyScan:                 !cfg.DisableDetectedLevelBodyScan,
 		loweringShadow:                        newLoweringShadow(cfg.TranslateShadowSample),
+		queryPlanLowering:                     !cfg.DisableQueryPlanLowering,
 		patternsEnabled:                       patternsEnabled,
 		deleteAPIEnabled:                      cfg.DeleteAPIEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,

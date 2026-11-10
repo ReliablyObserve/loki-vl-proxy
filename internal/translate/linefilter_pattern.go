@@ -167,12 +167,13 @@ func PatternLineFilter(values []string, negative bool, seq *int) (filters []logs
 // patternScratchDelete deletes the scratch fields of the pattern line filters.
 var patternScratchDelete = logsql.PipeDelete{Labels: []string{PatternFilterScratch + "*"}}
 
-// anyOfGroups is the OR of terms, each in parentheses; one term alone as it is.
+// anyOfGroups is the OR of terms, each in parentheses; one term alone as it is. The operator is the lowercase `or`
+// the string translator writes between the alternatives of a pattern line filter.
 func anyOfGroups(terms []logsql.FilterExpr) logsql.FilterExpr {
 	if len(terms) == 1 {
 		return terms[0]
 	}
-	out := make(logsql.AnyOf, len(terms))
+	out := make(logsql.AnyOfLower, len(terms))
 	for i, t := range terms {
 		out[i] = logsql.Group{Expr: t}
 	}

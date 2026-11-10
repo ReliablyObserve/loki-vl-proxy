@@ -311,6 +311,7 @@ extraArgs:
   # label-browse-extensions: "auto"          # auto | on | off: limit/offset/search on /labels and /label/{name}/values (Loki ignores them); auto = off in the Loki-compatible profile unless label-values-indexed-cache
   # error-response-message-field: "true"     # deprecated and ignored: error bodies are Loki's text/plain message
   # detected-level-body-scan: "true"         # derive detected_level from the log line when no level field is stored (false: stored fields only, unknown otherwise)
+  # query-plan-lowering: "true"       # translate log queries with a stream selector, line/pattern/label filters and no parser from the typed query-plan lowering (byte-identical to the string translator); "false" is the rollback to the string translator
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # default; convert VL dotted fields (service.name) to Loki underscores (service_name); set via flag, LABEL_STYLE env does not override it
   # translate-otel-attributes: "true"  # rewrite known OTel labels to dotted form in upstream queries (set "false" for underscore storage)
