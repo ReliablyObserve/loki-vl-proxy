@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.122.1] - 2026-11-10
+
 ### Fixed
 
 - Since 2.108.0 for `|= ip(...)` line filters and 2.115.0 for `label = ip(...)`
