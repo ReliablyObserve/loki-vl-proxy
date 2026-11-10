@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins a vector aggregation over a binary expression to Loki's
@@ -20,7 +22,7 @@ import (
 // bool, answers 0 or 1), newLiteralStepEvaluator (a literal on either side) and
 // VectorAggEvaluator.Next (the aggregation per step over the binary's samples).
 // The operands are `sum by (...)` over count_over_time and rate, read on the
-// window (t-range, t]; only VictoriaLogs is simulated (vlEmulator).
+// window (t-range, t]; only VictoriaLogs is simulated (vlemu.Emulator).
 
 type aggRefSample struct {
 	labels map[string]string
@@ -82,7 +84,7 @@ func (n *refNode) joinsVectors() bool {
 
 func refStreamLabels(stream string) map[string]string {
 	out := map[string]string{}
-	for _, m := range emuStreamLabelRE.FindAllStringSubmatch(stream, -1) {
+	for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1) {
 		out[m[1]] = m[2]
 	}
 	return out
@@ -115,7 +117,7 @@ func refComparison(op string) bool {
 }
 
 // eval returns the vector at t, or the literal.
-func (n *refNode) eval(rows []emuRow, t, window int64) ([]aggRefSample, float64, bool) {
+func (n *refNode) eval(rows []vlemu.Row, t, window int64) ([]aggRefSample, float64, bool) {
 	if n.scalar != nil {
 		return nil, *n.scalar, true
 	}
@@ -126,10 +128,10 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]aggRefSample, float64,
 		}
 		groups := map[string]*group{}
 		for _, row := range rows {
-			if row.ts <= t-window || row.ts > t {
+			if row.TS <= t-window || row.TS > t {
 				continue
 			}
-			stream := refStreamLabels(row.stream)
+			stream := refStreamLabels(row.Stream)
 			labels := map[string]string{}
 			for _, name := range n.by {
 				if v := stream[name]; v != "" {
@@ -141,7 +143,7 @@ func (n *refNode) eval(rows []emuRow, t, window int64) ([]aggRefSample, float64,
 				groups[key] = &group{labels: labels}
 			}
 			groups[key].count++
-			groups[key].sum += row.value
+			groups[key].sum += row.Value
 		}
 		var out []aggRefSample
 		seconds := float64(window) / 1e9
@@ -417,8 +419,8 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 						continue
 					}
 					for j := range s.rows {
-						pod := s.rows[j].stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
-						s.rows[j].stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
+						pod := s.rows[j].Stream[len(`{app="uw",pod="`) : len(`{app="uw",pod="`)+1]
+						s.rows[j].Stream = fmt.Sprintf(`{app="uw",job="%s",machine="m-%[1]s",pod="%s"}`, jobs[pod], pod)
 					}
 					query := expr.query(uwWindowText(s.window))
 					for _, agg := range chain {
@@ -438,7 +440,7 @@ func TestAggregationOverBinaryDifferential(t *testing.T) {
 							want[key][ts/1e9] = sample.v
 						}
 					}
-					emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 					got, _ := binaryAggregationAnswer(t, emu, query, s.start, s.end, s.step)
 					label := fmt.Sprintf("%s #%d %s step=%v window=%v rows=%d", name, i, query, s.step, s.window, len(s.rows))
 					compareBinaryAggregation(t, label, got, want)

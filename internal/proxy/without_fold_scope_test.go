@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins which `without` queries the proxy folds from a row per stream
@@ -37,10 +38,10 @@ import (
 // withoutScopeAnswer runs query through the real handler against the emulated
 // VictoriaLogs and returns the answer as "status: series ..." with the series
 // sorted, each as its labels and values.
-func withoutScopeAnswer(t *testing.T, rows []emuRow, query string, instant bool, seriesCap int) string {
+func withoutScopeAnswer(t *testing.T, rows []vlemu.Row, query string, instant bool, seriesCap int) string {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap})
 	if err != nil {
@@ -104,12 +105,12 @@ func withoutScopeAnswer(t *testing.T, rows []emuRow, query string, instant bool,
 	return "200 " + strings.Join(series, " ")
 }
 
-func withoutScopeRows() []emuRow {
+func withoutScopeRows() []vlemu.Row {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 40; i++ {
 		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
-		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf("amount=%v", i+1)})
+		rows = append(rows, vlemu.Row{TS: base - int64(i)*5e9 - 3e8, Stream: stream, Value: float64(i + 1), Msg: fmt.Sprintf("amount=%v", i+1)})
 	}
 	return rows
 }

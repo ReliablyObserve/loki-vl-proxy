@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // TestSumWithoutExtractionList: a parser that names the keys it extracts
@@ -44,16 +46,16 @@ func TestSumWithoutExtractionList(t *testing.T) {
 							s.parser = p.parser
 							for j := range s.rows {
 								route := routes[rnd.Intn(len(routes))]
-								s.rows[j].labels["route"] = route
-								s.rows[j].msg = fmt.Sprintf("amount=%v id=%d route=%s", s.rows[j].value, j, route)
+								s.rows[j].Labels["route"] = route
+								s.rows[j].Msg = fmt.Sprintf("amount=%v id=%d route=%s", s.rows[j].Value, j, route)
 							}
-							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 							got := runWithoutScenario(t, emu, s)
-							identity := func(row emuRow) string {
-								return row.stream + "|" + parsedKey(row, p.keys)
+							identity := func(row vlemu.Row) string {
+								return row.Stream + "|" + parsedKey(row, p.keys)
 							}
-							group := func(row emuRow) string {
-								return strings.TrimSuffix(withoutPodKey(row.stream)+","+parsedKey(row, p.keys), ",")
+							group := func(row vlemu.Row) string {
+								return strings.TrimSuffix(withoutPodKey(row.Stream)+","+parsedKey(row, p.keys), ",")
 							}
 							want := lokiWithoutIdentity(s.rows, c.fn, c.op, int64(s.window), s.times(), identity, group)
 							mode := compareValues
@@ -69,7 +71,7 @@ func TestSumWithoutExtractionList(t *testing.T) {
 								mode = compareSeries
 							}
 							compareWithout(t, fmt.Sprintf("%s #%d", name, i), s, got, want, mode)
-							if rawRows := emu.endpointCalls("/select/logsql/query"); len(rawRows) > 0 && version != "v1.40.0" {
+							if rawRows := emu.EndpointCalls("/select/logsql/query"); len(rawRows) > 0 && version != "v1.40.0" {
 								t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, rawRows[0])
 							}
 						}
@@ -81,10 +83,10 @@ func TestSumWithoutExtractionList(t *testing.T) {
 }
 
 // parsedKey is the labels of a row a parser extracted, as a key.
-func parsedKey(row emuRow, keys []string) string {
+func parsedKey(row vlemu.Row, keys []string) string {
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, k+"="+row.labels[k])
+		parts = append(parts, k+"="+row.Labels[k])
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")

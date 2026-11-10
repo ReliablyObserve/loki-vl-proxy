@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins count, min, max and avg of a range function to Loki's, over
@@ -29,7 +30,7 @@ import (
 // lines of a series in the window (t-range, t]).
 //
 // The proxy under test is the real handler; only VictoriaLogs is simulated, by
-// the same vlEmulator the unwrap sum differential uses.
+// the same vlemu.Emulator the unwrap sum differential uses.
 
 // vaStage is one vector aggregation of the query, innermost first.
 type vaStage struct {
@@ -54,7 +55,7 @@ type vaScenario struct {
 	window     time.Duration
 	step       time.Duration // 0: instant
 	start, end int64         // ns, step-aligned evaluation times
-	rows       []emuRow
+	rows       []vlemu.Row
 	version    string
 	// withLevel compares detected_level too: the stats routes of VictoriaLogs
 	// answer no detected_level label for streams without a level, the evaluator
@@ -137,7 +138,7 @@ func generateVectorAggScenario(rnd *rand.Rand, fn string, stages []vaStage, inst
 		if rnd.Intn(2) == 0 {
 			stream = vaStreams[0]
 		}
-		s.rows = append(s.rows, emuRow{ts: ts, stream: stream, msg: "x=1"})
+		s.rows = append(s.rows, vlemu.Row{TS: ts, Stream: stream, Msg: "x=1"})
 	}
 	return s
 }
@@ -221,8 +222,8 @@ func lokiVectorAgg(s vaScenario) (map[string]map[int64]float64, map[string]map[s
 	for _, t := range s.times() {
 		perStream := map[string]float64{}
 		for _, row := range s.rows {
-			if row.ts > t-int64(s.window) && row.ts <= t {
-				perStream[row.stream]++
+			if row.TS > t-int64(s.window) && row.TS <= t {
+				perStream[row.Stream]++
 			}
 		}
 		var vec []vaSeries
@@ -267,16 +268,16 @@ func streamLabel(stream, label string) string {
 	return ""
 }
 
-func newVectorAggProxy(t *testing.T, emu *vlEmulator) (*Proxy, func()) {
+func newVectorAggProxy(t *testing.T, emu *vlemu.Emulator) (*Proxy, func()) {
 	t.Helper()
 	return newVectorAggProxyBudget(t, emu, 0)
 }
 
 // newVectorAggProxyBudget is newVectorAggProxy with the response byte bound budget
 // (0: the default).
-func newVectorAggProxyBudget(t *testing.T, emu *vlEmulator, budget int) (*Proxy, func()) {
+func newVectorAggProxyBudget(t *testing.T, emu *vlemu.Emulator, budget int) (*Proxy, func()) {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	c := cache.New(60*time.Second, 1000)
 	cfg := Config{BackendURL: backend.URL, Cache: c, LogLevel: "error", BackendMinVersion: "v1.49.0", BackendVersionCheckTimeout: time.Second}
 	if budget > 0 {
@@ -286,7 +287,7 @@ func newVectorAggProxyBudget(t *testing.T, emu *vlEmulator, budget int) (*Proxy,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -308,7 +309,7 @@ func newVectorAggProxyBudget(t *testing.T, emu *vlEmulator, budget int) (*Proxy,
 // with the reference.
 func runVectorAggScenario(t *testing.T, label string, s vaScenario) {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, version: s.version, field: "amount"}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Version: s.version, Field: "amount"}
 	p, closeBackend := newVectorAggProxyBudget(t, emu, s.budget)
 	defer closeBackend()
 
@@ -520,12 +521,12 @@ func TestVectorAggregationGroupedByParsedLabelSlidingWindow(t *testing.T) {
 				at := sec * 1e9
 				perSeries := map[string]map[string]int{}
 				for _, row := range rows {
-					if row.ts > at-int64(window) && row.ts <= at {
-						route := row.labels["route"]
+					if row.TS > at-int64(window) && row.TS <= at {
+						route := row.Labels["route"]
 						if perSeries[route] == nil {
 							perSeries[route] = map[string]int{}
 						}
-						perSeries[route][row.stream]++
+						perSeries[route][row.Stream]++
 					}
 				}
 				for route, streams := range perSeries {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins the answer of stddev and stdvar over a range aggregation to
@@ -28,7 +29,7 @@ import (
 // window, are a different function and not tested here.
 //
 // The proxy under test is the real handler. Only VictoriaLogs is simulated, by
-// vlEmulator.
+// vlemu.Emulator.
 
 type stdGrouping struct {
 	kind   string // "", "by", "without"
@@ -106,7 +107,7 @@ func stdStreamText(labels map[string]string) string {
 // range function fn (count_over_time, rate, bytes_over_time or bytes_rate) of
 // each series' lines in (t-window, t], folded per group by VectorAggEvaluator.
 // Result: group -> time -> value.
-func lokiGroupedStd(rows []emuRow, window int64, times []int64, fn, op string, g stdGrouping) map[string]map[int64]float64 {
+func lokiGroupedStd(rows []vlemu.Row, window int64, times []int64, fn, op string, g stdGrouping) map[string]map[int64]float64 {
 	// A row's series: its stream and, when a parser extracted it, its route.
 	out := map[string]map[int64]float64{}
 	for _, t := range times {
@@ -114,16 +115,16 @@ func lokiGroupedStd(rows []emuRow, window int64, times []int64, fn, op string, g
 		series := map[string]map[string]string{}
 		bytes := map[string]float64{}
 		for _, row := range rows {
-			if row.ts <= t-window || row.ts > t {
+			if row.TS <= t-window || row.TS > t {
 				continue
 			}
 			for _, s := range stdStreams {
-				if stdStreamText(s) == row.stream {
-					key := row.stream + row.labels["route"]
+				if stdStreamText(s) == row.Stream {
+					key := row.Stream + row.Labels["route"]
 					counts[key]++
-					bytes[key] += float64(len(row.msg))
+					bytes[key] += float64(len(row.Msg))
 					series[key] = lokiSeriesLabels(s)
-					if route := row.labels["route"]; route != "" {
+					if route := row.Labels["route"]; route != "" {
 						series[key]["route"] = route
 					}
 				}
@@ -171,7 +172,7 @@ type stdScenario struct {
 	window     time.Duration
 	step       time.Duration // 0: instant
 	start, end int64
-	rows       []emuRow
+	rows       []vlemu.Row
 }
 
 func (s stdScenario) times() []int64 {
@@ -235,10 +236,10 @@ func generateStdScenario(rnd *rand.Rand, op string, g stdGrouping, instant, tumb
 				ts++
 			}
 		}
-		row := emuRow{ts: ts, stream: stdStreamText(stdStreams[rnd.Intn(len(stdStreams))]), value: 1, msg: "line"}
+		row := vlemu.Row{TS: ts, Stream: stdStreamText(stdStreams[rnd.Intn(len(stdStreams))]), Value: 1, Msg: "line"}
 		if parser {
 			route := fmt.Sprintf("/r%d", rnd.Intn(3))
-			row.labels, row.msg = map[string]string{"route": route}, "route="+route
+			row.Labels, row.Msg = map[string]string{"route": route}, "route="+route
 		}
 		s.rows = append(s.rows, row)
 	}
@@ -247,8 +248,8 @@ func generateStdScenario(rnd *rand.Rand, op string, g stdGrouping, instant, tumb
 
 func runStdScenario(t *testing.T, s stdScenario, version string) map[string]map[int64]float64 {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
-	backend := httptest.NewServer(emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {

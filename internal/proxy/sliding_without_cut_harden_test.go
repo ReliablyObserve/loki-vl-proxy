@@ -7,13 +7,15 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // swSetVersion makes both proxies of the runner read the backend as version
 // ("": unknown). A proxy keeps the first version it learns, so it is cleared
 // first.
 func (r *swRunner) swSetVersion(version string) {
-	r.emu.version = version
+	r.emu.Version = version
 	for _, p := range r.proxies {
 		p.backendVersionSemver = ""
 		p.storeBackendVersion(version, version)
@@ -57,13 +59,13 @@ func TestSlidingSumWithoutCutVersions(t *testing.T) {
 // conformance: semantics/without-sliding-sum-folded-buckets, tenant-numeric-routing
 func TestSlidingSumWithoutCutTenants(t *testing.T) {
 	s0 := time.Now().Add(-3 * time.Hour).Truncate(time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 600; i++ {
 		stream := fmt.Sprintf(`{app="uw",pod="p%d",zone="%s"}`, i%37, []string{"x", "y"}[i%2])
-		rows = append(rows, emuRow{ts: s0.UnixNano() + int64(i)*int64(11*time.Second) + int64(i%7)*1e6, stream: stream, msg: "x=1"})
+		rows = append(rows, vlemu.Row{TS: s0.UnixNano() + int64(i)*int64(11*time.Second) + int64(i%7)*1e6, Stream: stream, Msg: "x=1"})
 	}
-	emu := &vlEmulator{t: t, rows: rows, field: "amount"}
-	backend, shim := newExtentShim(t, emu.handler())
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount"}
+	backend, shim := newExtentShim(t, emu.Handler())
 	p := newExtentTestProxy(t, backend.URL, true, 64<<20)
 	p.labelTranslator = NewLabelTranslator(LabelStyleUnderscores, nil)
 	start, end := s0.Add(10*time.Minute), s0.Add(70*time.Minute)
@@ -104,7 +106,7 @@ func FuzzSlidingWithoutCut(f *testing.F) {
 	runner := newSWRunner(f)
 	fns := []string{"count_over_time", "bytes_over_time", "rate"}
 	f.Fuzz(func(t *testing.T, seed int64, fn, version uint8) {
-		runner.emu.t = t
+		runner.emu.T = t
 		runner.swSetVersion(swVersions[int(version)%len(swVersions)])
 		name := fns[int(fn)%len(fns)]
 		s, streams := swGenerateScenario(rand.New(rand.NewSource(seed)), name)
