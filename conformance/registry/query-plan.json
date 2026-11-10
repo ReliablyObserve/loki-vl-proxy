@@ -242,7 +242,7 @@
   "shadow": {
     "rows": 22935,
     "profiles": 12,
-    "native": 13020,
+    "native": 13155,
     "mismatches": 0,
     "delegated_by_construct": {
       "BinOp bool": 72,
@@ -276,7 +276,12 @@
       "RangeAgg parser": 117,
       "RangeAgg parser label": 180,
       "RangeAgg unwrap quantile spelling": 9,
-      "Rank": 1665,
+      "Rank grouping": 468,
+      "Rank operand BinOp": 27,
+      "Rank operand LabelReplace": 99,
+      "Rank operand Rank": 63,
+      "Rank operand VectorAgg": 828,
+      "Rank operand unwrap": 45,
       "Scalar": 18,
       "VectorAgg LogSelect label filter detected_level": 81,
       "VectorAgg LogSelect pipeline": 9,
