@@ -11,26 +11,33 @@ import (
 // stage that writes none), the way the string translator writes them for a log query (translate.JSONUnpack and
 // the builders next to it). It answers NotLoweredError for a pipeline the lowering does not write:
 //   - a stage that is none of those and not a line or label filter;
-//   - a label filter after a json or logfmt parser (it reads the parsed keys, which the string translator
-//     renames, re-reads and wraps in ways the lowering does not write yet);
 //   - a parser and a stream label the string translator copies aside because the pipeline reads it;
 //   - a stage whose text the string translator reads differently from the typed stage (translate.JSONAliasCopies,
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
-func stagePipes(sel *queryplan.LogSelect, prof Profile) ([][]logsql.Pipe, error) {
-	var built [][]logsql.Pipe
+func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, read []string, err error) {
 	parsed := false
+	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
+	// The query stays with it unless the label filters alone read it (streamValues); the construct is answered
+	// once the stages themselves are known to lower, so a query reports its first cause.
+	var streamErr error
+	if names := translate.StreamLabelNames(prof.Label); len(names) > 0 && hasParser(sel) {
+		if readsStreamLabel(sel, names) {
+			streamErr = &NotLoweredError{Construct: "LogSelect stream label after parser"}
+		} else if r, c := streamValues(sel, names); c != "" {
+			streamErr = &NotLoweredError{Construct: c}
+		} else {
+			read = r
+		}
+	}
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
-		var err error
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
 			err = lineFilterAfter(sel, i)
 		case *queryplan.LabelFilter:
-			if parsed {
-				err = &NotLoweredError{Construct: "LogSelect label filter after parser"}
-			}
 		case *queryplan.Parse:
 			ps, err = parserPipes(st)
+			ps = streamValuePipes(ps, read, !parsed)
 			parsed = true
 		case *queryplan.Drop:
 			ps, err = dropPipes(st)
@@ -40,7 +47,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) ([][]logsql.Pipe, error)
 			err = &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if len(ps) > 0 {
 			if built == nil {
@@ -49,10 +56,20 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) ([][]logsql.Pipe, error)
 			built[i] = ps
 		}
 	}
-	if parsed && readsStreamLabel(sel, translate.StreamLabelNames(prof.Label)) {
-		return nil, &NotLoweredError{Construct: "LogSelect stream label after parser"}
+	if streamErr != nil {
+		return nil, nil, streamErr
 	}
-	return built, nil
+	return built, read, nil
+}
+
+// hasParser reports whether the query has a json or logfmt parser stage.
+func hasParser(sel *queryplan.LogSelect) bool {
+	for _, st := range sel.Stages {
+		if _, ok := st.(*queryplan.Parse); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // lineFilterAfter answers NotLoweredError for a negative line filter (!=, !~, !>) right after a stage whose
@@ -156,9 +173,9 @@ func hasOperatorByte(s string) bool {
 }
 
 // readsStreamLabel reports whether a stage names one of the stream labels in a place the string translator
-// copies its stored value aside for: a label filter's name, a drop or keep matcher's name, a json or logfmt
-// extraction name. It is wider than the translator's reading, never narrower: a query it reports stays with the
-// translator.
+// copies its stored value aside for: a drop or keep matcher's name, a json or logfmt extraction name (the label
+// filters that read one are streamValues'). It is wider than the translator's reading, never narrower: a query
+// it reports stays with the translator.
 func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 	if len(names) == 0 {
 		return false
@@ -174,10 +191,6 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 	}
 	for _, st := range sel.Stages {
 		switch st := st.(type) {
-		case *queryplan.LabelFilter:
-			if st.Expr == nil || labelFilterNames(st.Expr, named) {
-				return true
-			}
 		case *queryplan.Drop:
 			for _, m := range st.Matchers {
 				if named(m.Name) {
@@ -199,11 +212,4 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 		}
 	}
 	return false
-}
-
-func labelFilterNames(e *logql.LabelFilterExpr, named func(string) bool) bool {
-	if e.IsLeaf() {
-		return named(e.Name)
-	}
-	return labelFilterNames(e.Left, named) || labelFilterNames(e.Right, named)
 }

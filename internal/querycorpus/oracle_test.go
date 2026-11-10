@@ -171,7 +171,20 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 	}
 	// The generated parser grid (json and logfmt with flags and field lists, drop and keep) adds the shapes the
 	// corpus lacks, under the same pairing.
-	for _, q := range parserGrid() {
+	// The label filters after a parser add the parsed keys, the aliases, the stream-label and name_extracted
+	// scratch fields and the trees of filters; a fixed stride of the grid keeps the inputs to a few thousand.
+	grid := parserGrid()
+	for i, q := range labelFilterParsedGrid() {
+		if i%parsedGridOracleStride == 0 {
+			grid = append(grid, q)
+		}
+	}
+	sentGrid := map[string]bool{}
+	for _, q := range grid {
+		if sentGrid[q] {
+			continue
+		}
+		sentGrid[q] = true
 		if typed, built, ok := typedQueryPair(q, v); ok {
 			in := oracleInput{ID: "grid-" + caseID(q), Kind: "typed-selector", Query: built, Ours: true, Printed: typed}
 			if err := enc.Encode(in); err != nil {
@@ -199,6 +212,10 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 		t.Fatal(err)
 	}
 }
+
+// parsedGridOracleStride is the stride at which the label filter grid after a parser is sampled into the
+// VictoriaLogs oracle's inputs.
+const parsedGridOracleStride = 17
 
 // typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector with its line
 // filters, label filters, json and logfmt parsers, drop and keep), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
