@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // quantile_over_time holds one count per value, bucket and series:
@@ -20,11 +22,11 @@ func TestGroupedQuantileCountLimit(t *testing.T) {
 	for _, values := range []int{2, 3} {
 		for _, endpoint := range []string{"query", "query_range"} {
 			t.Run(fmt.Sprintf("%s/values=%d", endpoint, values), func(t *testing.T) {
-				emu := &vlEmulator{t: t, field: "latency"}
+				emu := &vlemu.Emulator{T: t, Field: "latency"}
 				for i := 0; i < values; i++ {
-					emu.rows = append(emu.rows, emuRow{ts: stamp.UnixNano(), stream: `{app="api"}`, value: float64(i + 1)})
+					emu.Rows = append(emu.Rows, vlemu.Row{TS: stamp.UnixNano(), Stream: `{app="api"}`, Value: float64(i + 1)})
 				}
-				backend := httptest.NewServer(emu.handler())
+				backend := httptest.NewServer(emu.Handler())
 				defer backend.Close()
 				p := newGapTestProxy(t, backend.URL)
 				p.rangeMetricRowLimit = 2
@@ -46,7 +48,7 @@ func TestGroupedQuantileCountLimit(t *testing.T) {
 				} else if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "-manual-range-metric-row-limit") || strings.Contains(rec.Body.String(), `"result"`) {
 					t.Fatalf("over the limit must return the limit error without partial samples: %d %s", rec.Code, rec.Body.String())
 				}
-				if q := emu.endpointCalls("/select/logsql/query"); len(q) != 0 {
+				if q := emu.EndpointCalls("/select/logsql/query"); len(q) != 0 {
 					t.Fatalf("quantile read raw rows: %v", q)
 				}
 			})

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // tumblingLine is one stored log line of the labelled fake VictoriaLogs.
@@ -98,7 +100,7 @@ func fakeWindowPhaseKeep(t testing.TB, q string, ts int64) bool {
 		t.Errorf("fake VL: bad window phase filter in %q", q)
 		return false
 	}
-	return windowPhaseKeeps(ts, anchor, step, lower, upper, false)
+	return vlemu.WindowPhaseKeeps(ts, anchor, step, lower, upper, false)
 }
 
 // fakeInFilterKeep applies a `| filter f:in(...)` pipe (optionally

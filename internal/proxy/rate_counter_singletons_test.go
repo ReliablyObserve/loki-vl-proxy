@@ -18,9 +18,10 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
-// rateCounterEmuHandler serves vlEmulator plus the two reads of the
+// rateCounterEmuHandler serves vlemu.Emulator plus the two reads of the
 // rate_counter one-sample proof on /select/logsql/query, as VictoriaLogs
 // v1.49-v1.53 answer them: `| limit N | unpack_logfmt from _msg result_prefix
 // "__lvpk." | field_names` (every field of the first N lines carrying the
@@ -28,30 +29,30 @@ import (
 // `[| unpack_logfmt from _msg fields (...) result_prefix "__lvpk."] | stats
 // count() as n, count_uniq_hash(<fields>) as u` (stats_count_uniq_hash.go: a
 // tuple of only empty values is not counted). A row's stored fields are its
-// stream labels and emuRow.labels; its parsed keys come from its line.
-func rateCounterEmuHandler(e *vlEmulator) http.Handler {
-	inner := e.handler()
+// stream labels and vlemu.Row.Labels; its parsed keys come from its line.
+func rateCounterEmuHandler(e *vlemu.Emulator) http.Handler {
+	inner := e.Handler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		query := r.FormValue("query")
-		if r.URL.Path != "/select/logsql/query" || !strings.Contains(query, ` | filter `+e.field+`:*`) {
+		if r.URL.Path != "/select/logsql/query" || !strings.Contains(query, ` | filter `+e.Field+`:*`) {
 			inner.ServeHTTP(w, r)
 			return
 		}
-		e.record(r.URL.Path, query)
+		e.Record(r.URL.Path, query)
 		rateCounterEmuTenants.Store(r.Header.Get("AccountID")+"/"+r.Header.Get("ProjectID"), true)
-		selected := e.selectRows(r)
-		sort.SliceStable(selected, func(i, j int) bool { return selected[i].ts < selected[j].ts })
+		selected := e.SelectRows(r)
+		sort.SliceStable(selected, func(i, j int) bool { return selected[i].TS < selected[j].TS })
 		var rows []map[string]string
 		for _, row := range selected {
-			if row.text() == "" {
+			if row.Text() == "" {
 				continue
 			}
-			f := map[string]string{"_time": strconv.FormatInt(row.ts, 10), "_msg": e.line(row), "_stream": row.stream, "_stream_id": row.stream, e.field: row.text()}
-			for _, m := range emuStreamLabelRE.FindAllStringSubmatch(row.stream, -1) {
+			f := map[string]string{"_time": strconv.FormatInt(row.TS, 10), "_msg": e.Line(row), "_stream": row.Stream, "_stream_id": row.Stream, e.Field: row.Text()}
+			for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(row.Stream, -1) {
 				f[m[1]] = m[2]
 			}
-			for k, v := range row.labels {
+			for k, v := range row.Labels {
 				if v != "" {
 					f[k] = v
 				}
@@ -86,7 +87,7 @@ func rateCounterEmuHandler(e *vlEmulator) http.Handler {
 		}
 		m := rateCounterEmuUniqRE.FindStringSubmatch(query)
 		if m == nil {
-			e.t.Fatalf("emulator: unknown proof query %s", query)
+			e.T.Fatalf("emulator: unknown proof query %s", query)
 		}
 		if m[1] != "" {
 			only := map[string]bool{}
@@ -182,10 +183,10 @@ func lokiRateCounter(ts []int64, vs []float64, window int64) float64 {
 // left out) with a sample in (t-window, t], their rate_counter, summed per
 // group value (pkg/logql/evaluator.go VectorAggEvaluator.Next). A group with
 // no sample at t has no point.
-func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string) map[string]map[int64]float64 {
+func lokiRateCounterSum(rows []vlemu.Row, window int64, times []int64, group string) map[string]map[int64]float64 {
 	out := map[string]map[int64]float64{}
-	sorted := append([]emuRow(nil), rows...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ts < sorted[j].ts })
+	sorted := append([]vlemu.Row(nil), rows...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TS < sorted[j].TS })
 	for _, t := range times {
 		type series struct {
 			group string
@@ -194,16 +195,16 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 		}
 		perSeries := map[string]*series{}
 		for _, row := range sorted {
-			if row.ts <= t-window || row.ts > t {
+			if row.TS <= t-window || row.TS > t {
 				continue
 			}
-			parsed := lokiRateCounterLabels(row.msg)
+			parsed := lokiRateCounterLabels(row.Msg)
 			labels := make([]string, 0, len(parsed))
 			for k, v := range parsed {
 				labels = append(labels, k+"="+v)
 			}
 			sort.Strings(labels)
-			key := row.stream + "|" + strings.Join(labels, ",")
+			key := row.Stream + "|" + strings.Join(labels, ",")
 			s := perSeries[key]
 			if s == nil {
 				s = &series{}
@@ -212,8 +213,8 @@ func lokiRateCounterSum(rows []emuRow, window int64, times []int64, group string
 				}
 				perSeries[key] = s
 			}
-			s.ts = append(s.ts, row.ts)
-			s.vs = append(s.vs, row.value)
+			s.ts = append(s.ts, row.TS)
+			s.vs = append(s.vs, row.Value)
 		}
 		for _, s := range perSeries {
 			if out[s.group] == nil {
@@ -245,7 +246,7 @@ func lokiRateCounterLabels(line string) map[string]string {
 type rcScenario struct {
 	window, step time.Duration
 	start, end   int64
-	rows         []emuRow
+	rows         []vlemu.Row
 	group        string // "" for a bare sum
 	parser       string
 	shared       bool // some lines share every label
@@ -304,31 +305,31 @@ func generateRateCounterScenario(rnd *rand.Rand, parser string, shared bool) rcS
 			id = "dup"
 		}
 		level := levels[rnd.Intn(len(levels))]
-		row := emuRow{ts: ts, stream: streams[rnd.Intn(len(streams))], value: values[rnd.Intn(len(values))], labels: map[string]string{"txn": id, "level": level}}
+		row := vlemu.Row{TS: ts, Stream: streams[rnd.Intn(len(streams))], Value: values[rnd.Intn(len(values))], Labels: map[string]string{"txn": id, "level": level}}
 		if shared && id == "dup" {
-			row.stream, row.labels["level"] = streams[0], "info"
+			row.Stream, row.Labels["level"] = streams[0], "info"
 		}
-		row.msg = rateCounterLine(parser, row)
+		row.Msg = rateCounterLine(parser, row)
 		s.rows = append(s.rows, row)
 	}
 	return s
 }
 
-func rateCounterLine(parser string, row emuRow) string {
+func rateCounterLine(parser string, row vlemu.Row) string {
 	if parser == "json" {
-		fields := map[string]any{"amount": row.value, "txn": row.labels["txn"]}
-		if math.IsNaN(row.value) {
+		fields := map[string]any{"amount": row.Value, "txn": row.Labels["txn"]}
+		if math.IsNaN(row.Value) {
 			fields["amount"] = "NaN"
 		}
-		if row.labels["level"] != "" {
-			fields["level"] = row.labels["level"]
+		if row.Labels["level"] != "" {
+			fields["level"] = row.Labels["level"]
 		}
 		line, _ := json.Marshal(fields)
 		return string(line)
 	}
-	line := "amount=" + row.text() + " txn=" + row.labels["txn"]
-	if row.labels["level"] != "" {
-		line += " level=" + row.labels["level"]
+	line := "amount=" + row.Text() + " txn=" + row.Labels["txn"]
+	if row.Labels["level"] != "" {
+		line += " level=" + row.Labels["level"]
 	}
 	return line
 }
@@ -337,7 +338,7 @@ func rateCounterLine(parser string, row emuRow) string {
 // returns group value -> time -> value, and whether rows were read.
 func runRateCounterScenario(t testing.TB, version string, s rcScenario, tenant string) (map[string]map[int64]float64, bool) {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+	emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 	backend := httptest.NewServer(rateCounterEmuHandler(emu))
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second,
@@ -382,7 +383,7 @@ func runRateCounterScenario(t testing.TB, version string, s rcScenario, tenant s
 		}
 	}
 	readRows := false
-	for _, q := range emu.endpointCalls("/select/logsql/query") {
+	for _, q := range emu.EndpointCalls("/select/logsql/query") {
 		if !strings.Contains(q, "| filter amount:*") {
 			readRows = true
 		}
@@ -461,7 +462,7 @@ func TestRateCounterOneSampleProofRefusesSharedSeries(t *testing.T) {
 		s := generateRateCounterScenario(rnd, "logfmt", true)
 		dups := 0
 		for _, row := range s.rows {
-			if row.labels["txn"] == "dup" && row.ts > s.start-int64(s.window) && row.ts <= s.end {
+			if row.Labels["txn"] == "dup" && row.TS > s.start-int64(s.window) && row.TS <= s.end {
 				dups++
 			}
 		}
@@ -491,23 +492,23 @@ func TestRateCounterOneSampleProofEdges(t *testing.T) {
 	at := func(i int) int64 { return base - int64(4*time.Minute) + int64(i)*int64(7*time.Second) }
 	for _, tc := range []struct {
 		name   string
-		row    func(i int) emuRow
+		row    func(i int) vlemu.Row
 		zeroOK bool
 	}{
-		{"unique parsed id", func(i int) emuRow {
-			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=t%d", i, i), labels: map[string]string{"txn": fmt.Sprintf("t%d", i)}}
+		{"unique parsed id", func(i int) vlemu.Row {
+			return vlemu.Row{TS: at(i), Stream: `{app="rc"}`, Value: float64(i), Msg: fmt.Sprintf("amount=%d txn=t%d", i, i), Labels: map[string]string{"txn": fmt.Sprintf("t%d", i)}}
 		}, true},
-		{"unique parsed id, shared stored field", func(i int) emuRow {
-			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=t%d", i, i), labels: map[string]string{"txn": fmt.Sprintf("t%d", i), "region": "eu"}}
+		{"unique parsed id, shared stored field", func(i int) vlemu.Row {
+			return vlemu.Row{TS: at(i), Stream: `{app="rc"}`, Value: float64(i), Msg: fmt.Sprintf("amount=%d txn=t%d", i, i), Labels: map[string]string{"txn": fmt.Sprintf("t%d", i), "region": "eu"}}
 		}, true},
-		{"unique stored field only", func(i int) emuRow {
-			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d txn=same", i), labels: map[string]string{"txn": "same", "rid": fmt.Sprintf("r%d", i)}}
+		{"unique stored field only", func(i int) vlemu.Row {
+			return vlemu.Row{TS: at(i), Stream: `{app="rc"}`, Value: float64(i), Msg: fmt.Sprintf("amount=%d txn=same", i), Labels: map[string]string{"txn": "same", "rid": fmt.Sprintf("r%d", i)}}
 		}, false},
-		{"keys Loki names alike", func(i int) emuRow {
-			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d a_b=same a.b=u%d", i, i)}
+		{"keys Loki names alike", func(i int) vlemu.Row {
+			return vlemu.Row{TS: at(i), Stream: `{app="rc"}`, Value: float64(i), Msg: fmt.Sprintf("amount=%d a_b=same a.b=u%d", i, i)}
 		}, false},
-		{"a digit-leading key and its sanitized twin", func(i int) emuRow {
-			return emuRow{ts: at(i), stream: `{app="rc"}`, value: float64(i), msg: fmt.Sprintf("amount=%d _0id=same 0id=u%d", i, i)}
+		{"a digit-leading key and its sanitized twin", func(i int) vlemu.Row {
+			return vlemu.Row{TS: at(i), Stream: `{app="rc"}`, Value: float64(i), Msg: fmt.Sprintf("amount=%d _0id=same 0id=u%d", i, i)}
 		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -602,11 +603,11 @@ func FuzzRateCounterOneSample(f *testing.F) {
 // conformance: semantics/unwrap-rate-counter-one-sample-series
 func TestRateCounterKeysAreReusedPerQuery(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 200; i++ {
-		rows = append(rows, emuRow{ts: base - int64(10*time.Minute) + int64(i)*int64(5*time.Second), stream: `{app="rc"}`, value: float64(i % 9), msg: fmt.Sprintf("amount=%d txn=k%d", i%9, i)})
+		rows = append(rows, vlemu.Row{TS: base - int64(10*time.Minute) + int64(i)*int64(5*time.Second), Stream: `{app="rc"}`, Value: float64(i % 9), Msg: fmt.Sprintf("amount=%d txn=k%d", i%9, i)})
 	}
-	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 	backend := httptest.NewServer(rateCounterEmuHandler(emu))
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
@@ -623,7 +624,7 @@ func TestRateCounterKeysAreReusedPerQuery(t *testing.T) {
 		}
 	}
 	discoveries := 0
-	for _, q := range emu.endpointCalls("/select/logsql/query") {
+	for _, q := range emu.EndpointCalls("/select/logsql/query") {
 		if strings.HasSuffix(q, "| field_names") {
 			discoveries++
 		}

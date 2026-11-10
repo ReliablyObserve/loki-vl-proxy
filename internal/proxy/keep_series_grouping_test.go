@@ -20,6 +20,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // The rewrite of a range aggregation whose pipeline ends in a bare | keep:
@@ -152,7 +153,7 @@ func sameMatrixValues(got, want map[string]map[int64]string) bool {
 // keepFakeVL serves the rows with VictoriaLogs semantics: the pipes before
 // the first stats pipe as pushdownFakeVL runs them (unpack_json,
 // unpack_logfmt, fields, extract_regexp from _stream, ...), the stats, math
-// and stats pipes after it as vlEmulator does, and every other request
+// and stats pipes after it as vlemu.Emulator does, and every other request
 // (raw rows, probes, field listings) by pushdownFakeVL. It counts the stats
 // and raw-row requests.
 type keepFakeVL struct {
@@ -192,17 +193,17 @@ func newKeepFakeVL(t *testing.T, rows []pushdownRow) (*httptest.Server, *pushdow
 				t.Errorf("fake VL: no stats pipe in %s", r.Form.Get("query"))
 				return
 			}
-			emu := &vlEmulator{t: t}
+			emu := &vlemu.Emulator{T: t}
 			for _, row := range rows {
 				if values, kept := fake.applyPipes(t, before, row); kept {
 					msg := values["_msg"]
 					if msg == "" {
 						msg = row.msg
 					}
-					emu.rows = append(emu.rows, emuRow{ts: row.ts.UnixNano(), stream: "", labels: values, msg: msg})
+					emu.Rows = append(emu.Rows, vlemu.Row{TS: row.ts.UnixNano(), Stream: "", Labels: values, Msg: msg})
 				}
 			}
-			emu.serveStats(w, r)
+			emu.ServeStats(w, r)
 		case "/select/logsql/query":
 			counts.raw.Add(1)
 			rest.ServeHTTP(w, r)

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // BenchmarkSeriesLevelAggregationShapes runs the query shapes of bench/ab sets
@@ -20,12 +22,12 @@ func BenchmarkSeriesLevelAggregationShapes(b *testing.B) {
 	const step = 120 * time.Second
 	end := binaryAggregationAt
 	start := end - int64(4*time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for svc := 0; svc < 4; svc++ {
 		for pod := 0; pod < 30; pod++ {
 			stream := fmt.Sprintf(`{env="production",service_name="s%d",app="a%d",namespace="n%d",pod="p%d"}`, svc, svc, pod%3, pod)
 			for at := start - int64(10*time.Minute); at <= end; at += 70e9 {
-				rows = append(rows, emuRow{ts: at, stream: stream, value: 1})
+				rows = append(rows, vlemu.Row{TS: at, Stream: stream, Value: 1})
 			}
 		}
 	}
@@ -40,8 +42,8 @@ func BenchmarkSeriesLevelAggregationShapes(b *testing.B) {
 		{"avgBy", `avg by (service_name) (rate({env="production"}[5m]))`},
 	} {
 		b.Run(shape.name, func(b *testing.B) {
-			emu := &vlEmulator{t: b, rows: rows, version: "v1.52.0"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: b, Rows: rows, Version: "v1.52.0"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			p, err := New(Config{BackendURL: backend.URL, LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 			if err != nil {
@@ -61,7 +63,7 @@ func BenchmarkSeriesLevelAggregationShapes(b *testing.B) {
 				bytes = res.Body.Len()
 			}
 			b.StopTimer()
-			b.ReportMetric(float64(len(emu.endpointCalls("/select/logsql/stats_query_range"))+len(emu.endpointCalls("/select/logsql/query")))/float64(b.N), "vl-calls/op")
+			b.ReportMetric(float64(len(emu.EndpointCalls("/select/logsql/stats_query_range"))+len(emu.EndpointCalls("/select/logsql/query")))/float64(b.N), "vl-calls/op")
 			b.ReportMetric(float64(bytes), "resp-B")
 		})
 	}

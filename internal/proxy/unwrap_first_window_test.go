@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // firstWindowLookupSuffix ends the conversion check's lookup queries.
@@ -33,10 +34,10 @@ type firstWindowRun struct {
 // statsAnswered reports whether a stats call answered; with slowStats none
 // should, the early answer cancelling them (a call may also be cancelled
 // before the emulator sees it).
-func (fw firstWindowRun) do(t *testing.T, rows []emuRow, query string, start, end int64, step time.Duration) (code int, body, contentType string, statsAnswered bool, elapsed time.Duration) {
+func (fw firstWindowRun) do(t *testing.T, rows []vlemu.Row, query string, start, end int64, step time.Duration) (code int, body, contentType string, statsAnswered bool, elapsed time.Duration) {
 	t.Helper()
-	emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
-	inner := emu.handler()
+	emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
+	inner := emu.Handler()
 	statsDone := make(chan struct{})
 	var cancelled, closeOnce, armed atomic.Bool
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,14 +92,14 @@ func (fw firstWindowRun) do(t *testing.T, rows []emuRow, query string, start, en
 
 // firstWindowRows: lines every 50 s over [from, to), each pod's value a number
 // except rejected ones (a unit string) at the given offsets from from.
-func firstWindowRows(rnd *rand.Rand, from, to int64, rejectedAt []int64) []emuRow {
-	var rows []emuRow
+func firstWindowRows(rnd *rand.Rand, from, to int64, rejectedAt []int64) []vlemu.Row {
+	var rows []vlemu.Row
 	pods := []string{"a", "b", "c"}
 	for ts := from; ts < to; ts += int64(50 * time.Second) {
-		rows = append(rows, emuRow{ts: ts + rnd.Int63n(int64(time.Second)), stream: `{app="uw",pod="` + pods[rnd.Intn(len(pods))] + `"}`, value: float64(rnd.Intn(100))})
+		rows = append(rows, vlemu.Row{TS: ts + rnd.Int63n(int64(time.Second)), Stream: `{app="uw",pod="` + pods[rnd.Intn(len(pods))] + `"}`, Value: float64(rnd.Intn(100))})
 	}
 	for i, off := range rejectedAt {
-		rows = append(rows, emuRow{ts: from + off, stream: `{app="uw",pod="r` + strconv.Itoa(i) + `"}`, raw: "5m"})
+		rows = append(rows, vlemu.Row{TS: from + off, Stream: `{app="uw",pod="r` + strconv.Itoa(i) + `"}`, Raw: "5m"})
 	}
 	return rows
 }
@@ -183,15 +184,15 @@ func TestUnwrapFirstWindowScope(t *testing.T) {
 		query  string
 		span   time.Duration
 		lookup bool
-		rows   []emuRow
+		rows   []vlemu.Row
 	}{
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, 7 * time.Hour, false, clean},
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, 7 * time.Hour, true, failing},
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, 5 * time.Hour, false, failing},
 		{`max by (pod) (max_over_time({app="uw"} | logfmt | unwrap amount | __error__="" [5m]))`, 7 * time.Hour, false, failing},
 	} {
-		emu := &vlEmulator{t: t, rows: tc.rows, field: "amount", version: "v1.53.0"}
-		inner := emu.handler()
+		emu := &vlemu.Emulator{T: t, Rows: tc.rows, Field: "amount", Version: "v1.53.0"}
+		inner := emu.Handler()
 		// The first window's lookup reads from start-range (plus 1 ns).
 		firstStart := time.Unix(0, base-int64(5*time.Minute)+1).UTC().Format(time.RFC3339Nano)
 		var looked atomic.Bool
