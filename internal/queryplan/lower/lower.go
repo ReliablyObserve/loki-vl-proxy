@@ -29,6 +29,8 @@ type Profile struct {
 	Label        func(string) string
 	StreamFields map[string]bool
 	KeepLine     bool
+	// metric says the log query is the one of a metric row (metricLogQuery).
+	metric bool
 }
 
 // ErrNotLowered is the error of a plan whose construct has no native lowering
@@ -95,7 +97,12 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	if err != nil {
 		return logsql.Query{}, err
 	}
-	lf, err := labelFilters(sel, prof, read, defs)
+	// The label filters of a metric row read the field the stored value was put back into, not the copy.
+	filterRead := read
+	if prof.metric {
+		filterRead = nil
+	}
+	lf, err := labelFilters(sel, prof, filterRead, defs)
 	if err != nil {
 		return logsql.Query{}, err
 	}
@@ -106,7 +113,7 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 		}
 	}
 	var filters, after logsql.AllOf
-	var pipes []logsql.Pipe
+	pipes := pipeRoom(len(sel.Stages), staged, lf.pre)
 	flush := func() {
 		switch len(after) {
 		case 0:
@@ -202,6 +209,22 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 		return logsql.Query{}, err
 	}
 	return selectQuery(f, filters, pipes), nil
+}
+
+// pipeRoom is the empty list the pipes of a query go into, with room for the staged pipes, the pipes ahead of a
+// label filter, a filter pipe for each stage and the two deletes; nil when nothing is staged (no pipe is likely).
+func pipeRoom(stages int, staged, pre [][]logsql.Pipe) []logsql.Pipe {
+	if len(staged) == 0 {
+		return nil
+	}
+	room := stages + 2
+	for _, ps := range staged {
+		room += len(ps)
+	}
+	for _, ps := range pre {
+		room += len(ps)
+	}
+	return make([]logsql.Pipe, 0, room)
 }
 
 // selectQuery is the query of a stream selector's filter f, the filters written in front of the first pipe and

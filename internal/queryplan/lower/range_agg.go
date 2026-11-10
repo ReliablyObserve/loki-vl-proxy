@@ -31,6 +31,15 @@ import (
 // A label function that names stream labels adds the pipes that restore their stream values before the first pipe
 // of the log query (streamTagRestore, printed once per set of stream labels).
 func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
+	if unwrapStage(ra.In) != nil {
+		if ra.Op != logql.RangeAbsentOverTime {
+			return unwrapRange(ra, prof)
+		}
+		var err error
+		if ra, err = withoutUnwrap(ra, "RangeAgg"); err != nil {
+			return nil, err
+		}
+	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
 	var stats logsql.PipeStats
 	var ratePipes [3]logsql.Pipe
@@ -54,6 +63,20 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A rate reads the unwrapped label out of the text (a quoted `| unwrap x` makes it a sum) and its series
+	// identity from the parsers it finds there (a quoted `| json` drops the level from it).
+	if rate && readsUnwrapOrParser(ra.In, log, true, !log.parser) {
+		return nil, errQuotedClause
+	}
+	if rate && log.parser {
+		// The stream is the series of a rate over a parser: the detected_level chain is not derived.
+		ratePipes = translate.RateStatsPipesBy(rateFunc(ra.Op), ra.Range.Seconds(), parserIdentity)
+		pipes := ratePipes[:]
+		if log.has("| copy ") {
+			pipes = []logsql.Pipe{ratePipes[0], ratePipes[1], logsql.PipeFilter{Expr: logsql.FieldFilter{Field: rateFilterField, Op: logsql.FieldOpAny}}, ratePipes[2]}
+		}
+		return physical.VLQuery{Text: log.text("", "", pipes...)}, nil
+	}
 	if rate {
 		// One allocation for the text: the chain is most of it.
 		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:]...)}, nil
@@ -72,6 +95,14 @@ type metricLog struct {
 	restore string
 	// pipes is the log query's pipes printed, each after a space.
 	pipes string
+	// parser says the log query has a parser stage: the translator then takes the series of a metric to be the
+	// stream (and, for an unwrapped label, each line), where it takes the stream and its level without one.
+	parser bool
+	// copies says a copy pipe is among the pipes (a stream label's stored value, a json expression).
+	copies bool
+	// bareLogfmt is where the last pipe in pipes starts when it is the query's only unpack and a bare
+	// `| unpack_logfmt` (an unwrap names the fields to read then), and -1 otherwise.
+	bareLogfmt int
 }
 
 // metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
@@ -93,7 +124,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if keepsSpelling(in, Profile{Label: prof.Label}) {
 		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
 	}
-	q, err := logSelectQuery(in, Profile{Label: prof.Label})
+	q, err := logSelectQuery(in, Profile{Label: prof.Label, metric: true})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
 			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
@@ -112,16 +143,48 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if readsAsClause(head) {
 		return metricLog{}, quoted
 	}
-	var pipes strings.Builder
+	// Each pipe is printed once, into a builder sized for all of them.
+	var printed [8]string
+	texts := printed[:0]
+	size := 0
 	for _, p := range q.Pipes {
-		pipes.WriteByte(' ')
-		start := pipes.Len()
-		pipes.WriteString(p.String())
-		if readsAsClause(pipes.String()[start:]) {
+		t := p.String()
+		if readsAsClause(t) {
 			return metricLog{}, quoted
 		}
+		texts = append(texts, t)
+		size += 1 + len(t)
 	}
-	return metricLog{head: head, restore: restore, pipes: pipes.String()}, nil
+	var pipes strings.Builder
+	pipes.Grow(size)
+	bare, unpacks, copies := -1, 0, false
+	for i, p := range q.Pipes {
+		pipes.WriteByte(' ')
+		start := pipes.Len()
+		pipes.WriteString(texts[i])
+		switch p.(type) {
+		case logsql.PipeCopy:
+			copies = true
+		case logsql.PipeUnpackJSON:
+			unpacks++
+		case logsql.PipeUnpackLogfmt:
+			unpacks++
+			if i == len(q.Pipes)-1 && texts[i] == bareUnpackLogfmt {
+				bare = start - 1
+			}
+		}
+	}
+	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare}
+	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
+	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
+		m.bareLogfmt = -1
+	}
+	// The translator resolves the labels a stats reads (and looks for a copy pipe) when its text of the query holds an
+	// unpack pipe: quoted text that holds one takes a query with no parser there.
+	if !m.parser && (m.has("| unpack_json") || m.has("| unpack_logfmt")) {
+		return metricLog{}, quoted
+	}
+	return m, nil
 }
 
 // write puts the metric row's query, before its stats, into b, with room for extra more bytes: the filters, then the
@@ -152,24 +215,28 @@ func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
 }
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not
-// write, or "" when it writes all: an unwrap or a parser (the metric rows group by what they extract) first, any
-// drop or keep (written unlike a log query's) and any other stage the log query lowering leaves out is named by
-// that lowering.
+// write, or "" when it writes all: an unwrap first, then a regexp or pattern parser, any drop or keep (written unlike
+// a log query's) and a formatting stage; any other stage the log query lowering leaves out (a parser it does not
+// write) is named by that lowering.
 func rangeInnerConstruct(sel *queryplan.LogSelect) string {
-	parser, dropKeep, format := false, false, false
+	extract, dropKeep, format := false, false, false
 	for _, st := range sel.Stages {
-		switch st.(type) {
+		switch st := st.(type) {
 		case *queryplan.Unwrap:
 			return "RangeAgg unwrap"
 		case *queryplan.Parse:
-			parser = true
+			// The metric rows of json and logfmt are proven; regexp and pattern are written by the log query
+			// lowering but not yet proven under a range aggregation.
+			if st.Type == logql.ParserRegexp || st.Type == logql.ParserPattern {
+				extract = true
+			}
 		case *queryplan.Drop, *queryplan.Keep:
 			dropKeep = true
 		case *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
 			format = true
 		}
 	}
-	if parser {
+	if extract {
 		return "RangeAgg parser"
 	}
 	if dropKeep {
@@ -204,4 +271,23 @@ func quotedClauseError(owner string) *NotLoweredError {
 // bool modifier.
 func readsAsClause(s string) bool {
 	return strings.Contains(s, "without") || strings.Contains(s, "bool") || strings.Contains(s, "|||")
+}
+
+// bareUnpackLogfmt is the printed `| unpack_logfmt` of a logfmt stage with no flags and no extraction list.
+var bareUnpackLogfmt = logsql.PipeUnpackLogfmt{}.String()
+
+// parserIdentity is the series of a rate over a log query with a parser.
+var parserIdentity = []logsql.GroupKey{{Field: "_stream"}}
+
+// rateFunc is the stats function of the rows a rate or a bytes_rate reads.
+func rateFunc(op logql.RangeOp) logsql.StatsFunc {
+	if op == logql.RangeBytesRate {
+		return logsql.SumLen{Field: "_msg"}
+	}
+	return logsql.Count{}
+}
+
+// has reports whether the printed log query holds s, as the translator's searches of its text do.
+func (m metricLog) has(s string) bool {
+	return strings.Contains(m.head, s) || strings.Contains(m.restore, s) || strings.Contains(m.pipes, s)
 }

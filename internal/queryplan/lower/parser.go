@@ -24,7 +24,11 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 	// once the stages themselves are known to lower, so a query reports its first cause.
 	var streamErr error
 	if names := translate.StreamLabelNames(prof.Label); len(names) > 0 && hasParser(sel) {
-		if readsStreamLabel(sel, names) {
+		if prof.metric {
+			// A metric query puts the stored value of every stream label back behind each parser (and so reads
+			// the label from its own field): the labels the pipeline reads make no difference.
+			read = names
+		} else if readsStreamLabel(sel, names) {
 			streamErr = &NotLoweredError{Construct: "LogSelect stream label after parser"}
 		} else if r, c := streamValues(sel, names); c != "" {
 			streamErr = &NotLoweredError{Construct: c}
@@ -46,7 +50,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 				// aside without the fill that follows a parser's pipe.
 				err = &NotLoweredError{Construct: "LogSelect no-op pattern with stream label"}
 			}
-			ps = streamValuePipes(ps, read, !parsed)
+			ps = streamValuePipes(ps, read, !parsed, prof.metric)
 			parsed = true
 		case *queryplan.Drop:
 			ps, err = dropPipes(st)
@@ -123,21 +127,28 @@ func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 	return nil
 }
 
+// The pipes of a json and a logfmt stage with no extraction list. The slices are shared and never written to: they
+// have no spare room (a caller that appends copies them) and the pipes are values.
+var (
+	jsonUnpackPipes   = []logsql.Pipe{translate.JSONUnpack()}[0:1:1]
+	logfmtUnpackPipes = []logsql.Pipe{translate.LogfmtUnpack()}[0:1:1]
+)
+
 // parserPipes are the pipes of a json, logfmt, regexp or pattern stage.
 func parserPipes(st *queryplan.Parse) ([]logsql.Pipe, error) {
 	switch st.Type {
 	case logql.ParserJSON:
-		ps := []logsql.Pipe{translate.JSONUnpack()}
-		if len(st.Fields) > 0 {
-			copies, ok := translate.JSONAliasCopies(st.Fields, st.Param)
-			if !ok {
-				return nil, &NotLoweredError{Construct: "LogSelect json extraction"}
-			}
-			ps = append(ps, copies...)
+		if len(st.Fields) == 0 {
+			return jsonUnpackPipes, nil
 		}
-		return ps, nil
+		copies, ok := translate.JSONAliasCopies(st.Fields, st.Param)
+		if !ok {
+			return nil, &NotLoweredError{Construct: "LogSelect json extraction"}
+		}
+		ps := make([]logsql.Pipe, 0, 1+len(copies))
+		return append(append(ps, translate.JSONUnpack()), copies...), nil
 	case logql.ParserLogfmt:
-		return []logsql.Pipe{translate.LogfmtUnpack()}, nil
+		return logfmtUnpackPipes, nil
 	case logql.ParserRegexp:
 		return []logsql.Pipe{translate.ExtractRegexp(st.Param)}, nil
 	case logql.ParserPattern:

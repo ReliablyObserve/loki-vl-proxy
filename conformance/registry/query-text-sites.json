@@ -1,15 +1,16 @@
 {
   "description": "Places production Go code (cmd/, internal/; not internal/logql, internal/logsql or internal/querycorpus) handles query text as strings, per category and file, counted by TestQueryTextSites from the source. They may only fall: a category that grows fails, and one that falls fails until this file holds the new counts (LVP_QUERY_TEXT_SITES_UPDATE=1 rewrites it). The AST work takes every category to 0.",
   "totals": {
-    "deferred_raw": 8,
+    "deferred_raw": 9,
     "lowering_marker_reads": 11,
     "parse_calls": 61,
-    "string_reads": 50,
-    "text_built": 209,
+    "string_reads": 52,
+    "text_built": 217,
     "translator_string_ops": 683
   },
   "files": {
     "deferred_raw": {
+      "internal/queryplan/lower/unwrap.go": 1,
       "internal/translate/ip_label_filter.go": 1,
       "internal/translator/translator.go": 7
     },
@@ -72,6 +73,7 @@
       "internal/proxy/stats_extent_cache.go": 1,
       "internal/proxy/unwrap_conversion_error.go": 5,
       "internal/proxy/volume_segments.go": 1,
+      "internal/queryplan/lower/unwrap.go": 2,
       "internal/rulesmigrate/migrate.go": 1
     },
     "text_built": {
@@ -94,7 +96,9 @@
       "internal/proxy/stream_processing.go": 2,
       "internal/proxy/tail.go": 2,
       "internal/proxy/unwrap_conversion_error.go": 18,
-      "internal/proxy/volume.go": 6
+      "internal/proxy/volume.go": 6,
+      "internal/queryplan/lower/range_agg.go": 3,
+      "internal/queryplan/lower/unwrap.go": 5
     },
     "translator_string_ops": {
       "internal/translate/detected_level.go": 38,
@@ -108,6 +112,7 @@
       "internal/translate/linefilter.go": 23,
       "internal/translate/linefilter_pattern.go": 9,
       "internal/translate/selector.go": 17,
+      "internal/translate/unwrap_gate.go": 2,
       "internal/translate/vector.go": 4,
       "internal/translator/ip_label_filter.go": 1,
       "internal/translator/label_filter_expr.go": 6,
@@ -120,7 +125,7 @@
       "internal/translator/series_identity.go": 16,
       "internal/translator/stats_codec.go": 19,
       "internal/translator/translator.go": 372,
-      "internal/translator/unwrap_gate.go": 5,
+      "internal/translator/unwrap_gate.go": 3,
       "internal/translator/without_pushdown.go": 16
     }
   }

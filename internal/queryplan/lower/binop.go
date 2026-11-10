@@ -286,11 +286,6 @@ func matchingKeyword(s string) string {
 	return ""
 }
 
-// isRegexpSpace is \s of Go's regexp syntax.
-func isRegexpSpace(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r'
-}
-
 // topLevelOperator is the offset and token of the one operator token (translate.BinaryOperatorTokens) at
 // parenthesis depth 0 in q, counted as the translator counts it (every parenthesis, quoted or not), or -1 when
 // there is none or more than one.
