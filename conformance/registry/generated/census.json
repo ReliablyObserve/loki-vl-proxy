@@ -1544,6 +1544,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
@@ -1564,6 +1565,7 @@
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
+    "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
@@ -2073,7 +2075,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 421,
+      "go": 423,
       "playwright": 1
     },
     "page_kinds": {

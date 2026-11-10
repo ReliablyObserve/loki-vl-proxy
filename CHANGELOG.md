@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differently from the typed stage. No handler reads the lowering yet; the
   requests sent to VictoriaLogs do not change.
 
+### Fixed
+
+- Since 2.118.0, a log query with an escaped character (`\x41` style, or an octal escape) in a
+  regexp line filter (`|~`, `!~`), or a stream selector on a configured stream field written with
+  such an escape or in backquotes, was sent to VictoriaLogs in its unescaped spelling (`~"Ab"` for
+  `|~ "\x41b"`). VictoriaLogs reads both spellings alike, so results were the same; these queries
+  are now sent as they were before 2.118.0.
+
 ## [2.118.0] - 2026-11-10
 
 ### Changed
