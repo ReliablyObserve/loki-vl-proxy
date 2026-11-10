@@ -159,6 +159,15 @@ func parserMetricGrid() []string {
 			add(call(f, fmt.Sprintf(`{app="a"} | logfmt | s=%q `, v)+map[bool]string{true: `| unwrap n `, false: ``}[f != "count_over_time" && f != "rate"], `[5m]`, ``))
 		}
 	}
+	// quoted unpack text in front of a bare logfmt parser that ends the query: the translator narrows the unpack only
+	// when its text of the query holds one unpack pipe.
+	for _, v := range []string{`| unpack_json`, `| unpack_logfmt`, `x | unpack_`} {
+		for _, g := range []string{`by (a)`, `by ()`, `by (a, b)`} {
+			add(call("avg_over_time", fmt.Sprintf(`{app="a"} |= %q | logfmt | unwrap n `, v), `[5m]`, ` `+g))
+			wrap("sum", g, call("sum_over_time", fmt.Sprintf(`{app="a"} |= %q | logfmt | unwrap n `, v), `[5m]`, ``))
+			add(call("avg_over_time", fmt.Sprintf(`{app="a"} | logfmt | s=%q | unwrap n `, v), `[5m]`, ` `+g))
+		}
+	}
 	// the regexp, pattern and unpack parsers and the stages around a json parser, which stay with the translator.
 	for _, st := range []string{` | regexp "(?P<a>x)"`, ` | pattern "<a> <b>"`, ` | unpack`, ` | json | drop a`, ` | json | keep a`, ` | json | line_format "x"`, ` | json | label_format a=b`, ` | json | decolorize`} {
 		for _, f := range []string{"count_over_time", "rate"} {

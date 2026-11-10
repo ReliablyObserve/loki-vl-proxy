@@ -164,10 +164,11 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 			}
 		}
 	}
-	if unpacks != 1 {
-		bare = -1
-	}
 	m := metricLog{head: head, restore: restore, pipes: pipes.String(), parser: hasParser(in), copies: copies, bareLogfmt: bare}
+	// The translator narrows the unpack when its text of the query holds exactly one unpack pipe, quoted text included.
+	if unpacks != 1 || strings.Count(head, "| unpack_")+strings.Count(restore, "| unpack_")+strings.Count(m.pipes, "| unpack_") != 1 {
+		m.bareLogfmt = -1
+	}
 	// The translator resolves the labels a stats reads (and looks for a copy pipe) when its text of the query holds an
 	// unpack pipe: quoted text that holds one takes a query with no parser there.
 	if !m.parser && (m.has("| unpack_json") || m.has("| unpack_logfmt")) {

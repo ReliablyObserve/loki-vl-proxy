@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -296,4 +297,43 @@ func FuzzUnwrapLowering(f *testing.F) {
 			}
 		}
 	})
+}
+
+// The copies and restores of the stream values of a metric query are built once per set of names and shared by the
+// requests of a tenant, which the live shadow plans from background goroutines.
+//
+// conformance: architecture-syntax-package-layering
+func TestPlanMetricStreamValuesMemo(t *testing.T) {
+	label := translator.WithStreamLabels(nil, []string{"app", "env", "pod"})
+	q := `sum by (a) (rate({app="a"} | json [5m]))`
+	want, err := PlanQuery(q, rangeAggPlan(q), Profile{Label: label})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// A set of names of its own each time, past the bound once, and the shared one.
+			other := translator.WithStreamLabels(nil, []string{"app", "n" + strconv.Itoa(i)})
+			for j := 0; j < 50; j++ {
+				for _, l := range []func(string) string{label, other} {
+					if _, err := PlanQuery(q, rangeAggPlan(q), Profile{Label: l}); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+			}
+			got, err := PlanQuery(q, rangeAggPlan(q), Profile{Label: label})
+			if err != nil || physical.Encode(got) != physical.Encode(want) {
+				t.Errorf("the shared set changed: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	sv := metricStreamValues([]string{"app", "env", "pod"})
+	if len(sv.copies) != 3 || len(sv.restores) != 3 {
+		t.Errorf("copies %d restores %d", len(sv.copies), len(sv.restores))
+	}
 }
