@@ -548,7 +548,8 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 		return LabelMatcher{}, p.selectorValueError()
 	}
 
-	return LabelMatcher{Name: name.Val, Op: op, Value: p.advance().Val}, nil
+	val := p.advance()
+	return LabelMatcher{Name: name.Val, Op: op, Value: val.Val, Escaped: val.Escaped || val.Typ == TokRawString}, nil
 }
 
 // selectorValueError reports a stream-selector matcher value that is not a

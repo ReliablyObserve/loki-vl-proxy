@@ -21,7 +21,7 @@ type Stage interface {
 }
 
 // MatchOp is a label matcher operator.
-type MatchOp int
+type MatchOp uint8
 
 const (
 	MatchEq    MatchOp = iota // =
@@ -32,9 +32,14 @@ const (
 
 // LabelMatcher is a single {name op "value"} matcher.
 type LabelMatcher struct {
-	Name  string
-	Op    MatchOp
-	Value string
+	Name string
+	Op   MatchOp
+	// Escaped is set when the value was written in a spelling that is not the one strconv.Quote gives it: a
+	// double-quoted literal with an escape such as \x41 or \101 or a raw control character, or a back-quoted
+	// literal. The AST holds the value only, so a writer that must keep the client's spelling reads this to know
+	// it cannot rebuild it.
+	Escaped bool
+	Value   string
 }
 
 func (m LabelMatcher) String() string {
@@ -88,6 +93,8 @@ const (
 type LineFilterAlt struct {
 	Value string
 	IP    bool
+	// Escaped is LabelMatcher.Escaped for the operand's literal.
+	Escaped bool
 }
 
 // LineFilterStage is a `|= "value"` pipeline stage. Or holds the
@@ -97,7 +104,9 @@ type LineFilterStage struct {
 	Op    LineFilterOp
 	Value string
 	IP    bool // Distinguishes ip("address") from the literal "ip(address)".
-	Or    []LineFilterAlt
+	// Escaped is LabelMatcher.Escaped for the literal of Value.
+	Escaped bool
+	Or      []LineFilterAlt
 }
 
 func (s *LineFilterStage) String() string {

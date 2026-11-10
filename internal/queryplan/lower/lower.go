@@ -69,6 +69,9 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
 // assembled). Any other stage, and a label filter after a parser, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
+	if keepsSpelling(sel, prof) {
+		return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
+	}
 	staged, err := stagePipes(sel, prof)
 	if err != nil {
 		return nil, err

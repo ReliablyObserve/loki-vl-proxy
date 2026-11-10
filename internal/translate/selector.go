@@ -108,7 +108,7 @@ func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 			}
 			continue
 		}
-		if streamFields != nil && !negate && !isRe && streamFieldLabel(label, labelFn, streamFields) {
+		if inStreamFilter(label, negate, isRe, labelFn, streamFields) {
 			stream = append(stream, logsql.LabelMatcher{Name: m.Name, Op: "=", Value: m.Value})
 			continue
 		}
@@ -126,6 +126,22 @@ func SelectorFilter(matchers []SelectorMatcher, labelFn LabelTranslateFunc, stre
 		return parts[0], nil
 	}
 	return parts, nil
+}
+
+// inStreamFilter reports whether an exact matcher on label goes into the stream filter, where the string translator
+// copies the matcher's own spelling.
+func inStreamFilter(label string, negate, isRe bool, labelFn LabelTranslateFunc, streamFields map[string]bool) bool {
+	return streamFields != nil && !negate && !isRe && streamFieldLabel(label, labelFn, streamFields)
+}
+
+// StreamFilterMatcher reports whether SelectorFilter writes m into the stream filter ({k="v"}), where the string
+// translator copies the matcher's spelling instead of quoting its value.
+func StreamFilterMatcher(m logql.LabelMatcher, labelFn LabelTranslateFunc, streamFields map[string]bool) bool {
+	label := SanitizeFieldIdentifier(m.Name)
+	if !streamFields[DetectedLevelLabel] && label == DetectedLevelLabel {
+		return false
+	}
+	return inStreamFilter(label, m.Op == logql.MatchNeq || m.Op == logql.MatchNotRe, m.Op == logql.MatchRe || m.Op == logql.MatchNotRe, labelFn, streamFields)
 }
 
 func selectorMatchOp(op string) (negate, isRe, ok bool) {
