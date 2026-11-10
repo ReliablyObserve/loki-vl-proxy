@@ -179,6 +179,8 @@ func writeVLInputs(t *testing.T, path, casesPath, v, newest string, rows []Row) 
 			grid = append(grid, q)
 		}
 	}
+	// The regexp and pattern parsers and decolorize add the captured names and the pipes among the filters.
+	grid = append(grid, validQueries(extractGrid())...)
 	sentGrid := map[string]bool{}
 	for _, q := range grid {
 		if sentGrid[q] {

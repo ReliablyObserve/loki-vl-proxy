@@ -69,11 +69,12 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
 // assembled). Any other stage, and a label filter after a parser, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	staged, read, err := stagePipes(sel, prof)
+	defs := definitions(sel)
+	staged, read, err := stagePipes(sel, prof, defs)
 	if err != nil {
 		return nil, err
 	}
-	lf, err := labelFilters(sel, prof, read)
+	lf, err := labelFilters(sel, prof, read, defs)
 	if err != nil {
 		return nil, err
 	}
@@ -190,11 +191,11 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 // answers NotLoweredError for a query whose label filters the lowering does not write: a filter on
 // detected_level or service_name (the string translator derives them), a value that is not a valid literal, and a
 // label that translates to several parsed keys or to no field.
-func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string) (filterStages, error) {
+func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs) (filterStages, error) {
 	var res filterStages
 	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
 	for i, st := range sel.Stages {
-		lb.names.note(st)
+		lb.names.note(defs, i)
 		if p, ok := st.(*queryplan.Parse); ok {
 			lb.parsed = true
 			if p.Type == logql.ParserJSON || p.Type == logql.ParserLogfmt {

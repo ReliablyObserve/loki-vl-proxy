@@ -62,6 +62,7 @@
       "since": "v1.40.0",
       "used_by_proxy": true,
       "used_in": [
+        "internal/translate/extract_stages.go",
         "internal/translator/translator.go"
       ]
     },
@@ -113,6 +114,7 @@
       "used_by_proxy": true,
       "used_in": [
         "internal/proxy/range_metric_compat.go",
+        "internal/translate/extract_stages.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go"
       ]

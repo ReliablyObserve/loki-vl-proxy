@@ -14,7 +14,7 @@ import (
 //   - a parser and a stream label the string translator copies aside because the pipeline reads it;
 //   - a stage whose text the string translator reads differently from the typed stage (translate.JSONAliasCopies,
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
-func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, read []string, err error) {
+func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, err error) {
 	parsed := false
 	var names definedNames
 	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
@@ -32,7 +32,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, 
 	}
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
-		names.note(st)
+		names.note(defs, i)
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
 			err = lineFilterAfter(sel, i)
@@ -227,33 +227,52 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 	return false
 }
 
+// stageDefs are the labels each stage of a query defines by name (nil for the stages that define none), read from
+// the regexp and pattern stages once for the query.
+type stageDefs []struct{ captured, defined []string }
+
+// definitions reads the labels the regexp and pattern stages of the query define; nil when there is no such stage.
+func definitions(sel *queryplan.LogSelect) stageDefs {
+	var defs stageDefs
+	for i, st := range sel.Stages {
+		p, ok := st.(*queryplan.Parse)
+		if !ok || (p.Type != logql.ParserRegexp && p.Type != logql.ParserPattern) {
+			continue
+		}
+		if defs == nil {
+			defs = make(stageDefs, len(sel.Stages))
+		}
+		if p.Type == logql.ParserRegexp {
+			defs[i].captured = translate.RegexpCaptureNames(p.Param)
+		} else {
+			defs[i].defined = translate.PatternCaptureNames(p.Param)
+		}
+	}
+	return defs
+}
+
 // definedNames are the labels the stages before a stage define by name: the named groups of a regexp and the
 // placeholders of a pattern. The string translator keeps them in two sets, read by the stages that follow.
 type definedNames struct {
 	captured, defined map[string]bool
 }
 
-// note adds the labels st defines.
-func (d *definedNames) note(st queryplan.Stage) {
-	p, ok := st.(*queryplan.Parse)
-	if !ok {
+// note adds the labels stage i defines.
+func (d *definedNames) note(defs stageDefs, i int) {
+	if defs == nil {
 		return
 	}
-	switch p.Type {
-	case logql.ParserRegexp:
-		for _, n := range translate.RegexpCaptureNames(p.Param) {
-			if d.captured == nil {
-				d.captured = map[string]bool{}
-			}
-			d.captured[n] = true
+	for _, n := range defs[i].captured {
+		if d.captured == nil {
+			d.captured = map[string]bool{}
 		}
-	case logql.ParserPattern:
-		for _, n := range translate.PatternCaptureNames(p.Param) {
-			if d.defined == nil {
-				d.defined = map[string]bool{}
-			}
-			d.defined[n] = true
+		d.captured[n] = true
+	}
+	for _, n := range defs[i].defined {
+		if d.defined == nil {
+			d.defined = map[string]bool{}
 		}
+		d.defined[n] = true
 	}
 }
 

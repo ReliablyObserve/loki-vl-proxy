@@ -22,16 +22,19 @@
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
+      "internal/querycorpus/extract_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/stats_decode_test.go",
+      "internal/queryplan/lower/extract_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
+      "internal/translate/extract_stages_test.go",
       "internal/translate/selector_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
@@ -2911,6 +2914,9 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/extract_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/label_filter_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2943,6 +2949,9 @@
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/extract_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2961,6 +2970,9 @@
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
+    ],
+    "internal/translate/extract_stages_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/translate/ip_label_prefilter_test.go": [
       "semantics/ip-label-filter-embedded-address"
@@ -3790,7 +3802,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 422,
+  "tests_with_markers": 425,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

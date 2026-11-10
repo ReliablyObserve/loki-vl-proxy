@@ -58,6 +58,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label inside an and/or tree and the shapes whose text the translator reads
   differently from the typed stage. No handler reads the lowering yet; the
   requests sent to VictoriaLogs do not change.
+- The query plan lowers the `| regexp` and `| pattern` parsers and
+  `| decolorize` of log queries to the VictoriaLogs query the string
+  translator writes, byte for byte under every translator profile, together
+  with the filters among them: a name a regexp captures is read as written, a
+  label a regexp or pattern defines is not looked up as a json or logfmt key.
+  Of the 22,926 corpus rows x 12 profiles the plan lowers 2,340 (was 2,256), 0
+  mismatches. It leaves to the string translator a negative line filter right
+  after a regexp or pattern (the translator reads the operator into the
+  stage's argument and writes no filter). A regexp or pattern argument written
+  with escapes Go spells otherwise (`\x41`) is written in the canonical
+  spelling: the same query to VictoriaLogs, not the same bytes. No handler
+  serves these queries from the lowering yet; the requests sent to
+  VictoriaLogs do not change.
 
 ## [2.117.0] - 2026-11-10
 
