@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labels) to VictoriaLogs natively, as one stats pipe over the log query the
   string translator writes; the requests sent to VictoriaLogs are those of the
   string translator. The unwrap functions, parsers and groupings are still
-  answered by the string translator.
+  answered by the string translator, and so is a query whose quoted text the
+  translator reads as syntax (a `without (...)` or ` bool ` in a line filter).
 - The query plan lowers `rate` and `bytes_rate` over the same log queries
   (line, pattern and label filters, no parser) to VictoriaLogs natively, for
   every range and offset and every translation profile: the log query's

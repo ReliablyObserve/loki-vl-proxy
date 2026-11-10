@@ -67,6 +67,11 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 		}
 		return nil, err
 	}
+	// The string translator strips what its regexp reads as a without clause out of the query text, and removes a
+	// " bool " modifier, quoted strings included: the lowering leaves such a query to it.
+	if translatorReadsQuotedText(ra.In, q) {
+		return nil, &NotLoweredError{Construct: "RangeAgg quoted clause"}
+	}
 	// The derivation of detected_level goes after the filters of the query, then the restore of the stream labels,
 	// the rest of the query's pipes and the stats: the query as logsql.Query prints it, with the printed chain and
 	// restore inserted.
@@ -127,4 +132,45 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 		return "RangeAgg drop or keep"
 	}
 	return ""
+}
+
+// translatorReadsQuotedText reports whether the log query holds what a regexp of the string translator reads out of
+// the whole LogQL text, quoted strings included: a `without (...)` clause (stripped from the query, and a fold
+// marker appended) and a ` bool ` modifier (removed). The printed query may not hold the client's value (a value
+// that is not UTF-8 is written as a filter that matches nothing), so the selector and the line filters are read
+// too.
+func translatorReadsQuotedText(sel *queryplan.LogSelect, q logsql.Query) bool {
+	for _, word := range [2]string{"without", "bool"} {
+		if selectionHas(sel, word) || strings.Contains(logsql.Query{Filter: q.Filter}.String(), word) {
+			return true
+		}
+		for _, p := range q.Pipes {
+			if strings.Contains(p.String(), word) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// selectionHas reports whether a value the client wrote in the selector or a line filter contains s.
+func selectionHas(sel *queryplan.LogSelect, s string) bool {
+	for _, m := range sel.Matchers {
+		if strings.Contains(m.Value, s) {
+			return true
+		}
+	}
+	for _, st := range sel.Stages {
+		if lf, ok := st.(*queryplan.LineFilter); ok {
+			if strings.Contains(lf.Value, s) {
+				return true
+			}
+			for _, alt := range lf.Or {
+				if strings.Contains(alt.Value, s) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
