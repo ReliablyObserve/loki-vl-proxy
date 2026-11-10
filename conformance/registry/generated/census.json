@@ -1547,6 +1547,8 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/binop_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/binop_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
@@ -1568,6 +1570,7 @@
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
@@ -2088,7 +2091,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 433,
+      "go": 436,
       "playwright": 1
     },
     "page_kinds": {

@@ -22,6 +22,8 @@
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
+      "internal/querycorpus/binop_grid_test.go",
+      "internal/querycorpus/binop_loki_test.go",
       "internal/querycorpus/escaped_spelling_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
@@ -33,6 +35,7 @@
       "internal/querycorpus/vector_agg_blank_grid_test.go",
       "internal/querycorpus/vector_agg_grid_test.go",
       "internal/querycorpus/vector_agg_loki_test.go",
+      "internal/queryplan/lower/binop_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
@@ -2925,6 +2928,12 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/binop_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/binop_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/escaped_spelling_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2976,6 +2985,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/vector_agg_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/binop_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
@@ -3840,7 +3852,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 434,
+  "tests_with_markers": 437,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
