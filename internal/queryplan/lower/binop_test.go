@@ -123,7 +123,7 @@ func TestPlanDelegatesBinaryOperations(t *testing.T) {
 		rate + ` / 2.50`:                                                          "BinOp number spelling",
 		`(` + rate + `) / 2`:                                                      "BinOp operand spelling",
 		`sum( ` + rate + `) / 2`:                                                  "BinOp operand spelling",
-		`label_replace(topk(2, ` + rate + `), "a", "b", "c", "d")`:                "LabelReplace operand Rank",
+		`label_replace(topk(2, ` + rate + ` > 1), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
 		`label_replace(vector(1), "a", "b", "c", "d")`:                            "LabelReplace operand VectorLit",
 		`label_replace(stddev(` + rate + `), "a", "b", "c", "d")`:                 "LabelReplace operand VectorAgg",
 		`label_replace(` + rate + ` and ` + rate + `, "a", "b", "c", "d")`:        "LabelReplace operand BinOp",

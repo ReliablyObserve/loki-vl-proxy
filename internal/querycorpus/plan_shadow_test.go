@@ -29,8 +29,13 @@ type shadowSection struct {
 	// Rows are the corpus rows × profiles the string translator translates.
 	Rows     int `json:"rows"`
 	Profiles int `json:"profiles"`
-	// Native are the rows the lowering answers, each equal to the string translator's operators.
+	// Native are the rows the lowering answers, each equal to the string translator's operators, or, for a root the
+	// proxy evaluates itself, to the proxy's route.
 	Native int `json:"native"`
+	// NativeProxyEvaluated are the native rows whose root the proxy evaluates itself (a ranking): held to the
+	// operand's request and the evaluation the proxy applies to its answer (proxy.PostAggregationPhysical), not to
+	// the string translator's text for the whole query. Included in Native.
+	NativeProxyEvaluated int `json:"native_proxy_evaluated"`
 	// Mismatches are the rows where the lowering answers differently, or answers a query the translator rejects.
 	Mismatches int `json:"mismatches"`
 	// DelegatedByConstruct counts, by the construct at the top of the plan, the rows answered by the string
@@ -136,6 +141,22 @@ func runShadowSlices(t *testing.T, lowerFn lowering, limit int) (shadowSection, 
 				// The translator is the wrong one here (knownTypedDivergencesPath, with its registry case):
 				// not a mismatch of the lowering, and not native until the plan serves it.
 				sec.DelegatedByConstruct["known divergence "+caseID]++
+				sl.delegated++
+				continue
+			}
+			if rank, underLabelReplace := evaluatedRoot(plan); rank {
+				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
+					fail(msg)
+					continue
+				}
+				sec.Native++
+				sec.NativeProxyEvaluated++
+				sl.native++
+				continue
+			} else if underLabelReplace {
+				// The proxy does not route a label_replace around a ranking as one, and the translator's text for
+				// it drops the ranking (knownLabelReplaceAroundRanking): the plan is right, not served yet.
+				sec.DelegatedByConstruct["known divergence "+knownLabelReplaceAroundRanking]++
 				sl.delegated++
 				continue
 			}
@@ -276,7 +297,15 @@ func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 func TestPlanShadowCatchesAWrongLowering(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
 	const rows = 300
-	echo := func(q string, _ *queryplan.Plan, prof planProfile) (physical.Op, error) {
+	echo := func(q string, p *queryplan.Plan, prof planProfile) (physical.Op, error) {
+		// A ranking is evaluated by the proxy: the operators it runs are the route's, not the translator's text.
+		if rank, _ := evaluatedRoot(p); rank {
+			op, _, routed, err := proxyReference(q, prof)
+			if err != nil || !routed {
+				return nil, &lower.NotLoweredError{Construct: "rejected"}
+			}
+			return op, nil
+		}
 		s, ok := prof.translate(q)
 		if !ok {
 			return nil, &lower.NotLoweredError{Construct: "rejected"}
