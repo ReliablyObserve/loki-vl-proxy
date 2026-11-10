@@ -43,6 +43,10 @@ type Facts struct {
 	// clause (nil for none).
 	Outer    string    `json:"outer"`
 	Grouping *Grouping `json:"grouping"`
+	// Param is the k of a topk or bottomk (0 for any other outermost operation), and Operand the operation of the
+	// range aggregation directly under the outermost aggregation ("" when there is none).
+	Param   int    `json:"param,omitempty"`
+	Operand string `json:"operand,omitempty"`
 	// Offsets are the offsets of the range aggregations in Loki's tree, left operand first, in nanoseconds.
 	Offsets []int64 `json:"offsets"`
 	// Pipeline is the stages of the log query, or of the range aggregation under the aggregations; nil for any
@@ -174,6 +178,10 @@ func factsOf(x FactsInput) (r Facts) {
 	switch v := top.(type) {
 	case *syntax.VectorAggregationExpr:
 		r.Outer = v.Operation
+		r.Param = v.Params
+		if ra, ok := v.Left.(*syntax.RangeAggregationExpr); ok {
+			r.Operand = ra.Operation
+		}
 		if v.Grouping != nil {
 			r.Grouping = &Grouping{Groups: append([]string{}, v.Grouping.Groups...), Without: v.Grouping.Without}
 		}

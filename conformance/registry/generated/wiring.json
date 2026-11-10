@@ -35,6 +35,8 @@
       "internal/querycorpus/plan_shadow_test.go",
       "internal/querycorpus/range_agg_grid_test.go",
       "internal/querycorpus/range_agg_oracle_test.go",
+      "internal/querycorpus/rank_grid_test.go",
+      "internal/querycorpus/rank_loki_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/querycorpus/unwrap_grid_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
@@ -51,6 +53,7 @@
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/queryplan/lower/range_agg_test.go",
+      "internal/queryplan/lower/rank_test.go",
       "internal/queryplan/lower/spelling_test.go",
       "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
@@ -3003,6 +3006,12 @@
     "internal/querycorpus/range_agg_oracle_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/rank_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/rank_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3050,6 +3059,9 @@
       "semantics/pattern-line-filter"
     ],
     "internal/queryplan/lower/range_agg_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/rank_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/spelling_test.go": [
@@ -3906,7 +3918,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 449,
+  "tests_with_markers": 452,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
