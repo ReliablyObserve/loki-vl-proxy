@@ -121,14 +121,12 @@ func binMatching(m *queryplan.Matching) (*physical.Matching, string) {
 		return nil, ""
 	}
 	pm := &physical.Matching{}
-	tail := appendMatchingModifier(nil, m.Card, m.MatchLabels)
 	if m.Card == "on" {
 		pm.MatchOn, pm.On = true, labelsOrNil(m.MatchLabels)
 	} else {
 		pm.Ignoring = labelsOrNil(m.MatchLabels)
 	}
 	if m.GroupSide != "" {
-		tail = appendMatchingModifier(tail, m.GroupSide, m.Include)
 		pm.GroupSide = m.GroupSide
 		if m.GroupSide == "group_left" {
 			pm.GroupLeft = labelsOrNil(m.Include)
@@ -136,7 +134,21 @@ func binMatching(m *queryplan.Matching) (*physical.Matching, string) {
 			pm.GroupRight = labelsOrNil(m.Include)
 		}
 	}
-	return pm, string(tail)
+	var buf [128]byte
+	return pm, string(matchingTail(buf[:0], m))
+}
+
+// matchingTail appends the modifier text of a vector matching: `@@@<card>:<labels>` and, with a group side,
+// `@@@<side>:<labels>`. The text is built on the caller's buffer, so a screen compares it without a copy.
+func matchingTail(dst []byte, m *queryplan.Matching) []byte {
+	if m == nil || m.Card == "" {
+		return dst
+	}
+	dst = appendMatchingModifier(dst, m.Card, m.MatchLabels)
+	if m.GroupSide != "" {
+		dst = appendMatchingModifier(dst, m.GroupSide, m.Include)
+	}
+	return dst
 }
 
 func labelsOrNil(labels []string) []string {
@@ -187,8 +199,8 @@ func screenBinOp(query string, n *queryplan.BinOp) error {
 		return errBinSpelling
 	}
 	stripped, tail := stripMatching(q)
-	_, want := binMatching(n.Match)
-	if tail != want {
+	var buf [128]byte
+	if tail != string(matchingTail(buf[:0], n.Match)) {
 		return errBinMatchingSpell
 	}
 	at, tok := topLevelOperator(stripped)
@@ -239,7 +251,7 @@ func quotedReadsAsSyntax(q string) bool {
 // (`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`, every match, left to right) and returns the text left
 // and the modifier text the translator writes for them.
 func stripMatching(q string) (stripped, tail string) {
-	var out, t []byte
+	var out, t strings.Builder
 	last := 0
 	for i := 0; i < len(q); i++ {
 		if !isRegexpSpace(q[i]) || (i > 0 && isRegexpSpace(q[i-1])) {
@@ -265,15 +277,25 @@ func stripMatching(q string) (stripped, tail string) {
 			break
 		}
 		closeAt += k
-		out = append(out, q[last:i]...)
-		t = append(append(append(append(t, physical.MatchingPrefix...), kw...), ':'), strings.TrimSpace(q[k+1:closeAt])...)
+		if out.Len() == 0 {
+			out.Grow(len(q))
+		}
+		if t.Len() == 0 {
+			t.Grow(64)
+		}
+		out.WriteString(q[last:i])
+		t.WriteString(physical.MatchingPrefix)
+		t.WriteString(kw)
+		t.WriteByte(':')
+		t.WriteString(strings.TrimSpace(q[k+1 : closeAt]))
 		last = closeAt + 1
 		i = closeAt
 	}
-	if t == nil {
+	if t.Len() == 0 {
 		return q, ""
 	}
-	return string(append(out, q[last:]...)), string(t)
+	out.WriteString(q[last:])
+	return out.String(), t.String()
 }
 
 // matchingKeyword is the modifier keyword s starts with, "" for none.
