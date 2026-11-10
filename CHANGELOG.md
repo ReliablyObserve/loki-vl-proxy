@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
+  the comparisons) between range aggregations, vector aggregations without a
+  `without` clause and numbers, with `on`, `ignoring`, `group_left` and
+  `group_right`, and `label_replace` calls (nested ones too) around range
+  aggregations, vector aggregations and those binary operations, for every
+  translation profile. The text is the string translator's, byte for byte, so
+  the requests sent to VictoriaLogs and the proxy's evaluation of the
+  operation do not change, and the lowering takes well under half the time of
+  the translation and allocates less. `and`, `or`, `unless`, `bool`, nested
+  binary operations, `vector()`, rankings and operands with a `without`
+  clause are still written by the string translator, and so are spellings it
+  reads unlike Loki (an operator without blanks around it, a number such as
+  `1e3`, a parenthesized operand, a quoted string holding a parenthesis or
+  `bool`) and a `label_replace` around a `service_name` grouping.
 - The query plan lowers range and vector aggregations over a log query with
   a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
   filters behind the parser) to VictoriaLogs natively for every translation

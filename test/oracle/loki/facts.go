@@ -54,6 +54,35 @@ type Facts struct {
 	Matchers []Matcher `json:"matchers"`
 	// LineFilters are that log query's line filters, left to right (Loki merges consecutive ones into one stage).
 	LineFilters []LineFilterFact `json:"line_filters"`
+	// Binary is the binary operation under any label_replace, nil for any other shape.
+	Binary *BinaryFact `json:"binary,omitempty"`
+	// LabelReplace are the label_replace calls around the expression, outermost first.
+	LabelReplace []LabelReplaceFact `json:"label_replace,omitempty"`
+}
+
+// BinaryFact is a binary operation as Loki's tree holds it: the operator, the bool modifier, the vector matching
+// (whether the tree has one, on or ignoring, its labels, the cardinality and the include labels of group_left and
+// group_right), and the kind of each operand (the Go type of Loki's node) with the value of a number.
+type BinaryFact struct {
+	Op         string   `json:"op"`
+	ReturnBool bool     `json:"return_bool"`
+	Matching   bool     `json:"matching"`
+	On         bool     `json:"on"`
+	Labels     []string `json:"labels"`
+	Card       string   `json:"card"`
+	Include    []string `json:"include"`
+	Left       string   `json:"left"`
+	Right      string   `json:"right"`
+	LeftValue  float64  `json:"left_value"`
+	RightValue float64  `json:"right_value"`
+}
+
+// LabelReplaceFact is the four arguments of a label_replace call, unquoted.
+type LabelReplaceFact struct {
+	Dst         string `json:"dst"`
+	Replacement string `json:"replacement"`
+	Src         string `json:"src"`
+	Regex       string `json:"regex"`
 }
 
 // LineFilterFact is one line filter as Loki's tree holds it: the match type (|=, !=, |~, !~, |>, !>), the value,
@@ -133,10 +162,14 @@ func factsOf(x FactsInput) (r Facts) {
 	top := expr
 	for {
 		if lr, ok := top.(*syntax.LabelReplaceExpr); ok {
+			r.LabelReplace = append(r.LabelReplace, LabelReplaceFact{Dst: lr.Dst, Replacement: lr.Replacement, Src: lr.Src, Regex: lr.Regex})
 			top = lr.Left
 			continue
 		}
 		break
+	}
+	if b, ok := top.(*syntax.BinOpExpr); ok {
+		r.Binary = binaryFact(b)
 	}
 	switch v := top.(type) {
 	case *syntax.VectorAggregationExpr:
@@ -216,4 +249,22 @@ func stageOf(st syntax.StageExpr) Stage {
 		return Stage{Kind: "drop", Names: v.Names(), Conditional: v.HasNamedMatchers()}
 	}
 	return Stage{Kind: "other"}
+}
+
+// binaryFact reads a binary operation of Loki's tree.
+func binaryFact(b *syntax.BinOpExpr) *BinaryFact {
+	f := &BinaryFact{Op: b.Op, Left: fmt.Sprintf("%T", b.SampleExpr), Right: fmt.Sprintf("%T", b.RHS)}
+	if l, ok := b.SampleExpr.(*syntax.LiteralExpr); ok {
+		f.LeftValue = l.Val
+	}
+	if l, ok := b.RHS.(*syntax.LiteralExpr); ok {
+		f.RightValue = l.Val
+	}
+	if b.Opts != nil {
+		f.ReturnBool = b.Opts.ReturnBool
+		if vm := b.Opts.VectorMatching; vm != nil {
+			f.Matching, f.On, f.Labels, f.Card, f.Include = true, vm.On, vm.MatchingLabels, vm.Card.String(), vm.Include
+		}
+	}
+	return f
 }
