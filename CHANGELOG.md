@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `line_format` template whose trim marker joins text ending in `{` to an
+  action (`{ {{- .a}}`) got a canonical form that does not parse (`{{{.a}}`),
+  so its plan key could equal the text of a template Loki rejects. Such a
+  template now keeps its own text as its canonical form, as one with `define`
+  or `block` does. Found by fuzz-smoke (`FuzzLineTemplateCanonical`).
 - Since 2.108.0 for `|= ip(...)` line filters and 2.115.0 for `label = ip(...)`
   label filters, an IPv4 `ip()` filter matched an address written after a run
   of dots that a digit or a dot precedes (`ip("10.0.0.1")` kept

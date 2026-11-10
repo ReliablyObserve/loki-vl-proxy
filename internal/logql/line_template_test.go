@@ -157,7 +157,7 @@ func FuzzLineTemplateCanonical(f *testing.F) {
 		`{{ index . "a.b" }}`, "{{$x := .a}}{{$x = 2}}{{$x}}", "{{range $i, $v := .a}}{{$i}}{{break}}{{end}}",
 		`{{define "t"}}{{.z}}{{end}}{{template "t" .}}`, `{{block "b" .}}x{{end}}`, "{{(.a).b}}",
 		`{{printf "%5.2f" 1.5e3}}`, "{{0x1F}} {{'a'}} {{-1}} {{nil}}", "{{with .a}}{{.}}{{else with .b}}b{{end}}",
-		"{{`raw`}}", "{{\"q\\n\"}}", "}}", "{{- /* x */ -}}",
+		"{{`raw`}}", "{{\"q\\n\"}}", "}}", "{{- /* x */ -}}", "{ {{- 00}}", "a{ {{- if .a}}x{{end}}",
 	} {
 		f.Add(s)
 	}
