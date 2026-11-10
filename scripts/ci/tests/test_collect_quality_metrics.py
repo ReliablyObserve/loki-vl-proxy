@@ -141,6 +141,8 @@ class CollectQualityMetricsTest(unittest.TestCase):
 
     def test_without_a_snapshot_the_tests_run_and_are_counted(self):
         self.assertEqual(len(self.computed["test_runs"]), 1)
+        # A package timeout under the collection budget: Go's 10m default cut internal/proxy short.
+        self.assertIn("-timeout=18m", self.computed["test_runs"][0].split())
         tests = self.computed["result"]["tests"]
         self.assertEqual((tests["count"], tests["coverage_pct"]), (EXPECTED_COUNT, 83.4))
         self.assertEqual(tests["outcomes"]["p/a\tTestTwo/sub"], "pass")

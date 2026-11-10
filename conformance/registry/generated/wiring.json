@@ -25,6 +25,8 @@
       "internal/querycorpus/binop_grid_test.go",
       "internal/querycorpus/binop_loki_test.go",
       "internal/querycorpus/escaped_spelling_grid_test.go",
+      "internal/querycorpus/extract_grid_test.go",
+      "internal/querycorpus/format_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
@@ -36,6 +38,9 @@
       "internal/querycorpus/vector_agg_grid_test.go",
       "internal/querycorpus/vector_agg_loki_test.go",
       "internal/queryplan/lower/binop_test.go",
+      "internal/queryplan/lower/extract_test.go",
+      "internal/queryplan/lower/format_loki_test.go",
+      "internal/queryplan/lower/format_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
@@ -44,6 +49,8 @@
       "internal/queryplan/lower/range_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
+      "internal/translate/extract_stages_test.go",
+      "internal/translate/line_format_test.go",
       "internal/translate/selector_test.go",
       "internal/translate/vector_test.go"
     ],
@@ -1065,6 +1072,10 @@
       "internal/proxy/instant_result_type_test.go",
       "test/e2e-compat/instant_result_type_test.go"
     ],
+    "semantics/ip-filter-ipv4-after-dot-run": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "internal/translator/ip_label_filter_loki_test.go"
+    ],
     "semantics/ip-filter-json-stats-pushdown": [
       "internal/logql/label_filter_expr_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
@@ -1764,7 +1775,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 452,
+  "registry_items": 453,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2937,6 +2948,12 @@
     "internal/querycorpus/escaped_spelling_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/extract_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/format_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/known_divergence_test.go": [
       "semantics/translator-reads-parenthesized-metric-as-text"
     ],
@@ -2990,6 +3007,15 @@
     "internal/queryplan/lower/binop_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/queryplan/lower/extract_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/format_loki_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/lower/format_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3027,12 +3053,19 @@
     "internal/translate/detected_level_normalize_test.go": [
       "severity-detected-level-derivation"
     ],
+    "internal/translate/extract_stages_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/translate/ip_label_prefilter_test.go": [
       "semantics/ip-label-filter-embedded-address"
     ],
     "internal/translate/ip_line_filter_loki_test.go": [
+      "semantics/ip-filter-ipv4-after-dot-run",
       "semantics/ip-filter-precision",
       "semantics/ip-line-filter-ipv4-like-loki"
+    ],
+    "internal/translate/line_format_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/translate/linefilter_pattern_test.go": [
       "semantics/pattern-line-filter"
@@ -3063,6 +3096,7 @@
       "semantics/unwrap-first-last-under-aggregation"
     ],
     "internal/translator/ip_label_filter_loki_test.go": [
+      "semantics/ip-filter-ipv4-after-dot-run",
       "semantics/ip-label-filter-embedded-address",
       "semantics/ip-label-filter-missing-label"
     ],
@@ -3852,7 +3886,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 437,
+  "tests_with_markers": 444,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3958,5 +3992,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 276
+  "wired_items": 277
 }

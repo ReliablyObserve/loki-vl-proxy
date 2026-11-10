@@ -161,6 +161,15 @@ func spell(v string, mode uint8) string {
 	return b.String()
 }
 
+// translatorReadsMatcherOperator reports a stream-field value the string translator reads as an operator: it looks for
+// `!~`, `=~` and `!=` in the whole matcher text, the quoted value included (canUseStreamSelector), and writes such an
+// exact matcher as a field filter (`app:="a!~0"`) instead of a stream filter. Both keep the same rows; the lowering
+// reads the operator from the matcher and keeps the stream filter
+// (semantics/translator-reads-quoted-text-as-syntax).
+func translatorReadsMatcherOperator(v string) bool {
+	return strings.Contains(v, "!~") || strings.Contains(v, "=~") || strings.Contains(v, "!=")
+}
+
 // FuzzEscapedSpellingLowering holds the lowering to the string translator on a value written in any spelling, in
 // each position a filter-only log query holds one, with and without stream fields: both write the same bytes, or
 // the lowering leaves the query to the translator.
@@ -180,6 +189,9 @@ func FuzzEscapedSpellingLowering(f *testing.F) {
 	f.Add("x\"y"+bs+"z", uint8(0), uint8(7))
 	f.Add("A", uint8(1), uint8(8))
 	f.Add("A", uint8(1), uint8(9))
+	f.Add("a!~0", uint8(0), uint8(4))
+	f.Add("\xeb\xe5!~0", uint8(0), uint8(4))
+	f.Add("a=~b", uint8(0), uint8(3))
 	f.Fuzz(func(t *testing.T, v string, mode, shape uint8) {
 		l := spell(v, mode)
 		var q string
@@ -215,6 +227,9 @@ func FuzzEscapedSpellingLowering(f *testing.F) {
 		}
 		queryplan.Resolve(p)
 		for name, stream := range map[string]map[string]bool{"no stream fields": nil, "stream fields": {"app": true, "env": true}} {
+			if stream != nil && (shape%10 == 3 || shape%10 == 4) && translatorReadsMatcherOperator(v) {
+				continue
+			}
 			legacy, terr := translator.TranslateLogQLWithCapabilities(q, nil, stream, logsql.Capabilities{})
 			op, lerr := Plan(p, Profile{StreamFields: stream})
 			if errors.Is(lerr, ErrNotLowered) {

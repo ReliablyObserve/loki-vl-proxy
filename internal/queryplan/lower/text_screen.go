@@ -88,10 +88,10 @@ func PlanQuery(query string, p *queryplan.Plan, prof Profile) (physical.Op, erro
 func paddedOperand(q string) bool {
 	n := len(q)
 	for i := 0; i < n; i++ {
-		switch c := q[i]; {
-		case c == '"' || c == '`':
+		switch q[i] {
+		case '"', '`':
 			i = skipQuoted(q, i)
-		case c == '(':
+		case '(':
 			j := i + 1
 			blankBefore := false
 			for j < n && isBlank(q[j]) {

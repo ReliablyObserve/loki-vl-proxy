@@ -1,9 +1,10 @@
 package translator
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // regexpCaptureLabels returns the field names created by this pipeline stage.
@@ -17,9 +18,5 @@ func regexpCaptureLabels(stage string) []string {
 	if err != nil {
 		return nil
 	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil
-	}
-	return re.SubexpNames()
+	return translate.RegexpCaptureNames(pattern)
 }
