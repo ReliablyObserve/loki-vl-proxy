@@ -1,7 +1,9 @@
-# Seconds of the slow top-level tests of internal/proxy under -race, one per line: test, a tab, seconds.
+# Seconds of the slow top-level tests under -race, one per line: test, a tab, seconds, and for a package
+# other than internal/proxy a tab and its directory (internal/querycorpus).
 # Only a balancing hint for scripts/ci/test_shards.py: a test missing here, or listed with a stale time,
 # still runs in exactly one shard. Regenerate from a unit-results.json artifact:
-#   scripts/ci/test_shards.py weights --results unit-results.json > scripts/ci/test-shard-weights.tsv
+#   scripts/ci/test_shards.py weights --package internal/proxy --package internal/querycorpus \
+#       --results unit-results.json > scripts/ci/test-shard-weights.tsv
 TestQueryRangeStepsMatchUncached	381.9
 TestQueryRangeStepsBehindMiddleware	176.4
 TestUnwrapOverTimeWindowsDifferential	127.6
@@ -65,3 +67,26 @@ TestUnwrapOverTimeRangeEmitsEndSample	6.0
 TestBinaryMatchingDifferential	5.2
 TestInstantQueryAlwaysHasLokiResultType	5.1
 TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders	5.0
+TestMetricStagesGridShadow	502.7	internal/querycorpus
+TestFormatGridShadow	300.2	internal/querycorpus
+TestVectorAggGridShadow	290.0	internal/querycorpus
+TestLabelFilterParsedGridShadow	232.2	internal/querycorpus
+TestRangeAggGridShadow	223.6	internal/querycorpus
+TestVectorAggNestedGridShadow	199.5	internal/querycorpus
+TestUnwrapGridShadow	162.3	internal/querycorpus
+TestExtractGridShadow	116.3	internal/querycorpus
+TestParserMetricGridShadow	94.1	internal/querycorpus
+TestParserGridShadow	79.7	internal/querycorpus
+TestBinOpGridShadow	64.9	internal/querycorpus
+TestRankGridShadow	43.4	internal/querycorpus
+TestLabelFilterGridShadow	41.7	internal/querycorpus
+TestEscapedSpellingGridShadow	41.1	internal/querycorpus
+TestDecodeStatsReadsLikeTheProxyReaders	37.5	internal/querycorpus
+TestPlanShadow	30.6	internal/querycorpus
+TestBinOpMoreGridShadow	18.2	internal/querycorpus
+TestVectorAggBlankPaddingShadow	18.1	internal/querycorpus
+TestPlanShadowCatchesAWrongLowering	14.9	internal/querycorpus
+TestPhysicalCodecRoundTrip	8.4	internal/querycorpus
+TestPlanCorpusLowersParsedLabelFiltersByteForByte	7.8	internal/querycorpus
+FuzzPhysicalCodec	5.4	internal/querycorpus
+FuzzSplitPostMatchesLegacy	5.4	internal/querycorpus
