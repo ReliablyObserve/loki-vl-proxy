@@ -76,8 +76,8 @@
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
+        "internal/translate/detected_level.go",
         "internal/translate/linefilter_pattern.go",
-        "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
@@ -181,8 +181,8 @@
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/proxy/volume.go",
+        "internal/translate/detected_level.go",
         "internal/translate/linefilter_pattern.go",
-        "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/translator.go",
         "internal/translator/unwrap_gate.go"
@@ -300,6 +300,7 @@
       "used_in": [
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/unwrap_gate.go"
       ]
@@ -640,6 +641,7 @@
         "internal/proxy/rate_counter_singletons.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/unwrap_samples.go",
+        "internal/translate/range.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/stats_codec.go",
         "internal/translator/translator.go",
@@ -833,6 +835,7 @@
         "internal/proxy/nested_vector_fold.go",
         "internal/proxy/query_translation.go",
         "internal/proxy/unwrap_samples.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]
@@ -850,6 +853,7 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/sliding_window_stats.go",
         "internal/proxy/volume.go",
+        "internal/translate/range.go",
         "internal/translator/translator.go",
         "internal/translator/without_pushdown.go"
       ]

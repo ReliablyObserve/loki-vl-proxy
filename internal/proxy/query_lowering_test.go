@@ -216,8 +216,8 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 		want    map[string]int
 	}{
 		// `| json` is lowered natively but not served from the lowering (a parser stage): the shadow compares it.
-		{"flag on", false, map[string]int{"flipped LogSelect": 2, "match LogSelect": 1, "not_lowered RangeAgg": 1}},
-		{"flag off", true, map[string]int{"match LogSelect": 3, "not_lowered RangeAgg": 1}},
+		{"flag on", false, map[string]int{"flipped LogSelect": 2, "match LogSelect": 1, "not_lowered RangeAgg unwrap": 1}},
+		{"flag off", true, map[string]int{"match LogSelect": 3, "not_lowered RangeAgg unwrap": 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := New(Config{
@@ -228,7 +228,7 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
-			for _, q := range []string{`{app="a"}`, `{app="a"} |> "<_> x" | status="200"`, `rate({app="a"}[5m])`, `{app="a"} | json`} {
+			for _, q := range []string{`{app="a"}`, `{app="a"} |> "<_> x" | status="200"`, `sum_over_time({app="a"} | unwrap n [5m])`, `{app="a"} | json`} {
 				if _, err := translateAndSettle(t, p, q); err != nil {
 					t.Fatal(err)
 				}

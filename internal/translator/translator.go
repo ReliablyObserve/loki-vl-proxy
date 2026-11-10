@@ -1465,13 +1465,6 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.
 // logqlSingleFilterOp is what a LogQL label filter operator means.
 type logqlSingleFilterOp = translate.LabelFilterOp
 
-// buildFieldFilterStr builds a LogsQL field filter string using logsql.FieldFilter
-// for all value quoting/formatting, but uses the legacy "-" negation prefix
-// (rather than "NOT ").
-func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
-	return translate.BuildFieldFilter(field, op, value, negate).String()
-}
-
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
@@ -3420,25 +3413,7 @@ func topLevelPipePrefix(query, prefix string) int {
 func FirstTopLevelPipe(query string) int { return firstTopLevelPipe(query) }
 
 // firstTopLevelPipe returns the index of the first '|' outside quoted strings.
-func firstTopLevelPipe(query string) int {
-	var quote byte
-	for i := 0; i < len(query); i++ {
-		c := query[i]
-		switch {
-		case quote != 0:
-			if c == '\\' && quote == '"' {
-				i++
-			} else if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '`':
-			quote = c
-		case c == '|':
-			return i
-		}
-	}
-	return -1
-}
+func firstTopLevelPipe(query string) int { return translate.FirstTopLevelPipe(query) }
 
 // ServiceNameSourceFields returns the VictoriaLogs fields the proxy reads to
 // derive service_name, in Loki's discover_service_name order. The result must
