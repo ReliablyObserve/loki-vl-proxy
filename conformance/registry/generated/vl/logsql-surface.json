@@ -23,7 +23,7 @@
       "since": "v1.51.0",
       "used_by_proxy": true,
       "used_in": [
-        "internal/translator/translator.go"
+        "internal/translate/vector.go"
       ]
     },
     {
@@ -206,6 +206,7 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
+        "internal/translate/vector.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",
