@@ -94,3 +94,37 @@ func hasDot(s string) bool {
 	}
 	return false
 }
+
+// IntersectLabels returns the labels of want that are in have, each once, in want's order.
+func IntersectLabels(want, have []string) []string {
+	var out []string
+	for _, label := range want {
+		if slices.Contains(have, label) && !slices.Contains(out, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+// SubtractLabels returns the labels of have that are not in drop.
+func SubtractLabels(have, drop []string) []string {
+	var out []string
+	for _, label := range have {
+		if !slices.Contains(drop, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+// LevelKeeps is the labels a vector aggregation over another one keeps of the labels its input series have (kept,
+// as the LogQL names them): a level keeps exactly its own grouping labels that the series have, so a `by (l...)`
+// keeps the ones it lists that are in kept, in its order, a `without (l...)` keeps the ones of kept it does not
+// list, and a level with no clause or `by ()` keeps none. A label the series lack is absent in Loki, and groups
+// as empty in VictoriaLogs: both leave no label.
+func LevelKeeps(kept, labels []string, without bool) []string {
+	if without {
+		return SubtractLabels(kept, labels)
+	}
+	return IntersectLabels(labels, kept)
+}

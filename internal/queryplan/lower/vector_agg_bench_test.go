@@ -12,7 +12,7 @@ import (
 // vectorAggQueries are the plan corpus's vector aggregations that the plan lowers (sum, count, min, max and avg,
 // with by and without, over a range function with line, pattern and label filters), plus the grouping shapes the
 // corpus has few of (service_name, detected_level, the series identity of count and min), so that each stats form
-// is measured.
+// is measured. Nests are measured apart.
 func vectorAggQueries(b *testing.B) []string {
 	b.Helper()
 	qs, err := plancorpus.Queries("../../..")
@@ -34,7 +34,12 @@ func vectorAggQueries(b *testing.B) []string {
 		if err != nil {
 			continue
 		}
-		if _, ok := p.Root.(*queryplan.VectorAgg); !ok {
+		top, ok := p.Root.(*queryplan.VectorAgg)
+		if !ok {
+			continue
+		}
+		// A nest has benchmarks of its own (BenchmarkNestedVectorAggQueries*).
+		if _, nested := top.In.(*queryplan.VectorAgg); nested {
 			continue
 		}
 		queryplan.Resolve(p)

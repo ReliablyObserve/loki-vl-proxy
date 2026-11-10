@@ -41,6 +41,9 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 		q   string
 		op  physical.Op
 		agg logql.VectorOp
+		// nested says the aggregation is over another one: Loki's tree gives the clause the outer level wrote, and
+		// the lowering writes the labels it keeps of the level below (translate.LevelKeeps).
+		nested bool
 	}
 	var rows []row
 	in := filepath.Join(work, "facts-in.jsonl")
@@ -51,7 +54,7 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 	w := bufio.NewWriter(f)
 	identity := func(s string) string { return s }
 	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
-	for _, q := range vectorAggGrid() {
+	for _, q := range append(vectorAggGrid(), vectorAggNestedGrid()...) {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -71,7 +74,8 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 		}
 		b, _ := json.Marshal(map[string]string{"id": strconv.Itoa(len(rows)), "q": q})
 		w.Write(append(b, '\n'))
-		rows = append(rows, row{q, op, va.Op})
+		_, nested := va.In.(*queryplan.VectorAgg)
+		rows = append(rows, row{q, op, va.Op, nested})
 	}
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)
@@ -107,6 +111,14 @@ func TestVectorAggGroupingMatchesLoki(t *testing.T) {
 		compared++
 		if lf.Outer != string(r.agg) {
 			t.Errorf("%s: Loki reads %q, the lowering %q", r.q, lf.Outer, r.agg)
+		}
+		if r.nested {
+			// The outer operation is the one Loki reads; its clause is cut to the labels below (the fold of a
+			// nest is the innermost level's clause with the top operator).
+			if fold, ok := r.op.(physical.Fold); ok && fold.Levels[0].Op != string(r.agg) {
+				t.Errorf("%s: the nest's fold has operator %s, Loki's outer operation is %s", r.q, fold.Levels[0].Op, r.agg)
+			}
+			continue
 		}
 		var want []string
 		without := false

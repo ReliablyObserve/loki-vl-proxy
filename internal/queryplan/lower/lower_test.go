@@ -21,7 +21,7 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"LogSelect label filter numeric equality after parser": `{app="a"} | json | status=5`,
 		"LogSelect unpack parser":                              `{app="a"} | unpack`,
 		"RangeAgg grouping":                                    `avg_over_time({app="a"} | unwrap n [5m]) without (x)`,
-		"VectorAgg operand":                                    `sum by (app) (sum by (env) (count_over_time({app="a"}[5m])))`,
+		"VectorAgg operand":                                    `sum by (app) (rate({app="a"}[5m]) > 1)`,
 		"Rank operand VectorAgg":                               `topk(3, sum by (app) (rate({app="a"}[5m])))`,
 		"Rank grouping":                                        `topk by (app) (3, rate({app="a"}[5m]))`,
 		"Rank operand unwrap":                                  `sort(sum_over_time({app="a"} | unwrap n [5m]))`,
