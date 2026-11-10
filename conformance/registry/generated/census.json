@@ -578,6 +578,9 @@
     "semantics/parse-error-text-parity | query",
     "semantics/partial-parse-before-error | compare:exact",
     "semantics/partial-parse-before-error | query",
+    "semantics/pattern-capture-before-bracket-text | compare:observed",
+    "semantics/pattern-capture-before-bracket-text | gap:open",
+    "semantics/pattern-capture-before-bracket-text | query",
     "semantics/pattern-line-filter | compare:observed",
     "semantics/pattern-line-filter | gap:fixed",
     "semantics/pattern-line-filter | perf",
@@ -2112,7 +2115,7 @@
       "any": 28,
       "api": 52,
       "drilldown": 50,
-      "explore": 157,
+      "explore": 158,
       "grafana-datasource": 2,
       "operator": 4
     },
@@ -2136,7 +2139,7 @@
     },
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
-    "unwired_items": 102,
+    "unwired_items": 103,
     "wired_items": 277
   },
   "gates": [

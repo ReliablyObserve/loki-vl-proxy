@@ -1,0 +1,48 @@
+id: semantics/pattern-capture-before-bracket-text
+title: A pattern stage with a capture followed by an unclosed `<` is written as an extract that VictoriaLogs rejects (open; Loki accepts it)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: explore
+why: |
+  Loki reads `| pattern "<_> <a><b"` as a capture `a` followed by the literal
+  text `<b`, and accepts the query (the recorded Loki verdict for the corpus row
+  is accept). The string translator writes the pattern as it is, `| extract
+  "<_> <a><b"`, and VictoriaLogs rejects that pattern (checked on v1.49.0 and
+  v1.53.0), so the request fails where
+  Loki answers.
+
+  The query plan writes the same extract (the lowering is held to the
+  translator byte for byte), so the VictoriaLogs oracle's typed-selector check
+  finds the pair rejected; the corpus row is listed in
+  internal/querycorpus/testdata/known-typed-divergences.json with this case,
+  because the string translator is the wrong one. The fix is a pattern
+  rewrite that keeps the literal `<b` apart from the capture (a quoted
+  literal), in the query plan path (the translator is frozen).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="nginx"} | pattern "<_> <a><b"'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [status]
+  expect: |
+    200 with Loki's streams (the lines the pattern matches); today the proxy
+    answers VictoriaLogs' rejection of the pattern.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (pattern stage written as an extract), fixed in the query plan path'
+  loki: 'a capture followed by literal text starting with `<` is accepted and matches'
+  proxy: 'VictoriaLogs rejects the extract pattern, so the request fails'
+  planned_test: 'the VictoriaLogs oracle typed-selector check (internal/querycorpus, known-typed-divergences.json); an e2e row against Loki when the plan serves pattern stages'
+  visual: none
+  visual_reason: 'a crafted pattern; no Grafana panel sends it'
+  clusters: []
