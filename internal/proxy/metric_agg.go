@@ -235,8 +235,14 @@ var (
 // stats_query answer) is followed by a series-level stats over its result, the
 // shape of a grouped rate.
 func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetricPostAgg) (string, error) {
+	return postAggOperandText(postAgg, func(q string) (string, error) { return p.translateQueryWithContext(ctx, q) })
+}
+
+// postAggOperandText is translatePostAggOperand with the translation of a query as a parameter: the text the proxy
+// sends to VictoriaLogs for the operand of postAgg (PostAggregationPhysical reads it with another translation).
+func postAggOperandText(postAgg instantMetricPostAgg, translate func(string) (string, error)) (string, error) {
 	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
-		translated, err := p.translateQueryWithContext(ctx, "max by ("+strings.Join(g.Labels, ", ")+") ("+postAgg.inner+")")
+		translated, err := translate("max by (" + strings.Join(g.Labels, ", ") + ") (" + postAgg.inner + ")")
 		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
 			operand := translated[:i]
 			first := strings.Index(operand, "| stats ")
@@ -250,7 +256,7 @@ func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetr
 			}
 		}
 	}
-	return p.translateQueryWithContext(ctx, postAgg.inner)
+	return translate(postAgg.inner)
 }
 
 // closingParenIndex returns the index of the parenthesis closing the one s

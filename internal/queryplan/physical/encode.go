@@ -48,7 +48,9 @@ func AppendLabelReplaceMarker(dst []byte, spec LabelReplace) []byte {
 }
 
 // Encode writes the operators as the text the string translator writes: the query with its markers. It is what the
-// proxy sends on, and translator.EncodePhysical(translator.DecodePhysical(s)) == s for every s.
+// proxy sends on, and translator.EncodePhysical(translator.DecodePhysical(s)) == s for every s. A RankStep and a
+// SeriesAgg are levels the proxy evaluates over the answer of their operand and have no text: Encode writes the
+// operand, the request the proxy sends. DecodePhysical never produces them.
 func Encode(op Op) string {
 	switch v := op.(type) {
 	case VLQuery:
@@ -57,6 +59,10 @@ func Encode(op Op) string {
 		return v.Text
 	case Verbatim:
 		return v.Text
+	case RankStep:
+		return Encode(v.In)
+	case SeriesAgg:
+		return Encode(v.In)
 	case Binary:
 		if v.Text != "" {
 			return v.Text
