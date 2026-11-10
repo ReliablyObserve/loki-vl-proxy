@@ -149,23 +149,33 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if readsAsClause(head) {
 		return metricLog{}, quoted
 	}
+	// Each pipe is printed once, into a builder sized for all of them.
+	var printed [8]string
+	texts := printed[:0]
+	size := 0
+	for _, p := range q.Pipes {
+		t := p.String()
+		if readsAsClause(t) {
+			return metricLog{}, quoted
+		}
+		texts = append(texts, t)
+		size += 1 + len(t)
+	}
 	var pipes strings.Builder
+	pipes.Grow(size)
 	bare, unpacks, copies := -1, 0, false
 	for i, p := range q.Pipes {
 		pipes.WriteByte(' ')
 		start := pipes.Len()
-		pipes.WriteString(p.String())
-		if readsAsClause(pipes.String()[start:]) {
-			return metricLog{}, quoted
-		}
-		switch pp := p.(type) {
+		pipes.WriteString(texts[i])
+		switch p.(type) {
 		case logsql.PipeCopy:
 			copies = true
 		case logsql.PipeUnpackJSON:
 			unpacks++
 		case logsql.PipeUnpackLogfmt:
 			unpacks++
-			if i == len(q.Pipes)-1 && pp.String() == bareUnpackLogfmt {
+			if i == len(q.Pipes)-1 && texts[i] == bareUnpackLogfmt {
 				bare = start - 1
 			}
 		}

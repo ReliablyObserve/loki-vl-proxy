@@ -135,21 +135,28 @@ func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 	return nil
 }
 
+// The pipes of a json and a logfmt stage with no extraction list. The slices are shared and never written to: they
+// have no spare room (a caller that appends copies them) and the pipes are values.
+var (
+	jsonUnpackPipes   = []logsql.Pipe{translate.JSONUnpack()}[0:1:1]
+	logfmtUnpackPipes = []logsql.Pipe{translate.LogfmtUnpack()}[0:1:1]
+)
+
 // parserPipes are the pipes of a json, logfmt, regexp or pattern stage.
 func parserPipes(st *queryplan.Parse) ([]logsql.Pipe, error) {
 	switch st.Type {
 	case logql.ParserJSON:
-		ps := []logsql.Pipe{translate.JSONUnpack()}
-		if len(st.Fields) > 0 {
-			copies, ok := translate.JSONAliasCopies(st.Fields, st.Param)
-			if !ok {
-				return nil, &NotLoweredError{Construct: "LogSelect json extraction"}
-			}
-			ps = append(ps, copies...)
+		if len(st.Fields) == 0 {
+			return jsonUnpackPipes, nil
 		}
-		return ps, nil
+		copies, ok := translate.JSONAliasCopies(st.Fields, st.Param)
+		if !ok {
+			return nil, &NotLoweredError{Construct: "LogSelect json extraction"}
+		}
+		ps := make([]logsql.Pipe, 0, 1+len(copies))
+		return append(append(ps, translate.JSONUnpack()), copies...), nil
 	case logql.ParserLogfmt:
-		return []logsql.Pipe{translate.LogfmtUnpack()}, nil
+		return logfmtUnpackPipes, nil
 	case logql.ParserRegexp:
 		return []logsql.Pipe{translate.ExtractRegexp(st.Param)}, nil
 	case logql.ParserPattern:
