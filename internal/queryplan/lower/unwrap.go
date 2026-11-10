@@ -113,25 +113,7 @@ func readsUnwrapOrParser(sel *queryplan.LogSelect, m metricLog, unwrap, parser b
 	if textHasUnwrapOrParser(m.head, unwrap, parser) || textHasUnwrapOrParser(m.restore, unwrap, parser) || textHasUnwrapOrParser(m.pipes, unwrap, parser) {
 		return true
 	}
-	for _, mt := range sel.Matchers {
-		if textHasUnwrapOrParser(mt.Value, unwrap, parser) {
-			return true
-		}
-	}
-	for _, st := range sel.Stages {
-		switch st := st.(type) {
-		case *queryplan.LineFilter:
-			if textHasUnwrapOrParser(st.Value, unwrap, parser) {
-				return true
-			}
-			for _, alt := range st.Or {
-				if textHasUnwrapOrParser(alt.Value, unwrap, parser) {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return anyClientString(sel, func(s string) bool { return textHasUnwrapOrParser(s, unwrap, parser) })
 }
 
 // textHasUnwrapOrParser reports whether s holds `| unwrap ` (when unwrap is set) or a pipe followed (after blanks) by json, logfmt,
@@ -196,6 +178,9 @@ type unwrapQuery struct {
 	// parser says the log query has a parser: the series are then the stream (and each line, for an unwrapped
 	// value) instead of the stream and its level.
 	parser bool
+	// unpacked says the log query holds a json or logfmt unpack, which makes the translator resolve the labels its
+	// stats read: a parser of regexp and pattern only does not.
+	unpacked bool
 	// firstBy and firstEmpty are the grouping of the first stats pipe, which reads the unwrapped value (set marks
 	// them known); the bare logfmt unpack ahead of it is narrowed to the labels it reads.
 	firstBy    []string
@@ -307,12 +292,16 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if !ok {
 		return nil, &NotLoweredError{Construct: "RangeAgg unwrap conversion"}
 	}
-	if log.parser {
+	// The unwrap stage stands where it was written: the translator takes a keep after it to decide the series of a rate.
+	if err := keepIdentityError(ra.In, "RangeAgg", rate); err != nil {
+		return nil, err
+	}
+	if log.parser && log.unpacked() {
 		if c := parserLabelConstruct("RangeAgg", u.Label, by); c != "" {
 			return nil, &NotLoweredError{Construct: c}
 		}
 	}
-	q := unwrapQuery{parser: log.parser}
+	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked()}
 	switch {
 	case rate:
 		q.rate(op.fn, seconds)
@@ -355,7 +344,9 @@ func (q *unwrapQuery) rate(fn logsql.StatsFunc, seconds float64) {
 		pipes := translate.RateStatsPipesBy(fn, seconds, parserIdentity)
 		q.noteFirst([]string{"_stream"}, false)
 		q.pipes = append(q.pipes, pipes[0].String(), pipes[1].String())
-		q.pipes = appendRateFilter(q.pipes)
+		if q.unpacked {
+			q.pipes = appendRateFilter(q.pipes)
+		}
 		q.pipes = append(q.pipes, pipes[2].String())
 		return
 	}
@@ -436,7 +427,7 @@ func (q *unwrapQuery) text(log metricLog, field, conv string, prof Profile) stri
 	log.write(&b, chain, service, len(gate)+n+40)
 	// The translator drops the lines that have no value when a copy defines the label (a stored stream value, a json
 	// expression): it reads the unwrapped label among the fields the query defines.
-	if q.parser && log.has("| copy ") && log.has(" as "+field) {
+	if q.parser && log.unpacked() && log.has("| copy ") && log.has(" as "+field) {
 		b.WriteByte(' ')
 		b.WriteString(logsql.PipeFilter{Expr: logsql.FieldFilter{Field: field, Op: logsql.FieldOpAny}}.String())
 	}
@@ -506,6 +497,9 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg unwrap conversion"}
 	}
+	if err := keepIdentityError(ra.In, "VectorAgg", rate); err != nil {
+		return nil, err
+	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if (without || len(labels) > 0) && textReadAsClause(log) {
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
@@ -515,14 +509,14 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
 	if log.parser {
-		if c := parserVectorConstruct(labels, without); c != "" {
+		if c := parserVectorConstruct(labels, without, log.unpacked()); c != "" {
 			return nil, &NotLoweredError{Construct: c}
 		}
-		if resolvableLabel(u.Label) {
+		if log.unpacked() && resolvableLabel(u.Label) {
 			return nil, &NotLoweredError{Construct: "VectorAgg parser label"}
 		}
 	}
-	q := unwrapQuery{parser: log.parser}
+	q := unwrapQuery{parser: log.parser, unpacked: log.unpacked()}
 	if rate {
 		q.vectorRate(va.Op, op.fn, seconds, labels, without, log)
 	} else {
@@ -585,7 +579,7 @@ func (q *unwrapQuery) vectorRate(op logql.VectorOp, fn logsql.StatsFunc, seconds
 // over a rate of a log query with a parser: the translator builds that stats through the path that resolves
 // the labels it reads.
 func rateVectorPipes(pipes []logsql.Pipe, op logql.VectorOp, labels []string, log metricLog, gated bool) []logsql.Pipe {
-	if !log.parser || op != logql.VectorSum || len(labels) == 0 || !gated && !log.has("| copy ") || len(pipes) != 3 {
+	if !log.parser || !log.unpacked() || op != logql.VectorSum || len(labels) == 0 || !gated && !log.has("| copy ") || len(pipes) != 3 {
 		return pipes
 	}
 	return []logsql.Pipe{pipes[0], pipes[1], logsql.PipeFilter{Expr: logsql.FieldFilter{Field: rateFilterField, Op: logsql.FieldOpAny}}, pipes[2]}

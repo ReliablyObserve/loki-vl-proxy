@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The query plan lowers range and vector aggregations over a log query with
+  `| drop`, `| keep`, `| decolorize`, `| line_format`, `| label_format`,
+  `| regexp` and `| pattern` stages to VictoriaLogs natively for every
+  translation profile, alone and under `sum`, `count`, `min`, `max` and `avg`
+  with a `by` clause (a `without` clause stays with the string translator
+  behind a parser), for the functions that read rows and the functions over an
+  unwrapped label. The requests sent to VictoriaLogs are
+  those of the string translator, byte for byte: a drop deletes every name it
+  lists and a keep of `detected_level` without `level` deletes `level` after
+  its fields. A rate, and `count`, `min`, `max` and `avg`, behind a `keep`
+  that is last (or followed only by filters, `line_format` and `decolorize`)
+  are still written by the string translator, which groups them by the labels
+  the keep leaves, and so is a query with quoted text the translator reads as
+  a parser, an unwrap, a `without` clause or a boolean modifier, wherever the
+  client wrote it (a drop, keep, label filter, parser argument or format
+  template included). The lowering takes about 60% less time than the
+  translation and allocates about 30% less memory on these queries.
+- The query plan lowers range and vector aggregations over a log query with
   a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
   filters behind the parser) to VictoriaLogs natively for every translation
   profile: `count_over_time`, `bytes_over_time`, `absent_over_time`, `rate`

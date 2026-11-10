@@ -653,6 +653,103 @@ decisions:
         us, 25.9 KiB, 108 allocs, lowered 7.9 us, 13.2 KiB, 108 allocs (the stream value copies and restores are
         built once per set of names). The shapes were on the translator before this step, so no served request
         changes.
+  - id: lowering-metric-stages
+    pending: true
+    chosen: >-
+      lower.Plan lowers range and vector aggregations over a log query with `| drop`, `| keep`, `| decolorize`,
+      `| line_format`, `| label_format`, `| regexp` and `| pattern` stages (next to the json and logfmt parsers of
+      step 15), for the functions that read rows and the functions over an unwrapped label, as the string translator
+      writes them, byte for byte under the 12 profiles. The translator writes a metric row's log query with the
+      builders of a log query and the metric flag, which changes two stages: a drop deletes every bare name it lists
+      (a log query's keeps the fields detected_level is derived from) and a keep that names detected_level without
+      level deletes level after its fields. A query whose parsers are regexp and pattern alone gets none of the
+      label resolution the translator does behind a json or logfmt unpack in its text (the format pipes of a grouping
+      or unwrapped label, the filter on the rate or the unwrapped label, the narrowed logfmt unpack), so the
+      lowering writes those only when the printed query holds an unpack, and the parser label guard of step 15
+      applies only behind one. The text the translator reads as syntax (a parser stage, `| unwrap `, a without
+      clause, a boolean modifier, a stats pipe) is searched in every string the client wrote in the log query (the
+      selector, the line and label filters as written, the arguments of the parsers, the names and conditions of a
+      drop and a keep, the templates of line_format and label_format): a drop of matchers prints no pipe, and a label
+      filter's value is rewritten in the printed query, so the printed text alone misses them. Left to the translator
+      under named constructs: a without clause over any parser (parser without, as in step 15), the series of a rate, and of count, min, max and avg, behind a keep that is last or is
+      followed only by filters, line_format and decolorize (keep identity: the translator groups by the labels the
+      keep leaves, read from the text), and the rows the log query lowering names already (drop and keep values the
+      translator's splitting misreads, line_format and label_format templates it reads differently).
+    over:
+      - 'lowering the series of a trailing keep (the labels the keep names, without the error labels, through the label function) in this step: the translator reads it from the text with its own stage scanner (a matcher, a dotted name or a quoted string ends the reading), 63 corpus rows and a small slice of the grid carry it, and the delegation is exact on the typed stages'
+      - 'resolving a grouping or unwrapped label with an underscore behind a regexp or pattern parser: the translator does not do it without a json or logfmt unpack in its text, so those labels lower as they stand; a without clause behind any parser stays with the translator (VectorAgg parser without: it folds by the labels the parsers extract, a regexp''s named groups and a pattern''s placeholders included, which it reads from the text)'
+      - 'reading only the printed query for quoted parser words (step 15): a drop or keep of matchers prints nothing and a label filter prints a rewritten value, so the lowering read a different text from the translator for them (the hand-written grid shapes found it)'
+      - 'porting the earlier branch''s separate range aggregation file for the parser half: step 15 already lowers json and logfmt metrics, and the drop, keep and word-reading pieces are the only parts that were missing'
+    why: |
+      Step 17 of architecture B (owner 2026-11-10). After step 15 the corpus shadow still delegated 549 vector and
+      477 range rows (x 12 profiles / 9 for the vector rows' profile split) to the translator for drop, keep,
+      formatting stages and the regexp and pattern parsers under an aggregation, a guard the merge of the
+      regexp/pattern lowering added to the range aggregation classifier. The grid found four places where the
+      translator reads a metric row differently from a log query: the two stages above, the unpack-text gates
+      (a regexp-only parser query gets no label resolution, so the lowering's step-15 conditions on a parser alone
+      wrote a filter the translator does not), and the series of a trailing keep. The hand-written shapes found the
+      client strings the quoted-text guard must read.
+      Handlers do not read the lowering for metric queries yet, so behaviour does not change.
+    evidence: >-
+      TestPlanShadow native 10743 -> 11524 of 22,935 rows x 12 profiles, 0 mismatches (delegated here: keep
+      identity 27 range and 36 vector, parser label 180 and 308, parser without 333, the rest as before; range drop or
+      keep 324, parser 117, pipeline 36 and vector drop or keep 504, parser 36, pipeline 9 -> 0);
+      TestPlanRouteParity delegated counts re-recorded with the route digests unchanged;
+      TestMetricStagesGridShadow 59,971 queries x 12 profiles, 533,781 rows, 300,276 lowered, 0 mismatches, text byte
+      for byte, about 26 s (a 1/32 sample of the parser, extract, format and parsed label filter grids inside the
+      five row functions and the vector aggregations, plus 90 hand-written shapes inside every function, operator
+      and clause); the same grid at a stride of 8 (148,055 queries, 1,326,537 rows, 818,586 lowered, 59 s) and
+      at a stride of 1 (984,679 queries, 8,856,153 rows, 5,849,100 lowered, 401 s) gives 0 mismatches; mutation
+      checks of the lowering (the metric drop, the level delete of a keep, the keep identity of a rate, of a vector
+      aggregation and of an unwrapped rate, the unpack conditions of the rate filter and of the unwrapped filter, the
+      client strings of a drop, keep, label filter and parser argument, the regexp-only unpack guard) each fail the
+      grid or the unit tests (three survive the grid and fail the unit tests: the client strings of a line_format and of
+      a parser argument, which the printed query repeats, and the regexp-only unpack guard; one survives both, an
+      equivalent mutant: the Raw text of a label_format repeats its parsed assignments); FuzzMetricStagesLowering 90 s, 433,000 execs (mean 4,700 per second on four workers), three 12 s
+      runs 60,000 execs each, no finding; the TestPlanDelegatesMetricStages rows name every delegation;
+      TestFormatStagesMeanWhatLokiMeans, TestVectorAggGroupingMatchesLoki (5,908 vector aggregations) and
+      TestPlanMatchesLokiOracle (2,433 queries) pass.
+    code:
+      - internal/queryplan/lower/metric_stages.go
+      - internal/translate/extract_stages.go
+      - internal/queryplan/lower/range_agg.go
+      - internal/queryplan/lower/vector_agg.go
+      - internal/queryplan/lower/unwrap.go
+      - internal/queryplan/lower/parser.go
+    tests:
+      - TestPlanShadow
+      - TestMetricStagesGridShadow
+      - TestPlanLowersMetricStages
+      - TestPlanDelegatesMetricStages
+      - TestPlanRegexpParserResolvesNoLabels
+      - TestMetricDropAndKeepPipes
+      - TestTrailingKeep
+      - TestAnyClientString
+      - TestRegexpCaptureNamesMatchCompile
+      - FuzzMetricStagesLowering
+      - TestPlanDelegatesRangeAggregations
+      - TestPlanDelegatesVectorAggregations
+      - TestPlanDelegatesUnwrapAggregations
+      - TestPlanRouteParity
+    quality: >-
+      No handler reads the lowering for metric queries yet; the requests sent to VictoriaLogs do not change. The
+      lowered text keeps the translator's meaning for a keep (the stream stays in the row, where Loki's keep removes
+      every stream label it does not name): the open case parsed-label-series-identity covers it. No Loki answer is
+      recorded for a metric row's drop or keep yet; the format answers of step 12d hold the delete and copy pipes.
+    performance:
+      tracked:
+        - 'BenchmarkMetricStageQueriesTranslator / BenchmarkMetricStageQueriesLowered / BenchmarkMetricStageQueriesPlanOnly / BenchmarkMetricStageQueriesStreamLabelsTranslator / BenchmarkMetricStageQueriesStreamLabelsLowered (internal/queryplan/lower) ns/op, B/op, allocs/op'
+      bound: >-
+        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10 (other processes shared the machine: ns/op carries
+        +-5-17%, allocs and B/op are exact), 93 corpus and grid aggregations over a drop, keep, formatting stage or
+        regexp or pattern parser: string translator 10.8 us, 9.7 KiB, 64 allocs, lowered (Parse + Build + Resolve +
+        Plan) 3.7 us, 6.7 KiB, 69 allocs (-66% time, -31% memory, +5 allocs: Parse, Build and Resolve cost 19
+        allocs, the plan alone 50, 22% under the translator and over it on 2 of the 93 queries); under the tenant's six
+        stream labels translator 18.8 us, 24.6 KiB, 106 allocs, lowered 6.2 us, 11.8 KiB, 104 allocs. The shapes were
+        on the translator before this step, so no served request changes. The aggregations the base already lowers
+        (rows, parser and unwrap shapes, 51 to 104 allocs, nine benchmark pairs, base 8e9b922d3 against this branch,
+        12 runs each, interleaved with the order swapped every round): allocs/op identical and B/op equal to within
+        0.1% in all nine, ns/op geomean +0.2%, every pair within the noise (p > 0.05).
   - id: flip-log-select-to-lowering
     pending: true
     chosen: 'A log query whose pipeline is line filters, pattern filters and label filters (no parser or formatting stage; the plan construct LogSelect) is translated by lower.Plan and written by physical.Encode instead of the string translator, when -query-plan-lowering is on (default). The decision is made on the text before any plan exists: a query that does not start with a stream selector (every metric query) is turned away by its first byte, and logql.MayHaveNonFilterStage (one allocation-free pass over the text that skips quoted strings) turns away a query with a parser or formatting stage or a detected_level / service_name label filter; only then is the query parsed (parseLogQLExpr, so the request flow counts the parse), planned and lowered. Any error, a construct outside proxy.QueryPlanFlippedConstructs, or a panic (recovered, counted as panic) falls back to the string translator, which also stays the authority on rejecting a query. The text is the translator''s byte for byte: the logsql nodes the lowering builds print the translator''s spelling (AnyOfLower, and AndExpr / OrExpr with Lower, for the lowercase `or` and `and` the translator writes), TestPlanShadow and the generated label-filter grid assert physical.Encode(lower.Plan(...)) equals the translator text for every native row under the 12 profiles, and TestQueryPlanLowering_RouteParity sends the same queries through a fake VictoriaLogs with the flag on and off under seven profiles and compares the client answers and every upstream request. The legacy text writer moved to physical.Encode (translator.EncodePhysical wraps it) so the proxy writes the text without the translator. One options-to-lower.Profile mapping (loweringProfile) serves the flip and the live shadow, and one planning function (loweringPlan) holds the parse of both. The live shadow counts a flipped query as result=flipped and keeps comparing what stays on the translator. To keep the flip from costing allocations, logsql renders a query into one pooled buffer (appendTo on the hot nodes; String is unchanged) and the shared field-name normaliser skips its regexp for a name with no dot.'
