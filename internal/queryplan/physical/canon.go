@@ -26,6 +26,18 @@ type (
 		L, R  any
 	}
 	canonScalar struct{ V float64 }
+	// canonLevel is a RankStep (K set) or a SeriesAgg; By is nil for no clause and for `by ()`.
+	canonLevel struct {
+		Rank bool
+		Op   string
+		K    int
+		By   *canonGrouping
+		In   any
+	}
+	canonGrouping struct {
+		Labels  []string
+		Without bool
+	}
 )
 
 // Canon is the structure of op: the parsed LogsQL of each VictoriaLogs query with its default spellings folded
@@ -43,6 +55,10 @@ func Canon(op Op, unparsed *bool) any {
 		return canonBin{v.Op, v.Bool, v.Match, Canon(v.L, unparsed), Canon(v.R, unparsed)}
 	case ScalarOp:
 		return canonScalar{v.V}
+	case RankStep:
+		return canonLevel{true, v.Op, v.K, canonClause(v.By), Canon(v.In, unparsed)}
+	case SeriesAgg:
+		return canonLevel{false, v.Op, 0, canonClause(v.By), Canon(v.In, unparsed)}
 	case VLQuery:
 		q, err := logsql.Parse(v.Text)
 		if err != nil {
@@ -53,6 +69,20 @@ func Canon(op Op, unparsed *bool) any {
 		return q
 	}
 	return op
+}
+
+// canonClause is the clause of a level the proxy evaluates: `by ()` is no clause (it groups every series together,
+// as no clause does), a list of labels is kept with its order, and `without ()` stays, since the proxy groups it by
+// every label.
+func canonClause(g *Grouping) *canonGrouping {
+	if g == nil || !g.Without && len(g.Labels) == 0 {
+		return nil
+	}
+	labels := g.Labels
+	if len(labels) == 0 {
+		labels = nil
+	}
+	return &canonGrouping{labels, g.Without}
 }
 
 // Equal reports whether a and b have the same structure (Canon).

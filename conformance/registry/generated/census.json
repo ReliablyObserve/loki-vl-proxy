@@ -1296,6 +1296,7 @@
     "internal/proxy/plain_stream_labels_test.go | semantics/plain-name-after-parser-reads-stream-label",
     "internal/proxy/plan_predicate_parity_test.go | architecture-syntax-package-layering",
     "internal/proxy/plan_route_parity_test.go | architecture-syntax-package-layering",
+    "internal/proxy/post_aggregation_physical_test.go | architecture-syntax-package-layering",
     "internal/proxy/proxy_helpers_test.go | semantics/absent-over-time-semantics",
     "internal/proxy/quantile_histogram_test.go | quality/query-range-settled-steps",
     "internal/proxy/quantile_histogram_test.go | semantics/unwrap-quantile-response-limit",
@@ -1580,6 +1581,8 @@
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/rank_loki_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/rank_step_alloc_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/rank_step_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
@@ -1605,6 +1608,7 @@
     "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_nested_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/physical/eval_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
@@ -2120,7 +2124,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 457,
+      "go": 461,
       "playwright": 1
     },
     "page_kinds": {

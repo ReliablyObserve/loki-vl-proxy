@@ -25,6 +25,13 @@ import (
 // would read back as one), and a spelling the translator reads unlike the plan (screenLabelReplace, before the
 // lowering).
 func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) {
+	return labelReplaceOver(n, prof, true)
+}
+
+// labelReplaceOver is labelReplace; rankOK says a ranking may stand under the calls. It is false for the operand of
+// a ranking, which the proxy translates as text: a ranking inside that text is dropped by the translator, so the
+// route evaluates nothing the plan could say there.
+func labelReplaceOver(n *queryplan.LabelReplace, prof Profile, rankOK bool) (physical.Op, error) {
 	var specs []physical.LabelReplace
 	x := queryplan.Node(n)
 	for {
@@ -47,6 +54,9 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 	if err := labelReplaceShape(x); err != nil {
 		return nil, err
 	}
+	if _, isRank := x.(*queryplan.Rank); isRank && !rankOK {
+		return nil, &NotLoweredError{Construct: "LabelReplace operand Rank"}
+	}
 	inner := Profile{Label: prof.Label, KeepLine: prof.KeepLine}
 	var op physical.Op
 	var err error
@@ -57,6 +67,9 @@ func labelReplace(n *queryplan.LabelReplace, prof Profile) (physical.Op, error) 
 		op, err = vectorAgg(v, inner)
 	case *queryplan.BinOp:
 		op, err = binOp(v, inner)
+	case *queryplan.Rank:
+		// The ranking is evaluated by the proxy, whose operand is translated with the request's own options.
+		op, err = rank(v, prof)
 	}
 	if err != nil {
 		return nil, operandError(err, &NotLoweredError{Construct: "LabelReplace operand " + Construct(x)})
@@ -84,7 +97,7 @@ var (
 // the lowering writes.
 func labelReplaceShape(x queryplan.Node) error {
 	switch x.(type) {
-	case *queryplan.RangeAgg, *queryplan.VectorAgg, *queryplan.BinOp:
+	case *queryplan.RangeAgg, *queryplan.VectorAgg, *queryplan.BinOp, *queryplan.Rank:
 		return nil
 	}
 	return &NotLoweredError{Construct: "LabelReplace operand " + Construct(x)}
@@ -118,16 +131,26 @@ func screenLabelReplace(query string, n *queryplan.LabelReplace) error {
 	if depth > maxLabelReplaceNesting || labelReplaceShape(x) != nil {
 		return nil
 	}
-	rest, ok := strings.CutPrefix(strings.TrimSpace(logql.CanonicalizeLogRanges(query)), "label_replace(")
+	arg, ok := labelReplaceArgument(query)
 	if !ok {
 		return errLabelReplaceSpelling
 	}
-	end := logql.FirstArgumentLen(rest)
-	if end == len(rest) || rest[end] != ',' {
-		return errLabelReplaceSpelling
-	}
-	if ScreenText(strings.TrimSpace(rest[:end]), &queryplan.Plan{Root: n.In}) != nil {
+	if ScreenText(arg, &queryplan.Plan{Root: n.In}) != nil {
 		return errLabelReplaceOperandSpelling
 	}
 	return nil
+}
+
+// labelReplaceArgument is the first argument of a label_replace call the query starts with (no blank before its
+// parenthesis), as written, and false when the query is no such call.
+func labelReplaceArgument(query string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(logql.CanonicalizeLogRanges(query)), "label_replace(")
+	if !ok {
+		return "", false
+	}
+	end := logql.FirstArgumentLen(rest)
+	if end == len(rest) || rest[end] != ',' {
+		return "", false
+	}
+	return strings.TrimSpace(rest[:end]), true
 }

@@ -20,6 +20,7 @@
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
+      "internal/proxy/post_aggregation_physical_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/binop_grid_test.go",
@@ -39,6 +40,8 @@
       "internal/querycorpus/range_agg_oracle_test.go",
       "internal/querycorpus/rank_grid_test.go",
       "internal/querycorpus/rank_loki_test.go",
+      "internal/querycorpus/rank_step_alloc_test.go",
+      "internal/querycorpus/rank_step_grid_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/querycorpus/unwrap_grid_test.go",
       "internal/querycorpus/vector_agg_blank_grid_test.go",
@@ -63,6 +66,7 @@
       "internal/queryplan/lower/unwrap_test.go",
       "internal/queryplan/lower/vector_agg_nested_test.go",
       "internal/queryplan/lower/vector_agg_test.go",
+      "internal/queryplan/physical/eval_test.go",
       "internal/translate/extract_stages_test.go",
       "internal/translate/line_format_test.go",
       "internal/translate/selector_test.go",
@@ -2536,6 +2540,9 @@
     "internal/proxy/plan_route_parity_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/proxy/post_aggregation_physical_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/proxy_helpers_test.go": [
       "semantics/absent-over-time-semantics"
     ],
@@ -3024,6 +3031,12 @@
     "internal/querycorpus/rank_loki_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/rank_step_alloc_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/rank_step_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -3095,6 +3108,9 @@
       "architecture-syntax-package-layering"
     ],
     "internal/queryplan/lower/vector_agg_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/queryplan/physical/eval_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/rulesmigrate/migrate_test.go": [
@@ -3942,7 +3958,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 458,
+  "tests_with_markers": 462,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

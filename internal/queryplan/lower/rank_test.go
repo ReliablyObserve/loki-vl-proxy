@@ -2,88 +2,118 @@ package lower
 
 import (
 	"errors"
-	"fmt"
-	"strconv"
-	"strings"
+	"reflect"
 	"testing"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// A ranking without a grouping over a range aggregation lowers to the operand's own operator: the string translator
-// writes no ranking (its text for topk(3, rate(..)) is the text of rate(..)), and the proxy asks VictoriaLogs for the
-// operand alone and ranks each step of the answer itself. The lowered operator is the operand's, and it is the
-// translator's text byte for byte under every profile (rank_grid_test.go in internal/querycorpus holds it on many
-// more shapes).
+// A ranking lowers to a RankStep over the operand's own operators: the proxy evaluates the ranking over the answer of
+// the operand it translates alone. The operand is lowered as it stands alone, the clause and k are the ranking's, a
+// ranking over a ranking is a RankStep over a RankStep, and the sum, avg, min, max and count layers between or above
+// rankings are SeriesAgg levels, innermost first. The RankStep encodes as its operand's request (rank_grid_test.go in
+// internal/querycorpus holds it to the proxy's route on many more shapes).
 //
 // conformance: architecture-syntax-package-layering
-func TestPlanLowersRankingsToTheOperand(t *testing.T) {
-	for _, operand := range []string{
-		`rate({app="a"}[5m])`, `count_over_time({app="a"} |= "x" [5m])`, `bytes_over_time({app=~"a.*"}[1h] offset 1h)`,
-		`bytes_rate({app="a", env!="p"}[1m])`, `absent_over_time({app="a"}[5m])`, `count_over_time({app="a"} | json [5m])`,
-		`sum_over_time({app="a"} | json | unwrap amount [5m])`, `last_over_time({app="a"} | logfmt | unwrap amount [5m])`,
-		`avg_over_time({app="a"} | json | unwrap amount [5m]) by (pod)`,
-	} {
-		want, err := PlanQuery(operand, rangeAggPlan(operand), Profile{})
+func TestPlanLowersRankingsToRankSteps(t *testing.T) {
+	prof := Profile{}
+	operandOf := func(q string) physical.Op {
+		t.Helper()
+		op, err := PlanQuery(q, rangeAggPlan(q), prof)
 		if err != nil {
-			t.Fatalf("%s: %v", operand, err)
+			t.Fatalf("%s: %v", q, err)
 		}
-		for _, q := range []string{
-			`topk(3, ` + operand + `)`, `bottomk(2, ` + operand + `)`, `sort(` + operand + `)`, `sort_desc(` + operand + `)`,
-			`TOPK(03, ` + operand + `)`, `topk (3, ` + operand + `)`, `topk by () (3, ` + operand + `)`, `topk(3, ` + operand + `) by ()`,
-		} {
-			got, err := PlanQuery(q, rangeAggPlan(q), Profile{})
-			if err != nil {
-				t.Errorf("%s: %v", q, err)
-				continue
-			}
-			if !physical.Equal(want, got) || physical.Encode(want) != physical.Encode(got) {
-				t.Errorf("%s: lowered %s, want the operand's %s", q, physical.Encode(got), physical.Encode(want))
-			}
-			for _, prof := range rangeProfiles() {
-				if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); ok && (construct != "" || !same) {
-					t.Errorf("%s: %s: delegated %q or differs\n lowered %s\n  string %s", prof.name, q, construct, lowered, legacy)
-				}
-			}
+		return op
+	}
+	lowered := func(q string) physical.Op {
+		t.Helper()
+		op, err := PlanQuery(q, rangeAggPlan(q), prof)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
 		}
+		return op
+	}
+	rate := `rate({app="a"}[5m])`
+	sum := `sum by (app) (` + rate + `)`
+	unwrap := `sum_over_time({app="a"} | unwrap amount [5m])`
+	app := &physical.Grouping{Labels: []string{"app"}}
+	for _, c := range []struct {
+		query string
+		want  physical.Op
+	}{
+		{`topk(3, ` + rate + `)`, physical.RankStep{Op: "topk", K: 3, In: operandOf(rate)}},
+		{`bottomk(2, ` + rate + `)`, physical.RankStep{Op: "bottomk", K: 2, In: operandOf(rate)}},
+		{`sort(` + rate + `)`, physical.RankStep{Op: "sort", In: operandOf(rate)}},
+		{`sort_desc(` + rate + `)`, physical.RankStep{Op: "sort_desc", In: operandOf(rate)}},
+		{`topk by (app) (3, ` + rate + `)`, physical.RankStep{Op: "topk", K: 3, By: app, In: operandOf(rate)}},
+		{`topk(3, ` + rate + `) by (app)`, physical.RankStep{Op: "topk", K: 3, By: app, In: operandOf(rate)}},
+		{`bottomk without (app) (2, ` + rate + `)`, physical.RankStep{Op: "bottomk", K: 2, By: &physical.Grouping{Labels: []string{"app"}, Without: true}, In: operandOf(rate)}},
+		{`topk by () (3, ` + rate + `)`, physical.RankStep{Op: "topk", K: 3, By: &physical.Grouping{}, In: operandOf(rate)}},
+		{`topk(3, ` + sum + `)`, physical.RankStep{Op: "topk", K: 3, In: operandOf(sum)}},
+		{`sort_desc(` + unwrap + `)`, physical.RankStep{Op: "sort_desc", In: operandOf(unwrap)}},
+		{`topk(3, label_replace(` + sum + `, "a", "$1", "app", "(.*)"))`, physical.RankStep{Op: "topk", K: 3, In: operandOf(`label_replace(` + sum + `, "a", "$1", "app", "(.*)")`)}},
+		{`bottomk(2, topk(3, ` + sum + `))`, physical.RankStep{Op: "bottomk", K: 2, In: physical.RankStep{Op: "topk", K: 3, In: operandOf(sum)}}},
+		{`topk(1, sort(bottomk(2, ` + sum + `)))`, physical.RankStep{Op: "topk", K: 1, In: physical.RankStep{Op: "sort", In: physical.RankStep{Op: "bottomk", K: 2, In: operandOf(sum)}}}},
+		{`topk(1, sum(sort(avg(bottomk(2, ` + rate + `)))))`, physical.RankStep{Op: "topk", K: 1, In: physical.SeriesAgg{Op: "sum", In: physical.RankStep{Op: "sort", In: physical.SeriesAgg{Op: "avg", In: physical.RankStep{Op: "bottomk", K: 2, In: operandOf(rate)}}}}}},
+		{`topk(2, max by (app) (sort_desc(` + sum + `)))`, physical.RankStep{Op: "topk", K: 2, In: physical.SeriesAgg{Op: "max", By: app, In: physical.RankStep{Op: "sort_desc", In: operandOf(sum)}}}},
+	} {
+		got := lowered(c.query)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s:\n got %#v\nwant %#v", c.query, got, c.want)
+		}
+		if _, operand := physical.SplitEval(got); physical.Encode(operand) != physical.Encode(got) {
+			t.Errorf("%s: Encode = %q, want the operand's %q", c.query, physical.Encode(got), physical.Encode(operand))
+		}
+	}
+	// A chain of rankings wrapped whole in parentheses is routed, with the parentheses of every layer.
+	for _, q := range []string{`(topk(2, topk(3, ` + rate + `)))`, `topk(2, (sort(` + rate + `)))`, `((bottomk(1, sort_desc(` + sum + `))))`, `sort(sort_desc ( ` + rate + `))`} {
+		if _, ok := lowered(q).(physical.RankStep); !ok {
+			t.Errorf("%s: not a RankStep", q)
+		}
+	}
+	// label_replace around a ranking is the label rewrite around the RankStep.
+	lr := lowered(`label_replace(topk(3, ` + rate + `), "a", "b", "c", "d")`)
+	core, post := physical.Split(lr)
+	if step, ok := core.(physical.RankStep); !ok || step.Op != "topk" || len(post.LabelReplace) != 1 {
+		t.Errorf("label_replace around a ranking = %#v", lr)
 	}
 }
 
-// What the lowering leaves to the string translator, and the name each shape is delegated under. A grouping is a
-// clause the translator turns into a VictoriaLogs grouping the proxy never sends (it groups the ranked answer
-// itself); an operand that is not a range aggregation is written as a phrase search; an unwrapped value with no
-// parser is grouped by the stream under a ranking, and by nothing without one.
+// What the lowering leaves to the string translator, and the name each shape is delegated under. A sort with a clause
+// and a k below 1 are not routed as a ranking; an operand that is not a range or vector aggregation (or a
+// label_replace around one) is the proxy's other evaluations or a query the plan does not write; a ranking inside a
+// label_replace operand is translated as text by the proxy, which drops it; the spellings are the ones the proxy's
+// route reads unlike the plan (a sort with a blank before its parenthesis, a ranking wrapped whole in parentheses, a
+// blank or parenthesis around the operand's own call).
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesRankShapes(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		`topk by (app) (3, ` + rate + `)`:                                     "Rank grouping",
-		`topk(3, ` + rate + `) by (app)`:                                      "Rank grouping",
-		`bottomk without (app) (2, ` + rate + `)`:                             "Rank grouping",
-		`sort by (app) (` + rate + `)`:                                        "Rank grouping",
-		`topk without () (3, ` + rate + `)`:                                   "Rank grouping",
-		`topk(3, sum by (app) (` + rate + `))`:                                "Rank operand VectorAgg",
-		`sort_desc(sum(` + rate + `))`:                                        "Rank operand VectorAgg",
-		`topk(3, topk(2, ` + rate + `))`:                                      "Rank operand Rank",
-		`topk(3, ` + rate + ` > 1)`:                                           "Rank operand BinOp",
-		`topk(3, label_replace(` + rate + `, "a", "b", "c", "d"))`:            "Rank operand LabelReplace",
-		`topk(3, sum_over_time({app="a"} | unwrap amount [5m]))`:              "Rank operand unwrap",
-		`sort(avg_over_time({app="a"} | drop x | unwrap amount [5m]))`:        "Rank operand unwrap",
-		`bottomk(2, quantile_over_time(0.5, {app="a"} | unwrap amount [5m]))`: "Rank operand unwrap",
-		`topk(3, rate({app="a"} | detected_level="error" [5m]))`:              "Rank operand RangeAgg",
-		`sort( ` + rate + `)`:                                                 "Rank spelling",
-		`topk(3, rate ({app="a"}[5m]))`:                                       "Rank spelling",
-		`topk(3, (` + rate + `))`:                                             "Rank spelling",
-		`sort((` + rate + `))`:                                                "Rank spelling",
-		`topk(3, sum_over_time({app="a"} | json |unwrap x [5m]))`:             "Rank spelling",
-		`(topk(3, ` + rate + `))`:                                             "Rank parenthesized",
-		`label_replace(topk(3, ` + rate + `), "a", "b", "c", "d")`:            "LabelReplace operand Rank",
-		`topk(3, ` + rate + `) + 1`:                                           "BinOp operand Rank",
+		`sort by (app) (` + rate + `)`:                                      "Rank grouping",
+		`sort(` + rate + `) by ()`:                                          "Rank grouping",
+		`sort_desc without (app) (` + rate + `)`:                            "Rank grouping",
+		`topk(3, ` + rate + ` > 1)`:                                         "Rank operand BinOp",
+		`topk(3, vector(1))`:                                                "Rank operand VectorLit",
+		`topk(3, label_replace(topk(2, ` + rate + `), "a", "b", "c", "d"))`: "LabelReplace operand Rank",
+		`topk(3, stddev(` + rate + `))`:                                     "VectorAgg stddev",
+		`topk(2, stddev(topk(3, ` + rate + `)))`:                            "VectorAgg stddev",
+		`topk(3, rate({app="a"} | detected_level="error" [5m]))`:            "Rank operand RangeAgg",
+		`topk(3, sum by (app) (rate({app="a"} | detected_level="e" [5m])))`: "VectorAgg LogSelect label filter detected_level",
+		`topk(3, sum without () (` + rate + `))`:                            "VectorAgg without empty",
+		`sort(count_over_time({app="a"} |> "<_> x" [5m]))`:                  "Rank operand pattern",
+		`sort_desc(absent_over_time({app="a"} !> "<_> x" [5m]))`:            "Rank operand pattern",
+		`sort (` + rate + `)`:                                               "Rank spelling",
+		`sort_desc (` + rate + `)`:                                          "Rank spelling",
+		`topk(3, rate ({app="a"}[5m]))`:                                     "Rank spelling",
+		`topk(3, (` + rate + `))`:                                           "Rank spelling",
+		`sort((` + rate + `))`:                                              "Rank spelling",
+		`topk(3, sum( rate({app="a"}[5m])))`:                                "VectorAgg operand spelling",
+		`topk(3, sum_over_time({app="a"} | json |unwrap x [5m]))`:           "RangeAgg unwrap spelling",
+		`(topk(3, ` + rate + `))`:                                           "Rank spelling",
+		`label_replace(topk(3, ` + rate + ` > 1), "a", "b", "c", "d")`:      "LabelReplace operand Rank",
+		`topk(3, ` + rate + `) + 1`:                                         "BinOp operand Rank",
+		`sum(topk(3, ` + rate + `))`:                                        "VectorAgg operand",
 	} {
 		p := rangeAggPlan(q)
 		if p == nil {
@@ -100,130 +130,28 @@ func TestPlanDelegatesRankShapes(t *testing.T) {
 	}
 }
 
-// FuzzRankLowering holds the lowering of rankings to the string translator on any selector value, line filter,
-// ranking name and spelling, k, function, range, clause and blank placement: both write the same query, or the
-// lowering leaves the query to the translator. The text a metric query's regexps read as syntax inside a quoted
-// value (" bool ", "without") is kept in: the lowering delegates it.
+// Plan alone (no query text to screen) leaves a ranking the route does not take to the translator: a sort with a
+// clause, and a stddev or stdvar layer above a ranking.
 //
 // conformance: architecture-syntax-package-layering
-func FuzzRankLowering(f *testing.F) {
-	f.Add("a", "x", "level", uint8(0), uint8(0), uint8(0), uint8(0))
-	f.Add("service_name", "é\n", "status", uint8(7), uint8(3), uint8(5), uint8(9))
-	f.Add("k8s.pod", "topk(1, x)", "a-b", uint8(200), uint8(9), uint8(11), uint8(70))
-	f.Fuzz(func(t *testing.T, sel, line, name string, fn, shape, rng, rank uint8) {
-		strip := strings.NewReplacer("bool", "", "without", "")
-		for _, s := range []string{sel, line, name} {
-			if translatorReadsAsSyntax(strip.Replace(s)) {
-				return
-			}
+func TestPlanDelegatesRankLayersTheRouteDoesNotTake(t *testing.T) {
+	rate := `rate({app="a"}[5m])`
+	for q, construct := range map[string]string{
+		`sort by (app) (` + rate + `)`:                    "Rank grouping",
+		`sort_desc(` + rate + `) without (pod)`:           "Rank grouping",
+		`topk(2, sort by () (` + rate + `))`:              "Rank grouping",
+		`topk(2, stddev(topk(3, ` + rate + `)))`:          "VectorAgg stddev",
+		`sort(stdvar by (app) (sort_desc(` + rate + `)))`: "VectorAgg stdvar",
+		`bottomk(1, sum(stddev(topk(2, ` + rate + `))))`:  "VectorAgg stddev",
+	} {
+		p := rangeAggPlan(q)
+		if p == nil {
+			t.Fatalf("%s: does not parse", q)
 		}
-		ident := func(s string) string {
-			var b strings.Builder
-			for _, r := range s {
-				if r == '_' || r == '.' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' && b.Len() > 0 {
-					b.WriteRune(r)
-				}
-			}
-			if b.Len() == 0 {
-				return "x"
-			}
-			return b.String()
+		_, err := Plan(p, Profile{})
+		var nl *NotLoweredError
+		if !errors.As(err, &nl) || nl.Construct != construct {
+			t.Errorf("%s: got %v, want not lowered: %s", q, err, construct)
 		}
-		selector := `{` + ident(sel) + []string{`="`, `!="`, `=~"`, `!~"`}[shape%4] + escapeValue(sel) + `"}`
-		stage := []string{
-			``, ` |= ` + strconv.Quote(line), ` != ` + strconv.Quote(line), ` | json`, ` | logfmt | ` + ident(name) + `=` + strconv.Quote(line),
-			` | json | unwrap ` + ident(name), ` | unwrap ` + ident(name),
-		}[shape>>4%7]
-		function := []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate", "sum_over_time", "last_over_time", "avg_over_time"}[fn%8]
-		span := []string{`[5m]`, `[1ms]`, `[1d]`, `[1h30m]`, `[5m] offset 1h`, `[0s]`}[rng%6]
-		pad := []string{"", " ", "\t", "\n"}
-		operand := function + pad[rng>>4%4] + `(` + selector + stage + span + `)`
-		kk := []string{"3", "03", "1", "100", "99999999999"}[rank>>4%5]
-		clause := []string{``, ` by ()`, ` by (` + ident(name) + `)`, ` without (` + ident(name) + `)`}[rank>>2%4]
-		var q string
-		switch rank % 4 {
-		case 0:
-			q = []string{"topk", "bottomk", "TOPK", "Bottomk"}[rank>>6%4] + clause + `(` + kk + `,` + pad[rng>>6%4] + operand + `)`
-		case 1:
-			q = []string{"topk", "bottomk"}[rank>>6%2] + `(` + kk + `, ` + operand + `)` + clause
-		case 2:
-			q = []string{"sort", "sort_desc", "SORT", "Sort_Desc"}[rank>>6%4] + pad[rng>>6%4] + `(` + pad[rng>>4%4] + operand + pad[rng>>2%4] + `)`
-		default:
-			q = `(` + []string{"topk", "sort"}[rank>>6%2] + `(` + kk + `, ` + operand + `))`
-			if rank>>6%2 == 1 {
-				q = `(sort(` + operand + `))`
-			}
-		}
-		for _, prof := range rangeProfiles() {
-			if lowered, legacy, same, construct, ok := binOpLowering(t, q, prof); ok && construct == "" && !same {
-				t.Fatalf("%s: %s:\n lowered %s\n  string %s", prof.name, q, lowered, legacy)
-			}
-		}
-	})
-}
-
-// rankAllocGrid is the rankings the lowering writes, over every range function with and without a parser, a label
-// filter after it, and an unwrapped value with each conversion.
-func rankAllocGrid(t testing.TB) []string {
-	t.Helper()
-	qs, err := plancorpus.Queries("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"topk(3, %s)", "sort(%s)"} {
-		for _, f := range []string{"count_over_time", "bytes_over_time", "absent_over_time", "rate", "bytes_rate"} {
-			for _, st := range []string{``, ` |= "x"`, ` | json`, ` | logfmt`, ` | json | status >= 500`, ` | json | level="error"`, ` | logfmt | status="x"`,
-				` |= "x" | json | status >= 500`, ` | json | drop a`, ` | regexp "(?P<a>x)"`, ` | pattern "<a> <b>"`, ` | json | a="b" | c="d"`, ` | status >= 500`, ` | json a="b"`} {
-				qs = append(qs, fmt.Sprintf(name, fmt.Sprintf(`%s({app="a"}%s [5m])`, f, st)))
-			}
-		}
-		for _, f := range []string{"sum_over_time", "avg_over_time", "min_over_time", "max_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time", "rate_counter", "rate"} {
-			for _, st := range []string{` | json`, ` | logfmt`, ` | json | status >= 500`, ` | json | level="error"`, ` | logfmt | status="x"`, ` | json | drop a`, ` |= "x" | json`, ``} {
-				for _, u := range []string{`amount`, `duration(t)`, `bytes(t)`} {
-					qs = append(qs, fmt.Sprintf(name, fmt.Sprintf(`%s({app="a"}%s | unwrap %s [5m])`, f, st, u)))
-				}
-			}
-		}
-	}
-	return qs
-}
-
-// A ranking the lowering writes allocates no more than the string translator does for the same text, with and
-// without the tenant's stream labels (Parse, Build, Resolve, the text screen and Plan against the translation): the
-// shapes where it would are left to the translator (Rank operand parser).
-//
-// conformance: architecture-syntax-package-layering
-func TestRankLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
-	if raceDetectorEnabled {
-		t.Skip("allocation counts differ under the race detector")
-	}
-	checked := 0
-	for _, label := range []func(string) string{nil, benchStreamLabels} {
-		for _, q := range rankAllocGrid(t) {
-			p := rangeAggPlan(q)
-			if p == nil {
-				continue
-			}
-			if _, ok := p.Root.(*queryplan.Rank); !ok {
-				continue
-			}
-			if _, err := PlanQuery(q, p, Profile{Label: label}); err != nil {
-				continue
-			}
-			tr := testing.AllocsPerRun(5, func() { _, _ = translator.TranslateLogQLWithLabels(q, label) })
-			lo := testing.AllocsPerRun(5, func() {
-				expr, _ := logql.Parse(logql.CanonicalizeLogRanges(q))
-				pl, _ := queryplan.Build(expr, queryplan.Inputs{})
-				queryplan.Resolve(pl)
-				_, _ = PlanQuery(q, pl, Profile{Label: label})
-			})
-			checked++
-			if lo > tr {
-				t.Errorf("label=%v: %s: lowered %.0f allocs, translator %.0f", label != nil, q, lo, tr)
-			}
-		}
-	}
-	if checked < 500 {
-		t.Fatalf("only %d lowered rankings checked", checked)
 	}
 }

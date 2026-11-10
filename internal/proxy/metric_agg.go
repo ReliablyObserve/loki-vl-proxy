@@ -235,8 +235,14 @@ var (
 // stats_query answer) is followed by a series-level stats over its result, the
 // shape of a grouped rate.
 func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetricPostAgg) (string, error) {
+	return postAggOperandText(postAgg, func(q string) (string, error) { return p.translateQueryWithContext(ctx, q) })
+}
+
+// postAggOperandText is translatePostAggOperand with the translation of a query as a parameter: the text the proxy
+// sends to VictoriaLogs for the operand of postAgg (PostAggregationPhysical reads it with another translation).
+func postAggOperandText(postAgg instantMetricPostAgg, translate func(string) (string, error)) (string, error) {
 	if g := postAgg.grouping; g != nil && !g.Without && len(g.Labels) > 0 && postAggParserStageRE.MatchString(postAgg.inner) {
-		translated, err := p.translateQueryWithContext(ctx, "max by ("+strings.Join(g.Labels, ", ")+") ("+postAgg.inner+")")
+		translated, err := translate("max by (" + strings.Join(g.Labels, ", ") + ") (" + postAgg.inner + ")")
 		if i := strings.LastIndex(translated, " | stats "); err == nil && i > 0 && strings.Count(translated, "| stats ") > 1 {
 			operand := translated[:i]
 			first := strings.Index(operand, "| stats ")
@@ -250,7 +256,7 @@ func (p *Proxy) translatePostAggOperand(ctx context.Context, postAgg instantMetr
 			}
 		}
 	}
-	return p.translateQueryWithContext(ctx, postAgg.inner)
+	return translate(postAgg.inner)
 }
 
 // closingParenIndex returns the index of the parenthesis closing the one s
@@ -362,38 +368,8 @@ func parseTopKPostAgg(logql string) (instantMetricPostAgg, bool) {
 	return instantMetricPostAgg{}, false
 }
 
-// aggregationArgs returns the text between the parentheses that hold the
-// operand (and, for topk and bottomk, the parameter) of the aggregation name
-// written at the start of logql, in any of its spellings: `name(args)`,
-// `name by (l) (args)` and `name(args) by (l)`.
-func aggregationArgs(logql, name string) (string, bool) {
-	rest := strings.TrimSpace(logql)
-	if len(rest) < len(name) || !strings.EqualFold(rest[:len(name)], name) {
-		return "", false
-	}
-	rest = rest[len(name):]
-	if rest != "" && (rest[0] == '_' || rest[0] >= 'a' && rest[0] <= 'z' || rest[0] >= '0' && rest[0] <= '9') {
-		return "", false // a longer name: count_over_time is not count
-	}
-	rest = strings.TrimSpace(rest)
-	leading := false
-	if i := strings.IndexByte(rest, '('); i > 0 {
-		// `by (l) (k, expr)`: the label list comes before the arguments.
-		close := closingParen(rest, i)
-		if close < 0 {
-			return "", false
-		}
-		rest, leading = strings.TrimSpace(rest[close+1:]), true
-	}
-	if !strings.HasPrefix(rest, "(") {
-		return "", false
-	}
-	close := closingParen(rest, 0)
-	if close < 0 || (leading && strings.TrimSpace(rest[close+1:]) != "") {
-		return "", false
-	}
-	return rest[1:close], true
-}
+// aggregationArgs is logqlpkg.AggregationArgs.
+func aggregationArgs(logql, name string) (string, bool) { return logqlpkg.AggregationArgs(logql, name) }
 
 // parseAggregationOverRanking reads an aggregation chain whose innermost
 // ranking layer (topk, bottomk, sort or sort_desc) sits under other vector
@@ -465,38 +441,11 @@ func parseAggregationOverRanking(logql string) (instantMetricPostAgg, bool) {
 	return postAgg, true
 }
 
-// unwrapParens strips the parentheses that wrap the whole of s.
-func unwrapParens(s string) string {
-	s = strings.TrimSpace(s)
-	for strings.HasPrefix(s, "(") && closingParen(s, 0) == len(s)-1 {
-		s = strings.TrimSpace(s[1 : len(s)-1])
-	}
-	return s
-}
+// unwrapParens is logqlpkg.UnwrapParens.
+func unwrapParens(s string) string { return logqlpkg.UnwrapParens(s) }
 
-// closingParen returns the index of the ")" that closes the "(" at s[open],
-// skipping quoted strings and raw strings, or -1.
-func closingParen(s string, open int) int {
-	depth := 0
-	for i := open; i < len(s); i++ {
-		switch s[i] {
-		case '"', '`':
-			quote := s[i]
-			for i++; i < len(s) && s[i] != quote; i++ {
-				if quote == '"' && s[i] == '\\' {
-					i++
-				}
-			}
-		case '(':
-			depth++
-		case ')':
-			if depth--; depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
+// closingParen is logqlpkg.ClosingParen.
+func closingParen(s string, open int) int { return logqlpkg.ClosingParen(s, open) }
 
 // topKCompare orders two sample values for topk, bottomk, sort and sort_desc:
 // negative when a ranks before b, positive after, zero when they tie. NaN ranks
@@ -541,29 +490,8 @@ func topKGroupKey(group *logqlpkg.Grouping, metric map[string]string) string {
 	return canonicalLabelsKey(kept)
 }
 
-func topLevelCommaIndex(s string) int {
-	depth := 0
-	inQuote := false
-	for i, r := range s {
-		switch r {
-		case '"':
-			inQuote = !inQuote
-		case '(':
-			if !inQuote {
-				depth++
-			}
-		case ')':
-			if !inQuote && depth > 0 {
-				depth--
-			}
-		case ',':
-			if !inQuote && depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
+// topLevelCommaIndex is logqlpkg.TopLevelCommaIndex.
+func topLevelCommaIndex(s string) int { return logqlpkg.TopLevelCommaIndex(s) }
 
 func preserveMetricStreamIdentity(originalLogQL, translatedLogsQL string, withoutLabels []string) string {
 	if !isStatsQuery(translatedLogsQL) {
