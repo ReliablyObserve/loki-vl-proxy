@@ -226,6 +226,14 @@ func (p *Proxy) runLoweringShadow(s *loweringShadow, in shadowInput) {
 		if err = lower.ScreenText(in.query, plan); err == nil {
 			lowered, err = s.lower(plan, in.profile())
 		}
+		if err == nil && physical.Evaluated(lowered) {
+			// The proxy evaluates a ranking itself, over the answer of its operand, and translates the operand
+			// alone: the text the translator wrote for the whole query is not what it sends, so it is no reference
+			// for these operators. The corpus shadow holds them to the proxy's route
+			// (proxy.PostAggregationPhysical).
+			result(shadowNotLowered)
+			return
+		}
 		if err != nil {
 			var nl *lower.NotLoweredError
 			switch {

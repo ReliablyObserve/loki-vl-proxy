@@ -195,6 +195,17 @@ func gridShadow(t *testing.T, grid []string, byteExact bool) (rows, native int, 
 				problems = append(problems, fmt.Sprintf("%s: %q: lowering failed: %v", prof.name, q, lerr))
 				continue
 			}
+			if rank, underLabelReplace := evaluatedRoot(plan); rank {
+				if msg := checkProxyEvaluated(q, prof, got); msg != "" {
+					problems = append(problems, msg)
+					continue
+				}
+				native++
+				continue
+			} else if underLabelReplace {
+				delegated["known divergence "+knownLabelReplaceAroundRanking]++
+				continue
+			}
 			want, err := translator.DecodePhysical(legacy)
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
