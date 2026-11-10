@@ -15,13 +15,32 @@ import (
 // handlers receive them (routedQuery), so that each shape is measured.
 func loweredRankQueries(b *testing.B) []string {
 	b.Helper()
+	return loweredEvaluatedQueries(b, "ranking", func(p *queryplan.Plan) bool {
+		_, ok := p.Root.(*queryplan.Rank)
+		return ok
+	}, append(rankGrid(), rankStepGrid()...))
+}
+
+// loweredSeriesAggQueries are the stddev and stdvar roots of the plan corpus and the grids that the lowering answers.
+func loweredSeriesAggQueries(b *testing.B) []string {
+	b.Helper()
+	return loweredEvaluatedQueries(b, "stddev or stdvar", func(p *queryplan.Plan) bool {
+		va, ok := p.Root.(*queryplan.VectorAgg)
+		return ok && (va.Op == logql.VectorStddev || va.Op == logql.VectorStdvar)
+	}, seriesAggGrid())
+}
+
+// loweredEvaluatedQueries are the queries of the plan corpus and grid that the proxy routes as one evaluation, whose
+// plan keep accepts, that the lowering answers.
+func loweredEvaluatedQueries(b *testing.B, what string, keep func(*queryplan.Plan) bool, grid []string) []string {
+	b.Helper()
 	var qs []string
 	seen := map[string]bool{}
 	corpus, err := plancorpus.Queries("../..")
 	if err != nil {
 		b.Fatal(err)
 	}
-	for _, q := range append(append(corpus, rankGrid()...), rankStepGrid()...) {
+	for _, q := range append(corpus, grid...) {
 		rq := routedQuery(q)
 		if seen[rq] {
 			continue
@@ -36,7 +55,7 @@ func loweredRankQueries(b *testing.B) []string {
 			continue
 		}
 		queryplan.Resolve(plan)
-		if routed, _ := evaluatedRoot(plan); !routed {
+		if routed, _ := evaluatedRoot(plan); !routed || !keep(plan) {
 			continue
 		}
 		if _, err := lower.PlanQuery(rq, plan, lower.Profile{}); err != nil {
@@ -45,9 +64,9 @@ func loweredRankQueries(b *testing.B) []string {
 		qs = append(qs, rq)
 	}
 	if len(qs) == 0 {
-		b.Fatal("no lowered ranking")
+		b.Fatalf("no lowered %s", what)
 	}
-	b.Logf("%d ranking queries", len(qs))
+	b.Logf("%d %s queries", len(qs), what)
 	return qs
 }
 
@@ -57,7 +76,10 @@ func BenchmarkRankRoute(b *testing.B)             { benchRankRoute(b, nil) }
 func BenchmarkRankRouteStreamLabels(b *testing.B) { benchRankRoute(b, rankStreamLabels) }
 
 func benchRankRoute(b *testing.B, label func(string) string) {
-	qs := loweredRankQueries(b)
+	benchRoute(b, loweredRankQueries(b), label)
+}
+
+func benchRoute(b *testing.B, qs []string, label func(string) string) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -77,7 +99,10 @@ func BenchmarkRankLowered(b *testing.B)             { benchRankLowered(b, nil) }
 func BenchmarkRankLoweredStreamLabels(b *testing.B) { benchRankLowered(b, rankStreamLabels) }
 
 func benchRankLowered(b *testing.B, label func(string) string) {
-	qs := loweredRankQueries(b)
+	benchLowered(b, loweredRankQueries(b), label)
+}
+
+func benchLowered(b *testing.B, qs []string, label func(string) string) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -95,4 +120,15 @@ func benchRankLowered(b *testing.B, label func(string) string) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// The same two measures for the stddev and stdvar roots: the proxy's route (the decision and the string translator on
+// the operand it slices), and the typed plan (a SeriesAgg over the operand's operators).
+func BenchmarkSeriesAggRoute(b *testing.B) { benchRoute(b, loweredSeriesAggQueries(b), nil) }
+func BenchmarkSeriesAggRouteStreamLabels(b *testing.B) {
+	benchRoute(b, loweredSeriesAggQueries(b), rankStreamLabels)
+}
+func BenchmarkSeriesAggLowered(b *testing.B) { benchLowered(b, loweredSeriesAggQueries(b), nil) }
+func BenchmarkSeriesAggLoweredStreamLabels(b *testing.B) {
+	benchLowered(b, loweredSeriesAggQueries(b), rankStreamLabels)
 }

@@ -4,7 +4,7 @@
     "deferred_raw": 9,
     "lowering_marker_reads": 11,
     "parse_calls": 61,
-    "string_reads": 52,
+    "string_reads": 51,
     "text_built": 217,
     "translator_string_ops": 682
   },
@@ -63,7 +63,7 @@
       "internal/proxy/drilldown.go": 4,
       "internal/proxy/drilldown_burst_coalescer.go": 2,
       "internal/proxy/metadata_inventory.go": 2,
-      "internal/proxy/metric_agg.go": 9,
+      "internal/proxy/metric_agg.go": 8,
       "internal/proxy/metric_binary.go": 2,
       "internal/proxy/ordered_json_metric.go": 3,
       "internal/proxy/plain_stream_labels.go": 2,

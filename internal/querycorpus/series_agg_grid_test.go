@@ -2,11 +2,17 @@ package querycorpus_test
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/lower"
 )
 
 // seriesAggGrid is the generated grid of stddev and stdvar: both operators in every spelling of the by and without
@@ -195,5 +201,73 @@ func TestSeriesAggGridShadow(t *testing.T) {
 		if delegated[want] == 0 {
 			t.Errorf("no row delegated as %q: the grid does not reach it", want)
 		}
+	}
+}
+
+// The registry case semantics/stddev-stdvar-nested-or-binary lists the shapes of its difference in
+// corpus.dimensions.shapes, which become corpus rows: the shadows and the route-parity digests see them. Ten are a
+// level the proxy sends as the translator's text (lowered to the chain Loki evaluates, a known divergence of the
+// shadow), two are the controls the proxy answers right (a stddev routed as one evaluation, a ranking), and three
+// have a binary operation at the top (a stddev under it is a request of its own; the plan leaves it to the
+// translator).
+// conformance: semantics/stddev-stdvar-nested-or-binary
+func TestNestedEvaluationCaseRowsAreInTheCorpus(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	raw, err := os.ReadFile("../../conformance/registry/cases/semantics/stddev-stdvar-nested-or-binary.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Corpus struct {
+			Dimensions struct {
+				Shapes []struct {
+					Query string `yaml:"query"`
+				} `yaml:"shapes"`
+			} `yaml:"dimensions"`
+		} `yaml:"corpus"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	inCorpus := map[string]bool{}
+	for _, q := range planCorpus(t) {
+		inCorpus[q] = true
+	}
+	prof := planProfiles()[2].lowerProfile()
+	nested, routedRows, other := 0, 0, 0
+	for _, s := range doc.Corpus.Dimensions.Shapes {
+		q := s.Query
+		if !inCorpus[q] {
+			t.Errorf("%q is not a plan corpus row", q)
+			continue
+		}
+		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
+		if err != nil {
+			t.Fatalf("%q: %v", q, err)
+		}
+		plan, err := queryplan.Build(expr, queryplan.Inputs{})
+		if err != nil {
+			t.Fatalf("%q: %v", q, err)
+		}
+		queryplan.Resolve(plan)
+		routed, divergence := evaluatedRoot(plan)
+		_, lerr := lower.PlanQuery(q, plan, prof)
+		switch {
+		case divergence == knownNestedEvaluation:
+			nested++
+			if lerr != nil {
+				t.Errorf("%q: a known divergence must lower to the chain Loki evaluates: %v", q, lerr)
+			}
+		case routed:
+			routedRows++
+			if lerr != nil {
+				t.Errorf("%q: the control is routed as one evaluation and must lower: %v", q, lerr)
+			}
+		default:
+			other++
+		}
+	}
+	if nested != 10 || routedRows != 2 || other != 3 {
+		t.Fatalf("the case lists %d nested, %d routed and %d other rows, want 10, 2 and 3", nested, routedRows, other)
 	}
 }
