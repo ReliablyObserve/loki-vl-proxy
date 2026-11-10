@@ -1,0 +1,199 @@
+package querycorpus_test
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus"
+)
+
+// seriesAggGrid is the generated grid of stddev and stdvar: both operators in every spelling of the by and without
+// clause (both positions), over every kind of operand (range aggregations with parsers, label filters and unwrapped
+// values, vector aggregations and nests of them, label_replace around either, rankings, stddev), with the layers
+// sum, avg, min, max and count above them, rankings around them, and the spellings the proxy's route reads (case,
+// blanks, newlines, comments, parentheses, quoted text). Deterministic. Every row the lowering answers is held to
+// the proxy's route (proxy.PostAggregationPhysical) where the proxy routes it as one evaluation, and recorded as a
+// known divergence where it sends the translator's text, which drops a level.
+func seriesAggGrid() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(q string) {
+		if !seen[q] {
+			seen[q] = true
+			out = append(out, q)
+		}
+	}
+	// fold writes a stddev or stdvar of operand in the spelling of clause: before the arguments, after them, or none.
+	fold := func(op, clause, operand string) {
+		if clause == "" {
+			add(fmt.Sprintf(`%s(%s)`, op, operand))
+			return
+		}
+		add(fmt.Sprintf(`%s %s (%s)`, op, clause, operand))
+		add(fmt.Sprintf(`%s(%s) %s`, op, operand, clause))
+	}
+	ops := []string{"stddev", "stdvar"}
+	sel := `{app="a"}`
+	ranges, vectors := gridRanges(sel), gridVectors()
+	lr := func(in string) string { return `label_replace(` + in + `, "d", "$1", "app", "(.*)")` }
+	operands := append([]string(nil), ranges...)
+	for _, v := range vectors {
+		for _, r := range ranges[:6] {
+			operands = append(operands, fmt.Sprintf(v, r))
+		}
+		for _, r := range []string{ranges[6], ranges[9], ranges[16], ranges[17]} {
+			operands = append(operands, fmt.Sprintf(v, r))
+		}
+	}
+	for _, base := range []string{ranges[0], ranges[3], `sum by (app) (` + ranges[0] + `)`, `max without (pod) (` + ranges[3] + `)`, `sum by (service_name) (` + ranges[0] + `)`} {
+		operands = append(operands, lr(base), lr(lr(base)))
+	}
+	clauses := []string{``, `by ()`, `by (app)`, `by (app, env)`, `by (app, app)`, `by (service_name)`, `by (k8s.pod.name)`, `by (route)`, `without ()`, `without (pod)`,
+		`without (a, b)`, `without (detected_level)`, `by ( app )`, `by (bool)`, `by (detected_level)`}
+	// every operator x every operand, without a clause.
+	for _, op := range ops {
+		for _, o := range operands {
+			fold(op, ``, o)
+		}
+	}
+	// every clause on each operator over a spread of operands, the parsed ones among them.
+	for _, c := range clauses {
+		for _, op := range ops {
+			for _, o := range []string{ranges[0], ranges[3], ranges[6], ranges[7], ranges[16], ranges[17], ranges[18], fmt.Sprintf(vectors[1], ranges[0]), fmt.Sprintf(vectors[2], ranges[3]),
+				fmt.Sprintf(vectors[1], ranges[6]), lr(ranges[0]), `sum by (app, route) (` + ranges[7] + `)`} {
+				fold(op, c, o)
+			}
+		}
+	}
+	// the layers above (the proxy does not take a stddev under them), the rankings around, and a stddev under a stddev.
+	inner := []string{ranges[0], ranges[3], fmt.Sprintf(vectors[1], ranges[0]), ranges[6], ranges[16]}
+	for _, in := range inner {
+		for _, op := range ops {
+			for _, c := range []string{``, `by (app)`, `without (pod)`, `by ()`} {
+				var s string
+				if c == `` {
+					s = fmt.Sprintf(`%s(%s)`, op, in)
+				} else {
+					s = fmt.Sprintf(`%s %s (%s)`, op, c, in)
+				}
+				for _, layer := range []string{
+					`sum(%s)`, `sum by (app) (%s)`, `avg without (pod) (%s)`, `max(%s) by (app)`, `min by () (%s)`, `count(%s)`, `count by (app) (%s)`,
+					`stddev(%s)`, `stdvar by (app) (%s)`, `topk(2, %s)`, `bottomk by (app) (1, %s)`, `topk(2, %s) by (app)`, `sort(%s)`, `sort_desc(%s)`,
+					`label_replace(%s, "d", "$1", "app", "(.*)")`, `sum by (app) (max(%s))`, `topk(1, sum(%s))`, `sum(topk(1, %s))`, `(%s)`, `sum((%s))`,
+					`%s / 2`, `sum(%s) / 2`, `sum(%s / 2)`, `2 * %s`, `%s > 1`,
+				} {
+					add(fmt.Sprintf(layer, s))
+				}
+			}
+		}
+	}
+	// a ranking under a stddev, and the layers between: the operand text the route translates drops the ranking.
+	for _, rk := range []string{`topk(3, ` + ranges[3] + `)`, `bottomk by (app) (2, ` + fmt.Sprintf(vectors[1], ranges[0]) + `)`, `sort(` + ranges[0] + `)`, `sort_desc(` + ranges[6] + `)`,
+		`sum(topk(2, ` + fmt.Sprintf(vectors[1], ranges[0]) + `))`, `topk(2, sort_desc(` + ranges[3] + `))`} {
+		for _, op := range ops {
+			fold(op, ``, rk)
+			fold(op, `by (app)`, rk)
+			fold(op, `without (pod)`, rk)
+			add(fmt.Sprintf(`sum(%s(%s))`, op, rk))
+			add(fmt.Sprintf(`topk(2, %s by (app) (%s))`, op, rk))
+			add(fmt.Sprintf(`%s(sum by (app) (%s))`, op, rk))
+		}
+	}
+	// the spellings the proxy's route reads: case, blanks, newlines, comments, parser flags, parentheses.
+	op := ranges[3]
+	for _, q := range []string{
+		`STDDEV(` + op + `)`, `Stdvar by (app) (` + op + `)`, `stddev (` + op + `)`, `stddev( ` + op + ` )`, `stddev by(app)(` + op + `)`, `stddev by (app)(` + op + `)by(app)`,
+		"stddev(\n" + op + "\n)", "stddev\t(" + op + ")", ` stddev(` + op + `) `, `STDVAR BY (app) (` + op + `)`, `stddev(` + op + `)by(app)`, `stddev(` + op + `) BY (app)`,
+		`(stddev(` + op + `))`, `( stddev by (app) (` + op + `) )`, `((stdvar(` + op + `)))`, `stddev((` + op + `))`, `stddev( (` + op + `) )`, `stddev(((` + op + `)))`,
+		`stddev(RATE({app="a"}[5m]))`, `stddev(rate ({app="a"}[5m]))`, `stddev(rate({app="a"} [5m]))`, `stddev(sum( ` + op + `))`, `stddev(sum (` + op + `))`,
+		`stddev(sum by (app) ( ` + op + `))`, `stddev(sum by (app) ((` + op + `)))`, `stddev((sum by (app) (` + op + `)))`, `stddev by (app) ( sum by (app, pod) (` + op + `) )`,
+		`# a comment` + "\n" + `stddev(` + op + `)`, `stddev(` + op + `) # trailing`, `stddev(count_over_time({app="a"} | logfmt --strict [5m]))`,
+		`stddev by (app) (count_over_time({app="a"} | logfmt --keep-empty | json [5m]))`, `stddev(sum(stddev(` + op + `)))`, `stddev(sum(topk(2, ` + op + `)))`,
+		`sum(stddev(` + op + `))`, `sum( stddev(` + op + `))`, `sum (stddev(` + op + `))`, `sum((stddev(` + op + `)))`, `(sum(stddev(` + op + `)))`,
+		`topk(2, STDDEV by (app) (` + op + `))`, `topk(2, (stddev by (app) (` + op + `)))`, `(topk(2, stddev(` + op + `)))`, `sort_desc( stddev(` + op + `) )`,
+	} {
+		add(q)
+	}
+	// quoted text the translator's and the route's scans read as syntax, in the operand and in the selector. A `|
+	// json` inside a line filter is read as a parser by the route's rewrite of a stddev by a label.
+	for _, line := range []string{
+		` |= "without (x)"`, ` |= "by (x)"`, ` |= "| stats by (x)"`, ` |= "service_name"`, ` |= "detected_level"`, ` |= "a bool b"`, ` |~ "|||"`,
+		` |= "stddev(rate(x))"`, ` |= "sum by (x) (rate(y))"`, ` |= "__without__:sum:app"`, ` |= "__lvp_lr:x__"`, ` |= "@@@on:x"`, ` |= "__binary__:+:"`,
+		` |= "("`, ` |= ")"`, ` |= ","`, " |= `without (z)`", ` |= "stddev("`, ` |= "label_replace("`, ` |= "\\""`, ` |= "a\\"b, c"`,
+		` |= "| json"`, ` |= "|logfmt"`, ` != "| pattern"`, ` |= "| regexp x"`, ` |= "| unpack"`, ` |= "x | jsonx"`, ` |= "| line_format"`,
+	} {
+		for _, o := range ops {
+			for _, f := range []string{"count_over_time", "rate"} {
+				body := f + `({app="a"}` + line + `[5m])`
+				for _, c := range []string{``, `by (app)`, `without (pod)`} {
+					fold(o, c, body)
+					fold(o, c, `sum by (app) (`+body+`)`)
+				}
+			}
+		}
+	}
+	for _, s := range []string{`{app="stddev(1, x)"}`, `{app="a, b"}`, `{app="(("}`, `{app=~"a|b"}`, `{app="without (x)"}`, `{a="stdvar(x)"}`, `{a=")"}`, `{a="| json"}`} {
+		for _, o := range ops {
+			fold(o, ``, `rate(`+s+`[5m])`)
+			fold(o, `by (app)`, `sum(rate(`+s+`[5m]))`)
+		}
+	}
+	// operands that stay with the string translator: a binary operation, vector(), a number, a log query.
+	for _, operand := range []string{
+		`sum(` + ranges[3] + `) / sum(` + ranges[0] + `)`, ranges[3] + ` > 1`, ranges[3] + ` * 2`, `vector(1)`, `1`, `2 + 3`,
+		`label_replace(` + ranges[3] + ` > 1, "d", "$1", "app", "(.*)")`, `sum(` + ranges[3] + `) > bool 1`, `approx_topk(3, ` + ranges[3] + `)`, `{app="a"}`, `{app="a"} |= "x"`,
+	} {
+		for _, o := range ops {
+			fold(o, ``, operand)
+			fold(o, `by (app)`, operand)
+		}
+	}
+	// label_replace around a stddev, a stddev inside a label_replace, and a stddev inside a binary operation.
+	arg := `"d", "$1", "app", "(.*)"`
+	for _, o := range ops {
+		for _, in := range []string{ranges[3], fmt.Sprintf(vectors[1], ranges[0]), ranges[16], ranges[6]} {
+			head := o + "("
+			add(fmt.Sprintf(`label_replace(%s%s), %s)`, head, in, arg))
+			add(fmt.Sprintf(`label_replace(%s by (app) (%s), %s)`, o, in, arg))
+			add(fmt.Sprintf(`label_replace(label_replace(%s%s), %s), "e", "$1", "d", "(.*)")`, head, in, arg))
+			add(fmt.Sprintf(`%slabel_replace(%s, %s))`, head, in, arg))
+			add(fmt.Sprintf(`%s%s) + 1`, head, in))
+			add(fmt.Sprintf(`%s%s) / %s%s)`, head, in, head, in))
+			add(fmt.Sprintf(`sum(%s%s))`, head, in))
+			add(fmt.Sprintf(`sum(%s%s)) / 2`, head, in))
+			add(fmt.Sprintf(`%s%s%s)))`, head, head, in))
+		}
+	}
+	return out
+}
+
+// TestSeriesAggGridShadow holds the lowering of stddev and stdvar (and the layers around them) to the proxy's route
+// on the generated grid under every profile: the operators the route builds (a SeriesAgg per level over the
+// operand's operators) and the operand's request byte for byte, with 0 mismatches. The shapes the proxy sends as the
+// translator's text, which drops a level, are counted as known divergences, and the clause by a parsed label as
+// delegations; the rows the lowering leaves to the string translator are counted by construct.
+// conformance: architecture-syntax-package-layering
+func TestSeriesAggGridShadow(t *testing.T) {
+	t.Cleanup(querycorpus.PauseRecording())
+	grid := seriesAggGrid()
+	rows, native, delegated, problems := labelFilterShadow(t, grid)
+	var kinds []string
+	for c, n := range delegated {
+		kinds = append(kinds, fmt.Sprintf("%s=%d", c, n))
+	}
+	sort.Strings(kinds)
+	t.Logf("%d queries x %d profiles: %d rows, %d lowered, %d delegated (%s)", len(grid), len(planProfiles()), rows, native, rows-native-len(problems), strings.Join(kinds, ", "))
+	if len(problems) > 0 {
+		t.Fatalf("%d rows lower unlike the proxy's route:\n%s", len(problems), joinFirst(problems, 20))
+	}
+	if native < rows/4 {
+		t.Fatalf("only %d of %d rows lowered", native, rows)
+	}
+	for _, want := range []string{"known divergence " + knownNestedEvaluation, "VectorAgg stddev parsed label", "SeriesAgg operand BinOp", "SeriesAgg spelling"} {
+		if delegated[want] == 0 {
+			t.Errorf("no row delegated as %q: the grid does not reach it", want)
+		}
+	}
+}

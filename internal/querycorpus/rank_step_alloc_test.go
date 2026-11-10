@@ -18,13 +18,14 @@ var rankStreamLabels = translator.WithStreamLabels(nil, []string{"app", "namespa
 // The two sides take the query as the handlers hand it on: keywords in lower case, comments and logfmt flags removed
 // (routedQuery).
 //
-// rankRouteAllocs is what the proxy does for a ranking before it asks VictoriaLogs: the route decision on the routed
-// query text, and the translation of the operand it slices (the translator alone: the proxy's translation cache and
-// singleflight come on top, so this is the least the route costs).
+// rankRouteAllocs is what the proxy does for a ranking, stddev or stdvar before it asks VictoriaLogs: the route
+// decision on the routed query text, and the translation of the operand it slices (the canonical form of its ranges,
+// as translateQueryWithContext reads it, then the translator alone: the proxy's translation cache and singleflight
+// come on top, so this is the least the route costs).
 func rankRouteAllocs(rq string, label func(string) string) float64 {
 	return testing.AllocsPerRun(5, func() {
 		if inner, routed := proxy.PostAggregationRoute(rq); routed {
-			_, _ = translator.TranslateLogQLWithLabels(inner, label)
+			_, _ = translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(inner), label)
 		}
 	})
 }
@@ -39,8 +40,8 @@ func rankLoweredAllocs(q string, label func(string) string) float64 {
 	})
 }
 
-// A ranking the lowering answers allocates no more than the proxy's route does for it (the decision and the operand's
-// translation), with and without the tenant's stream labels. The comparator is the proxy's current route, not the
+// A ranking, stddev or stdvar the lowering answers allocates no more than the proxy's route does for it (the decision
+// and the operand's translation), with and without the tenant's stream labels. The comparator is the proxy's current route, not the
 // string translator's text for the whole query, which the proxy never translates; a shape where the lowering
 // allocates more is left to the translator under a named construct.
 // conformance: architecture-syntax-package-layering
@@ -51,7 +52,7 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	var qs []string
-	for _, q := range append(append(planCorpus(t), rankGrid()...), rankStepGrid()...) {
+	for _, q := range append(append(append(planCorpus(t), rankGrid()...), rankStepGrid()...), seriesAggGrid()...) {
 		if !seen[q] {
 			seen[q] = true
 			qs = append(qs, q)
@@ -69,7 +70,7 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 				continue
 			}
 			queryplan.Resolve(plan)
-			if rank, _ := evaluatedRoot(plan); !rank {
+			if routed, _ := evaluatedRoot(plan); !routed {
 				continue
 			}
 			rq := routedQuery(q)
@@ -86,7 +87,7 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 			}
 		}
 	}
-	if checked < 2000 {
+	if checked < 4000 {
 		t.Fatalf("only %d lowered rankings checked", checked)
 	}
 	var keys []string
@@ -95,6 +96,6 @@ func TestRankLoweringAllocatesNoMoreThanTheProxyRoute(t *testing.T) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		t.Logf("%s: %d lowered rankings checked, the lowering allocates at most %.2f of the route", k, checked, worst[k])
+		t.Logf("%s roots: the lowering allocates at most %.2f of the route (%d lowered shapes checked)", k, worst[k], checked)
 	}
 }

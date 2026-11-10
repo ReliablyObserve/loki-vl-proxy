@@ -83,10 +83,6 @@ func TestPlanNestedVectorAggregationFold(t *testing.T) {
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesNestedVectorAggregations(t *testing.T) {
 	for q, construct := range map[string]string{
-		`sum(stddev by (app) (rate({app="a"}[5m])))`:                                         "VectorAgg operand",
-		`stddev(sum by (app) (rate({app="a"}[5m])))`:                                         "VectorAgg operand",
-		`sum(sum by (app) (stdvar(rate({app="a"}[5m]))))`:                                    "VectorAgg operand",
-		`sum(topk(2, sum by (app) (rate({app="a"}[5m]))))`:                                   "VectorAgg operand",
 		`sum(sum by (app) (rate({app="a"}[5m]) > 1))`:                                        "VectorAgg operand",
 		`sum(sum by (app) (label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")))`:   "VectorAgg operand",
 		`sum(sum by (app) (sum_over_time({app="a"} | unwrap n [5m])))`:                       "VectorAgg nested unwrap",

@@ -36,7 +36,7 @@ func loweredRankQueries(b *testing.B) []string {
 			continue
 		}
 		queryplan.Resolve(plan)
-		if rank, _ := evaluatedRoot(plan); !rank {
+		if routed, _ := evaluatedRoot(plan); !routed {
 			continue
 		}
 		if _, err := lower.PlanQuery(rq, plan, lower.Profile{}); err != nil {
@@ -65,7 +65,7 @@ func benchRankRoute(b *testing.B, label func(string) string) {
 		if !routed {
 			b.Fatal("not routed")
 		}
-		if _, err := translator.TranslateLogQLWithLabels(inner, label); err != nil {
+		if _, err := translator.TranslateLogQLWithLabels(logql.CanonicalizeLogRanges(inner), label); err != nil {
 			b.Fatal(err)
 		}
 	}
