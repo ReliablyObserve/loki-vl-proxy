@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Since 2.108.0 for `|= ip(...)` line filters and 2.115.0 for `label = ip(...)`
+  label filters, an IPv4 `ip()` filter matched an address written after a run
+  of dots that a digit or a dot precedes (`ip("10.0.0.1")` kept
+  `0..10.0.0.1`), where Loki reads the digits and dots as one run that is not
+  an address and matches nothing; `!= ip(...)` dropped those lines. The proxy
+  now matches what Loki matches there, checked against Loki's own answers on
+  the line and label grids. Answers cached before the fix are not reused (the
+  ip() response cache fence now covers line filters too).
+
 ## [2.122.0] - 2026-11-10
 
 ### Changed
@@ -39,17 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the translator copies into the query as it is or reads from text. No
   handler serves these queries from the lowering yet; the requests sent to
   VictoriaLogs do not change.
-
-### Fixed
-
-- Since 2.108.0 for `|= ip(...)` line filters and 2.115.0 for `label = ip(...)`
-  label filters, an IPv4 `ip()` filter matched an address written after a run
-  of dots that a digit or a dot precedes (`ip("10.0.0.1")` kept
-  `0..10.0.0.1`), where Loki reads the digits and dots as one run that is not
-  an address and matches nothing; `!= ip(...)` dropped those lines. The proxy
-  now matches what Loki matches there, checked against Loki's own answers on
-  the line and label grids. Answers cached before the fix are not reused (the
-  ip() response cache fence now covers line filters too).
 
 ## [2.121.0] - 2026-11-10
 
