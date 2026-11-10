@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.128.0] - 2026-11-10
-
 ### Changed
 
 - The lowered binary operations of the query plan allocate less: the text of
@@ -19,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The plan is only compared with the string
   translator today, so the requests sent to VictoriaLogs and the answers do
   not change.
+
+## [2.128.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers a vector aggregation over other ones (two or more
   levels of `sum`, `count`, `min`, `max` and `avg`, each with a `by` or
   `without` clause or none) over the range aggregations it already writes,
