@@ -22,6 +22,7 @@
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
+      "internal/querycorpus/escaped_spelling_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
@@ -29,18 +30,14 @@
       "internal/querycorpus/range_agg_grid_test.go",
       "internal/querycorpus/range_agg_oracle_test.go",
       "internal/querycorpus/stats_decode_test.go",
-      "internal/querycorpus/vector_agg_blank_grid_test.go",
-      "internal/querycorpus/vector_agg_grid_test.go",
-      "internal/querycorpus/vector_agg_loki_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
       "internal/queryplan/lower/range_agg_test.go",
-      "internal/queryplan/lower/vector_agg_test.go",
-      "internal/translate/selector_test.go",
-      "internal/translate/vector_test.go"
+      "internal/queryplan/lower/spelling_test.go",
+      "internal/translate/selector_test.go"
     ],
     "backend-admission-and-heavy-query-queueing": [
       "internal/proxy/backend_heavy_test.go",
@@ -2923,6 +2920,9 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/escaped_spelling_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/known_divergence_test.go": [
       "semantics/translator-reads-parenthesized-metric-as-text"
     ],
@@ -2964,15 +2964,6 @@
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
-    "internal/querycorpus/vector_agg_blank_grid_test.go": [
-      "architecture-syntax-package-layering"
-    ],
-    "internal/querycorpus/vector_agg_grid_test.go": [
-      "architecture-syntax-package-layering"
-    ],
-    "internal/querycorpus/vector_agg_loki_test.go": [
-      "architecture-syntax-package-layering"
-    ],
     "internal/queryplan/lower/label_filter_parsed_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2992,7 +2983,7 @@
     "internal/queryplan/lower/range_agg_test.go": [
       "architecture-syntax-package-layering"
     ],
-    "internal/queryplan/lower/vector_agg_test.go": [
+    "internal/queryplan/lower/spelling_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/rulesmigrate/migrate_test.go": [
@@ -3018,9 +3009,6 @@
       "semantics/pattern-line-filter"
     ],
     "internal/translate/selector_test.go": [
-      "architecture-syntax-package-layering"
-    ],
-    "internal/translate/vector_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/translator/detected_level_filter_stage_test.go": [
@@ -3832,7 +3820,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 432,
+  "tests_with_markers": 429,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

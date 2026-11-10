@@ -298,6 +298,8 @@ func TestPlanDelegatesRangeAggregations(t *testing.T) {
 		`count_over_time({app="a"} | keep detected_level [5m])`:  "RangeAgg drop or keep",
 		`count_over_time({app="a"} | detected_level="e" [5m])`:   "RangeAgg LogSelect label filter detected_level",
 		`count_over_time({app="a"} |= "a bool b" [5m])`:          "RangeAgg quoted clause",
+		`rate({app="a"} |~ "\x41b" [5m])`:                        "RangeAgg LogSelect escaped spelling",
+		`count_over_time({app="a"} !~ "\101b" [5m])`:             "RangeAgg LogSelect escaped spelling",
 		`count_over_time({app="a"} |= "x without (y)" [5m])`:     "RangeAgg quoted clause",
 		`count_over_time({app="a"} | m="a bool b" [5m])`:         "RangeAgg quoted clause",
 		`rate({app="a"} |= "without(0)\xa2" [5m])`:               "RangeAgg quoted clause",

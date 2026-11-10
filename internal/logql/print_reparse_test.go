@@ -58,7 +58,8 @@ func walkTree(v reflect.Value, visit func(any)) {
 // filter that keeps the spacing of its source (the stage's Raw and each leaf's
 // Leaf), so that two trees compare by what they say, not by how it was spaced:
 // the printer writes `a>1`, the client may have written `a > 1`. What the
-// filters say stays in Name, Cmp, Value and Kind of each leaf.
+// filters say stays in Name, Cmp, Value and Kind of each leaf. The Escaped flag of a quoted value is source text
+// too: the printer writes the canonical quoting of the value, where the client may have written \x41.
 func withoutSourceSpacing(e Expr) {
 	walkTree(reflect.ValueOf(&e), func(node any) {
 		switch x := node.(type) {
@@ -68,6 +69,12 @@ func withoutSourceSpacing(e Expr) {
 			}
 		case *LabelFilterExpr:
 			x.Leaf = ""
+		case *LabelMatcher:
+			x.Escaped = false
+		case *LineFilterStage:
+			x.Escaped = false
+		case *LineFilterAlt:
+			x.Escaped = false
 		}
 	})
 }
@@ -240,6 +247,7 @@ func FuzzPrintReparse(f *testing.F) {
 		`-00`, // negative zero prints as "- 0": Loki's lexer reads "-0" as a duration
 		`{app="nginx"}`,
 		`{app="nginx"} |= "error" != "debug"`,
+		`{app="\x41", env=` + "`b`" + `} |~ "\101b" !~ "a\tb"`, // a value spelled other than Go quotes it
 		`{app="nginx"} | json | level="error"`,
 		`{app="nginx"} | logfmt | status>=500 and (a="1" or b=~"x.*")`,
 		`{app="nginx"} | label_format new=old`,

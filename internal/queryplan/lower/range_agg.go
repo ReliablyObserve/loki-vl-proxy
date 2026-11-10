@@ -88,6 +88,11 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	if !ok {
 		return metricLog{}, &NotLoweredError{Construct: owner + " stream label name"}
 	}
+	// The metric row's log query keeps the client's spelling of a regexp line filter as the log query does
+	// (keepsSpelling; it has no stream fields).
+	if keepsSpelling(in, Profile{Label: prof.Label}) {
+		return metricLog{}, &NotLoweredError{Construct: owner + " " + escapedSpellingConstruct}
+	}
 	q, err := logSelectQuery(in, Profile{Label: prof.Label})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {

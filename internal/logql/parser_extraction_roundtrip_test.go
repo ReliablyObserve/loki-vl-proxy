@@ -115,7 +115,7 @@ func TestRawAndEscapedStringValuesPreserveDecodedBytes(t *testing.T) {
 				t.Fatalf("decoded bytes changed: input=%q selector=%q line=%q", value, expr.Selector.Matchers[0].Value, expr.Pipeline[0].(*LineFilterStage).Value)
 			}
 			again, err := ParseLogQuery(expr.String())
-			if err != nil || !reflect.DeepEqual(expr, again) {
+			if err != nil || !sameTree(expr, again) {
 				t.Fatalf("roundtrip=%q err=%v", expr.String(), err)
 			}
 		}

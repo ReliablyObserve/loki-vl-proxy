@@ -126,3 +126,4 @@ smoke	internal/logql	FuzzMayHaveNonFilterStage	12s	-	the stage screen the loweri
 smoke	internal/queryplan/lower	FuzzParserLowering	12s	-	json, logfmt, drop and keep lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzLabelFilterAfterParserLowering	12s	-	label filters after a json or logfmt parser lower to the query the string translator writes, byte for byte
 smoke	internal/proxy	FuzzParseLokiTimeIntegerFastPath	12s	-	Loki time parse: integer fast path equals the layouts-first parse
+smoke	internal/queryplan/lower	FuzzEscapedSpellingLowering	12s	-	a value in any quoted spelling lowers to the bytes the string translator writes, or is left to it
