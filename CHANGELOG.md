@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan leaves a range function spelled with a blank, tab or newline
+  between its name and its parenthesis (`rate ({app="a"}[5m])`) to the string
+  translator, whether it stands alone, is an operand of a binary operation or
+  the first argument of a `label_replace` call. The translator reads that
+  spelling as a phrase search where Loki reads the range aggregation, and the
+  plan's text screen used to let it through to a lowering that differs from
+  the translator. Nothing is served from the plan for metric queries, so
+  requests and answers do not change; the open difference is recorded as
+  `semantics/translator-reads-blank-before-range-call-as-text`.
+
 ## [2.128.0] - 2026-11-10
 
 ### Changed

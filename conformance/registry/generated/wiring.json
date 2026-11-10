@@ -1468,6 +1468,10 @@
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go"
     ],
+    "semantics/translator-reads-blank-before-range-call-as-text": [
+      "internal/querycorpus/vector_agg_blank_grid_test.go",
+      "internal/queryplan/lower/range_agg_test.go"
+    ],
     "semantics/translator-reads-parenthesized-metric-as-text": [
       "internal/querycorpus/known_divergence_test.go"
     ],
@@ -1785,7 +1789,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 453,
+  "registry_items": 454,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3021,7 +3025,8 @@
       "architecture-syntax-package-layering"
     ],
     "internal/querycorpus/vector_agg_blank_grid_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/translator-reads-blank-before-range-call-as-text"
     ],
     "internal/querycorpus/vector_agg_grid_test.go": [
       "architecture-syntax-package-layering"
@@ -3064,7 +3069,8 @@
       "semantics/pattern-line-filter"
     ],
     "internal/queryplan/lower/range_agg_test.go": [
-      "architecture-syntax-package-layering"
+      "architecture-syntax-package-layering",
+      "semantics/translator-reads-blank-before-range-call-as-text"
     ],
     "internal/queryplan/lower/rank_test.go": [
       "architecture-syntax-package-layering"
@@ -4032,5 +4038,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 277
+  "wired_items": 278
 }
