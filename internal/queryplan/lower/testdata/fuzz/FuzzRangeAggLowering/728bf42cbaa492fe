@@ -1,0 +1,8 @@
+go test fuzz v1
+string("0")
+string("|||")
+string("0")
+string("0")
+byte('ä')
+byte('b')
+byte('\x06')

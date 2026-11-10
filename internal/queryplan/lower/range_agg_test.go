@@ -298,6 +298,7 @@ func TestPlanDelegatesRangeAggregations(t *testing.T) {
 		`count_over_time({app="a"} |= "x without (y)" [5m])`:     "RangeAgg quoted clause",
 		`count_over_time({app="a"} | m="a bool b" [5m])`:         "RangeAgg quoted clause",
 		`rate({app="a"} |= "without(0)\xa2" [5m])`:               "RangeAgg quoted clause",
+		`rate({app="a"} |~ "|||" [5m])`:                          "RangeAgg quoted clause",
 		`count_over_time({app="a"}[5m]) by (x)`:                  "RangeAgg grouping",
 		`count_over_time({app="a"}[5m]) by ()`:                   "RangeAgg grouping",
 		`absent_over_time({app="a"}[5m]) without (x)`:            "RangeAgg grouping",

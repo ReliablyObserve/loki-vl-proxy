@@ -699,6 +699,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-reads-parenthesized-metric-as-text | compare:observed",
+    "semantics/translator-reads-parenthesized-metric-as-text | gap:open",
+    "semantics/translator-reads-parenthesized-metric-as-text | query",
     "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
     "semantics/translator-reads-quoted-text-as-syntax | gap:open",
     "semantics/translator-reads-quoted-text-as-syntax | query",
@@ -1544,6 +1547,7 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/nested-aggregation-outer-by-native-routes",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
+    "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
@@ -2068,14 +2072,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 50,
+      "api": 51,
       "drilldown": 50,
       "explore": 157,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 423,
+      "go": 424,
       "playwright": 1
     },
     "page_kinds": {
@@ -2095,7 +2099,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 275
+    "wired_items": 276
   },
   "gates": [
     "A/B shape selection",

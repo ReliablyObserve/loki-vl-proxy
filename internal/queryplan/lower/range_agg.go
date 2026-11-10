@@ -71,7 +71,7 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	// " bool " modifier, quoted strings included: the lowering leaves such a query to it. The printed query may not
 	// hold the client's value (a value that is not UTF-8 is written as a filter that matches nothing), so the
 	// selector and the line filters are read as well as the printed filter and pipes.
-	if selectionHas(ra.In, "without") || selectionHas(ra.In, "bool") {
+	if selectionHas(ra.In, "without") || selectionHas(ra.In, "bool") || selectionHas(ra.In, "|||") {
 		return nil, errQuotedClause
 	}
 	// The derivation of detected_level goes after the filters of the query, then the restore of the stream labels,
@@ -145,13 +145,14 @@ func rangeInnerConstruct(sel *queryplan.LogSelect) string {
 
 // errQuotedClause names a log query holding what a regexp of the string translator reads out of the whole LogQL
 // text, quoted strings included: a `without (...)` clause (stripped from the query, and a fold marker appended) and
-// a ` bool ` modifier (removed).
+// a ` bool ` modifier (removed) and the `|||` that separates the operands of a binary expression (the translator
+// splits its output there to insert the derived-label pipes).
 var errQuotedClause = &NotLoweredError{Construct: "RangeAgg quoted clause"}
 
 // readsAsClause reports whether printed LogsQL holds a word the string translator reads as a without clause or a
 // bool modifier.
 func readsAsClause(s string) bool {
-	return strings.Contains(s, "without") || strings.Contains(s, "bool")
+	return strings.Contains(s, "without") || strings.Contains(s, "bool") || strings.Contains(s, "|||")
 }
 
 // selectionHas reports whether a value the client wrote in the selector or a line filter contains s.
