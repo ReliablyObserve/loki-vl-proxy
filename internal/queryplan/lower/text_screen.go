@@ -35,6 +35,9 @@ func ScreenText(query string, p *queryplan.Plan) error {
 	if padded != nil && paddedOperand(query) {
 		return padded
 	}
+	if err := screenUnwrap(query, p); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -474,6 +474,187 @@ decisions:
     performance:
       tracked: ['BenchmarkVectorAggQueriesTranslator / BenchmarkVectorAggQueriesLowered / BenchmarkVectorAggQueriesPlanOnly / BenchmarkVectorAggQueriesStreamLabelsTranslator / BenchmarkVectorAggQueriesStreamLabelsLowered, BenchmarkRangeAggQueriesLowered, BenchmarkRateQueriesLowered (internal/queryplan/lower), BenchmarkTranslate_SumRate / BenchmarkTranslate_StdVar / BenchmarkTranslateLogQL_MetricQuery (internal/translator) ns/op, B/op, allocs/op']
       bound: 'M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, 2026-11-10, 217 corpus and crafted vector aggregations: string translator 7.4-7.8 us, 13.0 KiB, 63 allocs, lowered (Parse + Build + Resolve + Plan) 2.1-3.0 us, 7.7 KiB, 45 allocs, Plan alone 1.5-2.4 us, 6.7 KiB, 34 allocs; under the tenant''s six stream labels string translator 13.6 us, 27.1 KiB, 91 allocs, lowered 2.7 us, 8.9 KiB, 45 allocs. The range aggregation lowering the metric row''s text builder was shared with (base ast/lower-range-agg vs this branch, 10 interleaved runs): RangeAgg 26 -> 25 allocs, 1.94 -> 1.79 KiB, rate and bytes_rate unchanged (40 allocs, 10.0 KiB). The string translator''s own benchmarks before and after the move (interleaved): allocs/op and B/op identical (SumRate 52, StdVar 48, MetricQuery 48, Rate 60), ns/op within noise.'
+  - id: lowering-unwrap-aggregations
+    pending: true
+    chosen: >-
+      lower.Plan lowers the range functions over an unwrapped label (sum_over_time, avg_over_time, min_over_time,
+      max_over_time, first_over_time, last_over_time, stddev_over_time, stdvar_over_time, quantile_over_time,
+      rate_counter, and rate over a label) of a log query with line, pattern and label filters and no parser, with a
+      plain, bytes(), duration() or duration_seconds() value, a by clause or by () on the range, and a label
+      filter such as __error__="" after the unwrap, and sum, count, min, max and avg with or without a by or
+      without clause over them, as the string translator writes them. The metric row's log query is the range
+      aggregation's (metricLogQuery, the unwrap stage is no pipe), then the unwrap gate (translate.UnwrapGateFor,
+      moved out of the translator, which forwards to it), then the stats pipes built from typed nodes. Group
+      keys follow the translator's choices: a function alone groups by nothing or by its clause; first and last keep
+      row_min or row_max per series and take the largest per group, by the stream and its level when no clause
+      says otherwise; under a vector aggregation the series identity is the stream (the stream and its level
+      for a rate and for a clause with count, min, max and avg), quantile_over_time aggregates the rows of its
+      group whatever the outer aggregation is, and stdvar_over_time is a binary expression the proxy squares
+      (physical.Binary). absent_over_time written with an unwrap stage is lowered over the query without it. The
+      quantile parameter is printed from the plan's typed value (logsql.Quantile); the translator copies the
+      client's text, so the text screen (lower.ScreenText) reads the literal the way the translator does and
+      delegates a parameter that is not the shortest form of its value (0.50, 5e-1).
+    over:
+      - 'carrying the quantile parameter''s spelling in the plan (the key reads the value, so two spellings would share a plan and one memo by key would lower the other differently): the spelling is read from the text by the screen, as the other spellings the translator reads from text are'
+      - 'lowering the aggregations the translator writes from the text of the unwrap stage without checking that spelling (a stage not written with one blank on each side, or a quoted | unwrap earlier in the query, gives the translator another label or none; the lowering reads the same text with the translator''s own rule and delegates when the two differ)'
+      - 'leaving the stdvar and the absent_over_time with an unwrap stage to the translator (both are written from the same typed pieces)'
+    why: |
+      Step 15, first part, of architecture B (owner 2026-11-10). Unwrap
+      aggregations were 5,148 of the corpus shadow's delegated metric rows
+      (3,231 range, 1,917 vector). The translator writes them from text:
+      the field and conversion are found by searching the query for
+      "| unwrap " and the series identity by whether the text holds a
+      parser word, quoted strings included. The lowering writes the same
+      bytes from the typed nodes and reads the query text only to check
+      that the translator would have read the same label and conversion
+      (lower.ScreenText); where the two can differ it delegates under a named
+      construct (unwrap spelling, quoted clause, grouping).
+      The grid and the fuzz target found one defect that was already in step
+      13 and 14: the translator reads a quoted "| json" or "| unwrap x" in a line
+      filter as syntax and so writes a different series identity for rate and for
+      count, min, max and avg (and a sum for a rate that holds "| unwrap"). The
+      lowering of those delegates now (RangeAgg or VectorAgg quoted clause).
+      Handlers do not read the lowering for metric queries yet, so behaviour
+      does not change.
+    evidence: >-
+      TestPlanShadow native 5190 -> 7134 of 22,935 rows x 12 profiles, 0 mismatches (RangeAgg unwrap 3231 and
+      VectorAgg unwrap 1917 delegated rows leave the list: the rows with a parser move to RangeAgg parser 3042 and
+      VectorAgg parser 2205, the others are native; delegated here: quantile spelling 9, without empty 9);
+      TestUnwrapGridShadow 11,556 queries x 12 profiles, 103,095 rows, 67,329 lowered, 0 mismatches, text byte for
+      byte, about 8 s (every function x conversion x unwrapped-label name x selector x line filter x label filter
+      before and after the unwrap x range and offset spelling x grouping spelling on the range and on the
+      vector aggregation x the seven vector aggregations, the spellings of the unwrap stage, and quoted unwrap, json,
+      stats, without, bool and ||| text); mutation checks of the grid (a dropped series identity, detected_level
+      grouping, the quantile outer rule, the squaring marker, the quoted-parser guard, the spelling screen, the
+      rate chain: each fails it); FuzzUnwrapLowering 184k execs, no finding;
+      TestRangeAggGridShadow and TestVectorAggGridShadow unchanged and green with the quoted-parser guard added.
+    code:
+      - internal/queryplan/lower/unwrap.go
+      - internal/queryplan/lower/range_agg.go
+      - internal/queryplan/lower/vector_agg.go
+      - internal/queryplan/lower/text_screen.go
+      - internal/translate/unwrap_gate.go
+      - internal/translate/range.go
+      - internal/translator/unwrap_gate.go
+    tests:
+      - TestPlanShadow
+      - TestUnwrapGridShadow
+      - TestPlanLowersUnwrapRangeAggregations
+      - TestPlanLowersUnwrapDerivedGroupings
+      - TestPlanDelegatesUnwrapAggregations
+      - TestPlanKeepsQuantileSpelling
+      - TestUnwrapFromText
+      - FuzzUnwrapLowering
+      - TestRangeAggGridShadow
+      - TestVectorAggGridShadow
+      - TestPlanDelegatesRangeAggregations
+      - TestPlanDelegatesVectorAggregations
+      - TestPlanDelegatesEveryConstruct
+      - TestQueryTextSites
+    quality: >-
+      No handler reads the lowering for metric queries yet. Meaning against Loki, checked where a recorded answer
+      exists (internal/logql TestRangeAggregationRulesLikeLoki records which functions take unwrap and a
+      grouping; the other function semantics are held to the translator, not to Loki, in this step):
+      quantile_over_time under a vector aggregation takes the quantile of the rows of each group instead of
+      of the per-series values (the translator's choice, kept so the bytes stay equal; sum by (x) (quantile_over_time)
+      differs from Loki's per-series evaluation when a group holds several series), and sum, count, min, max and
+      avg by (x) of first_over_time and last_over_time read the latest row per stream.
+    performance:
+      tracked:
+        - 'BenchmarkUnwrapQueriesTranslator / BenchmarkUnwrapQueriesLowered / BenchmarkUnwrapQueriesPlanOnly / BenchmarkUnwrapQueriesStreamLabelsTranslator / BenchmarkUnwrapQueriesStreamLabelsLowered (internal/queryplan/lower), BenchmarkTranslate_UnwrapSumByJSON / BenchmarkTranslate_UnwrapMaxPlain / BenchmarkTranslate_SumRate / BenchmarkTranslate_StdVar (internal/translator) ns/op, B/op, allocs/op'
+      bound: >-
+        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, benchstat, 2026-11-10, corpus unwrap aggregations that the
+        plan lowers, with or without a parser: string translator 10.5 us, 10.1 KiB, 58 allocs, lowered (Parse + Build
+        + Resolve + Plan) 3.5 us, 5.3 KiB, 51 allocs; under the tenant's six stream labels string translator 19.2
+        us, 25.4 KiB, 95 allocs, lowered 6.4 us, 8.5 KiB, 71 allocs. The string translator's own benchmarks base
+        (ast/lower-vector-agg) vs this branch, 10 interleaved runs of 10,000 iterations: ns/op within noise on
+        all seven (the unwrap gate moved to internal/translate and the translator forwards to it).
+  - id: lowering-parser-aggregations
+    pending: true
+    chosen: >-
+      lower.Plan lowers range and vector aggregations over a log query with a json or logfmt parser (flags, extraction
+      lists and aliases, label filters behind the parser, several parsers), for the functions that read rows
+      (count_over_time, bytes_over_time, absent_over_time, rate, bytes_rate) and for the functions over an
+      unwrapped label of part one, as the string translator writes them. The series identity of a log query with a
+      parser is the stream (a rate groups by it and derives no detected_level; count, min, max and avg add it to
+      the clause's labels) and, for an unwrapped label, each line of the stream (_stream, _msg), where it is the stream and its stored
+      level without a parser; the lowering parametrises the identity lists it already had by that, with no second
+      builder. A profile that knows stream labels copies every stored stream value aside before the first parser,
+      puts it back behind each parser and deletes the copies (the metric form of the stream value pipes, memoised per
+      set of names), and the label filters read the field. A bare logfmt unpack that ends the query is narrowed to the
+      unwrapped label and the clause's labels (skip_empty_results). The translator writes a filter on the field
+      __lvp_rate before the final stats of a rate over a parser, and on the unwrapped label, when its search of
+      the query text finds a copy pipe and an "as <field>" (the stream value copies, a json expression, the gate's own
+      copy); the lowering writes it under the same condition on its printed text. Left to the translator under
+      named constructs: a grouping or unwrapped label with an underscore (RangeAgg or VectorAgg parser label: the
+      translator looks for it under the other spellings a parser key may have), a without clause over a parser
+      (VectorAgg parser without: it folds by the labels the parsers extract, which it reads from the text), and
+      the stages the log query lowering does not write.
+    over:
+      - 'a second set of builders for the stats of a parser query: the identity lists, the rate pipes and the stream value pipes take the parser as an argument instead'
+      - 'resolving a label with an underscore through the parsed-key variants in this step (translate.ParsedKeyVariants already holds them; the format pipes, the existence check relocation and the name_extracted collisions are the same text reading to move, and 5,000 grid rows carry the label): delegated and counted instead'
+      - 'reading the text of the query only where the translator does: every quoted text that spells an unpack pipe (the translator resolves labels and looks for a copy pipe when its text holds one) is left to it, also for a query with no parser'
+    why: |
+      Step 15, second part, of architecture B (owner 2026-11-10). Parser
+      metric queries were 5,148 more delegated rows in the corpus shadow
+      (RangeAgg parser 945 + VectorAgg parser 1,125, and the unwrap rows
+      that had a parser). The translator treats them differently from a
+      log query in four places the grid found, each now a lowered rule or
+      a named delegation: the series identity (above), the stream value
+      pipes (metric form, every stream label, behind every parser), the
+      filter on the rate or on the unwrapped label that its text search
+      writes by coincidence, and the narrowed logfmt unpack. The grid
+      also found that the translator reads quoted text that spells an
+      unpack pipe like a parser in a query with none, which part one's
+      guard now covers for the rows that read rows too.
+      Handlers do not read the lowering for metric queries yet, so behaviour
+      does not change.
+    evidence: >-
+      TestPlanShadow native 7134 -> 10527 of 22,935 rows x 12 profiles, 0 mismatches (delegated here: parser label
+      180 range and 261 vector, parser without 333, drop or keep behind a parser 324 and 504, the regexp, pattern
+      and unpack parsers 306, the rest as before); TestParserMetricGridShadow 12,517 queries x 12 profiles, 110,673
+      rows, 65,132 lowered, 0 mismatches, text byte for byte, about 5 s (14 parser spellings x 14 label filter shapes x
+      the row functions, 12 unwrapped labels x 4 conversions x 11 functions, the range clause and the seven vector
+      aggregations with 19 groupings, ranges and offsets, quoted text, and the stages that stay with the translator);
+      mutation checks of the grid (the identity by parser, the label guard, the rate filter, the narrowing, the
+      stream value restore, the line identity, the define-check filter, the without guard: each fails it);
+      FuzzUnwrapLowering now seeds a parser stage, 124k execs, no finding; TestUnwrapGridShadow, TestRangeAggGridShadow
+      and TestVectorAggGridShadow green with the quoted unpack text guard.
+    code:
+      - internal/queryplan/lower/range_agg.go
+      - internal/queryplan/lower/vector_agg.go
+      - internal/queryplan/lower/unwrap.go
+      - internal/queryplan/lower/stream_value.go
+      - internal/queryplan/lower/parser.go
+      - internal/queryplan/lower/lower.go
+      - internal/translate/range.go
+      - internal/translate/stream_value_scratch.go
+    tests:
+      - TestPlanShadow
+      - TestParserMetricGridShadow
+      - TestUnwrapGridShadow
+      - TestPlanDelegatesRangeAggregations
+      - TestPlanDelegatesVectorAggregations
+      - TestPlanDelegatesUnwrapAggregations
+      - FuzzUnwrapLowering
+      - TestQueryTextSites
+    quality: >-
+      No handler reads the lowering for metric queries yet. The series of a metric over a parser are the stream (and
+      the line, for an unwrapped label), where Loki's are the stream plus every label the parsers extract: the
+      proxy folds the rows (the open case parsed-label-series-identity), and the lowering keeps the bytes
+      the translator writes. The lowering does not change that; closing it is a change of bytes with its own proof.
+    performance:
+      tracked:
+        - 'BenchmarkParserMetricQueriesTranslator / BenchmarkParserMetricQueriesLowered / BenchmarkParserMetricQueriesPlanOnly / BenchmarkParserMetricQueriesStreamLabelsTranslator / BenchmarkParserMetricQueriesStreamLabelsLowered (internal/queryplan/lower) ns/op, B/op, allocs/op'
+      bound: >-
+        M5 Pro, GOMAXPROCS=4, 3000 iterations x 10 runs, benchstat, 2026-11-10, 377 corpus parser aggregations: string
+        translator 11.1 us, 9.4 KiB, 62 allocs, lowered (Parse + Build + Resolve + Plan) 3.6 us, 4.9 KiB, 61 allocs;
+        under the tenant's six stream labels string translator 19.8 us, 25.9 KiB, 108 allocs, lowered 6.9 us, 9.6
+        KiB, 99 allocs. The first measure of this row had the lowered path 5 allocations over the translator (67 against
+        62); printing each pipe once into a presized builder, sharing the pipes of a plain json or logfmt stage,
+        presizing the pipe list and keeping the unwrap strip off the heap removed them (-9% allocs, -8% B/op on
+        the same shapes), with the written text unchanged. The shapes were on the translator before this step, so
+        no served request changes.
   - id: flip-log-select-to-lowering
     pending: true
     chosen: 'A log query whose pipeline is line filters, pattern filters and label filters (no parser or formatting stage; the plan construct LogSelect) is translated by lower.Plan and written by physical.Encode instead of the string translator, when -query-plan-lowering is on (default). The decision is made on the text before any plan exists: a query that does not start with a stream selector (every metric query) is turned away by its first byte, and logql.MayHaveNonFilterStage (one allocation-free pass over the text that skips quoted strings) turns away a query with a parser or formatting stage or a detected_level / service_name label filter; only then is the query parsed (parseLogQLExpr, so the request flow counts the parse), planned and lowered. Any error, a construct outside proxy.QueryPlanFlippedConstructs, or a panic (recovered, counted as panic) falls back to the string translator, which also stays the authority on rejecting a query. The text is the translator''s byte for byte: the logsql nodes the lowering builds print the translator''s spelling (AnyOfLower, and AndExpr / OrExpr with Lower, for the lowercase `or` and `and` the translator writes), TestPlanShadow and the generated label-filter grid assert physical.Encode(lower.Plan(...)) equals the translator text for every native row under the 12 profiles, and TestQueryPlanLowering_RouteParity sends the same queries through a fake VictoriaLogs with the flag on and off under seven profiles and compares the client answers and every upstream request. The legacy text writer moved to physical.Encode (translator.EncodePhysical wraps it) so the proxy writes the text without the translator. One options-to-lower.Profile mapping (loweringProfile) serves the flip and the live shadow, and one planning function (loweringPlan) holds the parse of both. The live shadow counts a flipped query as result=flipped and keeps comparing what stays on the translator. To keep the flip from costing allocations, logsql renders a query into one pooled buffer (appendTo on the hot nodes; String is unchanged) and the shared field-name normaliser skips its regexp for a name with no dot.'

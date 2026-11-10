@@ -2,6 +2,8 @@ package lower
 
 import (
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -149,9 +151,19 @@ func holdsInFilter(e *logql.LabelFilterExpr, holds func(string) bool) bool {
 
 // streamValuePipes are the pipes a parser stage gets when the query reads stream labels: the copies of their
 // stored values ahead of the first parser, the fills behind each.
-func streamValuePipes(ps []logsql.Pipe, read []string, first bool) []logsql.Pipe {
+func streamValuePipes(ps []logsql.Pipe, read []string, first, metric bool) []logsql.Pipe {
 	if len(read) == 0 {
 		return ps
+	}
+	if metric {
+		// A metric query carries no entry labels: the stored value goes back into the name behind each parser. The
+		// copies and the restores depend on the names alone, which a tenant's requests share.
+		sv := metricStreamValues(read)
+		out := make([]logsql.Pipe, 0, len(sv.copies)+len(ps)+len(sv.restores))
+		if first {
+			out = append(out, sv.copies...)
+		}
+		return append(append(out, ps...), sv.restores...)
 	}
 	var out []logsql.Pipe
 	if first {
@@ -159,6 +171,31 @@ func streamValuePipes(ps []logsql.Pipe, read []string, first bool) []logsql.Pipe
 	}
 	out = append(out, ps...)
 	return append(out, translate.StreamValueFills(read)...)
+}
+
+// streamValueSet is the copies ahead of the first parser of a metric query and the restores behind each, for one
+// set of stream label names. The pipes are values, so the slices are shared.
+type streamValueSet struct{ copies, restores []logsql.Pipe }
+
+// svMemo holds the set of each distinct list of names. The memo is bounded: past maxSVMemo sets they are built each
+// time.
+var (
+	svMemo      sync.Map // names joined by "," -> streamValueSet
+	svMemoCount atomic.Int64
+)
+
+const maxSVMemo = 1024
+
+func metricStreamValues(names []string) streamValueSet {
+	key := strings.Join(names, ",")
+	if e, hit := svMemo.Load(key); hit {
+		return e.(streamValueSet)
+	}
+	set := streamValueSet{copies: translate.StreamValueCopies(names), restores: translate.StreamValueRestores(names)}
+	if svMemoCount.Add(1) <= maxSVMemo {
+		svMemo.Store(key, set)
+	}
+	return set
 }
 
 // extractedUnpacks puts, behind the pipe of each json and logfmt stage, the pipe that unpacks the keys of the

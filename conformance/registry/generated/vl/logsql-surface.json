@@ -50,10 +50,10 @@
         "internal/translate/line_format.go",
         "internal/translate/parser.go",
         "internal/translate/stream_value_scratch.go",
+        "internal/translate/unwrap_gate.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
-        "internal/translator/translator.go",
-        "internal/translator/unwrap_gate.go"
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -186,9 +186,9 @@
         "internal/proxy/volume.go",
         "internal/translate/detected_level.go",
         "internal/translate/linefilter_pattern.go",
+        "internal/translate/unwrap_gate.go",
         "internal/translator/parsed_key_variants.go",
-        "internal/translator/translator.go",
-        "internal/translator/unwrap_gate.go"
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -214,11 +214,11 @@
         "internal/translate/extracted_label.go",
         "internal/translate/line_format.go",
         "internal/translate/stream_value_scratch.go",
+        "internal/translate/unwrap_gate.go",
         "internal/translate/vector.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
-        "internal/translator/translator.go",
-        "internal/translator/unwrap_gate.go"
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -306,8 +306,8 @@
         "internal/proxy/range_metric_compat.go",
         "internal/proxy/unwrap_conversion_error.go",
         "internal/translate/range.go",
-        "internal/translator/translator.go",
-        "internal/translator/unwrap_gate.go"
+        "internal/translate/unwrap_gate.go",
+        "internal/translator/translator.go"
       ]
     },
     {
@@ -383,7 +383,7 @@
       "used_in": [
         "internal/proxy/ordered_json_metric.go",
         "internal/proxy/ordered_json_valid_split.go",
-        "internal/translator/unwrap_gate.go",
+        "internal/translate/unwrap_gate.go",
         "internal/translator/without_pushdown.go"
       ]
     },

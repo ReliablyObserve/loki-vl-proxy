@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers range and vector aggregations over a log query with
+  a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
+  filters behind the parser) to VictoriaLogs natively for every translation
+  profile: `count_over_time`, `bytes_over_time`, `absent_over_time`, `rate`
+  and `bytes_rate`, and the functions over an unwrapped label, alone and under
+  `sum`, `count`, `min`, `max` and `avg` with a `by` clause. The series are
+  the stream (and each line, for an unwrapped label), as the string
+  translator writes them; with the tenant's stream labels every stream value
+  is copied aside before the first parser and put back behind each. The
+  requests sent to VictoriaLogs are those of the string translator, byte for
+  byte, and the lowering takes about a third of the time of the translation
+  and allocates less memory. A grouping or unwrapped label with an underscore,
+  a `without` clause over a parser, `| regexp`, `| pattern` and `| unpack` are
+  still written by the string translator, and so is a query with quoted
+  text that spells an unpack pipe.
+- The query plan lowers the range functions over an unwrapped label
+  (`sum_over_time`, `avg_over_time`, `min_over_time`, `max_over_time`,
+  `first_over_time`, `last_over_time`, `stddev_over_time`, `stdvar_over_time`,
+  `quantile_over_time`, `rate_counter` and `rate` over a label), with a plain,
+  `bytes()`, `duration()` or `duration_seconds()` value, a `by` clause on the
+  range and a `| __error__=""` filter after the unwrap, and `sum`, `count`,
+  `min`, `max` and `avg` over them, to VictoriaLogs natively for every
+  translation profile. The requests sent to VictoriaLogs are those of the
+  string translator, byte for byte, and the lowering takes about a third of
+  the time of the translation and allocates less. A `quantile_over_time`
+  parameter written other than as its shortest form, an unwrap stage not
+  spelled with one blank on each side, a range-level `without` clause and
+  quoted text the translator reads as syntax (`| unwrap`, `| json`, `| stats `)
+  are still written by the string translator. The lowering of `rate` and of
+  `count`, `min`, `max` and `avg` also leaves a log query that holds a quoted
+  `| json` or `| unwrap` to the translator, which reads those words as syntax.
 - The query plan lowers `sum`, `count`, `min`, `max` and `avg`, with or
   without a `by` or `without` clause, over `count_over_time`,
   `bytes_over_time`, `absent_over_time`, `rate` and `bytes_rate` of a log query

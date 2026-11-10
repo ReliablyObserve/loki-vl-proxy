@@ -41,6 +41,22 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
 	}
+	if unwrapStage(ra.In) != nil {
+		if ra.Op != logql.RangeAbsentOverTime {
+			return unwrapVector(va, ra, prof)
+		}
+		// absent_over_time reads no unwrapped value: the aggregation is the same over the query without the stage.
+		stripped, err := withoutUnwrap(ra, "VectorAgg")
+		if err != nil {
+			return nil, err
+		}
+		ra = stripped
+	}
+	return vectorAggOver(va, ra, prof)
+}
+
+// vectorAggOver is vectorAgg over the range aggregation ra, the operand of va.
+func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
@@ -85,6 +101,11 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
+	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
+	if err := parserTextError(ra.In, log, rate, labels, without); err != nil {
+		return nil, err
+	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if without || len(labels) > 0 {
 		if textReadAsClause(log) {
@@ -95,7 +116,7 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if without && (textHas(log, "  ") || selectionHas(ra.In, "  ")) {
 		return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 	}
-	stats := vectorStats(va.Op, fn, rate, seconds, labels, without)
+	stats := rateVectorPipes(vectorStats(va.Op, fn, rate, seconds, labels, without, seriesIdentity(log.parser)), va.Op, labels, log, false)
 	chain, service := "", ""
 	var needChain, needService bool
 	for _, p := range stats {
@@ -119,9 +140,8 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 
 // vectorStats are the stats pipes of the aggregation over the rows of a range function fn (a rate divides by
 // seconds). labels are the grouping labels as VictoriaLogs names them, without whether the clause is a without
-// (which groups by none: the proxy folds the series).
-func vectorStats(op logql.VectorOp, fn logsql.StatsFunc, rate bool, seconds float64, labels []string, without bool) []logsql.Pipe {
-	identity := []string{"_stream", "level"}
+// (which groups by none: the proxy folds the series). identity is what tells a series apart (seriesIdentity).
+func vectorStats(op logql.VectorOp, fn logsql.StatsFunc, rate bool, seconds float64, labels []string, without bool, identity []string) []logsql.Pipe {
 	const inner, rated = "__lvp_inner", "__lvp_rate"
 	byKeys := func(fields []string) []logsql.GroupKey {
 		keys := make([]logsql.GroupKey, len(fields))
@@ -245,3 +265,61 @@ func textReadAsClause(m metricLog) bool { return textHas(m, statsPipePrefix) }
 
 // statsPipePrefix is how a stats pipe starts in the printed query ("| stats "), taken from the typed pipe.
 var statsPipePrefix = strings.TrimSuffix(logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}}}}.String(), logsql.Count{}.String())
+
+// seriesIdentity is what the translator takes to tell the series of a metric apart: the stream and its stored level
+// (with the detected_level the chain derives), or the stream alone when the log query has a parser, whose labels
+// the translator does not carry.
+func seriesIdentity(parser bool) []string {
+	if parser {
+		return []string{"_stream"}
+	}
+	return []string{"_stream", "level"}
+}
+
+// parserVectorConstruct names the construct of a vector aggregation over a log query with a parser that the
+// lowering leaves to the translator, "" when it writes it. The translator folds a without clause over a parser by
+// the labels the parsers extract, which it reads from the text of the query, and resolves a grouping by a label
+// that a parser may have stored under another spelling (a name with an underscore).
+func parserVectorConstruct(labels []string, without bool) string {
+	if without {
+		return "VectorAgg parser without"
+	}
+	for _, l := range labels {
+		if resolvableLabel(l) {
+			return "VectorAgg parser label"
+		}
+	}
+	return ""
+}
+
+// resolvableLabel reports whether the translator looks for a label under the other spellings of a parser key: a
+// name with an underscore that is not the first character, which is not a derived label.
+func resolvableLabel(label string) bool {
+	if label == "service_name" || label == translate.DetectedLevelLabel {
+		return false
+	}
+	if i := strings.IndexByte(label, '_'); i <= 0 {
+		return false
+	}
+	for i := 0; i < len(label); i++ {
+		c := label[i]
+		if name := c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' && i > 0; !name {
+			return false
+		}
+	}
+	return true
+}
+
+// parserTextError names the construct of a vector aggregation whose series identity the translator reads from the
+// parsers in the text of the query (quoted text that spells one, or a parser whose labels it resolves or folds).
+func parserTextError(in *queryplan.LogSelect, log metricLog, rate bool, labels []string, without bool) error {
+	if readsUnwrapOrParser(in, log, rate, !log.parser) {
+		return errVectorQuotedClause
+	}
+	if log.parser {
+		if c := parserVectorConstruct(labels, without); c != "" {
+			return &NotLoweredError{Construct: c}
+		}
+	}
+	return nil
+}
