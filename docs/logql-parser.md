@@ -271,6 +271,25 @@ Everything else goes through the full parse + semantic pass.
 
 ## Translation
 
+### Query plan lowering (which translator answers)
+
+A query is translated by one of two paths, and the client cannot tell which: the same VictoriaLogs query comes out of both, byte for byte.
+
+```mermaid
+flowchart LR
+    Q["canonical LogQL"] --> C{"log query?<br/>(starts with a stream selector)"}
+    C -- no --> T["string translator<br/>(internal/translator)"]
+    C -- yes --> P["logql.Parse, queryplan.Build + Resolve,<br/>lower.Plan"]
+    P -- "lowered" --> E["physical.Encode"]
+    P -- "not covered / error" --> T
+    E --> OUT["VictoriaLogs query<br/>(translation cache, handlers)"]
+    T --> OUT
+```
+
+- **Served from the plan:** log queries made of a stream selector, line filters (`|=`, `!=`, `|~`, `!~`), pattern filters (`|>`, `!>`) and label filters (including `ip()` and repeated filters), with no parser stage. `lower.Plan` builds the filters with the shared builders in `internal/translate` and `physical.Encode` writes the text. `-query-plan-lowering=false` returns every query to the string translator.
+- **Still on the string translator:** every query with a parser or formatting stage (`| json`, `| logfmt`, `| line_format`, `| drop`, …), every metric query (range and vector aggregations, `unwrap`, binary operations, `label_replace`), and any log query the lowering answers with an error.
+- **Why it is safe to switch:** the corpus shadow (`TestPlanShadow`, see [testing](testing.md#query-plan-shadow)) asserts, for every native corpus row under each of the 12 translator profiles, that `physical.Encode(lower.Plan(...))` equals the translator's text byte for byte; the route-parity test sends the same queries through a fake VictoriaLogs with the flag on and off and compares the answers and every upstream request.
+
 ### LogQL stage → LogsQL pipe mapping
 
 The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `logsql` typed pipe nodes:

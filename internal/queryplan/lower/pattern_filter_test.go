@@ -1,7 +1,6 @@
 package lower
 
 import (
-	"reflect"
 	"strconv"
 	"testing"
 
@@ -12,8 +11,8 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
-// loweredMatchesTranslator reports whether the plan lowers q to the query the string translator writes, read by
-// the LogsQL parser (grouping and the case of `or` are spelling). ok is false when neither lowers q.
+// loweredMatchesTranslator reports whether the plan lowers q to the query the string translator writes, byte for
+// byte (the text a flipped query serves; both must also parse). ok is false when neither lowers q.
 func loweredMatchesTranslator(t testing.TB, q string) (lowered, legacy string, same, ok bool) {
 	t.Helper()
 	expr, err := logql.Parse(q)
@@ -34,15 +33,13 @@ func loweredMatchesTranslator(t testing.TB, q string) (lowered, legacy string, s
 		return "", "", false, false
 	}
 	lowered = op.(physical.VLQuery).Text
-	want, err := logsql.Parse(legacy)
-	if err != nil {
+	if _, err := logsql.Parse(legacy); err != nil {
 		t.Fatalf("%s: the translator's %s does not parse: %v", q, legacy, err)
 	}
-	got, err := logsql.Parse(lowered)
-	if err != nil {
+	if _, err := logsql.Parse(lowered); err != nil {
 		t.Fatalf("%s: the lowered %s does not parse: %v", q, lowered, err)
 	}
-	return lowered, legacy, reflect.DeepEqual(want, got), true
+	return lowered, legacy, lowered == legacy, true
 }
 
 // A pattern line filter lowers to the query the string translator writes, for every shape its builder has: the

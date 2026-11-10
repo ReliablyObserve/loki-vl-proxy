@@ -228,3 +228,26 @@ func TestScannerSpaceStringsAndKeywords(t *testing.T) {
 		t.Errorf("Raw() = %q, want the quoted source", sc.Raw())
 	}
 }
+
+// AnyOfLower is AnyOf with the lowercase operator: it prints and nests alike, and parses to the same filter.
+func TestAnyOfLowerIsAnyOfInLowercase(t *testing.T) {
+	a, b := logsql.Word{Value: "a"}, logsql.Word{Value: "b"}
+	lower, upper := logsql.AnyOfLower{logsql.Group{Expr: a}, logsql.Group{Expr: b}}, logsql.AnyOf{logsql.Group{Expr: a}, logsql.Group{Expr: b}}
+	if got, want := lower.String(), "(a) or (b)"; got != want {
+		t.Fatalf("AnyOfLower = %q, want %q", got, want)
+	}
+	if got, want := (logsql.AndExpr{Left: a, Right: lower}).String(), "a AND ((a) or (b))"; got != want {
+		t.Fatalf("nested = %q, want %q", got, want)
+	}
+	pl, err := logsql.Parse(lower.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pu, err := logsql.Parse(upper.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(pl, pu) {
+		t.Fatalf("`or` and `OR` parse differently: %#v vs %#v", pl, pu)
+	}
+}

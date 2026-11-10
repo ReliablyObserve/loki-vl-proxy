@@ -764,7 +764,7 @@ func (p *OTLPPusher) loweringShadowMetrics(now int64) []map[string]interface{} {
 	if len(points) == 0 {
 		return nil
 	}
-	return []map[string]interface{}{p.sumMetric("loki_vl_proxy_lowering_shadow_total", "Query-plan lowering shadow comparisons by result and plan construct.", "", points...)}
+	return []map[string]interface{}{p.sumMetric("loki_vl_proxy_lowering_shadow_total", "Query-plan lowering outcomes (shadow comparisons, and queries translated by the lowering) by result and plan construct.", "", points...)}
 }
 
 func (p *OTLPPusher) internalOperationMetrics(now int64) []map[string]interface{} {
