@@ -27,12 +27,15 @@
       "internal/querycorpus/label_filter_parsed_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
       "internal/querycorpus/plan_shadow_test.go",
+      "internal/querycorpus/range_agg_grid_test.go",
+      "internal/querycorpus/range_agg_oracle_test.go",
       "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/label_filter_parsed_test.go",
       "internal/queryplan/lower/label_filter_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
+      "internal/queryplan/lower/range_agg_test.go",
       "internal/queryplan/lower/spelling_test.go",
       "internal/translate/selector_test.go"
     ],
@@ -1436,6 +1439,9 @@
       "internal/proxy/topk_over_aggregation_test.go",
       "test/e2e-compat/topk_over_aggregation_test.go"
     ],
+    "semantics/translator-reads-parenthesized-metric-as-text": [
+      "internal/querycorpus/known_divergence_test.go"
+    ],
     "semantics/tumbling-window-single-grid": [
       "internal/proxy/sliding_window_stats_test.go"
     ],
@@ -1605,9 +1611,10 @@
       "internal/proxy/detected_level_test.go",
       "internal/proxy/logfmt_risk_candidates_test.go",
       "internal/proxy/ordered_json_detected_level_split_test.go",
-      "internal/translator/detected_level_chain_memo_test.go",
+      "internal/translate/detected_level_chain_memo_test.go",
+      "internal/translate/detected_level_keyword_test.go",
+      "internal/translate/detected_level_normalize_test.go",
       "internal/translator/detected_level_filter_stage_test.go",
-      "internal/translator/detected_level_keyword_test.go",
       "internal/translator/detected_level_logsql_test.go",
       "test/e2e-compat/detected_level_corpus_test.go",
       "test/e2e-compat/detected_level_filter_test.go",
@@ -1749,7 +1756,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 451,
+  "registry_items": 452,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -2916,6 +2923,9 @@
     "internal/querycorpus/escaped_spelling_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/known_divergence_test.go": [
+      "semantics/translator-reads-parenthesized-metric-as-text"
+    ],
     "internal/querycorpus/label_filter_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2945,6 +2955,12 @@
     "internal/querycorpus/plan_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/range_agg_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
+    "internal/querycorpus/range_agg_oracle_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/stats_decode_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2964,11 +2980,23 @@
       "architecture-syntax-package-layering",
       "semantics/pattern-line-filter"
     ],
+    "internal/queryplan/lower/range_agg_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/spelling_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
+    ],
+    "internal/translate/detected_level_chain_memo_test.go": [
+      "severity-detected-level-derivation"
+    ],
+    "internal/translate/detected_level_keyword_test.go": [
+      "severity-detected-level-derivation"
+    ],
+    "internal/translate/detected_level_normalize_test.go": [
+      "severity-detected-level-derivation"
     ],
     "internal/translate/ip_label_prefilter_test.go": [
       "semantics/ip-label-filter-embedded-address"
@@ -2983,15 +3011,9 @@
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
     ],
-    "internal/translator/detected_level_chain_memo_test.go": [
-      "severity-detected-level-derivation"
-    ],
     "internal/translator/detected_level_filter_stage_test.go": [
       "severity-detected-level-derivation",
       "severity/detected-level-filter-json-level"
-    ],
-    "internal/translator/detected_level_keyword_test.go": [
-      "severity-detected-level-derivation"
     ],
     "internal/translator/detected_level_logsql_test.go": [
       "semantics/detected-level-missing-from-stats-answers",
@@ -3798,7 +3820,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 424,
+  "tests_with_markers": 429,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3904,5 +3926,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 275
+  "wired_items": 276
 }

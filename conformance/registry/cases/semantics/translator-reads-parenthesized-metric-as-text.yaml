@@ -1,0 +1,55 @@
+id: semantics/translator-reads-parenthesized-metric-as-text
+title: The string translator writes a metric query wrapped whole in parentheses as a phrase search (open; the query plan reads the metric)
+pending: true
+proves:
+  - loki_api_v1_query_range
+consumer: api
+why: |
+  LogQL allows parentheses around any expression, so `(rate({app="a"}[5m]))`
+  is the metric query inside them. The string translator does not see a
+  metric there: it writes the whole query text as one phrase filter, which
+  VictoriaLogs rejects (`missing whitespace or ':' between ...`). The query
+  plan's parser reads the parentheses away, and the lowering writes the
+  metric as for the unwrapped query.
+
+  Evidence (2026-11-10, the PR quality report of the range aggregation
+  lowering): 128 corpus rows, fuzz mutations such as
+  `(rate({app="uw"}[800ms])\n)` and `(bytes_rate({app="a"}[5m] offset 10m)\n)`.
+  Loki's parser (the Loki oracle, Loki 3.7.9) accepts every one, and ours
+  reads them with Loki's meaning. VictoriaLogs v1.49.0 and v1.53.0 reject the
+  translator's text and accept the plan's:
+    string translator  =>  "(rate({app=\"a\"}[5m]))"
+    query plan         =>  app:="a" | format if (detected_level:*) ... | stats by (_stream, level, detected_level) ...
+
+  The VictoriaLogs oracle's typed-selector check compares the plan with the
+  string translator. These rows differ because the translator is wrong, so
+  the check recognises them by content (translatorMisreadsParenthesizedMetric
+  in internal/querycorpus) and leaves them out. The fix is in the query plan
+  path (the translator is frozen): it closes when metric queries are served
+  from the plan.
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '(count_over_time({app="x"}[5m]))'
+    start: 'now-15m'
+    end: 'now'
+    step: '60s'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [matrix.values]
+  expect: |
+    The series of count_over_time({app="x"}[5m]), as without the parentheses.
+gap:
+  status: open
+  impact: edge
+  effort: S
+  area: 'internal/translator (reads the metric from the query text); fixed when the query plan serves metric queries'
+  loki: 'parentheses around an expression do not change it'
+  proxy: 'the string translator writes the parenthesized metric query as a phrase filter, which VictoriaLogs rejects'
+  planned_test: 'TestTranslatorMisreadsParenthesizedMetric (internal/querycorpus) records the defect; an e2e row against Loki when the plan serves metric queries'
+  visual: none
+  visual_reason: 'Grafana does not wrap a metric query in parentheses; generated and API-written queries do'
+  clusters: []

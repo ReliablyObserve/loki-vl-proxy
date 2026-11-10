@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan lowers `count_over_time`, `bytes_over_time` and
+  `absent_over_time` over a log query with line, pattern and label filters and
+  no parser (any offset, any range, with or without the tenant's stream
+  labels) to VictoriaLogs natively, as one stats pipe over the log query the
+  string translator writes; the requests sent to VictoriaLogs are those of the
+  string translator. The unwrap functions, parsers and groupings are still
+  answered by the string translator, and so is a query whose quoted text the
+  translator reads as syntax (a `without (...)` or ` bool ` in a line filter)
+  or that holds a regexp line filter written with an escape (`|~ "\x41b"`),
+  which the translator sends in the client's spelling.
+- The query plan lowers `rate` and `bytes_rate` over the same log queries
+  (line, pattern and label filters, no parser) to VictoriaLogs natively, for
+  every range and offset and every translation profile: the log query's
+  filters, the detected_level derivation, the count (or line bytes) per
+  stream, level and detected_level, its division by the range's seconds, and
+  the sum per series, with VictoriaLogs still doing the aggregation. The
+  builders of the detected_level derivation moved out of the string
+  translator into the translation package, which forwards to them with the
+  same output. The requests sent to VictoriaLogs are those of the string
+  translator, and the lowering takes about half the time of the translation
+  and allocates less.
+
+### Fixed
+
+- Since 2.118.0, a log query whose parser or formatting stage was written in
+  another letter case (`| JSON`, `| Logfmt`, `| DROP x`) could be translated by
+  the query plan instead of the string translator: the check that keeps those
+  queries on the translator compared the stage name case-sensitively, while the
+  parser reads it in any case. The request sent to VictoriaLogs was the same
+  text either way, so results did not change. Such queries now stay on the
+  string translator, and the plan is served only after a typed check that the
+  query holds line and label filters only.
+
 ## [2.120.0] - 2026-11-10
 
 ### Fixed
@@ -36,14 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label inside an and/or tree and the shapes whose text the translator reads
   differently from the typed stage. No handler reads the lowering yet; the
   requests sent to VictoriaLogs do not change.
-
-### Fixed
-
-- Since 2.118.0, a log query with an escaped character (`\x41` style, or an octal escape) in a
-  regexp line filter (`|~`, `!~`), or a stream selector on a configured stream field written with
-  such an escape or in backquotes, was sent to VictoriaLogs in its unescaped spelling (`~"Ab"` for
-  `|~ "\x41b"`). VictoriaLogs reads both spellings alike, so results were the same; these queries
-  are now sent as they were before 2.118.0.
 
 ## [2.118.0] - 2026-11-10
 
