@@ -422,9 +422,7 @@ type RangeAggregation struct {
 	Offset   string  // optional offset modifier, e.g. "1h" from [5m] offset 1h
 	Param    float64 // for quantile_over_time
 	HasParam bool
-	// ParamText is the parameter as written (`0.50`, `.5`), which Param does not keep.
-	ParamText string
-	Grouping  *Grouping
+	Grouping *Grouping
 	// RangeDuration and OffsetDuration are Range and Offset as durations: 0
 	// when the offset is absent or the literal is not a positive duration.
 	RangeDuration  time.Duration

@@ -206,9 +206,6 @@ type RangeAgg struct {
 	// Phi is quantile_over_time's value as Loki reads it (any clamp for
 	// VictoriaLogs is a physical rule).
 	Phi float64
-	// PhiText is Phi as the client wrote it (`0.50`): the lowering prints the client's spelling, which Phi
-	// does not keep. The key reads Phi, so two spellings of one value share a plan.
-	PhiText string
 	// By is the range-level grouping of the unwrap functions.
 	By  *Grouping
 	Sem *MetricSem

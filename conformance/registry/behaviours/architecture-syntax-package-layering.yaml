@@ -491,10 +491,11 @@ decisions:
       for a rate and for a clause with count, min, max and avg), quantile_over_time aggregates the rows of its
       group whatever the outer aggregation is, and stdvar_over_time is a binary expression the proxy squares
       (physical.Binary). absent_over_time written with an unwrap stage is lowered over the query without it. The
-      quantile parameter is printed from the plan's typed value and only when the client wrote that shortest form
-      (the plan keeps the spelling: logql.RangeAggregation.ParamText, queryplan.RangeAgg.PhiText).
+      quantile parameter is printed from the plan's typed value (logsql.Quantile); the translator copies the
+      client's text, so the text screen (lower.ScreenText) reads the literal the way the translator does and
+      delegates a parameter that is not the shortest form of its value (0.50, 5e-1).
     over:
-      - 'carrying the quantile parameter as text (a raw DeferredExpr with the client''s spelling) and a raw first/last row pipe: the typed Quantile, RowMin and RowMax print the same bytes and add no text site'
+      - 'carrying the quantile parameter''s spelling in the plan (the key reads the value, so two spellings would share a plan and one memo by key would lower the other differently): the spelling is read from the text by the screen, as the other spellings the translator reads from text are'
       - 'lowering the aggregations the translator writes from the text of the unwrap stage without checking that spelling (a stage not written with one blank on each side, or a quoted | unwrap earlier in the query, gives the translator another label or none; the lowering reads the same text with the translator''s own rule and delegates when the two differ)'
       - 'leaving the stdvar and the absent_over_time with an unwrap stage to the translator (both are written from the same typed pieces)'
     why: |
@@ -535,8 +536,6 @@ decisions:
       - internal/translate/unwrap_gate.go
       - internal/translate/range.go
       - internal/translator/unwrap_gate.go
-      - internal/logql/parser.go
-      - internal/queryplan/build.go
     tests:
       - TestPlanShadow
       - TestUnwrapGridShadow

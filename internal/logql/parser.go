@@ -1339,7 +1339,6 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 		if err != nil {
 			return newParseError(0, 0, "invalid parameter for operation quantile_over_time: "+err.Error())
 		}
-		ra.ParamText = p.cur.Val
 		p.advance()
 		ra.Param = phi
 		ra.HasParam = true
@@ -1357,7 +1356,6 @@ func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
 		if err != nil {
 			return fmt.Errorf("logql: invalid phi: %w", err)
 		}
-		ra.ParamText = "-" + p.cur.Val
 		p.advance()
 		ra.Param = -phi
 		ra.HasParam = true

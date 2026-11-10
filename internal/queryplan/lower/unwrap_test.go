@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -144,21 +143,6 @@ func TestPlanDelegatesUnwrapAggregations(t *testing.T) {
 		_, err := PlanQuery(q, p, Profile{})
 		var nl *NotLoweredError
 		if !errors.As(err, &nl) || nl.Construct != construct {
-			t.Errorf("%s: got %v, want not lowered: %s", q, err, construct)
-		}
-	}
-	// A plan built without the parameter's spelling (not from the parser) leaves the quantile to the translator.
-	for q, construct := range map[string]string{
-		`quantile_over_time(0.5, {app="a"} | unwrap n [5m])`:      "RangeAgg unwrap quantile spelling",
-		`sum(quantile_over_time(0.5, {app="a"} | unwrap n [5m]))`: "VectorAgg unwrap quantile spelling",
-	} {
-		p := rangeAggPlan(q)
-		ra, ok := p.Root.(*queryplan.RangeAgg)
-		if !ok {
-			ra = p.Root.(*queryplan.VectorAgg).In.(*queryplan.RangeAgg)
-		}
-		ra.PhiText = ""
-		if _, err := Plan(p, Profile{}); !errors.Is(err, ErrNotLowered) || !strings.Contains(err.Error(), construct) {
 			t.Errorf("%s: got %v, want not lowered: %s", q, err, construct)
 		}
 	}

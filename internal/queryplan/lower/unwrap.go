@@ -280,11 +280,6 @@ func unwrapRange(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if err != nil {
 		return nil, err
 	}
-	if op.quantile {
-		if c := quantileSpelling(ra); c != "" {
-			return nil, &NotLoweredError{Construct: c}
-		}
-	}
 	log, u, err := unwrapLog(ra.In, prof, "RangeAgg")
 	if err != nil {
 		return nil, err
@@ -379,16 +374,6 @@ func rangeByLabels(ra *queryplan.RangeAgg, prof Profile) (by []string, empty boo
 	return by, false, nil
 }
 
-// quantileSpelling names the construct of a quantile the lowering cannot write as the client spelled it: the
-// translator copies the parameter's text, and the typed function prints the value (strconv's shortest form), so a
-// parameter written another way (`0.50`, `5e-1`) is left to the translator, as is a plan built without the text.
-func quantileSpelling(ra *queryplan.RangeAgg) string {
-	if ra.PhiText == "" || ra.PhiText != strconv.FormatFloat(ra.Phi, 'g', -1, 64) {
-		return "RangeAgg unwrap quantile spelling"
-	}
-	return ""
-}
-
 // unwrapVector lowers sum, count, min, max and avg, with or without a by or without clause, over a range aggregation
 // of an unwrapped label (see the top of this file for the shapes).
 func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
@@ -412,11 +397,6 @@ func unwrapVector(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile)
 	if rate {
 		if seconds = ra.Range.Seconds(); seconds <= 0 {
 			return nil, &NotLoweredError{Construct: "VectorAgg range"}
-		}
-	}
-	if op.quantile {
-		if c := quantileSpelling(ra); c != "" {
-			return nil, &NotLoweredError{Construct: "Vector" + strings.TrimPrefix(c, "Range")}
 		}
 	}
 	labels, raw, without, err := vectorClause(va, prof)
@@ -606,7 +586,29 @@ func screenUnwrap(query string, p *queryplan.Plan) *NotLoweredError {
 	if want, known := unwrapConv(u); !ok || !known || field != u.Label || conv != want {
 		return &NotLoweredError{Construct: owner + " unwrap spelling"}
 	}
+	// The string translator copies the quantile's parameter as written, and the typed function prints the shortest
+	// form of its value: a parameter written another way (`0.50`, `5e-1`) is left to the translator.
+	if ra.Op == logql.RangeQuantileOverTime && quantileFromText(query) != strconv.FormatFloat(ra.Phi, 'g', -1, 64) {
+		return &NotLoweredError{Construct: owner + " unwrap quantile spelling"}
+	}
 	return nil
+}
+
+// quantileFromText is the parameter the string translator reads out of the text of a quantile_over_time: what stands
+// between the opening parenthesis of the call and the first comma, without the blanks around it. It is empty for a
+// query that does not spell the call as the translator looks for it.
+func quantileFromText(query string) string {
+	const call = "quantile_over_time("
+	idx := strings.Index(query, call)
+	if idx < 0 {
+		return ""
+	}
+	rest := query[idx+len(call):]
+	comma := strings.IndexByte(rest, ',')
+	if comma < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:comma])
 }
 
 // unwrapFromText is the label and conversion the string translator reads from the text of a query.
