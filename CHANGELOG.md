@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The query plan lowers a binary operation with a `bool` modifier or with a
+  `without` clause on an operand (`sum without (pod) (rate(...)) / 2`,
+  `rate(...) > bool 0`), for every translation profile. The text is the string
+  translator's, byte for byte: `bool` is dropped, and the clause of an operand
+  is taken out of it and written once after the whole binary, as the
+  translator writes it (Loki folds the operand instead; the proxy evaluates a
+  binary operation from the LogQL, so the text does not answer). The requests
+  sent to VictoriaLogs do not change, and the lowering takes about 40 percent
+  of the translation time and allocates less. `and`, `or`, `unless`, nested
+  binary operations, `vector()`, two numbers and a `label_replace` operand,
+  which the translator writes without half of the query, are still written by
+  the string translator, as are the operands with a label filter, `drop`,
+  `keep`, a formatting stage or a parser extraction under `bool` or `without`.
 - The query plan lowers a vector aggregation over other ones (two or more
   levels of `sum`, `count`, `min`, `max` and `avg`, each with a `by` or
   `without` clause or none) over the range aggregations it already writes,
