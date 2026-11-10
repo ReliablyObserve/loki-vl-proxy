@@ -110,7 +110,7 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`stddev(rate({app="a"}[5m]))`:                                              "VectorAgg stddev",
 		`stdvar by (app) (count_over_time({app="a"}[5m]))`:                         "VectorAgg stdvar",
 		`sum(rate({app="a"}[5m]) > 1)`:                                             "VectorAgg operand",
-		`sum without () (rate({app="a"}[5m])) / 2`:                                 "BinOp operand without",
+		`sum without (a) (rate({app="a"}[5m])) / 2`:                                "BinOp operand without",
 		`sum by (app) (avg_over_time({app="a"} | unwrap n [5m]) by (x))`:           "VectorAgg grouping",
 		`sum by (a_b) (rate({app="a"} | json [5m]))`:                               "VectorAgg parser label",
 		`sum without (a) (rate({app="a"} | json [5m]))`:                            "VectorAgg parser without",

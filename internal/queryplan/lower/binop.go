@@ -11,46 +11,39 @@ import (
 )
 
 // binOp lowers a binary operation between two operands the lowering writes natively: a range aggregation rangeAgg
-// lowers, a vector aggregation vectorAgg lowers, or a number (not two numbers). The string translator writes the
-// operands as two metric queries in one text, `__binary__:<op>:<left>|||<right>`, with the vector matching
-// modifiers after it (`@@@on:app@@@group_left:pod`), and the proxy evaluates the operation over their answers; the
-// lowering returns the physical.Binary that text decodes to. Each operand is the query the lowering writes for it
-// alone (the translator derives service_name and detected_level per operand), a number is written as Go prints it,
-// and the labels of a modifier are joined with ", ".
-//
-// Two spellings are read as the translator reads them (binop_more.go): the bool modifier is dropped (Bool stays
-// false, as the legacy encoding writes it), and a without clause of an operand is taken out of the operand and
-// written once after the whole binary, as a Fold of the labels of the first clause.
+// lowers, a vector aggregation vectorAgg lowers with no without clause, or a number (not two numbers). The string
+// translator writes the operands as two metric queries in one text, `__binary__:<op>:<left>|||<right>`, with the
+// vector matching modifiers after it (`@@@on:app@@@group_left:pod`), and the proxy evaluates the operation over
+// their answers; the lowering returns the physical.Binary that text decodes to. Each operand is the query the
+// lowering writes for it alone (the translator derives service_name and detected_level per operand), a number is
+// written as Go prints it, and the labels of a modifier are joined with ", ".
 //
 // Left to the string translator under a construct name:
-//   - and, or and unless (the translator writes the left operand alone);
+//   - and, or and unless (the translator writes the left operand alone), and a bool modifier (it drops it);
 //   - two numbers, an operand that is a binary operation, vector(), label_replace, a ranking or a log query, a
-//     vector aggregation with a without clause that has no label or sits over another aggregation, an operand the
+//     vector aggregation with a without clause (the translator folds the whole binary by it), an operand the
 //     range or vector aggregation lowering leaves to the translator;
 //   - a spelling the translator reads unlike the plan (screenBinOp, before the lowering).
 func binOp(n *queryplan.BinOp, prof Profile) (physical.Op, error) {
 	if err := binOpShape(n); err != nil {
 		return nil, err
 	}
-	s, labels := withoutOperands(n)
-	l, err := binOperand(s.L, prof)
+	l, err := binOperand(n.L, prof)
 	if err != nil {
-		return nil, operandWithoutError(err, labels)
+		return nil, err
 	}
-	r, err := binOperand(s.R, prof)
+	r, err := binOperand(n.R, prof)
 	if err != nil {
-		return nil, operandWithoutError(err, labels)
+		return nil, err
 	}
 	b := physical.Binary{Op: n.Op, L: l, R: r}
 	b.Match, b.Tail = binMatching(n.Match)
-	if len(labels) > 0 {
-		return physical.Fold{Levels: []physical.FoldLevel{{Labels: labels, Without: true}}, In: b}, nil
-	}
 	return b, nil
 }
 
 var (
 	errBinSetOperator     = &NotLoweredError{Construct: "BinOp set operator"}
+	errBinBool            = &NotLoweredError{Construct: "BinOp bool"}
 	errBinScalarOperands  = &NotLoweredError{Construct: "BinOp scalar operands"}
 	errBinOperandWithout  = &NotLoweredError{Construct: "BinOp operand without"}
 	errBinOperandRange    = &NotLoweredError{Construct: "BinOp operand RangeAgg"}
@@ -64,10 +57,13 @@ var (
 )
 
 // binOpShape answers the NotLoweredError of a binary operation the lowering does not write, judged on the plan
-// alone: the operator and the kinds of the operands.
+// alone: the operator, the bool modifier and the kinds of the operands.
 func binOpShape(n *queryplan.BinOp) error {
 	if translate.BinaryOperatorToken(n.Op) == "" {
 		return errBinSetOperator
+	}
+	if n.Bool {
+		return errBinBool
 	}
 	_, ls := n.L.(*queryplan.Scalar)
 	_, rs := n.R.(*queryplan.Scalar)
@@ -78,14 +74,14 @@ func binOpShape(n *queryplan.BinOp) error {
 		switch v := x.(type) {
 		case *queryplan.Scalar, *queryplan.RangeAgg:
 		case *queryplan.VectorAgg:
-			if v.By != nil && v.By.Without && !withoutLowers(v) {
+			if v.By != nil && v.By.Without {
 				return errBinOperandWithout
 			}
 		default:
 			return &NotLoweredError{Construct: "BinOp operand " + Construct(x)}
 		}
 	}
-	return binStagesCost(n)
+	return nil
 }
 
 // binOperand lowers one operand binOpShape accepted: a number, or the query of a range or vector aggregation.
@@ -143,7 +139,7 @@ func binMatching(m *queryplan.Matching) (*physical.Matching, string) {
 }
 
 // matchingTail appends the modifier text of a vector matching: `@@@<card>:<labels>` and, with a group side,
-// `@@@<side>:<labels>`.
+// `@@@<side>:<labels>`. The text is built on the caller's buffer, so a screen compares it without a copy.
 func matchingTail(dst []byte, m *queryplan.Matching) []byte {
 	if m == nil || m.Card == "" {
 		return dst
@@ -183,8 +179,7 @@ func appendMatchingModifier(dst []byte, keyword string, labels []string) []byte 
 // leaves to the translator:
 //   - a quoted string holding a parenthesis, bool, two blanks or a marker the translator writes (`|||`, `@@@`,
 //     `__binary__`, `__lvp_lr:`, `without`): BinOp quoted text;
-//   - two blanks, a bool or a without that is not the plan's modifier or clause (dropBool, dropWithoutClauses; the
-//     translator removes the modifier and the clauses from the text first): BinOp spelling;
+//   - bool, without or two blanks anywhere else: BinOp spelling;
 //   - modifiers spelled unlike the lowering's text, or a group_left or group_right without its parenthesis:
 //     BinOp vector matching spelling;
 //   - no operator, or more than one, at depth 0, or another one than the plan's: BinOp operator spelling;
@@ -200,16 +195,8 @@ func screenBinOp(query string, n *queryplan.BinOp) error {
 	if quotedReadsAsSyntax(q) {
 		return errBinQuotedText
 	}
-	if strings.Contains(q, "  ") {
+	if strings.Contains(q, "bool") || strings.Contains(q, "without") || strings.Contains(q, "  ") {
 		return errBinSpelling
-	}
-	q, err := dropWithoutClauses(q, n)
-	if err != nil {
-		return err
-	}
-	q, boolAt, err := dropBool(q, n.Bool)
-	if err != nil {
-		return err
 	}
 	stripped, tail := stripMatching(q)
 	var buf [128]byte
@@ -220,18 +207,13 @@ func screenBinOp(query string, n *queryplan.BinOp) error {
 	if at < 0 || tok != translate.BinaryOperatorToken(n.Op) {
 		return errBinOperatorSpell
 	}
-	// The modifier follows the operator: the blank the translator leaves in its place is the operator's own.
-	if boolAt >= 0 && boolAt != at+len(tok)-1 {
-		return errBinSpelling
-	}
-	s, _ := withoutOperands(n)
-	for i, x := range [2]queryplan.Node{s.L, s.R} {
+	for i, x := range [2]queryplan.Node{n.L, n.R} {
 		text := strings.TrimSpace(stripped[:at])
 		if i == 1 {
 			text = strings.TrimSpace(stripped[at+len(tok):])
 		}
-		if sc, ok := x.(*queryplan.Scalar); ok {
-			if text != binNumber(sc.V) {
+		if s, ok := x.(*queryplan.Scalar); ok {
+			if text != binNumber(s.V) {
 				return errBinNumberSpelling
 			}
 			continue
@@ -297,6 +279,9 @@ func stripMatching(q string) (stripped, tail string) {
 		closeAt += k
 		if out.Len() == 0 {
 			out.Grow(len(q))
+		}
+		if t.Len() == 0 {
+			t.Grow(64)
 		}
 		out.WriteString(q[last:i])
 		t.WriteString(physical.MatchingPrefix)

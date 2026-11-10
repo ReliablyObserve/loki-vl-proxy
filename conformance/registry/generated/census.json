@@ -1582,7 +1582,7 @@
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_nested_grid_test.go | architecture-syntax-package-layering",
-    "internal/queryplan/lower/binop_more_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/binop_alloc_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/binop_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",

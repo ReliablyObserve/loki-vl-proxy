@@ -26,8 +26,6 @@ func TestPlanDelegatesEveryConstruct(t *testing.T) {
 		"Rank grouping":                                        `topk by (app) (3, rate({app="a"}[5m]))`,
 		"Rank operand unwrap":                                  `sort(sum_over_time({app="a"} | unwrap n [5m]))`,
 		"BinOp set operator":                                   `sum(rate({app="a"}[5m])) and sum(rate({app="b"}[5m]))`,
-		"BinOp bool stages":                                    `rate({app="a"} | json | status >= 500 [5m]) > bool 1`,
-		"BinOp operand without stages":                         `sum without (pod) (count_over_time({app="a"} | line_format "x" [5m])) / 2`,
 		"LabelReplace operand Rank":                            `label_replace(topk(3, rate({app="a"}[5m])), "b", "$1", "app", "(.*)")`,
 		"VectorLit":                                            `vector(1)`,
 		"Scalar":                                               `1`,

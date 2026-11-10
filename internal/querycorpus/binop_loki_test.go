@@ -20,8 +20,8 @@ import (
 )
 
 // TestBinOpLoweringMatchesLoki holds what the lowering writes for a binary operation and for label_replace calls to
-// Loki's own syntax tree, on every grid row the lowering writes natively: the operator, the bool modifier (the
-// plan's: the operators carry none, as the legacy encoding writes), the vector matching (on or ignoring and its labels, the cardinality
+// Loki's own syntax tree, on every grid row the lowering writes natively: the operator, no bool modifier (the
+// lowering leaves bool to the translator), the vector matching (on or ignoring and its labels, the cardinality
 // group_left and group_right give and their include labels; Loki's tree holds a one-to-one matching with no labels
 // when the query has none, and ignoring() reads the same), each operand a number with Loki's value or a query of a
 // range or vector aggregation, and the label_replace arguments, innermost first. Rows Loki's parser rejects (a dotted
@@ -39,9 +39,8 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 		t.Fatal(err)
 	}
 	type row struct {
-		q      string
-		op     physical.Op
-		isBool bool
+		q  string
+		op physical.Op
 	}
 	var rows []row
 	in := filepath.Join(work, "facts-in.jsonl")
@@ -52,7 +51,7 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 	w := bufio.NewWriter(f)
 	identity := func(s string) string { return s }
 	prof := lower.Profile{Caps: logsql.CapabilitiesFor("v1.53.0"), Label: identity}
-	for _, q := range append(binOpGrid(), binOpMoreGrid()...) {
+	for _, q := range binOpGrid() {
 		expr, err := logql.Parse(logql.CanonicalizeLogRanges(q))
 		if err != nil {
 			continue
@@ -68,7 +67,7 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 		}
 		b, _ := json.Marshal(map[string]string{"id": strconv.Itoa(len(rows)), "q": q})
 		w.Write(append(b, '\n'))
-		rows = append(rows, row{q, op, planBool(p.Root)})
+		rows = append(rows, row{q, op})
 	}
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)
@@ -112,11 +111,10 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 		i, _ := strconv.Atoi(lf.ID)
 		r := rows[i]
 		if !lf.Accept {
-			// Loki rejects a dotted grouping label, a trailing comma in a label list (`without (pod,)`) and an invalid label_replace regexp when it parses; the proxy accepts the first two and
-			// answers the third with Loki's error when it reads the markers, as the translator does: not part of
-			// what is compared here.
-			if !strings.Contains(lf.Error, "unexpected .") && !strings.Contains(lf.Error, "unexpected ), expecting IDENTIFIER") &&
-				!strings.Contains(lf.Error, "invalid regex in label_replace") {
+			// Loki rejects a dotted grouping label and an invalid label_replace regexp when it parses; the proxy
+			// accepts the first and answers the second with Loki's error when it reads the markers, as the
+			// translator does: not part of what is compared here.
+			if !strings.Contains(lf.Error, "unexpected .") && !strings.Contains(lf.Error, "invalid regex in label_replace") {
 				t.Errorf("%s: lowered, Loki rejects it: %s", r.q, lf.Error)
 			}
 			rejected++
@@ -137,11 +135,6 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 		} else if len(lf.LabelReplace) > 0 {
 			t.Errorf("%s: Loki reads label_replace %+v, the lowering none", r.q, lf.LabelReplace)
 		}
-		// A without clause of an operand is a fold of the binary the translator writes; Loki's tree holds the clause
-		// on the operand, so only the binary is compared.
-		if fold, ok := op.(physical.Fold); ok {
-			op = fold.In
-		}
 		bin, ok := op.(physical.Binary)
 		if !ok {
 			if lf.Binary != nil {
@@ -155,8 +148,8 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 			t.Errorf("%s: the lowering writes a binary operation, Loki reads none", r.q)
 			continue
 		}
-		if bin.Op != lb.Op || bin.Bool || r.isBool != lb.ReturnBool {
-			t.Errorf("%s: operator %q bool %v (the plan's %v), Loki's %q bool %v", r.q, bin.Op, bin.Bool, r.isBool, lb.Op, lb.ReturnBool)
+		if bin.Op != lb.Op || bin.Bool || lb.ReturnBool {
+			t.Errorf("%s: operator %q bool %v, Loki's %q bool %v", r.q, bin.Op, bin.Bool, lb.Op, lb.ReturnBool)
 		}
 		m := bin.Match
 		if m == nil {
@@ -198,19 +191,5 @@ func TestBinOpLoweringMatchesLoki(t *testing.T) {
 	t.Logf("%d lowered rows compared with Loki's tree, %d binary operations; %d rows Loki's parser rejects", compared, binaries, rejected)
 	if binaries == 0 {
 		t.Fatal("no binary operation compared")
-	}
-}
-
-// planBool is the bool modifier of the binary operation at the top of the plan, under any label_replace calls.
-func planBool(n queryplan.Node) bool {
-	for {
-		switch v := n.(type) {
-		case *queryplan.LabelReplace:
-			n = v.In
-		case *queryplan.BinOp:
-			return v.Bool
-		default:
-			return false
-		}
 	}
 }
