@@ -2669,7 +2669,7 @@ func tryTranslateBinaryMetricExpr(logql string, labelFn LabelTranslateFunc) (str
 
 	// Find a binary operator at the top level (not inside parens)
 	// Includes: /, *, +, -, %, ^, ==, !=, >, <, >=, <=
-	ops := []string{" / ", " * ", " + ", " - ", " % ", " ^ ", " == ", " != ", " >= ", " <= ", " > ", " < "}
+	ops := translate.BinaryOperatorTokens[:]
 	depth := 0
 	for i, ch := range logql {
 		switch ch {
@@ -2691,7 +2691,7 @@ func tryTranslateBinaryMetricExpr(logql string, labelFn LabelTranslateFunc) (str
 
 					vmSuffix := ""
 					if len(vectorMatchMeta) > 0 {
-						vmSuffix = "@@@" + strings.Join(vectorMatchMeta, "@@@")
+						vmSuffix = physical.MatchingPrefix + strings.Join(vectorMatchMeta, physical.MatchingPrefix)
 					}
 
 					if !leftOK || !rightOK {
@@ -2776,10 +2776,10 @@ func ParseBinaryMetricExprFull(s string) (op, left, right string, vm *VectorMatc
 
 	// Split off vector matching metadata at @@@
 	vm = &VectorMatchInfo{}
-	if atIdx := strings.Index(body, "@@@"); atIdx >= 0 {
-		metaPart := body[atIdx+3:]
+	if atIdx := strings.Index(body, physical.MatchingPrefix); atIdx >= 0 {
+		metaPart := body[atIdx+len(physical.MatchingPrefix):]
 		body = body[:atIdx]
-		for _, segment := range strings.Split(metaPart, "@@@") {
+		for _, segment := range strings.Split(metaPart, physical.MatchingPrefix) {
 			parts := strings.SplitN(segment, ":", 2)
 			if len(parts) != 2 {
 				continue

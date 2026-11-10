@@ -65,6 +65,10 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 		return rangeAgg(n, prof)
 	case *queryplan.VectorAgg:
 		return vectorAgg(n, prof)
+	case *queryplan.BinOp:
+		return binOp(n, prof)
+	case *queryplan.LabelReplace:
+		return labelReplace(n, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }

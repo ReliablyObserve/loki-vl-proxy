@@ -15,17 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translation profile, alone and under `sum`, `count`, `min`, `max` and `avg`
   with a `by` clause (a `without` clause stays with the string translator
   behind a parser), for the functions that read rows and the functions over an
-  unwrapped label. The requests sent to VictoriaLogs are
-  those of the string translator, byte for byte: a drop deletes every name it
-  lists and a keep of `detected_level` without `level` deletes `level` after
-  its fields. A rate, and `count`, `min`, `max` and `avg`, behind a `keep`
-  that is last (or followed only by filters, `line_format` and `decolorize`)
-  are still written by the string translator, which groups them by the labels
-  the keep leaves, and so is a query with quoted text the translator reads as
-  a parser, an unwrap, a `without` clause or a boolean modifier, wherever the
-  client wrote it (a drop, keep, label filter, parser argument or format
-  template included). The lowering takes about 60% less time than the
-  translation and allocates about 30% less memory on these queries.
+  unwrapped label. The requests sent to VictoriaLogs are those of the string
+  translator, byte for byte: a drop deletes every name it lists and a keep of
+  `detected_level` without `level` deletes `level` after its fields. A rate,
+  and `count`, `min`, `max` and `avg`, behind a `keep` that is last (or
+  followed only by filters, `line_format` and `decolorize`) are still written
+  by the string translator, which groups them by the labels the keep leaves,
+  and so is a query with quoted text the translator reads as a parser, an
+  unwrap, a `without` clause or a boolean modifier, wherever the client wrote
+  it (a drop, keep, label filter, parser argument or format template
+  included). The lowering takes about 60% less time than the translation and
+  allocates about 30% less memory on these queries.
+- The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
+  the comparisons) between range aggregations, vector aggregations without a
+  `without` clause and numbers, with `on`, `ignoring`, `group_left` and
+  `group_right`, and `label_replace` calls (nested ones too) around range
+  aggregations, vector aggregations and those binary operations, for every
+  translation profile. The text is the string translator's, byte for byte, so
+  the requests sent to VictoriaLogs and the proxy's evaluation of the
+  operation do not change, and the lowering takes well under half the time of
+  the translation and allocates less. `and`, `or`, `unless`, `bool`, nested
+  binary operations, `vector()`, rankings and operands with a `without`
+  clause are still written by the string translator, and so are spellings it
+  reads unlike Loki (an operator without blanks around it, a number such as
+  `1e3`, a parenthesized operand, a quoted string holding a parenthesis or
+  `bool`) and a `label_replace` around a `service_name` grouping.
 - The query plan lowers range and vector aggregations over a log query with
   a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
   filters behind the parser) to VictoriaLogs natively for every translation
@@ -57,6 +71,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are still written by the string translator. The lowering of `rate` and of
   `count`, `min`, `max` and `avg` also leaves a log query that holds a quoted
   `| json` or `| unwrap` to the translator, which reads those words as syntax.
+
+## [2.123.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers `sum`, `count`, `min`, `max` and `avg`, with or
   without a `by` or `without` clause, over `count_over_time`,
   `bytes_over_time`, `absent_over_time`, `rate` and `bytes_rate` of a log query
