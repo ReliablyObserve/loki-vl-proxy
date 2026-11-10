@@ -702,7 +702,7 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 
 // StoredLineField is the field TranslateLogQueryKeepingLine copies the
 // stored line into before the query's first line_format.
-const StoredLineField = "_lvp_line"
+const StoredLineField = translate.StoredLineField
 
 // TranslateLogQueryKeepingLine translates a log query (no metric wrapper)
 // like TranslateLogQLWithCapabilities, and has VictoriaLogs copy the stored
@@ -1410,13 +1410,7 @@ func isNoopPatternExpression(expr string) bool {
 			expr = expr[1 : len(expr)-1]
 		}
 	}
-	expr = strings.TrimSpace(expr)
-	switch expr {
-	case "(.*)", ".*", "^.*$", "(?s).*", "(?s:.*)":
-		return true
-	default:
-		return false
-	}
+	return translate.NoopPattern(expr)
 }
 
 // translateLabelFilter handles label comparison filters.
@@ -1838,7 +1832,7 @@ func convertGoTemplate(tmpl string) string {
 	if unquoted, err := strconv.Unquote(strings.TrimSpace(tmpl)); err == nil {
 		tmpl = unquoted
 	}
-	result := goTemplateRE.ReplaceAllString(tmpl, "<$1>")
+	result := translate.GoTemplatePlaceholders(tmpl)
 	return strconv.Quote(result)
 }
 
@@ -2547,7 +2541,6 @@ var rangeByClauseRE = regexp.MustCompile(`^by\s*\(([^)]*)\)`)
 var (
 	boolModifierRE  = regexp.MustCompile(`\s+bool\s+`)
 	withoutMarkerRE = regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
-	goTemplateRE    = regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
 	vectorMatchRE   = regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
 	aggByBeforeRE   = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
 	aggFuncRE       = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|count_values)\s*\(`)
