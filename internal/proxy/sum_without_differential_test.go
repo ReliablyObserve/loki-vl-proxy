@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // This file pins `<op> without (pod) (<range function>)` to Loki's answer over
@@ -37,20 +38,20 @@ import (
 
 // lokiWithout is the reference: timestamp -> stream labels without pod ->
 // Loki's value projected onto them.
-func lokiWithout(rows []emuRow, fn, op string, window int64, times []int64) map[int64]map[string]float64 {
-	return lokiWithoutIdentity(rows, fn, op, window, times, func(row emuRow) string {
-		parsed := make([]string, 0, len(row.labels))
-		for k, v := range row.labels {
+func lokiWithout(rows []vlemu.Row, fn, op string, window int64, times []int64) map[int64]map[string]float64 {
+	return lokiWithoutIdentity(rows, fn, op, window, times, func(row vlemu.Row) string {
+		parsed := make([]string, 0, len(row.Labels))
+		for k, v := range row.Labels {
 			parsed = append(parsed, k+"="+v)
 		}
 		sort.Strings(parsed)
-		return row.stream + "|" + strings.Join(parsed, ",")
-	}, func(row emuRow) string { return withoutPodKey(row.stream) })
+		return row.Stream + "|" + strings.Join(parsed, ",")
+	}, func(row vlemu.Row) string { return withoutPodKey(row.Stream) })
 }
 
 // lokiWithoutIdentity is lokiWithout for a series identity and a result group
 // the caller names for a row.
-func lokiWithoutIdentity(rows []emuRow, fn, op string, window int64, times []int64, identity, group func(emuRow) string) map[int64]map[string]float64 {
+func lokiWithoutIdentity(rows []vlemu.Row, fn, op string, window int64, times []int64, identity, group func(vlemu.Row) string) map[int64]map[string]float64 {
 	out := map[int64]map[string]float64{}
 	for _, t := range times {
 		type series struct {
@@ -59,14 +60,14 @@ func lokiWithoutIdentity(rows []emuRow, fn, op string, window int64, times []int
 		}
 		perSeries := map[string]*series{}
 		for _, row := range rows {
-			if row.ts <= t-window || row.ts > t {
+			if row.TS <= t-window || row.TS > t {
 				continue
 			}
 			key := identity(row)
 			if perSeries[key] == nil {
 				perSeries[key] = &series{group: group(row)}
 			}
-			perSeries[key].values = append(perSeries[key].values, row.value)
+			perSeries[key].values = append(perSeries[key].values, row.Value)
 		}
 		if len(perSeries) == 0 {
 			continue
@@ -129,7 +130,7 @@ func lokiWithoutIdentity(rows []emuRow, fn, op string, window int64, times []int
 // withoutPodKey is the label set of a stream selector without pod, as a key.
 func withoutPodKey(stream string) string {
 	var parts []string
-	for _, m := range emuStreamLabelRE.FindAllStringSubmatch(stream, -1) {
+	for _, m := range vlemu.StreamLabelRE.FindAllStringSubmatch(stream, -1) {
 		if m[1] != "pod" {
 			parts = append(parts, m[1]+"="+m[2])
 		}
@@ -160,12 +161,12 @@ func generateWithoutScenario(rnd *rand.Rand, fn, op, parser string, instant bool
 	// Two labels survive `without (pod)` (app, ns), and two pods share each.
 	streams := []string{`{app="uw",ns="x",pod="a"}`, `{app="uw",ns="x",pod="b"}`, `{app="uw",ns="y",pod="a"}`, `{app="uw",ns="y",pod="c"}`}
 	for j := range s.rows {
-		s.rows[j].stream = streams[rnd.Intn(len(streams))]
-		s.rows[j].labels = nil
-		s.rows[j].msg = ""
+		s.rows[j].Stream = streams[rnd.Intn(len(streams))]
+		s.rows[j].Labels = nil
+		s.rows[j].Msg = ""
 		if parser != "" {
-			s.rows[j].labels = map[string]string{"id": strconv.Itoa(j)}
-			s.rows[j].msg = fmt.Sprintf("amount=%v id=%d", s.rows[j].value, j)
+			s.rows[j].Labels = map[string]string{"id": strconv.Itoa(j)}
+			s.rows[j].Msg = fmt.Sprintf("amount=%v id=%d", s.rows[j].Value, j)
 		}
 	}
 	return s
@@ -175,19 +176,19 @@ func generateWithoutScenario(rnd *rand.Rand, fn, op, parser string, instant bool
 // emulated VictoriaLogs and returns timestamp -> stream labels without pod ->
 // value, failing on a series that keeps pod or two series with the same stream
 // labels.
-func runWithoutScenario(t *testing.T, emu *vlEmulator, s withoutScenario) map[int64]map[string]float64 {
+func runWithoutScenario(t *testing.T, emu *vlemu.Emulator, s withoutScenario) map[int64]map[string]float64 {
 	return runWithoutScenarioQ(t, emu, s, s.query())
 }
 
-func runWithoutScenarioQ(t *testing.T, emu *vlEmulator, s withoutScenario, query string) map[int64]map[string]float64 {
+func runWithoutScenarioQ(t *testing.T, emu *vlemu.Emulator, s withoutScenario, query string) map[int64]map[string]float64 {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -343,7 +344,7 @@ func TestSumWithoutDifferential(t *testing.T) {
 					rnd := rand.New(rand.NewSource(int64(len(name)) * 7907))
 					for i := 0; i < 12; i++ {
 						s := generateWithoutScenario(rnd, c.fn, c.op, c.parser, instant)
-						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+						emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 						got := runWithoutScenario(t, emu, s)
 						want := lokiWithout(s.rows, c.fn, c.op, int64(s.window), s.times())
 						mode := compareValues
@@ -355,7 +356,7 @@ func TestSumWithoutDifferential(t *testing.T) {
 							mode = compareSeries
 						}
 						compareWithout(t, fmt.Sprintf("%s #%d", name, i), s, got, want, mode)
-						if rawRows := emu.endpointCalls("/select/logsql/query"); len(rawRows) > 0 && version != "v1.40.0" {
+						if rawRows := emu.EndpointCalls("/select/logsql/query"); len(rawRows) > 0 && version != "v1.40.0" {
 							t.Fatalf("%s #%d: the metric read raw rows: %s", name, i, rawRows[0])
 						}
 					}
@@ -377,20 +378,20 @@ func TestSumWithoutDifferential(t *testing.T) {
 // conformance: semantics/unwrap-sum-without-collapses, metric-series-identity, limits/series-limit-error, series-limits-and-partial-results, limits/drilldown-partial-with-warning
 func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 40; i++ {
 		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
-		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf(`{"amount":%d}`, i+1)})
+		rows = append(rows, vlemu.Row{TS: base - int64(i)*5e9 - 3e8, Stream: stream, Value: float64(i + 1), Msg: fmt.Sprintf(`{"amount":%d}`, i+1)})
 	}
-	logfmtRows := make([]emuRow, len(rows))
+	logfmtRows := make([]vlemu.Row, len(rows))
 	for i, row := range rows {
-		row.msg = fmt.Sprintf("amount=%v", row.value)
+		row.Msg = fmt.Sprintf("amount=%v", row.Value)
 		logfmtRows[i] = row
 	}
-	run := func(t *testing.T, rows []emuRow, query string, instant bool, seriesCap int, drilldown bool, orgID ...string) (int, string, int) {
+	run := func(t *testing.T, rows []vlemu.Row, query string, instant bool, seriesCap int, drilldown bool, orgID ...string) (int, string, int) {
 		t.Helper()
-		emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
-		backend := httptest.NewServer(emu.handler())
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
+		backend := httptest.NewServer(emu.Handler())
 		defer backend.Close()
 		tenants := map[string]TenantMapping{"t1": {AccountID: "1", ProjectID: "0"}, "t2": {AccountID: "2", ProjectID: "0"}}
 		p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: seriesCap, TenantMap: tenants})
@@ -437,7 +438,7 @@ func TestSumWithoutSeriesLimitOnFoldedAnswer(t *testing.T) {
 	const warning = "maximum number of series (1) reached for a single query; returning partial results"
 	for _, tc := range []struct {
 		query string
-		rows  []emuRow
+		rows  []vlemu.Row
 	}{
 		{`sum without (pod) (max_over_time({app="uw"} | unwrap amount [5m]))`, logfmtRows},
 		{`sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`, logfmtRows},
@@ -642,7 +643,7 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 							s := generateWithoutScenario(rnd, in.fn, in.op, "", instant)
 							// A value per pod that differs from every other, so the operators differ.
 							for j := range s.rows {
-								s.rows[j].value = float64(1+j%7) * 1.5
+								s.rows[j].Value = float64(1+j%7) * 1.5
 							}
 							ref := lokiWithout(s.rows, in.fn, in.op, int64(s.window), s.times())
 							// A threshold between the groups' values: the lowest drops.
@@ -661,7 +662,7 @@ func TestWithoutWrappedByAnOperator(t *testing.T) {
 								threshold = lo - 1
 							}
 							query := w.wrap(s.query(), threshold)
-							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 							got := runWithoutScenarioQ(t, emu, s, query)
 							keep := w.keep
 							if instant && w.keepInstant != nil {
@@ -725,20 +726,20 @@ func TestWithoutOffset(t *testing.T) {
 						const offset = 5 * time.Minute
 						s := generateWithoutScenario(rnd, c.fn, c.op, "", instant)
 						for j := range s.rows {
-							s.rows[j].value = float64(1+j%7) * 1.5
+							s.rows[j].Value = float64(1+j%7) * 1.5
 						}
 						// Loki's window at t is (t-o-w, t-o]: the same rows, o earlier, are
 						// what an evaluation without an offset reads at t.
 						unshifted := slices.Clone(s.rows)
 						for j := range s.rows {
-							s.rows[j].ts -= int64(offset)
+							s.rows[j].TS -= int64(offset)
 						}
 						window := uwWindowText(s.window)
 						query := fmt.Sprintf(`%s without (pod) (%s({app="uw"} | unwrap amount [%s] offset %s))`, c.op, c.fn, window, uwWindowText(offset))
 						if c.fn == "count_rate" {
 							query = fmt.Sprintf(`%s without (pod) (rate({app="uw"} [%s] offset %s))`, c.op, window, uwWindowText(offset))
 						}
-						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+						emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 						got := runWithoutScenarioQ(t, emu, s, query)
 						// Loki's window at t-o holds the rows the rows' shift put there.
 						want := lokiWithout(unshifted, c.fn, c.op, int64(s.window), s.times())
@@ -774,7 +775,7 @@ func TestWithoutBinaryOperands(t *testing.T) {
 				for i := 0; i < 8; i++ {
 					s := generateWithoutScenario(rnd, "rate", "sum", "", instant)
 					for j := range s.rows {
-						s.rows[j].value = float64(1+j%7) * 1.5
+						s.rows[j].Value = float64(1+j%7) * 1.5
 					}
 					if !instant {
 						// A binary range query joins its operands on a step-aligned axis.
@@ -782,7 +783,7 @@ func TestWithoutBinaryOperands(t *testing.T) {
 					}
 					window := uwWindowText(s.window)
 					query := fmt.Sprintf(`sum without (pod) (rate({app="uw"} | unwrap amount [%s])) / sum without (pod) (rate({app="uw"} [%s]))`, window, window)
-					emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+					emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 					got := runWithoutScenarioQ(t, emu, s, query)
 					num := lokiWithout(s.rows, "rate", "sum", int64(s.window), s.times())
 					den := lokiWithout(s.rows, "count_rate", "sum", int64(s.window), s.times())
@@ -817,10 +818,10 @@ func TestWithoutBinaryOperands(t *testing.T) {
 // conformance: semantics/unwrap-sum-without-collapses, limits/series-limit-error
 func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 40; i++ {
 		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
-		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf("amount=%d", i+1)})
+		rows = append(rows, vlemu.Row{TS: base - int64(i)*5e9 - 3e8, Stream: stream, Value: float64(i + 1), Msg: fmt.Sprintf("amount=%d", i+1)})
 	}
 	for _, query := range []string{
 		`sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`,
@@ -832,8 +833,8 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", query, instant), func(t *testing.T) {
-				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
-				backend := httptest.NewServer(emu.handler())
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
+				backend := httptest.NewServer(emu.Handler())
 				defer backend.Close()
 				p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: 2, RangeMetricRowLimit: 3})
 				if err != nil {
@@ -879,10 +880,10 @@ func TestWithoutFoldRowBudgetIsNotASeriesLimit(t *testing.T) {
 // conformance: semantics/unwrap-sum-without-collapses, limits/series-limit-error
 func TestWithoutFoldRowBudgetError(t *testing.T) {
 	base := int64(1_800_000_000) * 1e9
-	var rows []emuRow
+	var rows []vlemu.Row
 	for i := 0; i < 40; i++ {
 		stream := fmt.Sprintf(`{app="uw",ns=%q,pod=%q}`, []string{"x", "y"}[(i/4)%2], []string{"a", "b", "c", "d"}[i%4])
-		rows = append(rows, emuRow{ts: base - int64(i)*5e9 - 3e8, stream: stream, value: float64(i + 1), msg: fmt.Sprintf("amount=%d", i+1)})
+		rows = append(rows, vlemu.Row{TS: base - int64(i)*5e9 - 3e8, Stream: stream, Value: float64(i + 1), Msg: fmt.Sprintf("amount=%d", i+1)})
 	}
 	const query = `sum without (pod) (max_over_time({app="uw"} | logfmt | unwrap amount [5m]))`
 	for _, tc := range []struct {
@@ -896,8 +897,8 @@ func TestWithoutFoldRowBudgetError(t *testing.T) {
 	} {
 		for _, instant := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/instant=%v", tc.name, instant), func(t *testing.T) {
-				emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.52.0"}
-				backend := httptest.NewServer(emu.handler())
+				emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.52.0"}
+				backend := httptest.NewServer(emu.Handler())
 				defer backend.Close()
 				p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, MaxStatsQuerySeries: tc.series, RangeMetricRowLimit: tc.row})
 				if err != nil {

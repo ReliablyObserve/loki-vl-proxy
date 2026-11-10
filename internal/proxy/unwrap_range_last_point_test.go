@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Loki evaluates a range query at start, start+step, ... up to and including
@@ -23,9 +24,9 @@ import (
 
 // unwrapRangeResult runs a query_range through the real handler against the
 // emulated VictoriaLogs and returns, per pod, timestamp -> value.
-func unwrapRangeResult(t *testing.T, emu *vlEmulator, query string, startSec, endSec, stepSec int64) map[string]map[int64]float64 {
+func unwrapRangeResult(t *testing.T, emu *vlemu.Emulator, query string, startSec, endSec, stepSec int64) map[string]map[int64]float64 {
 	t.Helper()
-	backend := httptest.NewServer(emu.handler())
+	backend := httptest.NewServer(emu.Handler())
 	defer backend.Close()
 	c := cache.New(60*time.Second, 1000)
 	defer c.Close()
@@ -34,7 +35,7 @@ func unwrapRangeResult(t *testing.T, emu *vlEmulator, query string, startSec, en
 		t.Fatal(err)
 	}
 	defer func() { _ = p.Shutdown(context.Background()) }()
-	if emu.version != "" {
+	if emu.Version != "" {
 		if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -111,15 +112,15 @@ func TestUnwrapOverTimeRangeEmitsEndSample(t *testing.T) {
 					t.Run(name, func(t *testing.T) {
 						startSec, endSec, stepSec := base, base+shape.lengthSec, int64(shape.step/time.Second)
 						rnd := rand.New(rand.NewSource(int64(len(name)) * 7919))
-						var rows []emuRow
+						var rows []vlemu.Row
 						for _, pod := range []string{"a", "b"} {
 							// Lines every few seconds from before the first window to
 							// just before end; none at or after it.
 							for ts := startSec*1e9 - int64(shape.window) - int64(shape.step); ts < endSec*1e9; ts += (5 + int64(rnd.Intn(5))) * 1e9 {
-								rows = append(rows, emuRow{ts: ts + 5e8, stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), value: float64(1 + rnd.Intn(9))})
+								rows = append(rows, vlemu.Row{TS: ts + 5e8, Stream: fmt.Sprintf(`{app="uw",pod=%q}`, pod), Value: float64(1 + rnd.Intn(9))})
 							}
 						}
-						emu := &vlEmulator{t: t, rows: rows, field: "amount", version: version}
+						emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: version}
 						query := fmt.Sprintf(`sum by (pod) (%s({app="uw"} | %s | unwrap amount | __error__="" [%s]))`, fn, parser, uwWindowText(shape.window))
 						got := unwrapRangeResult(t, emu, query, startSec, endSec, stepSec)
 						want := evaluationTimes(startSec, endSec, stepSec)
@@ -168,15 +169,15 @@ func TestUnwrapOverTimeTumblingMatchesLoki(t *testing.T) {
 						s := generateUnwrapScenario(rnd, fn, parser, false)
 						s.window = s.step
 						for j := range s.rows {
-							s.rows[j].labels = nil
+							s.rows[j].Labels = nil
 						}
-						emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+						emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 						query := fmt.Sprintf(`sum by (pod) (%s({app="uw"} | %s | unwrap amount | __error__="" [%s]))`, fn, parser, uwWindowText(s.window))
 						got := unwrapRangeResult(t, emu, query, s.start/1e9, s.end/1e9, int64(s.step/time.Second))
 						for _, pod := range []string{"a", "b", "c"} {
-							var rows []emuRow
+							var rows []vlemu.Row
 							for _, row := range s.rows {
-								if row.stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
+								if row.Stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
 									rows = append(rows, row)
 								}
 							}
@@ -230,23 +231,23 @@ func TestUnwrapOverTimeShortRangeMatchesLoki(t *testing.T) {
 							// Lines spread over the whole range, some on window edges.
 							lo, hi := s.start-int64(s.step), s.end+5e9
 							for j := range s.rows {
-								s.rows[j].labels = nil
-								s.rows[j].ts = lo + rnd.Int63n(hi-lo)
+								s.rows[j].Labels = nil
+								s.rows[j].TS = lo + rnd.Int63n(hi-lo)
 								if rnd.Intn(4) == 0 {
 									edge := s.start + int64(rnd.Intn(8))*int64(s.step)
 									if rnd.Intn(2) == 0 {
 										edge -= int64(s.window)
 									}
-									s.rows[j].ts = edge + int64(rnd.Intn(3)-1)
+									s.rows[j].TS = edge + int64(rnd.Intn(3)-1)
 								}
 							}
-							emu := &vlEmulator{t: t, rows: s.rows, field: "amount", version: version}
+							emu := &vlemu.Emulator{T: t, Rows: s.rows, Field: "amount", Version: version}
 							query := fmt.Sprintf(form.query, fn, parser, uwWindowText(s.window))
 							got := unwrapRangeResult(t, emu, query, s.start/1e9, s.end/1e9, int64(s.step/time.Second))
 							for _, pod := range []string{"a", "b", "c"} {
-								var rows []emuRow
+								var rows []vlemu.Row
 								for _, row := range s.rows {
-									if row.stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
+									if row.Stream == fmt.Sprintf(`{app="uw",pod=%q}`, pod) {
 										rows = append(rows, row)
 									}
 								}

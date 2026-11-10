@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // matrixFoldCase is one generated bucket matrix and the vector aggregations
@@ -263,7 +264,7 @@ func TestSeriesLevelAggregationStaysWithinResponseBudget(t *testing.T) {
 					// The same request without the fold in the builder.
 					matrixFoldOff.Store(true)
 					defer matrixFoldOff.Store(false)
-					emu := &vlEmulator{t: t, rows: s.rows, version: s.version, field: "amount"}
+					emu := &vlemu.Emulator{T: t, Rows: s.rows, Version: s.version, Field: "amount"}
 					p, closeBackend := newVectorAggProxyBudget(t, emu, budget)
 					target := fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&step=%d", url.QueryEscape(s.query()), s.start/1e9, s.end/1e9, int64(s.step/time.Second))
 					res := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "0"})
@@ -301,7 +302,7 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 	)
 	end := binaryAggregationAt
 	start := end - int64(4*time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for svc := 0; svc < 4; svc++ {
 		for pod := 0; pod < 30; pod++ {
 			stream := fmt.Sprintf(`{env="production",service_name="s%d",pod="p%d"}`, svc, pod)
@@ -311,7 +312,7 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 				if (at-start)%int64(3*time.Hour) < int64(30*time.Minute) && pod%2 == 0 {
 					continue
 				}
-				rows = append(rows, emuRow{ts: at, stream: stream, value: 1})
+				rows = append(rows, vlemu.Row{TS: at, Stream: stream, Value: 1})
 			}
 		}
 	}
@@ -319,12 +320,12 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 	for ts := start; ts <= end; ts += int64(step) {
 		active := map[string]map[string]bool{}
 		for _, row := range rows {
-			if row.ts > ts-int64(window) && row.ts <= ts {
-				svc := refStreamLabels(row.stream)["service_name"]
+			if row.TS > ts-int64(window) && row.TS <= ts {
+				svc := refStreamLabels(row.Stream)["service_name"]
 				if active[svc] == nil {
 					active[svc] = map[string]bool{}
 				}
-				active[svc][row.stream] = true
+				active[svc][row.Stream] = true
 			}
 		}
 		for svc, streams := range active {
@@ -337,12 +338,12 @@ func TestAggregationOverBinaryRateCountRatioSlidingWindowWithinBudget(t *testing
 	}
 	query := `sum by (service_name) (rate({env="production"}[5m]) / count_over_time({env="production"}[5m]))`
 	configure := func(cfg *Config) { cfg.ExecutionLimits.BackendMaxBufferedResponseBytes = budget }
-	got, _ := binaryAggregationAnswerFor(t, &vlEmulator{t: t, rows: rows, version: "v1.52.0"}, "0", query, start, end, step, configure)
+	got, _ := binaryAggregationAnswerFor(t, &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}, "0", query, start, end, step, configure)
 	compareBinaryAggregation(t, query, got, want)
 
 	matrixFoldOff.Store(true)
 	defer matrixFoldOff.Store(false)
-	backend := httptest.NewServer((&vlEmulator{t: t, rows: rows, version: "v1.52.0"}).handler())
+	backend := httptest.NewServer((&vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}).Handler())
 	defer backend.Close()
 	p, err := New(Config{BackendURL: backend.URL, Cache: cache.New(60*time.Second, 1000), LogLevel: "error", BackendMinVersion: "v1.40.0", BackendVersionCheckTimeout: time.Second, ExecutionLimits: ExecutionLimitsConfig{BackendMaxBufferedResponseBytes: budget}})
 	if err != nil {
@@ -369,24 +370,24 @@ func TestSeriesLevelAggregationRepeatedAndMovedWindows(t *testing.T) {
 	)
 	end0 := time.Now().Add(-3 * time.Hour).Truncate(step).UnixNano()
 	first := end0 - int64(3*time.Hour)
-	var rows []emuRow
+	var rows []vlemu.Row
 	for svc := 0; svc < 3; svc++ {
 		for pod := 0; pod < 6; pod++ {
 			stream := fmt.Sprintf(`{env="production",service_name="s%d",pod="p%d"}`, svc, pod)
 			for at := first + int64(pod)*1e9; at <= end0+20*int64(step); at += int64(40+10*svc) * 1e9 {
-				rows = append(rows, emuRow{ts: at, stream: stream, value: 1})
+				rows = append(rows, vlemu.Row{TS: at, Stream: stream, Value: 1})
 			}
 		}
 	}
 	lines := func(ts int64) map[string]map[string]int { // service -> stream -> lines in (ts-window, ts]
 		out := map[string]map[string]int{}
 		for _, row := range rows {
-			if row.ts > ts-int64(window) && row.ts <= ts {
-				svc := refStreamLabels(row.stream)["service_name"]
+			if row.TS > ts-int64(window) && row.TS <= ts {
+				svc := refStreamLabels(row.Stream)["service_name"]
 				if out[svc] == nil {
 					out[svc] = map[string]int{}
 				}
-				out[svc][row.stream]++
+				out[svc][row.Stream]++
 			}
 		}
 		return out
@@ -407,8 +408,8 @@ func TestSeriesLevelAggregationRepeatedAndMovedWindows(t *testing.T) {
 	}
 	for _, shape := range shapes {
 		t.Run(shape.query, func(t *testing.T) {
-			emu := &vlEmulator{t: t, rows: rows, version: "v1.52.0"}
-			backend := httptest.NewServer(emu.handler())
+			emu := &vlemu.Emulator{T: t, Rows: rows, Version: "v1.52.0"}
+			backend := httptest.NewServer(emu.Handler())
 			defer backend.Close()
 			c := cache.NewWithMaxBytes(time.Minute, 100000, 64<<20)
 			defer c.Close()
@@ -439,7 +440,7 @@ func TestSeriesLevelAggregationRepeatedAndMovedWindows(t *testing.T) {
 				compareBinaryAggregation(t, fmt.Sprintf("%s window moved %d steps", shape.query, move), got, want)
 			}
 			// The repeats and moved windows were served from the caches, in part.
-			if calls := len(emu.endpointCalls("/select/logsql/stats_query_range")); calls >= 7 {
+			if calls := len(emu.EndpointCalls("/select/logsql/stats_query_range")); calls >= 7 {
 				t.Fatalf("%d VictoriaLogs stats calls for 7 requests: no cache answered any of them", calls)
 			}
 		})

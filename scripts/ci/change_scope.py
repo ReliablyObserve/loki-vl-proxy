@@ -231,12 +231,14 @@ SHIPPED = (
     "alerting/**",
 )
 
-# Go files under the Go roots that are compiled into no binary: unit tests and
-# testdata (fuzz corpora, golden files). Nothing is embedded with go:embed,
+# Go files under the Go roots that are compiled into no binary: unit tests,
+# testdata (fuzz corpora, golden files) and internal/testutil (test-only
+# packages, imported from _test.go files). Nothing is embedded with go:embed,
 # so every other file below cmd/, internal/ and pkg/ ships.
 NOT_SHIPPED_GO = (
     "**_test.go",
     "**/testdata/**",
+    "internal/testutil/**",
 )
 GO_ROOTS = ("cmd/**", "internal/**", "pkg/**")
 

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 func TestQueryStepsTeeForcesJSONAndNoSniff(t *testing.T) {
@@ -111,8 +113,8 @@ func TestQueryRangeStepsBehindMiddleware(t *testing.T) {
 			s0 := time.Unix(1_700_001_000, 0).UTC()
 			rows := queryStepsRows(s0, 4*time.Hour, nil)
 			end := s0.Add(3 * time.Hour)
-			onSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
-			offSrv, _ := newExtentShim(t, (&vlEmulator{t: t, rows: rows, field: "amount", version: "v1.50.0"}).handler())
+			onSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
+			offSrv, _ := newExtentShim(t, (&vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.50.0"}).Handler())
 			on := newExtentTestProxy(t, onSrv.URL, true, 256<<20)
 			off := newExtentTestProxy(t, offSrv.URL, false, 256<<20)
 			windows := queryStepsWindows(end)[:4] // the first window and three refreshes

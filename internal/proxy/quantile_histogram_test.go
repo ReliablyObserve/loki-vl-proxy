@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -122,7 +123,7 @@ func TestQuantileWindowMergesBuckets(t *testing.T) {
 
 // conformance: semantics/unwrap-quantile-response-limit
 //
-// Differential: the real handler over VictoriaLogs' value counts (vlEmulator:
+// Differential: the real handler over VictoriaLogs' value counts (vlemu.Emulator:
 // stats_query_range buckets with the offset argument, stats_query for instant
 // queries) against a Loki reference over the generated rows: the window
 // (t-range, t], the series of the grouping, Loki's Quantile. Tumbling, sliding
@@ -152,11 +153,11 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 	}
 	// A row exactly on a window edge belongs to the window it ends.
 	rows = append(rows, row{ts: base.UnixNano(), pod: "p0", level: "info", value: 1000})
-	emu := &vlEmulator{t: t, field: "lat"}
+	emu := &vlemu.Emulator{T: t, Field: "lat"}
 	for _, r := range rows {
-		emu.rows = append(emu.rows, emuRow{ts: r.ts, stream: fmt.Sprintf(`{app="api",pod=%q,level=%q}`, r.pod, r.level), value: r.value})
+		emu.Rows = append(emu.Rows, vlemu.Row{TS: r.ts, Stream: fmt.Sprintf(`{app="api",pod=%q,level=%q}`, r.pod, r.level), Value: r.value})
 	}
-	srv := httptest.NewServer(emu.handler())
+	srv := httptest.NewServer(emu.Handler())
 	defer srv.Close()
 	p := newSlidingTestProxy(t, srv.URL)
 
@@ -193,7 +194,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 	}
 	for _, phi := range []float64{0, 0.5, 0.95, 0.99, 1} {
 		for grouping := range seriesOf {
-			rawBefore := len(emu.endpointCalls("/select/logsql/query"))
+			rawBefore := len(emu.EndpointCalls("/select/logsql/query"))
 			for _, shape := range []struct {
 				window, step time.Duration
 			}{
@@ -277,7 +278,7 @@ func TestQuantileHistogramDifferential(t *testing.T) {
 				}
 			}
 			// Grouped quantiles read value counts; per-stream ones the raw rows.
-			if readRaw := len(emu.endpointCalls("/select/logsql/query")) > rawBefore; readRaw != (grouping == "") {
+			if readRaw := len(emu.EndpointCalls("/select/logsql/query")) > rawBefore; readRaw != (grouping == "") {
 				t.Fatalf("phi=%v %q: read raw rows %v", phi, grouping, readRaw)
 			}
 		}
@@ -302,7 +303,7 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 		value      float64
 	}
 	var rows []row
-	emu := &vlEmulator{t: t, field: "lat"}
+	emu := &vlemu.Emulator{T: t, Field: "lat"}
 	for i := 0; i < 600; i++ {
 		r := row{
 			ts:    base.Add(-12*time.Minute + time.Duration(rng.Int63n(int64(24*time.Minute)))).UnixNano(),
@@ -311,9 +312,9 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 			value: float64(rng.Intn(50)),
 		}
 		rows = append(rows, r)
-		emu.rows = append(emu.rows, emuRow{ts: r.ts, stream: fmt.Sprintf(`{app="api",pod=%q,level=%q}`, r.pod, r.level), value: r.value})
+		emu.Rows = append(emu.Rows, vlemu.Row{TS: r.ts, Stream: fmt.Sprintf(`{app="api",pod=%q,level=%q}`, r.pod, r.level), Value: r.value})
 	}
-	srv := httptest.NewServer(emu.handler())
+	srv := httptest.NewServer(emu.Handler())
 	defer srv.Close()
 	p := newSlidingTestProxy(t, srv.URL)
 
@@ -358,7 +359,7 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 		{`sum without (pod) (%s)`, func(r row) string { return r.pod + r.level }, func(r row) string { return r.level }, "sum", func(m map[string]string) string { return m["level"] }},
 	} {
 		for _, pipeline := range []string{`{app="api"} | unwrap lat`, `{app="api"} | json | unwrap lat`} {
-			rawBefore := len(emu.endpointCalls("/select/logsql/query"))
+			rawBefore := len(emu.EndpointCalls("/select/logsql/query"))
 			reference := func(at time.Time, window time.Duration) map[string]float64 {
 				perSeries := map[string][]float64{}
 				groupOf := map[string]string{}
@@ -453,7 +454,7 @@ func TestQuantileHistogramOuterAggregationDifferential(t *testing.T) {
 				}
 			}
 			// Grouped quantiles read value counts; per-stream ones the raw rows.
-			if readRaw := len(emu.endpointCalls("/select/logsql/query")) > rawBefore; readRaw == strings.Contains(tc.query, "%s by (") {
+			if readRaw := len(emu.EndpointCalls("/select/logsql/query")) > rawBefore; readRaw == strings.Contains(tc.query, "%s by (") {
 				t.Fatalf("%s over %s: read raw rows %v", tc.query, pipeline, readRaw)
 			}
 		}

@@ -97,7 +97,9 @@ linters:
             - github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql
   exclusions:
     rules:
-      - path: _test\.go
+      # internal/testutil holds test-only packages (imported from _test.go
+      # files); they get the same exemptions as the tests they serve.
+      - path: (_test\.go|internal/testutil/)
         linters:
           - errcheck
           - gocyclo

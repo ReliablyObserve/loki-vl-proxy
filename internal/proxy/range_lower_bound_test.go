@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/testutil/vlemu"
 )
 
 // Loki's batchRangeVectorIterator.load (pkg/logql/range_vector.go:148-189, v3.7.7)
@@ -51,21 +53,21 @@ func TestLowerBoundIsExclusiveForEveryRangeFunction(t *testing.T) {
 // conformance: semantics/lower-bound-exclusive, window-bounds-and-step-alignment
 func TestRateCounterReadsLokiWindow(t *testing.T) {
 	const at = int64(1_800_000_000) * 1e9
-	rows := []emuRow{
-		{ts: at - 60e9, stream: `{app="uw",pod="a"}`, value: 100},
-		{ts: at - 40e9, stream: `{app="uw",pod="a"}`, value: 10},
-		{ts: at - 20e9, stream: `{app="uw",pod="a"}`, value: 20},
-		{ts: at, stream: `{app="uw",pod="a"}`, value: 50},
+	rows := []vlemu.Row{
+		{TS: at - 60e9, Stream: `{app="uw",pod="a"}`, Value: 100},
+		{TS: at - 40e9, Stream: `{app="uw",pod="a"}`, Value: 10},
+		{TS: at - 20e9, Stream: `{app="uw",pod="a"}`, Value: 20},
+		{TS: at, Stream: `{app="uw",pod="a"}`, Value: 50},
 	}
 	query := `sum by (pod) (rate_counter({app="uw"} | unwrap amount [1m]))`
 	for _, step := range []time.Duration{time.Minute, 0} {
-		emu := &vlEmulator{t: t, rows: rows, field: "amount", version: "v1.53.0"}
+		emu := &vlemu.Emulator{T: t, Rows: rows, Field: "amount", Version: "v1.53.0"}
 		c := owCase{shape: owShape{query: func(string) string { return query }}, step: step, start: at, end: at}
 		got := runOverTimeCase(t, emu, c, 0)
 		if v, ok := got["pod=a"][at]; !ok || math.Abs(v-40.0/60) > 1e-12 {
 			t.Fatalf("step %v: %v, want 0.666667 (the increase over (t-1m, t])", step, got)
 		}
-		if len(emu.endpointCalls("/select/logsql/query")) == 0 {
+		if len(emu.EndpointCalls("/select/logsql/query")) == 0 {
 			t.Fatalf("step %v: expected the raw-row evaluator", step)
 		}
 	}
