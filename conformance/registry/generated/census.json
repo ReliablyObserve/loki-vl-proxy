@@ -387,6 +387,9 @@
     "semantics/instant-result-type-missing | compare:observed",
     "semantics/instant-result-type-missing | gap:fixed",
     "semantics/instant-result-type-missing | query",
+    "semantics/ip-filter-ipv4-after-dot-run | compare:observed",
+    "semantics/ip-filter-ipv4-after-dot-run | gap:fixed",
+    "semantics/ip-filter-ipv4-after-dot-run | query",
     "semantics/ip-filter-json-stats-pushdown | compare:observed",
     "semantics/ip-filter-json-stats-pushdown | gap:fixed",
     "semantics/ip-filter-json-stats-pushdown | perf",
@@ -1548,6 +1551,8 @@
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/proxy/without_pushdown_differential_test.go | semantics/without-sliding-sum-folded-buckets",
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
@@ -1568,6 +1573,9 @@
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/format_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
@@ -1581,9 +1589,12 @@
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
+    "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
+    "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-ipv4-after-dot-run",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-line-filter-ipv4-like-loki",
+    "internal/translate/line_format_test.go | architecture-syntax-package-layering",
     "internal/translate/linefilter_pattern_test.go | semantics/pattern-line-filter",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
     "internal/translate/vector_test.go | architecture-syntax-package-layering",
@@ -1596,6 +1607,7 @@
     "internal/translator/extracted_suffix_test.go | loki_api_v1_query_range",
     "internal/translator/extracted_suffix_test.go | semantics/extracted-suffix-collision",
     "internal/translator/first_last_over_time_test.go | semantics/unwrap-first-last-under-aggregation",
+    "internal/translator/ip_label_filter_loki_test.go | semantics/ip-filter-ipv4-after-dot-run",
     "internal/translator/ip_label_filter_loki_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translator/ip_label_filter_loki_test.go | semantics/ip-label-filter-missing-label",
     "internal/translator/ip_label_filter_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -2081,14 +2093,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 51,
+      "api": 52,
       "drilldown": 50,
       "explore": 157,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 433,
+      "go": 440,
       "playwright": 1
     },
     "page_kinds": {
@@ -2108,7 +2120,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 276
+    "wired_items": 277
   },
   "gates": [
     "A/B shape selection",

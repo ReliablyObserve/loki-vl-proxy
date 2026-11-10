@@ -142,3 +142,7 @@ func (w *templateWalker) branch(b *parse.BranchNode) {
 	w.walk(b.List)
 	w.walk(b.ElseList)
 }
+
+// ParseLineTemplate is the typed form of a template text (a line_format template or a label_format value),
+// nil when it does not parse.
+func ParseLineTemplate(text string) *LineTemplate { return typeLineTemplate(text) }

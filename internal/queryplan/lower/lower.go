@@ -86,11 +86,12 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 
 // logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it.
 func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error) {
-	staged, read, err := stagePipes(sel, prof)
+	defs := definitions(sel)
+	staged, read, err := stagePipes(sel, prof, defs)
 	if err != nil {
 		return logsql.Query{}, err
 	}
-	lf, err := labelFilters(sel, prof, read)
+	lf, err := labelFilters(sel, prof, read, defs)
 	if err != nil {
 		return logsql.Query{}, err
 	}
@@ -129,12 +130,13 @@ func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error
 	afterParser := false
 	for i, st := range sel.Stages {
 		switch st.(type) {
-		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep:
-			// A json or logfmt parser, a drop and a keep are pipes (stagePipes); a drop of matchers writes none.
-			if _, ok := st.(*queryplan.Parse); ok {
-				afterParser = true
-			}
+		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep, *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
+			// A parser, a drop, a keep and decolorize are pipes (stagePipes); a drop of matchers and a
+			// wildcard pattern write none.
 			if len(staged) > 0 && len(staged[i]) > 0 {
+				if _, ok := st.(*queryplan.Parse); ok {
+					afterParser = true
+				}
 				flush()
 				pipes = append(pipes, staged[i]...)
 				lastPipe = true
@@ -218,14 +220,18 @@ func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe)
 // answers NotLoweredError for a query whose label filters the lowering does not write: a filter on
 // detected_level or service_name (the string translator derives them), a value that is not a valid literal, and a
 // label that translates to several parsed keys or to no field.
-func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string) (filterStages, error) {
+func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string, defs stageDefs) (filterStages, error) {
 	var res filterStages
 	lb := leafBuilder{label: prof.Label, caps: prof.Caps, sv: sv}
 	for i, st := range sel.Stages {
+		lb.names.note(defs, i)
 		if p, ok := st.(*queryplan.Parse); ok {
 			lb.parsed = true
-			lb.keyParsers++
-			lb.addJSONAliases(p)
+			if p.Type == logql.ParserJSON || p.Type == logql.ParserLogfmt {
+				lb.keyParsed = true
+				lb.keyParsers++
+				lb.addJSONAliases(p)
+			}
 			continue
 		}
 		lbl, ok := st.(*queryplan.LabelFilter)
@@ -235,10 +241,14 @@ func labelFilters(sel *queryplan.LogSelect, prof Profile, sv []string) (filterSt
 		if lbl.Expr == nil {
 			return filterStages{}, &NotLoweredError{Construct: "LogSelect label filter"}
 		}
-		if c := checkLabelFilterExpr(lbl.Expr, prof); c != "" {
+		// The labels a regexp captured are read as they are, not translated.
+		stageProf := prof
+		stageProf.Label = lb.names.label(prof.Label)
+		lb.label = stageProf.Label
+		if c := checkLabelFilterExpr(lbl.Expr, stageProf); c != "" {
 			return filterStages{}, &NotLoweredError{Construct: c}
 		}
-		if lb.parsed {
+		if lb.keyParsed {
 			if c := checkParsedLabelFilterExpr(lbl.Expr, sel); c != "" {
 				return filterStages{}, &NotLoweredError{Construct: c}
 			}
@@ -318,9 +328,13 @@ func checkLabelFilterExpr(e *logql.LabelFilterExpr, prof Profile) string {
 // and whether a json or logfmt parser came before the stage (the leaf then names a sanitized parsed key). bad is
 // the construct of the first leaf it cannot write, "" while it writes all.
 type leafBuilder struct {
-	label  func(string) string
-	caps   logsql.Capabilities
-	parsed bool
+	label func(string) string
+	caps  logsql.Capabilities
+	// parsed is whether a parser of any kind came before the stage; keyParsed whether a json or logfmt parser
+	// did (only those name the keys a sanitized label can be stored under).
+	parsed, keyParsed bool
+	// names are the labels the regexp and pattern stages before the stage define.
+	names definedNames
 	// aliases are the labels the json stages before the label filter define.
 	aliases []jsonAlias
 	// sv are the stream labels the query reads after a parser, which the filters read from their scratch copies.

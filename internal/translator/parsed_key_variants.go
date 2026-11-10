@@ -33,9 +33,7 @@ func stageDefinedLabels(stage string) []string {
 	var out []string
 	switch {
 	case strings.HasPrefix(stage, "pattern "):
-		for _, m := range patternCaptureRE.FindAllStringSubmatch(stage, -1) {
-			out = append(out, m[1])
-		}
+		out = append(out, translate.PatternCaptureNames(stage)...)
 	case strings.HasPrefix(stage, "label_format "):
 		for _, assign := range splitLabelFormatAssignments(stage[len("label_format "):]) {
 			if name, _, ok := strings.Cut(assign, "="); ok {

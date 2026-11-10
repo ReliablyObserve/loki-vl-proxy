@@ -157,14 +157,15 @@ func digitsRange(lo, hi string) string {
 const (
 	ipv4LeadOther = `(?:[^0-9.:A-Za-z]|^|[A-Za-z])` // ^ or [^0-9.:]
 	ipv4LeadColon = `(?:[^0-9:A-Za-z]|^|[G-Zg-z])`  // ^ or [^0-9A-Fa-f:]
-	ipv4LeadDots  = `(?:[^0-9A-Za-z]|^|[A-Za-z])`   // ^ or [^0-9]
+	ipv4LeadDots  = `(?:[^0-9.A-Za-z]|^|[A-Za-z])`  // ^ or [^0-9.]: the dots are the whole run
 	ipv4Trail     = `(?:[^0-9.A-Za-z]|$|[A-Za-z])`  // [^0-9.] or $
 )
 
 // ipv4LineRegex is the regexp of a line that holds an address of boxes as Loki's filter finds it.
 func ipv4LineRegex(boxes []ipv4Box) string {
 	// What may come right before the first octet: the start of the line, a character outside [0-9.:], a colon
-	// no hex digit or colon precedes, or dots no digit precedes.
+	// no hex digit or colon precedes, or a run of dots no digit precedes (Loki reads digits and dots as one run, so
+	// the dots must be the whole run: `0..1.2.3.4` holds no address).
 	const before = `(?:` + ipv4LeadOther + `|` + ipv4LeadColon + `:|` + ipv4LeadDots + `\.+)`
 	var short, long []string
 	for _, b := range boxes {

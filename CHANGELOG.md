@@ -26,6 +26,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   syntax (a `without (...)`, ` bool ` or `| stats ` in a line filter) or
   with a blank between an aggregation's parenthesis and its range function,
   a parenthesized operand, or wrapped whole in parentheses.
+
+## [2.122.1] - 2026-11-10
+
+### Fixed
+
+- Since 2.108.0 for `|= ip(...)` line filters and 2.115.0 for `label = ip(...)`
+  label filters, an IPv4 `ip()` filter matched an address written after a run
+  of dots that a digit or a dot precedes (`ip("10.0.0.1")` kept
+  `0..10.0.0.1`), where Loki reads the digits and dots as one run that is not
+  an address and matches nothing; `!= ip(...)` dropped those lines. The proxy
+  now matches what Loki matches there, checked against Loki's own answers on
+  the line and label grids. Answers cached before the fix are not reused (the
+  ip() response cache fence now covers line filters too).
+
+## [2.122.0] - 2026-11-10
+
+### Changed
+
+- The query plan lowers the `| regexp` and `| pattern` parsers and
+  `| decolorize` of log queries to the VictoriaLogs query the string
+  translator writes, byte for byte under every translator profile, together
+  with the filters among them: a name a regexp captures is read as written, a
+  label a regexp or pattern defines is not looked up as a json or logfmt key.
+  Of the 22,926 corpus rows x 12 profiles the plan lowers 2,340 (was 2,256), 0
+  mismatches. It leaves to the string translator a negative line filter right
+  after a regexp or pattern (the translator reads the operator into the
+  stage's argument and writes no filter). A regexp or pattern argument written
+  with escapes Go spells otherwise (`\x41`) is written in the canonical
+  spelling: the same query to VictoriaLogs, not the same bytes. No handler
+  serves these queries from the lowering yet; the requests sent to
+  VictoriaLogs do not change.
+- The query plan lowers `| line_format` and `| label_format` of log queries to
+  the VictoriaLogs query the string translator writes, byte for byte under
+  every translator profile (a keepLine profile copies the stored line aside
+  ahead of the first line_format), for templates of text and plain
+  `{{.name}}` fields and for renames; the labels a label_format sets are read
+  as they are by the filters after it. Of the 22,926 corpus rows x 12 profiles
+  the plan lowers 2,472 (was 2,340), 0 mismatches. The lowered text gives the
+  same line and labels as Loki's pipeline on 440 recorded Loki answers. It
+  leaves to the string translator the templates that are more than text and
+  plain fields (a function, a pipe, a condition, a dotted field, a trim marker,
+  an angle bracket in the text, a carriage return), a rename onto itself, a
+  name Loki reads as a keyword and a stream label named by the formatting,
+  which the translator copies into the query as it is or reads from text. No
+  handler serves these queries from the lowering yet; the requests sent to
+  VictoriaLogs do not change.
+
+## [2.121.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers `count_over_time`, `bytes_over_time` and
   `absent_over_time` over a log query with line, pattern and label filters and
   no parser (any offset, any range, with or without the tenant's stream
@@ -47,6 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same output. The requests sent to VictoriaLogs are those of the string
   translator, and the lowering takes about half the time of the translation
   and allocates less.
+
+## [2.120.1] - 2026-11-10
 
 ### Fixed
 

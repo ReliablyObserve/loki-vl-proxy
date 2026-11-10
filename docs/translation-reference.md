@@ -45,7 +45,7 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 
 `| json` and `| logfmt` write the same pipe whatever their flags and extraction list: `| logfmt --strict --keep-empty a, b` is `| unpack_logfmt`, and `| json a, b="x.y"` is `| unpack_json` followed by `| copy "x.y" as b` for each label defined by an expression. A json expression written with escapes, as a raw string, with a comma, with a leading or trailing space or as a bracket path is read from the stage's text by the string translator, and the query plan leaves such a query to it.
 
-The query plan lowers a log query with these parsers, `| drop` and `| keep`, and the label filters after a parser (below), to the same LogsQL, under every translator profile; `| regexp`, `| pattern`, `| unpack`, `| line_format` and `| label_format` are still translated by the string translator (`conformance/registry/query-plan.json` lists the rows each construct holds).
+The query plan lowers a log query with these parsers, `| regexp`, `| pattern`, `| decolorize`, `| drop`, `| keep`, `| line_format` and `| label_format` with a template of text and plain `{{.name}}` fields, and the label filters after a parser (below), to the same LogsQL, under every translator profile (a regexp or pattern argument written with escapes that Go spells otherwise, such as `\x41`, is written in the canonical spelling: the same query to VictoriaLogs, not the same bytes). A template with a function, a pipe, a condition, a dotted field, a trim marker or an angle bracket in its text stays with the string translator, which copies it into the query as it is; so does `| unpack` (`conformance/registry/query-plan.json` lists the rows each construct holds).
 
 ## Label Filters
 
