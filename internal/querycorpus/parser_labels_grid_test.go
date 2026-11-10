@@ -4,8 +4,10 @@ package querycorpus_test
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,6 +35,13 @@ import (
 // Deterministic; the lowering and the string translator are held to each other on every row under every profile
 // (TestParserLabelsGridShadow), and the grid is mutation-checked (TestParserLabelsGridCatchesMutations).
 func parserLabelsGrid() []string {
+	bulk, hand := parserLabelsGridParts()
+	return append(bulk[:len(bulk):len(bulk)], hand...)
+}
+
+// parserLabelsGridParts is the grid in two parts: the generated bulk (the first three groups above) and the
+// hand-written shapes (the text the translator reads as syntax), which a sampled run keeps whole.
+func parserLabelsGridParts() (bulk, hand []string) {
 	seen := map[string]bool{}
 	var out []string
 	add := func(q string) {
@@ -226,6 +235,7 @@ func parserLabelsGrid() []string {
 		}
 	}
 
+	bulkEnd := len(out)
 	// 4. text the translator reads as syntax, which the lowering leaves to it.
 	for _, line := range []string{` |= "| unpack_json"`, ` |= "as a_b"`, ` |= "<a_b>"`, ` |= "| filter a_b:!\"\""`, ` |= "| copy x as a_b"`, ` |= "| stats "`, ` |= "without (x)"`} {
 		for _, g := range []string{``, `by (a_b)`, `without (pod)`} {
@@ -234,7 +244,7 @@ func parserLabelsGrid() []string {
 			wrap("sum", g, call("sum_over_time", sel+` | json`+line+` | unwrap a_b`, `[5m]`))
 		}
 	}
-	return out
+	return out[:bulkEnd:bulkEnd], out[bulkEnd:]
 }
 
 // parserLabelsShadow holds lowerFn to the string translator on the grid under every profile: the text byte for
@@ -293,12 +303,35 @@ func parserLabelsShadow(t *testing.T, grid []string, lowerFn lowering) (rows, na
 	return rows, native, delegated, problems
 }
 
+// parserLabelsStride is the step through the generated bulk of the grid: every query when the race detector and the
+// coverage instrumentation are off (about 10 s), one in 24 under them, where the package would otherwise outrun its
+// timeout (the CI shard runs it with both). LVP_PARSER_LABELS_STRIDE sets it.
+func parserLabelsStride() int {
+	if v, err := strconv.Atoi(os.Getenv("LVP_PARSER_LABELS_STRIDE")); err == nil && v > 0 {
+		return v
+	}
+	if raceDetectorEnabled || testing.CoverMode() != "" {
+		return 24
+	}
+	return 1
+}
+
+// parserLabelsSampledGrid is every stride-th query of the generated bulk and all the hand-written shapes.
+func parserLabelsSampledGrid(stride int) []string {
+	bulk, hand := parserLabelsGridParts()
+	var out []string
+	for i := 0; i < len(bulk); i += stride {
+		out = append(out, bulk[i])
+	}
+	return append(out, hand...)
+}
+
 // TestParserLabelsGridShadow holds the lowering of the parser-label constructs to the string translator on the
 // generated grid under every profile: 0 mismatches, the text byte for byte.
 // conformance: architecture-syntax-package-layering
 func TestParserLabelsGridShadow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
-	grid := parserLabelsGrid()
+	grid := parserLabelsSampledGrid(parserLabelsStride())
 	rows, native, delegated, problems := parserLabelsShadow(t, grid, nativeLowering)
 	var kinds []string
 	for c, n := range delegated {
