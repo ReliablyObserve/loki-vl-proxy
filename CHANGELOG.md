@@ -21,6 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aggregation, a binary or `label_replace` under the nest, a nest over an
   unwrapped label and a `without` with no label are still written by the
   string translator.
+- The query plan lowers range and vector aggregations over `| drop`,
+  `| keep`, `| decolorize`, `| line_format`, `| label_format`, `| regexp`
+  and `| pattern` stages of a log query to VictoriaLogs natively for every
+  translation profile, alone and under `sum`, `count`, `min`, `max` and `avg`
+  with a `by` clause (a `without` clause stays with the string translator
+  behind a parser), for the functions that read rows and the functions over an
+  unwrapped label. The requests sent to VictoriaLogs are those of the string
+  translator, byte for byte: a drop deletes every name it lists and a keep of
+  `detected_level` without `level` deletes `level` after its fields. A rate,
+  and `count`, `min`, `max` and `avg`, behind a `keep` that is last (or
+  followed only by filters, `line_format` and `decolorize`) are still written
+  by the string translator, which groups them by the labels the keep leaves,
+  and so is a query with quoted text the translator reads as a parser, an
+  unwrap, a `without` clause or a boolean modifier, wherever the client wrote
+  it (a drop, keep, label filter, parser argument or format template
+  included). The lowering takes about 60% less time than the translation and
+  allocates about 30% less memory on these queries.
 - The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
   the comparisons) between range aggregations, vector aggregations without a
   `without` clause and numbers, with `on`, `ignoring`, `group_left` and

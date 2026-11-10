@@ -126,7 +126,7 @@ func buildVectorAgg(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profil
 	}
 	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
 	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
-	if err := parserTextError(ra.In, log, rate, labels, without); err != nil {
+	if err := parserTextError(ra.In, log, rate || va.Op != logql.VectorSum, rate, labels, without); err != nil {
 		return builtVector{}, err
 	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
@@ -263,28 +263,11 @@ func textHas(m metricLog, s string) bool {
 	return strings.Contains(m.head, s) || strings.Contains(m.restore, s) || strings.Contains(m.pipes, s)
 }
 
-// selectionHas reports whether a value the client wrote in the selector or a line filter contains s. The printed
-// query may not hold it: a value that is not UTF-8 is written as a filter that matches nothing, where the
-// translator reads the client's text.
+// selectionHas reports whether a value the client wrote in the query contains s (anyClientString). The printed
+// query may not hold it: a value that is not UTF-8 is written as a filter that matches nothing, a drop of matchers
+// writes no pipe, and the translator reads the client's text.
 func selectionHas(sel *queryplan.LogSelect, s string) bool {
-	for _, m := range sel.Matchers {
-		if strings.Contains(m.Value, s) {
-			return true
-		}
-	}
-	for _, st := range sel.Stages {
-		if lf, ok := st.(*queryplan.LineFilter); ok {
-			if strings.Contains(lf.Value, s) {
-				return true
-			}
-			for _, alt := range lf.Or {
-				if strings.Contains(alt.Value, s) {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return anyClientString(sel, func(v string) bool { return strings.Contains(v, s) })
 }
 
 // textReadAsClause reports whether the log query's text holds a stats pipe, which the translator finds by text to
@@ -306,11 +289,15 @@ func seriesIdentity(parser bool) []string {
 
 // parserVectorConstruct names the construct of a vector aggregation over a log query with a parser that the
 // lowering leaves to the translator, "" when it writes it. The translator folds a without clause over a parser by
-// the labels the parsers extract, which it reads from the text of the query, and resolves a grouping by a label
-// that a parser may have stored under another spelling (a name with an underscore).
-func parserVectorConstruct(labels []string, without bool) string {
+// the labels the parsers extract, which it reads from the text of the query, and, behind a json or logfmt unpack
+// (unpacked), resolves a grouping by a label that a parser may have stored under another spelling (a name with an
+// underscore).
+func parserVectorConstruct(labels []string, without, unpacked bool) string {
 	if without {
 		return "VectorAgg parser without"
+	}
+	if !unpacked {
+		return "" // only a json or logfmt unpack in the text makes the translator resolve the labels
 	}
 	for _, l := range labels {
 		if resolvableLabel(l) {
@@ -339,15 +326,17 @@ func resolvableLabel(label string) bool {
 }
 
 // parserTextError names the construct of a vector aggregation whose series identity the translator reads from the
-// parsers in the text of the query (quoted text that spells one, or a parser whose labels it resolves or folds).
-func parserTextError(in *queryplan.LogSelect, log metricLog, rate bool, labels []string, without bool) error {
+// parsers in the text of the query (quoted text that spells one, or a parser whose labels it resolves or folds) or
+// from a trailing keep (keepIdentityError, checked last). seriesLevel says the aggregation reads the series of the
+// rows (a rate, or count, min, max and avg).
+func parserTextError(in *queryplan.LogSelect, log metricLog, seriesLevel, rate bool, labels []string, without bool) error {
 	if readsUnwrapOrParser(in, log, rate, !log.parser) {
 		return errVectorQuotedClause
 	}
 	if log.parser {
-		if c := parserVectorConstruct(labels, without); c != "" {
+		if c := parserVectorConstruct(labels, without, log.unpacked()); c != "" {
 			return &NotLoweredError{Construct: c}
 		}
 	}
-	return nil
+	return keepIdentityError(in, "VectorAgg", seriesLevel)
 }

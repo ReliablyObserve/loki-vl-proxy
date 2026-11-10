@@ -68,11 +68,14 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if rate && readsUnwrapOrParser(ra.In, log, true, !log.parser) {
 		return nil, errQuotedClause
 	}
+	if err := keepIdentityError(ra.In, "RangeAgg", rate); err != nil {
+		return nil, err
+	}
 	if rate && log.parser {
 		// The stream is the series of a rate over a parser: the detected_level chain is not derived.
 		ratePipes = translate.RateStatsPipesBy(rateFunc(ra.Op), ra.Range.Seconds(), parserIdentity)
 		pipes := ratePipes[:]
-		if log.has("| copy ") {
+		if log.has("| copy ") && log.unpacked() {
 			pipes = []logsql.Pipe{ratePipes[0], ratePipes[1], logsql.PipeFilter{Expr: logsql.FieldFilter{Field: rateFilterField, Op: logsql.FieldOpAny}}, ratePipes[2]}
 		}
 		return physical.VLQuery{Text: log.text("", "", pipes...)}, nil
@@ -100,6 +103,9 @@ type metricLog struct {
 	parser bool
 	// copies says a copy pipe is among the pipes (a stream label's stored value, a json expression).
 	copies bool
+	// unpack says the pipes hold a json or logfmt unpack. metricLogQuery leaves a query whose text holds one without
+	// a typed unpack to the translator, so it also says whether the translator's text of the query holds one.
+	unpack bool
 	// bareLogfmt is where the last pipe in pipes starts when it is the query's only unpack and a bare
 	// `| unpack_logfmt` (an unwrap names the fields to read then), and -1 otherwise.
 	bareLogfmt int
@@ -136,7 +142,7 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	// hold the client's value (a value that is not UTF-8 is written as a filter that matches nothing), so the
 	// selector and the line filters are read as well as the printed filter and pipes.
 	quoted := quotedClauseError(owner)
-	if selectionHas(in, "without") || selectionHas(in, "bool") || selectionHas(in, "|||") {
+	if anyClientString(in, clientReadsAsClause) {
 		return metricLog{}, quoted
 	}
 	head := logsql.Query{Filter: q.Filter}.String()
@@ -181,9 +187,10 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	}
 	// The translator resolves the labels a stats reads (and looks for a copy pipe) when its text of the query holds an
 	// unpack pipe: quoted text that holds one takes a query with no parser there.
-	if !m.parser && (m.has("| unpack_json") || m.has("| unpack_logfmt")) {
+	if unpacks == 0 && m.holdsUnpack() {
 		return metricLog{}, quoted
 	}
+	m.unpack = unpacks > 0
 	return m, nil
 }
 
@@ -215,38 +222,14 @@ func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
 }
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not
-// write, or "" when it writes all: an unwrap first, then a regexp or pattern parser, any drop or keep (written unlike
-// a log query's) and a formatting stage; any other stage the log query lowering leaves out (a parser it does not
-// write) is named by that lowering.
+// write, or "" when it writes all: an unwrap (the unwrap aggregations strip it first). Any other stage the log query
+// lowering leaves out is named by that lowering. A metric row writes the stages a log query does, except that a drop
+// and a keep differ (metricDropPipes, metricKeepPipes).
 func rangeInnerConstruct(sel *queryplan.LogSelect) string {
-	extract, dropKeep, format := false, false, false
 	for _, st := range sel.Stages {
-		switch st := st.(type) {
-		case *queryplan.Unwrap:
+		if _, ok := st.(*queryplan.Unwrap); ok {
 			return "RangeAgg unwrap"
-		case *queryplan.Parse:
-			// The metric rows of json and logfmt are proven; regexp and pattern are written by the log query
-			// lowering but not yet proven under a range aggregation.
-			if st.Type == logql.ParserRegexp || st.Type == logql.ParserPattern {
-				extract = true
-			}
-		case *queryplan.Drop, *queryplan.Keep:
-			dropKeep = true
-		case *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
-			format = true
 		}
-	}
-	if extract {
-		return "RangeAgg parser"
-	}
-	if dropKeep {
-		// The string translator writes a metric row's drop and keep unlike a log query's: a drop deletes the
-		// level fields detected_level is derived from, and a keep of detected_level deletes level after its fields.
-		return "RangeAgg drop or keep"
-	}
-	if format {
-		// The log query lowering writes these stages; under a range aggregation they are not proven yet.
-		return "RangeAgg LogSelect pipeline"
 	}
 	return ""
 }
@@ -273,6 +256,28 @@ func readsAsClause(s string) bool {
 	return strings.Contains(s, "without") || strings.Contains(s, "bool") || strings.Contains(s, "|||")
 }
 
+// clientReadsAsClause is readsAsClause for a short value the client wrote, in one pass over its bytes: the three words
+// are looked for at their first letters, where three searches of the whole value cost more than they find.
+func clientReadsAsClause(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case 'w':
+			if strings.HasPrefix(s[i:], "without") {
+				return true
+			}
+		case 'b':
+			if strings.HasPrefix(s[i:], "bool") {
+				return true
+			}
+		case '|':
+			if strings.HasPrefix(s[i:], "|||") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // bareUnpackLogfmt is the printed `| unpack_logfmt` of a logfmt stage with no flags and no extraction list.
 var bareUnpackLogfmt = logsql.PipeUnpackLogfmt{}.String()
 
@@ -291,3 +296,10 @@ func rateFunc(op logql.RangeOp) logsql.StatsFunc {
 func (m metricLog) has(s string) bool {
 	return strings.Contains(m.head, s) || strings.Contains(m.restore, s) || strings.Contains(m.pipes, s)
 }
+
+// unpacked reports whether the translator's text of the log query holds a json or logfmt unpack, which is what makes
+// it resolve the labels its stats read (resolveStatsKeys): a query whose parsers are regexp and pattern holds none.
+func (m metricLog) unpacked() bool { return m.unpack }
+
+// holdsUnpack reports whether the printed log query holds a json or logfmt unpack pipe, typed or in quoted text.
+func (m metricLog) holdsUnpack() bool { return m.has("| unpack_json") || m.has("| unpack_logfmt") }

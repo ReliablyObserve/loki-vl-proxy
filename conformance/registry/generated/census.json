@@ -1558,6 +1558,7 @@
     "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/metric_stages_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_metric_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/physical_codec_test.go | semantics/label-replace-new-label",
@@ -1585,6 +1586,7 @@
     "internal/queryplan/lower/label_filter_parsed_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/label_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/lower_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/metric_stages_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
@@ -2108,7 +2110,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 448,
+      "go": 450,
       "playwright": 1
     },
     "page_kinds": {

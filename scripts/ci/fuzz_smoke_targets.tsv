@@ -131,4 +131,5 @@ smoke	internal/queryplan/lower	FuzzExtractLowering	12s	-	regexp and pattern pars
 smoke	internal/queryplan/lower	FuzzFormatLowering	12s	-	line_format and label_format lower to the query the string translator writes
 smoke	internal/proxy	FuzzParseLokiTimeIntegerFastPath	12s	-	Loki time parse: integer fast path equals the layouts-first parse
 smoke	internal/queryplan/lower	FuzzEscapedSpellingLowering	12s	-	a value in any quoted spelling lowers to the bytes the string translator writes, or is left to it
+smoke	internal/queryplan/lower	FuzzMetricStagesLowering	12s	-	range and vector aggregations over drop, keep, formatting stages and regexp and pattern parsers lower to the query the string translator writes
 smoke	internal/queryplan/lower	FuzzNestedVectorAggLowering	12s	-	vector aggregations over vector aggregations lower to the query the string translator writes
