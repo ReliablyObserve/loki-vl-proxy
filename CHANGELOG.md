@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads unlike Loki (an operator without blanks around it, a number such as
   `1e3`, a parenthesized operand, a quoted string holding a parenthesis or
   `bool`) and a `label_replace` around a `service_name` grouping.
+
+## [2.124.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers range and vector aggregations over a log query with
   a `| json` or `| logfmt` parser (flags, extraction lists, aliases and label
   filters behind the parser) to VictoriaLogs natively for every translation
