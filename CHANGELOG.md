@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it (a drop, keep, label filter, parser argument or format template
   included). The lowering takes about 60% less time than the translation and
   allocates about 30% less memory on these queries.
+
+## [2.125.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers binary operations (`+`, `-`, `*`, `/`, `%`, `^` and
   the comparisons) between range aggregations, vector aggregations without a
   `without` clause and numbers, with `on`, `ignoring`, `group_left` and
