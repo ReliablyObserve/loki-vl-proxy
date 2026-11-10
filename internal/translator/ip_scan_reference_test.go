@@ -51,7 +51,7 @@ func ipLineGridCases() []lineCase {
 	before := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "-", "[", "=", "1.", "::"}
 	after := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "]", "/24", ",", "%eth0", ":80"}
 	var out []lineCase
-	grid := func(patterns, addrs []string) {
+	grid := func(patterns, addrs, before []string) {
 		for _, p := range patterns {
 			for _, a := range addrs {
 				for _, b := range before {
@@ -62,8 +62,10 @@ func ipLineGridCases() []lineCase {
 			}
 		}
 	}
-	grid(v4Patterns, v4)
-	grid(v6Patterns, v6)
+	grid(v4Patterns, v4, before)
+	grid(v6Patterns, v6, before)
+	grid(v4Patterns, v4, []string{"..", "...", "0..", "1..", "a..", "f..", ":..", "1.2..", "1. ."})
+	grid(v4Patterns, v4, []string{"0:", "1:", "a:", "f:", "g:", "z:", "0::", "a::", "1:2:"})
 	return out
 }
 

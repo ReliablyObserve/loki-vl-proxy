@@ -28,7 +28,7 @@ func ipLabelCases() []ipLabelCase {
 	before := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "-", "[", "=", "1.", "::", "client ", "ip="}
 	after := []string{"", " ", "a", "f", "g", "0", "1", ".", ":", "]", "/24", ",", "%eth0", ":80", ":443", " rest"}
 	var out []ipLabelCase
-	grid := func(patterns, addrs []string) {
+	grid := func(patterns, addrs, before []string) {
 		for _, p := range patterns {
 			for _, a := range addrs {
 				for _, b := range before {
@@ -39,10 +39,13 @@ func ipLabelCases() []ipLabelCase {
 			}
 		}
 	}
-	grid(v4Patterns, v4)
-	grid(v6Patterns, v6)
-	grid(v4Patterns, v6[:4])
-	grid(v6Patterns, v4[:4])
+	grid(v4Patterns, v4, before)
+	grid(v6Patterns, v6, before)
+	grid(v4Patterns, v6[:4], before)
+	grid(v6Patterns, v4[:4], before)
+	// A run of dots in front of an IPv4 address: Loki reads the digits and dots in front as one run with the
+	// address, so a digit or a dot before the run hides the address.
+	grid(v4Patterns, v4, []string{"..", "0..", "1..", "a..", "1.2..", "x 0.."})
 	return out
 }
 
@@ -95,7 +98,7 @@ const ipv6LabelKnownDifferences = 12414
 // line Loki drops. Both the LogsQL the translator writes and the Go evaluation of it (DropCondition.Matches) are
 // held to Loki's answers, recorded with the Loki oracle (LVP_RUN_ORACLES=1 records them again).
 //
-// conformance: semantics/ip-label-filter-embedded-address, semantics/ip-label-filter-missing-label
+// conformance: semantics/ip-label-filter-embedded-address, semantics/ip-label-filter-missing-label, semantics/ip-filter-ipv4-after-dot-run
 func TestIPLabelFilterMatchesLoki(t *testing.T) {
 	cases := ipLabelCases()
 	if os.Getenv("LVP_RUN_ORACLES") == "1" {

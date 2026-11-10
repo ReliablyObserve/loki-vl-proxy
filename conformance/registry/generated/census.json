@@ -387,6 +387,9 @@
     "semantics/instant-result-type-missing | compare:observed",
     "semantics/instant-result-type-missing | gap:fixed",
     "semantics/instant-result-type-missing | query",
+    "semantics/ip-filter-ipv4-after-dot-run | compare:observed",
+    "semantics/ip-filter-ipv4-after-dot-run | gap:fixed",
+    "semantics/ip-filter-ipv4-after-dot-run | query",
     "semantics/ip-filter-json-stats-pushdown | compare:observed",
     "semantics/ip-filter-json-stats-pushdown | gap:fixed",
     "semantics/ip-filter-json-stats-pushdown | perf",
@@ -1584,6 +1587,7 @@
     "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
     "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
+    "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-ipv4-after-dot-run",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-line-filter-ipv4-like-loki",
     "internal/translate/line_format_test.go | architecture-syntax-package-layering",
@@ -1598,6 +1602,7 @@
     "internal/translator/extracted_suffix_test.go | loki_api_v1_query_range",
     "internal/translator/extracted_suffix_test.go | semantics/extracted-suffix-collision",
     "internal/translator/first_last_over_time_test.go | semantics/unwrap-first-last-under-aggregation",
+    "internal/translator/ip_label_filter_loki_test.go | semantics/ip-filter-ipv4-after-dot-run",
     "internal/translator/ip_label_filter_loki_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translator/ip_label_filter_loki_test.go | semantics/ip-label-filter-missing-label",
     "internal/translator/ip_label_filter_test.go | semantics/ip-filter-json-stats-pushdown",
@@ -2083,7 +2088,7 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 51,
+      "api": 52,
       "drilldown": 50,
       "explore": 157,
       "grafana-datasource": 2,
@@ -2110,7 +2115,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 276
+    "wired_items": 277
   },
   "gates": [
     "A/B shape selection",
