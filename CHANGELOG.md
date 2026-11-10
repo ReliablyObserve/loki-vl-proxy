@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs and no answer changes. A binary operation operand, a `sort`
   with a clause, a lone ranking wrapped in parentheses and a `stddev` or
   `stdvar` above a ranking stay with the string translator.
+
+## [2.128.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers a vector aggregation over other ones (two or more
   levels of `sum`, `count`, `min`, `max` and `avg`, each with a `by` or
   `without` clause or none) over the range aggregations it already writes,
@@ -34,15 +39,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aggregation, a binary or `label_replace` under the nest, a nest over an
   unwrapped label and a `without` with no label are still written by the
   string translator.
+
+## [2.127.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers `topk`, `bottomk`, `sort` and `sort_desc` without a
   `by` or `without` clause over `count_over_time`, `bytes_over_time`,
   `absent_over_time`, `rate`, `bytes_rate` and the unwrap functions behind a
   `json` or `logfmt` parser, for every translation profile, as the query of
   the operand: the proxy still reads the ranking from the LogQL and ranks
   each step of the answer itself, so the requests sent to VictoriaLogs and
-  the answers do not change. Rankings spelled in ways the string translator
-  reads unlike Loki are still written by the string translator (the entry
-  above covers the rest of the rankings).
+  the answers do not change. Rankings with a clause, over a vector
+  aggregation, a binary operation or `label_replace`, over an unwrapped label
+  with no parser, over a label filter after a parser or a `rate` over a parser
+  (where the lowering would allocate more than the translation), and spelled
+  in ways the string translator reads unlike Loki, are still written by the
+  string translator.
+
+## [2.126.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers range and vector aggregations over `| drop`,
   `| keep`, `| decolorize`, `| line_format`, `| label_format`, `| regexp`
   and `| pattern` stages of a log query to VictoriaLogs natively for every
