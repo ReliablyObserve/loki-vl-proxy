@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Split the top-level tests of one Go package across parallel CI shards.
 
-The `test` job's time is the time of internal/proxy, so its tests run in several
-jobs. The split works from the names `go test -list` prints:
+The `test` job's time is the time of internal/proxy and internal/querycorpus (the
+two packages that take minutes under -race), so their tests run in several jobs,
+each package split on its own (--package, default internal/proxy). The split works
+from the names `go test -list` prints:
 
   * the tests named in scripts/ci/test-shard-weights.tsv (the slow ones, with
-    their measured seconds) are placed longest first on the shard with the least
+    their measured seconds; an optional third column names the package, internal/proxy
+    when it is left out) are placed longest first on the shard with the least
     work so far;
   * every other test, and any test added later, goes to the shard its name hashes
     to. A new test therefore always lands in exactly one shard without the weights
@@ -17,7 +20,8 @@ Commands (the list is read from --list or stdin):
   assign  --shards N          print "<shard>\\t<test>" for every test
   regex   --shards N --shard K  print the `go test -run` pattern of shard K
   check   --shards N          fail unless every test is in exactly one shard
-  weights --results FILE      print a weights file from `go test -json` events
+  weights --results FILE [--package P ...]
+                              print a weights file from `go test -json` events
   verify  --assigned F... --results FILE
                               fail unless every assigned test has an outcome
 
@@ -33,6 +37,7 @@ from pathlib import Path
 
 SALT = "ci-test-shard:"
 HEAVY_SECONDS = 5.0
+DEFAULT_PACKAGE = "internal/proxy"
 NAME = re.compile(r"(?:Test|Fuzz|Example)\w*")
 OUTCOMES = {"pass", "fail", "skip"}
 
@@ -45,16 +50,20 @@ def parse_list(text):
     return names
 
 
-def parse_weights(text):
+def parse_weights(text, package=DEFAULT_PACKAGE):
+    """Seconds by test name for one package: the rows whose optional third column names it."""
     weights = {}
     for number, line in enumerate(text.splitlines(), 1):
         if not line.strip() or line.startswith("#"):
             continue
-        name, _, seconds = line.partition("\t")
+        name, _, rest = line.partition("\t")
+        columns = rest.split("\t")
         try:
-            weights[name.strip()] = float(seconds.split("\t")[0])
+            seconds = float(columns[0])
         except ValueError:
-            raise SystemExit(f"test_shards: weights line {number}: want <test><tab><seconds>")
+            raise SystemExit(f"test_shards: weights line {number}: want <test><tab><seconds>[<tab><package>]")
+        if (columns[1].strip() if len(columns) > 1 else DEFAULT_PACKAGE) == package:
+            weights[name.strip()] = seconds
     return weights
 
 
@@ -122,13 +131,19 @@ def weights_from_events(lines, package_suffix):
     return seconds
 
 
-def render_weights(seconds, minimum=HEAVY_SECONDS):
+def render_weights(seconds, minimum=HEAVY_SECONDS, package=DEFAULT_PACKAGE):
+    """Rows of one package; the package column is left out for internal/proxy."""
     rows = sorted(((s, n) for n, s in seconds.items() if s >= minimum), key=lambda r: (-r[0], r[1]))
-    head = ("# Seconds of the slow top-level tests of internal/proxy under -race, one per line: test, a tab, seconds.\n"
-            "# Only a balancing hint for scripts/ci/test_shards.py: a test missing here, or listed with a stale time,\n"
-            "# still runs in exactly one shard. Regenerate from a unit-results.json artifact:\n"
-            "#   scripts/ci/test_shards.py weights --results unit-results.json > scripts/ci/test-shard-weights.tsv\n")
-    return head + "".join(f"{name}\t{s:.1f}\n" for s, name in rows)
+    tail = "" if package == DEFAULT_PACKAGE else f"\t{package}"
+    return "".join(f"{name}\t{s:.1f}{tail}\n" for s, name in rows)
+
+
+WEIGHTS_HEAD = ("# Seconds of the slow top-level tests under -race, one per line: test, a tab, seconds, and for a package\n"
+                "# other than internal/proxy a tab and its directory (internal/querycorpus).\n"
+                "# Only a balancing hint for scripts/ci/test_shards.py: a test missing here, or listed with a stale time,\n"
+                "# still runs in exactly one shard. Regenerate from a unit-results.json artifact:\n"
+                "#   scripts/ci/test_shards.py weights --package internal/proxy --package internal/querycorpus \\\n"
+                "#       --results unit-results.json > scripts/ci/test-shard-weights.tsv\n")
 
 
 def verify(assigned, events):
@@ -164,14 +179,19 @@ def main(argv=None):
     parser.add_argument("--shard", type=int, help="1-based shard number (regex)")
     parser.add_argument("--weights-file", default=str(Path(__file__).with_name("test-shard-weights.tsv")))
     parser.add_argument("--results", help="go test -json events (weights, verify)")
-    parser.add_argument("--package", default="/internal/proxy", help="import path suffix of the package (weights, verify)")
+    parser.add_argument("--package", action="append", help=f"directory of the package in the module (default {DEFAULT_PACKAGE}); "
+                        "repeat for weights; selects the weight rows of assign, regex and check")
     parser.add_argument("--assigned", nargs="*", default=[], help="files of assigned test names (verify)")
     args = parser.parse_args(argv)
+    packages = [p.strip("/") for p in args.package or [DEFAULT_PACKAGE]]
+    package = packages[0]
 
     if args.command == "weights":
         if not args.results:
             parser.error("weights needs --results")
-        sys.stdout.write(render_weights(weights_from_events(Path(args.results).read_text().splitlines(), args.package)))
+        lines = Path(args.results).read_text().splitlines()
+        sys.stdout.write(WEIGHTS_HEAD + "".join(
+            render_weights(weights_from_events(lines, "/" + p), package=p) for p in packages))
         return 0
     if args.command == "verify":
         if not args.results or not args.assigned:
@@ -179,7 +199,7 @@ def main(argv=None):
         assigned = set()
         for path in args.assigned:
             assigned.update(line.strip() for line in Path(path).read_text().splitlines() if line.strip())
-        problems = verify(assigned, read_events(args.results, args.package))
+        problems = verify(assigned, read_events(args.results, "/" + package))
         for problem in problems:
             print(f"test_shards: {problem}", file=sys.stderr)
         print(f"test_shards: {len(assigned)} assigned tests, {len(problems)} without an outcome")
@@ -187,7 +207,7 @@ def main(argv=None):
 
     names = parse_list(Path(args.list).read_text() if args.list else sys.stdin.read())
     weights_path = Path(args.weights_file)
-    weights = parse_weights(weights_path.read_text()) if weights_path.exists() else {}
+    weights = parse_weights(weights_path.read_text(), package) if weights_path.exists() else {}
     parts = partition(names, args.shards, weights)
     if args.command == "assign":
         for index, part in enumerate(parts, 1):

@@ -41,11 +41,15 @@ jobs:
       pull-requests: read
     uses: ./.github/workflows/change-scope.yaml  # zizmor: ignore[self-repository] the $/ form is rejected by the pinned actionlint
 
-  # The unit tests run as parallel shards, because internal/proxy is ~96% of the
-  # time under -race: shards 1-4 each run a share of its top-level tests
-  # (scripts/ci/test_shards.py puts every test in exactly one shard), and `rest`
-  # runs every other package plus the build, vet, govulncheck and the cache
-  # coverage guard. The `test` job below fans them in.
+  # The unit tests run as parallel shards, because internal/proxy and
+  # internal/querycorpus are nearly all of the time under -race: shards 1-4 each
+  # run a share of the top-level tests of both packages (scripts/ci/test_shards.py
+  # puts every test of a package in exactly one shard; the packages are listed in
+  # UNIT_SHARD_PACKAGES of go_test_unit.sh, with their slow tests'
+  # weights in scripts/ci/test-shard-weights.tsv), and `rest` runs every other
+  # package plus the build, vet, govulncheck and the cache coverage guard. The
+  # `test` job below fans them in and fails unless every test of both packages
+  # was assigned once and reported.
   test-shard:
     name: test-shard (${{ matrix.shard }})
     needs: [scope]
@@ -138,8 +142,11 @@ jobs:
         if: matrix.shard == 'rest'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-      # internal/proxy can exceed 35 minutes under -race with coverage on a
-      # slower hosted runner as one job; its shards each take a quarter of that.
+      # internal/proxy can exceed 35 minutes and internal/querycorpus 45 under -race
+      # with coverage on a slower hosted runner as one job (internal/querycorpus hit
+      # the 50m package timeout inside `rest`); the shards each take a quarter of
+      # each. The tests of both read no CI variable and are not run with -short,
+      # so a shard needs no environment beyond what `rest` had.
       #
       # -json keeps every test's outcome: the conformance job reads the
       # ./internal/... part of it (its evidence check) instead of running the
