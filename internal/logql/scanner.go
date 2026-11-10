@@ -182,6 +182,9 @@ func (t TokType) String() string {
 type Token struct {
 	Typ TokType
 	Val string
+	// Escaped is set on a TokString whose literal is not spelled the way strconv.Quote spells Val (see
+	// quotedSpelling).
+	Escaped bool
 }
 
 type scanner struct {
@@ -504,10 +507,28 @@ func (s *scanner) scanQuotedString() Token {
 			if err != nil || !utf8.ValidString(literal) {
 				return Token{Typ: TokError, Val: "invalid quoted string"}
 			}
-			return Token{Typ: TokString, Val: value}
+			return Token{Typ: TokString, Val: value, Escaped: !quotedSpelling(literal, value)}
 		}
 	}
 	return Token{Typ: TokError, Val: "unterminated quoted string"}
+}
+
+// quotedSpelling reports whether the double-quoted literal is the text strconv.Quote writes for its value. A
+// literal of printable ASCII with no backslash is, which is nearly every literal and costs one pass over it; any
+// other is compared with the quoting of its value, written onto a stack buffer.
+func quotedSpelling(literal, value string) bool {
+	plain := true
+	for i := 1; i < len(literal)-1; i++ {
+		if c := literal[i]; c < 0x20 || c >= 0x7f || c == '\\' {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return true
+	}
+	var buf [64]byte
+	return string(strconv.AppendQuote(buf[:0], value)) == literal
 }
 
 func (s *scanner) scanRawString() Token {

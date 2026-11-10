@@ -55,7 +55,7 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	case TokBangGt:
 		op = LineFilterExcludePat
 	}
-	stage := &LineFilterStage{Op: op, Value: head.Value, IP: head.IP}
+	stage := &LineFilterStage{Op: op, Value: head.Value, IP: head.IP, Escaped: head.Escaped}
 	for p.cur.Typ == TokOr || p.cur.Typ == TokIdent && strings.EqualFold(p.cur.Val, "or") {
 		p.advance()
 		alt, err := p.parseLineFilterAlt()
@@ -96,7 +96,8 @@ func lastOrGroup(alts []LineFilterAlt) []LineFilterAlt {
 func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
 	switch {
 	case p.cur.Typ == TokString || p.cur.Typ == TokRawString:
-		return LineFilterAlt{Value: p.advance().Val}, nil
+		tok := p.advance()
+		return LineFilterAlt{Value: tok.Val, Escaped: tok.Escaped}, nil
 	case p.cur.Typ == TokIdent && p.cur.Val == "ip":
 		if !strings.HasPrefix(strings.TrimLeftFunc(p.sc.src[p.sc.pos:], unicode.IsSpace), "(") {
 			// Loki reads ip as a function only before "(": a bare ip is an identifier it does not expect.
@@ -110,7 +111,8 @@ func (p *parser) parseLineFilterAlt() (LineFilterAlt, error) {
 		if p.cur.Typ != TokString && p.cur.Typ != TokRawString {
 			return LineFilterAlt{}, p.syntaxErrorAt("STRING")
 		}
-		alt := LineFilterAlt{Value: p.advance().Val, IP: true}
+		tok := p.advance()
+		alt := LineFilterAlt{Value: tok.Val, IP: true, Escaped: tok.Escaped}
 		if p.cur.Typ != TokRParen {
 			return LineFilterAlt{}, p.syntaxErrorAt(")")
 		}

@@ -54,6 +54,9 @@ func (e *NotLoweredError) Is(target error) bool { return target == ErrNotLowered
 // answers ErrNotLowered naming the construct.
 func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 	if sel, ok := p.Root.(*queryplan.LogSelect); ok {
+		if keepsSpelling(sel, prof) {
+			return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
+		}
 		return logSelect(sel, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}

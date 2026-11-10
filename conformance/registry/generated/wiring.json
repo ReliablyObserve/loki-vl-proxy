@@ -22,6 +22,7 @@
       "internal/proxy/plan_route_parity_test.go",
       "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
+      "internal/querycorpus/escaped_spelling_grid_test.go",
       "internal/querycorpus/extract_grid_test.go",
       "internal/querycorpus/format_grid_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
@@ -37,6 +38,7 @@
       "internal/queryplan/lower/lower_test.go",
       "internal/queryplan/lower/parser_test.go",
       "internal/queryplan/lower/pattern_filter_test.go",
+      "internal/queryplan/lower/spelling_test.go",
       "internal/translate/extract_stages_test.go",
       "internal/translate/line_format_test.go",
       "internal/translate/selector_test.go"
@@ -2918,6 +2920,9 @@
       "semantics/without-over-inner-aggregation-collapses",
       "semantics/without-sliding-sum-folded-buckets"
     ],
+    "internal/querycorpus/escaped_spelling_grid_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/querycorpus/extract_grid_test.go": [
       "architecture-syntax-package-layering"
     ],
@@ -2980,6 +2985,9 @@
     "internal/queryplan/lower/pattern_filter_test.go": [
       "architecture-syntax-package-layering",
       "semantics/pattern-line-filter"
+    ],
+    "internal/queryplan/lower/spelling_test.go": [
+      "architecture-syntax-package-layering"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
@@ -3818,7 +3826,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 429,
+  "tests_with_markers": 431,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
