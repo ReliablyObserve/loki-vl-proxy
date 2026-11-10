@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Log queries with a stream selector, line filters (`|=`, `!=`, `|~`, `!~`),
+  pattern filters (`|>`, `!>`) and label filters (`| status >= 500`,
+  `| addr = ip("10.0.0.0/8")`, repeated filters) and no parser stage are now
+  translated to VictoriaLogs by the typed query plan instead of the string
+  translator: the first construct served from the plan. The VictoriaLogs query
+  is the same text, byte for byte, under every translator profile (label style,
+  stream fields, Loki-compatible labels, VictoriaLogs v1.49 and v1.53, the
+  detected_level body scan), so answers, translation-cache entries and
+  VictoriaLogs requests do not change. The corpus shadow and the generated
+  label-filter grid now assert that text, not only the parsed query, for every
+  query the plan lowers (the plan wrote `OR` and `AND` where the translator
+  writes `or` and `and`: 192 corpus rows differed in that case alone, and the
+  and/or trees of label filters did too; the plan now writes the translator's
+  spelling). Every other query stays on the string translator: parsers and
+  formatting stages, metric queries, `label_replace`, binary operations,
+  `detected_level` and `service_name` label filters, and any log query the plan
+  cannot translate. Deciding that costs a scan of the query text and no plan:
+  a metric query is turned away by its first byte, a query with a parser stage
+  by one pass over its text. A translation that misses the translation cache
+  allocates less than before on every query shape measured (benchstat, 10 runs,
+  Apple M5 Pro, GOMAXPROCS=4): a log query with two line filters 58 to 38
+  allocations and 3.3 to 2.0 KiB, with a pattern filter 75 to 74 and 3.8 to
+  3.7 KiB, with label filters 97 to 80 and 5.4 to 4.3 KiB, a `| json` query
+  49 to 32, `rate()` 70 to 60, and the time falls by a third on the first (the
+  rendering of a LogsQL query writes into one pooled buffer, and a label name
+  without a dot skips its regexp, which both translators use). New flag
+  `-query-plan-lowering` (default `true`, Helm `extraArgs.query-plan-lowering`):
+  `false` returns every query to the string translator. Translations served
+  from the plan are counted as `result="flipped"` in
+  `loki_vl_proxy_lowering_shadow_total`; the live shadow
+  (`-translate-shadow-sample`) keeps comparing the queries still on the
+  translator. The text writer of the legacy encoding moved from
+  `internal/translator` to `internal/queryplan/physical` (`physical.Encode`);
+  `translator.EncodePhysical` is a wrapper over it.
 - The query plan lowers log queries with a `| json` or `| logfmt` parser (with
   `--strict`, `--keep-empty` and field lists, including `| json a="b.c"`) and
   with `| drop` and `| keep` stages to VictoriaLogs natively, with builders in

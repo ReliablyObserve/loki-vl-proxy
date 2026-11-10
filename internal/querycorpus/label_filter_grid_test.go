@@ -126,6 +126,24 @@ func labelFilterGrid() []string {
 	return out
 }
 
+// filterOnly reports whether the plan is a log query whose stages are all line, pattern and label filters: the
+// construct the proxy serves from the lowering. A native row with a parser or formatting stage stays on the string
+// translator, so the flip's screen may turn it away.
+func filterOnly(plan *queryplan.Plan) bool {
+	sel, ok := plan.Root.(*queryplan.LogSelect)
+	if !ok {
+		return false
+	}
+	for _, st := range sel.Stages {
+		switch st.(type) {
+		case *logql.LineFilterStage, *logql.LabelFilterStage:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // labelFilterShadow holds the lowering to the string translator on the grid under every profile and returns the
 // counts: rows both write, rows lowered natively, rows delegated by construct.
 func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated map[string]int, problems []string) {
@@ -164,8 +182,13 @@ func labelFilterShadow(t *testing.T, grid []string) (rows, native int, delegated
 			if err != nil {
 				t.Fatalf("%s: DecodePhysical(%q): %v", prof.name, legacy, err)
 			}
-			if !physical.Equal(want, got) {
-				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, translator.EncodePhysical(got), legacy))
+			// The flip serves the lowering's text: byte for byte, which includes the parsed structure.
+			if text := physical.Encode(got); text != legacy || !physical.Equal(want, got) {
+				problems = append(problems, fmt.Sprintf("%s: %q:\n lowered %s\n  string %s", prof.name, q, text, legacy))
+				continue
+			}
+			if canon := logql.CanonicalizeLogRanges(q); filterOnly(plan) && (canon == "" || canon[0] != '{' || logql.MayHaveNonFilterStage(canon)) {
+				problems = append(problems, fmt.Sprintf("%s: %q: lowered natively, but the flip's screen turns it away", prof.name, q))
 				continue
 			}
 			native++

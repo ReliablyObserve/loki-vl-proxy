@@ -138,32 +138,5 @@ func decodeCore(s string) physical.Op {
 }
 
 // EncodePhysical writes the operators DecodePhysical returns back as the text the translator wrote:
-// EncodePhysical(DecodePhysical(s)) == s for every s.
-func EncodePhysical(op physical.Op) string {
-	switch v := op.(type) {
-	case physical.VLQuery:
-		return v.Text
-	case physical.ScalarOp:
-		return v.Text
-	case physical.Verbatim:
-		return v.Text
-	case physical.Binary:
-		if v.Text != "" {
-			return v.Text
-		}
-		return BinaryMetricPrefix + v.Op + ":" + EncodePhysical(v.L) + "|||" + EncodePhysical(v.R) + v.Tail
-	case physical.Fold:
-		s := EncodePhysical(v.In)
-		for _, level := range v.Levels {
-			s = appendWithoutMarker(s, level.Op, level.Labels)
-		}
-		return s
-	case physical.LabelMap:
-		b := append([]byte(nil), EncodePhysical(v.In)...)
-		for _, spec := range v.Replace {
-			b = appendLabelReplaceMarker(b, spec)
-		}
-		return string(b)
-	}
-	return ""
-}
+// EncodePhysical(DecodePhysical(s)) == s for every s. The writer is physical.Encode.
+func EncodePhysical(op physical.Op) string { return physical.Encode(op) }

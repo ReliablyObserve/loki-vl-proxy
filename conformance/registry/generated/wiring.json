@@ -20,6 +20,7 @@
       "internal/proxy/lowering_shadow_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
+      "internal/proxy/query_lowering_test.go",
       "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/label_filter_grid_test.go",
       "internal/querycorpus/parser_grid_test.go",
@@ -424,6 +425,7 @@
       "internal/proxy/parenthesized_range_test.go",
       "internal/proxy/physical_sites_test.go",
       "internal/proxy/plain_stream_labels_test.go",
+      "internal/proxy/query_lowering_test.go",
       "internal/proxy/query_range_steps_middleware_test.go",
       "internal/proxy/query_range_steps_test.go",
       "internal/proxy/ranked_topk_cached_route_test.go",
@@ -2505,6 +2507,10 @@
       "observability-query-flow",
       "observability-slow-query-log"
     ],
+    "internal/proxy/query_lowering_test.go": [
+      "architecture-syntax-package-layering",
+      "loki_api_v1_query_range"
+    ],
     "internal/proxy/query_range_steps_harden_test.go": [
       "quality/query-range-settled-steps",
       "semantics/unwrap-conversion-error",
@@ -3776,7 +3782,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 419,
+  "tests_with_markers": 420,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",

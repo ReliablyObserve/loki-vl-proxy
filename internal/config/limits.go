@@ -391,6 +391,16 @@ var Limits = []Limit{
 		Sizing:     "0 (off) is the default: the lowering is a development aid that tells when a construct can move from the string translator to the typed plan, and it answers nothing. A comparison costs the parse, plan and lowering of one query (about 4 microseconds and 3 KB of allocations, measured on a log query with a stream selector and two line filters) and only runs on a cache miss, so 1 is affordable for an investigation or a canary replica; lower it (0.01-0.1) on a replica that translates thousands of distinct queries per second. Watch not_lowered by construct for what the lowering does not cover yet and mismatch for what it gets wrong.",
 	},
 	{
+		Flag:       "query-plan-lowering",
+		Unit:       "switch",
+		Bounds:     "which translator writes the VictoriaLogs query of a log query with a stream selector, line filters, pattern filters and label filters and no parser stage: true (the default) the typed query-plan lowering, false the string translator; every other query is always translated by the string translator, and a query the lowering cannot translate falls back to it. Nothing grows with the setting: the lowering is bounded by the query parser's own input limits and runs once per translation cache miss",
+		Error:      "none; the translated query is the same text under either setting. A lowering that panics is recovered, counted as `panic` and answered by the string translator",
+		Metric:     "loki_vl_proxy_lowering_shadow_total{result=\"flipped\",construct=\"LogSelect\"}",
+		Alert:      "none",
+		LokiParity: "",
+		Sizing:     "On is the default: the lowering writes the string translator's text byte for byte on the whole query corpus under every translator profile (a CI gate), takes less CPU and fewer bytes per translation than the translator on the shapes it covers, and only runs on a translation cache miss. A query it does not cover (a metric query, a parser or formatting stage, a detected_level or service_name filter) is decided by a scan of its text and not planned. Turn it off (false) as a rollback if a translated query ever differs from the string translator's: compare -translate-shadow-sample=1 with it off to see the difference as mismatch counts by construct.",
+	},
+	{
 		Flag:       "max-lines",
 		Unit:       "rows",
 		Bounds:     "the default number of log lines per query when the client sends no limit",

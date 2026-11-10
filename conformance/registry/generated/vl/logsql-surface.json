@@ -75,7 +75,6 @@
         "internal/proxy/ordered_json_valid_split.go",
         "internal/proxy/range_metric_compat.go",
         "internal/translate/linefilter_pattern.go",
-        "internal/translate/parser.go",
         "internal/translator/detected_level_logsql.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",

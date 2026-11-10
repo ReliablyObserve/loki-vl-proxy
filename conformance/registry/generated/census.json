@@ -1294,6 +1294,8 @@
     "internal/proxy/quantile_slider_harden_test.go | semantics/unwrap-quantile-response-limit",
     "internal/proxy/query_flow_test.go | observability-query-flow",
     "internal/proxy/query_flow_test.go | observability-slow-query-log",
+    "internal/proxy/query_lowering_test.go | architecture-syntax-package-layering",
+    "internal/proxy/query_lowering_test.go | loki_api_v1_query_range",
     "internal/proxy/query_range_steps_harden_test.go | quality/query-range-settled-steps",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-conversion-error",
     "internal/proxy/query_range_steps_harden_test.go | semantics/unwrap-over-time-range-windows",
@@ -2069,7 +2071,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 418,
+      "go": 419,
       "playwright": 1
     },
     "page_kinds": {

@@ -231,6 +231,9 @@
       "VectorAgg": 9207,
       "VectorLit": 9,
       "known divergence semantics/translator-reads-quoted-text-as-syntax": 12
-    }
+    },
+    "flipped": [
+      "LogSelect"
+    ]
   }
 }
