@@ -17,14 +17,16 @@ import (
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
-		"LogSelect pipeline": `{app="a"} | json | level="error"`,
-		"RangeAgg":           `rate({app="a"}[5m])`,
-		"VectorAgg":          `sum by (app) (count_over_time({app="a"}[5m]))`,
-		"Rank":               `topk(3, sum by (app) (rate({app="a"}[5m])))`,
-		"BinOp":              `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,
-		"LabelReplace":       `label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")`,
-		"VectorLit":          `vector(1)`,
-		"Scalar":             `1`,
+		"LogSelect pipeline":                  `{app="a"} | line_format "{{.a}}"`,
+		"LogSelect label filter after parser": `{app="a"} | json | level="error"`,
+		"LogSelect regexp parser":             "{app=\"a\"} | regexp `(?P<a>\\d+)`",
+		"RangeAgg":                            `rate({app="a"}[5m])`,
+		"VectorAgg":                           `sum by (app) (count_over_time({app="a"}[5m]))`,
+		"Rank":                                `topk(3, sum by (app) (rate({app="a"}[5m])))`,
+		"BinOp":                               `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,
+		"LabelReplace":                        `label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")`,
+		"VectorLit":                           `vector(1)`,
+		"Scalar":                              `1`,
 	} {
 		t.Run(construct, func(t *testing.T) {
 			expr, err := logql.Parse(q)

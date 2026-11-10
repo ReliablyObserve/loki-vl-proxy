@@ -43,6 +43,10 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 | `\| regexp "..."` | `\| extract_regexp "..."` |
 | `\|> "pattern"` | Pattern match line filter (Loki 3.7+). Two captures in a row (`<_><_>`) or a named capture (`<foo>`) is Loki's 400 with Loki's text; only `<_>` is a capture here |
 
+`| json` and `| logfmt` write the same pipe whatever their flags and extraction list: `| logfmt --strict --keep-empty a, b` is `| unpack_logfmt`, and `| json a, b="x.y"` is `| unpack_json` followed by `| copy "x.y" as b` for each label defined by an expression. A json expression written with escapes, as a raw string, with a comma, with a leading or trailing space or as a bracket path is read from the stage's text by the string translator, and the query plan leaves such a query to it.
+
+The query plan lowers a log query with these parsers, `| drop` and `| keep` to the same LogsQL, under every translator profile; a label filter after a parser, `| regexp`, `| pattern`, `| unpack`, `| line_format` and `| label_format` are still translated by the string translator (`conformance/registry/query-plan.json` lists the rows each construct holds).
+
 ## Label Filters
 
 | LogQL | LogsQL |

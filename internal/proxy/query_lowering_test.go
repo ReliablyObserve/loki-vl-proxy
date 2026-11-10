@@ -207,8 +207,9 @@ func TestQueryPlanLowering_ShadowCountsOnlyWhatStaysOnTheTranslator(t *testing.T
 		disable bool
 		want    map[string]int
 	}{
-		{"flag on", false, map[string]int{"flipped LogSelect": 2, "not_lowered RangeAgg": 1, "not_lowered LogSelect pipeline": 1}},
-		{"flag off", true, map[string]int{"match LogSelect": 2, "not_lowered RangeAgg": 1, "not_lowered LogSelect pipeline": 1}},
+		// `| json` is lowered natively but not served from the lowering (a parser stage): the shadow compares it.
+		{"flag on", false, map[string]int{"flipped LogSelect": 2, "match LogSelect": 1, "not_lowered RangeAgg": 1}},
+		{"flag off", true, map[string]int{"match LogSelect": 3, "not_lowered RangeAgg": 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := New(Config{

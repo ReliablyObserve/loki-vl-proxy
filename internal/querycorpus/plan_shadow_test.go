@@ -227,8 +227,8 @@ func TestPlanShadow(t *testing.T) {
 }
 
 // The proxy asks two cheap screens before it plans a query to serve from the lowering (a stream selector first,
-// logql.MayHaveNonFilterStage): neither may turn away a query the lowering writes natively, or the flip would
-// silently leave it to the string translator.
+// logql.MayHaveNonFilterStage): neither may turn away a filter-only query the lowering writes natively, or the flip
+// would silently leave it to the string translator.
 // conformance: architecture-syntax-package-layering
 func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 	t.Cleanup(querycorpus.PauseRecording())
@@ -244,6 +244,9 @@ func TestFlipScreenAdmitsEveryNativeRow(t *testing.T) {
 			continue
 		}
 		queryplan.Resolve(plan)
+		if !filterOnly(plan) {
+			continue
+		}
 		passes := canon != "" && canon[0] == '{' && !logql.MayHaveNonFilterStage(canon)
 		for _, prof := range planProfiles() {
 			if _, err := lower.Plan(plan, prof.lowerProfile()); err != nil {
