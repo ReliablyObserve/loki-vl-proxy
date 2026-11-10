@@ -59,9 +59,13 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	}
 	if rate {
 		// One allocation for the text: the chain is most of it.
-		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:])}, nil
+		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:]...)}, nil
 	}
-	return physical.VLQuery{Text: log.text("", "", []logsql.Pipe{stats})}, nil
+	var b strings.Builder
+	log.write(&b, "", "", 80)
+	b.WriteByte(' ')
+	b.WriteString(stats.String())
+	return physical.VLQuery{Text: b.String()}, nil
 }
 
 // metricLog is the log query of a metric row, split where a range or vector aggregation inserts its derivations:
@@ -102,13 +106,12 @@ func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metric
 	return metricLog{head: logsql.Query{Filter: q.Filter}.String(), restore: restore, pipes: pipes.String()}, nil
 }
 
-// text is the metric row's query: the filters, then the derivation of detected_level (chain) and of service_name
-// (service), each when it is not empty, the restore of the stream labels, the log query's pipes and the stats
-// pipes. The string translator inserts the derivations before the first pipe of the log query, the chain after
-// the service name's, in front of it.
-func (m metricLog) text(chain, service string, stats []logsql.Pipe) string {
-	var b strings.Builder
-	b.Grow(len(m.head) + len(chain) + len(service) + len(m.restore) + len(m.pipes) + 512)
+// write puts the metric row's query, before its stats, into b, with room for extra more bytes: the filters, then the
+// derivation of detected_level (chain) and of service_name (service), each when it is not empty, the restore of the
+// stream labels and the log query's pipes. The string translator inserts the derivations before the first pipe of
+// the log query, the chain after the service name's, in front of it.
+func (m metricLog) write(b *strings.Builder, chain, service string, extra int) {
+	b.Grow(len(m.head) + len(chain) + len(service) + len(m.restore) + len(m.pipes) + extra)
 	b.WriteString(m.head)
 	for _, part := range [3]string{chain, service, m.restore} {
 		if part != "" {
@@ -117,6 +120,12 @@ func (m metricLog) text(chain, service string, stats []logsql.Pipe) string {
 		}
 	}
 	b.WriteString(m.pipes)
+}
+
+// text is the metric row's query with the stats pipes after it (write).
+func (m metricLog) text(chain, service string, stats ...logsql.Pipe) string {
+	var b strings.Builder
+	m.write(&b, chain, service, 80*len(stats))
 	for _, p := range stats {
 		b.WriteByte(' ')
 		b.WriteString(p.String())

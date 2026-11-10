@@ -108,7 +108,7 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if needService {
 		service = translate.ServiceNameGroupingPipes(prof.Caps)
 	}
-	op := physical.Op(physical.VLQuery{Text: log.text(chain, service, stats)})
+	op := physical.Op(physical.VLQuery{Text: log.text(chain, service, stats...)})
 	if without {
 		op = physical.Fold{Levels: []physical.FoldLevel{{Op: string(va.Op), Labels: raw, Without: true}}, In: op}
 	}
