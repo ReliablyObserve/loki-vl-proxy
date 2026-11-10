@@ -50,56 +50,78 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	if ra.By != nil {
 		return nil, &NotLoweredError{Construct: "RangeAgg grouping"}
 	}
-	if c := rangeInnerConstruct(ra.In); c != "" {
-		return nil, &NotLoweredError{Construct: c}
+	log, err := metricLogQuery(ra.In, prof, "RangeAgg")
+	if err != nil {
+		return nil, err
+	}
+	if translatorReadsQuotedText(ra.In, log) {
+		return nil, &NotLoweredError{Construct: "RangeAgg quoted clause"}
+	}
+	if rate {
+		// One allocation for the text: the chain is most of it.
+		return physical.VLQuery{Text: log.text(translate.RateDetectedLevelChain(), "", ratePipes[:])}, nil
+	}
+	return physical.VLQuery{Text: log.text("", "", []logsql.Pipe{stats})}, nil
+}
+
+// metricLog is the log query of a metric row, split where a range or vector aggregation inserts its derivations:
+// the filters (head), the restore of the stream labels, and the log query's pipes.
+type metricLog struct {
+	head    string
+	restore string
+	// pipes is the log query's pipes printed, each after a space.
+	pipes string
+}
+
+// metricLogQuery lowers the log query of a range aggregation the way the string translator writes a metric row's
+// (translateMetricInnerQuery: no capabilities, no stream fields, no kept line, only the label names). A part it
+// does not write is named under owner, the construct the aggregation delegates as.
+func metricLogQuery(in *queryplan.LogSelect, prof Profile, owner string) (metricLog, error) {
+	if c := rangeInnerConstruct(in); c != "" {
+		return metricLog{}, &NotLoweredError{Construct: owner + strings.TrimPrefix(c, "RangeAgg")}
 	}
 	if prof.KeepLine {
-		return nil, &NotLoweredError{Construct: "RangeAgg keepLine"}
+		return metricLog{}, &NotLoweredError{Construct: owner + " keepLine"}
 	}
 	restore, ok := streamTagRestore(prof.Label)
 	if !ok {
-		return nil, &NotLoweredError{Construct: "RangeAgg stream label name"}
+		return metricLog{}, &NotLoweredError{Construct: owner + " stream label name"}
 	}
-	q, err := logSelectQuery(ra.In, Profile{Label: prof.Label})
+	q, err := logSelectQuery(in, Profile{Label: prof.Label})
 	if err != nil {
 		if nl, ok := err.(*NotLoweredError); ok {
-			return nil, &NotLoweredError{Construct: "RangeAgg " + nl.Construct}
+			return metricLog{}, &NotLoweredError{Construct: owner + " " + nl.Construct}
 		}
-		return nil, err
+		return metricLog{}, err
 	}
-	// The derivation of detected_level goes after the filters of the query, then the restore of the stream labels,
-	// the rest of the query's pipes and the stats: the query as logsql.Query prints it, with the printed chain and
-	// restore inserted.
-	var b strings.Builder
-	head := logsql.Query{Filter: q.Filter}.String()
-	if rate {
-		// One allocation for the text: the chain is most of it.
-		chain := translate.RateDetectedLevelChain()
-		b.Grow(len(head) + len(chain) + len(restore) + 512)
-		b.WriteString(head)
-		b.WriteByte(' ')
-		b.WriteString(chain)
-	} else {
-		b.WriteString(head)
-	}
-	if restore != "" {
-		b.WriteByte(' ')
-		b.WriteString(restore)
-	}
+	var pipes strings.Builder
 	for _, p := range q.Pipes {
+		pipes.WriteByte(' ')
+		pipes.WriteString(p.String())
+	}
+	return metricLog{head: logsql.Query{Filter: q.Filter}.String(), restore: restore, pipes: pipes.String()}, nil
+}
+
+// text is the metric row's query: the filters, then the derivation of detected_level (chain) and of service_name
+// (service), each when it is not empty, the restore of the stream labels, the log query's pipes and the stats
+// pipes. The string translator inserts the derivations before the first pipe of the log query, the chain after
+// the service name's, in front of it.
+func (m metricLog) text(chain, service string, stats []logsql.Pipe) string {
+	var b strings.Builder
+	b.Grow(len(m.head) + len(chain) + len(service) + len(m.restore) + len(m.pipes) + 512)
+	b.WriteString(m.head)
+	for _, part := range [3]string{chain, service, m.restore} {
+		if part != "" {
+			b.WriteByte(' ')
+			b.WriteString(part)
+		}
+	}
+	b.WriteString(m.pipes)
+	for _, p := range stats {
 		b.WriteByte(' ')
 		b.WriteString(p.String())
 	}
-	if rate {
-		for _, p := range ratePipes {
-			b.WriteByte(' ')
-			b.WriteString(p.String())
-		}
-	} else {
-		b.WriteByte(' ')
-		b.WriteString(stats.String())
-	}
-	return physical.VLQuery{Text: b.String()}, nil
+	return b.String()
 }
 
 // rangeInnerConstruct names the first part of the log query of a range aggregation that its lowering does not

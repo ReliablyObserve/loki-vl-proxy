@@ -22,7 +22,7 @@ var serviceNameCoalesce = sync.OnceValue(func() string {
 	names := make([]string, len(SyntheticServiceNameFields))
 	for i, field := range SyntheticServiceNameFields {
 		names[i] = field
-		if strings.Contains(field, ".") {
+		if hasDot(field) {
 			names[i] = `"` + field + `"`
 		}
 	}
@@ -82,4 +82,13 @@ func JoinByLabels(first, second []string) []string {
 		}
 	}
 	return out
+}
+
+func hasDot(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '.' {
+			return true
+		}
+	}
+	return false
 }

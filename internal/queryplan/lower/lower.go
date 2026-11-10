@@ -58,6 +58,8 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 		return logSelect(n, prof)
 	case *queryplan.RangeAgg:
 		return rangeAgg(n, prof)
+	case *queryplan.VectorAgg:
+		return vectorAgg(n, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }

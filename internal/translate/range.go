@@ -42,9 +42,27 @@ func RateStatsPipes(op logql.RangeOp, seconds float64) (pipes [3]logsql.Pipe, ok
 	}
 	by := []logsql.GroupKey{{Field: "_stream"}, {Field: "level"}, {Field: DetectedLevelLabel}}
 	pipes[0] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: "__lvp_inner"}}}
-	pipes[1] = logsql.PipeMath{Alias: "__lvp_rate", Expr: "__lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64)}
+	pipes[1] = RateDivision(seconds)
 	pipes[2] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_rate"}}}}
 	return pipes, true
+}
+
+// RangeRowFunc is the stats function that reads the rows of a range aggregation with no unwrapped value: the rows
+// counted (count_over_time, absent_over_time and rate) or the bytes of their lines summed (bytes_over_time and
+// bytes_rate). ok is false for every other function.
+func RangeRowFunc(op logql.RangeOp) (fn logsql.StatsFunc, ok bool) {
+	switch op {
+	case logql.RangeCountOverTime, logql.RangeAbsentOverTime, logql.RangeRate:
+		return logsql.Count{}, true
+	case logql.RangeBytesOverTime, logql.RangeBytesRate:
+		return logsql.SumLen{Field: "_msg"}, true
+	}
+	return nil, false
+}
+
+// RateDivision is the pipe that divides the per-series count (or bytes) by the range's seconds.
+func RateDivision(seconds float64) logsql.PipeMath {
+	return logsql.PipeMath{Alias: "__lvp_rate", Expr: "__lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64)}
 }
 
 // RateDetectedLevelChain is the detected_level chain of a rate: Loki's value for every row, written into
