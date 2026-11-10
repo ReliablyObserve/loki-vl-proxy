@@ -25,7 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serves the plan yet: no request sent to VictoriaLogs and no answer
   changes. A `stddev` or `stdvar` by a label of a query with a parser, a
   binary operation operand and a `stddev` under a binary operation stay with
-  the string translator.
+  the string translator. A query whose line filter holds a quoted `| json`
+  (or `| logfmt`, `| pattern`, `| regexp`, `| unpack`) followed by a
+  non-ASCII character is now left to the string translator, which reads it
+  as a parser stage where the plan did not.
 - The query plan holds `topk`, `bottomk`, `sort` and `sort_desc` the way the
   proxy evaluates them, for every translation profile: one ranking step per
   ranking, with its `k` and its `by` or `without` clause, over the operand's
