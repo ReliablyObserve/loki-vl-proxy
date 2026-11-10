@@ -16,6 +16,8 @@ import (
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
 func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [][]logsql.Pipe, read []string, err error) {
 	parsed := false
+	// keepLine is whether the first line_format still has to keep the stored line aside.
+	keepLine := prof.KeepLine
 	var names definedNames
 	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
 	// The query stays with it unless the label filters alone read it (streamValues); the construct is answered
@@ -42,7 +44,7 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			if err == nil && len(ps) == 0 && len(read) > 0 {
 				// A wildcard pattern writes no pipe, and the string translator then copies the stream labels
 				// aside without the fill that follows a parser's pipe.
-				err = &NotLoweredError{Construct: "LogSelect pattern parser no-op with stream label"}
+				err = &NotLoweredError{Construct: "LogSelect no-op pattern with stream label"}
 			}
 			ps = streamValuePipes(ps, read, !parsed)
 			parsed = true
@@ -52,6 +54,18 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile, defs stageDefs) (built [
 			ps, err = keepPipes(st, names.label(prof.Label), prof)
 		case *queryplan.Decolorize:
 			ps = []logsql.Pipe{translate.Decolorize()}
+		case *queryplan.LineFormat:
+			var reason string
+			if ps, reason = translate.LineFormat(st.Template, keepLine); reason == "" {
+				keepLine = false
+			} else {
+				err = &NotLoweredError{Construct: "LogSelect line format " + reason}
+			}
+		case *queryplan.LabelFormat:
+			var reason string
+			if ps, reason = translate.LabelFormats(st.Formats); reason != "" {
+				err = &NotLoweredError{Construct: "LogSelect label format " + reason}
+			}
 		default:
 			err = &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
@@ -98,6 +112,10 @@ func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 		arguments = len(prev.Matchers) > 0
 	case *queryplan.Keep:
 		arguments = len(prev.Matchers) > 0
+	case *queryplan.LineFormat:
+		arguments = true // the template is a quoted argument
+	case *queryplan.LabelFormat:
+		arguments = true // the assignments are arguments
 	}
 	if arguments {
 		return &NotLoweredError{Construct: "LogSelect line filter after parser arguments"}
@@ -222,30 +240,47 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 					return true
 				}
 			}
+		case *queryplan.LabelFormat:
+			// The translator reads a label_format's destination and its rename source as names the pipeline reads.
+			for _, f := range st.Formats {
+				if named(f.Name) || f.Rename && named(f.Value) {
+					return true
+				}
+			}
 		}
 	}
 	return false
 }
 
 // stageDefs are the labels each stage of a query defines by name (nil for the stages that define none), read from
-// the regexp and pattern stages once for the query.
+// the regexp, pattern and label_format stages once for the query.
 type stageDefs []struct{ captured, defined []string }
 
-// definitions reads the labels the regexp and pattern stages of the query define; nil when there is no such stage.
+// definitions reads the labels the regexp, pattern and label_format stages of the query define; nil when there is
+// no such stage.
 func definitions(sel *queryplan.LogSelect) stageDefs {
 	var defs stageDefs
 	for i, st := range sel.Stages {
-		p, ok := st.(*queryplan.Parse)
-		if !ok || (p.Type != logql.ParserRegexp && p.Type != logql.ParserPattern) {
-			continue
-		}
-		if defs == nil {
-			defs = make(stageDefs, len(sel.Stages))
-		}
-		if p.Type == logql.ParserRegexp {
-			defs[i].captured = translate.RegexpCaptureNames(p.Param)
-		} else {
-			defs[i].defined = translate.PatternCaptureNames(p.Param)
+		switch st := st.(type) {
+		case *queryplan.Parse:
+			if st.Type != logql.ParserRegexp && st.Type != logql.ParserPattern {
+				continue
+			}
+			if defs == nil {
+				defs = make(stageDefs, len(sel.Stages))
+			}
+			if st.Type == logql.ParserRegexp {
+				defs[i].captured = translate.RegexpCaptureNames(st.Param)
+			} else {
+				defs[i].defined = translate.PatternCaptureNames(st.Param)
+			}
+		case *queryplan.LabelFormat:
+			if defs == nil {
+				defs = make(stageDefs, len(sel.Stages))
+			}
+			for _, f := range st.Formats {
+				defs[i].defined = append(defs[i].defined, f.Name)
+			}
 		}
 	}
 	return defs

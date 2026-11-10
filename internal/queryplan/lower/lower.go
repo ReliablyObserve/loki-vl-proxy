@@ -113,7 +113,7 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 	afterParser := false
 	for i, st := range sel.Stages {
 		switch st.(type) {
-		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep, *queryplan.Decolorize:
+		case *queryplan.Parse, *queryplan.Drop, *queryplan.Keep, *queryplan.Decolorize, *queryplan.LineFormat, *queryplan.LabelFormat:
 			// A parser, a drop, a keep and decolorize are pipes (stagePipes); a drop of matchers and a
 			// wildcard pattern write none.
 			if len(staged) > 0 && len(staged[i]) > 0 {

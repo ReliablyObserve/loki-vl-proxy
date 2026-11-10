@@ -113,6 +113,16 @@ func templateReads(sel *queryplan.LogSelect, names []string) bool {
 			if holds(st.Param) {
 				return true
 			}
+		case *queryplan.LineFormat:
+			if holds(st.Template) {
+				return true
+			}
+		case *queryplan.LabelFormat:
+			for _, f := range st.Formats {
+				if holds(f.Value) {
+					return true
+				}
+			}
 		case *queryplan.Drop:
 			for _, m := range st.Matchers {
 				if holds(m.Value) {

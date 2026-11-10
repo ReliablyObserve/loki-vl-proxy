@@ -727,3 +727,11 @@ func (s *scanner) scanLiteral(spaced bool) Token {
 	}
 	return Token{Typ: TokNumber, Val: val}
 }
+
+// IsLokiKeyword reports whether word is a word Loki's lexer reads as a keyword token (in some position), by its
+// lower case form. The scanner folds such an identifier to lower case, so a typed name equal to one may have been
+// written in another case.
+func IsLokiKeyword(word string) bool {
+	_, ok := lokiWords[word]
+	return ok
+}
