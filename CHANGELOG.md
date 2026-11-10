@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the translator copies into the query as it is or reads from text. No
   handler serves these queries from the lowering yet; the requests sent to
   VictoriaLogs do not change.
+
+## [2.121.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers `count_over_time`, `bytes_over_time` and
   `absent_over_time` over a log query with line, pattern and label filters and
   no parser (any offset, any range, with or without the tenant's stream
@@ -58,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same output. The requests sent to VictoriaLogs are those of the string
   translator, and the lowering takes about half the time of the translation
   and allocates less.
+
+## [2.120.1] - 2026-11-10
 
 ### Fixed
 
