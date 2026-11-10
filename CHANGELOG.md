@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.127.0] - 2026-11-10
+
 ### Changed
 
 - The query plan lowers `topk`, `bottomk`, `sort` and `sort_desc` without a
@@ -21,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (where the lowering would allocate more than the translation), and spelled
   in ways the string translator reads unlike Loki, are still written by the
   string translator.
+
+## [2.126.0] - 2026-11-10
+
+### Changed
+
 - The query plan lowers range and vector aggregations over `| drop`,
   `| keep`, `| decolorize`, `| line_format`, `| label_format`, `| regexp`
   and `| pattern` stages of a log query to VictoriaLogs natively for every
