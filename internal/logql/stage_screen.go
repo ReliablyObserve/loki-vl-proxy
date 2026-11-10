@@ -70,8 +70,21 @@ func isStageWordByte(c byte) bool {
 	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
+// isNonFilterStageWord reports a stage keyword in any letter case: the scanner folds a word Loki reads as a
+// keyword to lower case, so the parser reads `| JSON` as `| json`.
 func isNonFilterStageWord(w string) bool {
-	switch w {
+	var lower [len("label_format")]byte
+	if len(w) > len(lower) {
+		return false
+	}
+	for i := 0; i < len(w); i++ {
+		c := w[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		lower[i] = c
+	}
+	switch string(lower[:len(w)]) {
 	case "json", "logfmt", "regexp", "pattern", "unpack", "line_format", "label_format", "decolorize", "drop", "keep", "unwrap", "distinct":
 		return true
 	}
