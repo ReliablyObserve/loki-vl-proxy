@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The query plan holds `topk`, `bottomk`, `sort` and `sort_desc` the way the
+  proxy evaluates them, for every translation profile: one ranking step per
+  ranking, with its `k` and its `by` or `without` clause, over the operand's
+  own query, which is the request the proxy sends (it translates the operand
+  alone and ranks each step of the answer itself). Rankings with a clause,
+  over a vector aggregation, a nest of them, `label_replace`, an unwrapped
+  value or another ranking, with `sum`, `avg`, `min`, `max` and `count`
+  layers between rankings, are covered; the shadow holds them to the proxy's
+  own route, not to the translator's text for the whole query, which the
+  proxy never sends. Nothing serves the plan yet: no request sent to
+  VictoriaLogs and no answer changes. A binary operation operand, a `sort`
+  with a clause, a lone ranking wrapped in parentheses and a `stddev` or
+  `stdvar` above a ranking stay with the string translator.
+
 ## [2.128.1] - 2026-11-10
 
 ### Changed

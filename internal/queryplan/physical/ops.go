@@ -5,6 +5,8 @@
 // library and internal/logsql, so the logical plan can build operators without the translator.
 package physical
 
+import "slices"
+
 // Op is a node of the physical plan.
 type Op interface{ op() }
 
@@ -31,9 +33,31 @@ type VLStats struct {
 	UngatedText string
 }
 
-// RankStep ranks the series of each step (topk, bottomk, sort). Declared only: its fields arrive with the
-// handlers that evaluate it.
-type RankStep struct{}
+// Grouping is the by or without clause of a level the proxy evaluates; a nil *Grouping is no clause. `by ()` is kept
+// as written (non-nil, no labels); Canon folds it to nil, because the proxy reads both as one group.
+type Grouping struct {
+	Labels  []string
+	Without bool
+}
+
+// RankStep ranks the series of In at each step: topk and bottomk keep the K best of each group of By (NaN last),
+// sort and sort_desc keep every series (K is 0). The proxy evaluates it over the answer of In, so it has no text of
+// its own: the legacy encoding has no marker for it and Encode writes In, the request the proxy sends on.
+type RankStep struct {
+	Op string // topk, bottomk, sort, sort_desc
+	K  int
+	By *Grouping
+	In Op
+}
+
+// SeriesAgg folds the series of In at each step, per group of By: stddev and stdvar (population), and sum, avg, min,
+// max and count when the level below is itself evaluated by the proxy (the layers above a ranking). Like RankStep it
+// has no text: Encode writes In.
+type SeriesAgg struct {
+	Op string
+	By *Grouping
+	In Op
+}
 
 // Fold groups the series of In by the labels of its levels, innermost first, and combines the ones that end with
 // the same label set.
@@ -119,17 +143,20 @@ type Verbatim struct {
 	In   Op
 }
 
-func (VLQuery) op()  {}
-func (VLStats) op()  {}
-func (RankStep) op() {}
-func (Fold) op()     {}
-func (LabelMap) op() {}
-func (Binary) op()   {}
-func (ScalarOp) op() {}
-func (Verbatim) op() {}
+func (VLQuery) op()   {}
+func (VLStats) op()   {}
+func (RankStep) op()  {}
+func (SeriesAgg) op() {}
+func (Fold) op()      {}
+func (LabelMap) op()  {}
+func (Binary) op()    {}
+func (ScalarOp) op()  {}
+func (Verbatim) op()  {}
 
 // Split separates the post-processing of a decoded query from the operator it applies to. The core is what the
-// proxy sends to VictoriaLogs: translator.EncodePhysical(core) is the clean query text.
+// proxy sends to VictoriaLogs: translator.EncodePhysical(core) is the clean query text. A core that is a RankStep or
+// a SeriesAgg is evaluated by the proxy: SplitEval separates its levels from the operand it evaluates them over, and
+// Split of that operand gives the request (the core) and the operand's own post-processing.
 func Split(op Op) (core Op, post Post) {
 	if v, ok := op.(Verbatim); ok {
 		op = v.In
@@ -144,4 +171,56 @@ func Split(op Op) (core Op, post Post) {
 		op = v.In
 	}
 	return op, post
+}
+
+// Level is one level the proxy evaluates over the series of the operand below it: a ranking (topk, bottomk, sort,
+// sort_desc; K is the count of the first two) or a series aggregation (stddev, stdvar, sum, avg, min, max, count).
+type Level struct {
+	Op string
+	K  int
+	By *Grouping
+}
+
+// Ranks reports whether the level is a ranking.
+func (l Level) Ranks() bool {
+	switch l.Op {
+	case "topk", "bottomk", "sort", "sort_desc":
+		return true
+	}
+	return false
+}
+
+// SplitEval separates the levels the proxy evaluates from the operand they are evaluated over: the RankStep and
+// SeriesAgg chain of core, innermost level first (the order the proxy applies them in). A core that is neither has
+// no levels and is its own operand.
+func SplitEval(core Op) (levels []Level, operand Op) {
+	for {
+		switch v := core.(type) {
+		case RankStep:
+			levels, core = append(levels, Level{v.Op, v.K, v.By}), v.In
+		case SeriesAgg:
+			levels, core = append(levels, Level{v.Op, 0, v.By}), v.In
+		default:
+			slices.Reverse(levels)
+			return levels, core
+		}
+	}
+}
+
+// Evaluated reports whether op holds a level the proxy evaluates (a RankStep or a SeriesAgg), anywhere in the
+// operators that wrap or combine queries.
+func Evaluated(op Op) bool {
+	switch v := op.(type) {
+	case RankStep, SeriesAgg:
+		return true
+	case Verbatim:
+		return Evaluated(v.In)
+	case LabelMap:
+		return Evaluated(v.In)
+	case Fold:
+		return Evaluated(v.In)
+	case Binary:
+		return Evaluated(v.L) || Evaluated(v.R)
+	}
+	return false
 }

@@ -19,6 +19,9 @@ func TestEncodeWritesTheLegacyText(t *testing.T) {
 		{"binary", Binary{Op: "/", L: q, R: ScalarOp{Text: "2"}}, `__binary__:/:app:="x"|||2`},
 		{"binary text", Binary{Op: "/", Text: "whole"}, "whole"},
 		{"label_replace", LabelMap{Replace: []LabelReplace{lr}, In: q}, string(AppendLabelReplaceMarker([]byte(`app:="x"`), lr))},
+		{"ranking", RankStep{Op: "topk", K: 3, By: &Grouping{Labels: []string{"app"}}, In: q}, `app:="x"`},
+		{"series aggregation", SeriesAgg{Op: "stddev", In: LabelMap{Replace: []LabelReplace{lr}, In: q}}, string(AppendLabelReplaceMarker([]byte(`app:="x"`), lr))},
+		{"ranking over ranking", RankStep{Op: "sort", In: RankStep{Op: "topk", K: 2, In: q}}, `app:="x"`},
 		{"unknown", RankStep{}, ""},
 	}
 	for _, c := range cases {
