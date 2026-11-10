@@ -75,7 +75,7 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 		return "", false
 	}
 	construct := lower.Construct(plan.Root)
-	if !slices.Contains(QueryPlanFlippedConstructs, construct) {
+	if !slices.Contains(QueryPlanFlippedConstructs, construct) || !filterOnly(plan.Root) {
 		return "", false
 	}
 	op, err := lower.Plan(plan, prof)
@@ -87,4 +87,22 @@ func (p *Proxy) lowerLogSelect(ctx context.Context, canon string, prof lower.Pro
 	querycorpus.Record(querycorpus.LogQLTranslate, canon)
 	p.recordLoweringShadow(shadowFlipped, construct)
 	return physical.Encode(op), true
+}
+
+// filterOnly reports a log query whose stages are line filters and label filters only: the queries served from the
+// lowering. The text screen (logql.MayHaveNonFilterStage) turns the others away before a plan is built; this is the
+// typed check behind it, so a stage the screen misses stays with the string translator.
+func filterOnly(n queryplan.Node) bool {
+	sel, ok := n.(*queryplan.LogSelect)
+	if !ok {
+		return false
+	}
+	for _, st := range sel.Stages {
+		switch st.(type) {
+		case *queryplan.LineFilter, *queryplan.LabelFilter:
+		default:
+			return false
+		}
+	}
+	return true
 }

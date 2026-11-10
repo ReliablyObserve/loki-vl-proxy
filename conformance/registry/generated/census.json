@@ -699,6 +699,9 @@
     "semantics/topk-per-step-membership-differs | compare:observed",
     "semantics/topk-per-step-membership-differs | gap:open",
     "semantics/topk-per-step-membership-differs | query",
+    "semantics/translator-reads-parenthesized-metric-as-text | compare:observed",
+    "semantics/translator-reads-parenthesized-metric-as-text | gap:open",
+    "semantics/translator-reads-parenthesized-metric-as-text | query",
     "semantics/translator-reads-quoted-text-as-syntax | compare:observed",
     "semantics/translator-reads-quoted-text-as-syntax | gap:open",
     "semantics/translator-reads-quoted-text-as-syntax | query",
@@ -1547,6 +1550,7 @@
     "internal/querycorpus/escaped_spelling_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/extract_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/format_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/known_divergence_test.go | semantics/translator-reads-parenthesized-metric-as-text",
     "internal/querycorpus/label_filter_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/label_filter_parsed_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/parser_grid_test.go | architecture-syntax-package-layering",
@@ -1560,6 +1564,8 @@
     "internal/querycorpus/plan_corpus_test.go | semantics/label-replace-new-label",
     "internal/querycorpus/plan_corpus_test.go | semantics/without-over-inner-aggregation-collapses",
     "internal/querycorpus/plan_shadow_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/extract_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/format_loki_test.go | architecture-syntax-package-layering",
@@ -1570,8 +1576,12 @@
     "internal/queryplan/lower/parser_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
+    "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
+    "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
+    "internal/translate/detected_level_keyword_test.go | severity-detected-level-derivation",
+    "internal/translate/detected_level_normalize_test.go | severity-detected-level-derivation",
     "internal/translate/extract_stages_test.go | architecture-syntax-package-layering",
     "internal/translate/ip_label_prefilter_test.go | semantics/ip-label-filter-embedded-address",
     "internal/translate/ip_line_filter_loki_test.go | semantics/ip-filter-precision",
@@ -1579,10 +1589,8 @@
     "internal/translate/line_format_test.go | architecture-syntax-package-layering",
     "internal/translate/linefilter_pattern_test.go | semantics/pattern-line-filter",
     "internal/translate/selector_test.go | architecture-syntax-package-layering",
-    "internal/translator/detected_level_chain_memo_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_filter_stage_test.go | severity/detected-level-filter-json-level",
-    "internal/translator/detected_level_keyword_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_logsql_test.go | semantics/detected-level-missing-from-stats-answers",
     "internal/translator/detected_level_logsql_test.go | severity-detected-level-derivation",
     "internal/translator/detected_level_logsql_test.go | severity-exposure-surfaces",
@@ -2075,14 +2083,14 @@
   "counts": {
     "case_consumers": {
       "any": 28,
-      "api": 50,
+      "api": 51,
       "drilldown": 50,
       "explore": 157,
       "grafana-datasource": 2,
       "operator": 4
     },
     "claiming_tests": {
-      "go": 430,
+      "go": 435,
       "playwright": 1
     },
     "page_kinds": {
@@ -2102,7 +2110,7 @@
     "shape_covers_distinct": 108,
     "shapes_path_only": 8,
     "unwired_items": 102,
-    "wired_items": 275
+    "wired_items": 276
   },
   "gates": [
     "A/B shape selection",

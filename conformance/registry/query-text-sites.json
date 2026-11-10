@@ -97,6 +97,7 @@
       "internal/proxy/volume.go": 6
     },
     "translator_string_ops": {
+      "internal/translate/detected_level.go": 38,
       "internal/translate/extract_stages.go": 3,
       "internal/translate/ip_label_filter.go": 9,
       "internal/translate/ip_line_v4.go": 9,
@@ -107,7 +108,6 @@
       "internal/translate/linefilter.go": 23,
       "internal/translate/linefilter_pattern.go": 9,
       "internal/translate/selector.go": 17,
-      "internal/translator/detected_level_logsql.go": 38,
       "internal/translator/ip_label_filter.go": 1,
       "internal/translator/label_filter_expr.go": 6,
       "internal/translator/label_matcher_regexp.go": 1,

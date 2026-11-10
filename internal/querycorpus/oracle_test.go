@@ -229,8 +229,9 @@ const parsedGridOracleStride = 17
 // VictoriaLogs oracle's inputs.
 const formatGridOracleStride = 5
 
-// typedSelectorPair is, for a client LogQL log query the plan lowers natively (a stream selector with its line
-// filters, label filters, json and logfmt parsers, drop and keep), the query the plan lowers to (lower.Plan) and the one the string translator writes for it, both for
+// typedSelectorPair is, for a client LogQL log query or range aggregation over one that the plan lowers natively
+// (a stream selector with its line filters, label filters, json and logfmt parsers, drop and keep), the query the
+// plan lowers to (lower.Plan) and the one the string translator writes for it, both for
 // version v: VictoriaLogs' parser must read the two the same. A selector whose regexp does not compile, and a query
 // the LogQL validation rejects (a pattern line filter Loki refuses), are left out: every route answers Loki's
 // rejection of them before it translates anything.
@@ -244,12 +245,19 @@ func typedSelectorPair(r Row, v string) (typed, built string, ok bool) {
 // typedQueryPair is typedSelectorPair for the LogQL query q.
 func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	// The translator is the wrong one for these (known_divergence_test.go): nothing to hold the plan to.
-	if translatorMisreadsQuotedText(q) {
+	if translatorMisreadsQuotedText(q) || translatorMisreadsParenthesizedMetric(q) {
 		return "", "", false
 	}
 	lq, err := logql.ParseLogQuery(q)
 	if err != nil {
-		return "", "", false
+		// A range aggregation over a log query: the selector of its log query.
+		agg, ok := mustParse(q).(*logql.RangeAggregation)
+		if !ok {
+			return "", "", false
+		}
+		if lq, ok = agg.Inner.(*logql.LogQuery); !ok {
+			return "", "", false
+		}
 	}
 	for _, m := range lq.Selector.Matchers {
 		if m.Op == logql.MatchRe || m.Op == logql.MatchNotRe {
@@ -280,12 +288,22 @@ func typedQueryPair(q, v string) (typed, built string, ok bool) {
 	if !isQuery {
 		return "", "", false
 	}
-	// The string translator gets the text the handlers translate: the request rewrite removes comments first.
-	built, err = translator.TranslateLogQLWithCapabilities(logql.StripComments(q), identity, nil, caps)
+	// The string translator gets the text the handlers translate: the request rewrite removes comments and
+	// canonicalizes the ranges first.
+	built, err = translator.TranslateLogQLWithCapabilities(logql.CanonicalizeLogRanges(logql.StripComments(q)), identity, nil, caps)
 	if err != nil {
 		return "", "", false
 	}
 	return vq.Text, built, true
+}
+
+// mustParse is the parsed expression of q, nil when it does not parse.
+func mustParse(q string) logql.Expr {
+	expr, err := logql.Parse(q)
+	if err != nil {
+		return nil
+	}
+	return expr
 }
 
 // TestPinVLOracle pins VictoriaLogs version LVP_ORACLE_PIN in the oracle: in go.mod when it is the matrix's pinned

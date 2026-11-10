@@ -164,20 +164,30 @@ func hasByte(s string, c byte) bool {
 // read as stream values: WithStreamLabels of the string translator wraps the function that way.
 const streamLabelsProbe = "\x03"
 
-// StreamLabelNames are the Loki stream label names the label function carries, nil when it carries none.
-func StreamLabelNames(label func(string) string) []string {
+// StreamLabelList is the comma-joined Loki stream label names the label function carries, as it answers the
+// probe, and false when it carries none.
+func StreamLabelList(label func(string) string) (string, bool) {
 	if label == nil {
-		return nil
+		return "", false
 	}
 	r := label(streamLabelsProbe)
 	if len(r) < 2 || r[0] != streamLabelsProbe[0] || r[1] != '=' {
+		return "", false
+	}
+	return r[2:], true
+}
+
+// StreamLabelNames are the Loki stream label names the label function carries, nil when it carries none.
+func StreamLabelNames(label func(string) string) []string {
+	list, ok := StreamLabelList(label)
+	if !ok {
 		return nil
 	}
 	var names []string
-	start := 2
-	for i := 2; i <= len(r); i++ {
-		if i == len(r) || r[i] == ',' {
-			names = append(names, r[start:i])
+	start := 0
+	for i := 0; i <= len(list); i++ {
+		if i == len(list) || list[i] == ',' {
+			names = append(names, list[start:i])
 			start = i + 1
 		}
 	}

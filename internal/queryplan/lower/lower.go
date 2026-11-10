@@ -53,11 +53,14 @@ func (e *NotLoweredError) Is(target error) bool { return target == ErrNotLowered
 // under every profile (internal/querycorpus TestPlanShadow); until then Plan
 // answers ErrNotLowered naming the construct.
 func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
-	if sel, ok := p.Root.(*queryplan.LogSelect); ok {
-		if keepsSpelling(sel, prof) {
+	switch n := p.Root.(type) {
+	case *queryplan.LogSelect:
+		if keepsSpelling(n, prof) {
 			return nil, &NotLoweredError{Construct: escapedSpellingConstruct}
 		}
-		return logSelect(sel, prof)
+		return logSelect(n, prof)
+	case *queryplan.RangeAgg:
+		return rangeAgg(n, prof)
 	}
 	return nil, &NotLoweredError{Construct: Construct(p.Root)}
 }
@@ -72,19 +75,28 @@ func Plan(p *queryplan.Plan, prof Profile) (physical.Op, error) {
 // its own (the translator wraps it as it translates it, where a line filter is wrapped once the query is
 // assembled). Any other stage, and a label filter after a parser, is not lowered yet.
 func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
-	defs := definitions(sel)
-	staged, read, err := stagePipes(sel, prof, defs)
+	q, err := logSelectQuery(sel, prof)
 	if err != nil {
 		return nil, err
 	}
+	return physical.VLQuery{Text: q.String()}, nil
+}
+
+// logSelectQuery is the typed query logSelect prints: a range aggregation appends its stats pipe to it.
+func logSelectQuery(sel *queryplan.LogSelect, prof Profile) (logsql.Query, error) {
+	defs := definitions(sel)
+	staged, read, err := stagePipes(sel, prof, defs)
+	if err != nil {
+		return logsql.Query{}, err
+	}
 	lf, err := labelFilters(sel, prof, read, defs)
 	if err != nil {
-		return nil, err
+		return logsql.Query{}, err
 	}
 	built := lf.filters
 	if len(lf.bases) > 0 {
 		if staged, err = extractedUnpacks(sel, staged, lf.bases); err != nil {
-			return nil, err
+			return logsql.Query{}, err
 		}
 	}
 	var filters, after logsql.AllOf
@@ -147,7 +159,7 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		}
 		lf, ok := st.(*queryplan.LineFilter)
 		if !ok {
-			return nil, &NotLoweredError{Construct: "LogSelect pipeline"}
+			return logsql.Query{}, &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
 		if lf.Op == logql.LineFilterContainsPat || lf.Op == logql.LineFilterExcludePat {
 			values := []string{lf.Value}
@@ -165,7 +177,7 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 		}
 		f, ok := translate.LineFilter(lf)
 		if !ok {
-			return nil, &NotLoweredError{Construct: "LogSelect line filter"}
+			return logsql.Query{}, &NotLoweredError{Construct: "LogSelect line filter"}
 		}
 		if f != nil {
 			add(f)
@@ -181,13 +193,25 @@ func logSelect(sel *queryplan.LogSelect, prof Profile) (physical.Op, error) {
 	}
 	f, err := translate.StreamSelectorFilter(sel.Matchers, prof.Label, prof.StreamFields)
 	if err != nil {
-		return nil, err
+		return logsql.Query{}, err
 	}
+	return selectQuery(f, filters, pipes), nil
+}
+
+// selectQuery is the query of a stream selector's filter f, the filters written in front of the first pipe and
+// the pipes.
+func selectQuery(f logsql.FilterExpr, filters logsql.AllOf, pipes []logsql.Pipe) logsql.Query {
 	q := logsql.Query{Filter: f, Pipes: pipes}
 	if len(filters) > 0 {
-		q.Filter = append(logsql.AllOf{f}, filters...)
+		// A selector that keeps every row (`{detected_level!="info"}`) is no filter next to the others, as the
+		// string translator writes it.
+		if _, all := f.(logsql.Wildcard); all {
+			q.Filter = filters
+		} else {
+			q.Filter = append(logsql.AllOf{f}, filters...)
+		}
 	}
-	return physical.VLQuery{Text: q.String()}, nil
+	return q
 }
 
 // labelFilters builds the filter of each label filter stage of the query, by stage index (nil elsewhere), or

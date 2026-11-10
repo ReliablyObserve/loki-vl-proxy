@@ -67,7 +67,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 
 | Track | Item | Cases named | Wired | State |
 |---|---|---:|---:|---|
-| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 31 | unknown |
+| architecture | `architecture-syntax-package-layering` — The LogQL and LogsQL syntax packages depend on nothing but the standard library | 3 | 34 | unknown |
 | limits | `backend-admission-and-heavy-query-queueing` — Heavy backend work is admitted, queued, then refused like Loki's scheduler | 15 | 8 | proven |
 | resource_control | `backend-deadlines-and-cancellation` — Work the client has given up on stops in the backend too | 11 | 8 | proven |
 | data_quality | `cache-response-key-versions` — An answer cached before a semantics fix is never served after it | 4 | 1 | unknown |
@@ -94,7 +94,7 @@ Semantics, severity, identity and data-quality behaviour the proxy must reproduc
 | observability | `query-stats-envelope` — Every query and query_range answer carries Loki's data.stats object, filled only with measurements of that request | 11 | 3 | unknown |
 | limits | `series-limits-and-partial-results` — Series limits: error, or partial result with a warning | 9 | 12 | partial |
 | identity | `service-name-derivation` — service_name follows Loki's discovery order | 9 | 0 | partial |
-| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 13 | partial |
+| severity | `severity-detected-level-derivation` — detected_level is derived on the read path | 10 | 14 | partial |
 | severity | `severity-exposure-surfaces` — Where detected_level and level must appear | 7 | 5 | partial |
 | resource_control | `shutdown-releases-background-work` — Shutting a proxy down stops every goroutine it started | 2 | 2 | unknown |
 | semantics | `tenant-label-isolation` — Tenant-label mode confines every request to its org | 4 | 4 | proven |
