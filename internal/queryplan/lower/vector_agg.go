@@ -30,9 +30,10 @@ import (
 // pipe of the log query (translate.ServiceNameGroupingPipes, and the chain, in front of them), and a stats that
 // groups by both the stream and its level also groups by detected_level, as the translator rewrites it.
 //
-// Everything else is left to the string translator under a construct name:
+// A vector aggregation over other ones is nestedVectorAgg's. Everything else is left to the string translator under
+// a construct name:
 //   - stddev and stdvar (the translator writes the operand's stats, or a binary, and the proxy evaluates them);
-//   - an operand that is not a range aggregation (a nested aggregation, a ranking, a binary), one rangeAgg leaves
+//   - an operand that is not a range aggregation (a ranking, a binary), one rangeAgg leaves
 //     out (unwrap functions, parsers, drop and keep, a range-level grouping), and the cases it names there;
 //   - a without clause with no label, a grouping label the label function turns into nothing, and a query whose
 //     text the translator would read as a clause or a stats pipe (a quoted `without`, `| stats`).
