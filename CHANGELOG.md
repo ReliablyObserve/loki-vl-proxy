@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translator, and the lowering takes about half the time of the translation
   and allocates less.
 
+## [2.120.1] - 2026-11-10
+
 ### Fixed
 
 - Since 2.118.0, a log query whose parser or formatting stage was written in
