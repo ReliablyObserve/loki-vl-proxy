@@ -1,0 +1,56 @@
+id: semantics/ip-filter-ipv4-after-dot-run
+title: An IPv4 ip() filter does not match an address after a run of dots that a digit or a dot precedes (fixed)
+pending: true
+proves:
+  - loki_api_v1_query_range
+  - loki_api_v1_query
+consumer: api
+why: |
+  Loki's ip() filter reads a run of digits and dots that starts at a digit as
+  one candidate address, so in `0..10.0.0.1` the run `0..10.0.0.1` is not an
+  address and nothing matches; dots that no digit precedes (`x ..10.0.0.1`)
+  are not part of a run, and the address after them matches. The proxy's
+  IPv4 regexp allowed the dots in front of the address to be the tail of a
+  longer run: `\.+` could take only the last dot, whose preceding character
+  was another dot. `ip("10.0.0.1")` kept `0..10.0.0.1`, as a line filter
+  (since 2.108.0) and as a label filter on text values (since 2.115.0), and
+  `!= ip(...)` dropped those lines. fuzz-smoke found it
+  (FuzzIPLabelFilterNeverKeepsWhatLokiDrops: `ip("0.0.0.0")` kept
+  `0..0.0.0.0`).
+
+  Fixed: the character before the run of dots may not be a digit or a dot
+  (internal/translate ip_line_v4.go, the builder the translator and the
+  lowering share). Evidence: the Loki oracle (test/oracle/loki ipfilter,
+  Loki's exported log.NewIPLineFilter) recorded on the line grid with dot and
+  colon prefixes added (35,420 lines) and on the label grid with dot prefixes
+  added; every IPv4 line and value answers like Loki, and the main build's
+  regexp fails the new rows. Cached answers are fenced (response key
+  `@ip-label-filter-v4:`, which now also covers line filters).
+request:
+  method: GET
+  path: /loki/api/v1/query_range
+  params:
+    query: '{app="ip-line"} |= ip("10.0.0.1")'
+    start: 'now-15m'
+    end: 'now'
+    limit: '100'
+  headers:
+    X-Scope-OrgID: "0"
+compare:
+  mode: observed
+  fields: [streams.values]
+  expect: |
+    Loki's lines: `x ..10.0.0.1 y` and `x a..10.0.0.1 y` are kept,
+    `x 0..10.0.0.1 y` and `x 1.2..10.0.0.1 y` are not.
+gap:
+  status: fixed
+  impact: edge
+  effort: S
+  area: 'internal/translate ip_line_v4.go (ipv4LeadDots, ipv4LineRegex)'
+  loki: 'ip() line and label filters (log.NewIPLineFilter / NewIPLabelFilter), recorded with the Loki oracle'
+  proxy: 'the run of dots in front of an IPv4 address is the whole run'
+  planned_test: 'TestIPLineFilterMatchesLoki (internal/translate), TestIPLabelFilterMatchesLoki and the fuzz seed be1cd0d3261a1cae (internal/translator)'
+  fixed_by: '#1273'
+  visual: none
+  visual_reason: 'no generated log line or label holds an address after a run of dots; proven against the Loki oracle grids'
+  clusters: []

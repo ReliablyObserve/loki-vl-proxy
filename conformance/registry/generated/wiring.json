@@ -1057,6 +1057,10 @@
       "internal/proxy/instant_result_type_test.go",
       "test/e2e-compat/instant_result_type_test.go"
     ],
+    "semantics/ip-filter-ipv4-after-dot-run": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "internal/translator/ip_label_filter_loki_test.go"
+    ],
     "semantics/ip-filter-json-stats-pushdown": [
       "internal/logql/label_filter_expr_test.go",
       "internal/proxy/ordered_json_filter_pushdown_test.go",
@@ -1756,7 +1760,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 452,
+  "registry_items": 453,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -3002,6 +3006,7 @@
       "semantics/ip-label-filter-embedded-address"
     ],
     "internal/translate/ip_line_filter_loki_test.go": [
+      "semantics/ip-filter-ipv4-after-dot-run",
       "semantics/ip-filter-precision",
       "semantics/ip-line-filter-ipv4-like-loki"
     ],
@@ -3031,6 +3036,7 @@
       "semantics/unwrap-first-last-under-aggregation"
     ],
     "internal/translator/ip_label_filter_loki_test.go": [
+      "semantics/ip-filter-ipv4-after-dot-run",
       "semantics/ip-label-filter-embedded-address",
       "semantics/ip-label-filter-missing-label"
     ],
@@ -3926,5 +3932,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 276
+  "wired_items": 277
 }
