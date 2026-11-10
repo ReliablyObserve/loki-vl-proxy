@@ -1565,6 +1565,7 @@
     "internal/querycorpus/range_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/range_agg_oracle_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/stats_decode_test.go | architecture-syntax-package-layering",
+    "internal/querycorpus/unwrap_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_blank_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_grid_test.go | architecture-syntax-package-layering",
     "internal/querycorpus/vector_agg_loki_test.go | architecture-syntax-package-layering",
@@ -1576,6 +1577,7 @@
     "internal/queryplan/lower/pattern_filter_test.go | semantics/pattern-line-filter",
     "internal/queryplan/lower/range_agg_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/spelling_test.go | architecture-syntax-package-layering",
+    "internal/queryplan/lower/unwrap_test.go | architecture-syntax-package-layering",
     "internal/queryplan/lower/vector_agg_test.go | architecture-syntax-package-layering",
     "internal/rulesmigrate/migrate_test.go | semantics/parenthesized-log-range",
     "internal/translate/detected_level_chain_memo_test.go | severity-detected-level-derivation",
@@ -2088,7 +2090,7 @@
       "operator": 4
     },
     "claiming_tests": {
-      "go": 433,
+      "go": 435,
       "playwright": 1
     },
     "page_kinds": {

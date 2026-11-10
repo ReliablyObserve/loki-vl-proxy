@@ -40,11 +40,17 @@ func RateStatsPipes(op logql.RangeOp, seconds float64) (pipes [3]logsql.Pipe, ok
 	default:
 		return pipes, false
 	}
+	return RateStatsPipesOf(fn, seconds), true
+}
+
+// RateStatsPipesOf is RateStatsPipes over the stats function fn of the rows: the count or the bytes of the lines,
+// or the sum of an unwrapped label's values (rate over an unwrapped label).
+func RateStatsPipesOf(fn logsql.StatsFunc, seconds float64) (pipes [3]logsql.Pipe) {
 	by := []logsql.GroupKey{{Field: "_stream"}, {Field: "level"}, {Field: DetectedLevelLabel}}
 	pipes[0] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: fn, Alias: "__lvp_inner"}}}
 	pipes[1] = RateDivision(seconds)
 	pipes[2] = logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{{Func: logsql.Sum{Field: "__lvp_rate"}}}}
-	return pipes, true
+	return pipes
 }
 
 // RangeRowFunc is the stats function that reads the rows of a range aggregation with no unwrapped value: the rows

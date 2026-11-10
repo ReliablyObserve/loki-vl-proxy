@@ -304,7 +304,7 @@ func (b *builder) rangeAgg(x *logql.RangeAggregation) (Node, error) {
 	n := b.newRange()
 	n.Op, n.Range, n.Offset, n.HasOffset, n.By = x.Op, x.RangeDuration, x.OffsetDuration, x.HasOffset(), x.Grouping
 	if x.HasParam {
-		n.Phi = x.Param
+		n.Phi, n.PhiText = x.Param, x.ParamText
 	}
 	start := len(b.e.b)
 	e := &b.e

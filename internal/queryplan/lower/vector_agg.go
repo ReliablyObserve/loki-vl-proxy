@@ -41,6 +41,22 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	if !ok {
 		return nil, &NotLoweredError{Construct: "VectorAgg operand"}
 	}
+	if unwrapStage(ra.In) != nil {
+		if ra.Op != logql.RangeAbsentOverTime {
+			return unwrapVector(va, ra, prof)
+		}
+		// absent_over_time reads no unwrapped value: the aggregation is the same over the query without the stage.
+		stripped, err := withoutUnwrap(ra, "VectorAgg")
+		if err != nil {
+			return nil, err
+		}
+		ra = stripped
+	}
+	return vectorAggOver(va, ra, prof)
+}
+
+// vectorAggOver is vectorAgg over the range aggregation ra, the operand of va.
+func vectorAggOver(va *queryplan.VectorAgg, ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	switch va.Op {
 	case logql.VectorSum, logql.VectorCount, logql.VectorMin, logql.VectorMax, logql.VectorAvg:
 	default:
@@ -84,6 +100,11 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 	log, err := metricLogQuery(ra.In, prof, "VectorAgg")
 	if err != nil {
 		return nil, err
+	}
+	// The series identity of count, min, max, avg and rate comes from the parsers the translator finds in the text
+	// (a quoted `| json` drops the level from it), and a rate reads the unwrapped label there.
+	if readsUnwrapOrParser(ra.In, log, rate) {
+		return nil, errVectorQuotedClause
 	}
 	// The translator reads a clause and a stats pipe out of the text of the query, quoted strings included.
 	if without || len(labels) > 0 {

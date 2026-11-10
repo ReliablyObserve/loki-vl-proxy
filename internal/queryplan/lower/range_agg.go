@@ -31,6 +31,15 @@ import (
 // A label function that names stream labels adds the pipes that restore their stream values before the first pipe
 // of the log query (streamTagRestore, printed once per set of stream labels).
 func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
+	if unwrapStage(ra.In) != nil {
+		if ra.Op != logql.RangeAbsentOverTime {
+			return unwrapRange(ra, prof)
+		}
+		var err error
+		if ra, err = withoutUnwrap(ra, "RangeAgg"); err != nil {
+			return nil, err
+		}
+	}
 	rate := ra.Op == logql.RangeRate || ra.Op == logql.RangeBytesRate
 	var stats logsql.PipeStats
 	var ratePipes [3]logsql.Pipe
@@ -53,6 +62,11 @@ func rangeAgg(ra *queryplan.RangeAgg, prof Profile) (physical.Op, error) {
 	log, err := metricLogQuery(ra.In, prof, "RangeAgg")
 	if err != nil {
 		return nil, err
+	}
+	// A rate reads the unwrapped label out of the text (a quoted `| unwrap x` makes it a sum) and its series
+	// identity from the parsers it finds there (a quoted `| json` drops the level from it).
+	if rate && readsUnwrapOrParser(ra.In, log, true) {
+		return nil, errQuotedClause
 	}
 	if rate {
 		// One allocation for the text: the chain is most of it.

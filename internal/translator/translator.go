@@ -3008,9 +3008,9 @@ func extractUnwrapField(inner string) string {
 
 	// Strip conversion wrappers: duration(field), duration_seconds(field) and
 	// bytes(field) → field
-	for _, c := range unwrapConversions {
-		if strings.HasPrefix(rest, c.call) && strings.HasSuffix(rest, ")") {
-			rest = rest[len(c.call) : len(rest)-1]
+	for _, c := range translate.UnwrapConversions {
+		if strings.HasPrefix(rest, c.Call) && strings.HasSuffix(rest, ")") {
+			rest = rest[len(c.Call) : len(rest)-1]
 			break
 		}
 	}

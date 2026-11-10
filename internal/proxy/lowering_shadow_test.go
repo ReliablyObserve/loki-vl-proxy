@@ -213,18 +213,18 @@ func TestLoweringShadow_ComparesUnderTheRequestsOptions(t *testing.T) {
 func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 	p := newShadowProxy(t, 1, "http://unused")
 	for _, q := range []string{
-		`{app="a"}`,                                // match
-		`{app="a"} | line_format "{{.a}}"`,         // LogSelect pipeline: not lowered
-		`sum_over_time({app="a"} | unwrap n [5m])`, // RangeAgg: not lowered (unwrap)
-		`rate({app="a"}[5m])`,                      // RangeAgg: lowered, a match
-		`sum by (app) (rate({app="a"}[5m]))`,       // VectorAgg: lowered, a match
-		`sum( rate({app="a"}[5m]))`,                // VectorAgg: not lowered (blank padding, which the translator reads as a phrase)
-		`stddev by (app) (rate({app="a"}[5m]))`,    // VectorAgg: not lowered (stddev)
-		`topk(3, rate({app="a"}[5m]))`,             // Rank
-		`rate({app="a"}[5m]) / 2`,                  // BinOp
-		`vector(1)`,                                // VectorLit
-		`{app="a"} |> "<_>"`,                       // pattern filter: lowered, a match
-		`{app="a"`,                                 // rejected by both
+		`{app="a"}`,                        // match
+		`{app="a"} | line_format "{{.a}}"`, // LogSelect pipeline: not lowered
+		`avg_over_time({app="a"} | unwrap n [5m]) without (pod)`, // RangeAgg: not lowered (range-level without)
+		`rate({app="a"}[5m])`,                   // RangeAgg: lowered, a match
+		`sum by (app) (rate({app="a"}[5m]))`,    // VectorAgg: lowered, a match
+		`sum( rate({app="a"}[5m]))`,             // VectorAgg: not lowered (blank padding, which the translator reads as a phrase)
+		`stddev by (app) (rate({app="a"}[5m]))`, // VectorAgg: not lowered (stddev)
+		`topk(3, rate({app="a"}[5m]))`,          // Rank
+		`rate({app="a"}[5m]) / 2`,               // BinOp
+		`vector(1)`,                             // VectorLit
+		`{app="a"} |> "<_>"`,                    // pattern filter: lowered, a match
+		`{app="a"`,                              // rejected by both
 		`label_replace(rate({app="a"}[5m]), "x", "$1", "app", "(.*)")`, // LabelReplace
 	} {
 		_, _ = translateAndSettle(t, p, q)
@@ -239,7 +239,7 @@ func TestLoweringShadow_ResultsByConstruct(t *testing.T) {
 			t.Errorf("a query both reject is counted: %q in %v", key, got)
 		}
 	}
-	for _, want := range []string{"match LogSelect", "not_lowered LogSelect pipeline", "match RangeAgg", "not_lowered RangeAgg unwrap", "match VectorAgg", "not_lowered VectorAgg stddev", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
+	for _, want := range []string{"match LogSelect", "not_lowered LogSelect pipeline", "match RangeAgg", "not_lowered RangeAgg grouping", "match VectorAgg", "not_lowered VectorAgg stddev", "not_lowered VectorAgg operand spelling", "not_lowered Rank", "not_lowered BinOp", "not_lowered LabelReplace"} {
 		if got[want] == 0 {
 			t.Errorf("no %q in %v", want, got)
 		}
@@ -275,8 +275,8 @@ func TestLoweringShadow_ErrorsAreCounted(t *testing.T) {
 	}
 	// The translator rejects it and the lowering does not cover it: not compared either.
 	p.loweringShadow.lower = lower.Plan
-	run(shadowInput{query: `sum_over_time({app="a"} | unwrap n [5m])`, legacyErr: errors.New("boom")})
-	if got = shadowCounts(t, p); got["not_lowered RangeAgg unwrap"] != 0 || len(got) != 2 {
+	run(shadowInput{query: `avg_over_time({app="a"} | unwrap n [5m]) without (pod)`, legacyErr: errors.New("boom")})
+	if got = shadowCounts(t, p); got["not_lowered RangeAgg grouping"] != 0 || len(got) != 2 {
 		t.Fatalf("a rejected query the lowering does not cover is counted: %v", got)
 	}
 	p.loweringShadow.lower = lower.Plan
