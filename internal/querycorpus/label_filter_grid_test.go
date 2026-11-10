@@ -123,6 +123,10 @@ func labelFilterGrid() []string {
 	} {
 		add(q)
 	}
+	// the spellings a quoted value can take (escapedSpellingGrid).
+	for _, q := range escapedSpellingGrid() {
+		add(q)
+	}
 	return out
 }
 

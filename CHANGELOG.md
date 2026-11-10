@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Since 2.118.0, a log query with an escaped character (`\x41` style, or an octal escape) in a
+  regexp line filter (`|~`, `!~`), or a stream selector on a configured stream field written with
+  such an escape or in backquotes, was sent to VictoriaLogs in its unescaped spelling (`~"Ab"` for
+  `|~ "\x41b"`). VictoriaLogs reads both spellings alike, so results were the same; these queries
+  are now sent as they were before 2.118.0.
 - Since 2.118.0, a log query whose parser or formatting stage was written in
   another letter case (`| JSON`, `| Logfmt`, `| DROP x`) could be translated by
   the query plan instead of the string translator: the check that keeps those

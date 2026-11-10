@@ -75,6 +75,14 @@ var loweringParityQueries = []struct {
 	{"ip line filter", `{app="a"} |= ip("10.0.0.0/8")`, true, ""},
 	{"not ip line filter", `{app="a"} != ip("1.2.3.4")`, true, ""},
 	{"quotes and unicode", "{app=\"a\"} |= `a\"b` |= \"żółć\\n\"", true, ""},
+	// A regexp the client wrote with an escape is sent as written (the lowering holds only the value), so the
+	// translator serves it; the substring filter quotes its value, so the lowering still does.
+	{"escaped regexp filter", `{app="a"} |~ "\x41b"`, false, ""},
+	{"escaped negated regexp filter", `{app="a"} !~ "\101b"`, false, ""},
+	{"escaped regexp or chain", `{app="a"} |~ "\x41" or "b"`, true, ""},
+	{"escaped substring filter", `{app="a"} |= "\x41b"`, true, ""},
+	{"escaped label filter", `{app="a"} | b=~"\x41"`, true, ""},
+	{"quote and backslash regexp filter", `{app="a"} |~ "a\"b\\d+"`, true, ""},
 	// Pattern filters.
 	{"pattern", `{app="a"} |> "<_> GET <_> <_>"`, true, ""},
 	{"not pattern", `{app="a"} !> "<_> POST <_>"`, true, ""},
@@ -337,5 +345,52 @@ func TestQueryPlanLowering_ServesFilterOnlyPlans(t *testing.T) {
 		if got := filterOnly(plan.Root); got != want {
 			t.Errorf("filterOnly(%s) = %v, want %v", q, got, want)
 		}
+	}
+}
+
+// A stream selector or a regexp line filter written with an escape (\x41) is translated by the string translator
+// with the flag on: it copies the client's spelling where the lowering, which holds the value, would write its own.
+// The query is counted as not lowered, never as flipped, and the text is the translator's. A plain spelling of the
+// same query is still served from the lowering.
+// conformance: architecture-syntax-package-layering
+func TestQueryPlanLowering_EscapedSpellingStaysOnTheTranslator(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		streamFields []string
+		query, want  string
+		plain, wantP string
+	}{
+		{"regexp line filter", nil, `{app="a"} |~ "\x41b"`, `app:="a" ~"\x41b"`, `{app="a"} |~ "Ab"`, `app:="a" ~"Ab"`},
+		{"negated regexp line filter", nil, `{app="a"} !~ "\x41b"`, `app:="a" NOT ~"\x41b"`, `{app="a"} !~ "Ab"`, `app:="a" NOT ~"Ab"`},
+		{"stream field selector", []string{"app"}, `{app="\x41"}`, `{app="\x41"}`, `{app="A"}`, `{app="A"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			translate := func(disable bool, q string) (string, map[string]int) {
+				p, err := New(Config{
+					BackendURL: "http://unused", Cache: cache.New(60*time.Second, 1000), LogLevel: "error",
+					LabelStyle: LabelStyleUnderscores, StreamFields: tc.streamFields, TranslateShadowSample: 1, DisableQueryPlanLowering: disable,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+				out, err := translateAndSettle(t, p, q)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return out, shadowCounts(t, p)
+			}
+			got, counts := translate(false, tc.query)
+			if want, _ := translate(true, tc.query); got != want || got != tc.want {
+				t.Fatalf("flag on translated %q\nflag off translated %q\nwant %q", got, want, tc.want)
+			}
+			if counts["flipped LogSelect"] != 0 || counts["not_lowered LogSelect escaped spelling"] != 1 || shadowTotal(counts, "mismatch") != 0 {
+				t.Fatalf("shadow counts = %v, want the query counted as not lowered", counts)
+			}
+			got, counts = translate(false, tc.plain)
+			if got != tc.wantP || counts["flipped LogSelect"] != 1 {
+				t.Fatalf("plain spelling translated %q, counts %v; want %q served from the lowering", got, counts, tc.wantP)
+			}
+		})
 	}
 }
