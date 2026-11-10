@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/querycorpus/plancorpus"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -120,9 +121,10 @@ func TestBinOpMoreLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 	if raceDetectorEnabled {
 		t.Skip("allocation counts differ under the race detector")
 	}
-	checked := 0
+	checked, corpus := 0, 0
+	grid := binOpMoreAllocGrid()
 	for _, label := range []func(string) string{nil, benchStreamLabels} {
-		for _, q := range binOpMoreAllocGrid() {
+		for _, q := range grid {
 			p := rangeAggPlan(q)
 			if p == nil {
 				continue
@@ -146,15 +148,23 @@ func TestBinOpMoreLoweringAllocatesNoMoreThanTheTranslator(t *testing.T) {
 			}
 		}
 	}
-	if checked < 300 {
-		t.Fatalf("only %d lowered binary operations checked", checked)
+	for _, q := range binOpMoreCorpus() {
+		if p := rangeAggPlan(q); p != nil {
+			if _, err := PlanQuery(q, p, Profile{}); err == nil {
+				corpus++
+			}
+		}
+	}
+	t.Logf("%d shapes checked (%d grid and corpus queries, two label modes), %d of them corpus queries", checked, len(grid), corpus)
+	if checked < 300 || corpus < 20 {
+		t.Fatalf("only %d lowered binary operations checked, %d from the corpus", checked, corpus)
 	}
 }
 
-// binOpMoreAllocGrid is the binary operations with a bool modifier or a without clause over the range
-// aggregations, with a parser, a label filter and an unwrapped value.
+// binOpMoreAllocGrid is the binary operations with a bool modifier or a without clause of the plan corpus, and
+// the ones over the range aggregations with a parser, a label filter and an unwrapped value.
 func binOpMoreAllocGrid() []string {
-	var qs []string
+	qs := binOpMoreCorpus()
 	ranges := []string{`rate({app="a"}[5m])`, `count_over_time({app="a"} |= "x" [1m])`, `bytes_over_time({app="a"} | json | status >= 500 [5m])`,
 		`rate({app="a"} | logfmt [5m])`, `max_over_time({app="a"} | json | unwrap amount [5m])`, `rate({app="a"} | unwrap amount [150s])`,
 		`absent_over_time({app="a"}[5m])`, `sum_over_time({app="a"} | logfmt | level="error" | unwrap amount [5m])`,
@@ -174,6 +184,36 @@ func binOpMoreAllocGrid() []string {
 		}
 	}
 	return qs
+}
+
+// binOpMoreCorpus is the plan corpus's binary operations (under label_replace calls too) with a bool modifier or a
+// without clause on an operand.
+func binOpMoreCorpus() []string {
+	all, err := plancorpus.Queries("../../..")
+	if err != nil {
+		panic(err)
+	}
+	var out []string
+	for _, q := range all {
+		p := rangeAggPlan(q)
+		if p == nil {
+			continue
+		}
+		x := p.Root
+		for {
+			lr, ok := x.(*queryplan.LabelReplace)
+			if !ok {
+				break
+			}
+			x = lr.In
+		}
+		if b, ok := x.(*queryplan.BinOp); ok {
+			if _, withoutClauses := plannedWithout(b); b.Bool || withoutClauses > 0 {
+				out = append(out, q)
+			}
+		}
+	}
+	return out
 }
 
 // FuzzBinOpMoreLowering holds the lowering of a binary operation with a bool modifier or a without clause to the

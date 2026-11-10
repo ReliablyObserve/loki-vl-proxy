@@ -106,9 +106,15 @@ func TestPlanLowersBinaryOperations(t *testing.T) {
 func TestPlanDelegatesBinaryOperations(t *testing.T) {
 	rate := `rate({app="a"}[5m])`
 	for q, construct := range map[string]string{
-		rate + ` and ` + rate:               "BinOp set operator",
-		rate + ` or ` + rate:                "BinOp set operator",
-		rate + ` unless ` + rate:            "BinOp set operator",
+		rate + ` and ` + rate:                                                                       "BinOp set operator",
+		rate + ` or ` + rate:                                                                        "BinOp set operator",
+		rate + ` unless ` + rate:                                                                    "BinOp set operator",
+		`rate({app="a"} | json | status >= 500 [5m]) > bool 1`:                                      "BinOp bool stages",
+		`rate({app="a"} | logfmt [5m]) > bool ` + rate:                                              "BinOp bool stages",
+		`2 < bool count_over_time({app="a"} | json | drop a [5m])`:                                  "BinOp bool stages",
+		`sum without (pod) (count_over_time({app="a"} | line_format "x" [5m])) / 2`:                 "BinOp operand without stages",
+		`2 * max(rate({app="a"} | regexp "(?P<a>x)" [5m])) without (pod)`:                           "BinOp operand without stages",
+		`sum without (pod) (` + rate + `) / min without (node) (rate({app="a"} | json a="b" [5m]))`: "BinOp operand without stages",
 		`1 + 2`:                             "BinOp scalar operands",
 		`sum without () (` + rate + `) / 2`: "BinOp operand without",
 		`sum without (pod) (sum by (app) (` + rate + `)) / 2`:                     "BinOp operand without",
