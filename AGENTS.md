@@ -217,6 +217,21 @@ Loki's speed or better is part of the same work, not a follow-up. Measure it
 (`benchstat`, the cost on VictoriaLogs, timings against Loki for the affected
 query shapes) and keep improving it. Only when that is not possible within
 the change, show why with numbers and ask the maintainers before it ships.
+## Serving a construct from the query plan
+
+A construct moves from the string translator to the typed plan (`internal/queryplan/lower`, written by
+`physical.Encode`) by being added to `proxy.QueryPlanFlippedConstructs`, behind `-query-plan-lowering`.
+
+- The plan must write the translator's text byte for byte, not an equal parsed query: the text is the cache key and the
+  request VictoriaLogs sees. `TestPlanShadow` and the generated grids assert it for every native row under the 12
+  profiles; fix a difference of spelling in the AST builders, never in `internal/translator`.
+- Decide eligibility before planning (`logql.MayHaveNonFilterStage` and a first-byte test for log queries): a query the
+  plan does not cover pays no plan. `TestFlipScreenAdmitsEveryNativeRow` holds the screen to the native rows.
+- No shape may allocate more than its base (benchstat of `BenchmarkTranslateQueryMissShapes`, base against branch); add
+  the new construct's shapes to it. Add the construct to the route-parity test
+  (`TestQueryPlanLowering_RouteParity`), which runs the same queries with the flag on and off against a fake
+  VictoriaLogs.
+
 ## Published numbers
 
 Every number the README, `docs/` and the website state is generated and kept current: a generator writes it, a

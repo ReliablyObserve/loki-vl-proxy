@@ -76,7 +76,6 @@
         "internal/proxy/range_metric_compat.go",
         "internal/translate/detected_level.go",
         "internal/translate/linefilter_pattern.go",
-        "internal/translate/parser.go",
         "internal/translator/parsed_key_variants.go",
         "internal/translator/plain_stream_labels.go",
         "internal/translator/translator.go",

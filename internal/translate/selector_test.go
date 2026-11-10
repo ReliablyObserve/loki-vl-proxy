@@ -83,3 +83,30 @@ func TestSelectorFilterMatchers(t *testing.T) {
 		}
 	})
 }
+
+// The field-name normaliser drops the white space around a dot and skips its regexp for a name that has no dot or
+// no white space; both ways give the name the regexp alone would.
+//
+// conformance: architecture-syntax-package-layering
+func TestNormalizeFieldIdentifier(t *testing.T) {
+	for in, want := range map[string]string{
+		"status":         "status",
+		"k8s.pod.name":   "k8s.pod.name",
+		"k8s . pod.name": "k8s.pod.name",
+		"a .b":           "a.b",
+		"a. b":           "a.b",
+		"a\t.\nb":        "a.b",
+		" a b ":          "a b",
+		"`a`":            "a",
+		`"a . b"`:        "a.b",
+		"":               "",
+		"  ":             "",
+	} {
+		if got := NormalizeFieldIdentifier(in); got != want {
+			t.Errorf("NormalizeFieldIdentifier(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if n := testing.AllocsPerRun(100, func() { _ = NormalizeFieldIdentifier("k8s_pod_name") }); n != 0 {
+		t.Errorf("a plain name allocates %v times", n)
+	}
+}

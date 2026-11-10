@@ -35,6 +35,8 @@ func newShadowProxy(t *testing.T, sample float64, backend string) *Proxy {
 		LogLevel:              "error",
 		LabelStyle:            LabelStyleUnderscores,
 		TranslateShadowSample: sample,
+		// The shadow compares what the string translator translates; the lowering would serve these queries itself.
+		DisableQueryPlanLowering: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,8 +104,11 @@ func TestLoweringShadow_OffByDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := shadowCounts(t, p); len(got) != 0 {
-		t.Fatalf("shadow work at sample 0: %v", got)
+	// The queries the lowering serves itself are counted as flipped; nothing is compared.
+	for k, n := range shadowCounts(t, p) {
+		if !strings.HasPrefix(k, shadowFlipped+" ") {
+			t.Fatalf("shadow work at sample 0: %s = %d", k, n)
+		}
 	}
 	if on := newLoweringShadow(7); on == nil || on.sample != 1 {
 		t.Fatalf("a sample above 1 is clamped to 1: %+v", on)
@@ -164,6 +169,7 @@ func TestLoweringShadow_ComparesUnderTheRequestsOptions(t *testing.T) {
 		StreamFields:                 []string{"app", "namespace", "level"},
 		DisableDetectedLevelBodyScan: true,
 		TranslateShadowSample:        1,
+		DisableQueryPlanLowering:     true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -507,7 +513,7 @@ func sameJSON(a, b string) bool {
 // goroutines are gone.
 // conformance: architecture-syntax-package-layering
 func TestLoweringShadow_ShutdownLeavesNoGoroutines(t *testing.T) {
-	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error", TranslateShadowSample: 1})
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error", TranslateShadowSample: 1, DisableQueryPlanLowering: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +556,7 @@ func TestLoweringShadow_ShutdownLeavesNoGoroutines(t *testing.T) {
 // BenchmarkLoweringShadowCompare is the cost of one shadowed query, the comparison alone (what a sampled cache
 // miss adds in the background).
 func BenchmarkLoweringShadowCompare(b *testing.B) {
-	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error", LabelStyle: LabelStyleUnderscores, TranslateShadowSample: 1})
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 100), LogLevel: "error", LabelStyle: LabelStyleUnderscores, TranslateShadowSample: 1, DisableQueryPlanLowering: true})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -572,7 +578,7 @@ func BenchmarkLoweringShadowCompare(b *testing.B) {
 // BenchmarkTranslateQueryMissShadowed is the translate-on-miss path with the shadow on at sample 1: what the
 // request path pays for handing the comparison off (the comparison itself runs on another goroutine).
 func BenchmarkTranslateQueryMissShadowed(b *testing.B) {
-	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 1000), LogLevel: "error", LabelStyle: LabelStyleUnderscores, TranslateShadowSample: 1})
+	p, err := New(Config{BackendURL: "http://unused", Cache: cache.New(time.Minute, 1000), LogLevel: "error", LabelStyle: LabelStyleUnderscores, TranslateShadowSample: 1, DisableQueryPlanLowering: true})
 	if err != nil {
 		b.Fatal(err)
 	}

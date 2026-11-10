@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -107,6 +108,44 @@ type Expr interface {
 	expr()
 }
 
+// appender is a node that writes itself onto a buffer: the nodes a query is mostly made of print through it, so a
+// whole query is written into one buffer instead of one string per node concatenated by its parent. A node
+// without it prints through String.
+type appender interface{ appendTo(b []byte) []byte }
+
+// appendFilter appends the text of f.
+func appendFilter(b []byte, f FilterExpr) []byte {
+	if a, ok := f.(appender); ok {
+		return a.appendTo(b)
+	}
+	return append(b, f.String()...)
+}
+
+// appendOperand is operand, appended: f inside a filter that binds with precedence prec.
+func appendOperand(b []byte, f FilterExpr, prec int) []byte {
+	if filterPrec(f) < prec {
+		b = append(b, '(')
+		b = appendFilter(b, f)
+		return append(b, ')')
+	}
+	return appendFilter(b, f)
+}
+
+// appendQuoteLogsQL is quoteLogsQL, appended.
+func appendQuoteLogsQL(b []byte, s string) []byte {
+	if strings.ContainsAny(s, "\n\r") || !utf8.ValidString(s) {
+		return strconv.AppendQuote(b, s)
+	}
+	b = append(b, '"')
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '\\' || c == '"' {
+			b = append(b, '\\')
+		}
+		b = append(b, s[i])
+	}
+	return append(b, '"')
+}
+
 // FilterExpr is a filter expression node in a LogsQL query.
 type FilterExpr interface {
 	String() string
@@ -136,18 +175,34 @@ type Query struct {
 }
 
 func (q Query) String() string {
-	var b strings.Builder
+	bp := queryBufPool.Get().(*[]byte)
+	b := (*bp)[:0]
 	if q.Filter == nil {
-		b.WriteString("*")
+		b = append(b, '*')
 	} else {
-		b.WriteString(q.Filter.String())
+		b = appendFilter(b, q.Filter)
 	}
 	for _, p := range q.Pipes {
-		b.WriteByte(' ')
-		b.WriteString(p.String())
+		b = append(b, ' ')
+		if a, ok := p.(appender); ok {
+			b = a.appendTo(b)
+		} else {
+			b = append(b, p.String()...)
+		}
 	}
-	return b.String()
+	s := string(b)
+	// A buffer grown past what a query needs is dropped, so the pool never holds a large one.
+	if cap(b) <= maxPooledQueryBuf {
+		*bp = b
+		queryBufPool.Put(bp)
+	}
+	return s
 }
+
+// queryBufPool holds the buffers Query.String writes into, so a query costs the allocation of its text alone.
+var queryBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 512); return &b }}
+
+const maxPooledQueryBuf = 16 << 10
 
 func (q Query) expr() {}
 
@@ -191,8 +246,11 @@ func (e Exact) filterExpr()    {}
 // Regexp matches using a regular expression.
 type Regexp struct{ Pattern string }
 
-func (r Regexp) String() string { return "~" + quoteLogsQLPattern(r.Pattern) }
-func (r Regexp) filterExpr()    {}
+func (r Regexp) String() string { return string(r.appendTo(make([]byte, 0, len(r.Pattern)+8))) }
+func (r Regexp) appendTo(b []byte) []byte {
+	return strconv.AppendQuote(append(b, '~'), r.Pattern)
+}
+func (r Regexp) filterExpr() {}
 
 // Sequence matches a sequence of words in order.
 type Sequence struct {
@@ -269,69 +327,85 @@ type FieldFilter struct {
 	GoQuoted bool
 }
 
-func (f FieldFilter) String() string {
-	var rest string
+func (f FieldFilter) String() string { return string(f.appendTo(make([]byte, 0, 64))) }
+
+func (f FieldFilter) appendTo(b []byte) []byte {
+	if f.Negate {
+		b = append(b, "NOT "...)
+	}
+	if f.Field != "" {
+		b = append(b, f.Field...)
+		b = append(b, ':')
+	}
 	switch f.Op {
 	case FieldOpExact:
+		b = append(b, '=')
 		if f.GoQuoted {
-			rest = "=" + quoteLogsQLPattern(f.Value)
-		} else {
-			rest = "=" + quoteLogsQL(f.Value)
+			return strconv.AppendQuote(b, f.Value)
 		}
+		return appendQuoteLogsQL(b, f.Value)
 	case FieldOpRegexp:
-		rest = "~" + quoteLogsQLPattern(f.Value)
-	case FieldOpPrefix:
-		rest = prefixValue(f.Value) + "*"
-	case FieldOpSubstring:
-		rest = "*" + wordOrQuoted(f.Value) + "*"
+		b = append(b, '~')
+		return strconv.AppendQuote(b, f.Value)
 	case FieldOpEmpty:
-		rest = `""`
+		return append(b, `""`...)
 	case FieldOpAny:
-		rest = "*"
+		return append(b, '*')
 	case FieldOpGT:
-		rest = ">" + f.Value
+		return append(append(b, '>'), f.Value...)
 	case FieldOpGTE:
-		rest = ">=" + f.Value
+		return append(append(b, ">="...), f.Value...)
 	case FieldOpLT:
-		rest = "<" + f.Value
+		return append(append(b, '<'), f.Value...)
 	case FieldOpLTE:
-		rest = "<=" + f.Value
-	case FieldOpRange:
-		rest = "range(" + f.Value + ")"
-	case FieldOpIn:
-		rest = "in(" + f.Value + ")"
-	case FieldOpIPv4Range:
-		rest = "ipv4_range(" + f.Value + ")"
-	case FieldOpIPv6Range:
-		rest = "ipv6_range(" + f.Value + ")"
+		return append(append(b, "<="...), f.Value...)
 	case FieldOpExactPrefix:
-		rest = "=" + quoteLogsQL(f.Value) + "*"
-	case FieldOpEqField:
-		rest = "eq_field(" + f.Value + ")"
-	case FieldOpLeField:
-		rest = "le_field(" + f.Value + ")"
-	case FieldOpStringRange:
-		rest = "string_range(" + f.Value + ")"
-	case FieldOpValueType:
-		rest = "value_type(" + f.Value + ")"
-	case FieldOpJSONArrayContainsAny:
-		rest = "json_array_contains_any(" + f.Value + ")"
-	case FieldOpContainsCommonCase:
-		rest = "contains_common_case(" + f.Value + ")"
-	case FieldOpEqualsCommonCase:
-		rest = "equals_common_case(" + f.Value + ")"
+		b = append(b, '=')
+		b = appendQuoteLogsQL(b, f.Value)
+		return append(b, '*')
 	case FieldOpNotExact:
-		rest = "!" + quoteLogsQL(f.Value)
+		b = append(b, '!')
+		return appendQuoteLogsQL(b, f.Value)
+	case FieldOpPrefix:
+		b = append(b, prefixValue(f.Value)...)
+		return append(b, '*')
+	case FieldOpSubstring:
+		b = append(b, '*')
+		b = append(b, wordOrQuoted(f.Value)...)
+		return append(b, '*')
 	case FieldOpPhrase:
-		rest = wordOrQuoted(f.Value)
+		return append(b, wordOrQuoted(f.Value)...)
+	}
+	var fn string
+	switch f.Op {
+	case FieldOpRange:
+		fn = "range("
+	case FieldOpIn:
+		fn = "in("
+	case FieldOpIPv4Range:
+		fn = "ipv4_range("
+	case FieldOpIPv6Range:
+		fn = "ipv6_range("
+	case FieldOpEqField:
+		fn = "eq_field("
+	case FieldOpLeField:
+		fn = "le_field("
+	case FieldOpStringRange:
+		fn = "string_range("
+	case FieldOpValueType:
+		fn = "value_type("
+	case FieldOpJSONArrayContainsAny:
+		fn = "json_array_contains_any("
+	case FieldOpContainsCommonCase:
+		fn = "contains_common_case("
+	case FieldOpEqualsCommonCase:
+		fn = "equals_common_case("
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
-	core := fieldPrefix(f.Field) + rest
-	if f.Negate {
-		return "NOT " + core
-	}
-	return core
+	b = append(b, fn...)
+	b = append(b, f.Value...)
+	return append(b, ')')
 }
 
 func (f FieldFilter) filterExpr() {}
@@ -377,7 +451,7 @@ func (t TimeFilter) filterExpr()    {}
 // filterPrec is how tightly a filter binds when printed beside others: OR loosest, then AND, then NOT and the rest.
 func filterPrec(f FilterExpr) int {
 	switch f.(type) {
-	case OrExpr, AnyOf:
+	case OrExpr, AnyOf, AnyOfLower:
 		return 1
 	case AndExpr, AllOf:
 		return 2
@@ -398,10 +472,21 @@ func operand(f FilterExpr, prec int) string {
 // AndExpr is a logical AND of two filter expressions.
 type AndExpr struct {
 	Left, Right FilterExpr
+	// Lower writes the operator in lowercase (`a and b`), which LogsQL reads like `AND`: the spelling the string
+	// translator uses to join the label filters of a query. The parser never sets it.
+	Lower bool
 }
 
-func (a AndExpr) String() string {
-	return operand(a.Left, 2) + " AND " + operand(a.Right, 2)
+func (a AndExpr) String() string { return string(a.appendTo(make([]byte, 0, 64))) }
+
+func (a AndExpr) appendTo(b []byte) []byte {
+	b = appendOperand(b, a.Left, 2)
+	if a.Lower {
+		b = append(b, " and "...)
+	} else {
+		b = append(b, " AND "...)
+	}
+	return appendOperand(b, a.Right, 2)
 }
 
 func (a AndExpr) filterExpr() {}
@@ -409,10 +494,20 @@ func (a AndExpr) filterExpr() {}
 // OrExpr is a logical OR of two filter expressions.
 type OrExpr struct {
 	Left, Right FilterExpr
+	// Lower writes the operator in lowercase (`a or b`), as AndExpr.Lower does.
+	Lower bool
 }
 
-func (o OrExpr) String() string {
-	return o.Left.String() + " OR " + o.Right.String()
+func (o OrExpr) String() string { return string(o.appendTo(make([]byte, 0, 64))) }
+
+func (o OrExpr) appendTo(b []byte) []byte {
+	b = appendFilter(b, o.Left)
+	if o.Lower {
+		b = append(b, " or "...)
+	} else {
+		b = append(b, " OR "...)
+	}
+	return appendFilter(b, o.Right)
 }
 
 func (o OrExpr) filterExpr() {}
@@ -432,39 +527,65 @@ func (e Exclude) filterExpr() {}
 // Group is a filter in parentheses.
 type Group struct{ Expr FilterExpr }
 
-func (g Group) String() string { return "(" + g.Expr.String() + ")" }
-func (g Group) filterExpr()    {}
+func (g Group) String() string { return string(g.appendTo(make([]byte, 0, 64))) }
+func (g Group) appendTo(b []byte) []byte {
+	return append(appendFilter(append(b, '('), g.Expr), ')')
+}
+func (g Group) filterExpr() {}
 
 // AllOf is filters written one after another, which LogsQL reads as their AND.
 type AllOf []FilterExpr
 
-func (a AllOf) String() string {
-	parts := make([]string, len(a))
+func (a AllOf) String() string { return string(a.appendTo(make([]byte, 0, 128))) }
+
+func (a AllOf) appendTo(b []byte) []byte {
 	for i, f := range a {
-		parts[i] = operand(f, 2)
+		if i > 0 {
+			b = append(b, ' ')
+		}
+		b = appendOperand(b, f, 2)
 	}
-	return strings.Join(parts, " ")
+	return b
 }
 func (a AllOf) filterExpr() {}
 
 // AnyOf is the OR of filters.
 type AnyOf []FilterExpr
 
-func (a AnyOf) String() string {
-	parts := make([]string, len(a))
-	for i, f := range a {
-		parts[i] = f.String()
+func (a AnyOf) String() string { return string(a.appendTo(make([]byte, 0, 128))) }
+
+func (a AnyOf) appendTo(b []byte) []byte { return appendJoined(b, a, " OR ") }
+
+// appendJoined appends the filters separated by sep.
+func appendJoined(b []byte, fs []FilterExpr, sep string) []byte {
+	for i, f := range fs {
+		if i > 0 {
+			b = append(b, sep...)
+		}
+		b = appendFilter(b, f)
 	}
-	return strings.Join(parts, " OR ")
+	return b
 }
 func (a AnyOf) filterExpr() {}
+
+// AnyOfLower is AnyOf written with the lowercase operator (`a or b`). LogsQL reads both spellings alike; the
+// alternatives of a pattern line filter are written this way, the text the string translator wrote for them.
+type AnyOfLower []FilterExpr
+
+func (a AnyOfLower) String() string { return string(a.appendTo(make([]byte, 0, 128))) }
+
+func (a AnyOfLower) appendTo(b []byte) []byte { return appendJoined(b, a, " or ") }
+func (a AnyOfLower) filterExpr()              {}
 
 // NotExpr negates a filter expression.
 type NotExpr struct {
 	Expr FilterExpr
 }
 
-func (n NotExpr) String() string { return "NOT " + operand(n.Expr, 3) }
+func (n NotExpr) String() string { return string(n.appendTo(make([]byte, 0, 64))) }
+func (n NotExpr) appendTo(b []byte) []byte {
+	return appendOperand(append(b, "NOT "...), n.Expr, 3)
+}
 
 func (n NotExpr) filterExpr() {}
 
@@ -698,8 +819,11 @@ type PipeFilter struct {
 	Expr FilterExpr
 }
 
-func (p PipeFilter) String() string { return "| filter " + p.Expr.String() }
-func (p PipeFilter) pipe()          {}
+func (p PipeFilter) String() string { return string(p.appendTo(make([]byte, 0, 128))) }
+func (p PipeFilter) appendTo(b []byte) []byte {
+	return appendFilter(append(b, "| filter "...), p.Expr)
+}
+func (p PipeFilter) pipe() {}
 
 // PipeLimit limits the number of log entries returned.
 type PipeLimit struct {
@@ -775,12 +899,19 @@ type PipeExtract struct {
 	SkipEmptyResults   bool
 }
 
-func (p PipeExtract) String() string {
-	s := "| extract" + ifString(p.If) + " " + strconv.Quote(p.Pattern)
-	if p.From != "" {
-		s += " from " + p.From
+func (p PipeExtract) String() string { return string(p.appendTo(make([]byte, 0, 128))) }
+
+func (p PipeExtract) appendTo(b []byte) []byte {
+	b = append(b, "| extract"...)
+	if p.If != nil {
+		b = appendFilter(append(b, " if ("...), p.If)
+		b = append(b, ')')
 	}
-	return s + flagsString(p.KeepOriginalFields, p.SkipEmptyResults)
+	b = strconv.AppendQuote(append(b, ' '), p.Pattern)
+	if p.From != "" {
+		b = append(append(b, " from "...), p.From...)
+	}
+	return append(b, flagsString(p.KeepOriginalFields, p.SkipEmptyResults)...)
 }
 func (p PipeExtract) pipe() {}
 
@@ -824,8 +955,18 @@ func (p PipeFields) pipe()          {}
 // PipeDelete removes the listed fields.
 type PipeDelete struct{ Labels []string }
 
-func (p PipeDelete) String() string { return "| delete " + strings.Join(p.Labels, ", ") }
-func (p PipeDelete) pipe()          {}
+func (p PipeDelete) String() string { return string(p.appendTo(make([]byte, 0, 64))) }
+func (p PipeDelete) appendTo(b []byte) []byte {
+	b = append(b, "| delete "...)
+	for i, l := range p.Labels {
+		if i > 0 {
+			b = append(b, ", "...)
+		}
+		b = append(b, l...)
+	}
+	return b
+}
+func (p PipeDelete) pipe() {}
 
 // --- Transform pipe stages ---
 
