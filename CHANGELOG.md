@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.128.1] - 2026-11-10
-
 ### Changed
 
 - The query plan holds `topk`, `bottomk`, `sort` and `sort_desc` the way the
@@ -24,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VictoriaLogs and no answer changes. A binary operation operand, a `sort`
   with a clause, a lone ranking wrapped in parentheses and a `stddev` or
   `stdvar` above a ranking stay with the string translator.
+
+## [2.128.1] - 2026-11-10
+
+### Changed
+
 - The lowered binary operations of the query plan allocate less: the text of
   the vector matching modifiers (`on`, `ignoring`, `group_left`,
   `group_right`) is built on a stack buffer and compared without a copy, and
