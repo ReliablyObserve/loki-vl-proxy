@@ -124,6 +124,7 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 		`sum by (app) (count_over_time({app="a"} |= "| stats "[5m]))`:    "VectorAgg quoted clause",
 		`sum without (x) (rate({x!="  "}[5m]))`:                          "VectorAgg quoted clause",
 		`sum without (x) (rate({app="a"} |= "without(0)\xa2"[5m]))`:      "VectorAgg quoted clause",
+		`sum by ( bool ) (rate({app="a"}[5m]))`:                          "VectorAgg quoted clause",
 		`topk(3, sum by (app) (rate({app="a"}[5m])))`:                    "Rank",
 		`count_over_time({app="a"} |= "without (x)"[5m])`:                "RangeAgg quoted clause",
 		`rate({app="a"} |= "a bool b"[5m])`:                              "RangeAgg quoted clause",
@@ -156,8 +157,10 @@ func TestPlanDelegatesVectorAggregations(t *testing.T) {
 }
 
 // A query with blanks inside the parentheses (`sum( rate(...) )`) is a phrase to the string translator: its regexps
-// do not skip them. The plan has no text, so it lowers the query as Loki reads it. Recorded here as the
-// difference; no handler reads the lowering for metric queries yet.
+// do not skip them, and the proxy's request rewrite (comments, keywords, parser flags) leaves the blanks, so the
+// proxy answers a phrase search for it today where Loki answers the metric. The plan has no text, so it lowers the
+// query as Loki reads it. Recorded here as the difference (it is not quoted text); no handler reads the lowering
+// for metric queries yet.
 //
 // conformance: architecture-syntax-package-layering
 func TestPlanVectorAggregationReadsBlanksLikeLoki(t *testing.T) {

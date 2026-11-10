@@ -1,6 +1,7 @@
 package lower
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
@@ -68,6 +69,10 @@ func vectorAgg(va *queryplan.VectorAgg, prof Profile) (physical.Op, error) {
 			if len(labels) == 0 {
 				return nil, &NotLoweredError{Construct: "VectorAgg grouping label"}
 			}
+		}
+		// A label named bool, with a blank on each side in the text, is a modifier to the translator's regexp.
+		if !g.Without && slices.Contains(g.Labels, "bool") {
+			return nil, &NotLoweredError{Construct: "VectorAgg quoted clause"}
 		}
 		if g.Without {
 			if len(g.Labels) == 0 {

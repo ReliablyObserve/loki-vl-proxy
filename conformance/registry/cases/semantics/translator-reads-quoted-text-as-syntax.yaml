@@ -18,10 +18,15 @@ why: |
   Loki reads: a line filter holding `without (x)` (the translator strips it and
   appends a fold marker), ` bool ` (it removes it) or `| stats ` (it inserts a
   grouping there), and, under a `without` clause, a run of two blanks in any
-  value (it folds runs of blanks). A related difference, the other way: blanks
-  inside the parentheses of a vector aggregation (`sum( rate( {a="x"} [5m] ) )`)
-  make the translator return the query as a phrase, where Loki accepts it; the
-  plan lowers it (TestPlanVectorAggregationReadsBlanksLikeLoki).
+  value (it folds runs of blanks), and a grouping label named bool padded with
+  blanks (`by ( bool )`).
+
+  A different difference, found by the same grid and not about quoted text:
+  blanks inside the parentheses of a vector aggregation (`sum( rate( {a="x"}
+  [5m] ) )`) make the translator return the query as a phrase, and the proxy's
+  request rewrite leaves the blanks (checked 2026-11-10), so the proxy answers a
+  phrase search where Loki answers the metric; the plan lowers it as Loki reads
+  it (TestPlanVectorAggregationReadsBlanksLikeLoki).
 
   Evidence (main, 2026-11-09; the corpus rows come from TestKeyCraftedValues):
     {a="x"} | s=`…detected_level…`

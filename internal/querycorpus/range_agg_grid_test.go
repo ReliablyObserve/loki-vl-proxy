@@ -78,7 +78,7 @@ func rangeAggGrid() []string {
 		}
 	}
 	// quoted text the string translator reads as a without clause or a boolean modifier.
-	for _, line := range []string{` |= "without (x)"`, " |= `without (z)`", ` |= "a bool b"`, ` |~ "without\\s*\\(a\\)"`} {
+	for _, line := range []string{` |= "without (x)"`, " |= `without (z)`", ` |= "a bool b"`, ` |~ "without\\s*\\(a\\)"`, ` |= "without(0)\xa2"`} {
 		for _, f := range funcs {
 			add(fmt.Sprintf(`%s({app="a"}%s[5m])`, f, line))
 		}
