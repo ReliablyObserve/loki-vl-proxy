@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.129.0] - 2026-11-10
-
 ### Changed
 
 - The query plan lowers the metric queries whose labels come from a parser,
@@ -22,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such a label, a `without` fold or a `keep`, a collision rename that reuses
   the scratch fields of a label filter, a `keep` that leaves no label and a
   nest over an unwrapped label are still written by the string translator.
+
+
+## [2.129.0] - 2026-11-10
+
+### Changed
+
 - The query plan holds `topk`, `bottomk`, `sort` and `sort_desc` the way the
   proxy evaluates them, for every translation profile: one ranking step per
   ranking, with its `k` and its `by` or `without` clause, over the operand's
