@@ -16,6 +16,7 @@ import (
 //     a keep that mixes names and matchers, a matcher value holding the characters its splitting trips on).
 func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, read []string, err error) {
 	parsed := false
+	var names definedNames
 	// A stream label the pipeline reads after a parser: the string translator copies its stored value aside.
 	// The query stays with it unless the label filters alone read it (streamValues); the construct is answered
 	// once the stages themselves are known to lower, so a query reports its first cause.
@@ -31,18 +32,26 @@ func stagePipes(sel *queryplan.LogSelect, prof Profile) (built [][]logsql.Pipe, 
 	}
 	for i, st := range sel.Stages {
 		var ps []logsql.Pipe
+		names.note(st)
 		switch st := st.(type) {
 		case *queryplan.LineFilter:
 			err = lineFilterAfter(sel, i)
 		case *queryplan.LabelFilter:
 		case *queryplan.Parse:
 			ps, err = parserPipes(st)
+			if err == nil && len(ps) == 0 && len(read) > 0 {
+				// A wildcard pattern writes no pipe, and the string translator then copies the stream labels
+				// aside without the fill that follows a parser's pipe.
+				err = &NotLoweredError{Construct: "LogSelect pattern parser no-op with stream label"}
+			}
 			ps = streamValuePipes(ps, read, !parsed)
 			parsed = true
 		case *queryplan.Drop:
 			ps, err = dropPipes(st)
 		case *queryplan.Keep:
-			ps, err = keepPipes(st, prof)
+			ps, err = keepPipes(st, names.label(prof.Label), prof)
+		case *queryplan.Decolorize:
+			ps = []logsql.Pipe{translate.Decolorize()}
 		default:
 			err = &NotLoweredError{Construct: "LogSelect pipeline"}
 		}
@@ -95,7 +104,7 @@ func lineFilterAfter(sel *queryplan.LogSelect, i int) error {
 	return nil
 }
 
-// parserPipes are the pipes of a json or logfmt stage.
+// parserPipes are the pipes of a json, logfmt, regexp or pattern stage.
 func parserPipes(st *queryplan.Parse) ([]logsql.Pipe, error) {
 	switch st.Type {
 	case logql.ParserJSON:
@@ -111,9 +120,12 @@ func parserPipes(st *queryplan.Parse) ([]logsql.Pipe, error) {
 	case logql.ParserLogfmt:
 		return []logsql.Pipe{translate.LogfmtUnpack()}, nil
 	case logql.ParserRegexp:
-		return nil, &NotLoweredError{Construct: "LogSelect regexp parser"}
+		return []logsql.Pipe{translate.ExtractRegexp(st.Param)}, nil
 	case logql.ParserPattern:
-		return nil, &NotLoweredError{Construct: "LogSelect pattern parser"}
+		if p, ok := translate.ExtractPattern(st.Param); ok {
+			return []logsql.Pipe{p}, nil
+		}
+		return nil, nil // a wildcard-only pattern writes no pipe
 	}
 	return nil, &NotLoweredError{Construct: "LogSelect unpack parser"}
 }
@@ -135,7 +147,7 @@ func dropPipes(st *queryplan.Drop) ([]logsql.Pipe, error) {
 // keepPipes are the pipes of a keep stage over its names or its matchers' names. A keep that holds both loses the
 // order they were written in, and a matcher value with a quote or an operator character is read wrongly by the
 // string translator.
-func keepPipes(st *queryplan.Keep, prof Profile) ([]logsql.Pipe, error) {
+func keepPipes(st *queryplan.Keep, label func(string) string, prof Profile) ([]logsql.Pipe, error) {
 	if len(st.Labels) > 0 && len(st.Matchers) > 0 {
 		return nil, &NotLoweredError{Construct: "LogSelect keep order"}
 	}
@@ -146,7 +158,7 @@ func keepPipes(st *queryplan.Keep, prof Profile) ([]logsql.Pipe, error) {
 		}
 		names = append(names, m.Name)
 	}
-	return []logsql.Pipe{translate.KeepFields(names, prof.Label)}, nil
+	return []logsql.Pipe{translate.KeepFields(names, label)}, nil
 }
 
 // hasQuote reports a quote character, which the string translator's comma splitting of a drop or keep list
@@ -213,3 +225,51 @@ func readsStreamLabel(sel *queryplan.LogSelect, names []string) bool {
 	}
 	return false
 }
+
+// definedNames are the labels the stages before a stage define by name: the named groups of a regexp and the
+// placeholders of a pattern. The string translator keeps them in two sets, read by the stages that follow.
+type definedNames struct {
+	captured, defined map[string]bool
+}
+
+// note adds the labels st defines.
+func (d *definedNames) note(st queryplan.Stage) {
+	p, ok := st.(*queryplan.Parse)
+	if !ok {
+		return
+	}
+	switch p.Type {
+	case logql.ParserRegexp:
+		for _, n := range translate.RegexpCaptureNames(p.Param) {
+			if d.captured == nil {
+				d.captured = map[string]bool{}
+			}
+			d.captured[n] = true
+		}
+	case logql.ParserPattern:
+		for _, n := range translate.PatternCaptureNames(p.Param) {
+			if d.defined == nil {
+				d.defined = map[string]bool{}
+			}
+			d.defined[n] = true
+		}
+	}
+}
+
+// label is the label translation the stages after a regexp read: a name the regexp captured is its own field,
+// not translated.
+func (d *definedNames) label(base func(string) string) func(string) string {
+	if len(d.captured) == 0 {
+		return base
+	}
+	captured := d.captured
+	return func(l string) string {
+		if captured[l] || base == nil {
+			return l
+		}
+		return base(l)
+	}
+}
+
+// exact reports whether the label is one a regexp or pattern defines, which a parser's keys do not stand for.
+func (d *definedNames) exact(label string) bool { return d.captured[label] || d.defined[label] }

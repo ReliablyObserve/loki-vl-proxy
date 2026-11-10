@@ -162,6 +162,9 @@ func extractedUnpacks(sel *queryplan.LogSelect, staged [][]logsql.Pipe, bases []
 		if !ok {
 			continue
 		}
+		if p.Type != logql.ParserJSON && p.Type != logql.ParserLogfmt {
+			continue // a regexp or pattern has no keys to unpack
+		}
 		if p.Strict || p.KeepEmpty || len(p.Fields) > 0 {
 			return nil, &NotLoweredError{Construct: "LogSelect label filter _extracted with parser arguments"}
 		}

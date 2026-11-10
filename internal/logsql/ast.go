@@ -804,10 +804,16 @@ type PipeExtractRegexp struct {
 	// KeepOriginalFields keeps the fields already set; SkipEmptyResults skips empty results.
 	KeepOriginalFields bool
 	SkipEmptyResults   bool
+	// Quoted writes the regular expression Go-quoted, as the string translator does, instead of backquoted.
+	Quoted bool
 }
 
 func (p PipeExtractRegexp) String() string {
-	s := "| extract_regexp" + ifString(p.If) + " " + rawOrQuoted(p.Pattern)
+	pattern := rawOrQuoted(p.Pattern)
+	if p.Quoted {
+		pattern = strconv.Quote(p.Pattern)
+	}
+	s := "| extract_regexp" + ifString(p.If) + " " + pattern
 	if p.From != "" {
 		s += " from " + p.From
 	}

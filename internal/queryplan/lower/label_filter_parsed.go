@@ -160,13 +160,16 @@ func (lb *leafBuilder) parsedLeaf(e *logql.LabelFilterExpr) (f logsql.FilterExpr
 		}
 		return labelFilterLeaf(&re, lb.label, lb.caps), ""
 	}
+	if !lb.keyParsed {
+		return labelFilterLeaf(e, lb.label, lb.caps), "" // a regexp or pattern names its labels itself
+	}
 	label := translate.SanitizeFieldIdentifier(e.Name)
 	translated := label
 	if lb.label != nil {
 		translated = lb.label(label)
 	}
 	var keys []string
-	if !lb.aliased(label) {
+	if !lb.aliased(label) && !lb.names.exact(label) {
 		keys = translate.ParsedKeysOf(label, translated)
 	}
 	if keys == nil {

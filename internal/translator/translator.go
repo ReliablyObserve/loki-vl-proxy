@@ -1416,13 +1416,7 @@ func isNoopPatternExpression(expr string) bool {
 			expr = expr[1 : len(expr)-1]
 		}
 	}
-	expr = strings.TrimSpace(expr)
-	switch expr {
-	case "(.*)", ".*", "^.*$", "(?s).*", "(?s:.*)":
-		return true
-	default:
-		return false
-	}
+	return translate.NoopPattern(expr)
 }
 
 // translateLabelFilter handles label comparison filters.
